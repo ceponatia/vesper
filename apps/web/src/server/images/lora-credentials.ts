@@ -2,7 +2,7 @@ import type { ImageLoraRenderBinding } from "@vesper/image-core";
 
 /**
  * The credential a LoRA locator needs to be fetchable, joined to it at the last
- * possible moment (intimate-scene-lora.spec.md §Decisions, "Secret handling").
+ * possible moment.
  *
  * The LoRA library stores a PUBLIC retrieval address and nothing else — that is
  * the contract `isValidImageLoraLocator` enforces, and the reason it refuses a

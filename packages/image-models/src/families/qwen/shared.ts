@@ -63,8 +63,8 @@ export const QWEN_MULTI_REFERENCE_IDENTITY_LOCK =
  * The behavior moved here from a shared quality preset that had to re-check the
  * model's slug on every call, because it ran for every model in the system. An
  * adapter is already the answer to "which model is this", so the slug check has
- * no work left to do — which is what plan §20 means by Qwen behavior living in
- * one adapter instead of in slug checks.
+ * no work left to do — Qwen behavior lives in one adapter instead of in slug
+ * checks.
  */
 export function qwenEditPromptDialect(): ImageModelQuirk {
   return {

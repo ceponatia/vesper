@@ -1,5 +1,5 @@
 /**
- * Burst rate limiting — the in-process half of rate-limits.plan.md.
+ * Burst rate limiting — the in-process half of the cost guards.
  *
  * Per-process state is the accepted single-instance constraint (fly.toml pins
  * one machine; cross-instance sharing stays deferred). What lives here is only

@@ -26,8 +26,8 @@ import {
 import { RETRIEVAL_FIXTURES, type RetrievalFixture } from "./fixtures";
 
 /**
- * Retrieval eval harness (character-chat-standalone.spec.md §6.3 #6) — the
- * measurement precondition for the §6.3 retrieval-quality work and the
+ * Retrieval eval harness — the
+ * measurement precondition for the retrieval-quality work and the
  * permanent regression harness for retrieval changes. For each fixture it
  * mints a throwaway chat memory group ("eval-retrieval-…"), seeds it through
  * the REAL `addFacts`/`appendEpisode`, retrieves through the REAL
@@ -37,8 +37,7 @@ import { RETRIEVAL_FIXTURES, type RetrievalFixture } from "./fixtures";
  *
  * A "joined baseline" (all queries newline-joined into ONE retrieveFacts /
  * retrieveEpisodes call) runs per fixture; the fused-vs-joined recall delta is
- * the honest measure of what per-query embedding + RRF fusion (§6.3 #2)
- * bought.
+ * the honest measure of what per-query embedding + RRF fusion bought.
  *
  *   pnpm eval:retrieval                      # all fixtures (needs DATABASE_URL)
  *   pnpm eval:retrieval --fixture pinned     # substring match on fixture id
@@ -112,7 +111,7 @@ interface FixtureResult {
     pinnedIncluded: boolean | null;
   };
   joined: { hits: HitReport[]; recall: number };
-  /** fused recall − joined recall: what §6.3 #2 bought on this fixture. */
+  /** fused recall − joined recall: what the fusion bought on this fixture. */
   recallDelta: number;
   scoreMatrix: ScoreEntry[];
   diagnostics: Diagnostic[];

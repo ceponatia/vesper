@@ -13,8 +13,7 @@ import type {
 import type { TagTone } from "@/components/ui/tag";
 
 /**
- * The identity-pack vocabulary in English
- * (image-identity-packs.spec.data.md's warning and failure codes).
+ * The identity-pack vocabulary in English — its warning and failure codes.
  *
  * Every translation from code to copy happens HERE, at the UI boundary, and
  * nowhere else: the server stores and reasons about stable codes only, so a
@@ -27,9 +26,8 @@ import type { TagTone } from "@/components/ui/tag";
  * Plain copy for one warning or failure code.
  *
  * Failure copy always names the correction the user can actually make — an
- * unusable reference is a thing to fix, not a thing to be told about (plan
- * §"Normal path": an unusable pack "stops before provider spend and explains the
- * correction").
+ * unusable reference is a thing to fix, not a thing to be told about: an
+ * unusable pack stops before provider spend and explains the correction.
  */
 export function identityPackCodeCopy(code: ImageIdentityPackWarningCode | ImageIdentityPackFailureCode): string {
   switch (code) {
@@ -136,7 +134,7 @@ export function identityPackSummaryHint(status: IdentityPackSummaryStatus, stale
 
 /**
  * Plain copy for every way the trial surface says no
- * (image-identity-packs.spec.trial.md; `imageIdentityPackTrialRefusalCodes`).
+ * (`imageIdentityPackTrialRefusalCodes`).
  * Same exhaustive-switch rule as the failure copy above: a new refusal code
  * without copy is a compile error, never a raw identifier on screen.
  */
@@ -253,7 +251,7 @@ export function trialPackVariantLabel(variantKey: string): string {
   return characterId === undefined || revision === undefined ? variantKey : `pack rev ${revision} · ${characterId}`;
 }
 
-/** The eleven review dimensions in English (spec.trial.md §"Review procedure"). */
+/** The eleven review dimensions in English. */
 export function trialGradeDimensionLabel(dimension: TrialGradeDimension): string {
   switch (dimension) {
     case "identity_likeness":
@@ -291,7 +289,7 @@ export function trialCountsLine(counts: TrialCellCounts): string {
   );
 }
 
-/** The verdict vocabulary in English (spec.trial.md §"Version promotion"). */
+/** The verdict vocabulary in English. */
 export function trialVerdictLabel(verdict: TrialVerdictValue): string {
   switch (verdict) {
     case "promoted":

@@ -7,15 +7,14 @@ import { chatBusyBounce, chatExchangeLockKey } from "../sim-shared";
 type Params = { chatId: string };
 
 /**
- * R3 slice 1 (engine.rollout.plan.md) — the explicit successor turn route.
- * Thin over `runSimChatExchange` (the shared core the ordinary send path
- * also forks into for sim-routed chats); kept for headless/API play and the
- * int suites.
+ * The explicit successor turn route. Thin over `runSimChatExchange` (the shared
+ * core the ordinary send path also forks into for sim-routed chats); kept for
+ * headless/API play and the int suites.
  *
- * command-integrity A1 (slice 1): the turn holds the SAME per-chat
- * `chat_exchange` lock the reply lanes and sim-commands take — one exchange in
- * flight per conversation from any tab or headless caller. Contention bounces as
- * `chat_busy` (A1-1) rather than interleaving with a live reply or world command.
+ * Command integrity: the turn holds the SAME per-chat `chat_exchange` lock the
+ * reply lanes and sim-commands take — one exchange in flight per conversation
+ * from any tab or headless caller. Contention bounces as `chat_busy` rather
+ * than interleaving with a live reply or world command.
  */
 
 const bodySchema = z.object({ message: z.string().trim().min(1).max(4_000) }).strict();

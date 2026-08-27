@@ -5,8 +5,7 @@
  *
  * It is runtime-neutral on purpose — it produces the STRING a fingerprint is
  * taken of, and never takes one. The hash itself is Node work and stays on the
- * application side (monorepo-image-core.spec.render-kernel.md §"Fingerprint
- * split").
+ * application side.
  */
 export function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map((entry) => stableJson(entry)).join(",")}]`;

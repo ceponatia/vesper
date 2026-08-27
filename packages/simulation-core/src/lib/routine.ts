@@ -41,7 +41,7 @@ import { buildConsumptionBodyEffects, buildItemConsumedEvent, type ConsumptionBo
  * E6.2 — the pure routine-controller kernel (the no-model tier).
  * Deterministic candidate generation, versioned fixed-point scoring, and the
  * resolved event train — the chosen outcome commits through the ordinary body
- * law (`buildSleepConditionTrain`, the §26.6 consumption builders), never a
+ * law (`buildSleepConditionTrain`, the consumption builders), never a
  * special path. No IO, no clock, no model.
  */
 
@@ -86,7 +86,7 @@ function minuteOfDayAt(storySecond: number): number {
  * wake edge, wrapping midnight). A routine candidate is DUE only inside its
  * own window — the same law meals follow — so a midday boundary can never
  * turn a hold into a nap off the always-positive daytime circadian floor;
- * forced daytime sleep belongs to the §25.4 collapse law alone.
+ * forced daytime sleep belongs to the collapse law alone.
  */
 export function insideSleepWindow(window: SleepWindow, atStorySecond: number): boolean {
   return minuteInsideWindow(minuteOfDayAt(atStorySecond), window.startMinuteOfDay, window.endMinuteOfDay);
@@ -133,18 +133,18 @@ export function nextRoutineBoundarySecond(
 }
 
 // ---------------------------------------------------------------------------
-// Meal item selection (§26.5 adapted — E6.2 slice 2)
+// Meal item selection (E6.2 slice 2)
 // ---------------------------------------------------------------------------
 
 /**
- * §26.5 selection adapted to the routine meal: eligible items are extant,
- * carry at least one authored `meal`-source consumption effect, are unowned
- * or the actor's own (a background routine never eats against ownership),
- * are unreserved, sit outside any container the actor cannot open
- * (fail-closed §26.2), and root-locate at the actor (held/worn or a
- * container chain rooted there) or the actor's own zone. Actor-rooted items
- * sort before zone-rooted ones; lexicographic item id breaks ties within
- * each group — the first survivor is the meal.
+ * The `consume_item` selection law adapted to the routine meal: eligible items
+ * are extant, carry at least one authored `meal`-source consumption effect, are
+ * unowned or the actor's own (a background routine never eats against
+ * ownership), are unreserved, sit outside any container the actor cannot open
+ * (fail-closed), and root-locate at the actor (held/worn or a container chain
+ * rooted there) or the actor's own zone. Actor-rooted items sort before
+ * zone-rooted ones; lexicographic item id breaks ties within each group — the
+ * first survivor is the meal.
  */
 export function selectRoutineMealItem(
   view: MaterialResolutionView,
@@ -270,7 +270,7 @@ function rejection(code: RoutineRejection["code"], publicReason: string): Routin
 
 export interface RunRoutinePolicyResolutionView extends RoutineBranchMeta {
   actorExists: boolean;
-  /** The actor's effective LOD read at fire time (§6.4 capture basis). */
+  /** The actor's effective LOD read at fire time — captured on the decision event. */
   lod: ActorLodRead;
   rhythmRows: readonly BodyRhythmRow[];
   /** The actor's energy integration view; absent means the body is untracked. */
@@ -310,14 +310,14 @@ export interface RunRoutinePolicyResolution {
 }
 
 /**
- * §19.1/§19.2 for the v2 routine boundary: `begin_sleep` scores the actor's
- * own circadian pressure minus the obligation penalty when a live obligation
- * falls inside the would-be sleep; `eat_meal` scores the meal weight inside
- * one of the actor's authored meal windows (0 outside); `hold` scores 0.
- * The vocabulary order is the tie order — a later candidate must STRICTLY
- * outscore the running winner, so every tie falls back toward `hold` (the
- * no-change fallback). The §19.3 deliberator is never consulted here —
- * routine choices are the §28 no-model tier by definition.
+ * Candidate generation and scoring for the v2 routine boundary: `begin_sleep`
+ * scores the actor's own circadian pressure minus the obligation penalty when a
+ * live obligation falls inside the would-be sleep; `eat_meal` scores the meal
+ * weight inside one of the actor's authored meal windows (0 outside); `hold`
+ * scores 0. The vocabulary order is the tie order — a later candidate must
+ * STRICTLY outscore the running winner, so every tie falls back toward `hold`
+ * (the no-change fallback). The deliberator is never consulted here — routine
+ * choices are the no-model tier by definition.
  */
 export function resolveRunRoutinePolicyFromView(
   view: RunRoutinePolicyResolutionView,
@@ -345,7 +345,7 @@ export function resolveRunRoutinePolicyFromView(
   const wakeSecond = nextWakeSecond(window, view.storySecond);
 
   const clampScore = (value: number): number => Math.max(-1_000_000, Math.min(1_000_000, value));
-  // The §19.1 busy gates, shared by both non-hold candidates in fixed order:
+  // The busy gates, shared by both non-hold candidates in fixed order:
   // an actor mid-activity or mid-scene neither sleeps nor eats by routine.
   const busyIllegalReason =
     view.claimHoldingActivityCount > 0
@@ -371,8 +371,8 @@ export function resolveRunRoutinePolicyFromView(
     : 0;
 
   // eat_meal: due inside an authored meal window; the item is a legality
-  // fact, not a score term. Eating is instantaneous (§26.6), so the sleep
-  // obligation penalty never applies to it.
+  // fact, not a score term. Eating is instantaneous — one command, one atomic
+  // record — so the sleep obligation penalty never applies to it.
   const coveringMealWindow = mealWindowCovering(view.rhythmRows, view.storySecond);
   const mealItem =
     coveringMealWindow !== undefined &&
@@ -478,7 +478,7 @@ export function resolveRunRoutinePolicyFromView(
       lastIntegratedAtStorySecond: view.storySecond,
     };
   } else if (chosenCandidateId === "eat_meal" && mealItem !== undefined && view.materialView !== undefined) {
-    // The §26.6 consumption train, byte-identical to what `consume_item`
+    // The consumption train, byte-identical to what `consume_item`
     // records: one item_consumed causation-chained to the decision, then the
     // item's authored body effects through the shared builders.
     const locationId = view.materialView.actorLocationId(actorId);

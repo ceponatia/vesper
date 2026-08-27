@@ -21,11 +21,10 @@ import {
 import { garmentTemplateForCategory, mintGarmentBlueprint } from "./garment-templates";
 
 /**
- * The chat garment STORE reducer (clothing-state-graph.plan.md §Slice 2; slice-0
- * audit Part 2 ruling P + OQ2).
+ * The chat garment STORE reducer.
  *
- * Slice 1 gave the store its shape; this module is the pure machinery that makes
- * it the wardrobe truth for a conversation:
+ * `garment-instance.ts` gives the store its shape; this module is the pure
+ * machinery that makes it the wardrobe truth for a conversation:
  *
  * - **materialization** — a chat whose store is unseeded grows instances from the
  *   worn definition-id lists it already has (lazily, on the next state WRITE);
@@ -36,7 +35,7 @@ import { garmentTemplateForCategory, mintGarmentBlueprint } from "./garment-temp
  *   list compiles to instance transfers (keep what is already on, re-don what
  *   sits in the wardrobe with its condition intact, mint what is missing, move
  *   the rest to the wardrobe). Outfit presets go through it, so a preset change
- *   is transfers rather than a free-text replacement (plan §Typed mutation surface);
+ *   is transfers rather than a free-text replacement;
  * - **`applyGarmentTransfers`** — the typed `transfer` operation, validated with
  *   stable diagnostics and never a throw (docs/resilience.md).
  *
@@ -253,10 +252,10 @@ function blueprintsFullDiag(detail: string): Diagnostic {
 }
 
 /**
- * Instantiate ONE garment from a blueprint at a given locus — R2's ad-hoc minting
- * path (plan §Promotion rulings: "an unowned garment the fiction introduces
- * becomes a real chat-scoped instance minted from a validated minimal category
- * template"). The blueprint joins the content-hash map like any other, so a
+ * Instantiate ONE garment from a blueprint at a given locus — the ad-hoc minting
+ * path: an unowned garment the fiction introduces becomes a real chat-scoped
+ * instance minted from a validated minimal category
+ * template. The blueprint joins the content-hash map like any other, so a
  * borrowed hoodie costs one entry however many times it is borrowed.
  *
  * Safe in the direction that matters: a mint can only ADD a garment's own
@@ -516,7 +515,7 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
 }
 
 /**
- * Retire every garment an actor owns (audit §1.1, scenario modal): switching the
+ * Retire every garment an actor owns: switching the
  * player's persona replaces the body wearing them, so the old persona's
  * instances must not stay on the new one. They move to `gone{discarded}` rather
  * than being spliced out, so the store keeps one shape — and because `gone`
@@ -550,7 +549,7 @@ export interface GarmentOperationResult {
 }
 
 /**
- * Apply `transfer` operations in fiction order (plan §Typed mutation surface).
+ * Apply `transfer` operations in fiction order.
  * Every rejection is a DROP with a stable diagnostic, never a throw and never a
  * failed turn:
  *

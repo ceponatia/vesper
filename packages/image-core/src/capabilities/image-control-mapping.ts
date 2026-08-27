@@ -6,9 +6,8 @@ import type {
 } from "./image-model-capabilities";
 
 /**
- * The normalized-control mapper (image-model-capabilities.spec.md §"Control
- * mapping"): normalized control names in, one version's real provider fields
- * out.
+ * The normalized-control mapper: normalized control names in, one version's real
+ * provider fields out.
  *
  * The whole point of the layer is that ALIAS DISCOVERY HAPPENED ONCE, in the
  * probe. `guidance` is `guidance` on one model and `cfg` on another, and a
@@ -28,13 +27,11 @@ import type {
  * 2. **Out-of-range is a drop, never a clamp.** A profile asking for guidance 40
  *    where the version declares a 0–20 range is a configuration mistake; sending
  *    20 instead would render something nobody configured under a hash that
- *    claims 40 was requested. The spec's "clamp only where the profile
- *    explicitly allows a bounded range" has no such opt-in yet, so the honest
- *    behavior is refusal of the value.
+ *    claims 40 was requested. Clamping is reserved for a profile that explicitly
+ *    opts into a bounded range, and no profile does yet, so the honest behavior
+ *    is refusal of the value.
  *
- * Pure: no IO, no environment, no clock. It lives in `src/server/ai` because
- * that is where the spec puts it and where the provider payload is otherwise
- * built, not because it touches a provider.
+ * Pure: no IO, no environment, no clock.
  */
 
 /** One control that did not reach the payload, and why. */
@@ -218,7 +215,7 @@ export function mapImageRenderControls(input: MapImageRenderControlsInput): Mapp
  *
  * `applied` gets the id and the scale and NEVER the locator: `applied` is what a
  * caller stores and reports, and a signed URL's query string has no business in a
- * saved record (spec §`image_loras`).
+ * saved record.
  */
 function mapResolvedLora(
   result: MappedImageRenderControls,

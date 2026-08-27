@@ -3,8 +3,7 @@ import { appearanceDetailTierSchema, type AppearanceRecognitionPriors } from "..
 import { toUnitInterval, unitIntervalSchema } from "../affordances/core";
 
 /**
- * Authored attention calibration for a visual feature (visual-state.spec.md
- * §Feature and kind contracts).
+ * Authored attention calibration for a visual feature.
  *
  * Two things live here that look alike and are not:
  *

@@ -28,7 +28,7 @@ import { witnessEligibilityWhere, type WitnessEligibility } from "./witness-elig
 const stringArraySchema = z.array(z.string());
 
 /**
- * Who authored a fact (character-chat-standalone.spec.md §6.4): the background
+ * Who authored a fact: the background
  * archivist ("extracted", the default), the player's "remember this"
  * ("player"), or a dev inspector edit ("dev").
  */
@@ -39,7 +39,7 @@ export type FactDraftInput = FactDraft & {
   subjectId?: string | null;
   /** Participant ids present when the fact originated — interim co-location semantics (decision 3); write-only until the knowledge ledger ships. */
   witnessedBy?: string[];
-  /** Force-include in retrieval + protect from extracted supersedence (spec §6.4 "remember this"). */
+  /** Force-include in retrieval + protect from extracted supersedence ("remember this"). */
   pinned?: boolean;
   /** Provenance; defaults to "extracted" (archivist drafts). */
   origin?: FactOrigin;
@@ -65,13 +65,13 @@ export interface FactHit {
   origin: FactOrigin;
 }
 
-/** A fused-retrieval hit: which queries retrieved it (spec §6.3 #2 per-source attribution). */
+/** A fused-retrieval hit: which queries retrieved it (per-source attribution). */
 export type FusedFactHit = FactHit & {
   /** Queries that retrieved this hit; [] for force-included pinned rows no query found. */
   sources: string[];
 };
 
-/** Full fact row for the dev inspector's list read (spec §6.1). */
+/** Full fact row for the dev inspector's list read. */
 export interface FactRecord {
   id: string;
   kind: string;
@@ -118,12 +118,12 @@ export interface SupersedeCandidate {
  * similarity at/above SUPERSEDE_MIN_SCORE. Pure — tested with
  * pseudoEmbed-derived scores. Two slice-7 refinements:
  *
- * - Subject identity (spec §6.3 #4): when BOTH sides carry a `subjectId`, id
+ * - Subject identity: when BOTH sides carry a `subjectId`, id
  *   equality is the test — differing ids block supersedence even when names
  *   match (two "Twin"s are two entities), and matching ids pass even across a
  *   rename. When either side lacks an id (all chat-lane drafts today), fall
  *   back to lowercased-name equality.
- * - Pinned asymmetry (spec §6.4): a pinned candidate is only superseded when
+ * - Pinned asymmetry: a pinned candidate is only superseded when
  *   the incoming draft's origin is "player" or "dev" — an "extracted" draft
  *   never retires a pinned fact. Pinned facts supersede others freely.
  */
@@ -160,7 +160,7 @@ export function cosineSimilarity(a: readonly number[], b: readonly number[]): nu
  */
 /**
  * Where extracted facts came from: the session lane's turn row, or the chat
- * lane's assistant message (character-chat-standalone.spec.md §4.3) — the anchor
+ * lane's assistant message — the anchor
  * edit/delete/another-take reconciliation retracts by. `null` ⇒ no anchor
  * (authored inner notes, player "remember this").
  */
@@ -329,7 +329,7 @@ async function queryFactCandidates(
 
 /**
  * The scope's active pinned facts, newest first, capped at PINNED_FACT_CAP —
- * force-included ahead of the similarity top-k (spec §6.4). No embedder filter:
+ * force-included ahead of the similarity top-k. No embedder filter:
  * a pinned row is retrieved even when it never embedded. With a query vector
  * the row's true cosine is reported when comparable (same embedder, non-null
  * embedding); otherwise the honest "not scored" 0. FENCED to narrator-visible
@@ -371,7 +371,7 @@ async function selectPinnedFacts(
 /**
  * Single-query fact retrieval: the scope's pinned facts ride ahead of the
  * similarity top-k (on top of `limit`, deduped by id), then scored hits at/above
- * FACT_MIN_SCORE (pinned rows exempt from the floor — spec §6.3 #1, §6.4).
+ * FACT_MIN_SCORE (pinned rows exempt from the floor).
  * A query-embedding failure degrades to the pinned-only result with a
  * diagnostic, never a throw.
  */
@@ -417,7 +417,7 @@ export async function retrieveFacts(
 }
 
 /**
- * Multi-query fact retrieval (spec §6.3 #2): every query embedded in one batch
+ * Multi-query fact retrieval: every query embedded in one batch
  * call, one top-k cosine select per query, fused by reciprocal rank. The
  * relevance floor applies to each hit's BEST raw cosine across queries (never
  * the RRF number), pinned rows exempt and force-included ahead of the fused
@@ -500,8 +500,8 @@ export async function retrieveFactsFused(
 }
 
 /**
- * Full fact rows for a scope, newest first — the dev inspector's list read
- * (spec §6.1). Default: active rows only; `includeInactive` adds superseded +
+ * Full fact rows for a scope, newest first — the dev inspector's list read.
+ * Default: active rows only; `includeInactive` adds superseded +
  * retracted history.
  */
 export async function listFactsForScope(
@@ -544,16 +544,16 @@ export async function listFactsForScope(
 }
 
 /**
- * Edit/rerun reconciliation (docs/turn-engine.md): facts sourced from the turn
+ * Edit/rerun reconciliation: facts sourced from the turn
  * are retracted, never deleted. Facts THEY superseded are deliberately NOT
  * reactivated — history moved past them; both stay invisible to retrieval and
  * `superseded_by_id` keeps the audit trail.
  */
 /**
- * Retract every active fact extracted from one chat assistant message (spec §4.3)
- * — the edit/delete/another-take reconciliation. Status-flip, never a row delete
+ * Retract every active fact extracted from one chat assistant message — the
+ * edit/delete/another-take reconciliation. Status-flip, never a row delete
  * (audit trail), same as the session lane's turn retraction below. Pinned player
- * facts carry no `source_message_id`, so they never match here (spec §6.4).
+ * facts carry no `source_message_id`, so they never match here.
  */
 export async function retractFactsForMessage(messageId: string): Promise<string[]> {
   const updated = await db()
@@ -575,7 +575,7 @@ export async function retractFactsFromTurn(turnId: string): Promise<string[]> {
 
 /**
  * Hard-delete every fact in a scope. Sessions cascade-delete their facts with the session
- * row, so this is the chat lane's bulk purge (the single "Clear Chat" — character-chat-primary.spec.md §4).
+ * row, so this is the chat lane's bulk purge (the single "Clear Chat").
  */
 export async function deleteFactsForScope(scope: MemoryScope, dbc: DbWriter = db()): Promise<number> {
   const deleted = await dbc.delete(facts).where(memoryScopeWhere(facts, scope)).returning({ id: facts.id });

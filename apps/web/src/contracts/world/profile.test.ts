@@ -24,7 +24,7 @@ const entry = (over: Partial<ScheduleEntry> = {}): ScheduleEntry => ({
   ...over,
 });
 
-describe("schedule day parts (chat-initiative.plan.md slice 4)", () => {
+describe("schedule day parts", () => {
   it("round-trips: every day part matches its own window", () => {
     for (const part of SCHEDULE_DAY_PARTS) {
       expect(scheduleDayPartById(part.id)).toBe(part);
@@ -57,7 +57,7 @@ describe("schedule day parts (chat-initiative.plan.md slice 4)", () => {
   });
 });
 
-describe("voiceAnchors (character-fidelity slice 7)", () => {
+describe("voiceAnchors", () => {
   it("trims, drops blanks, and caps the lists", () => {
     const parsed = voiceAnchorsSchema.parse({
       petPhrases: ["  no promises  ", "", "  ", ...Array.from({ length: 10 }, (_, i) => `p${i}`)],
@@ -105,7 +105,7 @@ describe("profile.schedule boundary (element-wise catch)", () => {
   });
 });
 
-describe("toPublicCharacterProfile (security-authz.plan.md OQ2)", () => {
+describe("toPublicCharacterProfile", () => {
   /** A profile with something authored in EVERY section, so an exclusion is a real one. */
   const authored = characterProfileSchema.parse({
     bio: "Runs the glassworks on the quay.",

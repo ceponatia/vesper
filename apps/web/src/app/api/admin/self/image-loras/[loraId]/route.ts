@@ -6,8 +6,7 @@ import { deleteImageLora, updateImageLora } from "@/server/images";
 type Params = { loraId: string };
 
 /**
- * Edit or remove one LoRA library row (image-model-capabilities.spec.md
- * §`image_loras`).
+ * Edit or remove one row of the `image_loras` library.
  *
  * The cross-field rules a PATCH can break — a scale triple that goes out of order
  * one field at a time, a locator whose type arrived in an earlier request — are

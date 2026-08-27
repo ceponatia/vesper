@@ -23,13 +23,13 @@ type HeldItem = ChatWorld["held"][number];
 type WorldAction = ChatWorld["actions"][number];
 
 /**
- * The world card (world-ui.plan.md slices 1 + 3): the player-facing surface of
+ * The world card: the player-facing surface of
  * the successor world, beside the clock card in the right "story time" aside
  * (and in the responsive World sheet). It draws where the player is (or is walking
  * to), who else is around, the open destinations as skip-style travel chips
  * (ruling 20), the player's pocket with a "Hand to {primary}" handoff
  * (`give_item`), and the zone-gated actions as skip-style chips (`do_activity`).
- * Every world command routes its refusal through ONE §14.4 surface (publicReason
+ * Every world command routes its refusal through ONE refusal surface (publicReason
  * + legalAlternatives). A landing / handoff / performed action refreshes the
  * transcript (the server-written world beat), the world envelope, and chat
  * state via `onWorldChanged`. Renders nothing for a degraded / legacy / shadow
@@ -37,7 +37,7 @@ type WorldAction = ChatWorld["actions"][number];
  * can stay focused on an available projection.
  */
 
-/** A human "time remaining" for the catch-up banner (A5 slice 5); "" below an hour (not worth a number). */
+/** A human "time remaining" for the catch-up banner; "" below an hour (not worth a number). */
 function catchUpRemaining(cu: { targetStorySecond: number; reachedStorySecond: number }): string {
   const seconds = Math.max(0, cu.targetStorySecond - cu.reachedStorySecond);
   if (seconds < 3_600) return "";
@@ -73,7 +73,7 @@ export function ChatWorldCard({
   if (!world) return null;
 
   // One command in flight at a time — travel, walk-together, a handoff, and an
-  // action are mutually exclusive (each moves the same world clock). A5 slice 5: while a durable
+  // action are mutually exclusive (each moves the same world clock). While a durable
   // time job is catching the world up, every affordance is disabled — the server owns the clock
   // until it settles (a click would only bounce with world_catching_up).
   const anyBusy =
@@ -259,7 +259,7 @@ export function ChatWorldCard({
                   >
                     {goChipLabel(dest.label)}
                   </Button>
-                  {/* Walk-with-me (slice 5): only when the primary is here to accept. */}
+                  {/* Walk-with-me: only when the primary is here to accept. */}
                   {primary?.present ? (
                     <Button
                       size="sm"

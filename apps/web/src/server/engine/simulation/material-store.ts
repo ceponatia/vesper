@@ -88,7 +88,7 @@ import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
  * E5.3 slice 1 durable material authority. Modeled on
  * body-store.ts / activity-store.ts, NOT on the Gate 1 `item-transfer-store.ts`
  * this replaces: every command runs through the shared `runSimulationCommand`
- * shell (§11.1) rather than a hand-rolled transaction, so observation/knowledge/
+ * shell rather than a hand-rolled transaction, so observation/knowledge/
  * soft-canon/memory folds come free instead of needing to be reimplemented here.
  */
 
@@ -143,7 +143,7 @@ export interface MaterialSubmitOptions {
 }
 
 /**
- * §26.7 item-condition commands mirror `BodyStoreOptions` (body-store.ts),
+ * Item-condition commands mirror `BodyStoreOptions` (body-store.ts),
  * not `MaterialSubmitOptions`: they have no soak crash-injection points of
  * their own (the pre-commit failpoints above are transfer/destroy/consume-
  * specific), matching `submitDurableResolveBodyThreshold`'s own option shape.
@@ -179,8 +179,8 @@ export async function seedDurableMaterialBranch(
   options: MaterialSeedOptions = {},
 ): Promise<void> {
   const seed = materialBranchSeedSchema.parse(rawSeed);
-  // Asserts §26 projection invariants (unique ids, container refs, capacity,
-  // no cycles) before anything is written — the pure layer runs first.
+  // Asserts the material projection invariants (unique ids, container refs,
+  // capacity, no cycles) before anything is written — the pure layer runs first.
   materialsSeedProjection(seed);
   const database = options.database ?? db();
 
@@ -223,7 +223,7 @@ export async function seedDurableMaterialBranch(
       headSequence: 0,
       version: 0,
       storySecond: seed.originStorySecond,
-      // The seed step is not an event (plan R3), so the origin clock must be
+      // The seed step is not an event (R3), so the origin clock must be
       // recorded here or a fork at sequence zero could never recover it.
       originStorySecond: seed.originStorySecond,
     });
@@ -280,13 +280,13 @@ export async function seedDurableMaterialBranch(
  * `touchedItemIds` names the item(s) THIS command's pure resolver may check
  * `reservingActivityId` against (always exactly the one named item, for every
  * current command) — the reservation fact is preloaded for just those ids in
- * one query (§26.5), not resolved per-callback, because the accessor must
+ * one query, not resolved per-callback, because the accessor must
  * answer synchronously.
  */
 /**
- * Load the §26 authority view under the branch lock. Exported for the E6.2
+ * Load the material authority view under the branch lock. Exported for the E6.2
  * routine controller (`routine-store.ts`), whose `eat_meal` candidate runs
- * the same §26.5 selection + §26.6 consumption law over this exact view.
+ * the same selection + consumption law over this exact view.
  */
 export async function loadMaterialResolutionView(
   tx: SimTx,
@@ -332,7 +332,7 @@ export async function loadMaterialResolutionView(
     }
   }
 
-  // §26.5: which live activity (if any) reserves each touched item. Live is
+  // Which live activity (if any) reserves each touched item. Live is
   // every claim-holding phase (queued/preparing/active/paused/interrupted) —
   // the same set claims themselves project from — so a reservation can never
   // outlive the activity that holds it and never orphan.
@@ -386,7 +386,7 @@ export async function loadMaterialResolutionView(
   };
 }
 
-/** All actors physically at `zoneId` — the item-condition witness set (§26.7: co-location with the item's root locus). */
+/** All actors physically at `zoneId` — the item-condition witness set (co-location with the item's root locus). */
 async function loadCoLocatedActorIdsForZone(tx: SimTx, branchId: string, zoneId: string): Promise<string[]> {
   const rows = await tx
     .select({ actorId: simPhysicalLoci.actorId })
@@ -412,7 +412,7 @@ function rejectedResult<TCode extends string>(commandId: string, code: TCode, pu
 }
 
 // ---------------------------------------------------------------------------
-// transfer_item (v2) — §26.4
+// transfer_item (v2)
 // ---------------------------------------------------------------------------
 
 /** Execute one TransferItem: event append, holdings update, and feed obligation, atomically. */
@@ -436,7 +436,7 @@ export async function submitDurableTransferItem(
     execute: async (tx, branch: LockedBranchView, command: TransferItemCommand) => {
       const view = await loadMaterialResolutionView(tx, branch, [command.payload.itemId]);
       const item = view.itemById(command.payload.itemId);
-      // §26.7: only a worn-ness-changing move on a tracked item ever touches
+      // Only a worn-ness-changing move on a tracked item ever touches
       // condition state — every other transfer skips loading/initializing it
       // entirely, keeping "lazy" honest (a held-to-held move of a tracked-but-
       // untouched item must not spuriously initialize its meters).
@@ -519,7 +519,7 @@ export async function submitDurableTransferItem(
 }
 
 // ---------------------------------------------------------------------------
-// destroy_item (v1) — §26.1 gone/terminal
+// destroy_item (v1) — gone/terminal
 // ---------------------------------------------------------------------------
 
 /** Execute one DestroyItem: event append, terminal holdings update, and feed obligation, atomically. */
@@ -580,13 +580,13 @@ export async function submitDurableDestroyItem(
 }
 
 // ---------------------------------------------------------------------------
-// consume_item (v1) — §26.6 a material event with a body effect
+// consume_item (v1) — a material event with a body effect
 // ---------------------------------------------------------------------------
 
 /**
  * Execute one ConsumeItem: the `item_consumed` event, holdings update, and
  * feed obligation exactly like destroy, PLUS — when the item carries authored
- * `consumptionEffects` — the trailing §25 body-kernel events in the same
+ * `consumptionEffects` — the trailing body-kernel events in the same
  * transaction (retire-then-re-arm per meter, mirroring
  * `submitDurableApplyBodySource`), all under one branch advance. An
  * uninitialized (or bodiless) actor still eats: `resolveConsumeItemFromView`
@@ -629,7 +629,7 @@ export async function submitDurableConsumeItem(
       await publishMaterialFeedObligation(tx, event);
       injectCrash(options.crashAt, "after_outbox_insert");
 
-      // §26.6 trailing body effects, in the order the resolver built them:
+      // Trailing body effects, in the order the resolver built them:
       // each body_source_applied retires (and, for energy, collapse-retires)
       // its own meter's pending alarm BEFORE its own trailing re-arm — never
       // a single retirement for the whole batch, because a multi-effect item
@@ -682,13 +682,13 @@ export async function submitDurableConsumeItem(
 }
 
 // ---------------------------------------------------------------------------
-// set_item_ownership (v1) — §26.3 social, not physical
+// set_item_ownership (v1) — social, not physical
 // ---------------------------------------------------------------------------
 
 /**
  * Execute one SetItemOwnership: event append and `sim_items.owner_actor_id`
  * update, atomically. No holdings row change (ownership never moves an item)
- * and no feed obligation (§26.3 — nothing in the world moved for anyone to
+ * and no feed obligation (nothing in the world moved for anyone to
  * see; the material feed carries movements, not the social ledger).
  */
 export async function submitDurableSetItemOwnership(
@@ -744,7 +744,7 @@ export async function submitDurableSetItemOwnership(
 }
 
 // ---------------------------------------------------------------------------
-// apply_item_condition_source (v1) — §26.7 an actor cleans/adjusts a reachable item
+// apply_item_condition_source (v1) — an actor cleans/adjusts a reachable item
 // ---------------------------------------------------------------------------
 
 /**
@@ -782,7 +782,7 @@ export async function submitDurableApplyItemConditionSource(
         ? await loadOrInitializeItemConditionView(tx, branch, command, command.payload.itemId)
         : undefined;
 
-      // Witness capture for a possible instant threshold crossing (§26.7 — the
+      // Witness capture for a possible instant threshold crossing (the
       // `wear` meter has no drift, so its crossings can only ever be detected
       // synchronously here, unlike bodies' purely-scheduled thresholds). The
       // acting actor's own zone join is exactly "co-located with the item":
@@ -841,7 +841,7 @@ export async function submitDurableApplyItemConditionSource(
 }
 
 // ---------------------------------------------------------------------------
-// resolve_item_condition_threshold (v1) — §26.7 trigger-dispatched, fire-time re-validated
+// resolve_item_condition_threshold (v1) — trigger-dispatched, fire-time re-validated
 // ---------------------------------------------------------------------------
 
 /** Resolve one item meter's due threshold — mirrors `submitDurableResolveBodyThreshold`'s structure, item-scoped. */
@@ -874,7 +874,7 @@ export async function submitDurableResolveItemConditionThreshold(
         (candidate) => candidate.key === command.payload.thresholdKey,
       );
 
-      // §26.7: "witnessed by co-location with the item's root locus". When the
+      // Witnessed by co-location with the item's root locus. When the
       // root is an actor (held/worn), that actor is the item's own holder —
       // not an external witness of their own effects, so `loadCoLocatedActorIds`
       // (the SAME zone join `resolveApplyItemConditionSource`'s instant-crossing

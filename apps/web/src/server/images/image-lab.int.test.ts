@@ -59,10 +59,10 @@ import {
 
 /**
  * The Advanced Image Lab's services end to end against DATABASE_URL and a
- * sandboxed DATA_ROOT (qwen-advanced-image-subsystem.spec.md §"Fixtures and
- * tests"). Both provider seams are always injected — Replicate is never called —
+ * sandboxed DATA_ROOT. Both provider seams are always injected — Replicate is
+ * never called —
  * so what is under test is the lab's own machinery: the experiment lifecycle,
- * every refusal the spec's §Resilience table names, and the fixture extraction
+ * every refusal the lane can settle on, and the fixture extraction
  * path including its decode gate.
  *
  * Every degradation case asserts BOTH halves docs/resilience.md demands: the
@@ -1735,7 +1735,7 @@ describe.skipIf(!ready)("image lab two-character scenes", () => {
 });
 
 /**
- * The staged bench end to end (intimate-scene-lora.spec.md §"Slice 2"): one
+ * The staged bench end to end: one
  * registry staging rendered on a named character with no chat, no composer and
  * no narration.
  *

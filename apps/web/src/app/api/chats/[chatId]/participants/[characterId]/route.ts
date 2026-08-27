@@ -11,7 +11,7 @@ import { chatBusyResponse, loadOwnedChat } from "../../../owned";
 type Params = { chatId: string; characterId: string };
 
 const patchBodySchema = z.object({
-  /** The roster panel's manual presence override (multi-character-chat.plan.md). */
+  /** The roster panel's manual presence override. */
   presence: z.enum(["present", "away"]),
 });
 
@@ -52,13 +52,12 @@ export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
 });
 
 /**
- * DELETE /api/chats/:chatId/participants/:characterId — remove a roster member
- * (multi-character-chat.plan.md slice 1). The last member can't leave (a
- * conversation always has a character); removing the primary promotes the next
- * member by re-numbering sorts 0..n-1, so the Chats list (which joins sort 0)
- * never loses the row. The member's state row and memory stay — re-adding the
- * character resumes where they left off; Clear Chat / deleteChat remain the
- * destructive levers.
+ * DELETE /api/chats/:chatId/participants/:characterId — remove a roster member.
+ * The last member can't leave (a conversation always has a character); removing
+ * the primary promotes the next member by re-numbering sorts 0..n-1, so the
+ * Chats list (which joins sort 0) never loses the row. The member's state row
+ * and memory stay — re-adding the character resumes where they left off; Clear
+ * Chat / deleteChat remain the destructive levers.
  */
 export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { chatId, characterId } = await ctx.params;

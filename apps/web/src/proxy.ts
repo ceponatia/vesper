@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
 /**
- * Logged-out gate (auth.plan.md / auth.md). Sends users with no session cookie
+ * Logged-out gate (auth.md). Sends users with no session cookie
  * to `/sign-in` *before* any protected page renders, so the dashboard's
  * owner-scoped fetches never run client-side and flash a "please sign in" error.
  *

@@ -42,10 +42,10 @@ import { projectIdentityPackPolicy } from "./identity-pack-store";
  * the admin and trial surfaces able to collect their numbers independently of
  * any render.
  *
- * **Eligibility runs BEFORE provider reservation** (spec §"Eligibility timing"):
- * a stale, ambiguous, missing or undersized pack must stop the render before
- * render-unit and price guards are charged, which is why every refusal here is a
- * value with an actionable code rather than an exception from a provider call.
+ * **Eligibility runs BEFORE provider reservation**: a stale, ambiguous, missing
+ * or undersized pack must stop the render before render-unit and price guards
+ * are charged, which is why every refusal here is a value with an actionable
+ * code rather than an exception from a provider call.
  */
 
 export interface EvaluateIdentityPackForProfileInput {
@@ -379,8 +379,7 @@ function ineligible(
 }
 
 /**
- * The record that travels with the render attempt for one selected reference
- * (spec §"Render provenance").
+ * The record that travels with the render attempt for one selected reference.
  *
  * It belongs on the attempt rather than on the character or the image row because
  * an old render has to stay explainable after its pack is superseded: the

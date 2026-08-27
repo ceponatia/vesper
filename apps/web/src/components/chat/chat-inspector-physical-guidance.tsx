@@ -12,8 +12,7 @@ import {
 } from "@/lib/api-inspector";
 
 /**
- * The READ-ONLY narrator physical-guidance preview
- * (narrator-physical-guidance.plan.md slice 2).
+ * The READ-ONLY narrator physical-guidance preview.
  *
  * It shows the staircase a developer reads in code, in order —
  *

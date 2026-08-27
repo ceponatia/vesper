@@ -58,9 +58,9 @@ import {
 } from "@/contracts";
 
 /**
- * LANE ASSEMBLY for the visual-state projection (visual-state.plan.md slice 6;
- * spec §Implementation placement — "lane adapters and source assembly belong
- * under … a focused `apps/web/src/server/visual-state/` barrel").
+ * LANE ASSEMBLY for the visual-state projection. Lane adapters and source
+ * assembly belong under this focused `apps/web/src/server/visual-state/`
+ * barrel.
  *
  * This module is deliberately PURE over passed-in committed state: no IO, no
  * env, no clock, and no import from any other server module. The turn pipelines
@@ -69,7 +69,7 @@ import {
  * inputs rebuilds a byte-identical snapshot — the projection-is-pure ruling,
  * held at the assembly seam and asserted by test.
  *
- * Everything here is SHADOW-side (spec §Flags): nothing it returns may reach a
+ * Everything here is SHADOW-side: nothing it returns may reach a
  * prompt, an image, chat state, or observer memory. The narrator selection's
  * notices, post-notice memory and mention commits come back as plain data and
  * are DISCARDED by every slice-6 caller — spending them is slice 7's separately
@@ -440,10 +440,10 @@ export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): Vi
 // ---------------------------------------------------------------------------
 
 /**
- * A committed scene camera, bound into the ONE image selection pass
- * (image-lane-consolidation.spec.visual-state.md §Camera). The id names the
- * viewpoint the selection runs under; the spec supplies the distance, angle and
- * framing reads through `visualCameraReadsOfSceneCamera`. Lighting and motion
+ * A committed scene camera, bound into the ONE image selection pass. The id
+ * names the
+ * viewpoint the selection runs under; the distance, angle and
+ * framing reads come from `visualCameraReadsOfSceneCamera`. Lighting and motion
  * deliberately stay lane-derived — the scene camera proves where the frame is,
  * not what the light does.
  */
@@ -521,8 +521,8 @@ export interface VisualStateSelections {
 }
 
 /**
- * The lane's viewing conditions (plan §Open questions → "how the narrator lane
- * obtains usable viewing conditions", resolved 2026-08-17).
+ * The lane's viewing conditions — how the narrator lane obtains usable viewing
+ * conditions (resolved 2026-08-17).
  *
  * Until this, every component was passed as `unknown`, the slice-4 read failed
  * the whole feature list closed, and the production narrator selection had zero

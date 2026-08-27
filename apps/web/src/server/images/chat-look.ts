@@ -20,7 +20,7 @@ import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 
 /**
- * Chat reference images (chat-scene-references.plan.md): the two cached anchors
+ * Chat reference images: the two cached anchors
  * that keep a conversation's renders visually consistent —
  *
  * - **`chat_look`**: an outfit-true, identity-locked variant of the avatar,
@@ -89,8 +89,8 @@ export function chatLookKey(input: {
  * framing. Age is inherited from the portrait reference; neither chronological
  * nor apparent-age fields are accepted by this scene-supporting render.
  *
- * RETAINED BUT UNCALLED BY PRODUCTION since the Stage 4 cutover
- * (image-lane-consolidation.plan.md): `renderChatLookImage` now assembles its
+ * RETAINED BUT UNCALLED BY PRODUCTION since the Stage 4 cutover:
+ * `renderChatLookImage` now assembles its
  * prompt from `buildChatLookSegments`, which carries these three sentences as
  * route-owned segments beside the visual digest's facts. This builder stays in
  * the tree as the frozen comparison baseline (`prompt-freeze.test.ts`) exactly

@@ -10,8 +10,7 @@ import {
 } from "./vocabulary";
 
 /**
- * Visual-state feature KIND definitions (visual-state.spec.md §Feature and kind
- * contracts).
+ * Visual-state feature KIND definitions.
  *
  * A kind stores CALIBRATION and shape, never which features a character has:
  * what a value may look like, where it may sit, how long it lasts, which
@@ -58,7 +57,7 @@ export const VISUAL_STATE_KIND_ID_PATTERN = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/
  * duplicated locus list, out-of-range priors, an unknown layer/stability, or an
  * `instantaneous` kind that also claims recognition eligibility — a posture fact
  * true for exactly one committed cut must never earn a long-term recognition
- * floor (spec §Core vocabulary).
+ * floor.
  */
 export function defineVisualStateKind<TValue>(
   definition: VisualStateKindDefinition<TValue>,

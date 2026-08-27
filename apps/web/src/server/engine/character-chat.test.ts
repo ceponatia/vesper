@@ -3,8 +3,8 @@ import { FABLE_FUSION_711_ID } from "@/server/ai";
 import type { NarratorCompletion } from "@/server/ai";
 
 /**
- * The narrator stream's completion metadata and the exact-model hidden retry
- * (narrator-model-bench.spec.md §The Featherless rows). `streamText` is scripted
+ * The narrator stream's completion metadata and the exact-model hidden
+ * retry. `streamText` is scripted
  * attempt by attempt so every case runs with zero network: the questions here are
  * "how many attempts did it make", "what did it report", and "what reached the
  * player", none of which need a live provider.

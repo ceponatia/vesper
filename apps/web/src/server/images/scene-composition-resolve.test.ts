@@ -15,7 +15,7 @@ import {
 import { resolveScenePlan } from "./prompts-scene-plan";
 
 /**
- * The camera / staging clamps (scene-composition.plan.md slices 1–3).
+ * The camera / staging clamps.
  *
  * Every case here is a degradation test in the sense docs/resilience.md means: it asserts
  * the fallback AND the diagnostic code, because a camera that quietly reverts to the frontal

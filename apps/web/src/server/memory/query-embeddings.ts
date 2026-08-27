@@ -3,7 +3,7 @@ import { embedTexts, toVectorLiteral } from "../ai";
 import { nonBlankQueries } from "./fusion";
 
 /**
- * The per-turn query-embedding cache (chat-agent-improvements.plan.md slice 3).
+ * The per-turn query-embedding cache.
  *
  * A turn's retrieval legs all search with the SAME query texts — last turn's
  * `memoryQueries` plus the player's input — but each leg used to embed them itself:

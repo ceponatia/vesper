@@ -7,10 +7,9 @@ import {
 } from "@/server/reference-extraction";
 
 /**
- * Reference-image extraction runs (visual-state.plan.md slice 9). Owner-admin
- * only, and only beneath `/api/admin/self` — `withOwnerAdmin` fails closed with
- * a hidden 404 anywhere else. The spec keeps the whole workflow admin-only
- * until review behavior is proven.
+ * Reference-image extraction runs. Owner-admin only, and only beneath
+ * `/api/admin/self` — `withOwnerAdmin` fails closed with a hidden 404 anywhere
+ * else. The whole workflow stays admin-only until review behavior is proven.
  *
  * GET lists one character's runs with FRESH diffs against canonical truth.
  * POST registers one offline extractor run: the body carries the extractor's

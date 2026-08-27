@@ -2,8 +2,8 @@ import { referenceCapacity, type ImageModel } from "../models/image-models";
 import type { SceneReferenceMode, SceneVisualReference } from "../references/scene-reference";
 
 /**
- * Provider-capability seam for image rendering (scene-images.spec.md §4,
- * re-based on the registry 2026-08-05).
+ * Provider-capability seam for image rendering, re-based on the registry
+ * 2026-08-05.
  *
  * Before the registry this module carried a hardcoded matrix of provider ids
  * (`venice_edit`, `replicate_multi_edit`, …) whose capabilities were constants.

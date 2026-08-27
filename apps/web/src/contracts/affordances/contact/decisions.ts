@@ -3,11 +3,10 @@ import { affordanceSubjectIdSchema, type AffordanceEvidence, type AffordanceSubj
 
 /**
  * The three permissions a contact needs before it can be committed, plus the
- * implicit-adjustment policy (romantic-contact-affordances.spec.contact-core.md
- * §"Action context" and §"Implicit adjustment policy").
+ * implicit-adjustment policy.
  *
  * Every one of them is a RESULT the lane hands in, never something this layer
- * calculates. The plan's rule is blunt about why: *"This system describes
+ * calculates. The rule is blunt about why: *"This system describes
  * physical consequences. It does not decide desire, consent, attraction,
  * pleasure, climax, withdrawal, or any other character choice."* A permission
  * derived from arousal, affinity, relationship stage, narrative framing, or the
@@ -52,8 +51,7 @@ export const CONTACT_ACTION_SCOPE: Readonly<Record<ContactActionKind, ContactPol
 /**
  * Which kinds need an interaction-permission grant.
  *
- * **Settled law** (owner, 2026-07-30 — romantic-contact-affordances.audit.md
- * §"Owner decisions needed" 3): permission-neutral incidental, casual, and
+ * **Settled law** (owner, 2026-07-30): permission-neutral incidental, casual, and
  * affectionate touch; a grant required for romantic and intimate. Ordinary
  * social contact is what the chat lane already narrates freely and has no
  * permission owner for, so demanding a grant it cannot produce would block the
@@ -132,9 +130,8 @@ export type ContactPolicyStatus = z.infer<typeof contactPolicyStatusSchema>;
  *
  * `not_required` alone is not a pass — an owner that answers "I was not asked"
  * about an action that requires asking is silence, and the resolver reads it as
- * `unresolved`. The one exception is ruled (owner, 2026-08-04 —
- * romantic-contact-affordances.spec.permission.md §"Direction and participant
- * rules"): a contact whose GRANTING TARGET is the player needs no standing
+ * `unresolved`. The one exception is ruled (owner, 2026-08-04):
+ * a contact whose GRANTING TARGET is the player needs no standing
  * player grant, because the player writes their own next reaction. A basis is a
  * closed vocabulary rather than a boolean so a future second exception is a data
  * edit, not a schema change.

@@ -38,9 +38,7 @@ import type { ChatCommittedHairState } from "./chat-affordances";
 import type { SensoryFocusHint } from "./chat-intent";
 
 /**
- * The CHAT LANE's narrator-physical-guidance adapter
- * (narrator-physical-guidance.plan.md slice 2; as-built detail in
- * narrator-physical-guidance.spec.md §"Slice 2").
+ * The CHAT LANE's narrator-physical-guidance adapter.
  *
  * Three jobs, all deterministic and all pure:
  *
@@ -50,7 +48,7 @@ import type { SensoryFocusHint } from "./chat-intent";
  *    plus the hair domain's own phrase lexicon.
  * 2. **Relevance** — decide whether a standing constraint is about anything happening
  *    this turn. A braid is true all day; stating so on every exchange is inventory,
- *    and plan §6 selects risk (see `chatGuidanceRelevance`).
+ *    selection favors risk over inventory (see `chatGuidanceRelevance`).
  * 3. **Compilation** — hand this cut's admitted constraints, the turn's corrections, and
  *    whatever resolved action outcomes the caller supplies to the lane-neutral compiler,
  *    which gates, orders, and budgets them. The outcomes are only ever PASSED THROUGH:
@@ -84,9 +82,9 @@ import type { SensoryFocusHint } from "./chat-intent";
  * ## Why nothing is persisted
  *
  * Every input is either the committed cut or this turn's message text, and a retake
- * restores both through the rollback anchors that already exist (plan §"State and
- * retakes"). The same take therefore reproduces the same corrections and the same
- * fingerprints for free; a `physical_guidance` state row would only add a way for the
+ * restores both through the rollback anchors that already exist. The same take
+ * therefore reproduces the same corrections and the same fingerprints for free;
+ * a `physical_guidance` state row would only add a way for the
  * stored answer and the recomputed one to disagree.
  */
 
@@ -699,8 +697,8 @@ function correction(input: {
 // ---------------------------------------------------------------------------
 
 /**
- * A constraint existed and this turn had no reason to carry it (plan §6, "selection
- * favors risk, not inventory"). `info`, not `warn`: an irrelevant fence is the designed
+ * A constraint existed and this turn had no reason to carry it (selection
+ * favors risk, not inventory). `info`, not `warn`: an irrelevant fence is the designed
  * outcome on most turns, and this exists so the inspector can explain the silence.
  */
 export const GUIDANCE_CONSTRAINT_IRRELEVANT = "guidance.constraint.irrelevant";

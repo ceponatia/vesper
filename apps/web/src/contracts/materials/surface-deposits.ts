@@ -3,10 +3,10 @@ import { FIXED_POINT_ONE } from "@/lib/fixed-point";
 
 /**
  * The vocabulary of **material sitting on a surface** — what it is, how much of
- * it, and how recently it landed (romantic-contact-affordances.spec.effects.md
- * §7, the 2026-08-22 ruling that the body-surface domain owns current material
- * and temporary condition on skin, plus the 2026-08-25 ruling that skin and
- * garments must not each keep their own list of what mud is).
+ * it, and how recently it landed (the 2026-08-22 ruling that the body-surface
+ * domain owns current material and temporary condition on skin, plus the
+ * 2026-08-25 ruling that skin and garments must not each keep their own list of
+ * what mud is).
  *
  * This module exists because there are now TWO owners of deposited material and
  * they must never disagree about it: the garment store

@@ -17,8 +17,7 @@ import {
 } from "@/server/images";
 
 /**
- * The Advanced Image Lab's experiment collection
- * (qwen-advanced-image-subsystem.spec.md §"Code organization").
+ * The Advanced Image Lab's experiment collection.
  *
  * Owner-admin and self-scoped like the identity-trial routes beside it: the
  * service resolves every character, chat, input image and fixture against the

@@ -13,10 +13,10 @@ import {
 } from "@/server/engine";
 import { simulationSuiteHarness } from "@/server/test-support";
 
-// sim-read-seam-guards.plan.md slice 2: `readSimChatMeters` must INTEGRATE each
+// `readSimChatMeters` must INTEGRATE each
 // meter to the branch clock on read (via the shared `buildMeterView` seam),
 // not echo the last stored write. Needs Postgres; self-skips without it. The
-// slice-1 degradation guards are proven db-free in sim-surfaces.degradation.test.ts.
+// degradation guards are proven db-free in sim-surfaces.degradation.test.ts.
 //
 // The probe/pool handling comes from `simulationSuiteHarness`. That is a
 // behavioral FIX here: this file's hand-rolled probe had diverged to a plain

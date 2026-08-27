@@ -25,8 +25,7 @@ import {
 } from "./vocabulary";
 
 /**
- * One normalized visual feature (visual-state.spec.md §Feature and kind
- * contracts).
+ * One normalized visual feature.
  *
  * `key` is stable for the CONCEPTUAL feature; `truthFingerprint` changes with
  * its value. That split is what lets observer memory notice "her hair is damp

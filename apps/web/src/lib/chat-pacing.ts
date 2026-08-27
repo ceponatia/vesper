@@ -1,11 +1,10 @@
 /**
- * Reply-pacing hold (emotional-weather.plan.md slice 3, UI-only): how long the
- * chat client keeps the "…" typing indicator up before revealing the streamed
- * reply, derived from the state strip's snapshot. A guarded or cold character
- * lets the message sit; a hurt one hesitates; a warm or giddy one answers
- * eagerly. Purely presentational — tokens buffer client-side during the hold,
- * so total time-to-full-reply grows by at most the hold. Capped well below
- * perceived-latency pain. PURE.
+ * Reply-pacing hold (UI-only): how long the chat client keeps the "…" typing
+ * indicator up before revealing the streamed reply, derived from the state
+ * strip's snapshot. A guarded or cold character lets the message sit; a hurt one
+ * hesitates; a warm or giddy one answers eagerly. Purely presentational — tokens
+ * buffer client-side during the hold, so total time-to-full-reply grows by at
+ * most the hold. Capped well below perceived-latency pain. PURE.
  */
 
 /** Hard ceiling on the reveal hold — pacing must never read as a hang. */

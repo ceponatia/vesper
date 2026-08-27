@@ -12,10 +12,9 @@ import {
  * Replicate environment variables.
  *
  * The transport package performs the network IO but owns no ambient
- * configuration (monorepo-image-core.spec.replicate.md). Deployment settings are
- * the application's: this module resolves them once, builds one configured
- * client, and hands that client to every render, preprocessor run and schema
- * probe in the process.
+ * configuration. Deployment settings are the application's: this module
+ * resolves them once, builds one configured client, and hands that client to
+ * every render, preprocessor run and schema probe in the process.
  *
  * That single snapshot is what makes the safety posture single-source. The
  * render kernel fingerprints a plan with `disableSafetyChecker()` and the

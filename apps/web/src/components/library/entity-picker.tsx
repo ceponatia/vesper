@@ -54,7 +54,7 @@ export interface EntityPickerDialogProps {
 const DEBOUNCE_MS = 250;
 
 /**
- * Search-and-pick dialog over a library endpoint (library-ux.plan.md §6):
+ * Search-and-pick dialog over a library endpoint:
  * thumbnails, facet chips, grouped empty-query browse, single or basket
  * multi-select. The shared picker behind every "add from library" flow.
  */

@@ -17,7 +17,7 @@ import {
 } from "@/server/api";
 
 // Explicit list columns: the bare row carries the 1536-dim search embedding —
-// megabytes of dead payload across a 100-row list (library-ux.plan.md §2).
+// megabytes of dead payload across a 100-row list.
 const LIST_COLUMNS = {
   id: items.id,
   kind: items.kind,
@@ -47,12 +47,12 @@ export const GET = withUser(async (user, req: NextRequest) => {
   const params = req.nextUrl.searchParams;
   const q = params.get("q") ?? undefined;
   const tags = parseTagsParam(params.get("tag"));
-  // Optional sub-kind + facet filters (library-ux.plan.md); an unknown value
+  // Optional sub-kind + facet filters; an unknown value
   // degrades to no filter rather than failing the request.
   const kind = parseOrNull(itemKindSchema, params.get("kind"));
   const layer = parseOrNull(clothingLayerSchema, Number(params.get("layer") ?? NaN));
   const sort = parseOrNull(z.enum(["updated", "name"]), params.get("sort"));
-  // Discovery scope (auth.plan.md fast-follow): all|public|owned; default owner-only.
+  // Discovery scope: all|public|owned; default owner-only.
   const scopeParam = params.get("scope");
   const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
   // Pass kind + facets INTO the search so the result cap is applied per-facet.

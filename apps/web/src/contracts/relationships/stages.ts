@@ -5,8 +5,8 @@ import { z } from "zod";
  * (−100..100). Stages — never raw values — appear in prompts and gate behavior.
  * Boundaries are data (tune by editing this file).
  *
- * Widened from the original seven to eleven (personality-and-state.plan.md Slice 5 /
- * spec §4 "more levels") so progression reads less coarsely — the romance-leaning
+ * Widened from the original seven to eleven, for more levels, so progression
+ * reads less coarsely — the romance-leaning
  * positive half gets the extra granularity (`warm` between friendly and close,
  * `cherished` between close and devoted, `smitten` at the top), plus `cool` on the
  * cautious side. The original seven ids are retained (so `stranger` stays the neutral

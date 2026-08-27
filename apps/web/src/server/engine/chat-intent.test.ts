@@ -169,7 +169,7 @@ describe("detectSensoryFocus (scope guard)", () => {
     expect(detectSensoryFocus("I take in the lines of her dress.")).toEqual({ sense: "study", target: "dress", intimate: false });
   });
 
-  it("resolves singular and colloquial nouns to their registry region (sensory-grounding)", () => {
+  it("resolves singular and colloquial nouns to their registry region", () => {
     expect(detectSensoryFocus("I lick her foot.")).toEqual({ sense: "taste", target: "foot", intimate: false, region: "foot" });
     expect(detectSensoryFocus("I lick the sole of her foot.")).toEqual({ sense: "taste", target: "sole", intimate: false, region: "feet" });
     expect(detectSensoryFocus("I press my nose against her heels and inhale.")).toEqual({

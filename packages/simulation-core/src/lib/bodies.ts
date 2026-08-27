@@ -99,7 +99,7 @@ function compareStableText(left: string, right: string): number {
  * The deterministic 2^(-x) primitive and its scale now live in the shared
  * `lib/fixed-point.ts` kernel (both lanes run one implementation — see that
  * file's header). Re-exported here unchanged so `social.ts`, this module's
- * tests and any other §25 consumer keep importing them from `./bodies`.
+ * tests and any other body-kernel consumer keep importing them from `./bodies`.
  */
 export { EXP2_SCALE, exp2NegativeFixedPoint };
 
@@ -224,7 +224,7 @@ export interface MeterIntegrationView {
   modifiers: readonly BodyModifier[];
   /**
    * E5.2 rhythm self-care as data: absolute-second set/add jumps the
-   * integration folds as boundaries (§25.5 window crossing — deterministic
+   * integration folds as boundaries (window crossing — deterministic
    * clock points, so no per-day tick or trigger is ever needed). Entries at
    * or before the last material write are already folded into the persisted
    * value and are ignored.
@@ -290,8 +290,8 @@ function integrationBoundaries(
 
 /**
  * The pure, total query read: integrate piecewise across modifier and
- * self-care boundaries from the last material write. Never persists (§25.2 —
- * that is what makes partition invariance structural).
+ * self-care boundaries from the last material write. Never persists (that is
+ * what makes partition invariance structural).
  */
 export function integrateMeterValue(view: MeterIntegrationView, atStorySecond: number): number {
   const from = view.state.lastIntegratedAtStorySecond;
@@ -442,13 +442,13 @@ export function bodyConditionExpiryUniquenessKey(conditionId: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Window-crossing self-care (§25.5): each rhythm row whose kind carries a
- * self-care effect lands that effect at its window-END minute, every story
- * day. A skip credits only the crossings it actually contains — landing at
- * 6am (before a 7am wash) and landing at 8am (past it) genuinely differ, and
- * nothing ever blanket-restores. Crossings are deterministic clock points,
- * so they enter integration as {@link ScheduledBodyAdjustment}s — no per-day
- * tick, no trigger, no persistence.
+ * Window-crossing self-care: each rhythm row whose kind carries a self-care
+ * effect lands that effect at its window-END minute, every story day. A skip
+ * credits only the crossings it actually contains — landing at 6am (before a
+ * 7am wash) and landing at 8am (past it) genuinely differ, and nothing ever
+ * blanket-restores. Crossings are deterministic clock points, so they enter
+ * integration as {@link ScheduledBodyAdjustment}s — no per-day tick, no
+ * trigger, no persistence.
  */
 export function selfCareAdjustmentsBetween(
   rhythmRows: readonly BodyRhythmRow[],
@@ -476,7 +476,7 @@ export function selfCareAdjustmentsBetween(
  * The per-meter {@link MeterIntegrationView} over one actor's already-loaded
  * body rows: resolve the meter's registry definition from the row's captured
  * `registryVersion` (validated through {@link bodyRegistryVersionSchema}),
- * attach that meter's modifiers, and fold the §25.5 rhythm self-care crossings
+ * attach that meter's modifiers, and fold the rhythm self-care crossings
  * through `horizon` as scheduled adjustments. `undefined` when the actor holds
  * no such meter row, or its registry version / definition cannot be resolved.
  *
@@ -517,7 +517,7 @@ export function buildMeterView(
 }
 
 /**
- * The §25.4 sleep coupling, half one: falling asleep suspends the energy
+ * The sleep coupling, half one: falling asleep suspends the energy
  * reserve's decay. Callers may pass their own energy modifier; otherwise the
  * suspend is attached deterministically so no caller can model sleep without
  * its body consequence.
@@ -542,7 +542,7 @@ export function normalizeConditionModifierSpecs(
 }
 
 /**
- * The §25.4 sleep coupling, half two: waking credits the reserve linearly by
+ * The sleep coupling, half two: waking credits the reserve linearly by
  * time actually slept (+0.09/h), capped at 0.95 — a full night from a normal
  * bedtime refills; a full night after a bender reaches only ~0.80, so debt
  * emerges with no debt mechanic. Linear credit composes exactly, so split
@@ -574,10 +574,10 @@ export interface BodyBranchMeta {
 
 /**
  * The minimal command shape body event construction needs — narrower than the
- * closed `BodyCommand` union below so a non-body resolver (E5.3 §26.6
- * consumption, §26.5 completion-time consume costs) can drive the same
- * event-building helpers without becoming a body command. Every `BodyCommand`
- * member already structurally satisfies this.
+ * closed `BodyCommand` union below so a non-body resolver (E5.3 consumption,
+ * completion-time consume costs) can drive the same event-building helpers
+ * without becoming a body command. Every `BodyCommand` member already
+ * structurally satisfies this.
  */
 export interface BodyEventCommandContext {
   id: string;
@@ -881,9 +881,9 @@ export interface BodyMeterResolutionView extends BodyBranchMeta {
 export interface ApplyBodySourceResolution {
   ok: true;
   meter: BodyMeterState;
-  /** The exertion coupling's hygiene write, when it fired (§25.4). */
+  /** The exertion coupling's hygiene write, when it fired. */
   coupledMeter?: BodyMeterState;
-  /** The climax coupling's afterglow condition, when it fired (§25.4). */
+  /** The climax coupling's afterglow condition, when it fired. */
   condition?: BodyCondition;
   events: [
     BodySourceAppliedEvent,
@@ -907,12 +907,12 @@ function sourceValueAfter(
 }
 
 /**
- * The single-meter source-application core (§25.1 layer 2): integrate to now,
+ * The single-meter source-application core (layer 2): integrate to now,
  * apply the operation, build the `body_source_applied` event with its
  * captured derivation, and the meter's next state. `resolveApplyBodySource`
  * and the exported `applySourceToMeter` below both build on this — kept
  * private and rearm-free because `resolveApplyBodySource`'s exertion/climax
- * couplings (§25.4) must land BETWEEN this event and its own rearm calls, an
+ * couplings must land BETWEEN this event and its own rearm calls, an
  * interleaving `applySourceToMeter`'s bundled rearm has no reason to support.
  */
 function buildSourceAppliedEvent(args: {
@@ -984,12 +984,12 @@ export interface ApplySourceToMeterResult {
 }
 
 /**
- * The exported single-meter source-application helper (§25.1 layer 2, §26.6):
- * the core above, bundled with its threshold/collapse re-arm in one call —
- * exactly what a non-body resolver needs to write a meter and retire+re-arm
- * its alarms atomically (§26.6 consumption, §26.5 completion-time consume
- * costs). Consumption sources never carry the §25.4 exertion/climax couplings
- * (their sourceKind is meal/drink/adjustment), so bundling here is safe.
+ * The exported single-meter source-application helper (layer 2): the core
+ * above, bundled with its threshold/collapse re-arm in one call — exactly what
+ * a non-body resolver needs to write a meter and retire+re-arm its alarms
+ * atomically (consumption, completion-time consume costs). Consumption sources
+ * never carry the exertion/climax couplings (their sourceKind is
+ * meal/drink/adjustment), so bundling here is safe.
  */
 export function applySourceToMeter(args: ApplySourceToMeterArgs): ApplySourceToMeterResult {
   const { event, nextState } = buildSourceAppliedEvent(args);
@@ -1074,7 +1074,7 @@ export function resolveApplyBodySource(
   let coupledMeter: BodyMeterState | undefined;
   let condition: BodyCondition | undefined;
 
-  // §25.4 exertion coupling: working the body also costs freshness — a
+  // Exertion coupling: working the body also costs freshness — a
   // deterministic hygiene drain at half the energy cost, one causal record.
   if (
     command.payload.sourceKind === "exertion" &&
@@ -1117,7 +1117,7 @@ export function resolveApplyBodySource(
     }
   }
 
-  // §25.4 climax coupling: the reset installs afterglow as a self-expiring
+  // Climax coupling: the reset installs afterglow as a self-expiring
   // condition — the settled body is a state the world tracks, not prose.
   if (
     command.payload.sourceKind === "climax" &&
@@ -1335,7 +1335,7 @@ export interface SleepConditionTrain {
 
 /**
  * The asleep condition with its energy suspend and self-expiry alarm, as one
- * causation-chained event train (§25.4). Extracted from `resolveBodyCollapse`
+ * causation-chained event train. Extracted from `resolveBodyCollapse`
  * so forced sleep (collapse) and chosen sleep (the E6.2 routine controller)
  * commit the identical machinery — the applySourceToMeter precedent.
  */
@@ -1554,7 +1554,7 @@ export function resolveApplyBodyCondition(
   if (view.activeSameKey) {
     return rejection("condition_already_active", "That state already holds.");
   }
-  // The §25.4 sleep coupling: an asleep condition always suspends energy.
+  // The sleep coupling: an asleep condition always suspends energy.
   const modifierSpecs = normalizeConditionModifierSpecs(
     command.payload.conditionKey,
     command.payload.modifiers,
@@ -1777,8 +1777,8 @@ export function resolveEndBodyCondition(
 
   // Persist each affected meter at the retirement boundary and re-solve its
   // alarm against the post-retirement modifier set. Waking from `asleep`
-  // additionally credits the energy reserve by time actually slept (§25.4 —
-  // the coupling's second half), emitted as a real sleep_credit source so the
+  // additionally credits the energy reserve by time actually slept (the
+  // coupling's second half), emitted as a real sleep_credit source so the
   // causal record explains the refill.
   const events: [BodyConditionEndedEvent, ...(BodySourceAppliedEvent | TriggerScheduledEvent)[]] = [
     endedEvent,
@@ -2098,7 +2098,8 @@ export function lastSleepEndedAtOf(conditions: readonly BodyCondition[]): number
 
 /**
  * The collapse solver's context over one actor's loaded condition and rhythm
- * rows — the companion of `buildMeterView` for the collapse half of §25.
+ * rows — the companion of `buildMeterView` for the collapse half of the body
+ * kernel.
  */
 export function collapseContextOf(rows: {
   conditions: readonly BodyCondition[];
@@ -2350,7 +2351,7 @@ export function resolveBodyCollapse(
   nextSequence += 1;
 
   // The world does not pause for a body: every held activity and open scene
-  // breaks in the same transaction (§18.2 — one body, one physical scene).
+  // breaks in the same transaction (one body, one physical scene).
   const interruptedActivityIds: string[] = [];
   for (const activity of [...view.interruptibleActivities].sort((a, b) => compareStableText(a.id, b.id))) {
     const total =
@@ -2665,7 +2666,7 @@ export function applyBodyEvent(
 }
 
 export interface BodiesReplayInput {
-  /** Bodies are fully evented: a branch-origin seed holds none (plan R3). */
+  /** Bodies are fully evented: a branch-origin seed holds none (R3). */
   seed: BodiesProjection;
   events: readonly SimulationBranchEvent[];
 }

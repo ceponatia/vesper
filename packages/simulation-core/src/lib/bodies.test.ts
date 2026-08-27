@@ -589,7 +589,7 @@ describe("E5.1 resolvers and replay parity", () => {
   });
 });
 
-describe("E5.2 climax and exertion couplings (§25.4)", () => {
+describe("E5.2 climax and exertion couplings", () => {
   function arousalDefinition(): BodyMeterDefinition {
     return meterDefinition({
       key: "arousal",

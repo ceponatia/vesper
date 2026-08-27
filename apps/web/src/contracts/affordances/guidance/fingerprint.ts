@@ -1,6 +1,5 @@
 /**
- * Deterministic guidance fingerprints (narrator-physical-guidance.spec.md
- * §Fingerprint scheme).
+ * Deterministic guidance fingerprints.
  *
  * Selection ties break by fingerprint and a retake must reproduce the same
  * ordering from the same committed cut, so the digest is a pure function of the

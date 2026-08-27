@@ -19,7 +19,7 @@ import {
 } from "./narrator-prompt-shared";
 
 /**
- * The Prompt Lab's editor pane (narrator-prompt-lab.plan.md §"Editor pane").
+ * The Prompt Lab's editor pane.
  *
  * Presentational on purpose: the page above owns the draft, the dirty state and
  * every confirm, because the dirty state is also what guards navigation and a

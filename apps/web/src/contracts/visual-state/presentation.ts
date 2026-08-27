@@ -28,7 +28,7 @@ import { visualStateKindRegistry } from "./registry";
 import type { VisualStateRelationship } from "./relationships";
 
 /**
- * The non-item presentation owner (visual-state.spec.md §Presentation owner).
+ * The non-item presentation owner.
  *
  * Wardrobe already owns everything a character puts ON: jewelry, glasses, hats,
  * coats, carried objects. What it cannot hold is a deliberate choice with no
@@ -67,8 +67,8 @@ export const PRESENTATION_MAX_OPERATIONS = 12;
  * It is a subset of the presentation-layer kinds on purpose: `wardrobe.garment`
  * and `wardrobe.item` are also presentation, and an `apply` naming one of them
  * must be refused rather than quietly creating a second, item-less copy of a
- * garment that the wardrobe already owns (plan §First-release source map:
- * "Jewelry, glasses, hats, coats, and carried objects remain item-backed").
+ * garment that the wardrobe already owns: jewelry, glasses, hats, coats, and
+ * carried objects stay item-backed.
  */
 export const presentationOwnedKindIds = [
   VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID,

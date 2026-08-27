@@ -22,12 +22,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The Scenario setup modal (character-chat-scenario.plan.md; slimmed to the
- * genuinely CHAT-WIDE fields by followups ruling 13): the premise, the
- * setting-wide house rules (the active social cards — one set for the whole
- * roster, ruling 9), auto-scene mode, and the scene-image model. Per-character
- * fields (outfit + exposure, axes, texture) live on each member's Character
- * sheet instead. Scenario presets (character-chat-standalone.spec.md §1.5) ride
+ * The Scenario setup modal, slimmed to the genuinely CHAT-WIDE fields: the
+ * premise, the setting-wide house rules (the active social cards — one set for
+ * the whole roster, ruling 9), auto-scene mode, and the scene-image model.
+ * Per-character fields (outfit + exposure, axes, texture) live on each member's
+ * Character sheet instead. Scenario presets ride
  * on top: "Apply preset" fills the chat-wide draft fields (a preset's outfit /
  * starting relationship only seed NEW conversations), and "Save as preset"
  * captures the draft + the primary's current outfit/relationship as a reusable
@@ -117,12 +116,12 @@ function ScenarioForm({
   // form uses, so re-render picks up the new anchor without any state to reconcile.
   const storyStart = chatGameTime(0, snapshot.calendarStart);
 
-  // Who the player can be here (persona-library.plan.md slice 7). Chat-wide, like the
+  // Who the player can be here. Chat-wide, like the
   // premise beside it. Blank ⇒ the resolver falls back to the owner's default persona,
   // so an untouched chat still knows who you are.
   const personas = useAsyncData(() => personasApi.list({ sort: "name" }), []);
 
-  // --- Scenario presets (spec §1.5) — the form mounts per open, so this loads then.
+  // --- Scenario presets — the form mounts per open, so this loads then.
   const presets = useAsyncData(() => chatPresetsApi.list(), []);
   const [appliedPresetId, setAppliedPresetId] = useState("");
   const [presetNameOpen, setPresetNameOpen] = useState(false);
@@ -158,7 +157,7 @@ function ScenarioForm({
 
   /**
    * Capture the current draft + the chat's CURRENT relationship as the preset's
-   * starting point (followups ruling 4): both band ids and the kind/history/mask
+   * starting point: both band ids and the kind/history/mask
    * texture ride along, applied only when a NEW conversation seeds from this
    * preset — never to a running chat.
    */
@@ -269,9 +268,9 @@ function ScenarioForm({
         <span className="text-[11px] text-paper-600">This chat only — it never touches {who}&rsquo;s saved bio or personality.</span>
       </label>
 
-      {/* The calendar anchor's editor (mobile-ux.plan.md ruling 1 — moved out of the
-          Roster sheet, which no longer shows the clock at all). Saves immediately
-          through its own dialog, independent of this form's Save. */}
+      {/* The calendar anchor's editor — moved out of the Roster sheet, which no
+          longer shows the clock at all. Saves immediately through its own
+          dialog, independent of this form's Save. */}
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Story starts</span>
         <div className="flex items-center justify-between gap-2 rounded-md border border-ink-600 bg-ink-850 px-3 py-2">

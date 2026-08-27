@@ -7,7 +7,7 @@ import {
 } from "../capabilities/image-model-capabilities";
 
 /**
- * The image-model registry's vocabulary (image-model-registry.spec.md).
+ * The image-model registry's vocabulary.
  *
  * Which models the app can run is DATA — rows in `image_models`, managed from
  * the admin page — not a hardcoded union. This pure module carries the record
@@ -353,8 +353,7 @@ const RESOLUTION_TIER_AREAS: Readonly<Record<string, number>> = {
 };
 
 /**
- * What one render asks the dimension resolver
- * (image-model-capabilities.spec.md §"Dimension negotiation").
+ * What one render asks the dimension resolver.
  *
  * `operation`, `resolution`, `width` and `height` are the profile's merged
  * dimension controls, spelled as plain strings and numbers rather than the
@@ -388,7 +387,7 @@ export interface ImageDimensionRequest {
   mappedCustomSize?: { width: number; height: number } | null;
 }
 
-/** The negotiated shape for one render (spec §"Dimension negotiation"). */
+/** The negotiated shape for one render. */
 export interface DimensionChoice {
   /**
    * The aspect-key entry to send, or empty when the model offers no usable
@@ -407,7 +406,7 @@ export interface DimensionChoice {
 
 /**
  * Pick the shape AND size to request — the {@link chooseAspect} seam extended
- * with the profile's dimension controls (spec §"Dimension negotiation").
+ * with the profile's dimension controls.
  *
  * A request carrying no dimension controls resolves to exactly the
  * `chooseAspect` answer, whatever the mode: both branches delegate their

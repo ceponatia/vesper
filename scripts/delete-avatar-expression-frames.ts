@@ -5,7 +5,7 @@ import { characters, db, images, jobs } from "@/server/db";
 import { absoluteImagePath } from "@/server/images";
 
 /**
- * One-off cleanup for the mood-reactive-avatar rollback (avatar-3d.plan.md): delete every
+ * One-off cleanup for the mood-reactive-avatar rollback: delete every
  * generated avatar **expression frame** (portrait_variant rows tagged `meta.avatarExpression`,
  * any status — includes the give-up tombstones) plus their files, and drop any leftover
  * `avatar_seed` job rows (the job type no longer exists, so a queued row would fail on claim).

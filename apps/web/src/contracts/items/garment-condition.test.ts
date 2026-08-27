@@ -37,8 +37,7 @@ import { applyGarmentOperations } from "./garment-presentation";
 import { templateFor } from "./garment-test-fixtures";
 
 /**
- * The condition reducer, its gradients and its bands
- * (clothing-state-graph.plan.md slice 4; promotion ruling R4; fixtures F7–F11).
+ * The condition reducer, its gradients and its bands.
  *
  * Four claims this file exists to defend:
  *
@@ -553,7 +552,7 @@ describe("deposit", () => {
 
   /**
    * The 13th deposit — one material-capacity law across both surface owners
-   * (romantic-contact-affordances.spec.effects.md §9; owner ruling 2026-08-26),
+   * (owner ruling 2026-08-26),
    * and the case nothing exercised in either direction until it changed.
    *
    * Falsified against the behaviour this replaced, where `applyDeposit` ended in
@@ -588,9 +587,8 @@ describe("deposit", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * The destination half of a conserved surface transfer
- * (romantic-contact-affordances.spec.effects.md §9). Conservation is the whole
- * claim: exactly what leaves one surface arrives here.
+ * The destination half of a conserved surface transfer. Conservation is the
+ * whole claim: exactly what leaves one surface arrives here.
  *
  * Every case below is falsified by the obvious wrong implementation — reusing
  * `applyDeposit`, or "harmonising" the new reducer with it. That path

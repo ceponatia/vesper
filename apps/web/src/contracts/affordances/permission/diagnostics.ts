@@ -1,8 +1,6 @@
 /**
- * Romantic-permission diagnostic codes
- * (romantic-contact-affordances.spec.permission.md §"Events and active
- * projection", §"Chronology and non-retroactivity" — house dotted convention,
- * same rules as `contact/diagnostics.ts`).
+ * Romantic-permission diagnostic codes, in the house dotted convention and
+ * under the same rules as `contact/diagnostics.ts`.
  *
  * Only codes this layer actually emits live here. Severity follows the contact
  * layer's rule: `error` for a value nobody meant (a malformed event can only
@@ -22,8 +20,8 @@ export const PERMISSION_EVENT_INVALID = "permission.event_invalid";
 /**
  * An event was excluded from the projection because its order against the
  * attempt's chronology position could not be established. Ambiguous ordering
- * fails closed (spec §"Chronology and non-retroactivity"): the event does not
- * authorize, and the gap is reported here rather than resolved by a guess.
+ * fails closed: the event does not authorize, and the gap is reported here
+ * rather than resolved by a guess.
  * `warn`.
  */
 export const PERMISSION_CHRONOLOGY_AMBIGUOUS = "permission.chronology_ambiguous";

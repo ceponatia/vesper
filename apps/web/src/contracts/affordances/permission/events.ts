@@ -4,9 +4,8 @@ import type { ContactPolicyScope } from "../contact";
 
 /**
  * The romantic-permission EVENT — the durable unit of the branch-local grant
- * ledger (romantic-contact-affordances.spec.permission.md §"Events and active
- * projection", adapted to repo conventions: bounded strings, branded subject
- * ids, a strict schema with no repairs).
+ * ledger, on repo conventions: bounded strings, branded subject ids, a strict
+ * schema with no repairs.
  *
  * A permission key is DIRECTIONAL: `permitted actor → granting target → exact
  * scope → story branch`. If Mara grants Alex `romantic_touch`, the record says

@@ -43,8 +43,7 @@ import {
 
 /**
  * The guarded decision-envelope transaction, against a real database — the half
- * the unit suite cannot claim (romantic-contact-affordances.spec.actor-control.md
- * §"Durable decision envelope and transaction"; delivery-order step 2):
+ * the unit suite cannot claim:
  *
  * - the happy path commits all three halves — envelope, contact rows, scene
  *   CAS — in ONE transaction;

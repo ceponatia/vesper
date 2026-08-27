@@ -10,7 +10,7 @@ import {
   seedTestUser,
 } from "@/server/test-support";
 
-// Integration suite for the durable half of rate-limits.plan.md: the counter
+// Integration suite for the durable half of the cost guards: the counter
 // upsert's atomicity and conditional increment, the UTC-day reset boundary, and
 // the derived per-owner storage quota. Self-skips when the database is
 // unreachable, except under strict mode (`pnpm test:int:strict`).

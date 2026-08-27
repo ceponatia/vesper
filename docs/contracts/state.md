@@ -58,7 +58,7 @@ for `AttributeValue`, and [relationships.md](relationships.md) for `traits` / `p
 
 ## PersonaProfile
 
-The player as a library entity (`contracts/players/persona-profile.ts`, persona-library.plan.md) — who
+The player as a library entity (`contracts/players/persona-profile.ts`) — who
 *you* are in a chat, with a body and a wardrobe but no personality/disposition/schedule (the narrator
 never writes the player's lines). Carries bio, voice, `intimacy` (inverted semantics — what the player
 *responds to*), species/heritage/bodyPlan, `intimateRegions`, `bodyFeatures`, `attributes`, and `outfits`.

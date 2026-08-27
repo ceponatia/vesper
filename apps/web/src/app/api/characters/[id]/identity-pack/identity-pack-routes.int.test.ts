@@ -30,7 +30,7 @@ import { POST as packResetAutomatic } from "./reset-automatic/route";
 
 /**
  * The owner's four identity-pack routes against a real database and a sandboxed
- * DATA_ROOT (image-identity-packs.spec.lifecycle.md §"User routes").
+ * DATA_ROOT.
  *
  * What only an integration run can prove, and the reason this suite exists
  * alongside the service's own: that the ROUTES thread the authorization root,
@@ -255,7 +255,7 @@ describe.skipIf(!ready)("identity-pack owner routes", () => {
       expect(res.status).toBe(404);
       const body = await expectJson<{ error: { code: string } }>(res);
       // "character not found" — never "this character's pack is not yours", which
-      // would confirm the character exists (spec.lifecycle.md §Authorization root).
+      // would confirm the character exists.
       expect(body.error.code).toBe("not_found");
     } finally {
       authState.user = mine;

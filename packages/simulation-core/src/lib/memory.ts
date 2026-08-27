@@ -17,8 +17,8 @@ import { canonicalValueKey } from "./knowledge";
  * E4.4 — the pure memory kernel. Projectors turn persisted
  * source rows into REDACTED documents deterministically — text templates
  * only, no model — and the ranker orders an already-eligible candidate set.
- * Similarity never decides witness, truth, validity, or access (§24.1): by
- * the time anything here runs, eligibility has been resolved relationally.
+ * Similarity never decides witness, truth, validity, or access: by the time
+ * anything here runs, eligibility has been resolved relationally.
  */
 
 function compareStableText(left: string, right: string): number {
@@ -39,8 +39,8 @@ function sortedUnique(values: readonly string[]): string[] {
  * One neutral phrase per event kind, exhaustive so a new event cannot ship
  * without a memory-phrase ruling. Observation text NEVER quotes payload
  * detail — spoken content reaches recall only through speech-act and belief
- * documents, whose eligibility is their participants and holders (§24.3
- * redaction: authorized source data only).
+ * documents, whose eligibility is their participants and holders (redaction:
+ * authorized source data only).
  */
 function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
   switch (kind) {
@@ -130,22 +130,22 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "cohort_created":
     case "cohort_adjusted":
     case "actor_materialized_from_aggregate":
-      // An actor materializing from a cohort (E6.4, §27.2/§27.7) is a
+      // An actor materializing from a cohort (E6.4) is a
       // RESOLUTION change, not a story fact: the person was already there in
       // aggregate, and nobody in the scene did anything. Unlike item
       // promotion (an in-scene actor drawing from stock), there is nothing
       // for anyone to remember.
-      // Bookkeeping derives no observations (§20); unreachable in practice
+      // Bookkeeping derives no observations; unreachable in practice
       // (mirrors `body_initialized`/`item_ownership_set`). Pressure
       // acknowledgment (E5.5 slice 3) is pure turn bookkeeping, not
       // memory-eligible — mirrors `body_initialized`. An actor-LOD
-      // assignment (E6.1, §27) is an engine performance dial — no story
+      // assignment (E6.1) is an engine performance dial — no story
       // fact exists to recall.
       return "world bookkeeping";
     case "material_lot_transferred":
       return "stock changing hands";
     case "item_instantiated_from_promotion":
-      // Narratively meaningful (§26.10/§27.2): a concrete item coming into
+      // Narratively meaningful: a concrete item coming into
       // being from stock — memory-eligible, mirrors `activity_completed`.
       return "an item coming into someone's hands";
     case "household_restock_fulfilled":
@@ -153,7 +153,7 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "household_restock_deferred":
       return "a household's restock falling through";
     case "relationship_entry_authored":
-      // Narratively meaningful (§21.3): a promise, boundary, favor, or other
+      // Narratively meaningful: a promise, boundary, favor, or other
       // ledger-worthy relationship fact — memory-eligible, mirrors
       // `item_instantiated_from_promotion`.
       return "something between them being marked";
@@ -273,7 +273,7 @@ export function projectAssertionDocument(assertion: Assertion): MemoryDocument {
     lastSequence: assertion.sourceEventSequence ?? 0,
     storySecond: assertion.assertedAt,
     // Resolved relationally at query time: recallable only by an actor
-    // holding a live belief in this assertion on the query branch (§24.1).
+    // holding a live belief in this assertion on the query branch.
     visibility: "belief_holders",
     eligibleActorIds: [],
     aboutEntityIds: sortedUnique([...assertion.subjectIds]),
@@ -301,7 +301,7 @@ export function projectSoftCanonDocument(entry: SoftCanonEntry, sequence: number
     eligibleActorIds: isPublicScope ? [] : sortedUnique([...entry.subjectIds]),
     aboutEntityIds: sortedUnique([...entry.subjectIds]),
     validFromSecond: entry.firstRecordedAt,
-    // Promoted canon does not expire (§23.4); active entries keep their TTL.
+    // Promoted canon does not expire; active entries keep their TTL.
     ...(entry.status === "promoted" || entry.validUntil === undefined
       ? {}
       : { validUntilSecond: entry.validUntil }),
@@ -335,7 +335,7 @@ export function projectAuthoredLoreDocument(branchId: string, seed: AuthoredLore
 }
 
 // ---------------------------------------------------------------------------
-// Ranking (§24.1 steps 5–6) — inside the eligible set only
+// Ranking — inside the eligible set only
 // ---------------------------------------------------------------------------
 
 export function tokenizeMemoryText(text: string): string[] {
@@ -397,7 +397,7 @@ export interface RankMemoryDocumentsResult {
  * never guessing); lexical mode uses token overlap; with neither, recency
  * orders the set. Ties always break by document id. Diversification
  * round-robins across source kinds so one chatty class cannot crowd the
- * context budget (§24.1 step 6).
+ * context budget.
  */
 export function rankMemoryDocuments(input: RankMemoryDocumentsInput): RankMemoryDocumentsResult {
   let unembeddedEligible = 0;

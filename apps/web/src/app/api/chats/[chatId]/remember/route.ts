@@ -9,7 +9,7 @@ import { loadOwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * "Remember this" (character-chat-standalone.spec.md §6.4, D15): the one player-facing
+ * "Remember this" (D15): the one player-facing
  * memory affordance — write-only (no browsing, D2). The note lands as a normal fact via
  * `addFacts` (so retrieval, supersedence, embedding, and delete all just work) marked
  * `pinned` + `origin:"player"`: always retrieved ahead of the top-k, exempt from the

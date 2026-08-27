@@ -3,9 +3,7 @@ import { bodyLocationRegistry } from "../body/locations";
 import { defineAppearanceRecognitionPriors, type AppearanceRecognitionPriors } from "./priors";
 
 /**
- * Located-fact KIND definitions — validation plus recognition calibration
- * (body-attribute-affordances.spec.recognizable-features.md §Feature-kind
- * registry).
+ * Located-fact KIND definitions — validation plus recognition calibration.
  *
  * "The registry stores calibration, not which features a character has."
  * A kind says what a freckle cluster's value may look like, where it may sit,
@@ -27,7 +25,7 @@ export type AppearanceBodyAreaPath = readonly string[];
  * How long an instance of this kind lasts. Projection maps it to the
  * candidate's `stability`: `stable` → inherent, `persistent` → persistent,
  * `transient` → transient. Temporary marks (bruises, dirt) are NOT this — they
- * stay with body condition/state owners (spec §Conditions, injuries…).
+ * stay with the body condition/state owners.
  */
 export const appearanceFeaturePersistences = ["stable", "persistent", "transient"] as const;
 
@@ -46,7 +44,7 @@ export interface AppearanceFeatureKindDefinition<TValue = unknown> {
   /**
    * Forward-compat only: no visual-realizer system exists yet, so this is
    * optional and unread. Named here so the field does not have to be
-   * retrofitted onto authored kinds later (spec §Feature-kind registry).
+   * retrofitted onto authored kinds later.
    */
   readonly visualRealizerId?: string;
   readonly recognition: AppearanceRecognitionPriors;

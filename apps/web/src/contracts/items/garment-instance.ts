@@ -18,12 +18,12 @@ import {
 } from "./effective-coverage-read";
 
 /**
- * Garment INSTANCE state (clothing-state-graph.plan.md §"Garment instance and
- * locus" / §"Condition vector" / §"Typed mutation surface"; slice-0 audit OQ2).
+ * Garment INSTANCE state — the instance and its locus, its condition vector, and
+ * its typed mutation surface.
  *
  * A library item is a blueprint; a conversation needs a stable instance with its
  * own locus and mutable state. Instances carry a `blueprintHash` into the
- * chat-wide blueprint map (never a library pointer, OQ2), so a later library
+ * chat-wide blueprint map (never a library pointer), so a later library
  * edit cannot change an established scene and a retake restores instances and
  * blueprints together out of one rollback blob.
  *
@@ -181,7 +181,7 @@ export function garmentClosureOpenFraction(
 // --- Condition ----------------------------------------------------------------
 
 /**
- * v1 channels (plan §"Condition vector"). Directions, all `0 → 1` in fixed
+ * The v1 condition-vector channels. Directions, all `0 → 1` in fixed
  * point: `wetness` dry→saturated, `cleanliness` soiled→clean (matching
  * `item-condition-v1`, where 10_000 is fresh), `crease_load` smooth→wrinkled,
  * `wear` pristine→worn out.
@@ -362,7 +362,7 @@ function capCueRecord<T>(record: Record<string, T>): Record<string, T> {
 
 /**
  * What the narrator has already SAID about the wardrobe, and the bands it said it
- * in (clothing-state-graph.plan.md §"Narration and image policy"; audit §1.6).
+ * in.
  *
  * It lives inside the store rather than beside it for exactly one reason: fixture
  * F13 requires a retake to restore "instances, blueprint map, presentation,
@@ -607,8 +607,7 @@ export const garmentOperationSchema = z.discriminatedUnion("kind", [
     .strict(),
   /**
    * The destination leg of a CONSERVED surface transfer
-   * (romantic-contact-affordances.spec.effects.md §9; owner ruling 2026-08-22,
-   * "conserved transfer follows the pressure mark").
+   * (owner ruling 2026-08-22, "conserved transfer follows the pressure mark").
    *
    * Not a second spelling of `deposit`. `deposit` compiles the fiction's own
    * sentence — "there is mud on her sleeve" — and a band is the honest reading
@@ -631,7 +630,7 @@ export const garmentOperationSchema = z.discriminatedUnion("kind", [
        * fallback kind says so without pretending to name it. Here the substance
        * is already owner-backed on the source side, so a kind that does not
        * parse means the transaction is malformed: what left is not what would
-       * arrive. Voiding the operation is the refusal §9 asks for; degrading it
+       * arrive. Voiding the operation is the refusal conservation asks for; degrading it
        * would transmute mud into `unknown` mid-flight and still report
        * conservation satisfied.
        */
@@ -680,13 +679,13 @@ export type GarmentOperationKind = GarmentOperation["kind"];
 /**
  * The CONDITION-CLASS operations for which an empty `partIds` legally means the
  * whole garment (OQ7) — "rain soaked her coat" needs no fallback.
- * `restore_presentation` is deliberately NOT here: the audit lists it among the
- * operations that never fall back, so an empty list restores nothing — the slice-3
+ * `restore_presentation` is deliberately NOT here: it is one of the operations
+ * that never fall back, so an empty list restores nothing — the presentation
  * reducer drops it with `garment_op.restore_no_parts` rather than silently
  * no-opping, and a whole-garment restore is authored by naming the parts.
  *
- * `accept_transfer` IS here, deliberately, even though §9 wants an exact target
- * locus. `partIds: []` is not vagueness in this list — it resolves to the
+ * `accept_transfer` IS here, deliberately, even though a conserved transfer
+ * wants an exact target locus. `partIds: []` is not vagueness in this list — it resolves to the
  * garment ROOT, which is an exact, deterministic, single locus that the deposit
  * identity and the whole-garment band reader both already understand. Excluding
  * it would only mean that a transfer whose honest destination is "the coat"

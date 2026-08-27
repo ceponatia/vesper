@@ -9,13 +9,12 @@ import {
 } from "../materials/surface-deposits";
 
 /**
- * Per-character BODY-SURFACE state — what is on the skin and hair right now
- * (body-attribute-affordances.audit.md §"Capability → owner": *"New per-character
- * body-surface wetness state on `ChatState` (Slice 4): extraction-proposed,
- * fixed-point, lazy drying on the story clock (garment-condition precedent)"*).
+ * Per-character BODY-SURFACE state — what is on the skin and hair right now:
+ * extraction-proposed, fixed-point, lazily dried on the story clock, on the
+ * garment-condition precedent.
  *
  * This is an AUTHORITATIVE owner, which is the whole point: before it existed the
- * hair domain had no wetness input in the chat lane, and the audit's adapter
+ * hair domain had no wetness input in the chat lane, and the adapter
  * result law forbids substituting "probably dry". Narrator prose is never parsed
  * to fill it — the continuity extraction leg proposes typed ops
  * (`turns/chat-surface-ops.ts`) that commit through `parseOr`, exactly as the
@@ -55,8 +54,8 @@ import {
  *    An unassignable key is nonetheless a **tombstone, not a material fact** —
  *    it records that a fact was lost, and names no location to be true about —
  *    so it is the one thing a write at capacity may spend to make room
- *    (`setBodySurfaceWetness`; the 2026-08-26 ruling's own refinement of
- *    romantic-contact-affordances.spec.effects.md §9). Without that exception
+ *    (`setBodySurfaceWetness`; the 2026-08-26 ruling's own refinement of the
+ *    material-capacity law). Without that exception
  *    the poison could wedge a full record shut permanently, which is the
  *    opposite of what law 4 exists to protect.
  * 5. **Standing outdoor precipitation HOLDS wetness** (`suspendDrying`). Drying
@@ -73,7 +72,7 @@ import {
  * the per-member personal pass.
  *
  * **Temporary contact marks are a second module of this SAME owner**
- * (romantic-contact-affordances.spec.effects.md §7 — the 2026-08-22 ruling that
+ * (the 2026-08-22 ruling that
  * the body-surface domain owns all current material/condition on skin, not a
  * contact-local store per aftermath family). Marks inherit every law above:
  * fixed point, lazy fading on the story clock, integrate-on-write, per-entry
@@ -82,17 +81,17 @@ import {
  * 6. **A mark record is keyed by its IDEMPOTENCY IDENTITY**, derived by the
  *    proposer from the causal contact event — so a retried commit lands on the
  *    key it already wrote and changes nothing, structurally rather than by a
- *    comparison someone has to remember (effects spec §13).
+ *    comparison someone has to remember.
  * 7. **A mark's fade anchors at `createdAtMinutes` and is never restamped.** A
  *    mark is one physical event's residue; pressing again is a NEW event with
  *    its own key, never a refresh of the old one. Absent entry = no mark, and a
  *    mark that fades to zero is pruned on the next write (the wetness rule).
  *
- * **Deposits are the THIRD module of this same owner** (effects spec §7's
- * residue/deposit half; owner ruling 2026-08-25). Mud, blood, dust, food,
+ * **Deposits are the THIRD module of this same owner** (owner ruling
+ * 2026-08-25). Mud, blood, dust, food,
  * paint, and cosmetics on skin were the visual layer's largest current-state
  * gap — garments could carry them and the body under those garments could not —
- * and they land here rather than in a store of their own for §7's stated
+ * and they land here rather than in a store of their own for the same stated
  * reason: one body-surface domain owns all current material and condition on
  * skin. The substance vocabulary is shared outright with the garment store
  * (`materials/surface-deposits.ts`), so mud on a sleeve and mud on the forearm
@@ -287,12 +286,12 @@ const wetnessRecordSchema = z
   });
 
 // ---------------------------------------------------------------------------
-// Marks — vocabulary and shape (effects spec §7–8)
+// Marks — vocabulary and shape
 // ---------------------------------------------------------------------------
 
 /**
  * The mark kinds this owner supports. CLOSED vocabulary, one member: the
- * pressure mark is the first end-to-end effect proof (effects spec §8), and
+ * pressure mark is the first end-to-end effect proof, and
  * scratch/skin damage is EXPLICITLY not a member — it has no owner, and a
  * stored `"scratch"` must quarantine rather than ride in as a pressure mark.
  * Adding a kind is a data edit here plus an owner ruling, never a schema
@@ -413,13 +412,13 @@ export function isInvalidMarkSlot(slot: BodySurfaceMarkSlot): slot is BodySurfac
  *
  * - `transfers` — an absent record makes `bodySurfaceTransferCommitted` answer
  *   `false` for a transfer that already committed, so the settlement debits and
- *   credits a second time. That defeats effects spec §9's "a retry cannot
+ *   credits a second time. That defeats "a retry cannot
  *   transfer twice" in the exact direction this module is built to avoid: the
  *   item-level quarantine answers `true` on purpose, so an unreadable receipt
  *   SUPPRESSES a re-run, and a record-level rejection threw that decision away.
  * - `deposits` — one bad key and every deposit on that body silently vanishes,
- *   which is the unowned sink §7 says must not exist; §9's conservation law
- *   leans on §7 being true.
+ *   which is the unowned sink this owner must not become; the conservation law
+ *   leans on that staying true.
  * - `marks` — same shape, same class.
  *
  * So an entry whose key fails the bounds keeps its OWN key and holds
@@ -450,7 +449,7 @@ function bodySurfaceKeyedRecordSchema<TEntry>(entrySchema: z.ZodType<TEntry>, ma
 const marksRecordSchema = bodySurfaceKeyedRecordSchema(bodySurfaceMarkSchema, BODY_SURFACE_MAX_MARKS);
 
 // ---------------------------------------------------------------------------
-// Deposits — vocabulary and shape (effects spec §7; owner ruling 2026-08-25)
+// Deposits — vocabulary and shape (owner ruling 2026-08-25)
 // ---------------------------------------------------------------------------
 
 /** Max deposit entries one character retains (bounded jsonb; the garment store's own cap). */
@@ -516,7 +515,7 @@ export function bodySurfaceDepositIdFor(locationId: string, kind: SurfaceDeposit
 }
 
 // ---------------------------------------------------------------------------
-// Transfer receipts — shape (effects spec §9; owner ruling 2026-08-26)
+// Transfer receipts — shape (owner ruling 2026-08-26)
 // ---------------------------------------------------------------------------
 
 /**
@@ -562,7 +561,7 @@ export function isInvalidTransferReceiptSlot(
  * Item-lenient and quarantining, exactly like the three records beside it — and
  * the module where the shared shape's per-item KEY check matters most, since an
  * absent record here reads as "never transferred" and licenses the double debit
- * §9 forbids.
+ * conservation forbids.
  */
 const transfersRecordSchema = bodySurfaceKeyedRecordSchema(
   bodySurfaceTransferReceiptSchema,
@@ -601,7 +600,7 @@ export const bodySurfaceStateSchema = z.object({
    * the two keys above's rule.
    *
    * A receipt is not body state, and it lives here anyway, deliberately
-   * (effects spec §9; ruling 2026-08-26). §9 requires that a retry cannot
+   * (ruling 2026-08-26). A conserved transfer requires that a retry cannot
    * transfer twice and that a retake removes both sides or neither — and an
    * ADDING destination cannot tell a retry from a second helping by looking at
    * its own amount, so the transaction needs a durable record of the causal
@@ -691,7 +690,7 @@ export interface BodySurfaceReadOptions {
  *
  * Total and monotone: a `known` result is never negative, never above the stored
  * level, and integrating to a minute at or before the last write is the identity
- * (the §25.2 "queries never persist" law both lanes inherit). Reading changes
+ * (the "queries never persist" law both lanes inherit). Reading changes
  * nothing; `applySurfaceWetnessProposals` is the only thing that persists.
  *
  * **An absent location is dry only in a record whose keys are all assignable**
@@ -754,9 +753,9 @@ export function bodySurfaceWetnessAt(
  * and then it is gone.
  *
  * **At capacity a new location reclaims the slot of an UNASSIGNABLE KEY, and of
- * nothing else** (effects spec §9's material-capacity law, refined by the
- * 2026-08-26 ruling). §9 protects committed material FACTS — an owner may never
- * make room by destroying one. A key nobody can assign to a location is not a
+ * nothing else** (the material-capacity law, refined by the
+ * 2026-08-26 ruling). That law protects committed material FACTS — an owner may
+ * never make room by destroying one. A key nobody can assign to a location is not a
  * fact but a tombstone saying one was lost, so trading it for a named write
  * strictly increases what the record knows: *some unknown location may be wet*
  * becomes *this location is definitely this wet*. A real entry is never
@@ -774,7 +773,7 @@ export function bodySurfaceWetnessAt(
  * against the same stored blob reproduces the identical record.
  *
  * A record full of REAL entries still refuses, returning the SAME reference.
- * That is §9 working rather than the bug above, and
+ * That is the capacity law working rather than the bug above, and
  * `applySurfaceWetnessProposals` reports it as `chat_surface.wetness_capacity`
  * instead of letting it pass for a quiet exchange.
  */
@@ -846,7 +845,7 @@ export function pruneDryBodySurface(
 }
 
 // ---------------------------------------------------------------------------
-// Marks — reads and writes (effects spec §8, §13)
+// Marks — reads and writes
 // ---------------------------------------------------------------------------
 
 /** This key's stored slot: a mark, the quarantine marker, or `undefined` when nothing committed under it. */
@@ -964,7 +963,7 @@ export function pruneFadedBodySurfaceMarks(state: BodySurfaceState, atMinutes: n
 }
 
 // ---------------------------------------------------------------------------
-// Deposits — reads and writes (effects spec §7)
+// Deposits — reads and writes
 // ---------------------------------------------------------------------------
 
 /** This key's stored slot: a deposit, the quarantine marker, or `undefined` when nothing landed under it. */
@@ -1129,7 +1128,7 @@ export function reduceBodySurfaceDeposits(
 }
 
 // ---------------------------------------------------------------------------
-// Deposits — the conserving pair (effects spec §9; owner ruling 2026-08-26)
+// Deposits — the conserving pair (owner ruling 2026-08-26)
 // ---------------------------------------------------------------------------
 
 /**
@@ -1143,7 +1142,7 @@ export function reduceBodySurfaceDeposits(
  * the reduce sweeps everything under `BODY_SURFACE_DEPOSIT_REMOVAL_FLOOR` away
  * with it and takes the same amount off every substance standing there.
  *
- * Neither is a conserving move, and §9's transfer law is nothing but
+ * Neither is a conserving move, and the transfer law is nothing but
  * conservation: exactly what leaves one surface arrives on the others, in this
  * representation, atomically. Stretching the two writers above until the
  * conservation tests happened to pass would have quietly changed what the
@@ -1158,7 +1157,7 @@ export function reduceBodySurfaceDeposits(
  *   modelled sink accounts for.
  * - `acceptBodySurfaceDeposit` **adds**, and refuses rather than clamping,
  *   evicting, or discarding an overflow. A destination that silently absorbs
- *   less than the source lost is the unowned sink §7 exists to prevent.
+ *   less than the source lost is the unowned sink this owner exists to prevent.
  *
  * Both are keyed by the exact deposit identity rather than by location, because
  * a transfer moves one named substance and the reduce's take-from-everything
@@ -1220,8 +1219,8 @@ export function takeBodySurfaceDeposit(
  * destination could otherwise absorb less than the source lost:
  *
  * - `invalid_amount` — a non-positive amount. A zero leg is a planner bug, not
- *   a no-op to wave through: §9's transaction is an equation, and a leg that
- *   moves nothing should never have been in it.
+ *   a no-op to wave through: the transfer transaction is an equation, and a leg
+ *   that moves nothing should never have been in it.
  * - `saturated` — the sum would pass `BODY_SURFACE_UNIT_ONE`. Clamping here
  *   would be the silent discard.
  * - `quarantined` — an unreadable slot stands under this identity. Adding to an
@@ -1270,7 +1269,7 @@ export function acceptBodySurfaceDeposit(
 }
 
 // ---------------------------------------------------------------------------
-// Transfer receipts — reads and writes (effects spec §9)
+// Transfer receipts — reads and writes
 // ---------------------------------------------------------------------------
 
 /**
@@ -1279,8 +1278,8 @@ export function acceptBodySurfaceDeposit(
  * The one question the transaction asks BEFORE any debit or credit. A
  * quarantined slot answers `true`, and that is the conservative direction: an
  * unreadable receipt means something was written under this identity, and
- * re-running a transfer that may already have committed is the failure §9
- * forbids, while skipping one that did not is a beat that quietly does not
+ * re-running a transfer that may already have committed is the failure
+ * conservation forbids, while skipping one that did not is a beat that quietly does not
  * happen.
  */
 export function bodySurfaceTransferCommitted(state: BodySurfaceState, transferKey: string): boolean {

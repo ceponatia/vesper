@@ -17,7 +17,7 @@ import {
  * stream — so replay reproduces every row bit-for-bit and a rebuilt branch
  * cannot disagree with the live one about who saw what.
  *
- * Only material observations persist (§20): rows that can affect belief,
+ * Only material observations persist: rows that can affect belief,
  * memory, action choice, relationships, or narration continuity. Bookkeeping
  * events (trigger scheduling, commitment ledger changes, pressure) derive no
  * observations at all — knowledge of an obligation rides an `observed`
@@ -54,7 +54,7 @@ export const observationEvidenceClasses = ["direct", "sensory", "reported", "inf
 export const observationEvidenceClassSchema = z.enum(observationEvidenceClasses);
 export type ObservationEvidenceClass = z.infer<typeof observationEvidenceClassSchema>;
 
-/** Fixed-point confidence: 10_000 = certainty (spec §6.1 — no float rounding in rules). */
+/** Fixed-point confidence: 10_000 = certainty — no float rounding in rules. */
 export const observationConfidenceSchema = z.number().int().min(0).max(10_000);
 
 /** 3 = full first-person detail · 2 = clear witness · 1 = degraded (muffled, glimpsed). */

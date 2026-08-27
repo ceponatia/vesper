@@ -88,12 +88,12 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
   try {
     if (await hasLiveChatSceneJob(args.chatId)) return null;
 
-    // BOTH roles now, on the same total row budget (scene-composition.plan.md slice 1): the
-    // shot planner used to read only the narrator's replies, and "I come up behind her" is
-    // almost always the PLAYER's sentence — so a camera it could never learn about was the
-    // single largest source of the front-facing default being wrong. The two lists stay
-    // separate; `recentChat` keeps its meaning of assistant rows only, unchanged for every
-    // consumer, and the anchor keeps pointing at the newest assistant row.
+    // BOTH roles now, on the same total row budget: the shot planner used to read only
+    // the narrator's replies, and "I come up behind her" is almost always the PLAYER's
+    // sentence — so a camera it could never learn about was the single largest source of
+    // the front-facing default being wrong. The two lists stay separate; `recentChat`
+    // keeps its meaning of assistant rows only, unchanged for every consumer, and the
+    // anchor keeps pointing at the newest assistant row.
     const recent = await db()
       .select({
         id: characterChatMessages.id,
@@ -121,10 +121,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
 
     // Who is in the shot. Chat tracks no per-character location — `presence` is
     // its only location-like state, so "both in the same room" and "both present"
-    // are the same claim (owner ruling, qwen-advanced-image-subsystem.plan.md
-    // Stage 7). An away member is offstage living their own life and is not drawn
-    // into the picture. A selfie is the sender's own phone camera, so it stays
-    // single-subject whoever else is in the room.
+    // are the same claim. An away member is offstage living their own life and is
+    // not drawn into the picture. A selfie is the sender's own phone camera, so it
+    // stays single-subject whoever else is in the room.
     const roster = args.roster?.length ? args.roster : [args.character];
     const states = await Promise.all(
       roster.map(async (member) => ({ member, stored: await loadChatState(args.chatId, member.id, collected) })),
@@ -252,7 +251,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     );
     const cast = castDetail.map((detail) => detail.member);
 
-    // The cast digest cut (image-lane-consolidation Stage 4): hand the render
+    // The cast digest cut: hand the render
     // EVERY drawn member's committed chat cut as a camera-less shadow input,
     // through the SHARED factory the inspector preview uses. The render binds
     // the resolved plan's committed camera into each subject's own selection
@@ -313,12 +312,12 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       );
     }
     // What the chat's typed movements have actually COMMITTED about each cast member and the
-    // player (scene-composition.plan.md slice 3) — posture, facing, distance, touch. A
-    // provenance-carrying fact outranks anything the shot planner infers from prose, so these
-    // reach it as authoritative context and clamp its camera proposal. Sparse coverage is
-    // expected while the typed-movement lane gathers data: a member with nothing committed is
-    // simply absent from the map, and an empty map behaves exactly like slices 1–2. Nothing
-    // is written back — the resolved camera lives and dies inside one render job.
+    // player — posture, facing, distance, touch. A provenance-carrying fact outranks anything
+    // the shot planner infers from prose, so these reach it as authoritative context and clamp
+    // its camera proposal. Sparse coverage is expected while the typed-movement lane gathers
+    // data: a member with nothing committed is simply absent from the map, and an empty map
+    // leaves the shot planner's own camera proposal unclamped. Nothing is written back — the
+    // resolved camera lives and dies inside one render job.
     const committedScene = new Map<string, CommittedSceneFacts>();
     if (scenario) {
       for (const member of cast) {

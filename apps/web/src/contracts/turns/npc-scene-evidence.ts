@@ -26,9 +26,7 @@ import {
 } from "./npc-scene-decision";
 
 /**
- * NPC reply-scene EVIDENCE ADMISSION
- * (romantic-contact-affordances.spec.actor-control.md §"Evidence admission" +
- * §"The fence").
+ * NPC reply-scene EVIDENCE ADMISSION, and the fence.
  *
  * Every parsed candidate passes four gates IN ORDER, and a failure drops only
  * that candidate with a bounded reason — no gate repairs, substitutes, or

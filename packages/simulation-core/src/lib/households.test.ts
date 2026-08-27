@@ -355,7 +355,7 @@ describe("E5.4 slice 1 lot arithmetic", () => {
   });
 });
 
-describe("E5.4 slice 1 material-kind registry (§26.9)", () => {
+describe("E5.4 slice 1 material-kind registry", () => {
   it("resolves the reserved currency kind to fixed_point and every unregistered kind to count", () => {
     expect(resolveQuantityKind(RESERVED_CURRENCY_MATERIAL_KIND)).toBe("fixed_point");
     expect(resolveQuantityKind("food")).toBe("count");
@@ -363,7 +363,7 @@ describe("E5.4 slice 1 material-kind registry (§26.9)", () => {
   });
 });
 
-describe("E5.4 slice 1 conservation (§26.9)", () => {
+describe("E5.4 slice 1 conservation", () => {
   it("conserves total same-kind quantity across many interleaved transfers between three lots", () => {
     let lots = [
       lotOf(zoneLotLocus(ZONE_A), "food", 100),
@@ -402,10 +402,10 @@ describe("E5.4 slice 1 conservation (§26.9)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// §26.8 stock access + reachability
+// Stock access + reachability
 // ---------------------------------------------------------------------------
 
-describe("E5.4 slice 1 household stock access (§26.8)", () => {
+describe("E5.4 slice 1 household stock access", () => {
   function household(policy: { kind: "members_only" } | { kind: "allow_list"; actorIds: string[] }): SimulationHousehold {
     return simulationHouseholdSchema.parse({
       id: HOUSEHOLD,
@@ -458,7 +458,7 @@ describe("E5.4 slice 1 household stock access (§26.8)", () => {
   });
 });
 
-describe("E5.4 slice 1 lot locus reachability (§26.8/§26.9)", () => {
+describe("E5.4 slice 1 lot locus reachability", () => {
   it("a zone locus requires an exact zone match", () => {
     const view = resolutionView({ households: [], memberships: [], actorZones: {} });
     expect(lotLocusReachableFrom(view, zoneLotLocus(ZONE_A), ZONE_A)).toBe(true);
@@ -486,10 +486,10 @@ describe("E5.4 slice 1 lot locus reachability (§26.8/§26.9)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// §26.10 means read + band ordering
+// Means read + band ordering
 // ---------------------------------------------------------------------------
 
-describe("E5.4 slice 1 means read (§26.10)", () => {
+describe("E5.4 slice 1 means read", () => {
   it("prefers a lot-tracked read over a band when both exist for the same subject", () => {
     const subject = actorSubject("mara");
     const lot = lotOf(actorLotLocus("mara"), RESERVED_CURRENCY_MATERIAL_KIND, 4_200);
@@ -956,7 +956,7 @@ describe("E5.4 slice 1 projector, replay, and seed", () => {
 // E5.4 slice 2 — promotion, restock routine
 // ---------------------------------------------------------------------------
 
-describe("E5.4 slice 2 promotion determinism (§26.10/§27.2)", () => {
+describe("E5.4 slice 2 promotion determinism", () => {
   const WORLD_SEED = "seed-e5-4-promotion-determinism";
   const fundingLocus = actorLotLocus("mara");
   const pool = ["Copper Kettle", "Tin Cup", "Iron Skillet", "Clay Jug", "Wooden Bowl"] as const;
@@ -1015,7 +1015,7 @@ describe("E5.4 slice 2 promotion determinism (§26.10/§27.2)", () => {
   });
 });
 
-describe("E5.4 slice 2 promotion funding (§26.10)", () => {
+describe("E5.4 slice 2 promotion funding", () => {
   const fundingLocus = actorLotLocus("mara");
 
   function view(fundingLot: MaterialLotState): PromoteItemFromStockResolutionView {
@@ -1108,7 +1108,7 @@ describe("E5.4 slice 2 promotion funding (§26.10)", () => {
   });
 });
 
-describe("E5.4 slice 2 resolveConfigureRestockRoutineFromView (§26.11)", () => {
+describe("E5.4 slice 2 resolveConfigureRestockRoutineFromView", () => {
   it("accepts an active routine and arms a fresh trigger versioned by its own arming sequence", () => {
     const routine = householdRestockRoutineSchema.parse({
       householdId: HOUSEHOLD,
@@ -1151,7 +1151,7 @@ describe("E5.4 slice 2 resolveConfigureRestockRoutineFromView (§26.11)", () => 
   });
 });
 
-describe("E5.4 slice 2 resolveRunHouseholdRestockFromView (§26.11)", () => {
+describe("E5.4 slice 2 resolveRunHouseholdRestockFromView", () => {
   const householdLocus = householdLotLocus(HOUSEHOLD);
   const command = () => runHouseholdRestockCmd({ householdId: HOUSEHOLD, materialKindKey: "food", armedAtSequence: 5 });
 
@@ -1216,7 +1216,7 @@ describe("E5.4 slice 2 resolveRunHouseholdRestockFromView (§26.11)", () => {
     expect(result.events[0]).toMatchObject({ type: "household_restock_deferred", payload: { reason: "insufficient_funds" } });
   });
 
-  it("defers insufficient_funds for means_band_envelope funding below the minimum band, and fails closed for a lot-tracked or unknown means read (§26.10 structural precedence)", () => {
+  it("defers insufficient_funds for means_band_envelope funding below the minimum band, and fails closed for a lot-tracked or unknown means read (structural precedence)", () => {
     const belowBand = resolveRunHouseholdRestockFromView(
       runRestockView({
         routine: bandFundedRoutine(),
@@ -1253,7 +1253,7 @@ describe("E5.4 slice 2 resolveRunHouseholdRestockFromView (§26.11)", () => {
     }
   });
 
-  it("lot-funded fulfillment emits a causally-linked cross-kind debit+credit pair that assertConservedDeltasBalance correctly rejects (§26.9's two-kind exception)", () => {
+  it("lot-funded fulfillment emits a causally-linked cross-kind debit+credit pair that assertConservedDeltasBalance correctly rejects (the two-kind conservation exception)", () => {
     const result = resolveRunHouseholdRestockFromView(
       runRestockView({
         routine: lotFundedRoutine(),

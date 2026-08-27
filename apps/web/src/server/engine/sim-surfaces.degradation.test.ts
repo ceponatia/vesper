@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatEngineAuthorityState } from "@vesper/simulation-core/contracts/authority";
 import { log } from "@/server/log";
 
-// sim-read-seam-guards.plan.md slice 1: each of the four state-read seams must
+// Each of the four state-read seams must
 // degrade a thrown DB read to a null panel PLUS a distinct `log.warn`
 // diagnostic (docs/resilience.md §7 — degrade at every trust boundary), never
 // a 500. The authority guard stays OUTSIDE the wrap, so this mocks a routed

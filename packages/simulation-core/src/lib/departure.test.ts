@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildSoloDepartureLine, planDepartureChoreography, type SoloDeparture } from "./departure";
 
 /**
- * Pure departure-choreography tests (world-ui.plan.md slice 4). No IO — the
- * decision is scene-stands × admitted-kind → choreography steps, and the arc line
+ * Pure departure-choreography tests. No IO — the decision is
+ * scene-stands × admitted-kind → choreography steps, and the arc line
  * is asserted from a fixture departure. The choreography's side effects (end
  * scene / move / drain) are integration-shaped and covered on Fly.
  */

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { normalizePlanKey, planInvolvesPlayer, type ChatPlan } from "./chat-plans";
 
 /**
- * The meanwhile pass (chat-offscreen-life.plan.md): when a time skip crosses the
+ * The meanwhile pass: when a time skip crosses the
  * gate, ONE detached archivist-class call proposes a few concrete off-screen
  * developments for the whole ensemble — a life beat consistent with a member's
  * rhythm, a drive progress notch, a supporting-cast beat, an NPC↔NPC interaction,
@@ -18,13 +18,13 @@ import { normalizePlanKey, planInvolvesPlayer, type ChatPlan } from "./chat-plan
 
 /** Story-minutes of skipped time that arm the pass (cumulative since the last pass — ruling A). */
 export const MEANWHILE_GATE_MINUTES = 1440;
-/** Developments per pass, regardless of skip size (plan §Bounds). */
+/** Developments per pass, regardless of skip size. */
 export const MEANWHILE_MAX_DEVELOPMENTS = 3;
 /** Whereabouts refreshes per pass (at most one per away member; lenient cap). */
 export const MEANWHILE_MAX_WHEREABOUTS = 4;
 export const MEANWHILE_EVENT_MAX_CHARS = 200;
 export const MEANWHILE_NOTE_MAX_CHARS = 160;
-/** Cap on a whereabouts phrase — a phrase, not a location model (plan §Not in scope). */
+/** Cap on a whereabouts phrase — a phrase, not a location model. */
 export const WHEREABOUTS_MAX_CHARS = 120;
 
 /**

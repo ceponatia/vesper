@@ -26,7 +26,7 @@ const updaters: Record<ShareableKind, (id: string, body: unknown) => Promise<Api
 };
 
 /**
- * Publish / un-publish a shareable entity (auth.plan.md). Public ⇒ discoverable
+ * Publish / un-publish a shareable entity. Public ⇒ discoverable
  * and **copyable** by anyone (copy-on-use: they get an owned copy, never a live
  * reference to yours). An independent action, not part of the editor's save —
  * it owns the visibility state once mounted.

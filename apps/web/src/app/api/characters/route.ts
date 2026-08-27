@@ -27,13 +27,13 @@ export const GET = withUser(async (user, req: NextRequest) => {
   const q = params.get("q") ?? undefined;
   const tags = parseTagsParam(params.get("tag"));
   const sort = parseOrNull(z.enum(["updated", "name"]), params.get("sort"));
-  // Discovery scope (auth.plan.md fast-follow): all|public|owned; default owner-only.
+  // Discovery scope: all|public|owned; default owner-only.
   const scopeParam = params.get("scope");
   const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
   const ids = await searchLibraryIds("character", user.id, { q, tags, sort: sort ?? undefined, scope });
   if (ids.length === 0) return jsonOk({ characters: [] });
   // Summary columns only — the bare row carries the 1536-dim search embedding.
-  // The facet columns (library-ux.plan.md §Follow-up pass) are extracted in SQL
+  // The facet columns are extracted in SQL
   // rather than shipping the whole profile jsonb: speciesId is a top-level key,
   // gender lives in the attributes array.
   const rows = await db()

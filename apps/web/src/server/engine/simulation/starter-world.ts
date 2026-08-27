@@ -27,16 +27,16 @@ import { seedAuthoredLoreDocuments } from "./memory-index-store";
 import { seedDurableSpaceTopology, type SpaceTopologySeed } from "./space-store";
 
 /**
- * The successor front door (engine.rollout.plan.md, owner ask 2026-07-22) —
- * one small FRESH world per successor chat, provisioned through the same
+ * The successor front door (owner ask 2026-07-22) — one small FRESH world per
+ * successor chat, provisioned through the same
  * durable seeders the rollout world and the admin provisioning route use.
  * Isolation is the point: every chat gets its own branch, cast, and clock, so
  * no two chats ever contend for one standing scene (the R3 live-session
  * lesson).
  *
- * SEED CONTENTS (starter-world-seeds.plan.md / B8 — the engine machinery was
- * built but unseeded, so a new world collapsed to "she is at home and stays
- * there"). A fresh world now opens on: a home, a town square a five-minute
+ * SEED CONTENTS (B8 — the engine machinery was built but unseeded, so a new
+ * world collapsed to "she is at home and stays there"). A fresh world now
+ * opens on: a home, a town square a five-minute
  * walk away, and a market two hundred and forty seconds past the square; the
  * player and the chat's character at home, one background neighbor at the
  * square (so witnessed arrivals exist); a keepsake in the player's pocket (so
@@ -48,8 +48,7 @@ import { seedDurableSpaceTopology, type SpaceTopologySeed } from "./space-store"
  * departures to decide; and a handful of authored-lore memory documents, so a
  * turn-1 recall returns something instead of silence.
  *
- * RE-RUNNABLE since successor-world-lifecycle.plan.md slice 3: the caller
- * supplies a `stamp` derived from its idempotency key
+ * RE-RUNNABLE: the caller supplies a `stamp` derived from its idempotency key
  * (`deriveProvisioningStamp`) instead of this module minting `newId()`, so
  * every id below is stable across retries — and each seed stage is skipped when
  * its rows are already present. Calling this twice with the same stamp
@@ -109,7 +108,7 @@ export interface StarterCommitmentSeed {
 }
 
 /**
- * The §24.2 lore seed in its PRE-BRAND shape — `AuthoredLoreSeed` (the parsed
+ * The authored-lore seed in its PRE-BRAND shape — `AuthoredLoreSeed` (the parsed
  * type) carries branded actor ids, and seed data is plain strings until a
  * seeder parses it, exactly like every other `*Seed` type in this file.
  */
@@ -119,7 +118,7 @@ export type StarterLoreSeed = z.input<typeof authoredLoreSeedSchema>;
  * Everything a starter world is made of, as PURE DATA (B8). Splitting the
  * authored content out of `provisionStarterWorld` keeps the seed reviewable
  * and testable without a database: the pure suite parses these payloads
- * through the same contracts the durable seeders parse, and runs the §19.1
+ * through the same contracts the durable seeders parse, and runs the
  * routine kernel over the seeded meal facts to prove `eat_meal` is legal in
  * the seeded window. No IO, no clock, no randomness — the same stamp and
  * names always produce the same world.
@@ -191,7 +190,7 @@ export function starterWorldSeedPlan(input: StarterWorldSeedInput): StarterWorld
         // B8: the world's one edible thing. `eat_meal` is a candidate at every
         // routine boundary but was ALWAYS illegal (`no_eligible_item`) because
         // nothing in a fresh world carried a `meal`-source consumption effect
-        // — see `selectRoutineMealItem` (@/lib/simulation/routine), whose §26.5
+        // — see `selectRoutineMealItem` (@/lib/simulation/routine), whose
         // filter needs an extant, unreserved, unowned-or-own item with such an
         // effect, rooted at the actor or in her zone.
         //
@@ -200,7 +199,7 @@ export function starterWorldSeedPlan(input: StarterWorldSeedInput): StarterWorld
         // `seedDurableSpaceTopology` creates the zones, so a `zone` locus has
         // no FK target at seed time (that seeder's own doc spells out the
         // three-step ordering a zone-resting seed item would need). Actor-
-        // rooted is also the more robust choice — the §26.5 selection prefers
+        // rooted is also the more robust choice — meal selection prefers
         // it, and it stays eligible if the noon window ever catches her out on
         // an errand or mid-journey.
         id: mealItemId,
@@ -242,8 +241,9 @@ export function starterWorldSeedPlan(input: StarterWorldSeedInput): StarterWorld
       },
       {
         // Deliberately NOT a second edge off home: the market hangs off the
-        // square, so a route home → market is two hops and §15.2 derives a
-        // real departure lead from it instead of a flat five minutes.
+        // square, so a route home → market is two hops and the commitment
+        // kernel derives a real departure lead from it instead of a flat five
+        // minutes.
         id: `stw-${stamp}-link-square-market`,
         fromZoneId: zones.square,
         toZoneId: zones.market,
@@ -300,9 +300,9 @@ export function starterWorldSeedPlan(input: StarterWorldSeedInput): StarterWorld
     ],
   };
 
-  // B8 commitments (§15.1–15.2). Both are AUTHORED knowledge — setup the actor
+  // B8 commitments. Both are AUTHORED knowledge — setup the actor
   // is deemed to know — and both name a destination away from home, so the
-  // §15.2 derivation produces a real `latestDeparture` and the E3.4 arbiter has
+  // departure derivation produces a real `latestDeparture` and the E3.4 arbiter has
   // something to depart for without any player authoring. The firm one's notice
   // lands at 13:06, safely after the 12:00–13:00 meal window closes, so the
   // day's two obligations never fight over the same boundary.
@@ -350,7 +350,7 @@ export function starterWorldSeedPlan(input: StarterWorldSeedInput): StarterWorld
     },
   ];
 
-  // B8 authored lore (§24.2): seeded documents, not events, so recall on the
+  // B8 authored lore: seeded documents, not events, so recall on the
   // very first turn returns backstory instead of nothing. Public entries are
   // eligible to everyone; the two `actors` entries name their viewpoints
   // explicitly (the schema refuses a public doc with eligible actors and an
@@ -522,7 +522,7 @@ export async function provisionStarterWorld(
     throw new Error(`starter world seed step "lod-neighbor" was not accepted: ${JSON.stringify(lod)}`);
   }
   // The primary's obligations. These run LAST of the command stages because
-  // §15.2 derives each one's departure lead from the seeded route, so both the
+  // the departure lead derives from the seeded route, so both the
   // topology and the cast must already exist.
   for (const commitment of plan.commitments) {
     const created = await submitDurableCreateCommitment(

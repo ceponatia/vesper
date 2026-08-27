@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 /**
- * E4.3 — the §19.3 deliberator admission seam. An LLM deliberator may only
+ * E4.3 — the deliberator admission seam. An LLM deliberator may only
  * ever pick among candidates deterministic policy already ruled legal, and
  * only when admission passes every gate below. The seam ships fully typed and
  * stub-exercised — zero live model calls until a Gate 6 LOD controller
  * supplies a real deliberator.
  */
 
-/** The §Gate-6 inference-LOD vocabulary; admission requires the top tiers. */
+/** The inference-LOD vocabulary; admission requires the top tiers. */
 export const inferenceLods = ["no_model", "small_model", "deliberator", "narrator"] as const;
 export const inferenceLodSchema = z.enum(inferenceLods);
 export type InferenceLod = z.infer<typeof inferenceLodSchema>;
@@ -17,7 +17,7 @@ export type InferenceLod = z.infer<typeof inferenceLodSchema>;
 export const deliberationCandidateSchema = z
   .object({
     id: z.string().min(1).max(256),
-    /** Deterministic utility, fixed-point (§19.2) — no float rounding in rules. */
+    /** Deterministic utility, fixed-point — no float rounding in rules. */
     deterministicScoreFixedPoint: z.number().int().min(-1_000_000).max(1_000_000),
   })
   .strict();
@@ -77,8 +77,8 @@ export type DeliberatorRequest = z.infer<typeof deliberatorRequestSchema>;
 
 /**
  * The model's reply crosses a trust boundary. Deliberately NOT `.strict()`:
- * any extra fields — new action text especially — are stripped and ignored
- * (§19.3), never an error that fails the turn.
+ * any extra fields — new action text especially — are stripped and ignored,
+ * never an error that fails the turn.
  */
 export const deliberatorResponseSchema = z.object({
   chosenCandidateId: z.string().min(1).max(256),

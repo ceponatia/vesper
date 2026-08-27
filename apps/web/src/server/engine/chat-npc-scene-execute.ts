@@ -64,13 +64,11 @@ import { chatNpcSceneAuthorityKinds } from "./prompts/constants";
 
 /**
  * THE AUTHORITY EXECUTOR — what an admitted, chronologically planned reply-scene
- * decision actually DOES to the scene
- * (romantic-contact-affordances.spec.actor-control.md, delivery-order step 4:
- * "Increment 1 — movement: monotonic approach/depart helpers, composite
- * departure ordering, opening/presence integration"; step 5: "Increment 2 —
- * starts: arbitrary actor adapter, two-sided material, and same-reply
- * wardrobe-change veto"; step 6: "Increment 3 — updates: stable contact handles
- * and gesture-only lifecycle operation").
+ * decision actually DOES to the scene: movement (monotonic approach/depart
+ * helpers, composite departure ordering, opening/presence integration), starts
+ * (arbitrary actor adapter, two-sided material, and the same-reply
+ * wardrobe-change veto), and updates (stable contact handles and gesture-only
+ * lifecycle operation).
  *
  * Shadow evaluates dry; this module is the half that replaces exactly that dry
  * step when the mode is `authority`. Everything else about the leg — the digest,
@@ -138,9 +136,9 @@ import { chatNpcSceneAuthorityKinds } from "./prompts/constants";
  * ## The wardrobe-chronology veto
  *
  * A start whose actor or target had their wardrobe authoritatively rewritten
- * during this same reply is DROPPED as `wardrobe_chronology_ambiguous` (spec
- * §"Resolution laws → Contact start"). The material read available here is the
- * FINAL wardrobe, and a final wardrobe does not prove which layers existed at the
+ * during this same reply is DROPPED as `wardrobe_chronology_ambiguous`. The
+ * material read available here is the FINAL wardrobe, and a final wardrobe does
+ * not prove which layers existed at the
  * contact's own action offset: "she pulls her gloves off and takes your hand"
  * and "she takes your hand and pulls her gloves off" settle to the same
  * post-settle cut and mean different things about what the touch landed through.
@@ -799,9 +797,9 @@ export function executeNpcSceneDecision(input: NpcSceneExecutionInput): NpcScene
     const actor = subjectOf(candidate.actorRef);
     const target = subjectOf(candidate.targetRef);
     // The admission gate already refused `targetRef === actorRef` as `ref_invalid`
-    // (spec §"Resolution laws → Contact start": "the target must differ from the
-    // actor"), and the resolver refuses identical surfaces on top of that; this
-    // branch only has to survive a ref no handle map could resolve.
+    // — the target must differ from the actor — and the resolver refuses
+    // identical surfaces on top of that; this branch only has to survive a ref
+    // no handle map could resolve.
     if (actor === null || target === null) {
       pushDry(entry, composite, "ref_unresolved");
       return;
@@ -877,11 +875,10 @@ export function executeNpcSceneDecision(input: NpcSceneExecutionInput): NpcScene
 
   /**
    * The post-settle identity re-check: the live contact a durable id denotes, or
-   * the identity field that disagreed
-   * (spec §"Resolution laws → Contact update": "`contactRef` must still resolve
-   * to exactly one active contact whose immutable identity says: `actorId` is
+   * the identity field that disagreed. `contactRef` must still resolve to
+   * exactly one active contact whose immutable identity says: `actorId` is
    * the candidate NPC; source is that NPC's `hands`; `actionKind` is
-   * `affectionate`").
+   * `affectionate`.
    *
    * The digest's handle is NOT authority — it was assembled before settlement
    * and before this walk, and by the time an update executes, the contact behind

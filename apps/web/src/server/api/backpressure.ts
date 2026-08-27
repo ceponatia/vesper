@@ -5,7 +5,7 @@ import { errorText } from "./respond";
 import { JOB_SLOT_STALE_MS } from "./concurrency";
 
 /**
- * Backpressure (rate-limits.plan.md slice 6).
+ * Backpressure.
  *
  * Rate limits protect the app from its callers; backpressure protects it from
  * its dependencies. When an image provider is timing out, admitting the next

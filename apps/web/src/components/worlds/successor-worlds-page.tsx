@@ -36,13 +36,12 @@ export function SuccessorWorldsPage() {
   const [deleteTarget, setDeleteTarget] = useState<SuccessorChatSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
   /**
-   * The idempotency key for the current create INTENT
-   * (successor-world-lifecycle.plan.md slice 3). Minted lazily on the first tap
-   * (never during render — a render-time id would differ between the server and
-   * client passes) and HELD through a failure, so tapping Create again resumes
-   * the same world instead of provisioning a second one. Cleared on success and
-   * whenever the form changes — a different ask is a different intent, and
-   * reusing the key for it would answer `idempotency_mismatch`.
+   * The idempotency key for the current create INTENT. Minted lazily on the
+   * first tap (never during render — a render-time id would differ between the
+   * server and client passes) and HELD through a failure, so tapping Create
+   * again resumes the same world instead of provisioning a second one. Cleared
+   * on success and whenever the form changes — a different ask is a different
+   * intent, and reusing the key for it would answer `idempotency_mismatch`.
    */
   const requestIdRef = useRef<string | null>(null);
   const freshIntent = () => {
@@ -68,8 +67,8 @@ export function SuccessorWorldsPage() {
   };
 
   /**
-   * Delete a world = delete its chat (successor-world-lifecycle.plan.md slice 1,
-   * owner ruling E20-1): the front door is 1:1 chat↔world, so the ordinary chat
+   * Delete a world = delete its chat (owner ruling E20-1): the front door is
+   * 1:1 chat↔world, so the ordinary chat
    * DELETE is the whole verb — `deleteChat` takes the `sim_worlds` graph with the
    * chat row in one transaction. No world-specific endpoint exists or is wanted.
    */

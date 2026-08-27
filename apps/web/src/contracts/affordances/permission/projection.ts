@@ -9,9 +9,7 @@ import { PERMISSION_CHRONOLOGY_AMBIGUOUS, PERMISSION_EVENT_INVALID } from "./dia
 import type { RomanticPermissionEvent, RomanticPermissionScope } from "./events";
 
 /**
- * The ACTIVE PROJECTION — a pure fold over the branch's permission ledger
- * (romantic-contact-affordances.spec.permission.md §"Events and active
- * projection", §"Retakes and branches").
+ * The ACTIVE PROJECTION — a pure fold over the branch's permission ledger.
  *
  * There is deliberately NO stored projection column (ruled 2026-08-04): this
  * fold is computed on read, so the ledger rows are the only truth. Rows are

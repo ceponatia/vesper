@@ -4,14 +4,14 @@ import type { Commitment } from "../contracts/commitments";
 import { humanizeActivity } from "./humanize";
 
 /**
- * Solo-cut shaping (world-ui.plan.md slice 0, ruling 21) — PURE. When a turn
- * runs without a co-present primary, the render is **dual-block**: (a) a
- * second-person player-side block reacting to what the player does in their own
- * zone, and (b) a third-person AWAY VIGNETTE of the primary living their
- * routine. This module turns the raw simulation projections (loci, journeys,
- * activities, commitments, held items) into the structured, id-free context the
- * two blocks need, and a deterministic fallback prose the narrator degrades to
- * (docs/resilience.md — a solo turn NEVER dead-ends).
+ * Solo-cut shaping (ruling 21) — PURE. When a turn runs without a co-present
+ * primary, the render is **dual-block**: (a) a second-person player-side block
+ * reacting to what the player does in their own zone, and (b) a third-person
+ * AWAY VIGNETTE of the primary living their routine. This module turns the raw
+ * simulation projections (loci, journeys, activities, commitments, held items)
+ * into the structured, id-free context the two blocks need, and a deterministic
+ * fallback prose the narrator degrades to (docs/resilience.md — a solo turn
+ * NEVER dead-ends).
  *
  * No IO, no env, no db (src/lib purity): the caller loads the projections and
  * passes typed pieces in; every zone/actor label arrives resolved through the
@@ -19,7 +19,7 @@ import { humanizeActivity } from "./humanize";
  * law — display labels, never raw identifiers).
  */
 
-/** Activity phases that read as "happening right now" for narration (§16.2 activity phases). */
+/** Activity phases that read as "happening right now" for narration. */
 const LIVE_ACTIVITY_PHASES = new Set<string>(["active", "preparing"]);
 
 export interface SoloActorPresence {
@@ -230,9 +230,9 @@ export function buildSoloVignette(input: BuildSoloVignetteInput): SoloVignette {
 
 /**
  * The deterministic minimal narration a solo turn degrades to when the model
- * render fails entirely (docs/resilience.md, §18.5 "render a deterministic
- * minimal transition"). Always non-empty, always id-free, always dual-block so
- * the fallback keeps the ruling-21 shape.
+ * render fails entirely (docs/resilience.md — degrade to a deterministic
+ * minimal transition rather than a failed turn). Always non-empty, always
+ * id-free, always dual-block so the fallback keeps the ruling-21 shape.
  */
 export function buildSoloFallbackProse(context: SoloCutContext): string {
   const { playerSide, primaryName } = context;

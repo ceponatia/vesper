@@ -4,10 +4,10 @@ import { jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { createImageLora, listImageLoras } from "@/server/images";
 
 /**
- * The curated LoRA library's admin surface (image-model-capabilities.spec.md
- * §`image_loras`). Owner-admin only, and only beneath `/api/admin/self` —
- * `withOwnerAdmin` fails closed with a hidden 404 anywhere else, so the client-side
- * gate on the settings page is UX rather than security.
+ * The curated LoRA library's admin surface over the `image_loras` rows.
+ * Owner-admin only, and only beneath `/api/admin/self` — `withOwnerAdmin` fails
+ * closed with a hidden 404 anywhere else, so the client-side gate on the
+ * settings page is UX rather than security.
  *
  * GET lists every row. POST adds one. Both the locator's shape and the scale
  * ordering are the contract schema's judgment, not this route's: an invalid save is

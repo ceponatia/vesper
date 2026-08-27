@@ -8,8 +8,7 @@ import {
 } from "./entity-digest";
 
 /**
- * The item and location projections (model-aware-image-prompts.plan.md
- * §"Item and location module").
+ * The item and location projections.
  *
  * These cases are the surviving half of the deleted `buildItemImagePrompt` /
  * `buildLocationImagePrompt` tests. The product decisions they protected are
@@ -30,8 +29,8 @@ describe("item projection", () => {
   it("presents clothing unsupported and everything else isolated", () => {
     // Names no support, deliberately: "invisible ghost mannequin" rendered a
     // plainly visible dress form 12/12 across two fixtures, and this wording 0/12
-    // (model-aware-image-prompts.trial.qwen-2512-negative.md, Trial B). A future
-    // edit that reintroduces the industry term reintroduces the mannequin.
+    // in the same trial. A future edit that reintroduces the industry term
+    // reintroduces the mannequin.
     const clothing = factValue(projectItemDigest({ ...item, kind: "clothing" }).facts, "item.presentation");
     expect(clothing).toContain("its own shape");
     expect(clothing).not.toMatch(/mannequin|dress form|bust|torso|hanger/i);

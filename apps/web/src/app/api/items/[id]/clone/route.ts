@@ -2,7 +2,7 @@ import { cloneToLibrary, jsonError, jsonOk, storageQuotaRejection, withUser } fr
 
 type Params = { id: string };
 
-/** Clone an item into your library (auth.plan.md) — see characters clone. */
+/** Clone an item into your library — see characters clone. */
 export const POST = withUser<Params>(
   async (user, req, ctx) => {
     const { id } = await ctx.params;

@@ -1,6 +1,5 @@
 /**
- * Scene diagnostic codes, in the house dotted convention
- * (romantic-contact-affordances.spec.scene.md §"Degraded behaviour").
+ * Scene diagnostic codes, in the house dotted convention.
  *
  * Only the codes this module actually pushes exist. The severity rule is the
  * contact core's, unchanged:

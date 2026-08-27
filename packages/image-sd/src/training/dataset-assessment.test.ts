@@ -15,8 +15,7 @@ import {
  * coverage check that credits untagged images to every view, or a size check
  * that only ever fires on an empty list. Either one trains a LoRA on twenty
  * front-facing photographs of the same room and reports a clean set, and the
- * consequence arrives weeks later as a character who cannot change location
- * (sd-rendering-package.plan.md §8).
+ * consequence arrives weeks later as a character who cannot change location.
  *
  * The clean row matters as much as the failing ones: a report that flagged a
  * properly curated set would be ignored within a week, which is the same

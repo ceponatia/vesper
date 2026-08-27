@@ -55,8 +55,7 @@ export const humanoidEverydayLocations: readonly BodyLocation[] = [
   // `expandCoverage`, so a flip-flop's `sole` reaches the arch and the ball
   // there (the wardrobe-visibility resolver skips non-slot ids entirely). The foot
   // affordance domain maps its finer topology onto these three plus the four
-  // slots above (romantic-contact-affordances.spec.foot.md §"Semantic surface
-  // topology"); everything below this granularity stays domain-owned.
+  // slots above; everything below this granularity stays domain-owned.
   { id: "toenails", label: "toenails", parentId: "toes", coverageRelevant: false },
   { id: "top_of_foot", label: "top of foot", parentId: "feet", coverageRelevant: true },
   { id: "sole", label: "sole", parentId: "feet", coverageRelevant: true },

@@ -16,7 +16,7 @@ import { sdEvaluationDimensions, sdEvaluationFixtureSchema } from "./evaluation-
  */
 
 /**
- * Terms a fixture's negative prompt may never carry, taken from §19's list of
+ * Terms a fixture's negative prompt may never carry, taken from the list of
  * things a legitimate Vesper render CAN contain: unusual anatomy, missing limbs,
  * prosthetics, text, logos, blur, non-human features, authored wardrobe and
  * exposure states.

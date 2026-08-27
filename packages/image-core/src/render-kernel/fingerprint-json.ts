@@ -17,8 +17,7 @@ export interface ProfileRenderControlsFingerprintInput {
  *
  * This function decides WHAT represents the configuration; hashing that string
  * is the application's job, because SHA-256 execution is Node work and this
- * package stays browser/server portable
- * (monorepo-image-core.spec.guardrails.md §"Runtime targets"). The split is
+ * package stays browser/server portable. The split is
  * ownership, not behavior: the application's `profileRenderControlsHash` is
  * `sha256Hex` of exactly this string, and the stored value is unchanged.
  *
@@ -62,7 +61,7 @@ export function profileRenderControlsFingerprintJson(
   extra: ProfileRenderControlsFingerprintInput,
 ): string {
   const model = plan.effectiveModel;
-  // The dimension REQUEST (spec §"Dimension negotiation"): a size-mode tier
+  // The dimension REQUEST: a size-mode tier
   // never enters `controlInput` — the dimension resolver consumes it off the
   // plan's facts — so without this member two profiles differing only in tier
   // could hash alike while sending different sizes. `operation` stays out (it is

@@ -1,7 +1,6 @@
 /**
  * The narrator prompt's **authority layers** and the small node IR the builders
- * emit so one of those layers can be replaced (narrator-prompt-lab.plan.md
- * slice 1).
+ * emit so one of those layers can be replaced.
  *
  * ## Why an IR at all
  *
@@ -13,7 +12,7 @@
  * emitting classified nodes, and ONE composer decides whether to render the
  * production instruction text or the owner's.
  *
- * The classification is the product law (plan §4), not a refactor convenience:
+ * The classification is the product law, not a refactor convenience:
  *
  * - `behavior` — narrator craft. Role, prose camera, pacing, richness, dialogue
  *   style, topic discipline. **This is the only layer a test prompt replaces.**

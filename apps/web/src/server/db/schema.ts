@@ -99,7 +99,7 @@ const embedding = () => vector("embedding", { dimensions: 1536 });
 // ---------------------------------------------------------------------------
 
 /**
- * Accounts (auth.plan.md). Owns its core columns for Better Auth's Drizzle
+ * Accounts. Owns its core columns for Better Auth's Drizzle
  * adapter (`user` model → this table); the adapter maps by Drizzle **property
  * key**, so the keys below must match Better Auth's field names exactly
  * (`emailVerified`, `createdAt`, `updatedAt`) — the SQL column names are free.
@@ -115,7 +115,7 @@ export const users = pgTable("users", {
   /** Better Auth profile image URL (OAuth avatar); null for password sign-ups. */
   image: text("image"),
   /**
-   * The persona pre-selected for new chats (persona-library.plan.md slice 6) — the
+   * The persona pre-selected for new chats — the
    * middle rung of `resolveChatPersona`'s ladder, so one-time setup still works and
    * the per-chat pick is an override rather than a chore on every new conversation.
    *
@@ -133,7 +133,7 @@ export const users = pgTable("users", {
 });
 
 /**
- * Better Auth session tokens (auth.plan.md). Named `auth_sessions` to avoid the
+ * Better Auth session tokens. Named `auth_sessions` to avoid the
  * collision with the game `sessions` table; mapped via the adapter's `schema`
  * option (`session` model → this table). `impersonatedBy` is the admin plugin's
  * column, set when a dev/admin session is impersonating another user.
@@ -205,7 +205,7 @@ export const characters = pgTable(
     tags: jsonb("tags").notNull().default([]),
     avatarImageId: text("avatar_image_id"),
     /**
-     * Cross-account **share scope** (auth.plan.md). `private` ⇒ owner-only;
+     * Cross-account **share scope**. `private` ⇒ owner-only;
      * `public` ⇒ discoverable + copyable by anyone (copy-on-use, no live
      * cross-owner reference). Distinct from `lore_chunks.visibility` (in-world
      * secrecy) and `world_links.access` (in-world traversal). Headroom for an
@@ -232,14 +232,13 @@ export const characters = pgTable(
 );
 
 /**
- * **Personas** (persona-library.plan.md) — the player as a library entity: who *you*
+ * **Personas** — the player as a library entity: who *you*
  * are in a chat, with a body, a wardrobe and a bio. The graduated successor to the
  * single inline `users.player_persona` blob (one per account); a chat picks one.
  *
  * Deliberately NOT a row in `characters`: a "self" character would clutter every
- * library list and need a `kind` discriminator + filtering everywhere (the reasoning
- * recorded in finished/player-character.plan.md, which chose the blob for the same
- * reason and left this as the graduation).
+ * library list and need a `kind` discriminator + filtering everywhere, which is
+ * why the inline blob came first and this table is its graduation.
  *
  * No `visibility`/`clonedFromId` in v1 — a persona is *you*, so cross-account sharing
  * has no obvious want. Both are additive later.
@@ -274,13 +273,13 @@ export const personas = pgTable(
 );
 
 /**
- * A conversation (docs/character-chat/; character-chat-standalone.spec.md §1):
+ * A conversation (docs/character-chat/):
  * the chat lane's first-class record — the transcript, rolling summary, and
  * per-participant state hang off `chat_id`, so one character can host many
  * stories (a long-running main thread beside a fresh alternate-universe
  * scenario). Membership is the `chat_participants` join table (a roster of up to
  * 4, sort 0 = the primary participant). The multi-character substrate shipped
- * 2026-07-12 (finished/multi-character-chat.plan.md): the exchange runs the
+ * 2026-07-12: the exchange runs the
  * ensemble frame at a roster over 1 and is byte-identical at a roster of 1, and
  * scene images render every member whose `presence` is "present". The
  * `turn_context` layout is the piece that stays 1-on-1-only.
@@ -295,7 +294,7 @@ export const characterChats = pgTable(
     ownerId: text("owner_id").notNull().references(() => users.id),
     /** User-editable; "" renders as an auto-title (the character's name). */
     title: text("title").notNull().default(""),
-    // --- The chat-wide SCENARIO (followups rulings 8-9): what belongs to the
+    // --- The chat-wide SCENARIO: what belongs to the
     // conversation, not any one character. Moved off character_chat_state
     // 2026-07-12 (backfilled from each chat's primary): the premise, the
     // SETTING-wide house rules (per-character divergence rides character TAGS,
@@ -320,8 +319,7 @@ export const characterChats = pgTable(
      */
     sceneComposerModel: text("scene_composer_model").notNull().default(""),
     /**
-     * **Visual-state narration** (visual-state.plan.md slice 7), per conversation
-     * and OFF by default.
+     * **Visual-state narration**, per conversation and OFF by default.
      *
      * On, the narrator receives the visual projection's two blocks — a short
      * must-not-contradict fence of what is visibly true, and at most two details
@@ -347,7 +345,7 @@ export const characterChats = pgTable(
       .default("off"),
     /**
      * The Narrator Prompt Lab template this conversation is experimenting with
-     * (narrator-prompt-lab.plan.md §3) — `null`, the default and every
+     * — `null`, the default and every
      * pre-feature row, means Vesper's production narrator instructions.
      *
      * A sibling of `agentReasoningProfile` above, and for the same reason: this
@@ -374,8 +372,8 @@ export const characterChats = pgTable(
     sceneMemory: jsonb("scene_memory").notNull().default({}),
     /**
      * `ChatPlayerState` (contracts/players/chat-player-state.ts) — **who the player is
-     * in this conversation and what they're wearing** (persona-library.plan.md slices
-     * 7–8). Chat-wide, like every other field in this block: one player, many roster
+     * in this conversation and what they're wearing**. Chat-wide, like every other
+     * field in this block: one player, many roster
      * characters. `{}` ⇒ no pick ⇒ the resolver falls to the owner's default persona.
      *
      * ONE jsonb column rather than five, following `scene_memory`'s precedent — field
@@ -386,8 +384,7 @@ export const characterChats = pgTable(
     playerState: jsonb("player_state").notNull().default({}),
     /**
      * `ChatGarmentStore` (contracts/items/garment-instance.ts) — the conversation's
-     * GARMENT INSTANCES and their content-hash-deduplicated blueprint snapshots
-     * (clothing-state-graph.plan.md slice 2; slice-0 audit ruling P).
+     * GARMENT INSTANCES and their content-hash-deduplicated blueprint snapshots.
      *
      * Chat-WIDE, and one field rather than a table, for one reason: rollback. The
      * whole "another take" guarantee is "one jsonb blob per anchor, restored
@@ -424,8 +421,8 @@ export const characterChats = pgTable(
      * It lives beside the state it describes for ONE reason: the affordance read
      * is a pure function of committed state plus this memory, so restoring both
      * from the same rollback anchor is what makes a retake reproduce the identical
-     * read (architecture spec §"Recompute and capture"). Written by slice 5, when
-     * the read reaches the prompt; until then it rides through untouched.
+     * read. Written when the read reaches the prompt; until then it rides
+     * through untouched.
      */
     affordanceCues: jsonb("affordance_cues"),
     /**
@@ -452,23 +449,23 @@ export const characterChats = pgTable(
      * crosses `parseSceneState`, which is total and fail-closed on version.
      */
     scene: jsonb("scene"),
-    /** SupportingCastMember[] — recurring named side characters (chat-supporting-cast.plan.md). */
+    /** SupportingCastMember[] — recurring named side characters. */
     supportingCast: jsonb("supporting_cast").notNull().default([]),
-    /** ChatPlan[] — tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
+    /** ChatPlan[] — tracked commitments that come due on the story clock. */
     plans: jsonb("plans").notNull().default([]),
     /** The chat-local game clock (the only time model) — one timeline for the roster. */
     clockMinutes: integer("clock_minutes").notNull().default(0),
     /**
-     * CalendarStart — the story-calendar anchor for clock_minutes
-     * (chat-clock-calendar.plan.md): minute 0 = this date+time. `{}` (the
+     * CalendarStart — the story-calendar anchor for clock_minutes:
+     * minute 0 = this date+time. `{}` (the
      * default and every pre-feature row) heals to CHAT_DEFAULT_CALENDAR_START
      * (Jan 1, 8:00am) at the load boundary. Author-editable.
      */
     calendarStart: jsonb("calendar_start").notNull().default({}),
     pendingSkipNote: text("pending_skip_note").notNull().default(""),
     /**
-     * The meanwhile pass's one-shot narrator note (chat-offscreen-life.plan.md) —
-     * composes with pending_skip_note, cleared with it. "" = none pending.
+     * The meanwhile pass's one-shot narrator note — composes with
+     * pending_skip_note, cleared with it. "" = none pending.
      */
     pendingMeanwhileNote: text("pending_meanwhile_note").notNull().default(""),
     /** Clock minute the meanwhile pass last ran at (the cumulative ≥1-day gate's origin + the job's idempotency CAS). */
@@ -485,7 +482,7 @@ export const characterChats = pgTable(
      */
     lastReplyFailure: jsonb("last_reply_failure"),
     /**
-     * R1 (engine.rollout.plan.md): which lane owns this chat's world truth —
+     * R1: which lane owns this chat's world truth —
      * `legacy_chat` (default; successor not consulted) · `successor_shadow` ·
      * `successor_narrative_view` · `successor_authoritative`. Flipped only
      * through the audited admin route; read through
@@ -496,7 +493,7 @@ export const characterChats = pgTable(
     })
       .notNull()
       .default("legacy_chat"),
-    /** §24 recall routing — orthogonal to the lane (contracts/simulation/authority.ts). */
+    /** Successor recall routing — orthogonal to the lane (contracts/simulation/authority.ts). */
     successorRagEligibility: boolean("successor_rag_eligibility").notNull().default(false),
     /**
      * The successor branch this chat's world maps onto (null until linked).
@@ -512,8 +509,7 @@ export const characterChats = pgTable(
     /** Recency anchor for the Chats list; bumped on every exchange. */
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
     /**
-     * The "has something to say" seen-cursor (chat-initiative.plan.md slice 2 /
-     * character-chat-standalone.spec.md §8.4 v2): stamped when the player OPENS
+     * The "has something to say" seen-cursor: stamped when the player OPENS
      * the conversation (PATCH {seen}), never by the post-exchange transcript
      * refetch — so a milestone landing mid-visit reads as unseen on the next
      * hub visit and clears on the next open (the unread-badge pattern).
@@ -525,7 +521,7 @@ export const characterChats = pgTable(
 );
 
 /**
- * Chat membership (character-chat-standalone.spec.md §1.1). `memory_group_id`
+ * Chat membership. `memory_group_id`
  * keys this participant's facts/episodes scope (memory groups — D7):
  * "continue our shared history" chats reuse the character's existing group,
  * "fresh start / AU" chats mint a new one — every AU is its own island, and a
@@ -550,14 +546,14 @@ export const chatParticipants = pgTable(
 );
 
 /**
- * Reusable scenario setups (character-chat-standalone.spec.md §1.5): a nameable
+ * Reusable scenario setups: a nameable
  * premise/outfit/cards/starting-stage bundle, seeded into a new conversation's
  * state exactly the way the scenario modal writes those fields. A small owned
  * table now; `LibraryKind` graduation (sharing/cloning) later if wanted.
  */
 /**
- * Per-conversation directed relationship matrix (relationship-model.plan.md
- * §The matrix): one row per (chat, from, to) roster pair — the chat analogue of
+ * Per-conversation directed relationship matrix: one row per (chat, from, to)
+ * roster pair — the chat analogue of
  * participant_relationships, record-shaped from day one ("A loves B, B secretly
  * resents A" is a data state). NPC↔NPC records are static authored texture in
  * v2 (no pulse, no ratchet — lived shifts reach the narrator via archivist
@@ -649,7 +645,7 @@ export const characterChatMessages = pgTable(
     role: text("role", { enum: ["user", "assistant"] }).notNull(),
     content: text("content").notNull(),
     /**
-     * Alternate takes on an assistant reply (character-chat-standalone.spec.md §4.1):
+     * Alternate takes on an assistant reply:
      * `{ takes: [{id, content, createdAt}], activeId }`, cap TAKES_CAP. `content`
      * above always mirrors the active take, so transcript reads stay one-column.
      */
@@ -690,20 +686,20 @@ export const characterChatSummaries = pgTable(
 
 /**
  * Character-chat state (docs/character-chat/state.md). One row per
- * (chatId, characterId) — a multi-character roster holds one row per member
- * (multi-character-chat.plan.md): the character's tracked state beside the
+ * (chatId, characterId) — a multi-character roster holds one row per member:
+ * the character's tracked state beside the
  * message window, the rolling summary, and the chat-scoped facts/episodes —
  * the full meter registry, the two relationship axes, optional self-expiring
  * conditions, a dynamic "what's on their mind" note, the starting outfit +
  * exposure, narrative presence + activity recency, and the RAG carry-overs
  * (memory queries, attribute overlays, traces). Chat-WIDE fields — premise,
  * house rules, scene memory/prefs, the story clock — live on `character_chats`
- * (the scenario; followups rulings 8-9). A pure CREATE (not an extension of
+ * (the scenario). A pure CREATE (not an extension of
  * character_chat_summaries) so the migration never hits drizzle's rename
  * prompt and the pulse stays independent of the summary fold. No row ⇒ a fresh
  * stateless chat; the first POST lazily seeds one. Lifecycle: `deleteChat`
  * removes the chat row and everything hanging off it — state rows, transcript,
- * summary, chat memory (character-chat-primary.spec.md §4, D4).
+ * summary, chat memory (D4).
  */
 export const characterChatState = pgTable(
   "character_chat_state",
@@ -716,15 +712,15 @@ export const characterChatState = pgTable(
       .references(() => characters.id, { onDelete: "cascade" }),
     /**
      * Snapshot of the ChatState as it stood BEFORE the last exchange's drift +
-     * fan-out applied (character-chat-standalone.spec.md §4.1) — the rollback
+     * fan-out applied — the rollback
      * target for "another take". Overwritten each exchange; `{}` ⇒ none.
      */
     preExchangeState: jsonb("pre_exchange_state").notNull().default({}),
     /** Record<string,number> — the full meter registry, carried verbatim (seeded from initialMeters()). */
     meters: jsonb("meters").notNull().default({}),
     /**
-     * −100…100, the FEELING axis toward the player persona (relationship-model.plan.md;
-     * was `affinity`) — volatile, moved by the reaction pulse. Seeded from the authored
+     * −100…100, the FEELING axis toward the player persona (was `affinity`) —
+     * volatile, moved by the reaction pulse. Seeded from the authored
      * `playerRelationship` record at band midpoints.
      */
     regard: integer("regard").notNull().default(0),
@@ -745,14 +741,14 @@ export const characterChatState = pgTable(
     /** ChatPulseTrace — last-exchange debug trace for the state-tools modal; parsed defensively. */
     lastPulseTrace: jsonb("last_pulse_trace").notNull().default({}),
     /**
-     * Record<string,string> — the meter bands last surfaced as a "just shifted" beat
-     * (character-chat-state-narration.spec.md §5), `{ meterId: band }`. The anti-repetition
+     * Record<string,string> — the meter bands last surfaced as a "just shifted" beat,
+     * `{ meterId: band }`. The anti-repetition
      * gate diffs current bands against this so an unchanged state never re-fires a beat.
      */
     surfacedCues: jsonb("surfaced_cues").notNull().default({}),
     /**
-     * string[] — the structured worn item-definition ids (chat-wardrobe-parity.plan.md rung 2),
-     * seeded from the active outfit preset. When non-empty, THIS is the wardrobe truth: the
+     * string[] — the structured worn item-definition ids, seeded from the active
+     * outfit preset. When non-empty, THIS is the wardrobe truth: the
      * narrator's wearing-line renders these garments and exposure is COMPUTED from their coverage
      * via the session classifier (`items/visibility.ts`). Empty ⇒ the free-text `outfit` path
      * (legacy chats + ad-hoc looks) still applies (self-healing migration, ruled).
@@ -769,66 +765,66 @@ export const characterChatState = pgTable(
     /** Manual intimate-reveal flag — authoritative only on the free-text path (empty worn list); computed from coverage otherwise. */
     outfitExposed: boolean("outfit_exposed").notNull().default(false),
     /**
-     * string[] — the chat archivist's memory-retrieval queries for the NEXT turn
-     * (character-chat-primary.spec.md §2), mirroring the session director's `memoryQueries`.
+     * string[] — the chat archivist's memory-retrieval queries for the NEXT turn,
+     * mirroring the session director's `memoryQueries`.
      * Produced post-turn, consumed at the next prompt build to seed RAG recall.
      */
     memoryQueries: jsonb("memory_queries").notNull().default([]),
     /**
-     * AttributeValue[] — persisted narrative attribute overlays that EVOLVE over a chat
-     * (character-chat-primary.spec.md §3): the attribute proposer merges `source:"narrative"`
+     * AttributeValue[] — persisted narrative attribute overlays that EVOLVE over a chat:
+     * the attribute proposer merges `source:"narrative"`
      * overlays here (inherent traits guarded), and the prompt builder resolves them on top of
      * the authored base. Distinct from the transient condition overlays (render-time only).
      */
     attributeOverlays: jsonb("attribute_overlays").notNull().default([]),
     /**
-     * TraitValue[] — persisted narrative TRAIT overlays that evolve over a chat
-     * (character-fidelity slice 10): the archivist proposes `source:"narrative"` trait
+     * TraitValue[] — persisted narrative TRAIT overlays that evolve over a chat:
+     * the archivist proposes `source:"narrative"` trait
      * shifts only at relationship milestones, clamped one band from the authored value and
      * guarded to `developable` traits; the prompt builder resolves them on top of the
      * authored traits so a bounded personality arc becomes visible/editable, not implicit drift.
      */
     traitOverlays: jsonb("trait_overlays").notNull().default([]),
     /**
-     * VoiceExemplar[] ring (character-fidelity slice 8, cap 5): a few distinctly in-voice
+     * VoiceExemplar[] ring (cap 5): a few distinctly in-voice
      * lines the character actually said, one picked per exchange by the archivist — rendered
      * as a "How you sound" few-shot past the events-only summary horizon. Capped; rolls back
      * with the pre-exchange snapshot like the other rings.
      */
     voiceExemplars: jsonb("voice_exemplars").notNull().default([]),
     /**
-     * ChatMemoryTrace — last-turn RAG debug (character-chat-primary.spec.md §5): what was
-     * retrieved + extracted this exchange, for the dev inspector. Parsed defensively.
+     * ChatMemoryTrace — last-turn RAG debug: what was retrieved + extracted this
+     * exchange, for the dev inspector. Parsed defensively.
      */
     lastMemoryTrace: jsonb("last_memory_trace").notNull().default({}),
     /**
-     * string[] — the character's unfinished business (character-chat-standalone.spec.md
-     * §6.2): ≤3 short phrases the archivist re-emits in full each exchange (resolved loops
+     * string[] — the character's unfinished business: ≤3 short phrases the
+     * archivist re-emits in full each exchange (resolved loops
      * fall off naturally). Rendered as an "Unfinished business" state line, shown in the
-     * relationship panel, and read by the "has something to say" derivation (§8.4).
+     * relationship panel, and read by the "has something to say" derivation.
      */
     openLoops: jsonb("open_loops").notNull().default([]),
     /**
-     * RelationshipSample[] ring (spec §7.2, cap ~200): `{at, clockMinutes, affinity, stage}`
+     * RelationshipSample[] ring (cap ~200): `{at, clockMinutes, affinity, stage}`
      * appended by the finalizer when affinity moved or the stage crossed — the sparkline.
      */
     relationshipHistory: jsonb("relationship_history").notNull().default([]),
     /**
-     * Milestone[] (spec §7.2, append-only, capped): first exchange, stage changes (both
+     * Milestone[] (append-only, capped): first exchange, stage changes (both
      * directions), strong card-driven reactions, player-marked moments — each
      * `{at, kind, label, messageId?}`.
      */
     milestones: jsonb("milestones").notNull().default([]),
     /**
-     * Narrative presence (multi-character-chat.plan.md): "present" = sharing the
+     * Narrative presence: "present" = sharing the
      * player's scene; "away" = offstage living their life (meters freeze, no
      * memory legs). The ONLY location-like state chat tracks; the roster panel
      * is the manual override, the archivist confirms transitions.
      */
     presence: text("presence", { enum: ["present", "away"] }).notNull().default("present"),
     /**
-     * Where an AWAY member is, as a phrase — never a location entity
-     * (chat-offscreen-life.plan.md §Whereabouts): written by the archivist's
+     * Where an AWAY member is, as a phrase — never a location entity:
+     * written by the archivist's
      * presence read on an away transition and refreshed by the meanwhile pass;
      * rendered in the ensemble's away/salient lines. A PRESENT member with a
      * non-empty whereabouts "just returned" — the tail renders a one-turn
@@ -842,27 +838,27 @@ export const characterChatState = pgTable(
      */
     quietExchanges: integer("quiet_exchanges").notNull().default(0),
     /**
-     * CallbackEntry[] ring (memory-callbacks.plan.md): episode refs already offered as
+     * CallbackEntry[] ring: episode refs already offered as
      * an unprompted "remember when" cue, plus the chat-clock minute each fired — the
      * anti-repeat memory behind the cadence gate. Capped (CHAT_CALLBACK_HISTORY_CAP);
      * rolls back with the pre-exchange snapshot like the rest of the state.
      */
     callbackHistory: jsonb("callback_history").notNull().default([]),
     /**
-     * ChatFeelingState (engine/chat-feeling.ts, emotional-weather.plan.md): the
+     * ChatFeelingState (engine/chat-feeling.ts): the
      * persistent feeling (label + derived intensity + cause, exchange-decayed) and
      * the bruise (damped positive regard gains after a betrayal at high regard).
      * One jsonb blob so shape growth is never a migration; parsed defensively.
      */
     feeling: jsonb("feeling").notNull().default({}),
     /**
-     * SelfieEntry[] ring (chat-selfies.plan.md): recorded selfie sends (request/offer
+     * SelfieEntry[] ring: recorded selfie sends (request/offer
      * + chat-clock minute) — the unprompted-offer cooldown's memory. Capped; rolls
      * back with the pre-exchange snapshot like the rest of the state.
      */
     selfieHistory: jsonb("selfie_history").notNull().default([]),
     /**
-     * ChatDrive[] (character-drives.plan.md): the character's runtime drives —
+     * ChatDrive[]: the character's runtime drives —
      * authored wants seeded from `profile.drives` plus play's `progress`/`revealed`/
      * `resolved`. The drive prompt law and the archivist's driveUpdates read/write it.
      */
@@ -885,10 +881,8 @@ export const characterChatState = pgTable(
 );
 
 /**
- * Observer-scoped visual memory (body-attribute-affordances slice 7;
- * body-attribute-affordances.recognizable-features.memory.md §Structured visual
- * memory): what ONE observer has noticed about ONE subject's recognizable
- * features, and when the narrator last said it out loud.
+ * Observer-scoped visual memory: what ONE observer has noticed about ONE
+ * subject's recognizable features, and when the narrator last said it out loud.
  *
  * Scoped to the chat MEMORY GROUP rather than the chat, by the owner ruling that
  * governs every other chat memory: "continue our shared history" reuses the
@@ -925,7 +919,7 @@ export const chatVisualMemory = pgTable(
 );
 
 /**
- * NARRATOR VISUAL CUE STATE (visual-state.plan.md slice 7; the cue-state
+ * NARRATOR VISUAL CUE STATE (the cue-state
  * contract in contracts/visual-state/cue-state.ts): for ONE observer and ONE
  * subject, when each repeat family was last in view and when the narrator last
  * said it.
@@ -1043,9 +1037,8 @@ export const chatContactEvents = pgTable(
 );
 
 /**
- * The chat lane's DURABLE ROMANTIC-PERMISSION LEDGER
- * (romantic-contact-affordances.spec.permission.md §"Events and active
- * projection"; owner rulings settled 2026-08-04): every `RomanticPermissionEvent`
+ * The chat lane's DURABLE ROMANTIC-PERMISSION LEDGER (owner rulings settled
+ * 2026-08-04): every `RomanticPermissionEvent`
  * a producer committed — a future NPC-side grant/denial/withdrawal decision, or
  * an audited developer override — stamped with the exchange that produced it.
  *
@@ -1134,9 +1127,8 @@ export const chatPermissionEvents = pgTable(
 
 /**
  * The NPC reply-scene DECISION ENVELOPE — one row per persisted assistant
- * message that ran the reply-scene leg
- * (romantic-contact-affordances.spec.actor-control.md §"Durable decision
- * envelope and transaction"). Movement commits and EMPTY outcomes need durable
+ * message that ran the reply-scene leg. Movement commits and EMPTY outcomes
+ * need durable
  * identity as much as contact rows do: a trigger miss, a degraded classifier
  * call, and an all-rejected proposal set are tombstones the retry/reuse logic
  * reads, not absences it re-runs — the same assistant reply is never
@@ -1224,7 +1216,7 @@ export const locations = pgTable(
     affordances: jsonb("affordances").notNull().default([]),
     tags: jsonb("tags").notNull().default([]),
     imageId: text("image_id"),
-    /** Cross-account share scope (auth.plan.md) — see characters.visibility. */
+    /** Cross-account share scope — see characters.visibility. */
     visibility: text("visibility", { enum: ["private", "public"] }).notNull().default("private"),
     /** Soft provenance for a library→library clone of a public source — no FK. */
     clonedFromId: text("cloned_from_id"),
@@ -1267,7 +1259,7 @@ export const items = pgTable(
     definition: jsonb("definition").notNull().default({}),
     tags: jsonb("tags").notNull().default([]),
     imageId: text("image_id"),
-    /** Cross-account share scope (auth.plan.md) — see characters.visibility. */
+    /** Cross-account share scope — see characters.visibility. */
     visibility: text("visibility", { enum: ["private", "public"] }).notNull().default("private"),
     /** Soft provenance for a library→library clone of a public source — no FK. */
     clonedFromId: text("cloned_from_id"),
@@ -1289,7 +1281,7 @@ export const socialCards = pgTable(
     /** SocialReactionCard extras (contracts/personality/cards.ts): kind, triggers, severity, defaultReaction, reactionOverrides */
     definition: jsonb("definition").notNull().default({}),
     tags: jsonb("tags").notNull().default([]),
-    /** Cross-account share scope (auth.plan.md) — see items.visibility. */
+    /** Cross-account share scope — see items.visibility. */
     visibility: text("visibility", { enum: ["private", "public"] }).notNull().default("private"),
     /** Soft provenance for a library→library clone of a public source — no FK. */
     clonedFromId: text("cloned_from_id"),
@@ -1310,8 +1302,8 @@ export const episodes = pgTable(
   {
     id: id(),
     /**
-     * Memory-group keying (character-chat-standalone.spec.md §1.3) — the chat
-     * lane's scope, the only memory scope now (the session lane is gone).
+     * Memory-group keying — the chat lane's scope, the only memory scope now
+     * (the session lane is gone).
      * `turnNumber` is a per-group exchange ordinal.
      */
     chatMemoryGroupId: text("chat_memory_group_id"),
@@ -1321,7 +1313,7 @@ export const episodes = pgTable(
     /** Participant ids present for the turn — interim co-location semantics; write-only until the knowledge ledger ships. */
     witnessedBy: jsonb("witnessed_by").notNull().default([]),
     /**
-     * Chat-lane provenance (character-chat-standalone.spec.md §4.3): the assistant
+     * Chat-lane provenance: the assistant
      * message this episode summarizes. Deletion targets this, not the ordinal —
      * a shared memory group spans conversations, so ordinals alone are ambiguous.
      */
@@ -1340,7 +1332,7 @@ export const facts = pgTable(
   "facts",
   {
     id: id(),
-    /** Memory-group keying (character-chat-standalone.spec.md §1.3) — the chat lane's scope, the only memory scope now. */
+    /** Memory-group keying — the chat lane's scope, the only memory scope now. */
     chatMemoryGroupId: text("chat_memory_group_id"),
     kind: text("kind").notNull(),
     verb: text("verb"),
@@ -1354,21 +1346,21 @@ export const facts = pgTable(
     /** false ⇒ belief only (a told lie): known to its knowers, excluded from the narrator's truth channel. */
     canon: boolean("canon").notNull().default(true),
     /**
-     * Player/dev-pinned (character-chat-standalone.spec.md §6.4 "remember this"): always
+     * Player/dev-pinned ("remember this"): always
      * retrieved ahead of the top-k, exempt from the relevance floor, and never superseded
      * or retracted by an archivist-extracted fact (the asymmetric invariant) — only a
      * player/dev-authored fact (or the inspector) can retire it.
      */
     pinned: boolean("pinned").notNull().default(false),
     /**
-     * Honest provenance (spec §6.4): who authored this fact — the background archivist
+     * Honest provenance: who authored this fact — the background archivist
      * ("extracted", the default), the player's "remember this" ("player"), or a dev
      * inspector edit ("dev").
      */
     origin: text("origin", { enum: ["extracted", "player", "dev"] }).notNull().default("extracted"),
     /**
-     * The channel this fact was established through (player-input-perception.plan.md slice 6 —
-     * the RAG visibility fence). TEXT with headroom (NOT a pg enum — forward-compatible-schema
+     * The channel this fact was established through (the RAG visibility fence).
+     * TEXT with headroom (NOT a pg enum — forward-compatible-schema
      * preference); vocabulary today `perceived | private | ooc` (contracts/facts/taxonomy.ts).
      * `perceived` renders to the narrator as established knowledge; `private` (thought-derived)
      * and `ooc` are excluded from narrator-bound retrieval. Default `perceived` migrates every
@@ -1381,7 +1373,7 @@ export const facts = pgTable(
     supersededById: text("superseded_by_id"),
     sourceTurnId: text("source_turn_id"),
     /**
-     * Chat-lane provenance (character-chat-standalone.spec.md §4.3): the assistant
+     * Chat-lane provenance: the assistant
      * message this fact was extracted from — the session lane's `source_turn_id`
      * analogue. Plain text (no FK): retraction runs BEFORE the message row goes.
      */
@@ -1406,45 +1398,45 @@ export const images = pgTable(
   {
     id: id(),
     ownerId: text("owner_id").notNull().references(() => users.id),
-    // `chat_upload` (chat-image-input.plan.md): a player-attached chat photo — input-only
+    // `chat_upload`: a player-attached chat photo — input-only
     // (never an identity anchor or edit reference), Gallery-hidden, hard-deleted with its
     // message/conversation (unlike scenes, which SET NULL and survive). The drizzle enum is
     // type-level only, so adding a kind is never a migration.
-    // `chat_look` / `chat_place` (chat-scene-references.plan.md): a conversation's cached
+    // `chat_look` / `chat_place`: a conversation's cached
     // render anchors — the outfit-true identity variant and the current place's establishing
     // shot. Chat-keyed, Gallery-hidden (kind-filtered queries), hard-deleted with the chat.
-    // `identity_face_crop` (image-identity-packs.spec.data.md): the hidden face crop an
+    // `identity_face_crop`: the hidden face crop an
     // identity pack derives from the character's canonical portrait — an internal render
     // input, never a user-visible asset. It must be excluded from EVERY listing, clone
     // and cross-owner read; `HIDDEN_IMAGE_KINDS` in `src/server/images/assets.ts` names
     // those surfaces.
-    // `identity_trial_output` (image-identity-packs.spec.trial.md): a render produced by
+    // `identity_trial_output`: a render produced by
     // an admin identity-pack trial cell — operational evidence, never a Gallery asset.
     // Hidden like the face crop (same `HIDDEN_IMAGE_KINDS` surfaces); its owner still
     // reads it through the file route, which is how the blinded review UI displays it.
     // Swept when its trial run is deleted, AND with its character —
     // `deleteCharacterIdentityAssets` purges every hidden kind by entity on character
     // delete, this one included.
-    // `lab_control` / `lab_output` (qwen-advanced-image-subsystem.spec.md §Persistence):
-    // the Advanced Image Lab's control fixtures (pose skeleton, depth map, edge map) and
+    // `lab_control` / `lab_output`: the Advanced Image Lab's control fixtures
+    // (pose skeleton, depth map, edge map) and
     // its experiment renders. Admin-only operational evidence, never Gallery items —
     // hidden exactly like `identity_trial_output`, and owned solely by the lab module.
-    // `generator_output` (image-lab-general-model-trials.spec.md §Persistence): an Image
+    // `generator_output`: an Image
     // Generator run's render — admin bench evidence with no entity/chat association,
     // hidden exactly like `lab_output` and deleted with its run.
     kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output", "generator_output"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     /**
-     * The conversation a chat scene was rendered for (character-chat-standalone plan
-     * area 8, slice 9): scopes the scene list/scrub per chat instead of character-wide.
+     * The conversation a chat scene was rendered for: scopes the scene
+     * list/scrub per chat instead of character-wide.
      * SET NULL so deleting a chat keeps the asset in the Gallery. Null on legacy rows
      * and non-chat images.
      */
     chatId: text("chat_id").references(() => characterChats.id, { onDelete: "set null" }),
     /**
-     * The assistant message this scene illustrates — the inline-transcript anchor
-     * (slice 9). Plain text, no FK: messages are individually deletable, and a dangling
+     * The assistant message this scene illustrates — the inline-transcript
+     * anchor. Plain text, no FK: messages are individually deletable, and a dangling
      * anchor just means the image renders in the strip only. Captured at queue time
      * (newest assistant line for manual renders; the exchange's reply for auto).
      */
@@ -1452,7 +1444,7 @@ export const images = pgTable(
     /** Relative to data/, e.g. images/<ownerId>/<imageId>.webp */
     path: text("path").notNull(),
     /**
-     * Encoded size of the stored webp (rate-limits.plan.md slice 4). `writeWebpAtomic`
+     * Encoded size of the stored webp. `writeWebpAtomic`
      * already reported this into `meta.bytes`; promoting it to a column makes the
      * per-owner storage quota a `SUM(bytes)` over an indexed column rather than a JSONB
      * scan. Deliberately **derived, never a counter** — every delete path reclaims quota
@@ -1462,7 +1454,7 @@ export const images = pgTable(
     prompt: text("prompt").notNull().default(""),
     sourceImageId: text("source_image_id"),
     status: text("status", { enum: ["pending", "ready", "failed"] }).notNull().default("pending"),
-    /** Owner's Gallery favorite flag (library-ux.plan.md §Follow-up pass). */
+    /** Owner's Gallery favorite flag. */
     favorite: boolean("favorite").notNull().default(false),
     meta: jsonb("meta").notNull().default({}),
     createdAt: createdAt(),
@@ -1475,8 +1467,8 @@ export const images = pgTable(
 );
 
 /**
- * What a scene image featured / was anchored on — one row per reference
- * (scene-images.spec.md §4). The queryable source of truth that replaced the
+ * What a scene image featured / was anchored on — one row per reference.
+ * The queryable source of truth that replaced the
  * old `images.meta.references` JSONB: app-wide metrics ("which scenes used this
  * character / location / portrait") become a table query. `entity_id` is the
  * library character/location id (null for non-entity roles); `image_id` is the
@@ -1506,7 +1498,7 @@ export const imageReferences = pgTable(
 );
 
 /**
- * The image-model registry (image-model-registry.spec.md). Which Replicate
+ * The image-model registry. Which Replicate
  * models the app can run is DATA, not a code union: rows here are managed from
  * the admin page at `/settings/image-models`, and the portrait/variant/scene
  * pickers read them. Seeded with six models by migration; seeded rows are
@@ -1616,8 +1608,8 @@ export const imageModels = pgTable(
 );
 
 /**
- * Per-task profiles beneath a model row (image-model-capabilities.spec.md
- * §`image_model_profiles`). A model row says what Replicate will ACCEPT; a profile
+ * Per-task profiles beneath a model row. A model row says what Replicate will
+ * ACCEPT; a profile
  * says how Vesper should USE it for one job. The same Seedream row is an everyday
  * 2K scene model on one surface and a slow 4K location model on another, and one
  * permanent `extraInput` bag on the parent cannot express that difference — which
@@ -1691,7 +1683,7 @@ export const imageModelProfiles = pgTable(
 );
 
 /**
- * The curated LoRA library (image-model-capabilities.spec.md §`image_loras`).
+ * The curated LoRA library.
  *
  * A LoRA is a weights file the PROVIDER fetches by locator, so a row here is not
  * another control default — it is an address plus the rules that say where that
@@ -1700,7 +1692,7 @@ export const imageModelProfiles = pgTable(
  * noise on another: compatibility is a fact about the weights, and duplicating it
  * onto every profile is how one of the copies goes stale.
  *
- * The locator carries no credential (spec §`image_loras`), which is why there is
+ * The locator carries no credential, which is why there is
  * no token column to leak — private repositories stay out of scope until a
  * secret can live somewhere other than this table.
  *
@@ -1769,8 +1761,7 @@ export const imageLoras = pgTable(
 
 /**
  * A character's identity pack — the face crop and measurements every later render
- * reuses so the same person comes back (image-identity-packs.spec.data.md
- * §Persistence model).
+ * reuses so the same person comes back.
  *
  * The pack is a TABLE, not `images.meta`, because four things need relational
  * ownership that a metadata blob cannot give: which revision is current,
@@ -1834,8 +1825,7 @@ export const imageIdentityPacks = pgTable(
      * resolves and persists source pixels. */
     crop: jsonb("crop_json"),
     /** `ImageIdentityPackQuality | null` — measurements only (face box, blur, occlusion,
-     * padding). No embeddings, demographics or model-written descriptions ever land here
-     * (spec.lifecycle.md §Privacy boundary). */
+     * padding). No embeddings, demographics or model-written descriptions ever land here. */
     quality: jsonb("quality_json"),
     /** `ImageIdentityPackWarningCode[]` — warnings may accompany a perfectly usable pack. */
     warningCodes: jsonb("warning_codes_json").notNull().default([]),
@@ -1876,8 +1866,7 @@ export const imageIdentityPacks = pgTable(
 );
 
 /**
- * Which character LoRA was trained from which identity pack revision
- * (sd-rendering-package.plan.md §9).
+ * Which character LoRA was trained from which identity pack revision.
  *
  * The two sides already exist: `image_identity_packs` holds the canonical face,
  * `image_loras` holds the weights and the rules for sending them. This row is
@@ -1944,15 +1933,15 @@ export const imageIdentityLoraBindings = pgTable(
     // duplicate — two rows that would both claim to be the promotion candidate.
     uniqueIndex("image_identity_lora_bindings_pack_lora_unique").on(t.identityPackId, t.loraId),
     // A rank outside the contract's rail could never have trained, so it should
-    // never be storable; the dataset count matches §8's "a training set has images".
+    // never be storable; the dataset count matches "a training set has images".
     check("image_identity_lora_bindings_rank_bounds", sql`${t.rank} >= 1 AND ${t.rank} <= 128`),
     check("image_identity_lora_bindings_dataset_size", sql`${t.datasetImageCount} >= 1`),
   ],
 );
 
 /**
- * An admin identity-reference trial run (image-identity-packs.spec.trial.md) —
- * one bounded, owner-scoped comparison of reference strategies across a fixed
+ * An admin identity-reference trial run — one bounded, owner-scoped comparison
+ * of reference strategies across a fixed
  * character/profile/fixture grid. The validated create-request is snapshotted
  * into `config_json` so a later registry or profile edit can never change what
  * a finished run claims it tested.
@@ -2096,8 +2085,7 @@ export const imageIdentityPackTrialGrades = pgTable(
 );
 
 /**
- * One authoritative ruling per (run, profile, strategy)
- * (image-identity-packs.spec.trial.md §"Version promotion").
+ * One authoritative ruling per (run, profile, strategy).
  *
  * This table replaces the run row's `verdicts_json` array, and the reason is
  * lost updates: recording a verdict there meant reading the whole array,
@@ -2167,8 +2155,7 @@ export const imageIdentityPackTrialVerdicts = pgTable(
 
 /**
  * One Advanced Image Lab experiment — a single deliberate admin render with every
- * input, setting, and outcome written down
- * (qwen-advanced-image-subsystem.spec.md §Persistence).
+ * input, setting, and outcome written down.
  *
  * The row exists because the questions the lab asks cannot be answered by any
  * provider schema — "does this model honour a pose skeleton?" is settled by
@@ -2263,7 +2250,7 @@ export const imageLabExperiments = pgTable(
 
 /**
  * One Image Generator run — a single immutable raw prompt/model attempt on the
- * admin bench (image-lab-general-model-trials.spec.md §Persistence). The
+ * admin bench. The
  * Generator is a separate surface from the Advanced Image Lab: no experiment
  * kind, no verdict, no fixture rules — one row is one paid attempt whose
  * prompt, ordered inputs, controls, advanced provider values, and outcome are
@@ -2335,8 +2322,7 @@ export const imageGeneratorRuns = pgTable(
 );
 
 /**
- * One offline reference-image extraction run (visual-state.plan.md slice 9;
- * visual-state.spec.md §Reference-image extraction): an admin registered an
+ * One offline reference-image extraction run: an admin registered an
  * extractor's structured proposals about one character's canonical image.
  * Admin-only (`/api/admin/self/reference-extractions`), review-first — a row
  * here never touches a canonical owner; only a reviewed acceptance on a
@@ -2448,13 +2434,13 @@ export const jobs = pgTable(
     type: text("type", {
       // `lab_image` / `lab_control_extract`: the Advanced Image Lab's experiment render
       // and its control-fixture extraction. Both reach an image provider, so both map to
-      // the image lane in `providerLaneFor` (qwen-advanced-image-subsystem.spec.md).
-      // `generator_image`: one Image Generator run (image-lab-general-model-trials.spec.md)
-      // — an image-provider render, so it maps to the image lane as well.
+      // the image lane in `providerLaneFor`.
+      // `generator_image`: one Image Generator run — an image-provider render,
+      // so it maps to the image lane as well.
       enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract", "generator_image"],
     }).notNull(),
     /**
-     * Who the work is being done for (rate-limits.plan.md slice 5) — the key the
+     * Who the work is being done for — the key the
      * per-user concurrency cap counts over. Nullable: system//engine-internal jobs
      * belong to no user, and legacy rows predate the column. Uncapped when null.
      */
@@ -2488,7 +2474,7 @@ export const events = pgTable(
 );
 
 /**
- * Durable usage accounting for cost-bearing work (rate-limits.plan.md slice 3).
+ * Durable usage accounting for cost-bearing work.
  *
  * Burst limits stay in-process — losing them to a restart is harmless. These do
  * not: an in-memory daily budget is reset by crash-looping the process, which is
@@ -2522,7 +2508,7 @@ export const usageCounters = pgTable(
 
 /**
  * A saved narrator instruction prompt — the Narrator Prompt Lab's template
- * identity (narrator-prompt-lab.plan.md §Persistence).
+ * identity.
  *
  * The template is the STABLE half; the body lives in
  * `narrator_prompt_revisions`, which is append-only. Editing never overwrites:
@@ -2595,7 +2581,7 @@ export const narratorPromptTemplates = pgTable(
 );
 
 /**
- * One immutable narrator prompt body (narrator-prompt-lab.plan.md §Persistence).
+ * One immutable narrator prompt body.
  *
  * **Rows here are never UPDATEd after insert.** That is the whole point: a take
  * generated three weeks ago must still be explainable by the exact text that
@@ -2657,7 +2643,7 @@ export const simWorlds = pgTable(
     rulesetVersion: text("ruleset_version").notNull(),
     /**
      * `active` plays; `paused` is unused vocabulary held for a future need.
-     * "archived" was dropped (successor-world-lifecycle.plan.md slice 1, E20-1):
+     * "archived" was dropped (E20-1):
      * nothing ever set it, and a successor world is now hard-deleted with its
      * chat rather than shelved. App-level enum on a text column — no CHECK
      * constraint, so narrowing it needs no migration.
@@ -2682,10 +2668,10 @@ export const simWorlds = pgTable(
 /**
  * One serial command/event stream and one optimistic version per causal branch.
  *
- * E2.5 ancestry (spec §29.3): a fork child records its parent, fork boundary,
+ * E2.5 ancestry: a fork child records its parent, fork boundary,
  * and provenance here. A child stores only its own post-fork rows; ancestor
  * events are read through the parent chain bounded by fork_sequence, never
- * copied (plan R4).
+ * copied.
  */
 export const simBranches = pgTable(
   "sim_branches",
@@ -2707,7 +2693,7 @@ export const simBranches = pgTable(
     forkedByPrincipalKind: text("forked_by_principal_kind", { enum: principalKinds }),
     forkedByPrincipalId: text("forked_by_principal_id"),
     forkReason: text("fork_reason"),
-    /** Checksum of the materialized child projection at the fork point (§29.3). */
+    /** Checksum of the materialized child projection at the fork point. */
     inheritedSnapshotChecksum: text("inherited_snapshot_checksum"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -2791,8 +2777,8 @@ export const simCommands = pgTable(
 );
 
 /**
- * Route-level idempotency for successor sim-commands (command-integrity.plan.md
- * A1, slice 4). One row per `(chatId, requestId)` — the stable token the client
+ * Route-level idempotency for successor sim-commands. One row per
+ * `(chatId, requestId)` — the stable token the client
  * mints per tap. Under the shared `chat_exchange` lock the route records `started`
  * BEFORE executing, then `completed` with the full HTTP result (status + body), so
  * a retry replays the recorded response verbatim instead of re-running the drain or
@@ -2851,8 +2837,8 @@ export const simProvisioningPendingStates = [
 ] as const;
 
 /**
- * Resumable successor-world provisioning (successor-world-lifecycle.plan.md
- * slice 3, ruling E20-3) — the `sim_command_requests` shape, owner-scoped.
+ * Resumable successor-world provisioning (ruling E20-3) — the
+ * `sim_command_requests` shape, owner-scoped.
  *
  * One row per `(ownerId, requestId)`: the stable token the Worlds page mints
  * per create intent. The POST runs under `successor_provision:<ownerId>` and
@@ -2965,9 +2951,9 @@ export const simCharacters = pgTable(
 
 /**
  * Stable item identity and display facts, separate from mutable placement
- * (`sim_item_holdings`). E5.3 (§26) adds the material-classification key resource
- * costs reference (slice 2), social ownership (§26.3, distinct from holding), and
- * an optional container declaration (§26.2) — capacity and access are both-null
+ * (`sim_item_holdings`). E5.3 adds the material-classification key resource
+ * costs reference, social ownership (distinct from holding), and
+ * an optional container declaration — capacity and access are both-null
  * (not a container) or both-set, never one without the other.
  */
 export const simItems = pgTable(
@@ -2978,13 +2964,13 @@ export const simItems = pgTable(
       .references(() => simBranches.id, { onDelete: "cascade" }),
     itemId: text("item_id").notNull(),
     name: text("name").notNull(),
-    /** Authored classification key resource costs reference (§26.5, E5.3 slice 2). */
+    /** Authored classification key resource costs reference (E5.3). */
     materialKindKey: text("material_kind_key"),
-    /** Authored §26.6 body effects a consumption applies, in authored order. Null = not consumable. */
+    /** Authored body effects a consumption applies, in authored order. Null = not consumable. */
     consumptionEffects: jsonb("consumption_effects").$type<ItemConsumptionEffect[]>(),
-    /** Social ownership (§26.3) — null = unowned. Changed only by item_ownership_set. */
+    /** Social ownership — null = unowned. Changed only by item_ownership_set. */
     ownerActorId: text("owner_actor_id"),
-    /** Present iff this item is itself a container (§26.2); paired with containerAccess. */
+    /** Present iff this item is itself a container; paired with containerAccess. */
     containerCapacityCount: bigint("container_capacity_count", { mode: "number" }),
     containerAccess: jsonb("container_access").$type<ContainerAccessPolicy>(),
     /**
@@ -3011,11 +2997,11 @@ export const simItems = pgTable(
 );
 
 /**
- * One row per item is the database-enforced exclusive holding invariant (§26.1):
+ * One row per item is the database-enforced exclusive holding invariant:
  * every item has exactly one holding locus. `locusKind` discriminates which of
  * `actorId`/`slotKey`/`containerItemId`/`zoneId`/`goneBasis` is populated — the
  * per-kind CHECK constraints below enforce exactly one reference set per row.
- * `gone` is terminal — no transition leaves it (§26.1). `updatedSequence`
+ * `gone` is terminal — no transition leaves it. `updatedSequence`
  * identifies the event boundary that last changed placement.
  */
 export const simItemHoldings = pgTable(
@@ -3252,8 +3238,8 @@ export const simTimeJobs = pgTable(
 );
 
 /**
- * First disposable async projection: one stable row per material movement event
- * (§26.4). E5.3 bumps this to schema version 2 — `eventKind` distinguishes a
+ * First disposable async projection: one stable row per material movement
+ * event. E5.3 bumps this to schema version 2 — `eventKind` distinguishes a
  * transfer from a destruction, and `fromLocus`/`toLocus` carry the locus-model
  * placement (a destruction's `toLocus` is its terminal `gone` locus).
  */
@@ -3321,7 +3307,7 @@ export const simTriggers = pgTable(
     kind: text("kind", { enum: [...simulationTriggerKinds] }).notNull(),
     schemaVersion: integer("schema_version").notNull(),
     dueStorySecond: bigint("due_story_second", { mode: "number" }).notNull(),
-    /** Spec §12.1 queue order: lower is more urgent. No producer sets it above 0 yet. */
+    /** Queue order: lower is more urgent. No producer sets it above 0 yet. */
     priority: integer("priority").notNull().default(0),
     /** Immutable tie-break among triggers sharing one due second and priority. */
     stableOrder: bigint("stable_order", { mode: "number" }).notNull(),
@@ -3336,8 +3322,8 @@ export const simTriggers = pgTable(
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     resultCommandId: text("result_command_id"),
     /**
-     * Which scheduler ruleset produced this trigger's terminal outcome. Spec
-     * §12.1 makes queue order part of the ruleset version, so a later scheduler
+     * Which scheduler ruleset produced this trigger's terminal outcome. Queue
+     * order is part of the ruleset version, so a later scheduler
      * revision must stay distinguishable in history. Null until resolved.
      */
     derivationVersion: text("derivation_version"),
@@ -3381,7 +3367,7 @@ export const simTriggers = pgTable(
 );
 
 /**
- * Replay checkpoints (spec §10.4). A snapshot carries the full projection
+ * Replay checkpoints. A snapshot carries the full projection
  * payload at its sequence so replay can resume there instead of walking to the
  * root; it may be discarded at any time without changing truth, and tests must
  * periodically rebuild from zero so a wrong snapshot cannot hide a replay
@@ -3517,8 +3503,8 @@ export const simLinks = pgTable(
 );
 
 /**
- * Exactly one physical locus per actor per branch — the primary key IS the
- * §3.1 invariant. Shape checks keep an `at` row from carrying journey fields
+ * Exactly one physical locus per actor per branch — the primary key IS that
+ * invariant. Shape checks keep an `at` row from carrying journey fields
  * and an `in_transit` row from carrying place fields.
  */
 export const simPhysicalLoci = pgTable(
@@ -3585,7 +3571,7 @@ export const simActionDefinitions = pgTable(
 /**
  * E3.2 activity instances. Claims are projected from
  * these rows — an actor's held claims are the claims of their non-terminal
- * activities — so a crashed worker can never orphan a claim (§16.3).
+ * activities — so a crashed worker can never orphan a claim.
  */
 export const simActivities = pgTable(
   "sim_activities",
@@ -3605,7 +3591,7 @@ export const simActivities = pgTable(
     expectedCompleteAt: bigint("expected_complete_at", { mode: "number" }),
     progressFixedPoint: integer("progress_fixed_point").notNull().default(0),
     claims: jsonb("claims").$type<ActivityClaim[]>().notNull(),
-    /** §26.5: items reserved at start, held across every claim-holding phase. */
+    /** Items reserved at start, held across every claim-holding phase. */
     reservedItemIds: jsonb("reserved_item_ids").$type<string[]>().notNull().default([]),
     sourceCommandId: text("source_command_id").notNull(),
     updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
@@ -3633,7 +3619,7 @@ export const simActivities = pgTable(
 /**
  * E3.3 commitments. The window and derivation columns are
  * captured at creation (the creating event records them too); status is the
- * §15.4 machine driven by the notice and deadline triggers.
+ * state machine driven by the notice and deadline triggers.
  */
 export const simCommitments = pgTable(
   "sim_commitments",
@@ -3771,7 +3757,7 @@ export const simEngagements = pgTable(
 );
 
 /**
- * R4 shadow divergences (engine.rollout.plan.md): one row per compared domain
+ * R4 shadow divergences: one row per compared domain
  * per shadowed exchange — the queryable substrate the shadow-parity report is
  * computed from. `legacy`/`successor` hold each lane's raw view of the domain;
  * `verdict` is the durable triage state ("ruled intentional" survives here,
@@ -3998,9 +3984,9 @@ export const simBeliefs = pgTable(
  * E4.3 persisted NarrativeCuts. A cut row is IMMUTABLE and
  * addressable: rerender re-reads it and creates nothing; a failed narrator
  * render retries from the same row (ruling 8); armed speech acts confirm
- * against it by id (§23.3). There is deliberately no update path and no
+ * against it by id. There is deliberately no update path and no
  * updated_at — recompiling the same cut id must reproduce semantic_hash or
- * fail with a version diagnostic (§22.3).
+ * fail with a version diagnostic.
  */
 export const simNarrativeCuts = pgTable(
   "sim_narrative_cuts",
@@ -4018,7 +4004,7 @@ export const simNarrativeCuts = pgTable(
     throughSequence: bigint("through_sequence", { mode: "number" }).notNull(),
     fromStorySecond: bigint("from_story_second", { mode: "number" }).notNull(),
     throughStorySecond: bigint("through_story_second", { mode: "number" }).notNull(),
-    /** The full parsed §22.1 cut — the row IS the render input, bit for bit. */
+    /** The full parsed cut — the row IS the render input, bit for bit. */
     content: jsonb("content").$type<unknown>().notNull(),
     createdAt: createdAt(),
   },
@@ -4087,7 +4073,7 @@ export const simSoftCanon = pgTable(
  * E4.4 memory documents: redacted, indexable recall
  * representations derived from persisted source rows by the memory-index
  * outbox consumer. Eligibility, validity, and privacy are resolved
- * relationally at query time (§24.1) — this table never widens what any
+ * relationally at query time — this table never widens what any
  * viewpoint may see; a missing or stale row only narrows recall.
  */
 export const simMemoryDocuments = pgTable(
@@ -4268,7 +4254,7 @@ export const simBodyRhythms = pgTable(
 );
 
 /**
- * E5.1 body modifiers — the one §25.3 contract. Validity boundaries are
+ * E5.1 body modifiers — the one modifier contract. Validity boundaries are
  * integration boundaries; expiry needs no trigger because the piecewise
  * solver already sees `valid_until`.
  */
@@ -4309,7 +4295,7 @@ export const simBodyModifiers = pgTable(
 
 /**
  * E5.3 slice 3 item condition meters. Wear and
- * cleanliness ride the SAME §25 fixed-point kernel `sim_body_meters` does —
+ * cleanliness ride the SAME fixed-point kernel `sim_body_meters` does —
  * this is an item-scoped mirror, not a reuse of that table: one row per item
  * × meter, value fixed-point (10 000 ≡ 1.0), `last_integrated_at` the last
  * MATERIAL write. Queries integrate analytically from here and never
@@ -4353,7 +4339,7 @@ export const simItemConditionMeters = pgTable(
 );
 
 /**
- * E5.3 slice 3 item condition modifiers — the §25.3 modifier contract,
+ * E5.3 slice 3 item condition modifiers — the same modifier contract,
  * item-scoped, mirroring `sim_body_modifiers` minus `condition_id` AND
  * `visibility`: items have no categorical conditions in v1, so every
  * modifier is applied and retired directly (e.g. the
@@ -4459,7 +4445,7 @@ export const simHouseholds = pgTable(
 );
 
 /**
- * E5.4 household membership (§26.8). `status = 'ended'` iff `ended_at_story_second` is
+ * E5.4 household membership. `status = 'ended'` iff `ended_at_story_second` is
  * set (mirrors `sim_body_conditions`' end-basis-matches-status check). The
  * household and actor FKs are DEFERRABLE INITIALLY DEFERRED (hand-edited in
  * the migration, the 0069 precedent): a branch teardown cascades
@@ -4504,7 +4490,7 @@ export const simHouseholdMembers = pgTable(
 );
 
 /**
- * E5.4 fungible material lots (§26.9). `lot_key` is a synthetic, deterministic,
+ * E5.4 fungible material lots. `lot_key` is a synthetic, deterministic,
  * content-addressed persistence-layer key (`deriveMaterialLotRowKey`,
  * lib/simulation/households.ts) — NOT a domain id; contracts/events address a lot by
  * `(locus, materialKindKey)` directly. It exists only because Postgres cannot make a
@@ -4571,7 +4557,7 @@ export const simMaterialLots = pgTable(
 );
 
 /**
- * E5.4 means bands (§26.10). `subject_key` is the same kind of synthetic
+ * E5.4 means bands. `subject_key` is the same kind of synthetic
  * persistence-layer key as `sim_material_lots.lot_key`, for the same reason (the
  * actor-XOR-household discriminant cannot be a nullable primary key). The actor/
  * household FKs are DEFERRABLE INITIALLY DEFERRED (hand-edited, 0069 precedent).
@@ -4617,7 +4603,7 @@ export const simMeansBands = pgTable(
 );
 
 /**
- * E5.4 slice 2 restock routines (§26.11) — authored per household × material
+ * E5.4 slice 2 restock routines — authored per household × material
  * kind, natural composite key (no branching discriminant, so no synthetic key
  * needed — mirrors `sim_body_rhythms`). Live/evented (unlike rhythms):
  * `configure_restock_routine` upserts this row. The household FK is

@@ -28,7 +28,7 @@ const TABLE_NAMES: Record<LibraryKind, string> = {
 const idRowSchema = z.object({ id: z.string() });
 const scoredIdRowSchema = z.object({ id: z.string(), score: z.number() });
 
-/** Cross-account discovery tiers (auth.plan.md). */
+/** Cross-account discovery tiers. */
 export type LibraryScope = "all" | "public" | "owned";
 
 /**
@@ -67,10 +67,10 @@ export interface LibrarySearchOptions {
    */
   itemKind?: string;
   /**
-   * Items only: definition-jsonb facet filters (library-ux.plan.md), applied
-   * **before** the result cap for the same reason as `itemKind`. `wearer`
-   * follows the registry's filter semantics (contracts/items/wearer.ts):
-   * absent/unisex rows match every wearer filter.
+   * Items only: definition-jsonb facet filters, applied **before** the result
+   * cap for the same reason as `itemKind`. `wearer` follows the registry's
+   * filter semantics (contracts/items/wearer.ts): absent/unisex rows match
+   * every wearer filter.
    */
   itemFacets?: {
     category?: string;
@@ -82,18 +82,18 @@ export interface LibrarySearchOptions {
   /** Browse ordering; `updated` (default) = most-recently-updated first. */
   sort?: "updated" | "name";
   /**
-   * Cross-account discovery scope (auth.plan.md, debuted on social cards):
-   * `owned` (default) is owner-only — the long-standing behaviour every other
-   * caller relies on; `public` is everyone's published rows (your own public
-   * ones included); `all` is owner ∪ public. Only the shareable tables carry a
-   * `visibility` column, which is why the overloads below accept these options
-   * for `ShareableKind` alone.
+   * Cross-account discovery scope (debuted on social cards): `owned` (default)
+   * is owner-only — the long-standing behaviour every other caller relies on;
+   * `public` is everyone's published rows (your own public ones included);
+   * `all` is owner ∪ public. Only the shareable tables carry a `visibility`
+   * column, which is why the overloads below accept these options for
+   * `ShareableKind` alone.
    *
    * This returns **ids**; whatever hydrates them for a non-`owned` scope is
    * feeding foreign rows to a client and must select an explicit column list —
-   * never `select()` (security-authz.plan.md slice 4). Every list route already
-   * does (summary columns only, no `ownerId`/`searchEmbedding`); the detail
-   * routes project through `toPublic*` in `./visibility`.
+   * never `select()`. Every list route already does (summary columns only, no
+   * `ownerId`/`searchEmbedding`); the detail routes project through
+   * `toPublic*` in `./visibility`.
    */
   scope?: LibraryScope;
 }
@@ -101,13 +101,12 @@ export interface LibrarySearchOptions {
 /**
  * Search options for an owner-only kind: every filter the shareable kinds get,
  * but `owned` is the only expressible scope — a persona is *you*, so there is
- * no public tier to widen to (persona-library.plan.md).
+ * no public tier to widen to.
  */
 export type OwnerOnlyLibrarySearchOptions = Omit<LibrarySearchOptions, "scope"> & { scope?: "owned" };
 
 /**
- * The outcome of checking a `kind × scope` pair before any SQL is built
- * (security-authz.plan.md §Follow-ups item 3).
+ * The outcome of checking a `kind × scope` pair before any SQL is built.
  */
 export type LibraryScopeDecision =
   | { supported: true; scope: LibraryScope }
@@ -121,9 +120,9 @@ export type LibraryScopeDecision =
  * A non-`owned` scope on a kind with no `visibility` column used to compile a
  * `visibility = 'public'` clause against a table that has no such column: a
  * 500 from invalid SQL, latent only because the personas route hardcodes
- * `scope: "owned"` (security-authz.plan.md §Follow-ups item 3). The overloads
- * on `searchLibraryIds` keep that pair unrepresentable for statically-known
- * kinds; this is the backstop for dynamic ones. Unsupported degrades to an
+ * `scope: "owned"`. The overloads on `searchLibraryIds` keep that pair
+ * unrepresentable for statically-known kinds; this is the backstop for dynamic
+ * ones. Unsupported degrades to an
  * empty result + a `warn` diagnostic rather than throwing — and deliberately
  * does not quietly narrow `all` to `owned`, which would hand the caller their
  * own rows and hide the bug.
@@ -154,8 +153,8 @@ export function parseTagsParam(value: string | null): string[] {
  * to text-only results.
  *
  * Two overloads, so the scope split is a compile error rather than a runtime
- * one (security-authz.plan.md §Follow-ups item 3): **any** kind may be searched
- * at `owned` (including a dynamically-typed `LibraryKind`), while `public`/`all`
+ * one: **any** kind may be searched at `owned` (including a dynamically-typed
+ * `LibraryKind`), while `public`/`all`
  * are accepted only for the shareable kinds whose table has a `visibility`
  * column. `OwnerOnlyLibraryKind` (personas) therefore cannot reach the public
  * predicate at all from statically-known call sites.
@@ -430,7 +429,7 @@ export async function loadLocationLinks(ownerId: string, locationId: string): Pr
 /**
  * Reconcile a location's undirected connections to exactly `targetIds` —
  * unknown/non-owned/self ids are dropped, missing links are inserted, removed
- * links are deleted (either orientation). One row per pair (docs/world.md).
+ * links are deleted (either orientation). One row per pair (docs/engine/world.md).
  */
 export async function setLocationLinks(ownerId: string, locationId: string, targetIds: readonly string[]): Promise<void> {
   const wanted = [...new Set(targetIds.filter((t) => t && t !== locationId))];

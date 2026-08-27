@@ -6,27 +6,24 @@ the unit is a **conversation** (`character_chats`): one character can host many
 conversations (a main story beside a fresh alternate universe), each with its own
 transcript, rolling summary, and per-participant state, and a **memory group** deciding
 what carries across ([../memory.md](../memory.md) §Memory keying). It began as a voice-tuning test-bed
-and is now a **primary feature** (shipped — see
-`character-chat-standalone.plan.md`):
+and is now a **primary feature**:
 it carries its own tracked state, long-term RAG memory, evolving attributes, scenario
 system, a stage-driven relationship arc, in-game time, and scene images. Since 2026-07-12
 a conversation can hold a **roster of up to 4 full characters**
-([multi-character.md](multi-character.md) —
-`multi-character-chat.plan.md`):
+([multi-character.md](multi-character.md)):
 narrative presence instead of locations, the one-block ensemble prompt frame, a
 per-conversation relationship matrix. It carries **no** locations, exposure mask, or story
 threads — but **wardrobe** reached full parity with the old session model as the first
-test-bed step (chat-wardrobe-parity, shipped 2026-07-14: structured worn
+test-bed step (shipped 2026-07-14: structured worn
 item state, computed exposure via the shared wardrobe classifier, an equip/unequip Character sheet
-— see [state.md](state.md) §Wardrobe and
-`chat-wardrobe-parity.plan.md`).
+— see [state.md](state.md) §Wardrobe).
 **Direction (R6 rollout complete 2026-07-22):** chat was the **test bed the successor
 simulation engine grew out of**. The original world/session model it was proving a
 replacement for is now **retired** (its play pages, turn pipeline, and world CRUD are
 deleted; the successor engine is live behind the `/worlds` front door — see the top-level
-[README](../README.md) and `CLAUDE.md`). Chat still leads new interaction/state/narration
+[README](../README.md)). Chat still leads new interaction/state/narration
 patterns, and is expected to migrate onto the successor as it matures.
-Where a shared mechanism exists (memory scope, the §6 reaction curve, disposition rendering,
+Where a shared mechanism exists (memory scope, the reaction curve, disposition rendering,
 narration shape, artifact stripping, the generate-timeout race, the draining stream Response),
 there is **one implementation** — the chat lane must never re-fork it.
 
@@ -66,7 +63,7 @@ there is **one implementation** — the chat lane must never re-fork it.
 - **Scene memory (schema + merge + movement switch)** — `contracts/turns/chat-scene-memory.ts`
 - **Supporting cast (schema + merge — §Supporting cast)** — `contracts/turns/chat-supporting-cast.ts` (pure) + `buildSupportingCastSection` in `prompts/character-chat.ts` + the finalize merge in `chat-state.ts`; panel in `components/chat/chat-supporting-cast-panel.tsx`
 - **Narrator input (§Narrator input)** — `wrapNarratorInput`/`narratorInputNote` in `prompts/character-chat.ts` + `inputMode` through route/pipeline (`meta.inputMode`) + the composer toggle in `chat-conversation.tsx`
-- **World beats (successor lane — world-ui.plan.md slice 2)** — a durable transcript trace of travel / time-skip / scene-ended events, `meta.worldBeat = { kind }` on an ordinary `role: "assistant"` row (no migration), the phrased line on `content`. Phrasing `apps/web/src/lib/simulation/world-beat.ts` (pure, `formatSimLanding` stamp — it stays in the app because the stamp bridges the story clock onto the chat lane's calendar); writer `writeWorldBeat` in `server/engine/sim-beats.ts` (fires from the sim-command route + admitted-NL-move seam); excluded from the narrator tail (`isWorldBeatMeta`); `MessageBubble` renders a muted system line; replaced slice 1's travel/skip success toasts
+- **World beats (successor lane)** — a durable transcript trace of travel / time-skip / scene-ended events, `meta.worldBeat = { kind }` on an ordinary `role: "assistant"` row (no migration), the phrased line on `content`. Phrasing `apps/web/src/lib/simulation/world-beat.ts` (pure, `formatSimLanding` stamp — it stays in the app because the stamp bridges the story clock onto the chat lane's calendar); writer `writeWorldBeat` in `server/engine/sim-beats.ts` (fires from the sim-command route + admitted-NL-move seam); excluded from the narrator tail (`isWorldBeatMeta`); `MessageBubble` renders a muted system line
 - **System prompt** — `server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`)
 - **Life stage & minor fence** ([prompts.md](prompts.md) §Life stage & the minor fence) — `contracts/world/life-stage.ts` (pure registry) + the identity hint / `buildLifeStageSection` / scoped `CONTENT_FRAMING` in `prompts/character-chat.ts`
 - **Relationship block / band profiles** — `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones)
@@ -77,9 +74,3 @@ there is **one implementation** — the chat lane must never re-fork it.
 - **Retrieval eval harness** — `scripts/eval/retrieval/` (`pnpm eval:retrieval` — never in `verify`; see its README)
 - **UI — the conversation** — `components/chat/chat-conversation.tsx` (full-screen `/chat/[chatId]`, [ui.md](../ui.md) §The conversation page) + `components/chat/` (`chat-relationship-panel`, `chat-pickup-strip`, `chat-scene-moments`) + siblings in `components/characters/` (`chat-message`, `chat-scene-strip`, `chat-status`, `chat-state-tools`, `chat-scenario-modal`)
 - **UI — editor Chat tab** — `components/characters/character-chat.tsx` — a summary surface only (Chat defaults + conversation list), never the transcript
-
-
-History: the feature shipped across the `character-chat*` plan family (see
-`developer-notes/finished/` and the roadmap's Shipped list); the shipped standalone plan lives in
-`character-chat-standalone.plan.md`.
-Current direction is the relationship-model v2 and multi-character chat plans.

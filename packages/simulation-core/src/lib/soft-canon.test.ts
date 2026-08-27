@@ -72,7 +72,7 @@ function entryFor(p: SoftCanonProposal, overrides: Record<string, unknown> = {})
   });
 }
 
-describe("E4.3 resolveSoftCanonProposals (§23.4 validation)", () => {
+describe("E4.3 resolveSoftCanonProposals (validation)", () => {
   it("mints a fresh entry with the scope's default TTL and this cut as provenance", () => {
     const { accepted, rejected } = resolve([proposal()]);
     expect(rejected).toEqual([]);
@@ -244,7 +244,7 @@ function canonEvent(
   });
 }
 
-describe("E4.3 replaySoftCanonHistory (§6.4 snapshot fold)", () => {
+describe("E4.3 replaySoftCanonHistory (snapshot fold)", () => {
   it("rebuilds the ledger from event snapshots alone, last snapshot winning", () => {
     const base = entryFor(proposal());
     const promoted = softCanonEntrySchema.parse({ ...base, status: "promoted", statusChangedAt: NOW });

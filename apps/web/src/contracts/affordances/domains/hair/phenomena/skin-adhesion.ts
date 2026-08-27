@@ -19,7 +19,7 @@ import {
 
 /**
  * `hair.strands_adhere_to_skin` — damp strands clinging where they actually
- * touch (hair spec §"Phenomena").
+ * touch.
  *
  * The four hard requirements, in the order failure is most informative:
  *

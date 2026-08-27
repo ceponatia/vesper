@@ -26,8 +26,8 @@ import {
 } from "@/contracts";
 
 /**
- * The chat lane's GARMENT affordance payload (body-attribute-affordances slice
- * 6). Sibling of `chat-affordances.ts`, which owns the hair half and the read
+ * The chat lane's GARMENT affordance payload. Sibling of
+ * `chat-affordances.ts`, which owns the hair half and the read
  * itself; this module owns exactly one job — turning wardrobe truth into the
  * lane-neutral `GarmentLanePayload`.
  *
@@ -140,7 +140,7 @@ export function buildChatGarmentAffordance(input: ChatGarmentAffordanceInput): C
   if (wornGarmentInstances(input.store, input.actorId).length === 0) return null;
 
   // Integrate each instance ONCE, lazily, to the story clock. The result is used
-  // and dropped — reading a garment must never dry it (the §25.2 law).
+  // and dropped — reading a garment must never dry it.
   const conditions = new Map<string, ReturnType<typeof integrateGarmentCondition>>();
   const regions: GarmentRegionInput[] = [];
   const state: GarmentRegionStateRead[] = [];

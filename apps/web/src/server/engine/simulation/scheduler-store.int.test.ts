@@ -370,7 +370,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
   });
 
   it("produces the same material outcome for one skip as for equivalent partitions", async () => {
-    // Spec §12.4: advance(T0,T3) must equal advance(T0,T1); advance(T1,T2); advance(T2,T3).
+    // Partition invariance: advance(T0,T3) must equal advance(T0,T1); advance(T1,T2); advance(T2,T3).
     async function run(partitions: number[]): Promise<Array<[number, string]>> {
       const ids = makeIds(2);
       await seedCase(ids);
@@ -585,7 +585,7 @@ describe.skipIf(!ready)("E2.4 durable scheduler", () => {
   });
 });
 
-// command-integrity.plan.md slice 2 (A2). Ruling A2-1 — the world's clock wins: the
+// Ruling A2-1 — the world's clock wins: the
 // turn-side advance is opt-in tolerant. `targetMode: "at_least"` treats the target as
 // a FLOOR (effective target = `max(requested, current clock)`), so a turn whose span was
 // overtaken by a concurrent skip/travel drain lands at the drained clock as a LEGAL

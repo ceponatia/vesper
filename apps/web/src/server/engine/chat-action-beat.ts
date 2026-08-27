@@ -1,7 +1,7 @@
 import type { ChatActionId } from "@/contracts";
 
 /**
- * Chat action beats (chat-action-beats.plan.md): the pure cue for a tapped action
+ * Chat action beats: the pure cue for a tapped action
  * chip. A chip is no longer a silent state nudge — it is a narrated one-beat
  * exchange (`action_beat`). The engine applies the chip's deterministic effect to
  * the drifted state pre-narration (so the reply reflects the shift) and hands the

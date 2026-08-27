@@ -6,14 +6,14 @@
 export { CHARACTER_CHAT_HISTORY_TURNS, EPISODE_WINDOW } from "../constants";
 
 /**
- * Narration *shape profiles* (narrator-prompt-focus.plan.md §1.1) — the length /
+ * Narration *shape profiles* — the length /
  * focus guidance that opens the prose-style rules. A global dev/code A/B knob, not
  * a per-world field: instead of one hard-coded "3–5 paragraphs" floor (which made a
  * quiet "hi" manufacture errands and extra speakers to fill it), narration length
  * is a named profile, threaded through the builders as `narrationShape` so the eval
  * harness can sweep both in one process and both are snapshot-tested. The live
  * default is resolved by `narrationShapeId()`; authors tune richness through the
- * authored Style directives instead (decision 2).
+ * authored Style directives instead.
  */
 export type NarrationShapeId = "concise_immersive" | "aggressive_concise";
 
@@ -25,9 +25,8 @@ export const NARRATION_SHAPE_IDS = ["concise_immersive", "aggressive_concise"] a
 export const DEFAULT_NARRATION_SHAPE: NarrationShapeId = "concise_immersive";
 
 /**
- * Per-lane resting default shape profile (narrator-prompt-focus.plan.md decision 1,
- * re-ruled 2026-06-29). Run 2 of the behavioral eval
- * (narrator-prompt-focus.eval-results.md) found a per-model split the single global
+ * Per-lane resting default shape profile (re-ruled 2026-06-29). Run 2 of the
+ * behavioral eval found a per-model split the single global
  * default couldn't serve: the **session** narrator (Aion 2.0) prefers
  * `concise_immersive` (83% pairwise + best voice), while the **chat** default (GLM 5.2)
  * prefers `aggressive_concise` (71%). The live dev override still forces BOTH lanes when
@@ -56,7 +55,7 @@ export const NARRATION_SHAPE_PROFILES: Record<NarrationShapeId, string> = {
     "padding, no summary, no wrap-up. End on a natural sentence.",
 };
 
-// The live dev override (narrator-prompt-focus.plan.md §1.1 "Live dev toggle"): a
+// The live dev toggle override: a
 // server-side value flipped by the dev-only POST /api/dev/narration-shape route and
 // read here by `narrationShapeId()`. undefined ⇒ no override (fall through to env /
 // default). Dev-only and process-local — undefined in production (the route is 404
@@ -93,8 +92,8 @@ export function narrationShapeId(lane: NarrationLane): NarrationShapeId {
 }
 
 /**
- * The chat prompt LAYOUT switch (narrator-prompt-consolidation.plan.md slice 5) —
- * experimental, default-off. `system_tail` (today's layout): the volatile tail rides
+ * The chat prompt LAYOUT switch — experimental, default-off.
+ * `system_tail` (today's layout): the volatile tail rides
  * the system prompt, ahead of the history in token order, so each turn's tail change
  * re-processes the whole history. `turn_context`: the session lane's shape — system =
  * stable prefix only; the tail + fenced current input ride a final user message
@@ -107,9 +106,9 @@ export function chatPromptLayout(): ChatPromptLayout {
 }
 
 /**
- * The GARMENT NARRATION switch (clothing-state-graph.plan.md slice 6) —
+ * The GARMENT NARRATION switch —
  * experimental, default-off, exactly like `CHAT_PROMPT_LAYOUT` above and for the
- * same reason: the slice carries a live-model tuning gate ("tune contradiction,
+ * same reason: it carries a live-model tuning gate ("tune contradiction,
  * repetition, concrete-detail, and extraction accuracy before enabling by
  * default") and that eval spend is owner-gated.
  *
@@ -163,8 +162,7 @@ export function chatAffordanceCuesEnabled(): boolean {
 }
 
 /**
- * The CONSTRAINT-FIRST NARRATOR GUIDANCE switch
- * (narrator-physical-guidance.plan.md slice 2) — ON in production since 2026-08-02
+ * The CONSTRAINT-FIRST NARRATOR GUIDANCE switch — ON in production since 2026-08-02
  * (deployed Fly secret), and the REPLACEMENT for `CHAT_AFFORDANCE_CUES` above rather
  * than a second version of it. The code default is still off, so a build with the env
  * unset behaves as the OFF paragraph below describes — but that is no longer what the
@@ -174,11 +172,11 @@ export function chatAffordanceCuesEnabled(): boolean {
  * turn, this projects committed truth mostly as prohibitions: what the narrator must
  * not claim about this body (a braid is not streaming loose) plus the high-confidence
  * false premises in the player's own framing that it must not adopt. There is no
- * positive detail in it at all — that is slice 4's separately-flagged, change-gated
- * experiment (`CHAT_PHYSICAL_TRANSITIONS`), and the two get independent measured
+ * positive detail in it at all — that is the separately-flagged, change-gated
+ * `CHAT_PHYSICAL_TRANSITIONS` experiment, and the two get independent measured
  * ship/park decisions.
  *
- * OFF (the code default, and anything other than `on`) is the pre-slice-2 behavior to
+ * OFF (the code default, and anything other than `on`) is the pre-feature behavior to
  * the byte: no premise detection, no guidance compile, no block on the narrator prompt,
  * and — since the flag also decides whether the affordance read is taken at all — no
  * adapter call either unless another flag wants one. ON — what production runs — adds
@@ -195,9 +193,8 @@ export function chatPhysicalConstraintsEnabled(): boolean {
 }
 
 /**
- * The AFFECTIONATE CONTACT switch (romantic-contact-affordances.plan.md
- * §"Continuation order" 1) — experimental, default-off, the same shape as every
- * flag above.
+ * The AFFECTIONATE CONTACT switch — experimental, default-off, the same shape as
+ * every flag above.
  *
  * OFF (the default, and anything other than `on`) is today's behavior to the
  * byte: no scene seeding, no movement or touch detection, no contact
@@ -234,8 +231,8 @@ export function chatContactActionsEnabled(): boolean {
 }
 
 /**
- * The CONTACT-EFFECTS switch (romantic-contact-affordances.spec.effects.md §15
- * stages 5–6, the pressure-mark first proof) — default-off, and effective ONLY
+ * The CONTACT-EFFECTS switch (the pressure-mark first proof) — default-off, and
+ * effective ONLY
  * with `CHAT_CONTACT_ACTIONS=on`: an effect proposal is derived from a contact
  * this exchange durably committed, so granting effects while the lane that
  * commits contacts is off would be a flag that quietly re-enables another
@@ -249,8 +246,8 @@ export function chatContactActionsEnabled(): boolean {
  * into the PRIMARY character's `ChatState.bodySurface` at settle through the
  * body-surface owner transaction (`applyBodyMarkProposals`). The committed mark
  * is observable from the NEXT cut — visual state reads it as a
- * `body_surface.contact_mark` feature — never in the cut that proposed it
- * (effects spec §12). Retakes need no flag: the mark rides the state row's
+ * `body_surface.contact_mark` feature — never in the cut that proposed
+ * it. Retakes need no flag: the mark rides the state row's
  * pre-exchange snapshot, so the ordinary rollback restores or removes it with
  * the story cut. Env-only, no dev route.
  */
@@ -259,9 +256,7 @@ export function chatContactEffectsEnabled(): boolean {
 }
 
 /**
- * The NPC REPLY-SCENE DECISION SHADOW switch
- * (romantic-contact-affordances.spec.actor-control.md §"Execution, flags, and
- * cost gate"; delivery-order step 3) — experimental, default-off, the same
+ * The NPC REPLY-SCENE DECISION SHADOW switch — experimental, default-off, the same
  * literal-`on` shape as every flag above.
  *
  * OFF (the default, and anything other than `on`) is today's behavior to the
@@ -300,9 +295,8 @@ export function chatNpcSceneDecisionsEnabled(): boolean {
 }
 
 /**
- * The three authority KINDS the reply-scene leg can execute, in the spec's own
- * delivery order (movement → starts → updates; spec §"Delivery order and
- * gates" 4–6).
+ * The three authority KINDS the reply-scene leg can execute, in delivery order:
+ * movement → starts → updates.
  */
 export const NPC_SCENE_AUTHORITY_KINDS = ["movement", "start", "update"] as const;
 export type NpcSceneAuthorityKind = (typeof NPC_SCENE_AUTHORITY_KINDS)[number];
@@ -379,9 +373,9 @@ export function chatRomanticPermissionDevOverrideEnabled(): boolean {
 }
 
 /**
- * The RECOGNIZABLE-FEATURES switch (body-attribute-affordances.plan.md slice 7) —
+ * The RECOGNIZABLE-FEATURES switch —
  * experimental, default-off, the third of the same shape as `CHAT_GARMENT_CUES`
- * and `CHAT_AFFORDANCE_CUES` above, and for the same reason: slice 7 is a trial,
+ * and `CHAT_AFFORDANCE_CUES` above, and for the same reason: it is a trial,
  * and the live-model comparison it exists to run is owner-gated.
  *
  * OFF (the default, and anything other than `on`) is today's behavior to the
@@ -404,10 +398,9 @@ export function chatRecognitionCuesEnabled(): boolean {
 }
 
 /**
- * The VISUAL-STATE SHADOW switch (visual-state.plan.md slice 6; spec §Flags) —
- * measurement-only, default-off, the same literal-`on` shape as every flag
- * above. The spec leaves the shadow default open, so it defaults OFF as the
- * conservative reading.
+ * The VISUAL-STATE SHADOW switch — measurement-only, default-off, the same
+ * literal-`on` shape as every flag above. OFF is the conservative default for a
+ * measurement-only projection.
  *
  * OFF (the default, and anything other than `on`) is today's behavior to the
  * byte: no snapshot assembly, no selections, no extra memory read, no log line.

@@ -29,8 +29,7 @@ import { useToast } from "@/components/ui/toast";
 import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-shared";
 
 /**
- * The curated LoRA library, on the image-models settings page
- * (image-model-capabilities.spec.md §`image_loras`).
+ * The curated LoRA library, on the image-models settings page.
  *
  * A LoRA is unlike every other setting on this page: the value stored is not a
  * number a model declared a range for, it is a POINTER to somebody else's weights
@@ -281,8 +280,8 @@ function ImageLoraRow({
             {lora.builtin ? <Tag>built-in</Tag> : null}
             <Tag tone={lora.enabled ? "ok" : "default"}>{lora.enabled ? "enabled" : "switched off"}</Tag>
           </div>
-          {/* Redacted, always: a direct URL can carry signed query parameters, and
-              this screen is one of the places the spec forbids them reaching. */}
+          {/* Redacted, always: a direct URL can carry signed query parameters, which
+              must never reach this screen. */}
           <p className="mt-0.5 font-mono text-[11px] break-all text-paper-500">
             {`${locatorTypeLabel(lora.locatorType)} · ${redactImageLoraLocator(lora.locator)}`}
           </p>

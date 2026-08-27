@@ -11,8 +11,7 @@ import {
 /**
  * Environment resolution is the APPLICATION's half of the Replicate split: the
  * transport package reads no `process.env` at all, so the rules for what an
- * unset, blank or nonsense variable means live here and are pinned here
- * (monorepo-image-core.spec.replicate.md §"Environment inversion").
+ * unset, blank or nonsense variable means live here and are pinned here.
  *
  * `src/test/setup.ts` deletes the token for every application test, so each case
  * states the deployment it is about rather than inheriting one.

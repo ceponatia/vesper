@@ -43,11 +43,11 @@ Per fixture, against `expectRelevant` / `expectExcluded` keys:
   reported with its reason: `floor` (should have scored under `FACT_MIN_SCORE` /
   `EPISODE_MIN_SCORE`) or `window` (an episode inside the `EPISODE_WINDOW` recency window,
   which must stay out structurally).
-- **Pinned force-include** — pinned fixture facts (spec §6.4 "remember this") must surface
+- **Pinned force-include** — pinned fixture facts ("remember this") must surface
   even when dissimilar to every query.
 - **Fused vs joined baseline** — each fixture also runs its queries newline-joined as ONE
   `retrieveFacts`/`retrieveEpisodes` call; `Δrec` (fused recall − joined recall) is the
-  honest measure of what per-query embedding + RRF fusion (§6.3 #2) bought. Expect the
+  honest measure of what per-query embedding + RRF fusion bought. Expect the
   delta on `multi-query-fusion`-style fixtures, ~0 on single-query ones.
 - **Score matrix** (JSON only) — every seeded doc's best raw cosine across the queries,
   computed client-side with the same embedder. This is the floor-tuning payload: it shows

@@ -4,7 +4,7 @@ import { parseOr } from "@/lib/parse";
 import { characters, db, type images, items, locations, socialCards } from "@/server/db";
 
 /**
- * The authorization seam for shareable entities (auth.plan.md). One place owns
+ * The authorization seam for shareable entities. One place owns
  * the asymmetry: **reads** on the browse/preview/copy path widen to
  * owner-or-public; **every write stays owner-strict** (PATCH/DELETE still match
  * on `ownerId`, so a non-owner write 404s — it never confirms the row exists).
@@ -72,7 +72,7 @@ export async function findViewable(kind: ShareableKind, id: string, userId: stri
  * the preview path. World images and scene images (entityKind null) are never
  * shareable, so they stay owner-only.
  *
- * The ownership predicate is load-bearing (security-authz.plan.md slice 3):
+ * The ownership predicate is load-bearing:
  * `entityKind`/`entityId` are polymorphic metadata with no FK, so without it the
  * gate reads "some public row carries this id" and any path that ever lets a
  * user write those two columns turns their own private asset into a
@@ -103,8 +103,8 @@ export async function isPublicEntityImage(
 }
 
 /**
- * The **public representations** of the shareable kinds (security-authz.plan.md
- * slice 4). "Public" means *the approved public representation*, never the
+ * The **public representations** of the shareable kinds. "Public" means *the
+ * approved public representation*, never the
  * persisted row: each projection is an explicit allow-list, so a column added
  * later is private by default and only joins the public surface when someone
  * puts it here deliberately.
@@ -119,7 +119,7 @@ export async function isPublicEntityImage(
  * routes split on `row.ownerId === user.id`, never on the shape alone.
  *
  * The character projection goes one level deeper and narrows the `profile`
- * jsonb too (security-authz.plan.md OQ2, ruled **conservative
+ * jsonb too (ruled **conservative
  * private-by-default**): a public preview shows presentation data only, so the
  * narrator guidance, authored secrets and hidden stance an author writes for
  * their own use never reach a foreign viewer. That allow-list lives beside the
@@ -191,7 +191,7 @@ export function toPublicSocialCard(row: typeof socialCards.$inferSelect) {
  * render it through `/api/images/[id]/file`, and nothing else. No `path`
  * (storage layout), no `prompt` (prompts embed authored/chat text, which is why
  * `deleteChat` scrubs them), no `status`/`meta`/`sourceImageId` provider
- * internals (security-authz.plan.md slice 4).
+ * internals.
  */
 export function toPublicEntityImage(row: typeof images.$inferSelect) {
   return {

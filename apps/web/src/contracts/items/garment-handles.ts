@@ -3,10 +3,10 @@ import { garmentBlueprintFor, garmentLocusActorId, garmentsAtScenePlace } from "
 import type { ChatGarmentStore, GarmentInstanceState, GarmentLocusKind } from "./garment-instance";
 
 /**
- * The continuity extractor's HANDLE TABLE (clothing-state-graph.plan.md §Slice 5;
- * §"Models propose semantic operations, never raw state" — "the continuity prompt
- * enumerates only in-scope opaque garment and part handles; the extractor returns
- * those handles, not names to fuzzy-match").
+ * The continuity extractor's HANDLE TABLE. Models propose semantic operations,
+ * never raw state: the continuity prompt enumerates only in-scope opaque garment
+ * and part handles, and the extractor returns those handles, not names to
+ * fuzzy-match.
  *
  * This module is the enumeration half: a pure, deterministic, bounded projection
  * of the chat garment store into the short opaque strings the archivist prompt

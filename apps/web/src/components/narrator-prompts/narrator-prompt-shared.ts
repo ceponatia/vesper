@@ -1,6 +1,5 @@
 /**
- * The Prompt Lab's small shared vocabulary (narrator-prompt-lab.plan.md
- * §"What the owner gets → Prompt Lab page").
+ * The Prompt Lab's small shared vocabulary.
  *
  * The library pane and the editor pane both have to say the same things about
  * the same template — how many conversations use it, what saving will do to
@@ -38,7 +37,7 @@ export function usageCountLabel(usageCount: number): string {
 }
 
 /**
- * The warning the plan asks for BEFORE a save that will reach live
+ * The warning shown BEFORE a save that will reach live
  * conversations, not a toast after the fact: a saved body is an experimental
  * revision, and the owner should know how far it travels before it travels.
  */

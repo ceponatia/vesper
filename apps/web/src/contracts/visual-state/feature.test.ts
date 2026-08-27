@@ -114,7 +114,7 @@ describe("visualStateFingerprint", () => {
   });
 
   /**
-   * The literal form, pinned (visual-state.audit.md finding 9). Every other
+   * The literal form, pinned. Every other
    * property here — order insensitivity, separation, determinism — is equally
    * true of a hash, so without this assertion the fingerprint could be swapped
    * for `fnv1aHex` with the whole suite still green. It cannot: observer memory

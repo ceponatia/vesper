@@ -18,9 +18,8 @@ import {
 } from "./cue-state";
 
 /**
- * Slice-7 cue-state tests (visual-state.plan.md §Open questions → "how
- * repetition and first visibility are tracked for facts recognition does not
- * hold", ruled 2026-08-17).
+ * Cue-state tests: how repetition and first visibility are tracked for facts
+ * recognition does not hold (ruled 2026-08-17).
  *
  * The two questions this record exists to answer, proved separately: was this
  * family in view LAST cut, and when did the narrator last say it. Plus the

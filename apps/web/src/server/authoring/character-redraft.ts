@@ -11,8 +11,7 @@ import type { CharacterDraft } from "./drafts";
 import type { ClothingCandidateLookup, LibraryLookup } from "./library";
 
 /**
- * Per-tab Re-draft (character-sheet-forge.plan.md; re-ruled 2026-07-12 —
- * multi-character-chat.followups.md ruling 1): a FULL re-sync of ONE tab from
+ * Per-tab Re-draft (re-ruled 2026-07-12): a FULL re-sync of ONE tab from
  * the whole sheet, formatted for the narrator — personality prose moves out of
  * the bio, attributes derive from what the other tabs say. Player-set values
  * are revisable too (the unsaved-draft review is the safety net); the scope

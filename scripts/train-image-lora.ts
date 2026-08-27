@@ -8,8 +8,8 @@ import { parseArgs } from "node:util";
 import { z } from "zod";
 
 /**
- * The character-LoRA training runbook, as a script
- * (qwen-advanced-image-subsystem.plan.md §"Stage 5 — one character LoRA pilot").
+ * The character-LoRA training runbook, as a script — the one-character LoRA
+ * pilot.
  *
  *   pnpm tsx scripts/train-image-lora.ts --dataset-dir ./sabrina --name Sabrina \
  *     --destination brian/sabrina-lora --create-destination --yes

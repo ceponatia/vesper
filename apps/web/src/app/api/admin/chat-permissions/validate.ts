@@ -1,18 +1,16 @@
 import { affordanceSubjectId, type AffordanceSubjectId } from "@/contracts";
 
 /**
- * Direction validation for the `romantic_touch` developer-override endpoint
- * (romantic-contact-affordances.spec.permission.md §"Authorship and developer
- * controls"; plan ruling 1) — the pure half of the route's POST, extracted so
- * the participant rules are unit-testable without a database.
+ * Direction validation for the `romantic_touch` developer-override endpoint —
+ * the pure half of the route's POST, extracted so the participant rules are
+ * unit-testable without a database.
  *
  * A permission key is directional: `permitted actor → granting target`. The
  * override may name:
  *
  * - **granting target**: a roster NPC of the chat, and NEVER the player — the
  *   ruled player-target exception means no standing player grant exists, so
- *   there is nothing for an override to edit (spec §"Direction and participant
- *   rules");
+ *   there is nothing for an override to edit;
  * - **permitted actor**: the lane's player subject or a roster NPC, and never
  *   the target itself — a self-directed grant is not a direction.
  *

@@ -1,7 +1,7 @@
 import { normalizeConditionLabel, type ConditionEffect } from "./condition";
 
 /**
- * Known condition label → its structured effects (character-chat-state-narration.spec.md §2).
+ * Known condition label → its structured effects.
  * Conditions are created across the app with `attributeEffects: []`; this catalog lets a
  * recognised label arrive with real attribute overlays attached (the chat lane seeds from
  * it when an action/pulse/author creates a condition), mirroring the label→senseEffects
@@ -9,8 +9,8 @@ import { normalizeConditionLabel, type ConditionEffect } from "./condition";
  * trimmed). Only **mutable** attributes belong here — `conditionAttributeOverlays` drops any
  * effect that targets an inherent attribute, so a bad entry degrades, never corrupts.
  *
- * Deliberately small: the headline state cues (drunk, low hygiene) are *meter*-driven
- * (§3/§4), not condition-driven. This catalog covers explicit narrative conditions whose
+ * Deliberately small: the headline state cues (drunk, low hygiene) are *meter*-driven,
+ * not condition-driven. This catalog covers explicit narrative conditions whose
  * physical signature wants to ride into the attribute set. Extend by adding a row.
  */
 export interface CatalogCondition {

@@ -11,10 +11,9 @@ import {
 
 /**
  * The general owner-scoped image sources listing — what the reusable picker
- * renders (image-lab-general-model-trials.spec.md §"Owned-image sources
- * endpoint"). Ready rows only, every kind except the two system-bookkeeping
- * ones, ids and label metadata only — bytes stay behind the authorized image
- * file route.
+ * renders. Ready rows only, every kind except the two system-bookkeeping ones,
+ * ids and label metadata only — bytes stay behind the authorized image file
+ * route.
  */
 
 const limitSchema = z.coerce

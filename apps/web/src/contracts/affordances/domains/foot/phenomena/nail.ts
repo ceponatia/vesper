@@ -13,13 +13,12 @@ import {
 } from "./bands";
 
 /**
- * `foot.nail_contact` — a nail plate actually meeting a surface
- * (romantic-contact-affordances.spec.foot.md §`foot.nail_contact`).
+ * `foot.nail_contact` — a nail plate actually meeting a surface.
  *
  * Two observation bands and no third: `light_nail_trace` and `firm_nail_edge`.
- * **A scratch is not here and must not be.** The spec is explicit — *"A scratch
- * is only a proposed effect until the body-state owner commits it"* — and the
- * effects companion puts marks and scratches in slice 4. This phenomenon
+ * **A scratch is not here and must not be.** A scratch is only a proposed effect
+ * until the body-state owner commits it, and marks and scratches belong to the
+ * effect layer. This phenomenon
  * therefore has no magnitude, no mark, and no vocabulary that could become one:
  * it says a nail is involved and how firmly, and stops.
  *

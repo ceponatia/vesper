@@ -4,7 +4,7 @@ import { sdRecipeIdSchema } from "../recipes/sd-recipes";
 
 /**
  * The public input contract of the Vesper-owned Stable Diffusion renderer —
- * conceptually `vesper/sdxl-character-render` (sd-rendering-package.plan.md §5).
+ * conceptually `vesper/sdxl-character-render`.
  *
  * **Complexity belongs inside the renderer.** One prediction may internally run
  * identity conditioning, a ControlNet, SDXL sampling, targeted inpainting and a
@@ -19,9 +19,9 @@ import { sdRecipeIdSchema } from "../recipes/sd-recipes";
  * **The field names are snake_case on purpose.** They are the vocabulary
  * Vesper's existing Replicate capability probe already reads, so the deployment
  * registers as an ordinary `image_models` row and its inputs bind to image-core
- * controls with no Stable Diffusion special case anywhere in the render path
- * (§14, §16). This is the one place in the package where an external naming
- * convention wins over the repository's.
+ * controls with no Stable Diffusion special case anywhere in the render path.
+ * This is the one place in the package where an external naming convention wins
+ * over the repository's.
  *
  * **This schema is a seam, not a transport.** It says what the model accepts;
  * it does not build a request, upload a file, or call anything. Transport stays
@@ -38,22 +38,22 @@ const referenceImage = z.string().min(1);
 export const sdxlCharacterRenderInputSchema = z.object({
   prompt: z.string().min(1),
   /**
-   * Authored by Vesper, never assembled here (§19). A legitimate render can
+   * Authored by Vesper, never assembled here. A legitimate render can
    * contain unusual anatomy, prosthetics, text, logos, blur, non-human features
    * or an authored wardrobe state, so a package-side generic negative string
    * would contradict canonical visual state it cannot see.
    */
   negative_prompt: z.string().optional(),
-  /** The identity anchor for PuLID-style conditioning (§8, layer 3). */
+  /** The identity anchor for PuLID-style conditioning (layer 3). */
   reference_image: referenceImage.optional(),
-  /** Structural control maps, in image-core's `pose`/`depth` reference roles (§11). */
+  /** Structural control maps, in image-core's `pose`/`depth` reference roles. */
   pose_image: referenceImage.optional(),
   depth_image: referenceImage.optional(),
-  /** Inpainting inputs. §12: repair, not the normal route for changing authored state. */
+  /** Inpainting inputs: repair, not the normal route for changing authored state. */
   mask_image: referenceImage.optional(),
   source_image: referenceImage.optional(),
   /**
-   * One LoRA, matching Vesper's existing single-selection limit (§10). The slot
+   * One LoRA, matching Vesper's existing single-selection limit. The slot
    * is the character identity LoRA; multi-LoRA stacking is explicitly deferred
    * until identity rendering works and a style LoRA proves worth the extra slot.
    */

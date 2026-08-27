@@ -7,8 +7,7 @@ export type IdentityPackParams = { packId: string };
 /**
  * The self-scoped boundary both pack-id admin handlers share.
  *
- * A pack id in a URL is not authorization even for an administrator
- * (image-identity-packs.spec.lifecycle.md §"Authorization root"): the resolver
+ * A pack id in a URL is not authorization even for an administrator: the resolver
  * walks pack → character → owner and refuses anything that is not the requesting
  * admin's, which `withOwnerAdminResource` turns into the same 404 a nonexistent
  * pack gets. `/api/admin/self` is by definition the administrator's own data;

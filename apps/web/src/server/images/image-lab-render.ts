@@ -56,8 +56,7 @@ import {
  * may not read. It reaches for the SHARED resolver (`imageRenderRuntimeFacts`)
  * rather than one of its own, so a lab render can never compile under a
  * different safety setting or a different model dialect than the lane it is
- * imitating (monorepo-image-core.spec.render-kernel.md §"The remaining
- * inversions").
+ * imitating.
  */
 
 // ---------------------------------------------------------------------------
@@ -407,7 +406,7 @@ export async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeI
       // render for evidence, so it is judged by production's rules — the row's
       // `allowedTasks` curation included. Evidence gathered under rules
       // production does not apply would be evidence about a lane that does not
-      // exist (image-model-adapters.spec.md §"Execution context").
+      // exist.
       { model, versionId: input.versionId, execution: { kind: "image_lab", task: recipeProfile.task } },
       sink,
     );
@@ -434,7 +433,7 @@ export async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeI
     // A bench lane, so two-phase budgets and one startup retry: an admin
     // waiting on evidence can afford a cold-boot queue that a player cannot,
     // and a prediction the queue killed says nothing about the recipe under
-    // test (plan §8). Production lanes deliberately carry none.
+    // test. Production lanes deliberately carry none.
     executionPolicy: benchExecutionPolicy(model),
   };
   const planned = planImageRender(intent, imageRenderRuntimeFacts(model));

@@ -363,7 +363,7 @@ export function isCommitmentEvent(event: SimulationBranchEvent): event is Simula
  * `branch-store.ts`'s `forkBranch` stamps each forked engagement row's
  * `updatedSequence` from the LATEST event in this list touching that
  * engagement id, and `pressure_acknowledged` genuinely changes engagement
- * state (`acknowledgedPressureIds`, §4.6) — omitting it would silently
+ * state (`acknowledgedPressureIds`) — omitting it would silently
  * under-stamp `updatedSequence` whenever acknowledgment is the most recent
  * touch, the same "last touched" bookkeeping `audit-store.ts` already relies
  * on for items. `isEngagementEvent`/`SimulationEngagementEvent` have exactly
@@ -492,9 +492,9 @@ export function isHouseholdEvent(event: SimulationBranchEvent): event is Simulat
  * (Slice 3 — its accept/decline outcome folds into a `permission_granted`/
  * `consent_declined` ledger entry same as any other consent-scoped write).
  * `pressure_acknowledged` (also Slice 3) is deliberately NOT a member of this
- * family — acknowledgment produces no ledger entry at all (§1.7): it is a
- * pure engagements/commitments cross-domain fact, folded by those two
- * projections directly (§4.6), never by the relationship ledger.
+ * family — acknowledgment produces no ledger entry at all: it is a pure
+ * engagements/commitments cross-domain fact, folded by those two projections
+ * directly, never by the relationship ledger.
  */
 const relationshipEventTypeList = [
   "relationship_entry_authored",
@@ -620,7 +620,7 @@ export type SimulationCommandResultRecord =
   | PromoteActorFromCohortCommandResult;
 
 // ---------------------------------------------------------------------------
-// Branch fork (spec §29.3)
+// Branch fork
 // ---------------------------------------------------------------------------
 
 export const forkReasonSchema = z.string().trim().min(1).max(500);
@@ -672,7 +672,7 @@ export const branchForkResultSchema = z
 export type BranchForkResult = z.infer<typeof branchForkResultSchema>;
 
 // ---------------------------------------------------------------------------
-// Snapshots (spec §10.4)
+// Snapshots
 // ---------------------------------------------------------------------------
 
 export const itemTransferSnapshotProjectionKind = "item_transfer" as const;
@@ -720,7 +720,7 @@ export function deriveSnapshotId(
 }
 
 // ---------------------------------------------------------------------------
-// Projection rebuild and comparison (spec §10.4, plan deliverable)
+// Projection rebuild and comparison
 // ---------------------------------------------------------------------------
 
 export const projectionRebuildResultSchema = z
@@ -739,7 +739,7 @@ export const projectionRebuildResultSchema = z
 export type ProjectionRebuildResult = z.infer<typeof projectionRebuildResultSchema>;
 
 // ---------------------------------------------------------------------------
-// Causal explanation (spec §35.3, plan deliverable)
+// Causal explanation
 // ---------------------------------------------------------------------------
 
 const explainedEventSchema = z

@@ -137,9 +137,9 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
   });
 });
 
-// Item facet filtering (library-ux.plan.md §2): definition-jsonb conditions
-// applied before the result cap, wearer's absent/unisex-match-everything
-// semantics, multi-tag AND, and name sort.
+// Item facet filtering: definition-jsonb conditions applied before the result
+// cap, wearer's absent/unisex-match-everything semantics, multi-tag AND, and
+// name sort.
 describe.skipIf(!ready)("searchLibraryIds item facets", () => {
   let blouse: string;
   let jeans: string;

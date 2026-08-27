@@ -5,7 +5,7 @@ import { generateChecked, isDemoMode, visionModelId, withGenerateTimeout, type G
 import { absoluteImagePath } from "../images";
 
 /**
- * The chat-photo vision read (chat-image-input.plan.md): ONE batched call
+ * The chat-photo vision read: ONE batched call
  * describes every photo a player message attached (owner ruling: multi-image
  * from the start ⇒ one call, ordered descriptions — never a call per image).
  * The descriptions are what the narrator "sees" (injected as seen-channel

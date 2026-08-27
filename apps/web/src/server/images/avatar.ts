@@ -39,9 +39,8 @@ export interface GenerateAvatarInput {
 /**
  * A refused avatar render's diagnostic: the standalone visual digest could not
  * make the character render-eligible — a required fact resolved no clause, or
- * the assembly itself failed. The row is failed BEFORE any provider spend
- * (spec.prompts.md §Failure behavior); production never falls back to the
- * legacy prose builder.
+ * the assembly itself failed. The row is failed BEFORE any provider spend;
+ * production never falls back to the legacy prose builder.
  */
 export const AVATAR_DIGEST_INELIGIBLE = "images.avatar.visual_digest_ineligible";
 
@@ -188,9 +187,8 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     onReady: async (asset) => {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
       // Strictly AFTER the canonical pointer commits, and strictly best-effort:
-      // identity-pack preparation must never fail or delay a valid portrait
-      // (image-identity-packs.spec.lifecycle.md §"Creation after a canonical
-      // portrait"). Returns void, so nothing here can reject.
+      // identity-pack preparation must never fail or delay a valid portrait.
+      // Returns void, so nothing here can reject.
       queueIdentityPackPreparation(input.characterId, input.userId);
     },
     onSettled: ({ imageId: id, status, startedMs }) =>

@@ -34,10 +34,8 @@ import {
 import { insertVerifiedLedgerRows, ledgerMismatches, type LedgerKey } from "./ledger-verify";
 
 /**
- * THE CHAT LANE'S DURABLE ROMANTIC-PERMISSION LEDGER
- * (romantic-contact-affordances.spec.permission.md §"Events and active
- * projection", §"Retakes and branches", §"Revocation during active contact";
- * implementation-order step 1).
+ * THE CHAT LANE'S DURABLE ROMANTIC-PERMISSION LEDGER — events and the active
+ * projection, retakes and branches, and revocation during active contact.
  *
  * The one IO module of the permission seam, modeled row-for-row on
  * `chat-contact-events.ts`. Everything above it — the event schema, the
@@ -64,8 +62,7 @@ import { insertVerifiedLedgerRows, ledgerMismatches, type LedgerKey } from "./le
  * fresh `derivePermissionPolicyRead` reads, the resulting `contact_ended`
  * commits appended to the CONTACT ledger under the same event ref, and the
  * updated scene projection — so the permission ledger, the contact ledger, and
- * the scene can never expose a mixed state (spec §"Revocation during active
- * contact" steps 1–3; the narrator handoff of step 4 is a later slice).
+ * the scene can never expose a mixed state.
  *
  * ## Event-ref namespaces
  *
@@ -168,8 +165,8 @@ export interface AppendChatPermissionEventsInput {
    * Optional operator-audit record, inserted into the app `events` table INSIDE
    * the same transaction as the ledger rows (the `setChatEngineAuthority`
    * precedent) — how the developer-override endpoint records its auditable
-   * `developer_override` source (spec §"Authorship and developer controls").
-   * The append stamps the invalidation sweep's `endedContactIds` into the
+   * `developer_override` source. The append stamps the invalidation sweep's
+   * `endedContactIds` into the
    * payload before inserting, because they are computed by this call, not the
    * caller. Written only when the append commits `recorded`; a mismatched or
    * refused append audits nothing, because nothing happened. Omitted by every
@@ -406,7 +403,7 @@ const PERMISSION_PRUNE_BACKOFF_MS = [50, 200];
  * pruning a discarded take's durable rows is hygiene of state that already
  * exists, never gated on the flag that decides whether new events are produced.
  * A discarded reply's grant, denial, or withdrawal must not survive into the
- * replacement take (spec §"Retakes and branches").
+ * replacement take.
  *
  * Retries, unlike its contact twin, because the two failures are not equally
  * bad: a stranded contact row is a divergence the append's verification catches
@@ -561,8 +558,7 @@ class ChatPermissionSceneStaleError extends Error {
 
 /**
  * Record permission events AND everything their withdrawals invalidate,
- * atomically — THE single entry point for every producer (spec
- * §"Revocation during active contact"; ruled 2026-08-04).
+ * atomically — THE single entry point for every producer (ruled 2026-08-04).
  *
  * One `db().transaction`:
  *

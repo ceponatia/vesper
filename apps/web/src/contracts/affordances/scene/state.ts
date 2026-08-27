@@ -13,8 +13,7 @@ import type {
 } from "./vocabulary";
 
 /**
- * The scene state container — the whole of what this module owns
- * (romantic-contact-affordances.spec.scene.md §"State").
+ * The scene state container — the whole of what this module owns.
  *
  * Five collections and a version. Each collection exists because its facts have
  * a different ARITY, and collapsing them would force one of them to lie:

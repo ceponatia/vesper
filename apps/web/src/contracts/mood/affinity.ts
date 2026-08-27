@@ -2,8 +2,8 @@ import { relationshipStages } from "../relationships/stages";
 
 /**
  * Ordinal rank of a relationship stage (0 = `hostile` … 10 = `smitten`), used by the
- * emotion projection (warm-affinity → `affectionate`) and welcome/unwelcome touch
- * (mood.spec.md §5). Reading the *order* — not the raw affinity scalar — keeps the
+ * emotion projection (warm-affinity → `affectionate`) and welcome/unwelcome
+ * touch. Reading the *order* — not the raw affinity scalar — keeps the
  * warmth thresholds as stage ids (tunable in one place) rather than magic numbers.
  */
 const STAGE_RANK: ReadonlyMap<string, number> = new Map(relationshipStages.map((s, i) => [s.id, i]));

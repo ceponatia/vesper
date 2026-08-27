@@ -65,8 +65,8 @@ import {
 import { OwnedImagePicker } from "./owned-image-picker";
 
 /**
- * The create-experiment form (qwen-advanced-image-subsystem.spec.md §Stage 0
- * control-probe protocol step 2, plus the Stage 1–2 controlled recipes).
+ * The create-experiment form: the Stage 0 control-probe protocol, plus the
+ * Stage 1–2 controlled recipes.
  *
  * Every declared kind is offered, because as of Stage 3 the runner accepts every
  * one of them.
@@ -132,7 +132,7 @@ import { OwnedImagePicker } from "./owned-image-picker";
  * weights is not a comparison — it is the source image rendered twice.
  *
  * A STAGED SCENE is the second kind offered the LoRA picker, and the one it
- * matters most on (intimate-scene-lora.spec.md §"Slice 2"). It writes no
+ * matters most on. It writes no
  * instruction at all: the staging registry owns every explicit word of the act,
  * the runner compiles the same scene prompt the chat lane sends, and byte-parity
  * with that prompt is the entire reason this bench answers anything — a sentence
@@ -156,7 +156,7 @@ const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
  *
  * The ordinary default cannot carry a LoRA at all — `qwen-image-edit-2511`
  * exposes no `lora_weights` input, which is the entire reason the wrapper row
- * exists (docs/image-models/qwen-image-edit-plus-lora.md). A staged run seeds
+ * exists (docs/image-models/models/qwen-image-edit-plus-lora.md). A staged run seeds
  * the builtin intimate LoRA below, so defaulting the model the way every other
  * kind does would pair weights with a model that cannot load them and settle
  * the run `image_lora.incompatible` before rendering — a form that queues a

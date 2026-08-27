@@ -59,10 +59,10 @@ import {
  * arithmetic over the activity set, and the projectors replay uses. No IO, no
  * clock, no ambient randomness.
  *
- * E5.3 slice 2 (§26.5–26.6) adds resource-cost reservation at start and
- * consume-disposition consumption at completion, both reusing `materials.ts`'s
- * root-locus walk and `buildConsumptionBodyEffects` so the two consumption
- * entry points (`consume_item` and completion) share one code path.
+ * E5.3 slice 2 adds resource-cost reservation at start and consume-disposition
+ * consumption at completion, both reusing `materials.ts`'s root-locus walk and
+ * `buildConsumptionBodyEffects` so the two consumption entry points
+ * (`consume_item` and completion) share one code path.
  */
 
 function compareStableText(left: string, right: string): number {
@@ -146,16 +146,16 @@ export interface StartActivityResolutionView extends ActivityBranchMeta {
   /** Actors whose locus is the same zone, excluding the acting actor. */
   coLocatedActorIds: readonly string[];
   /**
-   * E5.5 slice 2 (§21.4, ruling 16): whether the target has granted §21.4
-   * consent coverage for this action's `consent_covered` scope — pre-resolved
-   * by the store from the (target → actor) directional ledger slice, exactly
-   * like `heldClaims`/`coLocatedActorIds` are already pre-resolved facts
-   * rather than live queries. Unused when the definition has no
-   * `consent_covered` precondition.
+   * E5.5 slice 2 (ruling 16): whether the target has granted consent coverage
+   * for this action's `consent_covered` scope — pre-resolved by the store from
+   * the (target → actor) directional ledger slice, exactly like
+   * `heldClaims`/`coLocatedActorIds` are already pre-resolved facts rather
+   * than live queries. Unused when the definition has no `consent_covered`
+   * precondition.
    */
   consentCovered?: boolean;
   /**
-   * §26.5 resource-cost eligibility: every extant item id potentially in play
+   * Resource-cost eligibility: every extant item id potentially in play
    * for this start (the store may narrow to the definition's requested
    * material kinds, or hand over the whole branch — the resolver still
    * filters by kind, reservation, and root). Unused when the definition has
@@ -184,7 +184,7 @@ function startRejection(code: StartActivityRejectionCode, publicReason: string):
 }
 
 /**
- * Deterministic §26.5 selection for one resource cost: eligible items are
+ * Deterministic selection for one resource cost: eligible items are
  * extant, matching `materialKindKey`, not already reserved (by this cost's
  * own prior picks or any live activity), and root-locate at either the
  * starting actor (held/worn, or a container chain rooted there) or the
@@ -270,7 +270,7 @@ export function resolveStartActivity(
     return startRejection("claim_conflict", "They are already occupied.");
   }
 
-  // §26.5: select and reserve concrete items for every resource cost.
+  // Select and reserve concrete items for every resource cost.
   const materialItemIds = view.materialItemIds ?? [];
   const materialItemById = view.materialItemById ?? (() => undefined);
   const reservingActivityId = view.reservingActivityId ?? (() => null);
@@ -418,13 +418,13 @@ export interface CompleteActivityResolutionView extends ActivityBranchMeta {
   /** Actors whose locus is the activity's zone at completion time. */
   coLocatedActorIds: readonly string[];
   noticeability?: SimulationActionDefinition["noticeability"];
-  /** §26.5–26.6: the captured action's resource costs, threaded from its definition. */
+  /** The captured action's resource costs, threaded from its definition. */
   resourceCosts?: readonly ActionResourceCost[];
   /** Raw item lookup for fire-time re-validation + consumption. Unused when `resourceCosts` is empty. */
   materialItemById?(itemId: string): SimulationMaterialItem | undefined;
-  /** The consuming actor's body facts for the §26.6 trailing effects; absent → zero body events. */
+  /** The consuming actor's body facts for the trailing effects; absent → zero body events. */
   bodyView?: ConsumptionBodyView;
-  /** §26.7: a `use`-disposition item's condition state, when it is condition-tracked. */
+  /** A `use`-disposition item's condition state, when it is condition-tracked. */
   itemConditionViewByItemId?(itemId: string): ItemConditionView | undefined;
 }
 
@@ -447,7 +447,7 @@ export interface CompleteResolution {
       | TriggerScheduledEvent
     )[],
   ];
-  /** The §26.6 body meters written by consumed items' authored effects, if any. */
+  /** The body meters written by consumed items' authored effects, if any. */
   meterUpdates: BodyMeterState[];
 }
 
@@ -457,9 +457,9 @@ function completeRejection(code: CompleteActivityRejectionCode, publicReason: st
 
 /**
  * Pure fire-time completion resolver. Re-validates rather than trusting the
- * schedule, and — §26.5–26.6 — re-validates every reserved item before
- * spending the `consume`-disposition ones: no legal command path can move a
- * reserved item, so a violation here is corruption, not a rejection.
+ * schedule, including every reserved item before spending the
+ * `consume`-disposition ones: no legal command path can move a reserved item,
+ * so a violation here is corruption, not a rejection.
  */
 export function resolveCompleteActivity(
   view: CompleteActivityResolutionView,
@@ -501,7 +501,7 @@ export function resolveCompleteActivity(
       ? sortedUnique([...view.coLocatedActorIds, ...activity.actorIds])
       : [...activity.actorIds];
 
-  // §26.5 fire-time re-validation: every reserved item must still be legally
+  // Fire-time re-validation: every reserved item must still be legally
   // in the activity's grasp. No legal command path can move a reserved item
   // (transfer/destroy/consume all reject item_reserved), so any failure here
   // is an engine invariant violation, not a rejection.
@@ -523,7 +523,7 @@ export function resolveCompleteActivity(
     reservedItems.set(itemId, item);
   }
 
-  // §26.6: match consume-disposition costs to reserved items by
+  // Match consume-disposition costs to reserved items by
   // materialKindKey, deterministically (lexicographic item id).
   const consumeCosts = [...(view.resourceCosts ?? [])]
     .filter((cost) => cost.disposition === "consume")
@@ -550,7 +550,7 @@ export function resolveCompleteActivity(
   }
   consumedIds.sort(compareStableText);
 
-  // §26.7: match use-disposition costs carrying authored condition deltas to
+  // Match use-disposition costs carrying authored condition deltas to
   // reserved TRACKED items, the same deterministic materialKindKey matching
   // consume-costs use — but every matched item receives its deltas (use
   // items are never spent away, so there is no "claimed" defense needed
@@ -601,9 +601,9 @@ export function resolveCompleteActivity(
     },
   });
 
-  // One item_consumed per consumed item, each followed by its own §26.6
-  // trailing body effects — causation-chained to THIS event, one running
-  // sequence counter (the resolveBodyCollapse precedent).
+  // One item_consumed per consumed item, each followed by its own trailing
+  // body effects — causation-chained to THIS event, one running sequence
+  // counter (the resolveBodyCollapse precedent).
   const trailing: (
     | ItemConsumedEvent
     | BodySourceAppliedEvent
@@ -650,7 +650,7 @@ export function resolveCompleteActivity(
     }
   }
 
-  // §26.7: use-delta events join the events train after consumption events,
+  // Use-delta events join the events train after consumption events,
   // causation-chained to the activity_completed event itself (there is no
   // per-item intermediate event the way item_consumed is for consumption).
   if (useConditionItems.length > 0) {
@@ -785,7 +785,7 @@ function resumeRejection(code: ResumeActivityRejectionCode, publicReason: string
 
 /**
  * Pick an interrupted activity back up. The claims never released
- * (interrupted is claim-holding, §16.3), so nothing re-validates them; what
+ * (interrupted is claim-holding), so nothing re-validates them; what
  * DOES change is the completion alarm — retired at interruption, re-armed
  * here under an attempt-versioned uniqueness key at now + remaining, with
  * the window rebased so progress math survives repeated interruptions.
@@ -1062,7 +1062,7 @@ export function applyActivityEvent(
 }
 
 export interface ActivitiesReplayInput {
-  /** Activities are fully evented: a branch-origin seed holds none (plan R3). */
+  /** Activities are fully evented: a branch-origin seed holds none (R3). */
   seed: ActivitiesProjection;
   events: readonly SimulationBranchEvent[];
 }

@@ -13,8 +13,8 @@ import {
 } from "./garment-blueprint";
 
 /**
- * Blueprint structural validation (clothing-state-graph.plan.md §"Definitions
- * are not instances"; slice-0 audit OQ1/OQ6). Returns typed issues with STABLE
+ * Blueprint structural validation — definitions are not instances. Returns
+ * typed issues with STABLE
  * codes and NEVER throws — a bad graph degrades to the conservative root-only
  * default and records a diagnostic (docs/resilience.md §§1–2).
  */

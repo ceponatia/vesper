@@ -185,7 +185,7 @@ describe.runIf(harness.ready)("E6.3 durable cohort authority", () => {
       populationAfter: 199,
     });
 
-    // §26.10 extension: a cohort wears a means band; a ghost cohort cannot.
+    // Means-band extension: a cohort wears a means band; a ghost cohort cannot.
     const banded = await submitDurableSetMeansBand(
       command(ids, "band-market", "set_means_band", {
         subject: { kind: "cohort", cohortId },

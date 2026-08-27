@@ -22,8 +22,8 @@ import {
 } from "./render-intent";
 
 /**
- * THE production render planner (image-model-capabilities.spec.md §"Normalized
- * render intent") — everything decided before a byte leaves the process.
+ * THE production render planner — everything decided before a byte leaves the
+ * process.
  *
  * Every image lane describes what it wants in one vocabulary — a prompt, a
  * shape, role-carrying references — and this turns that into the exact
@@ -60,8 +60,8 @@ import {
  *
  * `Buffer` is named here as a TYPE only — this package never constructs one, and
  * the images travel through it untouched. It is the same provider seam the
- * failure and detector contracts already sit on
- * (monorepo-image-core.spec.guardrails.md §"Rulings this build settled").
+ * failure and detector contracts already sit on: naming a platform type at a
+ * provider seam is allowed, evaluating one is not.
  */
 export interface ImageRenderReference extends ImageRenderReferenceSpec {
   buffer: Buffer;
@@ -71,8 +71,8 @@ export interface ImageRenderIntent extends ImageRenderIntentCore {
   /**
    * The profile and model this render runs on.
    *
-   * Resolved by the CALLER rather than from a `profileSelection` string here,
-   * which is the one deviation from the spec's signature. Every lane has to know
+   * Resolved by the CALLER rather than from a `profileSelection` string here.
+   * Every lane has to know
    * its model before it reserves an image row — the row's `meta.model` records
    * it, and a lane with no offered profile fails its precondition instead of
    * reserving — so resolving inside this call would mean a second registry read
@@ -425,8 +425,8 @@ function roleNames(references: readonly ImageRenderReferenceSpec[]): ImageRefere
  * The budget comes off the model's OWN probed prompt binding — `maxChars` is a
  * provider ceiling and `recommendedChars` the documented quality knee — rather
  * than from anything decided here. That matters twice over. It keeps the limit a
- * measured fact about one version instead of a family-wide guess (the assumption
- * the plan's §"Corrected assumptions" forbids reintroducing), and because no
+ * measured fact about one version instead of a family-wide guess — the
+ * assumption this seam exists not to reintroduce — and because no
  * seeded model has a probed prompt binding at all, every budget resolves empty
  * today and no render is fitted by this seam's arrival.
  *

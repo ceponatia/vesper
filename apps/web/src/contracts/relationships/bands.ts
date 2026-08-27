@@ -2,7 +2,7 @@ import { z } from "zod";
 import { stageMidpoint } from "./stages";
 
 /**
- * Relationship model v2 axes (relationship-model.plan.md): the one affinity
+ * Relationship model v2 axes: the one affinity
  * scalar splits into two independent axes —
  *
  * - **Familiarity** (0..100, slow ratchet — you can't un-know someone): how well

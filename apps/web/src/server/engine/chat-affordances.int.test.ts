@@ -26,8 +26,7 @@ import { characterChatState, characterChats, db } from "@/server/db";
  *   settles (docs/resilience.md's prime directive);
  * - the affordance read is CAPTURED by the rollback anchors: rolling the scenario
  *   and the state row back and rebuilding produces a byte-identical read and
- *   byte-identical next cues (architecture spec §"Recompute and capture", modelled
- *   on the garment cue-memory fixture F13);
+ *   byte-identical next cues (modelled on the garment cue-memory fixture F13);
  * - a corrupt `body_surface` blob degrades to dry with the boundary diagnostic
  *   rather than costing the turn (fixture F17's shape).
  */

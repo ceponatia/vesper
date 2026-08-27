@@ -2,8 +2,7 @@ import { z } from "zod";
 import { imageNegativeBlockIds } from "./negative-constraints";
 
 /**
- * What a render STORES about the prompt program it ran
- * (model-aware-image-prompts.plan.md §"Provenance and observability").
+ * What a render STORES about the prompt program it ran.
  *
  * Two rules shape everything below.
  *

@@ -1,8 +1,7 @@
 import type { ImageModel } from "@vesper/image-core";
 
 /**
- * A SEMANTIC capability a model composes rather than reimplements
- * (image-model-adapters.spec.md §"Composer and Qwen family").
+ * A SEMANTIC capability a model composes rather than reimplements.
  *
  * A feature is the answer to "what does Vesper want to express here?" — an
  * identity-bearing reference, a reproducible seed, a LoRA — stated once and
@@ -52,8 +51,8 @@ export interface ImageFeature {
    * exceptional answer, so an empty array is the normal one.
    *
    * These are PRE-SPEND refusals about the model/request pairing, not the
-   * compile step's final-wire invariant (spec §"Compile-step wire invariant"),
-   * which stays in `@vesper/image-core` where the payload actually exists. A
+   * compile step's final-wire invariant, which stays in `@vesper/image-core`
+   * where the payload actually exists. A
    * feature answers "this model cannot carry what you are asking for"; the
    * kernel answers "the payload does not carry what the plan claims".
    */

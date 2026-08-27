@@ -2,14 +2,14 @@ import { z } from "zod";
 import { familiarityBandForValue, regardBandForValue } from "./bands";
 
 /**
- * Relationship history + milestones (character-chat-standalone.spec.md §7.2): the
+ * Relationship history + milestones: the
  * visible arc of a chat relationship. Both live as capped jsonb rings on the chat
  * state row, appended by the exchange finalizer (and, for `player_marked`, by the
  * "mark this moment" action) — pure shapes + append/derive helpers here, IO in the
  * engine. They roll back with the pre-exchange snapshot for free ("another take"
  * undoes the sample/milestone its exchange recorded).
  *
- * v2 (relationship-model.plan.md): samples carry the REGARD scalar + band (the
+ * v2: samples carry the REGARD scalar + band (the
  * volatile axis — familiarity's slow ratchet gets its own milestone kind, not a
  * per-exchange sample). The `stage_up`/`stage_down` milestone kind ids are kept as
  * stored wire ids (rings already contain them); they now mean regard-band
@@ -41,7 +41,7 @@ export const milestoneKindSchema = z.enum([
   "strong_reaction",
   "secret_shared",
   "player_marked",
-  // Plans & promises (chat-plans-promises.plan.md): a kept/missed commitment involving the
+  // Plans & promises: a kept/missed commitment involving the
   // player — callback-boosted, so "remember our first real date" surfaces on its own.
   "plan_kept",
   "plan_missed",
@@ -74,8 +74,8 @@ export function appendMilestones(current: readonly Milestone[], added: readonly 
 export const STRONG_REACTION_DELTA = 4;
 
 /**
- * The newest milestone the player hasn't been shown yet (chat-initiative.plan.md
- * slice 2 — the §8.4 v2 marker key): landed after the per-chat seen-cursor and
+ * The newest milestone the player hasn't been shown yet — the initiative
+ * marker key: landed after the per-chat seen-cursor and
  * worth reaching out about. `first_exchange` never counts — "we spoke once" is
  * not a reason to reopen. Returns the milestone's label, or null. PURE.
  * (Ruled 2026-07-12: the marker keys on loops + milestones only — real time
@@ -92,7 +92,7 @@ export function unseenMilestoneReason(milestones: readonly Milestone[], seenAt: 
 }
 
 /**
- * Derive the milestones one settled exchange produced (spec §7.2). PURE:
+ * Derive the milestones one settled exchange produced. PURE:
  * - `first_exchange` when there was no stored state before it;
  * - `stage_up` / `stage_down` when the REGARD band crossed (both directions);
  * - `familiarity_up` when the ratchet crossed a familiarity band ("She let you in");

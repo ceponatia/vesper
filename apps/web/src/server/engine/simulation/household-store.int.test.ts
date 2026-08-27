@@ -541,7 +541,7 @@ describe.runIf(harness.ready)("E5.4 slice 1 durable households/lots/means substr
 
     // The DB CHECK rejects a negative quantity independently of the pure
     // resolver — a direct UPDATE bypassing `resolveTransferLotQuantityFromView`
-    // entirely still cannot commit a negative lot (§26.9). Drizzle's node-postgres
+    // entirely still cannot commit a negative lot. Drizzle's node-postgres
     // driver wraps the raw pg error in a "Failed query" Error, so the constraint
     // name lands on `.cause`, not `.message`.
     const actorLotKey = deriveMaterialLotRowKey(actorLocus(ids.mara), "bread");
@@ -665,13 +665,13 @@ describe.runIf(harness.ready)("E5.4 slice 1 durable households/lots/means substr
     expectRejected(result, "insufficient_balance", "transfer from a never-stocked lot");
 
     // A rejected command never persists its lazily-built init event/row — the
-    // store only commits the lazy init after the resolver accepts (§26.9's
-    // "lazily, on first touch" applies to accepted touches, not attempted ones).
+    // store only commits the lazy init after the resolver accepts ("lazily, on
+    // first touch" applies to accepted touches, not attempted ones).
     const lot = await loadLotRow(ids.branchId, householdLocus(householdId), "bread");
     expect(lot).toBeUndefined();
   });
 
-  it("prefers a lot-tracked means read over a means band once a currency lot exists (§26.10 precedence)", async () => {
+  it("prefers a lot-tracked means read over a means band once a currency lot exists", async () => {
     const ids = makeIds();
     await seedCase(ids);
     const householdId = newId();
@@ -720,7 +720,7 @@ describe.runIf(harness.ready)("E5.4 slice 1 durable households/lots/means substr
     const persistedLot = await loadLotRow(ids.branchId, householdLocus(householdId), RESERVED_CURRENCY_MATERIAL_KIND);
     const stillPersistedBand = await loadBandRow(ids.branchId, subject);
     // The band row is untouched (setting one on a lot-tracked subject is
-    // legal narrative color, §26.10), but the read now derives from the lot.
+    // legal narrative color), but the read now derives from the lot.
     expect(stillPersistedBand?.bandKey).toBe("modest");
     expect(
       deriveMeansRead(subject, { currencyLot: () => persistedLot, band: () => stillPersistedBand }),

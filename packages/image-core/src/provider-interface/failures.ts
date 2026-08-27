@@ -1,7 +1,7 @@
 /**
  * Failure classification and provider-health semantics — the half of the
  * provider seam that reads a failure MESSAGE and says what kind of failure it
- * was (scene-images.spec.md §4).
+ * was.
  *
  * Everything here takes a plain string, never an error object. Turning a
  * provider's thrown value into a message is transport work: the AI SDK's

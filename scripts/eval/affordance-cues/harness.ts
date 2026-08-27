@@ -105,9 +105,8 @@ function bodySurface(turn: EvalTurn): BodySurfaceState {
  * The scene block both arms get, byte for byte: the place, its standing detail,
  * and the scenario's `sceneFacts`.
  *
- * `sceneFacts` is the rematch-v2 BOTH-ARMS CHANNEL (rematch spec §"Why round 1
- * could not have succeeded", round-R1 follow-up). The narrator prompt carries no
- * environment line and no wetness line: outside the cue block, the only things
+ * `sceneFacts` is the rematch-v2 BOTH-ARMS CHANNEL. The narrator prompt carries
+ * no environment line and no wetness line: outside the cue block, the only things
  * that tell either arm what is physically true are the premise, the outfit
  * phrase, the player's lines and this list. Round R1's control arm therefore
  * could not misattribute a wetness it had never been told about — it stayed

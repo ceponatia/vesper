@@ -28,7 +28,7 @@ export const voiceGroup = defineAttributeGroup("voice", [
     ],
     autoDefaultExcludes: [...SYNTHETIC_VOICE_TIMBRES],
     aliases: ["voice timbre", "husky voice", "raspy voice"],
-    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // Narrator-gloss authoring batch — DRAFTS AWAITING
     // OWNER REVIEW. Timbre = the texture/color of the voice only; pitch (its own
     // attribute) is kept out — no "low"/"deep". Sparse: clear/warm stay bare.
     narratorGuidance: {
@@ -70,7 +70,7 @@ export const voiceGroup = defineAttributeGroup("voice", [
     ],
     aliases: ["cadence", "speaking rhythm"],
     promptHints: ["Cadence shapes dialogue beats and sentence length; keep it consistent across turns."],
-    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // Narrator-gloss authoring batch — DRAFTS AWAITING
     // OWNER REVIEW. Cadence = speech rhythm/pacing only. Sparse: rapid/animated stay bare.
     narratorGuidance: {
       clipped: "curt, cut-off words — brisk and economical",

@@ -16,7 +16,7 @@ const P95_BUDGET_MS = 5;
 
 /**
  * The Gate 1 exit benchmark, ported to the E5.3 material lane: the whole
- * deterministic command path (authority view -> §26.4 resolution -> event ->
+ * deterministic command path (authority view -> resolution -> event ->
  * projection fold) must hold its p95 budget with zero model calls.
  */
 const seed = materialsSeedProjection({

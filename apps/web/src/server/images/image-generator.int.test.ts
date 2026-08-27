@@ -32,8 +32,8 @@ import {
 
 /**
  * The Image Generator's server half end to end against DATABASE_URL and a
- * sandboxed DATA_ROOT (image-lab-general-model-trials.spec.md §"Fixtures and
- * tests"). The renderer seam is always injected — Replicate is never called —
+ * sandboxed DATA_ROOT. The renderer seam is always injected — Replicate is
+ * never called —
  * so what is under test is the Generator's own machinery: the run lifecycle,
  * every pre-spend refusal with its exact code, the provider-vs-storage failure
  * distinction, output cleanup, and owner scoping.
@@ -89,7 +89,7 @@ const SIZE_SLUG = "vesper-test/generator-size-mode";
 /**
  * A LoRA the library curates for SCENE renders only — deliberately not for the
  * synthetic profile's nominal `item` task. It is the exact row shape the bench
- * used to refuse (plan §1).
+ * used to refuse.
  */
 const BENCH_LORA_ID = "imglorabenchonlyaaaaaaaa";
 const PINNED_VERSION = "generatorversionaaaaaaaa";

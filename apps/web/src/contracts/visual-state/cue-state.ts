@@ -7,9 +7,8 @@ import {
 import { visualStateFingerprint } from "./feature";
 
 /**
- * NARRATOR VISUAL CUE STATE (visual-state.plan.md §Open questions → "how
- * repetition and first visibility are tracked for facts recognition does not
- * hold"; spec §Attention and memory).
+ * NARRATOR VISUAL CUE STATE: how repetition and first visibility are tracked
+ * for facts recognition does not hold.
  *
  * ## The gap this fills
  *

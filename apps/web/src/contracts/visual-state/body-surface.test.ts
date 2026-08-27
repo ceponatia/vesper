@@ -20,7 +20,7 @@ import { visualStateFeatureFixture, visualStateWetHairSurface, VISUAL_STATE_FIXT
 
 /**
  * Fixture VS-9 — wet hair, with and without the environment suspending drying.
- * The projection's band must ride the LAZY read (§25.2 — the same committed
+ * The projection's band must ride the LAZY read (the same committed
  * state at a later minute reads drier, and reading never persists), and the
  * owner's three answers must stay three: absent is dry, dry is silence, and a
  * quarantined entry is silence ON THE RECORD.
@@ -194,8 +194,8 @@ describe("projectBodySurfaceFeatures", () => {
 });
 
 /**
- * The marks read (effects spec §15 stage 6 — "later visual observation reads
- * committed mark state only"): the projection may only ever restate what the
+ * The marks read — later visual observation reads committed mark state
+ * only: the projection may only ever restate what the
  * owner committed, faded forward on the story clock. Two claims worth pinning
  * beyond the wetness precedents: two marks at one locus collapse to ONE
  * feature carrying the strongest band (the feature key is per locus per kind,

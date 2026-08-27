@@ -12,11 +12,9 @@ import { NSFW_TEST_VARIANT_KIND, PORTRAIT_IDENTITY_LOCK, type VariantKind } from
 import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
 
 /**
- * THE VARIANT/EDIT LANE'S SEGMENT ASSEMBLY (image-lane-consolidation.plan.md
- * Stage 4; spec.prompts.md §Lane migration order → "Variants and edits":
- * "Express the requested delta as an operation/change contract. Identity,
- * morphology, age, and unchanged wardrobe/scene facts remain separate mandatory
- * segments").
+ * THE VARIANT/EDIT LANE'S SEGMENT ASSEMBLY: the requested delta is expressed as
+ * an operation/change contract, while identity, morphology, age, and unchanged
+ * wardrobe/scene facts remain separate mandatory segments.
  *
  * `generateVariant` calls this once, sets BOTH `prompt` and
  * `intent.promptSegments`, and records `digestMeta` on the row at reserve time.
@@ -76,7 +74,7 @@ import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
  * Non-empty `missingRequired` means a required digest fact resolved no clause:
  * `generateVariant` refuses through `failedPrecondition`, BEFORE any provider
  * spend and without pushing a generation-failure diagnostic — a render that
- * never ran did not fail to generate (spec.prompts.md §Failure behavior).
+ * never ran did not fail to generate.
  *
  * Pure: no IO, no env, no clock.
  */

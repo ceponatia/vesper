@@ -17,8 +17,7 @@ import {
 import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permission-guidance";
 
 /**
- * PROMPT PROJECTION for narrator physical guidance
- * (narrator-physical-guidance.plan.md §Architecture 7).
+ * PROMPT PROJECTION for narrator physical guidance.
  *
  * One selected candidate → one imperative line. The renderer owns wording and owns
  * nothing else: it may not add a semantic the compiler did not select, may not
@@ -58,12 +57,11 @@ import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permissi
  * governs.
  *
  * All four tiers render today. **Action outcomes** arrived with the affectionate
- * contact proof (romantic-contact-affordances.plan.md §"Continuation order" 1) and
+ * contact proof and
  * lead the block, which is the compiler's own order rather than this file's: whether
  * the touch the player just wrote actually happened outranks any standing truth about
  * the body. **State transitions** gained their first producer with the permission
- * owner's revocation handoff (romantic-contact-affordances.spec.permission.md
- * §"Revocation during active contact" step 4, `chat-permission-guidance.ts`): a
+ * owner's revocation handoff (`chat-permission-guidance.ts`): a
  * contact the state already ENDED that the prose has not yet shown ending. Each such
  * candidate is a binding stop — it states the observable change only (never the
  * standing record, the withdrawal, or any developer control behind it), forbids
@@ -341,12 +339,11 @@ function unresolvedPremiseLine(premise: ChatContactUnresolvedPremise): string {
 
 /**
  * The one wording every stop line ends on. Three obligations in one sentence,
- * each traceable to the spec's narrator-instruction constraints (§"Revocation
- * during active contact"): the continuation ban ("do not write it as
- * continuing…"), the idempotent portrayal instruction ("if the stop has not
- * already been shown…" — still correct when the prior reply's prose showed it),
- * and the authorship fence (the player's response is never decided here). The
- * NPC's own reaction is explicitly licensed and never scripted.
+ * each a narrator-instruction constraint: the continuation ban ("do not write
+ * it as continuing…"), the idempotent portrayal instruction ("if the stop has
+ * not already been shown…" — still correct when the prior reply's prose showed
+ * it), and the authorship fence (the player's response is never decided here).
+ * The NPC's own reaction is explicitly licensed and never scripted.
  */
 const STOP_LINE_CLOSING =
   "That contact is over now — do not write it as continuing, resuming, or still in progress. " +

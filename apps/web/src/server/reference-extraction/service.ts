@@ -36,7 +36,7 @@ import {
 import { readImageBytes, sourceContentHashOf } from "@/server/images";
 
 /**
- * Reference-image extraction — the server half (visual-state.plan.md slice 9).
+ * Reference-image extraction — the server half.
  *
  * Three operations, all admin-only through `/api/admin/self`:
  *
@@ -120,9 +120,8 @@ export type VisualExtractionDecideResult =
 /**
  * The canonical owners' state for one character, as this lane can load it
  * today: attributes from the profile; located facts and presentation as their
- * honest empty states, since no lane persists canonical rows for either
- * (visual-state.spec.md, slices 3 and 6). `atMinutes: 0` with no located facts
- * is inert by construction.
+ * honest empty states, since no lane persists canonical rows for either.
+ * `atMinutes: 0` with no located facts is inert by construction.
  */
 function canonicalTruthOfProfile(profile: CharacterProfile): VisualExtractionCanonicalTruth {
   return {

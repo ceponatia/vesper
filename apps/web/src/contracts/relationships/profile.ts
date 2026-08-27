@@ -1,10 +1,10 @@
 import { relationshipStages } from "./stages";
 
 /**
- * Stage behavior profiles (character-chat-standalone.spec.md §7.1) — the first real
+ * Stage behavior profiles — the first real
  * CONSUMERS of the relationship number: per-stage behavioral bands rendered as the
  * chat prompt's compact "Relationship law" block (re-rendered only on stage change,
- * so it lives in the §9 stable prefix). Where `warmthHintForStage` was one soft line
+ * so it lives in the prompt's stable prefix). Where `warmthHintForStage` was one soft line
  * that demonstrably didn't land, this states law: initiative, openness, address, and
  * the escalation floor the D11 hard gate reads.
  *

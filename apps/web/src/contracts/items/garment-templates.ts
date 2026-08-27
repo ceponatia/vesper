@@ -148,8 +148,8 @@ const SPARSE_TEMPLATES: Readonly<Record<string, CategoryTemplate>> = {
     parts: [
       { id: "waistband", kind: "panel", aliases: ["waist", "waistband"], coverage: ["pelvis"] },
       // An open fly is an OBSERVATION, never a coverage change: the closure law
-      // targets chest/waist, so it can never bare the groin (plan §"Never let a
-      // free-text flag decide intimate coverage").
+      // targets chest/waist, so it can never bare the groin — a free-text flag
+      // never decides intimate coverage.
       { id: "fly", kind: "closure", aliases: ["fly", "zip"] },
       { id: "leg_left", kind: "panel", side: "left", aliases: ["left leg"], coverage: ["thighs", "calves"] },
       { id: "leg_right", kind: "panel", side: "right", aliases: ["right leg"], coverage: ["thighs", "calves"] },

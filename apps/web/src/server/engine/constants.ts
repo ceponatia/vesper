@@ -1,7 +1,7 @@
 /**
- * Engine tuning constants (docs/turn-engine.md). These are binding values:
- * the chat pipeline, prompt builders, and job runner reference them, and tests
- * assert the documented numbers.
+ * Engine tuning constants. These are binding values: the chat pipeline, prompt
+ * builders, and job runner reference them, and `constants.test.ts` asserts the
+ * numbers.
  */
 
 /** Narrator sampling temperature — the chat narrator stream's creativity knob. */
@@ -37,24 +37,24 @@ export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
  * passes at all — a player away for a week returns to a scene where nothing
  * moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the one between-scene
  * lever, and in v1 they are narrative flavor only: clock + condition expiry +
- * the skip note — meters untouched (D14). (Affinity never decays, spec §10.)
+ * the skip note — meters untouched. (Affinity never decays.)
  *
- * 4 → 1 (chat-clock-calendar.plan.md, owner ruling 2026-07-15): one exchange ≈ one
+ * 4 → 1 (owner ruling 2026-07-15): one exchange ≈ one
  * story minute, so ordinary conversation barely moves the visible clock and skips
  * are the primary time mover. Meter pacing did NOT follow the tick — see
  * CHAT_METER_DRIFT_MINUTES.
  */
 export const CHAT_TICK_MINUTES = 1;
 /**
- * Story-minutes of meter decay applied per exchange (the drift sweep, plan §1):
+ * Story-minutes of meter decay applied per exchange (the drift sweep):
  * meter pacing is exchange-keyed in spirit — like the feeling's per-exchange decay
  * — so when the clock tick dropped 4 → 1 this kept the shipped per-exchange meter
  * feel instead of slowing it 4×. Deliberately decoupled from CHAT_TICK_MINUTES.
  */
 export const CHAT_METER_DRIFT_MINUTES = 4;
 /**
- * In-game minutes per player skip amount (spec §8.1) — moved to the contract
- * (chat-clock-calendar: the clock card previews landings client-side); re-exported
+ * In-game minutes per player skip amount — moved to the contract so the clock
+ * card can preview landings client-side; re-exported
  * here beside its tuning siblings.
  */
 export { CHAT_SKIP_MINUTES } from "@/contracts/turns/chat-skip";
@@ -80,7 +80,7 @@ export const CHAT_PULSE_MAX_OUTPUT_TOKENS = 256;
  */
 export const CHAT_PULSE_TIMEOUT_MS = 60_000;
 /**
- * The post-turn extraction legs (chat-agent-improvements.plan.md slice 1b — formerly ONE
+ * The post-turn extraction legs (formerly ONE
  * 700-token archivist call emitting all thirteen fields). Three focused legs now run in
  * parallel with each other and with the pulse in the same post-flush finalizer, so this
  * budget still only delays controller.close() — invisible to perceived latency — and each
@@ -100,7 +100,7 @@ export const CHAT_CHARACTER_NOTES_MAX_OUTPUT_TOKENS = 350;
  * TEMPORARY (2026-07-15, diagnostic): lifted to 60_000 to MEASURE real latency — see CHAT_PULSE_TIMEOUT_MS. REVERT. */
 export const CHAT_EXTRACTOR_TIMEOUT_MS = 60_000;
 /**
- * The per-member personal pass (multi-character-chat.followups.md ruling 10): one small
+ * The per-member personal pass: one small
  * focused call per PRESENT ensemble member after the shared archivist. Four fields only
  * (loops/outfit/attributes/drives), so a tighter cap; same off-reply-path latency budget.
  */
@@ -108,11 +108,10 @@ export const CHAT_PERSONAL_NOTES_MAX_OUTPUT_TOKENS = 400;
 // Matched to CHAT_EXTRACTOR_TIMEOUT_MS — TEMPORARY 60_000 diagnostic (2026-07-15). REVERT with the others.
 export const CHAT_PERSONAL_NOTES_TIMEOUT_MS = 60_000;
 /**
- * The NPC reply-scene decision classifier (romantic-contact-affordances
- * .spec.actor-control.md §"Execution, flags, and cost gate"): ONE structured
+ * The NPC reply-scene decision classifier: ONE structured
  * call per persisted nonempty assistant reply, launched beside settlement and
  * awaited only after the post-settle cut. A dedicated budget, capped at 8s
- * from launch per the spec — explicitly NOT `CHAT_PULSE_TIMEOUT_MS`, whose
+ * from launch — explicitly NOT `CHAT_PULSE_TIMEOUT_MS`, whose
  * temporary 60s diagnostic ceiling this call must never inherit: the call runs
  * inside settlement and the exchange lock, so its latency is part of the
  * shadow rollout evidence, and an unbounded wait would hide exactly the number
@@ -123,9 +122,8 @@ export const CHAT_NPC_SCENE_DECISION_TIMEOUT_MS = 8_000;
 /** Output cap for the decision call: two bounded proposals + JSON scaffolding, evidence ≤480 chars each. */
 export const CHAT_NPC_SCENE_DECISION_MAX_OUTPUT_TOKENS = 600;
 /**
- * The NPC romantic-permission decision classifier (romantic-contact-affordances
- * .spec.permission.md §"Grant, denial, absence, and withdrawal";
- * implementation-order step 3): at most ONE structured call per qualifying
+ * The NPC romantic-permission decision classifier (grant, denial, absence, and
+ * withdrawal): at most ONE structured call per qualifying
  * committed assistant reply, run at the settle tail AFTER the exchange's last
  * scene writer. Same budget philosophy as the reply-scene decision above — a
  * dedicated 8s cap, never the pulse's temporary diagnostic ceiling: the call
@@ -136,14 +134,14 @@ export const CHAT_ROMANTIC_PERMISSION_DECISION_TIMEOUT_MS = 8_000;
 /** Output cap: up to four bounded decisions + JSON scaffolding, evidence ≤480 chars each. */
 export const CHAT_ROMANTIC_PERMISSION_DECISION_MAX_OUTPUT_TOKENS = 400;
 /**
- * The background location-sketch agent (chat-scene-fidelity.plan.md slice 2b) runs as a
+ * The background location-sketch agent runs as a
  * DETACHED job — nothing waits on it — so it affords a roomier timeout than the post-flush
  * legs. A miss just leaves the place unsketched; the absent-sketch trigger re-fires.
  */
 export const CHAT_SCENE_SKETCH_MAX_OUTPUT_TOKENS = 300;
 export const CHAT_SCENE_SKETCH_TIMEOUT_MS = 15000;
 /**
- * The meanwhile pass (chat-offscreen-life.plan.md): ONE archivist-class call per
+ * The meanwhile pass: ONE archivist-class call per
  * qualifying big skip, DETACHED like the scene sketch — nothing waits on it, so it
  * affords a roomy timeout. A miss degrades to an ordinary skip (grounded
  * improvisation covers the gap) and the gate re-arms on the next qualifying skip.
@@ -151,7 +149,7 @@ export const CHAT_SCENE_SKETCH_TIMEOUT_MS = 15000;
 export const CHAT_MEANWHILE_MAX_OUTPUT_TOKENS = 600;
 export const CHAT_MEANWHILE_TIMEOUT_MS = 25_000;
 /**
- * Arousal a pulse-classified **intimate** act adds (slice 4): full for an intimate
+ * Arousal a pulse-classified **intimate** act adds: full for an intimate
  * concept (e.g. a proposition), half for courtship / physical-affection. Skipped
  * when the act is disliked. Clamped to [0,1] like every meter.
  */
@@ -162,8 +160,8 @@ export const CHAT_ACTION_CONDITION_MINUTES = 90;
 export const EPISODE_WINDOW = 4;
 
 /**
- * Cap on browsable alternate takes per assistant reply (character-chat-standalone
- * spec §4.1) — the newest takes win; the oldest non-active entries evict first.
+ * Cap on browsable alternate takes per assistant reply — the newest takes win;
+ * the oldest non-active entries evict first.
  */
 export const CHAT_REPLY_TAKES_CAP = 4;
 

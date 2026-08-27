@@ -9,7 +9,7 @@ import {
 } from "./profile";
 import { relationshipStages } from "./stages";
 
-describe("stageBehaviorProfile (spec §7.1)", () => {
+describe("stageBehaviorProfile", () => {
   it("covers every registry stage exactly once", () => {
     expect(stageIdsMissingProfiles()).toEqual([]);
     const profiles = allStageBehaviorProfiles();

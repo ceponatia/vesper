@@ -30,12 +30,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The unblinded aggregates and the verdict ledger
- * (image-identity-packs.spec.trial.md §"Promotion rules"): per
- * (profile, strategy-pair) means with their sample sizes, win/tie/loss on
- * overall preference, catastrophic counts per side — and one verdict slot per
- * (profile, strategy) present in the RENDERED CELLS (the wire's
- * `renderedCombos`), each requiring a reason.
+ * The unblinded aggregates and the verdict ledger: per (profile, strategy-pair)
+ * means with their sample sizes, win/tie/loss on overall preference,
+ * catastrophic counts per side — and one verdict slot per (profile, strategy)
+ * present in the RENDERED CELLS (the wire's `renderedCombos`), each requiring a
+ * reason.
  */
 
 /** One (profile, strategy) the rendered cells put in play — the unit a verdict

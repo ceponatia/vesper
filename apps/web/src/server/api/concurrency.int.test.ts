@@ -4,10 +4,9 @@ import { activeJobCount, claimJobSlot, JOB_SLOT_STALE_MS, MAX_CONCURRENT_JOBS_PE
 import { db, jobs } from "@/server/db";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 
-// Integration suite for the per-user concurrency cap (rate-limits.plan.md slice
-// 5). The cap is enforced by a conditional INSERT rather than a read-then-write,
-// so the case that matters is parallel submits — which only a real database can
-// exercise.
+// Integration suite for the per-user concurrency cap. The cap is enforced by a
+// conditional INSERT rather than a read-then-write, so the case that matters is
+// parallel submits — which only a real database can exercise.
 
 const ready = await probeIntegrationDb("concurrency.int.test", "jobs");
 

@@ -25,16 +25,16 @@ import { consentScopeKeySchema } from "./social";
  * every terminal phase.
  *
  * Deliberate E3.2 boundaries: resource costs join with Gate 5 materials;
- * privacy/consent requirements join with E3.5's access layer; the §16.4 graded
+ * privacy/consent requirements join with E3.5's access layer; the graded
  * compatibility matrix (conversation-while-cooking) joins with E3.4
  * engagements — in this slice every body-claiming activity is stationary and
  * blocks departure outright.
  *
- * E5.3 slice 2 (§26.5–26.6) makes good on the resource-cost boundary: an
- * action definition may name `resourceCosts`, start selects and reserves
- * concrete items deterministically, and completion consumes the
- * `consume`-disposition ones through the same body-effect path `consume_item`
- * uses (`materials.ts`'s `buildConsumptionBodyEffects`).
+ * E5.3 slice 2 makes good on the resource-cost boundary: an action definition
+ * may name `resourceCosts`, start selects and reserves concrete items
+ * deterministically, and completion consumes the `consume`-disposition ones
+ * through the same body-effect path `consume_item` uses (`materials.ts`'s
+ * `buildConsumptionBodyEffects`).
  */
 
 // --- Claims ----------------------------------------------------------------
@@ -82,15 +82,15 @@ export const durationRuleSchema = z.discriminatedUnion("kind", [
 ]);
 
 /**
- * Typed, enforced preconditions — an inert authored field is not acceptable
- * (spec §16.1). Every E3.2 activity already requires an at-locus universally
- * (graded in-transit compatibility is E3.4's), so the vocabulary starts with
- * zone-kind placement alone and grows per scenario need.
+ * Typed, enforced preconditions — an inert authored field is not acceptable.
+ * Every E3.2 activity already requires an at-locus universally (graded
+ * in-transit compatibility is E3.4's), so the vocabulary starts with zone-kind
+ * placement alone and grows per scenario need.
  *
- * E5.5 slice 2 (§16.1, ruling 16) adds `consent_covered`: a `ConsentScopeKey`
- * naming the class of touch/closeness/intimacy the action concerns. Coverage
- * is checked against the §21.4 relationship ledger — fail-closed, before any
- * claim or resource is reserved.
+ * E5.5 slice 2 (ruling 16) adds `consent_covered`: a `ConsentScopeKey` naming
+ * the class of touch/closeness/intimacy the action concerns. Coverage is
+ * checked against the relationship ledger — fail-closed, before any claim or
+ * resource is reserved.
  */
 export const actionPreconditionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("at_zone_kind"), zoneKind: z.string().trim().min(1) }).strict(),
@@ -110,12 +110,12 @@ export const activityNoticeabilities = ["obvious", "private"] as const;
 export const activityNoticeabilitySchema = z.enum(activityNoticeabilities);
 
 /**
- * A named, quantified material requirement (§26.5). `consume` destroys the
+ * A named, quantified material requirement. `consume` destroys the
  * selected items into their body/world effect at completion; `use` only
  * requires and reserves them for the activity's span — they release, unspent,
  * at every terminal phase (wear/cleanliness effects are slice 3).
  */
-/** §26.7: a wear/cleanliness delta a `use`-disposition cost applies at completion. */
+/** A wear/cleanliness delta a `use`-disposition cost applies at completion. */
 export const useConditionDeltaSchema = z
   .object({
     meterKey: z.string().trim().min(1).max(64),
@@ -129,7 +129,7 @@ export const actionResourceCostSchema = z
     materialKindKey: z.string().trim().min(1).max(64),
     quantity: z.number().int().min(1).max(8),
     disposition: z.enum(["consume", "use"]),
-    /** §26.7: applied to each `use`-disposition reserved TRACKED item at completion. */
+    /** Applied to each `use`-disposition reserved TRACKED item at completion. */
     useConditionDeltas: z.array(useConditionDeltaSchema).max(2).default([]),
   })
   .strict();
@@ -140,21 +140,21 @@ export const simulationActionDefinitionSchema = z
     id: actionDefinitionIdSchema,
     version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     /**
-     * A short human display label for player-facing surfaces (world-ui.plan.md
-     * slice 3 — the world card's action chip, e.g. "Rest"). Optional and
-     * forward-compatible: stored in the jsonb payload (no migration), and a
-     * definition without it falls back to an id-derived label. Charter law —
-     * a display label as data, never a raw id in prose.
+     * A short human display label for player-facing surfaces (the world card's
+     * action chip, e.g. "Rest"). Optional and forward-compatible: stored in the
+     * jsonb payload (no migration), and a definition without it falls back to
+     * an id-derived label. Charter law — a display label as data, never a raw
+     * id in prose.
      */
     label: z.string().trim().min(1).max(48).optional(),
-    /** Principal kinds whose commands may start this action (spec §16.1). */
+    /** Principal kinds whose commands may start this action. */
     controllerKinds: z.array(principalKindSchema).min(1),
     duration: durationRuleSchema,
     preconditions: z.array(actionPreconditionSchema),
     requiredClaims: z.array(activityClaimSchema),
     interruptibility: interruptibilitySchema,
     noticeability: activityNoticeabilitySchema,
-    /** §26.5: materials reserved atomically at start, spent or released at completion. */
+    /** Materials reserved atomically at start, spent or released at completion. */
     resourceCosts: z.array(actionResourceCostSchema).max(4).default([]),
   })
   .strict()
@@ -185,7 +185,7 @@ export const activityPhases = [
 export const activityPhaseSchema = z.enum(activityPhases);
 export type ActivityPhase = z.infer<typeof activityPhaseSchema>;
 
-/** The §16.3 legal-transition table, exported so kernel and tests share one truth. */
+/** The legal-transition table, exported so kernel and tests share one truth. */
 export const activityPhaseTransitions: Record<ActivityPhase, readonly ActivityPhase[]> = {
   queued: ["preparing", "active", "cancelled", "failed"],
   preparing: ["active", "interrupted", "cancelled", "failed"],
@@ -199,7 +199,7 @@ export const activityPhaseTransitions: Record<ActivityPhase, readonly ActivityPh
 
 export const terminalActivityPhases: readonly ActivityPhase[] = ["completed", "failed", "cancelled"];
 
-/** Phases whose claims are held: acquired at start, released only terminally (§16.3). */
+/** Phases whose claims are held: acquired at start, released only terminally. */
 export const claimHoldingActivityPhases: readonly ActivityPhase[] = [
   "queued",
   "preparing",
@@ -208,7 +208,7 @@ export const claimHoldingActivityPhases: readonly ActivityPhase[] = [
   "interrupted",
 ];
 
-/** Progress is fixed-point parts-per-million (spec §6.1: no float rounding in rules). */
+/** Progress is fixed-point parts-per-million — no float rounding in rules. */
 export const progressFixedPointSchema = z.number().int().min(0).max(1_000_000);
 
 const activityActorIdsSchema = createStableStringSetSchema(worldCharacterIdSchema, "Activity actor IDs");
@@ -230,7 +230,7 @@ export const activityInstanceSchema = z
     expectedCompleteAt: storySecondSchema.optional(),
     progressFixedPoint: progressFixedPointSchema,
     claims: z.array(activityClaimSchema),
-    /** §26.5: items reserved at start, held across every claim-holding phase. */
+    /** Items reserved at start, held across every claim-holding phase. */
     reservedItemIds: activityReservedItemIdsSchema.default([]),
     sourceCommandId: commandIdSchema,
   })
@@ -274,7 +274,7 @@ export const startActivityRejectionCodes = [
   /** E5.5 slice 2: a `consent_covered` precondition with no `targetActorId` supplied. */
   "target_actor_required",
   "target_not_co_located",
-  /** E5.5 slice 2: fail-closed — no covering §21.4 ledger entry. */
+  /** E5.5 slice 2: fail-closed — no covering ledger entry. */
   "consent_required",
 ] as const;
 export const startActivityRejectionCodeSchema = z.enum(startActivityRejectionCodes);
@@ -356,7 +356,7 @@ const activityStartedPayloadSchema = z
     claims: z.array(activityClaimSchema),
     /** Captured derived value: replay does not recompute historical eligibility. */
     observerActorIds: witnessActorIdsSchema,
-    /** §26.5: the deterministic item selection, captured immutable at start. */
+    /** The deterministic item selection, captured immutable at start. */
     reservedItemIds: activityReservedItemIdsSchema,
     /**
      * E5.5 slice 2: present only when a `consent_covered` precondition was
@@ -385,7 +385,7 @@ const activityCompletedPayloadSchema = z
     activityInstanceId: activityInstanceIdSchema,
     completedAt: storySecondSchema,
     observerActorIds: witnessActorIdsSchema,
-    /** §26.6: the `consume`-disposition reserved items spent at completion. */
+    /** The `consume`-disposition reserved items spent at completion. */
     consumedItemIds: activityReservedItemIdsSchema.default([]),
   })
   .strict();

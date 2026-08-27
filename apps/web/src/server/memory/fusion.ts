@@ -2,8 +2,7 @@ import { RRF_K } from "./constants";
 
 /**
  * Pure reciprocal-rank-fusion math shared by the fused fact + episode
- * retrievers (character-chat-standalone.spec.md §6.3 #2). No IO — unit-tested
- * directly in fusion.test.ts.
+ * retrievers. No IO — unit-tested directly in fusion.test.ts.
  */
 
 /** One query's ranked candidate list (best-first) feeding the fusion. */
@@ -22,7 +21,7 @@ export interface FusedCandidate<T> {
   rrfScore: number;
   /** Best raw cosine similarity across the lists — the relevance-floor input (floors apply to raw similarity, never the RRF number). */
   bestScore: number;
-  /** Queries that retrieved this hit, in list order (per-source attribution, spec §6.3 #2). */
+  /** Queries that retrieved this hit, in list order (per-source attribution). */
   sources: string[];
 }
 

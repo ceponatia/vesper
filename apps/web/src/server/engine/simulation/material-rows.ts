@@ -17,7 +17,7 @@ import { simItemHoldings, simItems, simOutbox } from "@/server/db";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * The §26 material ROW layer: the `sim_item_holdings` locus mapping both
+ * The material ROW layer: the `sim_item_holdings` locus mapping both
  * directions, the item + holding join shape every material read hydrates
  * through, the one live locus write, and the material-feed delivery
  * obligation.
@@ -32,7 +32,7 @@ import type { SimTx } from "./trigger-projector";
 // Locus <-> row mapping
 // ---------------------------------------------------------------------------
 
-/** The flat `sim_item_holdings` column shape both directions convert against (§26.1). */
+/** The flat `sim_item_holdings` column shape both directions convert against. */
 export interface ItemHoldingRowFields {
   locusKind: "held" | "worn" | "container" | "zone" | "gone";
   actorId: string | null;
@@ -111,7 +111,7 @@ export interface MaterialItemRow {
   ownerActorId: string | null;
   containerCapacityCount: number | null;
   containerAccess: ContainerAccessPolicy | null;
-  /** §26.7: whether this item carries item-condition (wear/cleanliness) meters. */
+  /** Whether this item carries item-condition (wear/cleanliness) meters. */
   conditionTracked: boolean;
   locusKind: "held" | "worn" | "container" | "zone" | "gone";
   holdingActorId: string | null;
@@ -166,8 +166,8 @@ export async function updateItemLocus(
 
 /**
  * Insert one material feed delivery obligation — the one place that row shape
- * is built. Both the §26.4 transfer/destroy/consume paths (material-store.ts)
- * and the §26.5 completion-time consume disposition (activity-store.ts)
+ * is built. Both the transfer/destroy/consume paths (material-store.ts)
+ * and the completion-time consume disposition (activity-store.ts)
  * publish the same obligation for each movement event they emit.
  */
 export async function publishMaterialFeedObligation(

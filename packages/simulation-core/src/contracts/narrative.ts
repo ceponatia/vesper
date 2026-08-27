@@ -52,21 +52,21 @@ import {
 } from "./soft-canon";
 
 /**
- * E4.3 — the full §22.1 NarrativeCut, the §23.1 narrator trust boundary, and
- * the §23.2 presentation audit. A cut is everything one narrator render may
- * know: compiled deterministically, persisted immutable (§22.3), and
- * perspective-safe by OMISSION — private facts are absent, not flagged
- * (prompt instructions are defense in depth, never the privacy boundary).
+ * E4.3 — the full NarrativeCut, the narrator trust boundary, and the
+ * presentation audit. A cut is everything one narrator render may know:
+ * compiled deterministically, persisted immutable, and perspective-safe by
+ * OMISSION — private facts are absent, not flagged (prompt instructions are
+ * defense in depth, never the privacy boundary).
  *
  * Rerender re-reads the persisted cut and creates nothing; a failed render
  * retries from the same row (ruling 8). Armed speech acts confirm against the
- * persisted cut by id (§23.3, ruling 9) — unlisted ids are ignored, unenacted
+ * persisted cut by id (ruling 9) — unlisted ids are ignored, unenacted
  * effects expire with their cut.
  */
 
 export const CUT_COMPILER_VERSION = "cut-v3" as const;
 
-/** The ruled §23.3 speech-act vocabulary — closed; physical outcomes cannot ride it. */
+/** The ruled speech-act vocabulary — closed; physical outcomes cannot ride it. */
 export const speechActTypes = [
   "promise_offered",
   "promise_accepted",
@@ -82,7 +82,7 @@ export const speechActTypes = [
 export const speechActTypeSchema = z.enum(speechActTypes);
 export type SpeechActType = z.infer<typeof speechActTypeSchema>;
 
-/** Speech-act types the E5.5 §21.3 fold turns into a consent-scoped ledger
+/** Speech-act types the E5.5 fold turns into a consent-scoped ledger
  * entry (`boundary_stated`/`permission_granted`/`permission_withdrawn`) — a
  * speech act's free-text `detail` carries no structured scope, so these three
  * need `consentScopeKey` to name what boundary or permission it concerns. */
@@ -100,13 +100,13 @@ const armedEffectFields = {
   detail: z.string().trim().min(1).max(500),
   /**
    * The E4.2 bridge: an armed `disclosure_made` MAY carry typed knowledge
-   * content. When the render enacts it, confirmation appends a real §21
+   * content. When the render enacts it, confirmation appends a real
    * `disclosure_made` event alongside the speech act, so gossip spoken by the
    * narrator enters the belief ledgers with full provenance.
    */
   disclosureContent: disclosureContentSchema.optional(),
-  /** E5.5 (§21.3, §21.4): required exactly on the three consent-scoped
-   * effect types above — names the scope the boundary or permission covers. */
+  /** E5.5: required exactly on the three consent-scoped effect types above —
+   * names the scope the boundary or permission covers. */
   consentScopeKey: consentScopeKeySchema.optional(),
 };
 
@@ -129,7 +129,7 @@ export const armedEffectSchema = z
   .object({
     id: z.string().min(1).max(2_048),
     cutId: narrativeCutIdSchema,
-    /** The branch version the cut was compiled at (§23.3 revalidation). */
+    /** The branch version the cut was compiled at (confirmation revalidation). */
     preconditionVersion: z.number().int().nonnegative(),
     ...armedEffectFields,
   })
@@ -160,7 +160,7 @@ export const proposedArmedEffectSchema = z
 
 export type ProposedArmedEffect = z.infer<typeof proposedArmedEffectSchema>;
 
-// --- Cut building blocks (§22.1) ---------------------------------------------
+// --- Cut building blocks -----------------------------------------------------
 
 const cutBeatSchema = z
   .object({
@@ -196,7 +196,7 @@ const cutActivitySchema = z
 
 export type CutActivity = z.infer<typeof cutActivitySchema>;
 
-/** One §20 observation as narrator-facing evidence: how well, through what. */
+/** One observation as narrator-facing evidence: how well, through what. */
 const evidenceViewSchema = z
   .object({
     observationId: observationIdSchema,
@@ -241,7 +241,7 @@ const cutPressureSchema = z
   })
   .strict();
 
-/** The §22.2 forbidden-claim vocabulary — typed codes, not only prose. */
+/** The forbidden-claim vocabulary — typed codes, not only prose. */
 export const forbiddenClaimCodes = [
   "impossible_presence",
   "unearned_travel",
@@ -270,7 +270,7 @@ export const forbiddenClaimSchema = z
 
 export type ForbiddenClaim = z.infer<typeof forbiddenClaimSchema>;
 
-/** §14.4: the public face of a failure — the private cause never enters a cut. */
+/** The public face of a failure — the private cause never enters a cut. */
 export const publicFailurePresentationSchema = z
   .object({
     code: z.string().min(1).max(128),
@@ -283,8 +283,8 @@ export const publicFailurePresentationSchema = z
 export type PublicFailurePresentation = z.infer<typeof publicFailurePresentationSchema>;
 
 /**
- * Bounded invention the narrator MAY exercise (§23.1): transient ambiance,
- * the viewpoint's inner voice, consequence-free small talk, and reuse of
+ * Bounded invention the narrator MAY exercise: transient ambiance, the
+ * viewpoint's inner voice, consequence-free small talk, and reuse of
  * already-established soft canon. A license never grants a hard outcome.
  */
 export const creativeLicenseKinds = [
@@ -325,7 +325,7 @@ export const creativeLicenseSchema = z
 export type CreativeLicense = z.infer<typeof creativeLicenseSchema>;
 
 /**
- * E5.2 — the §25.1 layer-3 body surface inside the cut. The viewpoint gets
+ * E5.2 — the layer-3 body surface inside the cut. The viewpoint gets
  * their OWN reads (interoception: the signed energy axis and the intimacy
  * pulse); everyone else appears only as the closed visible-sign vocabulary a
  * witness could actually perceive. Raw meters structurally cannot enter a
@@ -385,12 +385,12 @@ export const provenanceRefSchema = z
 
 export type ProvenanceRef = z.infer<typeof provenanceRefSchema>;
 
-// --- The NarrativeCut (§22.1) -------------------------------------------------
+// --- The NarrativeCut ---------------------------------------------------------
 
 export const narrativeCutSchema = z
   .object({
     id: narrativeCutIdSchema,
-    /** §22.3: recompiling this cut id must reproduce this hash, or fail loudly. */
+    /** Recompiling this cut id must reproduce this hash, or fail loudly. */
     semanticHash: z.string().regex(/^[0-9a-f]{8}$/u),
     compilerVersion: z.string().min(1).max(64),
     worldId: worldIdSchema,
@@ -408,14 +408,14 @@ export const narrativeCutSchema = z
     currentActivities: z.array(cutActivitySchema),
     /** Interval beats the viewpoint witnessed; prose must enact each once. */
     mustEnact: z.array(cutBeatSchema),
-    /** The viewpoint's §20 evidence for this interval, graded as it arrived. */
+    /** The viewpoint's evidence for this interval, graded as it arrived. */
     perceptibleNow: z.array(evidenceViewSchema),
-    /** What the viewpoint believes (§21) — voiceable, possibly false. */
+    /** What the viewpoint believes — voiceable, possibly false. */
     speakerBeliefs: z.array(beliefViewSchema),
     /**
      * The viewpoint's OWN pressures only. Another actor's obligations enter a
      * cut solely as observable beats (a departure), never as private causes
-     * (spec §14.4 — redaction by omission, not instruction).
+     * (redaction by omission, not instruction).
      */
     relevantPressures: z.array(cutPressureSchema),
     /** Already-resolved beats the narrator MAY portray — never new outcomes. */
@@ -425,7 +425,7 @@ export const narrativeCutSchema = z
     failurePresentations: z.array(publicFailurePresentationSchema),
     creativeLicenses: z.array(creativeLicenseSchema),
     armedEffects: z.array(armedEffectSchema),
-    /** Defaulted so cuts persisted before cut-v3 still parse (§22.3). */
+    /** Defaulted so cuts persisted before cut-v3 still parse. */
     bodilyReads: cutBodilyReadsSchema.default({ observed: [] }),
     provenance: z.array(provenanceRefSchema),
   })
@@ -437,7 +437,7 @@ export const narrativeCutSchema = z
 
 export type NarrativeCut = z.infer<typeof narrativeCutSchema>;
 
-// --- Narrator result (§23.1) ---------------------------------------------------
+// --- Narrator result -----------------------------------------------------------
 
 /**
  * The narrator's structured reply. Deliberately NOT `.strict()`: it crosses a
@@ -448,7 +448,7 @@ export type NarrativeCut = z.infer<typeof narrativeCutSchema>;
 export const narratorResultSchema = z.object({
   prose: z.string().max(20_000),
   enactedArmedEffectIds: z.array(z.string().min(1).max(2_048)).max(32),
-  /** Which mustEnact beats the prose delivered, by event id (§23.2 audit). */
+  /** Which mustEnact beats the prose delivered, by event id (presentation audit). */
   enactedBeatEventIds: z.array(z.string().min(1).max(2_048)).max(64),
   proposedSoftCanon: z.array(softCanonProposalDraftSchema).max(16),
   diagnostics: z.array(z.string().min(1).max(500)).max(16).optional(),
@@ -457,11 +457,11 @@ export const narratorResultSchema = z.object({
 export type NarratorResult = z.infer<typeof narratorResultSchema>;
 
 /**
- * The solo-cut narrator's reply (world-ui.plan.md slice 0, ruling 21). A solo
- * turn enacts no beats and arms no effects (there is no committed cut), so its
- * output is prose alone. Deliberately NOT `.strict()` and `prose` defaults to ""
- * so a malformed reply degrades to the deterministic fallback rather than
- * throwing (docs/resilience.md).
+ * The solo-cut narrator's reply (ruling 21). A solo turn enacts no beats and
+ * arms no effects (there is no committed cut), so its output is prose alone.
+ * Deliberately NOT `.strict()` and `prose` defaults to "" so a malformed reply
+ * degrades to the deterministic fallback rather than throwing
+ * (docs/resilience.md).
  */
 export const soloNarrationSchema = z.object({
   prose: z.string().max(20_000).default(""),
@@ -469,7 +469,7 @@ export const soloNarrationSchema = z.object({
 
 export type SoloNarration = z.infer<typeof soloNarrationSchema>;
 
-// --- Presentation audit (§23.2) ------------------------------------------------
+// --- Presentation audit --------------------------------------------------------
 
 export const presentationAuditVerdicts = ["accept", "accept_with_bridge", "rerender"] as const;
 export const presentationAuditVerdictSchema = z.enum(presentationAuditVerdicts);
@@ -495,7 +495,7 @@ export const presentationAuditSchema = z
 
 export type PresentationAudit = z.infer<typeof presentationAuditSchema>;
 
-// --- Narrator-result confirmation (§23.3, ruling 9) ----------------------------
+// --- Narrator-result confirmation (ruling 9) -----------------------------------
 
 const confirmNarratorResultPayloadSchema = z
   .object({
@@ -507,7 +507,7 @@ const confirmNarratorResultPayloadSchema = z
      * ignored, and everything unenacted expires with the cut.
      */
     enactedArmedEffectIds: z.array(z.string().min(1).max(2_048)).max(32),
-    /** Validated §23.4 proposals, source cut already stamped by the boundary. */
+    /** Validated proposals, source cut already stamped by the boundary. */
     softCanonProposals: z.array(softCanonProposalSchema).max(16),
   })
   .strict()
@@ -546,7 +546,7 @@ const speechActDeliveredPayloadSchema = z
     actorId: worldCharacterIdSchema,
     targetActorIds: z.array(worldCharacterIdSchema).min(1),
     detail: z.string().trim().min(1).max(500),
-    /** E5.5 (§21.3, §21.4) — see `armedEffectFields`'s doc comment above. */
+    /** E5.5 — see `armedEffectFields`'s doc comment above. */
     consentScopeKey: consentScopeKeySchema.optional(),
   })
   .strict()
@@ -557,7 +557,7 @@ const speechActDeliveredPayloadSchema = z
 
 /**
  * One delivered semantic speech act. Gate 5's social ledger derives promises
- * and boundaries from these; the closed effectType enum keeps the §9.2
+ * and boundaries from these; the closed effectType enum keeps the
  * distinct-concept rule honest while the family shares one envelope.
  */
 export const speechActDeliveredEventSchema = createEventEnvelopeSchema(

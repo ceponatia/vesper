@@ -65,9 +65,7 @@ import { ROMANTIC_PERMISSION_OVERRIDE_AUDIT_TYPE } from "./shared";
 import { GET as permissionsGet, POST as permissionsPost } from "./[chatId]/route";
 
 /**
- * The `romantic_touch` developer-override endpoint, end to end
- * (romantic-contact-affordances.spec.permission.md §"Authorship and developer
- * controls"; plan rulings 1 and 5; implementation-order step 2) — what only the
+ * The `romantic_touch` developer-override endpoint, end to end — what only the
  * real route + a real Postgres can prove:
  *
  * - an override records the ledger row AND its app-`events` audit row through
@@ -647,7 +645,8 @@ describe.runIf(ready)("serialization — the override is a writer on the exchang
       // Every surface is untouched by the refused override: the ledger holds
       // only the grant, the contact never ended, no audit row was written, and
       // the other writer's scene stands. A partial commit here — a withdrawn
-      // ledger over a still-touching scene — is the mixed state the spec bans.
+      // ledger over a still-touching scene — is the mixed state that must never
+      // exist.
       expect((await listChatPermissionEvents(chat.chatId)).map((event) => event.kind)).toEqual(["developer_overridden"]);
       expect((await listChatContactEvents(chat.chatId)).map((event) => event.kind)).toEqual(["contact_started"]);
       expect(await auditRows(chat.chatId)).toHaveLength(1);

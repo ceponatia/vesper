@@ -16,7 +16,7 @@ import { Select } from "@/components/ui/select";
 import { SkeletonCards } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
-/** Scene grouping modes (library-ux.plan.md §Follow-up pass — view modes). */
+/** Scene grouping modes. */
 type ViewMode = "character" | "timeline";
 
 const TABS: { id: GalleryTab; label: string }[] = [
@@ -480,7 +480,7 @@ export function GalleryPage() {
                             {/* `.hover-reveal` (globals.css): hover-gated on pointer devices,
                                 always shown on touch — the raw opacity-0 + group-hover pair
                                 these used before never appeared on phones, so favoriting had
-                                no path there (mobile-ux W3 task 7). `.touch-target` widens the
+                                no path there. `.touch-target` widens the
                                 coarse-pointer tap height past the size-7 (28px) glyph box. The
                                 favorite heart stays unconditionally visible once set (it's a
                                 state marker, not just a reveal-on-hover action). */}

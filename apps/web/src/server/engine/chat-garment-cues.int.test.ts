@@ -4,8 +4,8 @@ import type { GarmentOperationProposal } from "@/contracts/turns/chat-garment-op
 import { switchScenePlace } from "@/contracts/turns/chat-scene-memory";
 
 /**
- * Slice 6 end to end — the narrator digest, the bounded cue block, and OQ8's
- * look-refresh trigger (clothing-state-graph.plan.md §Slice 6).
+ * The garment cue lane end to end — the narrator digest, the bounded cue block,
+ * and the look-refresh trigger.
  *
  * What only a database can prove:
  *

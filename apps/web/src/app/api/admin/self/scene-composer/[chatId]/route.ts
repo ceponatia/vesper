@@ -17,8 +17,7 @@ import { loadOwnedChat } from "@/app/api/chats/owned";
  *
  * Implemented directly beneath `/api/admin/self` rather than as a re-export of an
  * `/api/admin/**` twin: `withOwnerAdmin` fails closed with a hidden 404 outside this
- * prefix, so the twin would be a phantom path that can never serve
- * (codebase-modularity.audit.md §"admin/self shim inversion").
+ * prefix, so the twin would be a phantom path that can never serve.
  */
 
 type Params = { chatId: string };

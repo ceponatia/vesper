@@ -5,7 +5,7 @@ import { log } from "@/server/log";
 import { errorText } from "./respond";
 
 /**
- * Durable cost controls — the half of rate-limits.plan.md that must survive a
+ * Durable cost controls — the half of the cost guards that must survive a
  * process restart.
  *
  * Burst windows live in memory because losing them is harmless. These do not: an
@@ -36,7 +36,7 @@ function envInt(name: string, fallback: number): number {
 
 /**
  * Per-account daily ceilings. Counted in **calls**, not currency: per-model
- * prices live outside the app and would rot in here (rate-limits.plan.md OQ1).
+ * prices live outside the app and would rot in here.
  * Sized generously — these are an abuse backstop, not a product plan, and a
  * legitimate heavy session should never see one.
  */

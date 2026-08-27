@@ -27,7 +27,7 @@ import {
 } from "./index";
 
 /**
- * The prompt-program layer (model-aware-image-prompts.plan.md).
+ * The prompt-program layer.
  *
  * One file for the whole layer because the invariants worth protecting here are
  * about how its parts INTERACT — a guard, a protection set and a linter decision
@@ -175,8 +175,8 @@ describe("the negative channel never forbids what the world requires", () => {
   });
 
   /**
-   * Each case names a world fact and the exclusion it must disarm — the plan's
-   * "Minimum collision rules", one row each. A failure here means a render that
+   * Each case names a world fact and the exclusion it must disarm — the minimum
+   * collision rules, one row each. A failure here means a render that
    * asked for something was told not to produce it, which is the failure mode the
    * whole conflict-key design exists to make impossible.
    */
@@ -525,7 +525,7 @@ describe("compiling a prompt program", () => {
   });
 
   /**
-   * The plan's fail-closed rules, each of which would otherwise become a render
+   * The fail-closed rules, each of which would otherwise become a render
    * that looks fine and quietly lost a guarantee.
    */
   it.each([

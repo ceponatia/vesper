@@ -27,7 +27,7 @@ import { prepareModelPrompt } from "./model-adapters";
 import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
 
 /**
- * The image-model registry's server seam (image-model-registry.spec.md).
+ * The image-model registry's server seam.
  *
  * It loads the rows, runs one model, and normalizes the result back to the shape
  * the caller asked for. Callers never name a provider — that moved into the

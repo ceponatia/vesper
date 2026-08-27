@@ -26,10 +26,9 @@ const trialVerdictRequestSchema = z.object({
 });
 
 /**
- * Record (or revise) one per-(profile, strategy) verdict
- * (image-identity-packs.spec.trial.md §"Version promotion"). The reason is
- * required for the same reason an admin override records one: a promotion with
- * no stated reason is indistinguishable from a mistake six months later.
+ * Record (or revise) one per-(profile, strategy) verdict. The reason is required
+ * for the same reason an admin override records one: a promotion with no stated
+ * reason is indistinguishable from a mistake six months later.
  *
  * The response carries the run's settled status — when every combination
  * present in the rendered cells is ruled AND every reviewable pair is graded,

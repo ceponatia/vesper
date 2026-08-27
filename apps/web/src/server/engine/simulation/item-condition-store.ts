@@ -27,16 +27,17 @@ import { appendSimulationEvent, type LockedBranchView } from "./command-runner";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
- * E5.3 slice 3 — the §26.7 item-condition ROW layer, mirroring body-rows.ts
+ * E5.3 slice 3 — the item-condition ROW layer, mirroring body-rows.ts
  * over the item-scoped meter/modifier tables (never the body ones). Row
  * mapping, lazy initialization, the material-boundary writes, the alarm
  * retirement, and the shared trailing-event write live here.
  *
  * A LEAF module: it imports no sibling store, which is what lets material-
- * store.ts's two §26.7 command shells and activity-store.ts's completion-time
- * use-delta path share one copy. Before this module existed activity-store.ts
- * carried its own duplicates, because importing material-store.ts would have
- * closed the `material-store → body-store → activity-store` cycle.
+ * store.ts's two item-condition command shells and activity-store.ts's
+ * completion-time use-delta path share one copy. Before this module existed
+ * activity-store.ts carried its own duplicates, because importing
+ * material-store.ts would have closed the
+ * `material-store → body-store → activity-store` cycle.
  */
 
 export function itemConditionMeterFromRow(
@@ -146,7 +147,7 @@ export async function loadItemConditionView(
 
 /**
  * Batch-load condition state for a set of items under the lock. An item
- * absent from the returned map has never been initialized (LAZY init — §26.7)
+ * absent from the returned map has never been initialized (LAZY init)
  * — the caller synthesizes a fresh in-memory view and the completion path
  * emits `item_condition_initialized` for it before any delta.
  */
@@ -288,10 +289,10 @@ export async function upsertItemConditionMeterRow(
 }
 
 /**
- * The §26.5 completion-time use-delta write: value and integration boundary
+ * The completion-time use-delta write: value and integration boundary
  * straight off the resolved `item_condition_source_applied` event, with no
  * resolved meter state to carry a baseline — deliberately narrower than
- * {@link upsertItemConditionMeterRow}, which the §26.7 command shells use.
+ * {@link upsertItemConditionMeterRow}, which the command shells use.
  */
 export async function upsertItemConditionMeterValue(
   tx: SimTx,

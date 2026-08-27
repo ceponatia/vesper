@@ -16,7 +16,7 @@ function input(overrides: Partial<Parameters<typeof evaluateActReaction>[0]> = {
   };
 }
 
-describe("evaluateActReaction (the shared §6 sequence — both lanes)", () => {
+describe("evaluateActReaction (the shared reaction sequence — both lanes)", () => {
   it("a matched preference runs the curve into a signed, clamped delta + mood nudge", () => {
     const prefs: Preference[] = [{ target: "compliment", valence: "like", intensity: 6 }];
     const out = evaluateActReaction(input({ disposition: { tags: [], preferences: prefs, cards: [] } }));
@@ -45,7 +45,7 @@ describe("evaluateActReaction (the shared §6 sequence — both lanes)", () => {
     expect(out.moodDelta).toBeLessThan(0);
   });
 
-  it("an unmatched touch concept falls back to affinity-stage welcome-ness (mood.spec §5)", () => {
+  it("an unmatched touch concept falls back to affinity-stage welcome-ness", () => {
     const warm = evaluateActReaction(input({ act: { concept: "physical_affection", target: "Mara" }, affinity: 60 }));
     expect(warm.kind).toBe("touch");
     if (warm.kind !== "touch") return;

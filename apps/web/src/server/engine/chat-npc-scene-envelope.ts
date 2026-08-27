@@ -20,9 +20,7 @@ import {
 
 /**
  * THE NPC REPLY-SCENE DECISION ENVELOPE — durable identity for every outcome of
- * the reply-scene leg, empty ones included
- * (romantic-contact-affordances.spec.actor-control.md §"Durable decision
- * envelope and transaction"; delivery-order step 2).
+ * the reply-scene leg, empty ones included.
  *
  * `chat_contact_events` records what a decision COMMITTED; nothing recorded what
  * a decision WAS. A movement lands only in `character_chats.scene`, and a
@@ -88,7 +86,7 @@ import {
 /** The boundary path a dropped or degraded row reports under. */
 const CHAT_NPC_SCENE_DECISIONS_PATH = "chat_npc_scene_decisions";
 
-/** The diagnostic code every persistence conflict files (spec §"Diagnostics"). */
+/** The diagnostic code every persistence conflict files. */
 export const NPC_SCENE_DECISION_PERSISTENCE_CONFLICT = "npc_scene_decision.persistence_conflict";
 
 // ---------------------------------------------------------------------------
@@ -108,8 +106,8 @@ export const NPC_SCENE_DECISION_PAYLOAD_VERSION = 1;
 
 /**
  * What became of one raw output slot. "absent" and "malformed" are DIFFERENT
- * trace outcomes by ruling (spec §"Closed decision schema" — no `.catch(null)`),
- * which is exactly why the envelope must record which one happened.
+ * trace outcomes by ruling (no `.catch(null)`), which is exactly why the
+ * envelope must record which one happened.
  */
 export const npcSceneDecisionSlotOutcomes = ["absent", "malformed", "parsed"] as const;
 export type NpcSceneDecisionSlotOutcome = (typeof npcSceneDecisionSlotOutcomes)[number];
@@ -139,7 +137,7 @@ export type NpcSceneDecisionDropReason = (typeof npcSceneDecisionDropReasons)[nu
  * Where an admitted, ordered action came from: the frozen deterministic ending
  * floor, a tier-2 movement proposal, a tier-2 contact proposal, or the
  * PRESENCE PRECEDENCE fold that ends an away participant's contacts before any
- * tier-2 proposal resolves (spec §"Authoritative post-settle cut" 1).
+ * tier-2 proposal resolves.
  *
  * `presence_ending` is its own kind rather than a `floor_ending` with a detail,
  * because the floor is a prose EXTRACTOR and this is not: nothing was read, a
@@ -294,7 +292,7 @@ const droppedCandidateSchema = z.object({
 
 /**
  * Model/latency telemetry, following the other structured legs' fields, plus the
- * SPEND the cost gate is stated in (spec §"Execution, flags, and cost gate").
+ * SPEND figures the cost gate is expressed in.
  *
  * The spend fields are optional and absent-when-unknown rather than defaulted to
  * zero, because the gate reads them as measurements: a timed-out call and a free

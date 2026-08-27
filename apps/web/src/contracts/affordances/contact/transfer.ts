@@ -15,8 +15,7 @@ import type { CommittedContactRead, ContactMotionBand, ContactPressureBand } fro
 
 /**
  * Conserved surface transfer — the proposal, and the two owner-backed reads it
- * is not allowed to author (romantic-contact-affordances.spec.effects.md §9,
- * §15 stage 8; owner rulings 2026-08-25 and 2026-08-26).
+ * is not allowed to author (owner rulings 2026-08-25 and 2026-08-26).
  *
  * A transfer says: *this much of this substance left that surface, and all of
  * it arrived somewhere*. That is a stronger proof than the pressure mark
@@ -41,7 +40,7 @@ import type { CommittedContactRead, ContactMotionBand, ContactPressureBand } fro
  * **Throughput is not moisture.** `ContactMaterialLayerRead` already carries a
  * `moistureTransmission` channel, and reusing it here was the tempting move —
  * it composes, it is plumbed, and the chat lane's zero is exactly the blocker
- * §15 stage 8 names. It would also have been wrong. Moisture transmission
+ * that keeps transfer fixture-only. It would also have been wrong. Moisture transmission
  * answers "does dampness reach the other side"; a substance moving through a
  * layer is a different question with a different answer per substance, and
  * coupling them would mean that retuning how cotton carries damp silently
@@ -99,7 +98,7 @@ export const surfaceTransferMaterialReadSchema: z.ZodType<SurfaceTransferMateria
  * a sensory channel only needs to know something is in the way. A transfer has
  * to put material ONTO that something, so the handle carried here has to be one
  * the interposed thing's own owner can validate and credit. That is the second
- * of the three gaps §15 stage 8 names — the chat lane's layers carry a
+ * of the three known gaps — the chat lane's layers carry a
  * coverage-region identity rather than an owner-addressable one — and it is why
  * that lane resolves no path today.
  */
@@ -160,7 +159,8 @@ export function sortSurfaceTransferPathLayers(
 // ---------------------------------------------------------------------------
 
 /**
- * A requested conserved transfer (effects spec §6's required fields, §9's law).
+ * A requested conserved transfer, carrying every field the conservation law
+ * needs.
  *
  * `amount` is an INTENT, not a promise. The owner transaction re-reads the
  * source record inside its own transactional cut and takes what is actually
@@ -175,7 +175,7 @@ export interface SurfaceTransferProposal {
    * Stable idempotency key, derived from the causal contact event and the
    * source record. Covers the whole settlement — source debit, every
    * intermediate credit, and the destination credit are one identity, because
-   * §9's atomicity law has nothing to attach to if the legs are keyed apart.
+   * the atomicity law has nothing to attach to if the legs are keyed apart.
    */
   readonly idempotencyKey: string;
   /** Whose surface the material leaves. */
@@ -197,7 +197,7 @@ export interface SurfaceTransferProposal {
 }
 
 // ---------------------------------------------------------------------------
-// The producer (effects spec §9)
+// The producer
 // ---------------------------------------------------------------------------
 
 /**
@@ -223,8 +223,8 @@ const TRANSFER_PRESSURE_FRACTION: Readonly<Partial<Record<ContactPressureBand, n
 /**
  * What committed motion adds to the fraction.
  *
- * Only RELATIVE motion is in this table, and that is §16's "no relative motion
- * -> no glide" expressed as data: `still` and `pressing` are absent, because a
+ * Only RELATIVE motion is in this table — "no relative motion, no glide"
+ * expressed as data: `still` and `pressing` are absent, because a
  * hand bearing down without travelling has taken nothing off the surface it is
  * resting on, however hard it presses.
  */
@@ -248,7 +248,7 @@ export const SURFACE_TRANSFER_MIN_AMOUNT = 250;
  *
  * Pure and total over its three inputs — same reads, same proposal, same
  * idempotency key, which is what makes a retake's replay land on the identical
- * settlement (effects spec §13). It fails closed on every axis (§14):
+ * settlement. It fails closed on every axis:
  *
  * - an OBJECT target proposes nothing, because furniture has no surface owner;
  * - a target that is not the path's destination proposes nothing, since a
@@ -261,9 +261,9 @@ export const SURFACE_TRANSFER_MIN_AMOUNT = 250;
  *   clear `SURFACE_TRANSFER_MIN_AMOUNT`.
  *
  * Note what is NOT a refusal here: a fully blocking layer. `throughput: 0` is a
- * perfectly ordinary transfer whose destination happens to be the garment
- * (§9's "an intermediate garment receives material when path says it does").
- * A blocking layer stops material reaching skin; it does not stop it moving.
+ * perfectly ordinary transfer whose destination happens to be the garment — an
+ * intermediate garment receives material when the path says it does. A blocking
+ * layer stops material reaching skin; it does not stop it moving.
  */
 export function surfaceTransferProposals(input: {
   contact: CommittedContactRead;

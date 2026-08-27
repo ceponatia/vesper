@@ -116,7 +116,7 @@ export type UploadChatAttachmentResult = { ok: true; imageId: string } | { ok: f
 const CHAT_ATTACHMENT_MAX_DIM = 1280;
 
 /**
- * Player-attached chat photo (chat-image-input.plan.md): decode with the same
+ * Player-attached chat photo: decode with the same
  * bomb guards as the avatar upload, fit INSIDE a bounded box (aspect kept —
  * this is a photo to look at, not a portrait crop), honor EXIF, and save
  * through the normal row-before-file path as `kind: "chat_upload"`, chat-keyed.

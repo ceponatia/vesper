@@ -3,8 +3,7 @@ import { guidanceFingerprint, guidanceOrderedPart } from "./fingerprint";
 import type { GuidanceDisclosure, PhysicalActionOutcome, PhysicalActionStatus } from "./types";
 
 /**
- * The action-outcome adapter seam (narrator-physical-guidance.plan.md slice 1,
- * consumed by slice 3's contact resolver).
+ * The action-outcome adapter seam, consumed by the contact resolver.
  *
  * A resolver decides feasibility, permission, consent, and actor control; this
  * function only stamps the result with a deterministic identity so it can be

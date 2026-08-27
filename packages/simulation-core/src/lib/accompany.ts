@@ -4,22 +4,22 @@ import type { Commitment } from "../contracts/commitments";
 import { OPEN_COMMITMENT_STATUSES } from "./solo-cut";
 
 /**
- * Walk-with-me acceptance policy (world-ui.plan.md slice 5, §14.2) — PURE. When
- * the player invites the co-present primary to travel together, the primary's
- * acceptance is NPC AGENCY via a bounded DETERMINISTIC policy (no model call, no
- * consent-ledger touch — §39 ruling 16): accept UNLESS
+ * Walk-with-me acceptance policy — PURE. When the player invites the co-present
+ * primary to travel together, the primary's acceptance is NPC AGENCY via a
+ * bounded DETERMINISTIC policy (no model call, no consent-ledger touch —
+ * ruling 16): accept UNLESS
  *
  *   (a) a claim-holding activity occupies the primary's BODY right now (the same
  *       body-claim gate `resolveMoveActor` enforces — they're mid-something), or
  *   (b) a `firm`/`hard` commitment falls due before the walk's arrival plus a
  *       small buffer (leaving now would put a real obligation at risk).
  *
- * A decline returns an honest §14.4-style PUBLIC face built from PUBLIC facts
- * ONLY — the SAME public reason whether (a) or (b) blocks her, so the private
- * cause never leaks (a body claim vs. a commitment must read identically). A
- * future pass upgrades this seam to the §19.3 deliberator (bounded legal
- * candidates, deterministic fallback = decline); the decision shape here is
- * chosen to survive that upgrade.
+ * A decline returns an honest PUBLIC face built from PUBLIC facts ONLY — the
+ * SAME public reason whether (a) or (b) blocks her, so the private cause never
+ * leaks (a body claim vs. a commitment must read identically). A future pass
+ * upgrades this seam to the deliberator (bounded legal candidates,
+ * deterministic fallback = decline); the decision shape here is chosen to
+ * survive that upgrade.
  *
  * No IO, no env, no db (src/lib purity): the caller loads the activities,
  * commitments, and arrival estimate; this only decides accept/decline and
@@ -37,7 +37,7 @@ export interface AccompanyPolicyInput {
   activities: readonly ActivityInstance[];
   /** The branch's commitments (the firm/hard-due gate reads the primary's). */
   commitments: readonly Commitment[];
-  /** The story-second the walk would earliest-arrive at the destination (§17.1 lower bound). */
+  /** The story-second the walk would earliest-arrive at the destination (lower bound). */
   arrivalStorySecond: number;
 }
 
@@ -45,7 +45,7 @@ export type AccompanyDecision =
   | { accept: true }
   | { accept: false; publicReason: string; legalAlternatives: string[] };
 
-/** True when a claim-holding activity holds the actor's BODY (the departure-blocking claim, §3.1). */
+/** True when a claim-holding activity holds the actor's BODY (the departure-blocking claim). */
 export function actorHoldsBodyClaim(actorId: string, activities: readonly ActivityInstance[]): boolean {
   return activities.some(
     (activity) =>

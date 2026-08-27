@@ -4,9 +4,7 @@ import { contactRefAt, npcRefAt, NPC_SCENE_PLAYER_REF } from "./npc-scene-decisi
 import type { NpcSceneReplySpan } from "./npc-scene-evidence";
 
 /**
- * The chronological planner
- * (romantic-contact-affordances.spec.actor-control.md §"Chronology and
- * folding"): reply order — absolute action offsets — replaces the old fixed
+ * The chronological planner: reply order — absolute action offsets — replaces the old fixed
  * floor→movement→contact order; unorderable tier-2 actions drop; the floor
  * always survives; a floor ending and a depart over the same span group into
  * one composite-departure entry (data only — band math is increment-1 work).

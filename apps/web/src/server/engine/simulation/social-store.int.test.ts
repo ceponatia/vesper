@@ -1159,10 +1159,10 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
       true,
     );
 
-    // §9.4: a severity change SINCE acknowledgment re-surfaces the pressure —
-    // simulate the escalation directly on the row (the blueprint's own
-    // sanctioned shortcut, §9.6, since nothing in this slice's domain
-    // re-raises severity on a live pressure yet).
+    // A severity change SINCE acknowledgment re-surfaces the pressure —
+    // simulate the escalation directly on the row (a sanctioned shortcut,
+    // since nothing in this slice's domain re-raises severity on a live
+    // pressure yet).
     const acked = firstTurn.acknowledgments.find((ack) => ack.actorId === ids.ana && ack.result === "accepted");
     if (!acked) throw new Error("expected ana's first-turn pressure to have been acknowledged");
     await db()
@@ -1205,7 +1205,7 @@ describe.runIf(ready)("E5.5 slice 3 durable consent escalation and pressure ackn
     expectRejected(result, "unauthorized_principal", "a player acknowledging a pressure");
   });
 
-  it("full-corpus fork-hash parity: authored entries, a change, derived speech-act entries, a kept commitment, a consentGrant-gated activity, and consent_escalation_resolved together — child ledger rows exactly match a replaySocialLedgerHistory rebuild across every ledger-producing E5.5 event type (slices 1–3; pressure_acknowledged is excluded by design, §1.7 — it produces no ledger row, and its own fork/replay safety is proven separately by engagements.ts's replay tests)", async () => {
+  it("full-corpus fork-hash parity: authored entries, a change, derived speech-act entries, a kept commitment, a consentGrant-gated activity, and consent_escalation_resolved together — child ledger rows exactly match a replaySocialLedgerHistory rebuild across every ledger-producing E5.5 event type (slices 1–3; pressure_acknowledged is excluded by design — it produces no ledger row, and its own fork/replay safety is proven separately by engagements.ts's replay tests)", async () => {
     const ids = await seedCase();
 
     // Slice 1 — authored entries + a change. The authored_prior entry is

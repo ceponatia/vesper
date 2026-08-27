@@ -26,7 +26,7 @@ export const routinePolicyWeightsVersionSchema = z.enum(routinePolicyWeightsVers
 export const routinePolicyDerivationVersion = "routine-policy-v2" as const;
 
 // ---------------------------------------------------------------------------
-// Candidate vocabulary + versioned weights (§19.2 — registry data)
+// Candidate vocabulary + versioned weights (registry data)
 // ---------------------------------------------------------------------------
 
 /**
@@ -42,9 +42,9 @@ export type RoutineCandidateId = z.infer<typeof routineCandidateIdSchema>;
 
 /**
  * Why a candidate was illegal at scoring time, captured on the decision
- * event so the audit explains itself (§19.2 — never a model's private
- * chain of thought; these are deterministic gate names).
- * `no_eligible_item` is `eat_meal`'s §26.5 gate: the actor is inside a meal
+ * event so the audit explains itself (never a model's private chain of
+ * thought; these are deterministic gate names).
+ * `no_eligible_item` is `eat_meal`'s gate: the actor is inside a meal
  * window but no eligible consumable is within reach.
  */
 export const routineIllegalReasons = [
@@ -79,7 +79,7 @@ export const ROUTINE_SLEEP_OBLIGATION_PENALTY_FIXED_POINT = 10_000 as const;
  * beats the 3 500 bedtime anchor (supper first), while escalation (312/h
  * past the normal waking span) pushes sleep past 6 000 after ~8h of overdue
  * sleep — a badly deprived actor sleeps through the overlap, emergently.
- * Eating is instantaneous (§26.6: one command, one atomic record), so no
+ * Eating is instantaneous (one command, one atomic record), so no
  * obligation penalty applies. Versioned registry data.
  */
 export const ROUTINE_MEAL_WEIGHT_FIXED_POINT = 6_000 as const;
@@ -145,7 +145,7 @@ export const runRoutinePolicyCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// routine_policy_resolved — the §19.2 decision record (§6.4 capture)
+// routine_policy_resolved — the decision record, captured on the event
 // ---------------------------------------------------------------------------
 
 const routinePolicyResolvedPayloadSchema = z
@@ -166,8 +166,8 @@ const routinePolicyResolvedPayloadSchema = z
       })
       .strict()
       .optional(),
-    /** Present exactly when `eat_meal` was chosen: the §26.5-selected item
-     * this same command's causation-chained §26.6 consumption train eats. */
+    /** Present exactly when `eat_meal` was chosen: the selected item this
+     * same command's causation-chained consumption train eats. */
     meal: z
       .object({
         itemId: z.string().min(1).max(1_024),

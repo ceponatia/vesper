@@ -12,10 +12,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usageCountLabel } from "./narrator-prompt-shared";
 
 /**
- * The Prompt Lab's library pane (narrator-prompt-lab.plan.md §"Library pane"):
- * every saved prompt, with the three facts that decide which one to open —
- * which revision it is on, when it last changed, and how many conversations it
- * is currently steering.
+ * The Prompt Lab's library pane: every saved prompt, with the three facts that
+ * decide which one to open — which revision it is on, when it last changed, and
+ * how many conversations it is currently steering.
  *
  * The search filters the list the page already holds rather than asking the
  * server: this is one owner's handful of experiments, and a round trip per

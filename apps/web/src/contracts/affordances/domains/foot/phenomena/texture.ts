@@ -21,8 +21,7 @@ import {
 
 /**
  * `foot.surface_texture_contact` — what one region feels like, through whatever
- * is between (romantic-contact-affordances.spec.foot.md
- * §`foot.surface_texture_contact`).
+ * is between.
  *
  * Three gates, in the order failure is most informative:
  *

@@ -37,11 +37,11 @@ import {
 
 /**
  * The authoritative relation reads — reach, and whether a surface is free to
- * act (romantic-contact-affordances.spec.scene.md §"Reach rule").
+ * act.
  *
  * These are the two questions the contact core cannot answer for itself. Its
  * resolver takes `geometry` and `sourceSupport` as `AdapterRead`s precisely
- * because the truth-source audit found no owner for either in either lane; this
+ * because neither lane holds an owner for either; this
  * file is an owner, and `sceneGeometryRead` / `sceneSupportRead` hand back
  * exactly the shapes that resolver already consumes.
  *
@@ -160,8 +160,7 @@ type SceneRungAnswer =
  * drops both claimants — but a programmatically built one can, and this is the
  * guard that keeps the read honest either way.) Weight borne by another
  * PARTICIPANT (`held_by`) is a real case with no answer here: how high a carried
- * body sits depends on how it is carried, and 3A does not model that
- * (spec §"Open design questions").
+ * body sits depends on how it is carried, and this module does not model that.
  */
 function participantBaseRung(state: SceneState, participant: SceneParticipant): SceneRungAnswer {
   const support = participant.support;
@@ -369,8 +368,8 @@ export function sceneReach(request: SceneReachRequest): SceneReachAnswer {
  * would turn a bookkeeping fact into a physical one.
  *
  * `trapped` has no producer here. Pinning, restraint, and a limb caught under
- * something are real, and 3A does not model them (spec §"Open design
- * questions") — inventing a shape for them now would be an untested guess.
+ * something are real, and this module does not model them — inventing a shape
+ * for them now would be an untested guess.
  */
 export function sceneSupportOf(state: SceneState, surface: ContactBodySurfaceRef): SceneSupportAnswer {
   const participant = sceneParticipant(state, surface.subjectId);

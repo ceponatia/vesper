@@ -25,10 +25,10 @@ const MAX_CLASSIFY = 200;
 const ITEMS_PER_CLASSIFY_CALL = 20;
 
 /**
- * Backfill missing item facets (library-ux.plan.md §5) — the library
- * "Organize" button. Only items with an absent facet are touched, and only
- * their absent fields are written, so re-running is always safe. Runs as a
- * background job; the library grid polls and the facets appear as chunks land.
+ * Backfill missing item facets — the library "Organize" button. Only items with
+ * an absent facet are touched, and only their absent fields are written, so
+ * re-running is always safe. Runs as a background job; the library grid polls
+ * and the facets appear as chunks land.
  */
 export const POST = withUser(
   async (user, req: NextRequest) => {

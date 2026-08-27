@@ -8,8 +8,7 @@ import {
 } from "./image-model-capabilities";
 
 /**
- * Version-candidate comparison (image-model-capabilities.spec.md §"Version
- * candidate and promotion flow").
+ * Version-candidate comparison, for the promotion flow.
  *
  * Two pure questions the promotion flow asks before any row moves:
  *
@@ -142,10 +141,10 @@ function recordEntries(
 
 /**
  * Field-level diff between the ACTIVE version's stored capabilities and a
- * CANDIDATE probe — how the candidate's schema differs from what is stored
- * (spec §"Version candidate and promotion flow": the diff must highlight
- * removed or changed fields used by enabled profiles, including LoRA bindings,
- * reference arity, output format, aspects, size controls, and numeric ranges).
+ * CANDIDATE probe — how the candidate's schema differs from what is stored.
+ * The diff must highlight removed or changed fields used by enabled profiles,
+ * including LoRA bindings, reference arity, output format, aspects, size
+ * controls, and numeric ranges.
  * Most entries are what `activate-version` would rewrite; the owner-owned
  * `maxReferences` and `supportedAspects` entries are review-only and flagged.
  *

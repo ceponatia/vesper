@@ -1,7 +1,7 @@
 import { clothingCategories } from "@/contracts";
 
 /**
- * Wardrobe slots (library-ux.plan.md §6): presentation grouping of clothing
+ * Wardrobe slots: presentation grouping of clothing
  * categories for the outfit editor — "she needs a top" — not a registry and
  * never gameplay data. A category belongs to exactly one slot; categories the
  * map doesn't know (or items with no category) land in the trailing "Other".

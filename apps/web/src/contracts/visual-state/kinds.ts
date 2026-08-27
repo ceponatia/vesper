@@ -125,7 +125,7 @@ const SPECIES_FEATURE_GROUP_PRIORS: VisualStateAttentionPriors = {
 
 /** Ordinary clothing: what the piece is and where it currently sits. */
 export const VISUAL_STATE_WARDROBE_GARMENT_KIND_ID = "wardrobe.garment";
-/** Item-backed presentation — jewelry, eyewear, headwear (plan §First-release source map). */
+/** Item-backed presentation — jewelry, eyewear, headwear. */
 export const VISUAL_STATE_WARDROBE_ITEM_KIND_ID = "wardrobe.item";
 
 /**
@@ -195,8 +195,8 @@ export type PresentationHairArrangement = (typeof presentationHairArrangements)[
 /**
  * What has happened TO a deliberate choice since it was made. It rides on the
  * presentation entry rather than becoming a located fact of its own, because
- * smudged makeup is a disturbed presentation, not a permanent facial mark
- * (plan §Keep four layers separate).
+ * smudged makeup is a disturbed presentation, not a permanent facial mark —
+ * the four layers stay separate.
  */
 export const presentationDisturbances = ["smudged", "tousled", "running", "flaked", "displaced"] as const;
 export type PresentationDisturbance = (typeof presentationDisturbances)[number];
@@ -587,8 +587,8 @@ const visualStateContactEndLocusSchema = z
   .strict();
 
 /**
- * The first-class contact relation, sourced from `CommittedContactRead`
- * (romantic-contact-affordances.spec.effects.md §5): both participants, both
+ * The first-class contact relation, sourced from `CommittedContactRead`: both
+ * participants, both
  * loci, the action kind as relation identity, and the committed material
  * summary. STRICT because the must-not list is load-bearing — permission state,
  * pressure, motion, emotion, and rejected alternatives may never ride this
@@ -920,7 +920,7 @@ export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = 
     layer: "current",
     valueSchema: visualStateActiveConditionValueSchema,
     // The subject as a whole. The condition owner has no body locus (a
-    // condition cannot be placed — visual-state.audit.md finding 11), and the
+    // condition cannot be placed), and the
     // `subject` locus is the honest home rather than a guessed body location.
     allowedLoci: ["subject"],
     stability: "transient",

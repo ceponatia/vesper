@@ -11,7 +11,7 @@ import type { ImageWorldDigest } from "./world-digest";
 
 /**
  * The negative channel: named, guarded blocks over one shared conflict
- * vocabulary (model-aware-image-prompts.plan.md §"Negative prompt system").
+ * vocabulary.
  *
  * The thing this replaces is a universal negative string. Vesper's models render
  * portraits, product shots of a single garment, empty rooms, androids, signage
@@ -28,13 +28,13 @@ import type { ImageWorldDigest } from "./world-digest";
  * - the **linter** subtracts every key the world digest requires;
  * - the **dialect** spells whatever survives, in its own syntax and transport.
  *
- * A block is code and its activation is pack data. That split is the plan's
- * "what belongs in data versus code": an operator may turn a block on for a
+ * A block is code and its activation is pack data. That split is what belongs in
+ * data versus code: an operator may turn a block on for a
  * profile and reorder it, but may not author a new exclusion whose guard nobody
  * wrote.
  */
 
-/** What kind of failure a constraint is about — the plan's category vocabulary. */
+/** What kind of failure a constraint is about. */
 export const imageNegativeCategories = [
   "artifact",
   "anatomy",
@@ -191,14 +191,14 @@ export interface ImageNegativeBlockDefinition {
 }
 
 /**
- * The ten named blocks (plan §"Named blocks").
+ * The ten named blocks.
  *
  * Small and composable on purpose. A single "quality" block would be one guard
  * for a dozen unrelated exclusions, so the first render that legitimately wanted
  * one of them would lose all twelve — which is how universal negative strings
  * become universal by accident.
  *
- * The guards below encode the plan's minimum collision rules at their SOURCE.
+ * The guards below encode the minimum collision rules at their SOURCE.
  * The linter enforces them again from the positive side, and the redundancy is
  * intended: a guard is about whether the block makes sense for the job, while the
  * linter is about whether this particular world contradicts it.
@@ -396,7 +396,7 @@ export function selectImageNegativeConstraints(input: {
  * The exclusion that neutralizes one provider-injected default.
  *
  * Synthesized rather than authored because its content is the ENDPOINT's, not a
- * pack's: the plan's Pony example is the shape — clearing an injected
+ * pack's: a Pony wrapper is the shape of it — clearing an injected
  * `nsfw, naked` and leaving the wrapper's preprompt enabled are two different
  * actions, and the effective-prompt record has to show them separately.
  */

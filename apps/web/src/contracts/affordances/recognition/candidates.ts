@@ -21,9 +21,7 @@ import {
 } from "../core";
 
 /**
- * Recognition candidates — the observer-relative read over truth-level features
- * (body-attribute-affordances.spec.recognizable-features.md §Recognition
- * candidate).
+ * Recognition candidates — the observer-relative read over truth-level features.
  *
  * The upstream `ProjectedFeatureTruth` says what the body IS. This module says
  * what THIS observer can currently make of it, and nothing more: three separate

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Composition-fallback telemetry (drain-hardening.diagnostics.md — C15).
+ * Composition-fallback telemetry.
  *
  * The successor turn loop is deliberately resilient: when a composed step fails (a scene
  * won't end, a move is refused, a drain won't converge, a beat won't write), the choreography

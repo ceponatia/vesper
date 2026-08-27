@@ -45,7 +45,7 @@ import { heuristicLighting } from "./scene";
 
 /**
  * The `staged_scene` lane — the one kind whose PROMPT is compiled from a registry
- * rather than typed by the admin (intimate-scene-lora.spec.md §"Slice 2").
+ * rather than typed by the admin.
  *
  * It benches one intimate staging: the same compiled wording and the same LoRA
  * binding the chat lane sends, with no chat, no composer and no narration to
@@ -83,7 +83,7 @@ import { heuristicLighting } from "./scene";
  *   variant lanes take and under the chat scene lane's own policy. That is the
  *   third half of the parity claim, and it was missing until this ruling: the
  *   kind was built name-only, which was already recorded as a deliberate gap
- *   (`intimate-scene-lora.spec.md`) and became a parity BREAK once the chat lane
+ *   and became a parity BREAK once the chat lane
  *   moved its own character fields onto the digest. The `reference_only` arm
  *   keeps the name-only behavior as an explicit ablation — the only way to ask
  *   whether the textual anchors help or fight the identity reference — and is
@@ -422,7 +422,7 @@ export function stagedSceneWords(
   );
   const plan: SceneRenderPlan = {
     ...resolvedPlan,
-    // A surviving staging OWNS the shot (spec §Resolution step 5): the geometry
+    // A surviving staging OWNS the shot: the geometry
     // is entailed by the act, so its camera replaces the plan's rather than
     // merging with it.
     camera: { ...entry.camera },

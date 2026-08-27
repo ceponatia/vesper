@@ -16,8 +16,8 @@ export interface IdentityReferencePanelProps {
 }
 
 /**
- * The portrait tab's entry point into the face-crop editor
- * (image-identity-packs.plan.md §Correction path).
+ * The portrait tab's entry point into the face-crop editor — the correction
+ * path when the derived crop is wrong.
  *
  * Deliberately quiet: identity packs are machinery, and most owners never need to
  * think about the crop. The block states the current state in one chip and one line,

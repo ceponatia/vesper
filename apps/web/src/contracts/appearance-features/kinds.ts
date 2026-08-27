@@ -3,17 +3,16 @@ import { defineAppearanceFeatureKind, type AppearanceFeatureKindDefinition } fro
 import { defineAppearanceRecognitionPriors } from "./priors";
 
 /**
- * The seeded located-fact kinds — the catalog's first authoring priorities
- * (body-attribute-affordances.recognizable-features.catalog.md §Authoring
- * priorities: freckle/birthmark clusters, moles, one or two scar shapes with
- * event provenance).
+ * The seeded located-fact kinds — the catalog's first authoring priorities:
+ * freckle/birthmark clusters, moles, one or two scar shapes with event
+ * provenance.
  *
  * Vocabulary changes here are DATA edits, never schema migrations (the
  * registry-as-extension-point rule).
  *
  * CALIBRATION. Every prior below is an authored starting point on the shared
  * `0 … 10_000` fixed-point scale, not a measurement — they are meant to be
- * retuned once salience evaluation runs (spec rollout step 7). The ordering is
+ * retuned once salience evaluation runs. The ordering is
  * the load-bearing part:
  *
  * - a scar outranks a freckle field on IMPORTANCE (it carries event
@@ -80,7 +79,7 @@ export const APPEARANCE_SCAR_KIND_ID = "mark.scar";
 /**
  * The shipped kinds. `mark.scar` is the acquired family: rows are expected to
  * carry `source: "event"` + a `sourceEventId`, and a healed wound supersedes
- * its wound-era row rather than editing it (spec §Located appearance facts).
+ * its wound-era row rather than editing it.
  */
 export const appearanceFeatureKindDefinitions: readonly AppearanceFeatureKindDefinition[] = [
   defineAppearanceFeatureKind({

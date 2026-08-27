@@ -5,8 +5,7 @@ type Params = { runId: string };
 
 /**
  * The run's unblinded aggregates, its rendered (profile, strategy) combinations
- * — the verdict slots — plus every verdict recorded so far
- * (image-identity-packs.spec.trial.md §"Promotion rules"). Read-only and safe
+ * — the verdict slots — plus every verdict recorded so far. Read-only and safe
  * to serve mid-review: grades are stored already unblinded in canonical A/B
  * space, so this route computes over what exists and shows the sample size
  * behind every mean rather than waiting for the queue to empty.

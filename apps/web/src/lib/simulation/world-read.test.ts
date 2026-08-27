@@ -25,7 +25,7 @@ import {
 } from "@vesper/simulation-core/world-read";
 
 /**
- * Pure world-read shaping tests (world-ui.plan.md slice 1). No IO — every
+ * Pure world-read shaping tests. No IO — every
  * projection piece is a fixture (@/test/sim-space-fixtures), so the place/transit
  * envelope, the undirected destination derivation, the shared whereabouts
  * decision, the card phrasing, and the travel-response parsing are asserted
@@ -265,7 +265,7 @@ describe("client response parsing", () => {
     expect(parsed.sceneOpen).toBe(true);
   });
 
-  it("parses a travel landing and a §14.4 refusal", () => {
+  it("parses a travel landing and a refusal", () => {
     expect(
       simTravelResultSchema.parse({ status: "traveled", toStorySecond: 30_000, arrived: false, drainShort: true }),
     ).toMatchObject({

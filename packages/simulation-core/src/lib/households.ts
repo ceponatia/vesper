@@ -75,16 +75,16 @@ import { compareStableText, sortedUnique } from "./hash";
 
 /**
  * E5.4 slice 1 — the pure households/lots/means kernel: row-key helpers,
- * lot arithmetic, §26.8 access/reachability, the §26.10 means read, the
- * five slice-1 command resolvers, and the households projector/replay/seed.
- * No IO, no clock, no ambient randomness.
+ * lot arithmetic, access/reachability, the means read, the five slice-1
+ * command resolvers, and the households projector/replay/seed. No IO, no
+ * clock, no ambient randomness.
  *
  * Unlike `material-condition.ts` (E5.3 slice 3), this file needs no split
- * file and no dependency on `material-locus.ts`/`materials.ts`: lot loci
- * (§26.9) are FLAT — household XOR actor XOR zone, no container nesting — so
- * "root co-location" for a lot is a direct one-step check, never a chain
- * walk. `materials.ts` imports nothing from here and this file imports
- * nothing from `materials.ts` — there is no cycle to avoid (see
+ * file and no dependency on `material-locus.ts`/`materials.ts`: lot loci are
+ * FLAT — household XOR actor XOR zone, no container nesting — so "root
+ * co-location" for a lot is a direct one-step check, never a chain walk.
+ * `materials.ts` imports nothing from here and this file imports nothing
+ * from `materials.ts` — there is no cycle to avoid (see
  * `lib/simulation/materials.ts`'s new `item_instantiated_from_promotion`
  * passthrough case, added in slice 2, for the one place the two domains meet).
  */
@@ -120,7 +120,7 @@ export function deriveMeansSubjectRowKey(subject: MeansSubject): string {
 // Lot arithmetic (pure, no IO)
 // ---------------------------------------------------------------------------
 
-/** Registered key -> its declared kind; unregistered keys default to `count` (§26.9). */
+/** Registered key -> its declared kind; unregistered keys default to `count`. */
 export function resolveQuantityKind(
   materialKindKey: string,
   registry: readonly MaterialKindDefinition[] = materialKindRegistryV1,
@@ -180,7 +180,7 @@ export function applyLotTransfer(
 }
 
 // ---------------------------------------------------------------------------
-// Root/co-location resolution (flat, no chain walk — §26.8)
+// Root/co-location resolution (flat, no chain walk)
 // ---------------------------------------------------------------------------
 
 export interface HouseholdsBranchMeta {
@@ -194,11 +194,11 @@ export interface HouseholdsBranchMeta {
 export interface HouseholdsResolutionView {
   householdById(householdId: string): SimulationHousehold | undefined;
   activeMembership(householdId: string, actorId: string): HouseholdMembership | undefined;
-  /** The actor's current zone (§13.2 physical locus), or null if not embodied. */
+  /** The actor's current zone (its physical locus), or null if not embodied. */
   actorZoneId(actorId: string): string | null;
 }
 
-/** §26.8 fail-closed stock access. */
+/** Fail-closed stock access. */
 export function householdStockAccessAllowed(
   view: HouseholdsResolutionView,
   householdId: string,
@@ -249,7 +249,7 @@ export interface MeansReadView {
   band(subject: MeansSubject): MeansBandState | undefined;
 }
 
-/** Precedence is structural (§26.10): the lot wins whenever it exists. */
+/** Precedence is structural: the lot wins whenever it exists. */
 export function deriveMeansRead(subject: MeansSubject, view: MeansReadView): MeansRead {
   const lot = view.currencyLot(subject);
   if (lot) return { kind: "lot_tracked", quantityRaw: lot.quantityRaw, quantityKind: lot.quantityKind };
@@ -260,7 +260,7 @@ export function deriveMeansRead(subject: MeansSubject, view: MeansReadView): Mea
 
 // ---------------------------------------------------------------------------
 // Conservation checker (property-test support, not runtime-called by a
-// command path — runtime conservation is structural per §26.9).
+// command path — runtime conservation is structural).
 // ---------------------------------------------------------------------------
 
 /**
@@ -355,7 +355,7 @@ function lotLociEqual(left: LotLocus, right: LotLocus): boolean {
 type LotLocusAccessCode = "root_not_colocated" | "household_access_denied";
 
 /**
- * §26.8's three-step access check applied to ONE lot locus end of a transfer:
+ * The three-step access check applied to ONE lot locus end of a transfer:
  * a zone locus needs exact co-location; a household locus needs residence
  * co-location THEN the stock access policy; an actor locus is reachable
  * unconditionally for its own holder, or requires the OTHER actor to be
@@ -418,7 +418,7 @@ export function buildMaterialLotInitializedEvent(input: {
 }
 
 // ---------------------------------------------------------------------------
-// create_household (§26.8)
+// create_household
 // ---------------------------------------------------------------------------
 
 export interface CreateHouseholdResolutionView extends HouseholdsBranchMeta {
@@ -465,7 +465,7 @@ export function resolveCreateHouseholdFromView(
 }
 
 // ---------------------------------------------------------------------------
-// set_household_membership (§26.8)
+// set_household_membership
 // ---------------------------------------------------------------------------
 
 export interface SetHouseholdMembershipResolutionView extends HouseholdsBranchMeta {
@@ -521,7 +521,7 @@ export function resolveSetHouseholdMembershipFromView(
 }
 
 // ---------------------------------------------------------------------------
-// adjust_material_lot (§26.9) — privileged authoring, exempt from co-location
+// adjust_material_lot — privileged authoring, exempt from co-location
 // ---------------------------------------------------------------------------
 
 export interface AdjustMaterialLotResolutionView extends HouseholdsBranchMeta {
@@ -575,7 +575,7 @@ export function resolveAdjustMaterialLotFromView(
 }
 
 // ---------------------------------------------------------------------------
-// transfer_lot_quantity (§26.9) — same-kind conserved movement between lots
+// transfer_lot_quantity — same-kind conserved movement between lots
 // ---------------------------------------------------------------------------
 
 export interface TransferLotQuantityResolutionView extends HouseholdsResolutionView, HouseholdsBranchMeta {
@@ -594,7 +594,7 @@ export type TransferLotQuantityResolution =
       nextToLot: MaterialLotState;
     };
 
-/** Pure resolver, mirroring `resolveTransferItemFromView`'s numbered validation order (§26.4). */
+/** Pure resolver, mirroring `resolveTransferItemFromView`'s numbered validation order. */
 export function resolveTransferLotQuantityFromView(
   view: TransferLotQuantityResolutionView,
   command: TransferLotQuantityCommand,
@@ -611,14 +611,14 @@ export function resolveTransferLotQuantityFromView(
   if (!isStoryteller && !command.principal.controlledActorIds.includes(actorId)) {
     return rejection("unauthorized_actor", "You cannot direct that actor.");
   }
-  // 3. actor embodied at a zone (§13.2)
+  // 3. actor embodied at a zone
   const actorZoneId = view.actorZoneId(actorId);
   if (actorZoneId === null) return rejection("actor_not_embodied", "They are not anywhere they can do that.");
   // 4. positive quantity
   if (quantityRaw <= 0) return rejection("non_positive_quantity", "That amount must be positive.");
   // 5. no-op rejection
   if (lotLociEqual(fromLocus, toLocus)) return rejection("same_locus", "That stock is already there.");
-  // 6. §26.8 access at both ends
+  // 6. access at both ends
   const fromCheck = checkLotLocusAccess(view, fromLocus, actorId, actorZoneId);
   if (!fromCheck.ok) {
     return rejection(
@@ -660,7 +660,7 @@ export function resolveTransferLotQuantityFromView(
 }
 
 // ---------------------------------------------------------------------------
-// set_means_band (§26.10)
+// set_means_band
 // ---------------------------------------------------------------------------
 
 export interface SetMeansBandResolutionView extends HouseholdsBranchMeta {
@@ -710,7 +710,7 @@ export function resolveSetMeansBandFromView(
 }
 
 // ---------------------------------------------------------------------------
-// Household restock alarm identity (§26.11) — mirrors
+// Household restock alarm identity — mirrors
 // `itemConditionThresholdUniquenessKey`/`Prefix`: versioned by `armedAtSequence`
 // so a re-arm is a distinct alarm and the prefix retires every arming attempt
 // for one (householdId, materialKindKey) regardless of its version.
@@ -730,9 +730,9 @@ export function householdRestockUniquenessKeyPrefix(householdId: string, materia
 
 /**
  * Arm (or re-arm) one household+kind's restock alarm, due at `view.storySecond
- * + cadenceSeconds` — a fixed cadence, not a solved crossing (§9 open decision
- * 6: restock is discrete-scheduled, not continuous-integrated, so there is no
- * trajectory to solve against, unlike `rearmThresholdTrigger`/
+ * + cadenceSeconds` — a fixed cadence, not a solved crossing (restock is
+ * discrete-scheduled, not continuous-integrated, so there is no trajectory to
+ * solve against, unlike `rearmThresholdTrigger`/
  * `rearmItemConditionThresholdTrigger`).
  */
 function buildHouseholdRestockTrigger(input: {
@@ -785,7 +785,7 @@ function buildHouseholdRestockTrigger(input: {
 }
 
 // ---------------------------------------------------------------------------
-// configure_restock_routine (§26.11)
+// configure_restock_routine
 // ---------------------------------------------------------------------------
 
 export interface ConfigureRestockRoutineResolutionView extends HouseholdsBranchMeta {
@@ -850,7 +850,7 @@ export function resolveConfigureRestockRoutineFromView(
 }
 
 // ---------------------------------------------------------------------------
-// promote_item_from_stock (§26.10 / §27.2) — the only path an aggregate fact
+// promote_item_from_stock — the only path an aggregate fact
 // becomes an explicit `sim_items` row
 // ---------------------------------------------------------------------------
 
@@ -859,12 +859,12 @@ export interface PromoteItemFromStockResolutionView extends HouseholdsResolution
   /** The funding lot's current state — the store has already lazily initialized it. */
   fundingLot: MaterialLotState;
   /**
-   * Authored per-`materialKindKey` display-name pool (§26.10 step 3); an empty
-   * array means no pool. No pool is authored yet anywhere in the codebase as
-   * of E5.4 slice 2 — the store's implementation returns `[]` unconditionally
-   * today, so a caller that omits `item.name` MUST supply it explicitly until
-   * a pool registry exists (a future data edit, per the registry-as-data
-   * convention — no schema change).
+   * Authored per-`materialKindKey` display-name pool; an empty array means no
+   * pool. No pool is authored yet anywhere in the codebase as of E5.4 slice 2 —
+   * the store's implementation returns `[]` unconditionally today, so a caller
+   * that omits `item.name` MUST supply it explicitly until a pool registry
+   * exists (a future data edit, per the registry-as-data convention — no schema
+   * change).
    */
   namePool(materialKindKey: string): readonly string[];
   worldSeed: string;
@@ -879,7 +879,7 @@ export type PromoteItemFromStockResolution =
       nextFundingLot: MaterialLotState;
     };
 
-/** Pure resolver, mirroring `resolveTransferLotQuantityFromView`'s numbered validation order (§26.10/§27.2). */
+/** Pure resolver, mirroring `resolveTransferLotQuantityFromView`'s numbered validation order. */
 export function resolvePromoteItemFromStockFromView(
   view: PromoteItemFromStockResolutionView,
   command: PromoteItemFromStockCommand,
@@ -896,11 +896,11 @@ export function resolvePromoteItemFromStockFromView(
   if (!isStoryteller && !command.principal.controlledActorIds.includes(actorId)) {
     return rejection("unauthorized_actor", "You cannot direct that actor.");
   }
-  // 3. actor embodied at a zone (§13.2)
+  // 3. actor embodied at a zone
   const actorZoneId = view.actorZoneId(actorId);
   if (actorZoneId === null) return rejection("actor_not_embodied", "They are not anywhere they can do that.");
 
-  // 4. §26.8 access on the funding locus only (an actor-locus source needs no
+  // 4. access on the funding locus only (an actor-locus source needs no
   // co-location check for its own holder — `checkLotLocusAccess` already
   // encodes that).
   const fundingLocus = funding.kind === "stock" ? funding.sourceLocus : funding.currencyLocus;
@@ -935,9 +935,8 @@ export function resolvePromoteItemFromStockFromView(
   const delta = applyLotDelta(view.fundingLot, -cost);
   if (!delta.ok) return rejection("insufficient_balance", "There is not enough there to cover that.");
 
-  // Sample any detail the command did not supply (§26.10 step 3) — the stream
-  // identity and drawn result are captured on the event so replay never
-  // resamples.
+  // Sample any detail the command did not supply — the stream identity and
+  // drawn result are captured on the event so replay never resamples.
   let sampledName: string | undefined;
   let sampledDetail: PromotionSampledDetail | undefined;
   if (item.name === undefined) {
@@ -957,10 +956,10 @@ export function resolvePromoteItemFromStockFromView(
       registryVersion: materialKindRegistryVersion,
     };
   }
-  // Invariant 3.2.4 / §26.10 step 5: the caller, never the narrator, supplies
-  // any narratively-established name. An unauthored pool plus an omitted name
-  // is a foreseeable runtime state (no pool is authored anywhere yet), so it
-  // is a structured rejection rather than a thrown exception — resilience.md:
+  // Invariant 3.2.4 / step 5: the caller, never the narrator, supplies any
+  // narratively-established name. An unauthored pool plus an omitted name is a
+  // foreseeable runtime state (no pool is authored anywhere yet), so it is a
+  // structured rejection rather than a thrown exception — resilience.md:
   // diagnostics over exceptions, degraded defaults over failed turns.
   const finalName = item.name ?? sampledName;
   if (finalName === undefined) {
@@ -1018,7 +1017,7 @@ export function resolvePromoteItemFromStockFromView(
 }
 
 // ---------------------------------------------------------------------------
-// run_household_restock (§26.11) — trigger-dispatched, system principal only
+// run_household_restock — trigger-dispatched, system principal only
 // ---------------------------------------------------------------------------
 
 export interface RunHouseholdRestockResolutionView extends HouseholdsBranchMeta {
@@ -1026,13 +1025,13 @@ export interface RunHouseholdRestockResolutionView extends HouseholdsBranchMeta 
   routine?: HouseholdRestockRoutine;
   /**
    * Whether the alarm THIS command's own `command.payload.armedAtSequence`
-   * names has not been retired by a later reconfigure (§5.8's staleness
-   * defense) — the durable stand-in for "the routine's current arming",
-   * since routines carry no arming column of their own. `false` fails closed
-   * as stale rather than acting on a superseded arming.
+   * names has not been retired by a later reconfigure (the staleness defense) —
+   * the durable stand-in for "the routine's current arming", since routines
+   * carry no arming column of their own. `false` fails closed as stale rather
+   * than acting on a superseded arming.
    */
   armingIsLive: boolean;
-  /** The stock lot's current state — undefined means uninitialized (zero, §26.9). */
+  /** The stock lot's current state — undefined means uninitialized (zero). */
   stockLot?: MaterialLotState;
   /** `lot` funding only: the currency lot's current state — undefined means uninitialized (zero). */
   currencyLot?: MaterialLotState;
@@ -1061,7 +1060,7 @@ export type RunHouseholdRestockResolution =
 /**
  * Fire-time re-validation (mirrors `resolveBodyThreshold`/
  * `resolveItemConditionThreshold`'s re-validate-then-act shape) — always
- * re-arms the next cycle regardless of outcome (§26.11).
+ * re-arms the next cycle regardless of outcome.
  */
 export function resolveRunHouseholdRestockFromView(
   view: RunHouseholdRestockResolutionView,
@@ -1194,8 +1193,8 @@ export function resolveRunHouseholdRestockFromView(
     // means_band_envelope: fail closed unless the household's OWN means read
     // is band-tracked and at least at the routine's minimum band — a
     // lot-tracked or unknown read has no band to compare, so it cannot be
-    // verified sufficient (§26.10's structural precedence: this branch never
-    // consults a lot even if one happens to exist for this subject).
+    // verified sufficient (structural precedence: this branch never consults a
+    // lot even if one happens to exist for this subject).
     const read = view.householdMeansRead ?? { kind: "unknown" };
     const sufficient =
       read.kind === "band_tracked" && compareMeansBands(read.bandKey, routine.funding.minimumBandKey) >= 0;
@@ -1231,8 +1230,8 @@ export function resolveRunHouseholdRestockFromView(
     }
   }
 
-  // Re-arm the next cycle regardless of outcome (§26.11) — a deferred cycle
-  // keeps trying.
+  // Re-arm the next cycle regardless of outcome — a deferred cycle keeps
+  // trying.
   events.push(
     buildHouseholdRestockTrigger({
       view,

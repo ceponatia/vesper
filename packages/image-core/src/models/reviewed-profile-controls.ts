@@ -2,9 +2,7 @@ import type { ImageControlDefaults } from "./image-model-profiles";
 
 /**
  * The reviewed quality policy, said ONCE in both vocabularies it has to exist in
- * during the migration off the transitional overlay
- * (image-render-quality.spec.md §"Migration off the transitional policy", steps
- * 1–2).
+ * during the migration off the transitional overlay.
  *
  * The transitional policy says a reviewed setting as a RAW PROVIDER FIELD, merged
  * into the model row's `extraInput` (`withReviewedImageQuality`). A task profile

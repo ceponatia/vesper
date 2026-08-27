@@ -22,9 +22,9 @@ import {
  * witnessed, consequential act (ruling 3 — never auto-succeeding over a
  * person; this is spatial transgression only, and interpersonal consent
  * remains an untouched separate precondition). Missing or malformed grant
- * data fails closed (§13.1). Storyteller relocation is the one privileged
- * bypass: a distinct audited command family (§7, ruling 4), never a hidden
- * flag on ordinary movement.
+ * data fails closed. Storyteller relocation is the one privileged bypass: a
+ * distinct audited command family (ruling 4), never a hidden flag on ordinary
+ * movement.
  */
 
 export const accessGrantBases = ["owner", "resident", "employee", "invitation", "key", "forced"] as const;
@@ -46,7 +46,7 @@ export const accessGrantSchema = z
 
 export type AccessGrant = z.infer<typeof accessGrantSchema>;
 
-/** Fail-closed grant check: only a well-formed, live grant admits (§13.1). */
+/** Fail-closed grant check: only a well-formed, live grant admits. */
 export function grantAdmitsEntry(
   grant: AccessGrant,
   input: { actorId: string; locationId: string; zoneId: string; storySecond: number },
@@ -126,7 +126,7 @@ const storytellerRelocatePayloadSchema = z
   .object({
     actorId: worldCharacterIdSchema,
     destinationZoneId: zoneIdSchema,
-    /** Recorded rationale — the audit trail's why (§3.2 invariant 6). */
+    /** Recorded rationale — the audit trail's why (invariant 6). */
     reason: z.string().trim().min(1).max(500),
   })
   .strict();

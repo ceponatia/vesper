@@ -136,7 +136,7 @@ describe("chatSceneMemorySchema parse boundary", () => {
   });
 });
 
-describe("withPlaceSketch (chat-scene-fidelity.plan.md slice 2b)", () => {
+describe("withPlaceSketch", () => {
   const base: ChatSceneMemory = {
     current: "kitchen",
     places: [{ name: "kitchen", details: ["blue tiles"], connections: [] }],
@@ -182,7 +182,7 @@ describe("chatSceneSketchSchema (the sketch agent's output boundary)", () => {
   });
 });
 
-describe("withPlaceImage (chat-scene-references.plan.md)", () => {
+describe("withPlaceImage", () => {
   it("attaches an image to the named place once, by identity semantics", () => {
     const memory = { current: "kitchen", places: [{ name: "Kitchen", details: [], connections: [] }] };
     const parsed = chatSceneMemorySchema.parse(memory);

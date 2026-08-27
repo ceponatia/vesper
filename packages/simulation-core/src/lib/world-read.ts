@@ -1,8 +1,8 @@
 import type { Journey, PhysicalLocus, SimulationLink } from "../contracts/space";
 
 /**
- * World-read shaping (world-ui.plan.md slice 1) — PURE. The player-facing world
- * surface (`readSimChatWorld` in `server/engine/sim-surfaces.ts`) loads the raw
+ * World-read shaping — PURE. The player-facing world surface
+ * (`readSimChatWorld` in `server/engine/sim-surfaces.ts`) loads the raw
  * simulation projections and resolves display labels; this module turns those
  * typed pieces into a display-safe envelope the `ChatWorldCard` renders, plus the
  * small phrase helpers the card composes with (charter law — display labels,
@@ -48,7 +48,7 @@ export interface SimWorldDestination {
   label: string;
   /** Travel mode ("walk"). */
   mode: string;
-  /** The link's lower-bound duration (§17.1). */
+  /** The link's lower-bound duration. */
   travelSeconds: number;
 }
 
@@ -195,7 +195,7 @@ export function buildWorldDestinations(input: {
  * The player-startable actions for the card (slice 3). Availability is evaluated
  * against the player's CURRENT zone kind using the same `at_zone_kind` law the
  * durable `resolveStartActivity` enforces — no duplication of claim/scene checks
- * (those surface as a §14.4 refusal when the player actually taps). Only
+ * (those surface as a refusal when the player actually taps). Only
  * player-controllable actions are shaped; a consent-gated action is marked
  * unavailable (the card can't gather targeted consent yet). Definition order is
  * preserved (the server loads them id-sorted).

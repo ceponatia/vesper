@@ -3,7 +3,7 @@ import { qwenImageEdit2511 } from "./image-edit-2511";
 import { qwenImageEditPlusLora } from "./image-edit-plus-lora";
 
 /**
- * The LoRA wrapper's execution hints (image-model-adapters.plan.md §1, §8).
+ * The LoRA wrapper's execution hints.
  *
  * This is not a literal pinned for its own sake. The Stage 0 baseline is a
  * bench run that sat in a cold start past its entire five-minute budget and was

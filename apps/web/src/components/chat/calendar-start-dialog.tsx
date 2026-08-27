@@ -31,8 +31,8 @@ function monthFromName(raw: string): number | null {
 }
 
 /**
- * A tolerant free-form date parser for the desktop "jump to a date" field
- * (mobile-ux.plan.md ruling 2): "3/14" (M/D, current-year fallback), "march 3",
+ * A tolerant free-form date parser for the desktop "jump to a date" field:
+ * "3/14" (M/D, current-year fallback), "march 3",
  * "jan 5 2027". A missing year keeps `fallbackYear` (the anchor's current year —
  * this is a fictional calendar, not the real one). Returns null on anything it
  * can't confidently parse; the caller never blocks on that, it just hints.
@@ -62,7 +62,7 @@ export function parseTypedDate(input: string, fallbackYear: number): DatePickerV
 }
 
 /**
- * The "story starts on…" editor (mobile-ux.plan.md ruling 2 — extracted from
+ * The "story starts on…" editor (extracted from
  * chat-clock-card.tsx and rebuilt around the themed `DatePicker`): sets the
  * calendar anchor (minute 0 of the chat). Rebasing is safe — plans and
  * schedules store anchor-relative minutes, so every displayed weekday/date
@@ -150,7 +150,7 @@ export function CalendarStartDialog({
 
         <DatePicker value={draft} onChange={setDraft} />
 
-        {/* Typed free-form entry — desktop only (mobile-ux.plan.md ruling 2): iOS's native
+        {/* Typed free-form entry — desktop only: iOS's native
             date wheel has no weekday, which defeats the point of this whole editor. */}
         <label className="hidden flex-col gap-1 sm:flex">
           <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Jump to a date</span>

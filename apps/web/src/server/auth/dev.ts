@@ -4,7 +4,7 @@ import { accounts, db, users } from "../db";
 import { log } from "@/server/log";
 
 /**
- * Dev/QA session minting (auth.plan.md). The old `vesper_user` cookie =
+ * Dev/QA session minting. The old `vesper_user` cookie =
  * raw-userId model is gone; the cookie is now a signed session token, so the
  * documented QA flow ("act as the uxtest admin") needs a real session. The seed
  * provisions a shared dev credential for the Player + uxtest admin; the

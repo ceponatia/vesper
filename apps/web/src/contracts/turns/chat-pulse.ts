@@ -2,11 +2,11 @@ import { z } from "zod";
 import { emotionLabelEnum } from "../mood/emotion-label";
 
 /**
- * The character-chat reaction pulse (character-chat-state.spec.md §4): one small
+ * The character-chat reaction pulse: one small
  * structured agent call after a chat reply settles. It does ONLY the cheap
  * generative parts — classify the player's act into the interaction-concept
- * vocabulary and refresh the "what's on their mind" note. The deterministic §6
- * curve (engine/chat-state.ts) turns the classified act into every number, so the
+ * vocabulary and refresh the "what's on their mind" note. The deterministic
+ * response curve (engine/chat-state.ts) turns the classified act into every number, so the
  * schema carries no deltas. Fully `.default()`/`.catch()`ed so a parsed-empty
  * object IS the degraded fallback (docs/resilience.md §3).
  *
@@ -18,13 +18,13 @@ import { emotionLabelEnum } from "../mood/emotion-label";
 
 /** Cap on the pulse-written mindNote (1–3 sentences of disposition). */
 export const CHAT_MIND_NOTE_MAX_CHARS = 320;
-/** Cap on the pulse-proposed feeling cause phrase (emotional-weather.plan.md). */
+/** Cap on the pulse-proposed feeling cause phrase. */
 export const CHAT_FEELING_CAUSE_MAX = 120;
 /** Cap on the player-set per-chat premise (a scenario, not a bio). */
 export const CHAT_PREMISE_MAX_CHARS = 600;
 
 /**
- * **Action chips** (chat-action-beats.plan.md): a chip tap is a narrated one-beat
+ * **Action chips**: a chip tap is a narrated one-beat
  * exchange (`action_beat` — engine/chat-action-beat.ts builds the register-aware cue),
  * carrying the chip id and a paired deterministic state effect the engine applies
  * pre-narration. The id + label + `hint` live here (pure) so the chat UI renders the
@@ -49,8 +49,8 @@ export const chatPulseSchema = z.object({
   /** Refreshed 1–3 sentence "what's on their mind"; "" ⇒ keep the prior note. */
   mindNote: z.string().max(CHAT_MIND_NOTE_MAX_CHARS).catch("").default(""),
   /**
-   * A PERSISTENT emotional beat this exchange landed (emotional-weather.plan.md):
-   * label + cause only — intensity derives deterministically from the §6 curve
+   * A PERSISTENT emotional beat this exchange landed:
+   * label + cause only — intensity derives deterministically from the response-curve
    * outcome (the model never proposes numbers, same contract as `playerAct`).
    * null ⇒ no lasting weather (most turns); `"neutral"` ⇒ the exchange RESOLVED
    * the standing feeling and it clears.
@@ -62,7 +62,7 @@ export const chatPulseSchema = z.object({
     .default(null),
   /**
    * True ONLY when the character's reply states she is sending/taking/attaching a
-   * photo of herself for the player THIS exchange (chat-selfies.plan.md). The
+   * photo of herself for the player THIS exchange. The
    * deterministic gates (player request / apart+warm+cooldown offer eligibility)
    * decide whether it actually queues a render — the pulse only reads the fiction.
    */
@@ -81,9 +81,9 @@ export function degradedChatPulse(): ChatPulse {
 }
 
 /**
- * Last-turn debug trace persisted beside the state row for the state-tools modal
- * (spec §4). The "why" is derived deterministically from the concept + valence +
- * the §6 curve, not authored by the model. Parsed defensively from the jsonb
+ * Last-turn debug trace persisted beside the state row for the state-tools
+ * modal. The "why" is derived deterministically from the concept + valence +
+ * the response curve, not authored by the model. Parsed defensively from the jsonb
  * column (`parseOr(chatPulseTraceSchema, …, emptyChatPulseTrace())`).
  */
 export const chatPulseTraceSchema = z.object({
@@ -103,7 +103,7 @@ export const chatPulseTraceSchema = z.object({
   feeling: z.string().nullable().catch(null).default(null),
   /** Combined regard-delta multiplier applied (feeling bias × streak × bruise); 1 ⇒ unmodified. */
   regardScale: z.number().catch(1).default(1),
-  /** The pulse read the reply as sending a photo this exchange (chat-selfies.plan.md). */
+  /** The pulse read the reply as sending a photo this exchange. */
   sentPhoto: z.boolean().catch(false).default(false),
   /** True when the pulse degraded to drift-only (timeout / parse failure / demo). */
   degraded: z.boolean().catch(false).default(false),

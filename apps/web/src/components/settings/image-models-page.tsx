@@ -22,18 +22,17 @@ import { ImageLoraLibrary } from "./image-lora-library";
 import { ModelRow, type ImageModelPatchBody } from "./image-model-row";
 
 /**
- * The image-model registry's management page (image-model-registry.plan.md;
- * extended per image-model-capabilities.spec.md §"Admin UI"). Admin-only: paste
- * a Replicate model path, tick the surfaces it should appear in, save. The
- * routes beneath `/api/admin/self` are the real gate — they 404 for non-admins
- * — so the check here is only so a non-admin sees an explanation instead of a
- * page of failed requests.
+ * The image-model registry's management page. Admin-only: paste a Replicate
+ * model path, tick the surfaces it should appear in, save. The routes beneath
+ * `/api/admin/self` are the real gate — they 404 for non-admins — so the check
+ * here is only so a non-admin sees an explanation instead of a page of failed
+ * requests.
  *
  * One registry fetch feeds everything: the model cards, each card's nested
  * profiles and version corner (`ModelRow`), and the LoRA library's
  * compatibility list — so no two sections can disagree about which models
  * exist. Seeded models and profiles are ordinary rows: editable and deletable
- * like any other (owner ruling 4); `builtin` is a note, not a lock.
+ * like any other; `builtin` is a note, not a lock.
  */
 
 export function ImageModelsPage() {

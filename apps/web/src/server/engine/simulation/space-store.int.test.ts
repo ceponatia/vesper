@@ -245,7 +245,7 @@ describe.runIf(ready)("E3.1 durable space authority", () => {
       .orderBy(asc(simEvents.sequence))
       .offset(3);
     expect(arrivedEvent?.type).toBe("actor_arrived");
-    // §12.2 step 3: the clock stepped to the due second before resolution.
+    // The clock stepped to the due second before resolution.
     expect(arrivedEvent?.storySecond).toBe(arrivalSecond);
 
     const [trigger] = await db()

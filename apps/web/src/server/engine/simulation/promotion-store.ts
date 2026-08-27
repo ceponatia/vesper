@@ -105,7 +105,7 @@ export async function submitDurablePromoteActorFromCohort(
           cohort,
           zoneLocationId: zoneRow?.locationId,
           actorExists: existingActor !== undefined,
-          // §26.10 step 3 parity with item promotion: no pool is authored
+          // Parity with item promotion: no pool is authored
           // anywhere yet, so callers must supply `name` until one exists (a
           // future data edit, per the registry-as-data convention).
           namePool: () => [],

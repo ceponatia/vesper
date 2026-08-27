@@ -91,10 +91,10 @@ interface EntityConfig {
   sortable?: boolean;
   /** Grid ⇄ list density toggle (the list row renders cardChips). */
   viewToggle?: boolean;
-  /** `scope` drives the discovery gallery (all shareable kinds honor it — the auth.plan.md fast-follow). */
+  /** `scope` drives the discovery gallery (all shareable kinds honor it). */
   list: (args: ListArgs) => Promise<ApiResult<LibraryCard[]>>;
   /** `bucket` is the active type bucket ("all" when none), so New lands in the type
-   *  being browsed; `name` is the randomized placeholder (slice 7 create-on-new). */
+   *  being browsed; `name` is the randomized placeholder (create-on-new). */
   create: (args: { bucket: string; name: string }) => Promise<ApiResult<CreatedRef>>;
   /** Optional segmented type-buckets over a card field (items use `kind`). */
   buckets?: {
@@ -103,7 +103,7 @@ interface EntityConfig {
     /** Initial selected bucket; also suppresses the "All" tab when set (items: default to the closet view). */
     defaultId?: string;
   };
-  /** Registry-backed facet chip rows (library-ux.plan.md §3) — filter the loaded set client-side. */
+  /** Registry-backed facet chip rows — filter the loaded set client-side. */
   facets?: FacetDef<LibraryCard>[];
   /** Grouped sections for the unfiltered browse (items: the "closet" view); null = flat. */
   groupCards?: (card: LibraryCard, bucket: string) => CardGroup | null;
@@ -117,7 +117,7 @@ interface EntityConfig {
   /** Optional batch image generation for the given entity ids (those visible
    *  under the active filter) that are still missing an image. */
   generateImages?: (ids: readonly string[]) => Promise<ApiResult<{ queued: number }>>;
-  /** Optional facet backfill (items "Organize", library-ux.plan.md §5): classify
+  /** Optional facet backfill (items "Organize"): classify
    *  the visible entities still missing facet fields. Only absent fields are
    *  ever written server-side, so it's always safe to press again. */
   organize?: {
@@ -148,7 +148,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     create: ({ name }) => charactersApi.create({ name }),
     facets: characterFacetDefs<LibraryCard>(),
     cardChips: characterCardChips,
-    // The Chats-hub entry point (character-chat-standalone.spec.md §2.2):
+    // The Chats-hub entry point:
     // ?new= opens the new-conversation dialog pre-picked with this character.
     cardAction: {
       label: "Chat",
@@ -299,7 +299,7 @@ const SCOPE_OPTIONS: { id: Scope; label: string }[] = [
 ];
 
 /**
- * The Library hub's collection tabs (library-ux.plan.md §Follow-up pass): the
+ * The Library hub's collection tabs: the
  * four collection routes keep their URLs; this shared strip is what makes them
  * one surface under the header's single "Library" entry. Worlds stays its own
  * top-level destination, so it renders no strip.
@@ -452,8 +452,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const [view, setView] = useState<ViewMode>(() => readStoredView(entity));
   const [creating, setCreating] = useState(false);
   const [bucket, setBucketState] = useState(stored.bucket ?? config.buckets?.defaultId ?? "all");
-  // Drives the discovery gallery via config.list (social-reaction-cards.plan.md
-  // step 6; every shareable kind honors it since the library-ux follow-up pass).
+  // Drives the discovery gallery via config.list — every shareable kind honors it.
   const [scope, setScope] = useState<Scope>(stored.scope ?? "all");
   const [generatingBatch, setGeneratingBatch] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
@@ -516,7 +515,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
 
   const createBlank = async () => {
     setCreating(true);
-    // Randomized placeholder (ux-improvements slice 7 create-on-new): several
+    // Randomized placeholder (create-on-new): several
     // fresh drafts never share a name, so nothing dupes or shadows in pickers.
     const name = `${config.newName} ${Math.random().toString(36).slice(2, 6)}`;
     const result = await config.create({ bucket, name });

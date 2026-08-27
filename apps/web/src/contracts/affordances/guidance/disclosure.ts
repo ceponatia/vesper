@@ -8,7 +8,7 @@ import {
 } from "./types";
 
 /**
- * The disclosure gate (narrator-physical-guidance.plan.md §Architecture 5).
+ * The disclosure gate.
  *
  * A HARD gate, and it runs BEFORE ranking. That ordering is the whole design: if
  * salience could rank a `resolver_only` candidate first, then a sufficiently
@@ -26,9 +26,9 @@ import {
  * dropped. Unknown disclosure ⇒ no disclosure.
  *
  * A withheld `resolver_only` candidate is `info`, never `warn` or `error`. Hidden
- * state that constrains resolution without entering the prompt is the feature
- * (plan §Boundaries: "Hidden state may constrain a resolver without entering the
- * narrator prompt"); an error-level log would train readers to treat correct
+ * state that constrains resolution without entering the prompt is the feature —
+ * hidden state may constrain a resolver without entering the narrator prompt;
+ * an error-level log would train readers to treat correct
  * behaviour as a fault. An unrecognised value is the opposite — nobody meant it,
  * so it is an `error` naming the candidate and the bad value.
  *

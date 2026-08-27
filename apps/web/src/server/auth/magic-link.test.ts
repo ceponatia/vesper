@@ -12,7 +12,7 @@ import {
 } from "./magic-link";
 
 /**
- * Magic-link delivery policy (security-authz.plan.md slice 1). The load-bearing
+ * Magic-link delivery policy. The load-bearing
  * assertions: a production without a **resolved transport** has no plugin — even
  * with the reserved transport env vars set, since an env name is not a sender —
  * and a production log payload carries no `url` key, ever, including on a failed

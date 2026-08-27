@@ -18,8 +18,8 @@ import { useToast } from "@/components/ui/toast";
 import { PersonaEditor, type PersonaDraft } from "./persona-editor";
 
 /**
- * The persona edit page (persona-library.plan.md slice 5) — the character-edit-page
- * shell minus everything a persona doesn't have: no forge, no re-draft, no portrait
+ * The persona edit page — the character-edit-page shell minus everything a persona
+ * doesn't have: no forge, no re-draft, no portrait
  * studio, no clone, no publish toggle, no chat tab.
  *
  * One thing it has that the others don't: a **title collision** is a real, expected
@@ -89,8 +89,8 @@ export function PersonaEditPage({ personaId }: { personaId: string }) {
     return false;
   };
 
-  // Autosave (ux-improvements slice 7): silent saves on change/blur. Paused while a
-  // title collision is unresolved — retrying the same conflicting title every 1.5s
+  // Autosave: silent saves on change/blur. Paused while a title collision is
+  // unresolved — retrying the same conflicting title every 1.5s
   // would just churn 409s until the user renames it.
   const autosave = useAutosave({
     enabled: titleError === undefined,

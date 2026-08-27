@@ -10,8 +10,7 @@ import { bodyPlanById, DEFAULT_BODY_PLAN_ID } from "../body/plans";
 import { DEFAULT_SPECIES_ID, heritageFor, speciesById } from "./registry";
 
 /**
- * The realized body for one character — the single gating filter the spec calls
- * for (intimate-anatomy-sensory-and-species-spec.phase4.md §A). It composes:
+ * The realized body for one character — the single gating filter. It composes:
  *
  *   body plan (superset of locations)
  *     → species (allow / disallow + forbidden attribute rules)

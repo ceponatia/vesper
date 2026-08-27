@@ -4,8 +4,7 @@ import type { AttributeValue } from "../../attributes";
 import { affordanceEvidence, type AffordanceEvidence, type AffordanceEvidenceKind } from "./evidence";
 
 /**
- * The lane-neutral affordance type surface
- * (body-attribute-affordances.spec.architecture.md §"Layer contracts").
+ * The lane-neutral affordance type surface.
  *
  * The staged pipeline every domain compiles through:
  *
@@ -20,7 +19,7 @@ import { affordanceEvidence, type AffordanceEvidence, type AffordanceEvidenceKin
  *
  * Three laws are encoded as types rather than left to discipline:
  *
- * 1. **The adapter result law** (audit §"Adapter result law"). A lane input is
+ * 1. **The adapter result law.** A lane input is
  *    `supported`, `unavailable`, or `invalid`. The two failure states carry no
  *    value at all, so no code path can quietly read one as dry, uncovered,
  *    motionless, or in contact.
@@ -81,8 +80,8 @@ export function assertAffordancePhenomenonId(id: string, domainId: AffordanceDom
 /**
  * Story-clock stamp for the cut being read. **Provenance only** — the core does
  * no time arithmetic: no hysteresis, no latches, no decay. Persistent aftermath
- * belongs to the system that owns the state (architecture spec §"Recompute and
- * capture"), so the read layer stays a pure function of the committed moment.
+ * belongs to the system that owns the state, so the read layer stays a pure
+ * function of the committed moment.
  */
 export type AffordanceStoryTime = number;
 export const affordanceStoryTimeSchema = z.number().int().min(0).catch(0);
@@ -94,7 +93,7 @@ export const affordanceStoryTimeSchema = z.number().int().min(0).catch(0);
 /**
  * One lane input as the adapter found it. `unavailable` (no owner, or no fact
  * for this cut) and `invalid` (a trust-boundary value failed parsing) carry NO
- * value — the type makes the audit's law unbreakable. The adapter that produced
+ * value — the type makes the adapter result law unbreakable. The adapter that produced
  * an `invalid` records the diagnostic; the core records the suppression.
  */
 export type AdapterRead<T> =
@@ -162,8 +161,8 @@ export function adapterReadEvidence(
 // ---------------------------------------------------------------------------
 
 /**
- * The core's ONLY two diagnostic codes (audit §"Diagnostic convention for
- * missing inputs"). Everything else a read wants to explain — which phenomenon
+ * The core's ONLY two diagnostic codes, both for a missing input. Everything
+ * else a read wants to explain — which phenomenon
  * fell silent and why — rides the `suppressed` resolutions as data, so the
  * diagnostic sink stays a signal that something DEGRADED rather than a log of
  * every conservative silence.
@@ -403,9 +402,8 @@ export interface AffordanceDomainDefinition<
    * structure IS the character. A domain about something the character wears or
    * carries reads `request.payload`: a garment's material, construction, and
    * coverage belong to the wardrobe, not to the body, and the affordance layer
-   * is explicitly forbidden from keeping a second catalog of them
-   * (spec.garment-interaction.md §"Structural profile"). Both are the same
-   * stage — raw vocabulary in, orthogonal named terms out — so the core stays
+   * is explicitly forbidden from keeping a second catalog of them. Both are the
+   * same stage — raw vocabulary in, orthogonal named terms out — so the core stays
    * domain-neutral by handing over the request and caring about neither.
    *
    * Runs BEFORE `readInputs`, so a domain that compiles from the payload
@@ -427,9 +425,8 @@ export interface AffordanceDomainRun {
 }
 
 /**
- * One domain's STAGED calculation, for the read-only developer preview
- * (architecture spec §Resolved, "Developer preview"): source inputs →
- * structural profile → mechanics → observations or suppression reason.
+ * One domain's STAGED calculation, for the read-only developer preview: source
+ * inputs → structural profile → mechanics → observations or suppression reason.
  *
  * `profile`, `mechanics`, and `frame` are `unknown` because the registry erases
  * each domain's generics — a debug surface is exactly the place where that is

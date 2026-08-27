@@ -16,8 +16,7 @@ import {
 } from "./image-model-profiles";
 
 /**
- * The profile registry's admin contract (image-model-capabilities.spec.md
- * §"Admin UI", §`image_model_profiles`): what the create and edit routes accept,
+ * The profile registry's admin contract: what the create and edit routes accept,
  * and the one configuration judgment a save must pass.
  *
  * The request schemas follow the LoRA library's precedent (`../loras/image-loras.ts`):

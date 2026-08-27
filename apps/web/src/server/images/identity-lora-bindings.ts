@@ -13,7 +13,7 @@ import { db, imageIdentityLoraBindings, imageIdentityPacks } from "../db";
 import { parseRegistryRows } from "./models";
 
 /**
- * The identity-pack-to-LoRA binding store (sd-rendering-package.plan.md §9).
+ * The identity-pack-to-LoRA binding store.
  *
  * One job: say which trained character LoRA belongs to which identity pack
  * revision, and whether that claim is still true. The decision itself is pure and
@@ -77,7 +77,7 @@ export interface IdentityLoraBindingWithUsability {
  *
  * Deliberately not filtered to the current pack. The superseded rows are the
  * point: they are what tells an operator that this character's LoRA was trained
- * before the last re-crop, which is the whole reason §9 asks for the association.
+ * before the last re-crop, which is the whole reason the association exists.
  */
 export async function listCharacterIdentityLoraBindings(
   characterId: string,

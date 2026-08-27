@@ -14,8 +14,7 @@ import type { GuidancePriority, PhysicalNarrationConstraint } from "./types";
 
 /**
  * The mapping seam: existing affordance constraints → guidance candidates,
- * WITHOUT the shared layer learning a domain (narrator-physical-guidance.spec.md
- * §"Adapter seams").
+ * WITHOUT the shared layer learning a domain.
  *
  * A domain resolution says only "this code is currently true at this locus"
  * (`AffordanceConstraint`). Which narrator claims that code forbids, and which
@@ -28,12 +27,12 @@ import type { GuidancePriority, PhysicalNarrationConstraint } from "./types";
  *   Missing data never becomes guidance.
  * - **Whether the committed truth may be stated.** Fully visible loci license
  *   `allowedClaimCodes`; anything less — hinted, hidden, or a locus the lane
- *   cannot answer for — keeps the prohibition and drops the cause, which is
- *   plan §5's "a negative instruction about hidden state must be phrased without
- *   explaining the hidden cause".
+ *   cannot answer for — keeps the prohibition and drops the cause: a negative
+ *   instruction about hidden state must be phrased without explaining the
+ *   hidden cause.
  *
  * `positive_detail_allowed` is never produced here. A constraint is a fence;
- * positive detail is slice 4's transition path and has its own gates.
+ * positive detail rides the transition path and has its own gates.
  */
 
 /**

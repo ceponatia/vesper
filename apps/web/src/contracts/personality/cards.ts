@@ -6,7 +6,7 @@ import { normalizeTag } from "./tags";
 /**
  * Social-reaction cards: importable taboo / social-rule content, reusable across worlds
  * and attachable to characters, that resolves a classified social act to a
- * {@link SocialReaction} the §6 response curve then scales (reactions.ts). Pure: no IO,
+ * {@link SocialReaction} the response curve then scales (reactions.ts). Pure: no IO,
  * no engine imports.
  *
  * A card does **not** carry a raw affinity/mood delta (the companion-app shape). It sets a
@@ -100,7 +100,7 @@ export type SocialReactionCardExtras = z.infer<typeof socialReactionCardExtrasSc
  * Recompose a full inline {@link SocialReactionCard} from a `social_cards` library row's parts:
  * the row's `id`→a fresh inline id (passed in — contracts mints none), `name`→`label`,
  * `description`, and the `definition` extras. The copy-at-every-layer snapshot the world editor /
- * character Personality tab append when importing a library card (social-reaction-cards.plan.md).
+ * character Personality tab append when importing a library card.
  */
 export function cardFromLibraryParts(
   newCardId: string,
@@ -161,7 +161,7 @@ export function reactionKindToValence(kind: ReactionKind): PreferenceValence | n
 // Resolution — a card (or an ordered card set) → a pre-curve reaction.
 // ---------------------------------------------------------------------------
 
-/** A card resolved against a character's tags, before the §6 curve. */
+/** A card resolved against a character's tags, before the response curve. */
 export interface ResolvedCardReaction {
   conceptId: string;
   cardId: string;

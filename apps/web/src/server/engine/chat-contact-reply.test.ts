@@ -25,8 +25,7 @@ import {
 } from "./chat-contact-reply";
 
 /**
- * The reply-side NPC contact ending (romantic-contact-affordances
- * §"Continuation order" 3) — the PURE half.
+ * The reply-side NPC contact ending — the PURE half.
  *
  * Organised like the adapter's own suite: the vetoes first, because every one of
  * them stops a durable end row for a contact the prose did not clearly break —

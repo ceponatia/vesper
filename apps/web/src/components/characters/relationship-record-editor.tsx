@@ -26,13 +26,13 @@ const LEAN_LABELS: Record<PresentedLean, string> = {
 };
 
 /**
- * The authored relationship-record editor (relationship-model.plan.md slice 4):
- * two band selects + kind/history texture + the presented mask + the looming
- * flag, with a **live preview of the exact law block the narrator will read** —
- * authors see the render, not an abstraction. Edits the AUTHORED form (band
- * picks); the live scalars seed at band midpoints on chat creation. Shared by
- * the character Chat tab today and the conversation matrix menu later (plan
- * slice 6), so it takes the two display names as props.
+ * The authored relationship-record editor: two band selects + kind/history
+ * texture + the presented mask + the looming flag, with a **live preview of the
+ * exact law block the narrator will read** — authors see the render, not an
+ * abstraction. Edits the AUTHORED form (band picks); the live scalars seed at
+ * band midpoints on chat creation. Shared by the character Chat tab today and
+ * the conversation matrix menu later, so it takes the two display names as
+ * props.
  */
 export function RelationshipRecordEditor({
   value,

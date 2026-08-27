@@ -1,6 +1,6 @@
 /**
- * Visual-state diagnostic codes (visual-state.spec.md §Diagnostics and degraded
- * behavior). Every code this family DECLARES lives under `visual_state.*`.
+ * Visual-state diagnostic codes. Every code this family DECLARES lives under
+ * `visual_state.*`.
  *
  * Two foreign codes still reach a caller's sink from this family, because the
  * sink is passed straight through to a shared helper rather than wrapped:
@@ -11,7 +11,7 @@
  *
  * Only the codes the shipped slices actually emit are declared — a
  * declared-but-unreachable code reads like coverage that does not exist. The
- * extraction codes joined with slice 9, which emits them; the digest codes
+ * extraction codes joined with the extractor that emits them; the digest codes
  * live beside their emitter in `contracts/images/visual-digest.ts`.
  *
  * Every one of these is a DEGRADATION report: the feature is dropped and the
@@ -61,7 +61,7 @@ export const VISUAL_STATE_VISIBILITY_UNKNOWN = "visual_state.visibility.unknown"
 export const VISUAL_STATE_VISIBILITY_INVALID = "visual_state.visibility.invalid";
 /**
  * One or more visibility components came from a DECLARED RELEASE DEFAULT rather
- * than from an owner (spec §Visibility → declared defaults). Info severity: the
+ * than from an owner. Info severity: the
  * policy is deliberate and written down, and this is the line that makes it
  * measurable instead of invisible.
  */
@@ -79,7 +79,7 @@ export const VISUAL_STATE_INTIMATE_GATED = "visual_state.intimate.gated";
 /** An extraction proposal the target owner's own vocabulary refuses; it is dropped unreviewed. */
 export const VISUAL_STATE_EXTRACTION_PROPOSAL_INVALID = "visual_state.extraction.proposal_invalid";
 /**
- * The reserved extraction-conflict code (spec §Diagnostics), now with live
+ * The reserved extraction-conflict code, now with live
  * emitters: a newer run disagrees with a reviewed proposal for the same slot
  * (`reason: "reviewed_value_differs"`), or canonical truth moved between the
  * reviewer's look and their accept (`reason: "canonical_moved"`). Either way

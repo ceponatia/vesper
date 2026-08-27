@@ -7,8 +7,7 @@ import { newId } from "@/lib/ids";
 import { codes } from "@/test/diagnostics";
 
 /**
- * The reply-side NPC contact ending (romantic-contact-affordances
- * §"Continuation order" 3) — the DURABLE half, end to end through
+ * The reply-side NPC contact ending — the DURABLE half, end to end through
  * `submitChatMessage` with a SCRIPTED assistant reply.
  *
  * The pure suite (`chat-contact-reply.test.ts`) pins detection and the fold;

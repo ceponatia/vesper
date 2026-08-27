@@ -5,10 +5,9 @@ import { loadOwnedChat } from "../../../owned";
 type Params = { chatId: string };
 
 /**
- * Rebuild the rolling summary from the full transcript (character-chat-standalone.spec.md
- * §7.3) — the recovery lever for folded-then-deleted lines. Runs inline (a handful of
- * fold calls under the per-chat summary lock); heavy-write rate limited since each fold
- * is a model call.
+ * Rebuild the rolling summary from the full transcript — the recovery lever for
+ * folded-then-deleted lines. Runs inline (a handful of fold calls under the per-chat
+ * summary lock); heavy-write rate limited since each fold is a model call.
  */
 export const POST = withUser<Params>(
   async (user, req, ctx) => {

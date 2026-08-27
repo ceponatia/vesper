@@ -22,7 +22,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
   const tags = parseTagsParam(params.get("tag"));
   const sort = parseOrNull(z.enum(["updated", "name"]), params.get("sort"));
   // No `scope` param: personas are owner-only (no visibility column) — a persona is
-  // *you*, so there is no public/browse tier to widen to (persona-library.plan.md).
+  // *you*, so there is no public/browse tier to widen to.
   const ids = await searchLibraryIds("persona", user.id, { q, tags, sort: sort ?? undefined, scope: "owned" });
   if (ids.length === 0) return jsonOk({ personas: [] });
   // Summary columns only — the bare row carries the 1536-dim search embedding.
@@ -48,8 +48,8 @@ export const POST = withUser(async (user, req: NextRequest) => {
   // (characters/route.ts): curated core-visual defaults on a blank body, the
   // body-config those attribute values activate, then the persisted-baseline
   // facts against the seeded body. The body-config half is what stops a persona
-  // being born — and staying — with no intimate anatomy at all, which is audit
-  // E1 on the player's own avatar (intimate-defaulting.md §3b).
+  // being born — and staying — with no intimate anatomy at all on the player's
+  // own avatar.
   const profile = seedNewPersonaProfile(body.value.profile);
   try {
     const [row] = await db()

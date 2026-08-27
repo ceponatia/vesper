@@ -37,15 +37,15 @@ import { chatBusyResponse, loadOwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * Player time skip (character-chat-standalone.spec.md §8.1, D3/D8/D14): the ONE
+ * Player time skip (D3/D8/D14): the ONE
  * between-scene time mechanism. Flavor-only v1 — the SHARED scenario clock advances
- * once (followups ruling 8: one story timeline for the whole roster), the one-shot
+ * once (one story timeline for the whole roster), the one-shot
  * skip note is stamped on the scenario (worded by the primary's regard band), and
  * the skip records itself into the scenario's scaffolding ring. Each PRESENT
  * member then takes the per-character half — timed-condition expiry against the
  * advanced clock, the familiarity scene-budget reset, and feeling decay over the
  * skipped time. **Meters do not change.** A chat with no state row yet degrades to
- * seed + skip (spec §11) — never a failed action.
+ * seed + skip — never a failed action.
  */
 
 const skipBodySchema = z.object({ amount: chatSkipAmountSchema });
@@ -62,7 +62,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   }
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
-  // Lanes stay separate (R3 slice 4, ruling 17): a sim-routed chat's time is the
+  // Lanes stay separate: a sim-routed chat's time is the
   // world's storySecond — skips go through the sim advance_time admission, and
   // the legacy scenario clock must never advance underneath it.
   if ((await readSimChatClock(chatId)) !== null) {
@@ -100,7 +100,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // every other lane.
   void mirrorShadowTimeSkip(chatId, CHAT_SKIP_MINUTES[body.value.amount]);
 
-  // The meanwhile pass (chat-offscreen-life.plan.md): once the cumulative skipped
+  // The meanwhile pass: once the cumulative skipped
   // time since the last pass crosses the gate, ONE detached archivist-class job
   // advances the whole cast's off-screen lives. Fire-and-forget — the next exchange
   // proceeds on grounded improvisation if it hasn't landed (D3-safe: player-triggered).
@@ -119,7 +119,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   // expire against the shared clock on their next drift anyway).
   let primaryNext = primaryBase;
   // Rhythm auto-dress is a PRESET application, so it compiles to garment
-  // transfers like every other worn-list write (clothing-state-graph slice 2).
+  // transfers like every other worn-list write.
   // Collected here and reconciled in one pass after the loop — the store is one
   // jsonb field, so it takes one write, not one per member.
   const wardrobeChanges: ChatGarmentWardrobeChange[] = [];
@@ -138,7 +138,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
         );
     if (base.presence !== "present") continue;
     // Profile in ⇒ rhythm auto-dress: a schedule row at the new clock naming a
-    // preset re-dresses this member for the window (slice 8.4).
+    // preset re-dresses this member for the window.
     const next = await resolveSeededOutfit(
       applyTimeSkip(base, body.value.amount, nextScenario.clockMinutes, profile, nextScenario.calendarStart),
       user.id,
@@ -187,7 +187,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       intimateContext: true,
     }),
     // The snapshot this response replaces on the client also feeds the Character
-    // sheet's presentation controls (clothing-state-graph slice 3), so it carries
+    // sheet's presentation controls, so it carries
     // the primary's garment readout — a rhythm re-dress may have changed it.
     garments: garmentReadoutsFor(
       garmentStore,

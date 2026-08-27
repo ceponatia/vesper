@@ -121,7 +121,7 @@ export async function loadChatWardrobe(
 }
 
 /**
- * One worn garment INSTANCE as a wardrobe item (clothing-state-graph slice 3).
+ * One worn garment INSTANCE as a wardrobe item.
  *
  * The split of authority: the STORE owns coverage — per part, after presentation
  * has subtracted whatever a rolled sleeve or open placket takes away (OQ6) — and
@@ -231,7 +231,7 @@ export interface ResolvedChatWardrobe {
   /**
    * The coverage rows this resolve was computed from — the SAME `toWornInputs`
    * pass that produced `exposure` and `partVisibility`, handed on so the
-   * affordance adapter (body-attribute-affordances slice 4) can read coverage of
+   * affordance adapter can read coverage of
    * an arbitrary body location without a second item load or a second occlusion
    * model.
    *
@@ -300,12 +300,12 @@ function overlayTextExposure(text: string): RegionExposure | undefined {
 
 /**
  * True when this actor's wardrobe has actually been MODELLED as garment
- * instances (clothing-state-graph.plan.md slice 2). Two things follow:
+ * instances. Two things follow:
  *
  * - the worn ids come from the store's projection rather than the column, so the
  *   store is the truth at the read seam too (the two are equal by construction —
  *   every writer re-derives the column from the store);
- * - `outfitExposed` stops being authoritative (audit finding 6). It was an
+ * - `outfitExposed` stops being authoritative. It was an
  *   author/model-settable coverage BYPASS on the free-text path; once we know
  *   what this actor is wearing, coverage decides. A modelled actor with nothing
  *   worn reads as stripped — the same `seeded` trick `resolvePlayerWardrobe`
@@ -487,10 +487,10 @@ export interface ResolvedPlayerWardrobe {
    * means it was read and this body is wearing nothing — the seeded-then-emptied
    * case the exposure branch below already treats as stripped.
    *
-   * Added for the reply-scene contact leg (actor-control spec §"Resolution laws
-   * → Contact start": "the PLAYER can be the target — their wardrobe follows the
-   * same law"). Until an NPC could touch the player, nothing ever asked what lay
-   * over the player's own surfaces, so this side of the wardrobe had no consumer.
+   * Added for the reply-scene contact leg, where the PLAYER can be the target
+   * and their wardrobe follows the same law as any other body's. Until an NPC
+   * could touch the player, nothing ever asked what lay over the player's own
+   * surfaces, so this side of the wardrobe had no consumer.
    */
   worn?: readonly WornItemInput[];
   /** The character twin's marker, same contract (see `ResolvedChatWardrobe.unreliable`). */
@@ -498,13 +498,13 @@ export interface ResolvedPlayerWardrobe {
 }
 
 /**
- * Resolve the PLAYER's wardrobe for a chat (persona-library.plan.md slice 8). The
+ * Resolve the PLAYER's wardrobe for a chat. The
  * character-side twin above, with two deliberate differences:
  *
  * - **Structured-only.** There is no free-text path and no manual `outfitExposed` flag,
  *   because a persona is a library entity with real outfit presets. Exposure is always
  *   computed from coverage — which is what makes the scene-image gate that decides
- *   whether the viewer's anatomy renders unfakeable (scene-pov-embodiment.plan.md).
+ *   whether the viewer's anatomy renders unfakeable.
  *   The overlay's own garment nouns count as coverage here exactly as they do for the
  *   character (`overlayWornInputs`): additive over worn items, and the read of last
  *   resort when nothing resolved and the player was never stripped.

@@ -6,12 +6,12 @@ type Params = { id: string };
 
 /**
  * GET /api/items/:id/usage — where this item is referenced, for the delete
- * dialog's in-use warning (ux-improvements.plan.md slice 6). Owner-scoped:
- * only the caller's own characters are named (references from other accounts to
- * a public item are invisible by the visibility model). Warn, never block — a
- * character outfit preset (`profile.outfits[].items`; legacy rows still carry
- * `defaultOutfit` until their next save) referencing the id shows the red "not
- * in library" tag after the delete.
+ * dialog's in-use warning. Owner-scoped: only the caller's own characters are
+ * named (references from other accounts to a public item are invisible by the
+ * visibility model). Warn, never block — a character outfit preset
+ * (`profile.outfits[].items`; legacy rows still carry `defaultOutfit` until
+ * their next save) referencing the id shows the red "not in library" tag after
+ * the delete.
  */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
@@ -28,7 +28,8 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     .where(
       and(
         eq(characters.ownerId, user.id),
-        // New preset shape OR the legacy id list (rows not re-saved since slice 8).
+        // New preset shape OR the legacy id list (rows not re-saved since outfit
+        // presets replaced `defaultOutfit`).
         sql`(${characters.profile}->'outfits' @> ${JSON.stringify([{ items: [id] }])}::jsonb
              or ${characters.profile}->'defaultOutfit' @> ${JSON.stringify(id)}::jsonb)`,
       ),

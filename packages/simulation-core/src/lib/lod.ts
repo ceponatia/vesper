@@ -26,9 +26,9 @@ import {
 import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "./routine";
 
 /**
- * E6.1 — the pure actor-LOD kernel: the effective read
- * (assigned row or registry defaults), the assignment resolver with the §27.3
- * demotion guards, and the replay fold. No IO, no clock, no model.
+ * E6.1 — the pure actor-LOD kernel: the effective read (assigned row or
+ * registry defaults), the assignment resolver with the demotion guards, and
+ * the replay fold. No IO, no clock, no model.
  */
 
 // ---------------------------------------------------------------------------
@@ -86,19 +86,19 @@ function isPrivilegedPrincipal(kind: string): boolean {
 }
 
 /**
- * The §27.3 demotion-guard view, loaded by the store inside the command
+ * The demotion-guard view, loaded by the store inside the command
  * transaction. Counts, not booleans, so a rejection's public reason can stay
  * truthful without re-querying.
  */
 export interface AssignActorLodGuardCounts {
-  /** The actor's activity instances in a claim-holding phase (§16.3). */
+  /** The actor's activity instances in a claim-holding phase. */
   claimHoldingActivityCount: number;
-  /** The actor's unresolved temporal pressures (§15.2) — commitments near a boundary. */
+  /** The actor's unresolved temporal pressures — commitments near a boundary. */
   openPressureCount: number;
-  /** Claim-holding engagements (§18.2) the actor participates in. */
+  /** Claim-holding engagements the actor participates in. */
   openEngagementCount: number;
   /**
-   * E6.3: the actor's ACTIVE body conditions — a §27.3 near-boundary hazard
+   * E6.3: the actor's ACTIVE body conditions — a near-boundary hazard
    * that blocks only a move BELOW `event` (retiring a live expiry alarm
    * would leave the projection lying about when the condition ends).
    */
@@ -156,7 +156,7 @@ export type AssignActorLodResolution =
  * simulation axis moves toward less resolution. The inference axis never
  * guards, and neither does a simulation promotion — for a named actor whose
  * full state already exists, raising resolution is bookkeeping (real
- * aggregate promotion is E6.4, §27.2).
+ * aggregate promotion is E6.4).
  */
 export function resolveAssignActorLodFromView(
   view: AssignActorLodResolutionView,
@@ -327,7 +327,7 @@ function buildLodAssignmentTrain(input: LodAssignmentTrainInput): {
 }
 
 /**
- * E6.4 dependency wake (§27.7): a below-event actor an engagement reaches is
+ * E6.4 dependency wake: a below-event actor an engagement reaches is
  * promoted to `event` — inference axis untouched — inside the reaching
  * command's own transaction, riding that command's envelope. Body alarms
  * re-arm from re-solved law and the routine alarm arms at the next boundary,

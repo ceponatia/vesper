@@ -74,7 +74,7 @@ export function matchPreference(conceptId: string, preferences: readonly Prefere
 }
 
 // ---------------------------------------------------------------------------
-// The response curve — affinity- and mood-aware (spec §6).
+// The response curve — affinity- and mood-aware.
 // Tunable placeholders; tuned in playtest.
 // ---------------------------------------------------------------------------
 
@@ -139,7 +139,7 @@ export function evaluateSocialReaction(
 }
 
 /**
- * The signed mood-meter nudge a resolved reaction applies (spec §4): a liked act lifts
+ * The signed mood-meter nudge a resolved reaction applies: a liked act lifts
  * the character's mood, a disliked act lowers it, proportional to the evaluated magnitude
  * (which already folds in affinity + traits) and capped. Returns a delta on the 0–1 mood
  * scale; the merge clamps the meter to [0,1].

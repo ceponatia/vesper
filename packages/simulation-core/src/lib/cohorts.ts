@@ -26,7 +26,7 @@ import { composeSimulationId } from "../contracts/identity";
 export const cohortDerivationVersionForEvents = "cohort-v1" as const;
 
 // ---------------------------------------------------------------------------
-// Analytic presence (§27.6) — read-time only, never scheduled
+// Analytic presence — read-time only, never scheduled
 // ---------------------------------------------------------------------------
 
 /** Half-open [start, end) minute-of-day membership, wrapping midnight. */
@@ -81,11 +81,11 @@ export function cohortPresenceAt(
 }
 
 /**
- * E6.4 (§27.2 step 5, §27.7): whether the aggregate's own presence read admits
- * a person at `zoneId` right now — the no-contradiction law made deterministic.
- * Inside a covering window, only the windowed zone's `presentCount` and the
- * dispersed remainder are drawable; a zone the read declares empty cannot
- * yield a person. Dispersed cohorts admit materialization anywhere.
+ * E6.4: whether the aggregate's own presence read admits a person at `zoneId`
+ * right now — the no-contradiction law made deterministic. Inside a covering
+ * window, only the windowed zone's `presentCount` and the dispersed remainder
+ * are drawable; a zone the read declares empty cannot yield a person.
+ * Dispersed cohorts admit materialization anywhere.
  */
 export function cohortCanMaterializeAt(
   cohort: SimulationCohort,
@@ -145,7 +145,7 @@ export interface CohortBranchMeta {
 
 export interface CreateCohortResolutionView extends CohortBranchMeta {
   alreadyExists: boolean;
-  /** Fail-closed §13.1 integrity: every presence-window zone must exist. */
+  /** Fail-closed integrity: every presence-window zone must exist. */
   zoneExists(zoneId: string): boolean;
 }
 

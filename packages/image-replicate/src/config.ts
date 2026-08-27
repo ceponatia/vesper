@@ -5,8 +5,7 @@
  * The package reads NO environment. The application resolves the process
  * environment into a `ReplicateConfig` once and hands it to
  * `createReplicateClient`, so a process cannot fingerprint one safety posture
- * and send another (monorepo-image-core.spec.replicate.md §"One safety value
- * from plan to send").
+ * and send another: one safety value travels from plan to send.
  */
 
 export interface ReplicateConfig {

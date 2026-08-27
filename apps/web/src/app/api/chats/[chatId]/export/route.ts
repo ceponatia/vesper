@@ -11,10 +11,10 @@ import { loadOwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * Transcript export (character-chat-standalone.spec.md §7.4 — "take your story with
- * you", graduating deferred #8 at chat scale): `GET …/export?format=md|json[&memory=1]`
- * returns the whole conversation as a download — title, scenario, participants,
- * transcript, and (opt-in) a memory appendix of the chat's remembered facts + episodes.
+ * Transcript export — "take your story with you":
+ * `GET …/export?format=md|json[&memory=1]` returns the whole conversation as a
+ * download — title, scenario, participants, transcript, and (opt-in) a memory
+ * appendix of the chat's remembered facts + episodes.
  */
 
 /** Hard cap on exported messages — far above any real chat, guards a runaway query. */

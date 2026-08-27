@@ -127,7 +127,7 @@ async function loadPerceptionSpaceView(tx: SimTx, branchId: string): Promise<Per
  * Derive and persist the observations for every event an accepted command
  * appended (sequence > the locked branch head), graded against the
  * post-command locus rows. Runs inside the command transaction — called by
- * the shared §11.1 shell and by the pre-shell stores' inlined copies.
+ * the shared command shell and by the pre-shell stores' inlined copies.
  */
 export async function recordCommandObservations(
   tx: SimTx,
@@ -180,8 +180,8 @@ export async function loadViewpointObservations(
 
 /**
  * Whether an actor holds any observation of one event — the E3.3 commitment
- * knowledge gate's `observed` source resolves through this (spec §15.1: a
- * pressure is salient only if the actor can know).
+ * knowledge gate's `observed` source resolves through this (a pressure is
+ * salient only if the actor can know).
  */
 export async function hasObservationOfEvent(
   tx: SimTx,

@@ -5,10 +5,9 @@ import type { GarmentDegreeBand } from "./garment-material";
 import type { GarmentPresentationChannel } from "./garment-presentation";
 
 /**
- * The AUTHORITATIVE wardrobe digest (clothing-state-graph.plan.md §"Raw state
- * never enters narrator prose" + §"Narration and image policy").
+ * The AUTHORITATIVE wardrobe digest. Raw state never enters narrator prose.
  *
- * The plan splits the narrator's wardrobe input in two, and this file owns the
+ * The narrator's wardrobe input is split in two, and this file owns the
  * first half: **authority**, "a terse state guard" the narrator cannot
  * contradict — who is wearing what, how each piece currently sits, and what is
  * lying around the room. Attention — the ranked, repeat-gated cue block — is

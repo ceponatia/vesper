@@ -16,9 +16,8 @@ import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { sha256Hex } from "./render-fingerprint";
 
 /**
- * THE render-intent transport capture (image-lane-consolidation.spec.prompts.md
- * §Characterization and comparison: "The transport half of the capture … is not
- * built; it belongs with the render intent Stage 3 starts comparing").
+ * THE render-intent transport capture — the transport half of the lane capture,
+ * which belongs with the render intent Stage 3 starts comparing.
  *
  * The Stage 1 harness froze the CHARACTER-FACT half of every lane; this module
  * captures the TRANSPORT half — what a lane's request would actually configure

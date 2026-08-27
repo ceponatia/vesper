@@ -3,13 +3,13 @@ import { jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { sweepOrphanSimWorlds } from "@/server/engine";
 
 /**
- * The orphan sweeper's maintenance surface (successor-world-lifecycle.plan.md
- * slice 2, owner ruling E20-2). Deliberately a plain admin route called by hand
- * — once at deploy to reclaim the historical leak, and again only if a later
- * dry run shows leaks recurring. No GET (a scan is cheap but the verb here is a
- * write), no cron, and no jobs-seam registration: slice 1 made new leaks
- * unreachable, so a periodic guard would be scheduling for a bug that no longer
- * exists (the plan's resolved-by-lean).
+ * The orphan sweeper's maintenance surface (owner ruling E20-2). Deliberately a
+ * plain admin route called by hand — once at deploy to reclaim the historical
+ * leak, and again only if a later dry run shows leaks recurring. No GET (a scan
+ * is cheap but the verb here is a write), no cron, and no jobs-seam
+ * registration: chat deletion and failed provisioning now delete their own
+ * worlds, so new leaks are unreachable and a periodic guard would be scheduling
+ * for a bug that no longer exists.
  *
  * `{"dryRun": true}` reports the candidate worlds and deletes nothing — always
  * the first call. The body is required and strict; `{}` runs a real sweep.

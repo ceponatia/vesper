@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 
 /**
- * Two-character composite-into-scene test (scene-images.spec.md §6 follow-up):
+ * Two-character composite-into-scene test (reference-sheet follow-up):
  * the reference-sheet path failed (qwen-image-2-edit copies a board), but
  * compositing one subject INTO the scene + "harmonize" worked. This generalizes
  * it to TWO identities.

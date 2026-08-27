@@ -218,7 +218,7 @@ function listOf<T>(item: z.ZodType<T>, ...keys: string[]) {
 
 const idSchema = z.string().min(1);
 const nameSchema = z.string().catch("Untitled");
-/** Cross-account share scope (auth.plan.md); unknown/absent ⇒ private. */
+/** Cross-account share scope; unknown/absent ⇒ private. */
 export const visibilitySchema = z.enum(["private", "public"]).catch("private");
 export type Visibility = z.infer<typeof visibilitySchema>;
 const textOr = (fallback: string) => z.string().catch(fallback);
@@ -287,7 +287,7 @@ export const characterSummarySchema = z.object({
   tags: tagsSchema,
   avatarImageId: optionalId,
   updatedAt: optionalText,
-  /** Facet columns for the library browse (library-ux.plan.md §Follow-up pass). */
+  /** Facet columns for the library browse. */
   speciesId: optionalText,
   gender: optionalText,
 });
@@ -319,7 +319,7 @@ export const characterSaveSchema = z
 export type CharacterSaveResult = z.infer<typeof characterSaveSchema>;
 
 /**
- * A persona library card (persona-library.plan.md). `title` is the per-owner-unique
+ * A persona library card. `title` is the per-owner-unique
  * label the card shows and the owner searches by; `name` is the in-fiction name a
  * character addresses — which is why the two are separate and why `name` may repeat.
  */
@@ -340,14 +340,14 @@ export type PersonaDetail = z.infer<typeof personaDetailSchema>;
 
 /** One line of a conversation transcript. */
 /**
- * Alternate generations browsable on an assistant reply (character-chat-standalone.spec.md §4.1).
+ * Alternate generations browsable on an assistant reply.
  *
  * `provenance` names the narrator model and prompt revision that produced THIS
- * take (narrator-prompt-lab.plan.md §Provenance) — the take browser's admin-only
- * attribution label reads it. It is optional twice over: historical takes predate
- * it entirely, and zod strips unknown keys, so leaving it off this schema would
- * silently discard a field the server sends. Malformed ⇒ `undefined` ⇒ no label,
- * never a failed transcript parse.
+ * take — the take browser's admin-only attribution label reads it. It is
+ * optional twice over: historical takes predate it entirely, and zod strips
+ * unknown keys, so leaving it off this schema would silently discard a field the
+ * server sends. Malformed ⇒ `undefined` ⇒ no label, never a failed transcript
+ * parse.
  */
 export const replyTakesSchema = z
   .object({
@@ -370,8 +370,8 @@ export const chatMessageSchema = z.object({
   content: textOr(""),
   takes: replyTakesSchema,
   /**
-   * `{ stopped: true }` when the player cut the reply short (spec §4.2);
-   * `attachments.ids` on a user line = the photos it carried (chat-image-input.plan.md).
+   * `{ stopped: true }` when the player cut the reply short;
+   * `attachments.ids` on a user line = the photos it carried.
    */
   meta: z
     .object({
@@ -380,10 +380,10 @@ export const chatMessageSchema = z.object({
         .object({ ids: z.array(z.string()).catch([]) })
         .nullish()
         .catch(null),
-      /** "narrator" on a user line = story narration authored as the storyteller (chat-supporting-cast.plan.md). */
+      /** "narrator" on a user line = story narration authored as the storyteller. */
       inputMode: z.enum(["player", "narrator"]).nullish().catch(null),
       /**
-       * World beat (world-ui.plan.md slice 2): a durable travel / time-skip /
+       * World beat: a durable travel / time-skip /
        * scene-ended trace on an assistant row — `content` carries the phrased line,
        * this marks it so the transcript renders a muted system line, not a bubble.
        */
@@ -476,7 +476,7 @@ export const garmentReadoutSchema = z.object({
 });
 export type GarmentReadout = z.infer<typeof garmentReadoutSchema>;
 
-/** Light chat-state snapshot (character-chat-state.spec.md §5) for the strip, premise bar, and state tools. */
+/** Light chat-state snapshot for the strip, premise bar, and state tools. */
 export const chatStateSnapshotSchema = z.object({
   meters: z.record(z.string(), z.number()).catch({}),
   regard: z.number().catch(0),
@@ -503,8 +503,8 @@ export const chatStateSnapshotSchema = z.object({
     degraded: false,
   })),
   clockMinutes: z.number().catch(0),
-  // The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card formats
-  // clockMinutes against it; degraded default matches CHAT_DEFAULT_CALENDAR_START.
+  // The story-calendar anchor — the clock card formats clockMinutes against it;
+  // degraded default matches CHAT_DEFAULT_CALENDAR_START.
   calendarStart: calendarStartSchema.catch({ year: 2024, month: 1, day: 1, hour: 8, minute: 0 }),
   // Sim-routed chats (R3 slice 4 + R5 calendar, ruling 17): the linked world's
   // clock — storySecond plus the world's calendar anchor (null anchor = "Day N"
@@ -523,7 +523,7 @@ export const chatStateSnapshotSchema = z.object({
   // False ⇒ a seed-on-read (no row yet); the chat strip then previews the authored
   // Starting Relationship. Defaults true so a missing flag shows the stored disposition.
   persisted: z.boolean().catch(true),
-  // Structured worn state (chat-wardrobe-parity): the worn item-definition ids + active preset
+  // Structured worn state: the worn item-definition ids + active preset
   // id (the Character sheet's equip editor), the free-text outfit overlay/fallback, and the
   // manual intimate-reveal flag (superseded by computed coverage when items are worn).
   wornItemIds: z.array(z.string()).catch([]),
@@ -532,38 +532,38 @@ export const chatStateSnapshotSchema = z.object({
   // Rendered garment phrase (worn items + overlay) for the read-only strip chip.
   outfitLabel: textOr(""),
   outfitExposed: z.boolean().catch(false),
-  /** The presentation graph for this member's worn garments (clothing-state-graph slice 3). */
+  /** The presentation graph for this member's worn garments. */
   garments: z.array(garmentReadoutSchema).catch([]),
   /** Garment operations this save REJECTED, with their stable codes — the sheet's diagnostics row. */
   garmentDiagnostics: z.array(z.object({ code: z.string(), message: textOr("") })).catch([]),
-  /** Who the player is here + what they're wearing (persona-library.plan.md) — chat-wide. */
+  /** Who the player is here + what they're wearing — chat-wide. */
   playerState: chatPlayerStateSchema.catch(() => emptyChatPlayerState()),
   activeSocialCards: z.array(socialReactionCardSchema).catch([]),
-  // Meter bands last surfaced as a "just shifted" beat (character-chat-state-narration.spec.md
-  // §5) — for the state-tools "State → narration" debug readout.
+  // Meter bands last surfaced as a "just shifted" beat — for the state-tools
+  // "State → narration" debug readout.
   surfacedCues: z.record(z.string(), z.string()).catch({}),
-  // Persisted narrative attribute overlays (character-chat-primary.spec.md §3) + the last-turn
-  // RAG debug trace (§5) — both surfaced to the chat inspector in the state-tools modal.
+  // Persisted narrative attribute overlays + the last-turn RAG debug trace — both
+  // surfaced to the chat inspector in the state-tools modal.
   attributeOverlays: z.array(attributeValueSchema).catch([]),
   // The degraded default is the schema's OWN empty value (docs/resilience.md §1:
   // "fallbacks are schema defaults, defined next to the schema") — a hand-written
   // literal here drifted every time a trace field was added.
   lastMemoryTrace: chatMemoryTraceSchema.catch(() => emptyChatMemoryTrace()),
-  // The character's unfinished business (character-chat-standalone.spec.md §6.2) — shown in
-  // the relationship panel and driving the hub's "has something to say" marker (§8.4).
+  // The character's unfinished business — shown in the relationship panel and
+  // driving the hub's "has something to say" marker.
   openLoops: z.array(z.string()).catch([]),
-  // The live next-turn RAG queries column (not the trace) — editable in the state tools (§6.1).
+  // The live next-turn RAG queries column (not the trace) — editable in the state tools.
   memoryQueries: z.array(z.string()).catch([]),
   // Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle).
   sceneAuto: z.string().catch("off"),
   // Scene-image model pick (the scene strip's save-on-select dropdown).
   // Registry model id; an unknown/legacy value degrades to the scene default at render.
   sceneModel: z.string().catch(""),
-  // Recurring named side characters (chat-supporting-cast.plan.md) — the Supporting Cast panel's data.
+  // Recurring named side characters — the Supporting Cast panel's data.
   supportingCast: supportingCastSchema.catch([]),
-  // Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's data.
+  // Tracked plans & promises — the Plans panel's data.
   plans: chatPlansSchema.catch([]),
-  // Emotional weather (emotional-weather.plan.md): the persistent feeling + bruise —
+  // Emotional weather: the persistent feeling + bruise —
   // read by the reply-pacing hold and shown in the state tools. Degrades to empty.
   feeling: z
     .object({
@@ -574,8 +574,8 @@ export const chatStateSnapshotSchema = z.object({
 });
 export type ChatStateSnapshot = z.infer<typeof chatStateSnapshotSchema>;
 /**
- * A partial edit applied by the premise Save or the state-tools modal (slice 4),
- * extended to inspector-grade coverage (character-chat-standalone.spec.md §6.1).
+ * A partial edit applied by the premise Save or the state-tools modal, extended
+ * to inspector-grade coverage.
  */
 export interface ChatStateEdit {
   premise?: string;
@@ -585,13 +585,13 @@ export interface ChatStateEdit {
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
-  /** Structured worn item-definition ids (chat-wardrobe-parity rung 3) — the sheet's equip editor. */
+  /** Structured worn item-definition ids — the sheet's equip editor. */
   wornItemIds?: string[];
-  /** The active outfit preset id (rung 1) — the sheet's preset switcher. */
+  /** The active outfit preset id — the sheet's preset switcher. */
   outfitPresetId?: string;
   outfit?: string;
   outfitExposed?: boolean;
-  /** Typed garment operations (clothing-state-graph slice 3) — the sheet's presentation controls. */
+  /** Typed garment operations — the sheet's presentation controls. */
   garmentOperations?: GarmentOperation[];
   /** Who the player is here + what they're wearing — the "Playing as" pick. */
   playerState?: ChatPlayerState;
@@ -603,13 +603,13 @@ export interface ChatStateEdit {
   sceneAuto?: "off" | "milestones";
   /** Registry model id from the scene picker. */
   sceneModel?: string;
-  /** Recurring named side characters (chat-supporting-cast.plan.md) — whole-list replacement. */
+  /** Recurring named side characters — whole-list replacement. */
   supportingCast?: SupportingCastMember[];
-  /** Tracked plans & promises (chat-plans-promises.plan.md) — whole-list replacement. */
+  /** Tracked plans & promises — whole-list replacement. */
   plans?: ChatPlan[];
-  /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card's editor. */
+  /** The story-calendar anchor — the clock card's editor. */
   calendarStart?: CalendarStart;
-  /** Where an away member is (chat-offscreen-life) — author-correctable phrase. */
+  /** Where an away member is — author-correctable phrase. */
   whereabouts?: string;
 }
 
@@ -619,7 +619,7 @@ export const locationSummarySchema = z.object({
   description: textOr(""),
   tags: tagsSchema,
   imageId: optionalId,
-  /** Facet columns for the library browse (library-ux.plan.md §Follow-up pass). */
+  /** Facet columns for the library browse. */
   scale: z.enum(["intimate", "room", "hall", "open", "expanse"]).catch("room"),
 });
 export type LocationSummary = z.infer<typeof locationSummarySchema>;
@@ -719,7 +719,7 @@ export const itemDetailSchema = itemSummarySchema.extend({
 export type ItemDetail = z.infer<typeof itemDetailSchema>;
 
 // ---------------------------------------------------------------------------
-// Social-reaction cards (social-reaction-cards.plan.md — library-reuse slice)
+// Social-reaction cards
 // ---------------------------------------------------------------------------
 
 export const socialCardSummarySchema = z.object({
@@ -739,7 +739,7 @@ export const socialCardDetailSchema = socialCardSummarySchema.extend({
 });
 export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 
-/** The Gallery hub's tabs (library-ux.plan.md §Follow-up pass). */
+/** The Gallery hub's tabs. */
 export type GalleryTab = "scenes" | "portraits" | "entity";
 
 /**
@@ -782,7 +782,7 @@ export const imageRecordSchema = z.object({
       source: z.string().optional().catch(undefined),
       model: z.string().optional().catch(undefined),
       error: z.string().optional().catch(undefined),
-      /** "selfie" marks a character-sent photo message (chat-selfies.plan.md). */
+      /** "selfie" marks a character-sent photo message. */
       flavor: z.string().optional().catch(undefined),
       variantKind: z.string().optional().catch(undefined),
       /** The attempt provenance the lanes record (`ResolvedImageAttempt`) — kept
@@ -804,8 +804,8 @@ export type ImageRecord = z.infer<typeof imageRecordSchema>;
 export { portraitVariantKindLabel, portraitVariantKinds };
 export type { PortraitVariantKind };
 
-// The image-model registry is DATA now (image-model-registry.plan.md) — the
-// pickers fetch it rather than importing a key union. The record contract is
+// The image-model registry is DATA now — the pickers fetch it rather than
+// importing a key union. The record contract is
 // pure, so it is re-exported here for component imports.
 export {
   imageModelSchema,
@@ -820,8 +820,8 @@ export {
 };
 
 /**
- * One entry of a player-facing profile picker (capabilities Slice D): the id to
- * store, the labels to group by, and the model's operator warning shown BEFORE
+ * One entry of a player-facing profile picker: the id to store, the labels to
+ * group by, and the model's operator warning shown BEFORE
  * use. Deliberately not the profile row — the pickers need an option, and a row
  * here would make every picker a consumer of admin vocabulary.
  */
@@ -846,10 +846,9 @@ export const imageProfilesApi = {
     apiGet(listOf(imageProfileOptionSchema, "profiles"), `/api/image-profiles?task=${task}`),
 };
 
-// --- Version candidate wire shapes (image-model-capabilities.spec.md
-// §"Version candidate and promotion flow"). The diff-entry and finding schemas
-// are the package's own, so the client reads exactly the shape the pure layer
-// emits; everything else degrades per field like every schema in this file.
+// --- Version candidate wire shapes. The diff-entry and finding schemas are the
+// package's own, so the client reads exactly the shape the pure layer emits;
+// everything else degrades per field like every schema in this file.
 
 /** The candidate probe summary the admin card renders — mechanical facts only. */
 const imageVersionCandidateSchema = z.object({
@@ -964,9 +963,9 @@ export const adminImageModelsApi = {
 };
 
 /**
- * Admin CRUD for the task profiles beneath a model (capabilities spec §"Admin
- * UI"). The eligibility and override-key refusals arrive as a 400/409 whose
- * message the form shows beside the fields; the row shapes are the contract's.
+ * Admin CRUD for the task profiles beneath a model. The eligibility and
+ * override-key refusals arrive as a 400/409 whose message the form shows beside
+ * the fields; the row shapes are the contract's.
  */
 export const adminImageModelProfilesApi = {
   create: (modelId: string, body: ImageModelProfileCreateRequest) =>
@@ -1028,7 +1027,7 @@ export const imageLorasApi = {
 export const characterForgeSections = ["profile", "attributes", "outfit"] as const;
 export type CharacterForgeSection = (typeof characterForgeSections)[number];
 
-// Per-tab Re-draft scopes (character-sheet-forge.plan.md); single source in lib.
+// Per-tab Re-draft scopes; single source in lib.
 export { characterSheetScopes, type CharacterSheetScope } from "@/lib/character-scopes";
 
 export const characterDraftSchema = z.object({
@@ -1046,7 +1045,7 @@ export function emptyCharacterDraft(): CharacterDraft {
 /** An attribute value as the portrait review renders it (contracts' value union). */
 const portraitValueSchema = z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]);
 
-/** The portrait review-dialog payload (followups ruling 2). */
+/** The portrait review-dialog payload. */
 export const portraitReviewSchema = z
   .object({
     conflicts: z
@@ -1078,7 +1077,7 @@ export type ListParams = {
   /** Comma-separated tags are ANDed server-side. */
   tag?: string;
   kind?: string;
-  /** Items-only facet filters + sort (library-ux.plan.md). */
+  /** Items-only facet filters + sort. */
   category?: string;
   subtype?: string;
   layer?: string;
@@ -1119,7 +1118,7 @@ export const charactersApi = {
   /**
    * Vision pass over the canonical avatar → unset appearance attributes filled
    * on the draft, plus the review-dialog data: disagreements as current →
-   * proposed and the list of auto-filled blanks (followups ruling 2).
+   * proposed and the list of auto-filled blanks.
    */
   attributesFromPortrait: (id: string, draft: CharacterDraft) =>
     apiPost(
@@ -1155,7 +1154,7 @@ export const charactersApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Identity packs (image-identity-packs.spec.lifecycle.md §User routes)
+// Identity packs
 // ---------------------------------------------------------------------------
 
 export type {
@@ -1166,10 +1165,9 @@ export type {
 };
 
 /**
- * The optimistic-concurrency triple every pack WRITE carries
- * (spec.derivation.md §"Manual crop revisions") — the fields the manual-crop and
- * override requests share, named once so the editor can pass "the thing I opened"
- * around as one value.
+ * The optimistic-concurrency triple every pack WRITE carries — the fields the
+ * manual-crop and override requests share, named once so the editor can pass
+ * "the thing I opened" around as one value.
  */
 export type IdentityPackWriteGuard = Pick<
   IdentityPackManualCropRequest,
@@ -1263,9 +1261,8 @@ export const adminIdentityPacksApi = {
   override: (packId: string, body: IdentityPackAdminOverrideRequest) =>
     apiPost(identityPackResponseSchema, `/api/admin/self/identity-packs/${packId}/override`, body),
   /**
-   * The fixed identity-reference trial harness
-   * (image-identity-packs.spec.trial.md): plan a run, execute it a few renders
-   * at a time, review blinded pairs, aggregate, record verdicts. Refusals come
+   * The fixed identity-reference trial harness: plan a run, execute it a few
+   * renders at a time, review blinded pairs, aggregate, record verdicts. Refusals come
    * back as 400s whose code `identityPackTrialRefusal` recognizes.
    */
   trial: {
@@ -1312,7 +1309,7 @@ export const adminIdentityPacksApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Advanced Image Lab (qwen-advanced-image-subsystem.spec.md §Code organization)
+// Advanced Image Lab
 // ---------------------------------------------------------------------------
 
 const IMAGE_LAB_API_ROOT = "/api/admin/self/image-lab";
@@ -1325,7 +1322,7 @@ const IMAGE_LAB_API_ROOT = "/api/admin/self/image-lab";
  * schemas: those degrade the WHOLE payload to `[]` on one bad row, while the
  * element-wise drop this file uses everywhere costs a bad row only itself. The
  * page's job is to show evidence, so losing one malformed fixture must not empty
- * the panel beside it (spec §Resilience).
+ * the panel beside it.
  */
 export const imageLabApi = {
   experiments: {
@@ -1388,8 +1385,7 @@ export const imageLabApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Image Generator (image-lab-general-model-trials.spec.md) — the raw
-// prompt/model bench beside the lab, admin-only like it
+// Image Generator — the raw prompt/model bench beside the lab, admin-only like it
 // ---------------------------------------------------------------------------
 
 const IMAGE_GENERATOR_API_ROOT = "/api/admin/self/image-generator";
@@ -1423,7 +1419,7 @@ export const imageGeneratorApi = {
 /**
  * One owner-scoped picker row from `GET /api/admin/self/owned-images`: the id
  * plus what a display label needs. Label metadata degrades to null/"" —
- * a bare image id is still a usable source (spec §Resilience).
+ * a bare image id is still a usable source.
  */
 export const ownedImageSourceSchema = z.object({
   id: idSchema,
@@ -1457,7 +1453,7 @@ export const ownedImagesApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Conversations (character-chat-standalone.spec.md §2.1) — chat-id addressed
+// Conversations — chat-id addressed
 // ---------------------------------------------------------------------------
 
 /** One conversation row from `GET /api/chats` (the list / editor-tab picker shape). */
@@ -1475,16 +1471,15 @@ export const chatSummarySchema = z.object({
   /** Mood chip (`EmotionLabel` + intensity), same derivation as the state snapshot; null before the first exchange. */
   emotion: z.object({ label: z.string(), intensity: z.number() }).nullable().catch(null),
   /**
-   * "Has something to say" (character-chat-standalone.spec.md §8.4, D4): the character's
-   * top open loop, "" when nothing is pending. Pure read-time derivation — no jobs, no
+   * "Has something to say": the character's top open loop, "" when nothing is
+   * pending. Pure read-time derivation — no jobs, no
    * push, never the wall clock. Tapping the marker opens the chat and lets them speak
    * about exactly this.
    */
   say: textOr(""),
   /**
    * This conversation is bound to its own simulated world (engine authority is
-   * not `legacy_chat`) — so deleting it deletes that world too
-   * (successor-world-lifecycle.plan.md, owner ruling E20-1). Read only by the
+   * not `legacy_chat`) — so deleting it deletes that world too. Read only by the
    * delete confirm's copy; the row itself renders identically either way.
    */
   isSuccessor: z.boolean().catch(false),
@@ -1501,16 +1496,16 @@ export const chatRosterMemberSchema = z.object({
   name: nameSchema,
   avatarImageId: optionalId,
   sort: z.number().catch(0),
-  /** Narrative presence (multi-character-chat.plan.md): sharing the scene or away. */
+  /** Narrative presence: sharing the scene or away. */
   presence: z.enum(["present", "away"]).catch("present"),
-  /** The member's current free-text outfit (state row; "" pre-seed) — roster outfit line, ux-improvements slice 3. */
+  /** The member's current free-text outfit (state row; "" pre-seed) — the roster's outfit line. */
   outfit: textOr(""),
 });
 export type ChatRosterMember = z.infer<typeof chatRosterMemberSchema>;
 
 export const chatTranscriptSchema = z.object({
   messages: listOf(chatMessageSchema, "messages"),
-  /** Older rows exist beyond this page (ux-improvements.plan.md slice 2). */
+  /** Older rows exist beyond this page. */
   hasMore: z.boolean().catch(false),
   /** Keyset cursor for the next older page (`?before=`); null on the last page. */
   nextBefore: z.string().nullable().catch(null),
@@ -1521,9 +1516,9 @@ export const chatTranscriptSchema = z.object({
     /** Why the last exchange produced no reply (reply-failure surfacing); null when it replied. */
     lastReplyFailure: chatReplyFailureSchema.nullish().catch(null),
     /**
-     * True when the successor engine owns this chat's turns (presentation-charter
-     * §4). The composer hides the attachment control + legacy action chips for it —
-     * they have no successor semantics yet and the POST refuses them.
+     * True when the successor engine owns this chat's turns. The composer hides
+     * the attachment control + legacy action chips for it — they have no
+     * successor semantics yet and the POST refuses them.
      */
     simRouted: z.boolean().catch(false),
     /**
@@ -1544,7 +1539,7 @@ export const chatTranscriptSchema = z.object({
 });
 export type ChatTranscript = z.infer<typeof chatTranscriptSchema>;
 
-/** The Relationship panel payload (character-chat-standalone.spec.md §7; two axes since relationship-model v2). */
+/** The Relationship panel payload — two axes: regard and familiarity. */
 export const chatRelationshipSchema = z.object({
   regardBand: z.object({ id: z.string(), label: z.string() }).catch({ id: "neutral", label: "Neutral" }),
   regard: z.number().catch(0),
@@ -1555,16 +1550,16 @@ export const chatRelationshipSchema = z.object({
   relationship: relationshipTextureSchema.catch({ kind: "", history: "", presented: undefined, looming: false }),
   history: z.array(relationshipSampleSchema).catch([]),
   milestones: z.array(milestoneSchema).catch([]),
-  /** The rolling summary, read-only — "the story so far" (§7.3). */
+  /** The rolling summary, read-only — "the story so far". */
   storySoFar: textOr(""),
   openLoops: z.array(z.string()).catch([]),
-  /** Open wants + revealed secrets (character-drives.plan.md, ruled) — never unrevealed ones. */
+  /** Open wants + revealed secrets — never unrevealed ones. */
   wants: z.array(z.object({ want: z.string(), why: z.string().catch("") })).catch([]),
   clockMinutes: z.number().catch(0),
 });
 export type ChatRelationship = z.infer<typeof chatRelationshipSchema>;
 
-// --- Relationship matrix (relationship-model.plan.md slice 6) ---------------
+// --- Relationship matrix ----------------------------------------------------
 
 /** A live directed edge record (scalars; band labels derive client-side). */
 export const liveEdgeRecordSchema = z.object({
@@ -1594,7 +1589,7 @@ export const chatRelationshipsSchema = z.object({
   edges: arrayOf(
     z.object({ fromCharacterId: idSchema, toCharacterId: idSchema, record: liveEdgeRecordSchema }),
   ),
-  /** "Them → you" rows (followups ruling 5): each member's live player edge. */
+  /** "Them → you" rows: each member's live player edge. */
   playerEdges: arrayOf(z.object({ characterId: idSchema, record: liveEdgeRecordSchema })),
   roster: arrayOf(z.object({ characterId: idSchema, name: nameSchema, sort: z.number().catch(0) })),
 });
@@ -1622,7 +1617,7 @@ export const libraryRelationshipsSchema = z.object({
 export type LibraryRelationships = z.infer<typeof libraryRelationshipsSchema>;
 
 /**
- * The player-facing world envelope for a routed chat (world-ui.plan.md slice 1):
+ * The player-facing world envelope for a routed chat:
  * where the player is (`place`) or is walking to (`transit`), the cast's
  * whereabouts, the open walkable `destinations`, `held` items, and whether a
  * scene is standing. Every field is forgiving — a degraded field falls back, the
@@ -1682,7 +1677,7 @@ export type ChatWorld = z.infer<typeof chatWorldSchema>;
 
 /**
  * The `travel` command's outcome (ruling 20): a landing (`traveled`, with the
- * arrival `toStorySecond`) OR the §14.4 public refusal (`rejected`, with
+ * arrival `toStorySecond`) OR the public refusal face (`rejected`, with
  * `publicReason` + `legalAlternatives`). Both arrive at 200 so the card reads
  * the refusal instead of a flattened HTTP-error body.
  */
@@ -1701,7 +1696,7 @@ export type SimTravelResult = z.infer<typeof simTravelResultSchema>;
 /**
  * The `move_together` (walk-with-me) outcome (command-integrity A4): both walked
  * together (`accompanied` — true by construction; the atomic command has no
- * partial-commit "player alone" divergence) OR the §14.4 public refusal
+ * partial-commit "player alone" divergence) OR the public refusal face
  * (`rejected` — the primary declined the invite, or a move was refused). A landing
  * refreshes the world; `rejected` renders the public face.
  */
@@ -1717,8 +1712,8 @@ export const simMoveTogetherResultSchema = z.object({
 export type SimMoveTogetherResult = z.infer<typeof simMoveTogetherResultSchema>;
 
 /**
- * The `give_item` handoff outcome (slice 3): a success (`gave`) OR the §14.4
- * public refusal (`rejected` — the primary isn't co-located, etc.). Both arrive
+ * The `give_item` handoff outcome (slice 3): a success (`gave`) OR the public
+ * refusal face (`rejected` — the primary isn't co-located, etc.). Both arrive
  * at 200 so the card reads the refusal instead of a flattened HTTP-error body.
  */
 export const simGiveItemResultSchema = z.object({
@@ -1731,7 +1726,7 @@ export type SimGiveItemResult = z.infer<typeof simGiveItemResultSchema>;
 
 /**
  * The `do_activity` outcome (slice 3): a performed skip-style activity
- * (`performed`, with the settled `toStorySecond`) OR the §14.4 public refusal
+ * (`performed`, with the settled `toStorySecond`) OR the public refusal face
  * (`rejected` — e.g. a claim conflict when a scene is standing). Both at 200.
  */
 export const simDoActivityResultSchema = z.object({
@@ -1751,13 +1746,14 @@ export const chatsApi = {
       listOf(chatSummarySchema, "chats"),
       withQuery("/api/chats", { characterId: opts.characterId, archived: opts.archived ? "1" : undefined }),
     ),
-  /** Rename, archive, or restore a conversation — or stamp the §8.4 seen-cursor (`seen: true` on open). */
+  /** Rename, archive, or restore a conversation — or stamp the "has something to say"
+   * seen-cursor (`seen: true` on open). */
   update: (chatId: string, patch: { title?: string; archived?: boolean; seen?: boolean }) =>
     apiPatch(z.unknown(), `/api/chats/${chatId}`, patch),
   /**
    * Create a conversation — D7 memory choice: `"shared"` continues the history, `"fresh"`
    * is a clean island. `characterIds` order matters: the first is the primary participant;
-   * every pick joins as a full roster member (multi-character-chat.plan.md).
+   * every pick joins as a full roster member.
    */
   create: (body: { characterIds: string[]; title?: string; memory: "shared" | "fresh"; presetId?: string }) =>
     apiPost(createdRefSchema, "/api/chats", body),
@@ -1768,21 +1764,21 @@ export const chatsApi = {
   transcript: (chatId: string, opts: { before?: string } = {}) =>
     apiGet(chatTranscriptSchema, withQuery(`/api/chats/${chatId}`, { before: opts.before })),
   /**
-   * Hard-delete the conversation (character-chat-standalone.spec.md §1.4): transcript,
-   * summary, light state, and RAG memory all go with it; scene images survive in the Gallery.
+   * Hard-delete the conversation: transcript, summary, light state, and RAG
+   * memory all go with it; scene images survive in the Gallery.
    */
   remove: (chatId: string) => apiDelete(`/api/chats/${chatId}`),
-  // --- Light chat state (character-chat-state.spec.md), keyed per participant ---
-  // `characterId` targets any roster member's state (followups ruling 13 — the
-  // per-character sheet); absent ⇒ the primary.
+  // --- Light chat state, keyed per participant ---
+  // `characterId` targets any roster member's state (the per-character sheet);
+  // absent ⇒ the primary.
   state: (chatId: string, characterId?: string) =>
     apiGet(chatStateSnapshotSchema, `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`),
   /** Edit chat state fields from the character sheet / scenario modal; returns the refreshed snapshot. */
   editState: (chatId: string, patch: ChatStateEdit, characterId?: string) =>
     apiPatch(chatStateSnapshotSchema, `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`, patch),
   /**
-   * Upload ONE player photo for this conversation (chat-image-input.plan.md): a
-   * data-URL in, the `chat_upload` asset id back — sent with the next message as
+   * Upload ONE player photo for this conversation: a data-URL in, the
+   * `chat_upload` asset id back — sent with the next message as
    * `attachmentIds`. Input-only content: Gallery-hidden, deleted with its message.
    */
   uploadAttachment: (chatId: string, image: string) =>
@@ -1807,16 +1803,16 @@ export const chatsApi = {
     ),
   /** Queue a scene render from the recent chat (single-reference); poll `scenes` for the result. */
   generateScene: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/scene`, {}),
-  /** Cut the in-flight reply short (spec §4.2); what already streamed persists with `meta.stopped`. */
+  /** Cut the in-flight reply short; what already streamed persists with `meta.stopped`. */
   stop: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/stop`),
   /**
-   * "Remember this" (spec §6.4, D15): pin a player note into the chat's long-term memory —
+   * "Remember this" (D15): pin a player note into the chat's long-term memory —
    * always retrieved, floor-exempt, and never overridden by the background memory-writer.
    */
   remember: (chatId: string, content: string) =>
     apiPost(z.object({ id: z.string().nullable().catch(null) }), `/api/chats/${chatId}/remember`, { content }),
   /**
-   * Player time skip (spec §8.1, D14 — flavor-only v1): advances the in-game clock,
+   * Player time skip (D14 — flavor-only v1): advances the in-game clock,
    * expires running timed conditions, stamps the one-shot skip note. Meters untouched.
    */
   timeSkip: (chatId: string, amount: ChatSkipAmount) =>
@@ -1835,14 +1831,14 @@ export const chatsApi = {
       { kind: "advance_time", minutes, requestId: newId() },
     ),
   /**
-   * The player-facing world read (world-ui.plan.md slice 1). Degraded / legacy /
+   * The player-facing world read. Degraded / legacy /
    * shadow ⇒ `!ok`, and the `ChatWorldCard` simply doesn't render (ruling-18-style
    * affordance hiding).
    */
   world: (chatId: string) => apiGet(chatWorldSchema, `/api/chats/${chatId}/world`),
   /**
    * Skip-style travel (ruling 20): server-composed `move` + a bounded advance to
-   * the journey's earliest arrival. Returns a landing or the §14.4 public refusal
+   * the journey's earliest arrival. Returns a landing or the public refusal face
    * (both `ok`); the card refreshes world + chat state on a landing.
    */
   simTravel: (chatId: string, toZoneId: string) =>
@@ -1852,7 +1848,7 @@ export const chatsApi = {
    * together via the ONE atomic `move_together` command (decide + scene-end + one
    * shared journey + one arrival — the pair can no longer be stranded mid-move).
    * The primary's acceptance is NPC agency (a deterministic policy, re-run inside
-   * the locked view); returns a co-travel landing or the §14.4 public refusal (both
+   * the locked view); returns a co-travel landing or the public refusal face (both
    * `ok`). `requestId` is minted per tap (A1): a resend replays the recorded
    * response instead of moving twice. The card refreshes world + transcript on a landing.
    */
@@ -1864,7 +1860,7 @@ export const chatsApi = {
     }),
   /**
    * Hand the player's held item to the primary (slice 3): a success or the
-   * §14.4 public refusal, both at 200. On success the server writes a `gave_item`
+   * public refusal face, both at 200. On success the server writes a `gave_item`
    * world beat; the card refreshes the transcript + world.
    */
   simGiveItem: (chatId: string, itemId: string) =>
@@ -1872,7 +1868,7 @@ export const chatsApi = {
   /**
    * Perform a skip-style action (slice 3): server-composed `start_activity` + a
    * bounded drain through the activity's duration (the completion trigger fires
-   * inside the drain). Returns a landing or the §14.4 public refusal (both `ok`);
+   * inside the drain). Returns a landing or the public refusal face (both `ok`);
    * on success the server writes a `rested` world beat.
    */
   simDoActivity: (chatId: string, actionDefinitionId: string) =>
@@ -1887,9 +1883,9 @@ export const chatsApi = {
       kind: "end_scene",
       requestId: newId(),
     }),
-  /** The Relationship panel payload (spec §7.2–7.4 UI): stage, sparkline, milestones, story so far. */
+  /** The Relationship panel payload: stage, sparkline, milestones, story so far. */
   relationship: (chatId: string) => apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
-  // --- Relationship matrix (relationship-model.plan.md slice 6) ---
+  // --- Relationship matrix ---
   /** The conversation's directed NPC↔NPC edges + roster (the matrix editor's data). */
   relationships: (chatId: string) => apiGet(chatRelationshipsSchema, `/api/chats/${chatId}/relationships`),
   /** Upsert authored NPC↔NPC edges and/or player edges (band picks + texture → live scalars server-side). */
@@ -1900,7 +1896,7 @@ export const chatsApi = {
       playerEdges?: { characterId: string; record: AuthoredEdgeRecord }[];
     },
   ) => apiPut(chatRelationshipsSchema.omit({ roster: true }), `/api/chats/${chatId}/relationships`, body),
-  // --- Roster (multi-character-chat.plan.md slice 1) ---
+  // --- Roster ---
   /** Add a character to the roster (cap 4); D7 memory choice defaults to shared. */
   addParticipant: (chatId: string, characterId: string, memory: "shared" | "fresh" = "shared") =>
     apiPost(z.unknown(), `/api/chats/${chatId}/participants`, { characterId, memory }),
@@ -1910,24 +1906,24 @@ export const chatsApi = {
   /** Flip a member's narrative presence — the roster panel's manual override. */
   setPresence: (chatId: string, characterId: string, presence: "present" | "away") =>
     apiPatch(z.unknown(), `/api/chats/${chatId}/participants/${characterId}`, { presence }),
-  /** "Mark this moment" (spec §7.2): pin a milestone on any message. */
+  /** "Mark this moment": pin a milestone on any message. */
   markMoment: (chatId: string, messageId: string, label?: string) =>
     apiPost(z.object({ milestones: z.array(milestoneSchema).catch([]) }), `/api/chats/${chatId}/milestones`, {
       messageId,
       label,
     }),
-  /** Re-fold the rolling summary from the full transcript (spec §7.3 — the recovery lever). */
+  /** Re-fold the rolling summary from the full transcript — the recovery lever. */
   rebuildSummary: (chatId: string) =>
     apiPost(z.object({ summary: z.string().catch("") }), `/api/chats/${chatId}/summary/rebuild`, {}),
-  /** Transcript export (spec §7.4) — a plain download URL for an anchor/window.open. */
+  /** Transcript export — a plain download URL for an anchor/window.open. */
   exportUrl: (chatId: string, format: "md" | "json", memory: boolean) =>
     `/api/chats/${chatId}/export?format=${format}${memory ? "&memory=1" : ""}`,
-  /** Make one recorded take the displayed reply (spec §4.1 — display-only); returns its content. */
+  /** Make one recorded take the displayed reply (display-only); returns its content. */
   switchTake: (chatId: string, messageId: string, takeId: string) =>
     apiPatch(z.object({ content: z.string().catch("") }), `/api/chats/${chatId}/messages/${messageId}/take`, { takeId }),
 };
 
-/** The authored starting-relationship a preset stores (followups ruling 4). */
+/** The authored starting-relationship a preset stores. */
 export const presetRelationshipSchema = z
   .object({
     familiarity: z.string().catch("strangers"),
@@ -1943,7 +1939,7 @@ export const presetRelationshipSchema = z
   .catch({ familiarity: "strangers", regard: "neutral", kind: "", history: "", looming: false });
 export type PresetRelationship = z.infer<typeof presetRelationshipSchema>;
 
-/** A saved scenario preset (character-chat-standalone.spec.md §1.5). */
+/** A saved scenario preset. */
 export const chatPresetSchema = z.object({
   id: idSchema,
   name: textOr(""),
@@ -1981,11 +1977,11 @@ export const successorChatSummarySchema = z.object({
 export type SuccessorChatSummary = z.infer<typeof successorChatSummarySchema>;
 
 /**
- * The successor front door (engine.rollout.plan.md, Worlds page): create a
- * complete successor chat — fresh isolated world, actors mapped, authority
- * flipped — in one call, and list the caller's existing ones.
+ * The successor front door (the Worlds page): create a complete successor chat
+ * — fresh isolated world, actors mapped, authority flipped — in one call, and
+ * list the caller's existing ones.
  *
- * `requestId` is REQUIRED (successor-world-lifecycle.plan.md slice 3): it is the
+ * `requestId` is REQUIRED: it is the
  * caller's idempotency key for one create INTENT. Resend the same id to retry a
  * failed create — the server resumes that world instead of minting a second —
  * and mint a fresh one for a genuinely new world.
@@ -2032,11 +2028,11 @@ export async function sendChatMessage(
     messageId?: string;
     /** Attached-photo ids (uploaded first via chatsApi.uploadAttachment) — send only. */
     attachmentIds?: string[];
-    /** Reopen-opener initiative (chat-initiative.plan.md) — continue only. */
+    /** Reopen-opener initiative — continue only. */
     initiative?: boolean;
-    /** Composer register (chat-supporting-cast.plan.md §Narrator input) — send only. */
+    /** Composer register (player vs narrator) — send only. */
     inputMode?: "player" | "narrator";
-    /** Tapped action-chip id (chat-action-beats.plan.md) — required for kind "action_beat". */
+    /** Tapped action-chip id — required for kind "action_beat". */
     action?: ChatActionId;
   },
   onChunk: (delta: string) => void,
@@ -2091,7 +2087,7 @@ const entityImageSchema = z.object({ image: imageRecordSchema.nullable().catch(n
 /** Batch background-job response (image generation, item classify): how many entities were queued. */
 const batchQueuedSchema = z.object({ queued: z.number().catch(0) }).catch({ queued: 0 });
 
-/** ✦ Draft-from-description proposal (ux-improvements slice 5) — registry-grounded server-side. */
+/** ✦ Draft-from-description proposal — registry-grounded server-side. */
 export const itemDraftProposalSchema = z.object({
   category: z.string().optional().catch(undefined),
   subtype: z.string().optional().catch(undefined),
@@ -2176,7 +2172,7 @@ export const socialCardsApi = {
 };
 
 /**
- * Personas (persona-library.plan.md) — the player as a library entity. No `clone` and
+ * Personas — the player as a library entity. No `clone` and
  * no `scope`: a persona is *you*, so there is no public tier to browse or copy from.
  */
 export const personasApi = {
@@ -2188,7 +2184,7 @@ export const personasApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Account / default persona (persona-library.plan.md slice 6)
+// Account / default persona
 // ---------------------------------------------------------------------------
 
 export const meSchema = z.object({

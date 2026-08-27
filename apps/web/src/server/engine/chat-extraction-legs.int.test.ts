@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mergeChatExtractions, type ChatArchivist, type ChatExtractionLegs } from "@/contracts/turns/chat-archivist";
 
 /**
- * Per-leg degradation (chat-agent-improvements.plan.md slice 1b). The whole point of
+ * Per-leg degradation. The whole point of
  * splitting the 13-field archivist into three focused legs is that ONE failing leg costs
  * only its own fields. The folds in `finalizeChatState` therefore key on the leg that owns
  * each field, not on a single whole-extraction flag:

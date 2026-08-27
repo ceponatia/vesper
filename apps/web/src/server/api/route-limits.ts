@@ -10,7 +10,7 @@ import { clientIp, hashClientIp } from "./client-ip";
 import { recordAbuseSignal } from "./abuse-log";
 
 /**
- * The burst-limit seam the route wrappers call (rate-limits.plan.md slices 1–2).
+ * The burst-limit seam the route wrappers call.
  *
  * The per-IP check runs inside `withRoute`, which every route reaches —
  * `withUser` included — and fires *before* session resolution, so an

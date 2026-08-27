@@ -27,19 +27,19 @@ export const LORE_MIN_SCORE = 0.72;
 export const EPISODE_MIN_SCORE = 0.3;
 
 /**
- * Fact-relevance floor (character-chat-standalone.spec.md §6.3 #1) — the
- * "measured relevance floor". MEASURED 2026-07-02 via `pnpm eval:retrieval`
+ * Fact-relevance floor — the measured relevance floor for retrieval.
+ * MEASURED 2026-07-02 via `pnpm eval:retrieval`
  * (data/eval/retrieval/results.json): paraphrase-level matches land 0.27–0.35
  * on the live embedder and every distractor scores < 0.2, so 0.25 keeps a clean
  * margin both ways (the initial guess of 0.5 rejected real paraphrase recall).
- * Re-run the harness before touching this. Pinned facts are exempt (§6.4).
+ * Re-run the harness before touching this. Pinned facts are exempt.
  */
 export const FACT_MIN_SCORE = 0.25;
 
-/** Cap on force-included pinned facts per retrieval (spec §6.4 — they ride ahead of the top-k). */
+/** Cap on force-included pinned facts per retrieval (they ride ahead of the top-k). */
 export const PINNED_FACT_CAP = 8;
 
-/** Standard reciprocal-rank-fusion constant: fused score = Σ 1/(RRF_K + rank) (spec §6.3 #2). */
+/** Standard reciprocal-rank-fusion constant: fused score = Σ 1/(RRF_K + rank). */
 export const RRF_K = 60;
 
 /** Library fuzzy name resolution (merge grounding, forge dedup, search). */

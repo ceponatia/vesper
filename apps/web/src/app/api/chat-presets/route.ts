@@ -10,11 +10,11 @@ import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { chatScenarioPresets, db } from "@/server/db";
 
 /**
- * Scenario presets (character-chat-standalone.spec.md §1.5): reusable
- * premise/outfit/cards/starting-relationship bundles, seeded into a new
- * conversation's state at create time (followups ruling 4: the full authored
- * record — both bands + texture — replaced the single legacy stage). Small
- * owned CRUD — `LibraryKind` graduation (sharing/cloning) stays a later idea.
+ * Scenario presets: reusable premise/outfit/cards/starting-relationship
+ * bundles, seeded into a new conversation's state at create time (the full
+ * authored record — both bands + texture — replaced the single legacy stage).
+ * Small owned CRUD — `LibraryKind` graduation (sharing/cloning) stays a later
+ * idea.
  */
 
 const createBodySchema = z.object({

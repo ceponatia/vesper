@@ -1,6 +1,5 @@
 /**
- * The garment affordance domain — the plan's SECOND proving domain, slice 6
- * (body-attribute-affordances.spec.garment-interaction.md).
+ * The garment affordance domain — the SECOND proving domain.
  *
  * ```text
  * wardrobe material + construction + coverage  →  structural profile

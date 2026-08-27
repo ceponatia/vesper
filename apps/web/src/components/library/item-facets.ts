@@ -9,7 +9,7 @@ import {
 import type { ItemDefinitionParts } from "@/lib/client/api";
 
 /**
- * Facet + grouping config for the items library (library-ux.plan.md §3).
+ * Facet + grouping config for the items library.
  * Facets filter the loaded set client-side (instant chips, exact counts within
  * the fetch); the server-side facet params exist for pickers and fixed
  * pre-filters, where cap-correctness matters more than interactivity.

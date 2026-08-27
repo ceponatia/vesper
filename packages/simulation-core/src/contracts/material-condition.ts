@@ -24,7 +24,7 @@ import {
 
 /**
  * E5.3 slice 3 — item condition: wear and cleanliness.
- * Wear and cleanliness ride the SAME §25 fixed-point kernel bodies use
+ * Wear and cleanliness ride the SAME fixed-point kernel bodies use
  * (registry-as-data, analytic drift, one modifier contract, material
  * thresholds) under an item-scoped registry version and item-scoped tables —
  * the body tables are not reused, only the pure numerics
@@ -56,7 +56,7 @@ export type ItemConditionRegistryVersion = z.infer<typeof itemConditionRegistryV
  * same-valued target ties toward the ceiling), so a same-valued target could
  * never actually decrease no matter the modifier's rate or sign. `wear` never
  * drifts at all (`driftLaw: "none"`) — it moves only through discrete
- * `use`-disposition activity-completion deltas (§26.5).
+ * `use`-disposition activity-completion deltas.
  */
 export const itemConditionRegistryV1: readonly BodyMeterDefinition[] = [
   bodyMeterDefinitionSchema.parse({
@@ -120,7 +120,7 @@ export const itemConditionMeterStateSchema = z
 export type ItemConditionMeterState = z.infer<typeof itemConditionMeterStateSchema>;
 
 /**
- * The §25.3 modifier contract, itemId in place of actorId. Items have no
+ * The modifier contract, itemId in place of actorId. Items have no
  * categorical conditions in v1 (no `conditionId` — every modifier is applied
  * and retired directly, never owned by a condition).
  */
@@ -348,7 +348,7 @@ const itemConditionThresholdCrossedPayloadSchema = z
     direction: bodyThresholdDirectionSchema,
     boundaryFixedPoint: meterFixedPointSchema,
     valueFixedPoint: meterFixedPointSchema,
-    /** Captured co-located witness set (§20's noticeable capture idiom, from bodies). */
+    /** Captured co-located witness set (the noticeable capture idiom, from bodies). */
     observerActorIds: itemConditionObserverActorIdsSchema,
     derived: itemConditionIntegrationDerivationSchema,
   })

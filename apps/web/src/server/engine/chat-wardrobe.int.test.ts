@@ -5,7 +5,7 @@ import { personaProfileSchema, type PersonaProfile } from "@/contracts/players/p
 import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
 
 /**
- * Chat wardrobe parity (chat-wardrobe-parity.plan.md rung 2): the continuity leg proposes a
+ * Chat wardrobe parity: the continuity leg proposes a
  * garment-level change; `finalizeChatState` folds it into the structured `wornItemIds`
  * against the loaded worn items + wardrobe pool, and the pre-exchange snapshot preserves the
  * prior worn list so "another take" rolls it back. Drives `finalizeChatState` directly with
@@ -18,7 +18,7 @@ import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
  * diagnostic, the garments a kept description mentioned that nobody is wearing.
  */
 
-// Mocking at the merge seam (chat-agent-improvements slice 1b) keeps this test about
+// Mocking at the merge seam keeps this test about
 // the WARDROBE fold, not the leg composition.
 const mock = vi.hoisted(() => ({ archivist: { value: null as ChatArchivist | null, degraded: false } }));
 

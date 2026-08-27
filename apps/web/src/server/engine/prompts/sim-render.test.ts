@@ -21,8 +21,8 @@ import {
 } from "./sim-solo-render";
 
 /**
- * Snapshot + behavioural tests for the successor narrator prompt builder
- * (presentation-charter.plan.md slice 2). Pure — no IO — so the whole prompt is
+ * Snapshot + behavioural tests for the successor narrator prompt
+ * builder. Pure — no IO — so the whole prompt is
  * asserted from a fixture cut + context.
  */
 
@@ -255,7 +255,7 @@ describe("handle map determinism", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Narrator instruction override (narrator-prompt-lab.plan.md slice 1)
+// Narrator instruction override
 // ---------------------------------------------------------------------------
 
 /**

@@ -1,5 +1,5 @@
 /**
- * Visual affordances (body-attribute-affordances.plan.md).
+ * Visual affordances.
  *
  * Turns stable appearance and trustworthy live state into a few grounded,
  * perception-safe observations. Pure and lane-neutral: the chat and successor

@@ -229,7 +229,7 @@ describe("rhythm boundary math (E6.2)", () => {
   });
 });
 
-describe("selectRoutineMealItem (§26.5 adapted)", () => {
+describe("selectRoutineMealItem", () => {
   it("requires a meal-source consumption effect and skips others' property and reserved items", () => {
     const drinkOnly = mealItem({
       id: "item-water-1",
@@ -393,7 +393,7 @@ describe("resolveRunRoutinePolicyFromView (E6.2)", () => {
     expect(result.chosenCandidateId).toBe("begin_sleep");
   });
 
-  it("eats at a meal boundary, committing the §26.6 train and re-arming bedtime", () => {
+  it("eats at a meal boundary, committing the consumption train and re-arming bedtime", () => {
     const bread = mealItem();
     const result = resolveRunRoutinePolicyFromView(lunchView([bread]), command());
     if (!result.ok) throw new Error(`expected acceptance, got ${result.code}`);
@@ -495,7 +495,7 @@ describe("resolveRunRoutinePolicyFromView (E6.2)", () => {
   it("never naps outside the sleep window — even under deep debt, lunch is lunch", () => {
     // Awake since day-0 wake and fired at day-2 lunch: sleep is not DUE
     // outside its own window (it scores 0 there), so the routine eats and
-    // forced daytime sleep stays the §25.4 collapse law's job alone.
+    // forced daytime sleep stays the collapse law's job alone.
     const bread = mealItem();
     const result = resolveRunRoutinePolicyFromView(
       lunchView([bread], {

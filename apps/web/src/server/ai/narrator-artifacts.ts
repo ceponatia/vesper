@@ -11,7 +11,7 @@
  *
  *      </unsensored_response>   </uncensored_response>   </censored_response>
  *
- * 2. **Trailing meta-commentary notes** (forge-gaps.plan.md gap 7). The same
+ * 2. **Trailing meta-commentary notes.** The same
  *    model family sometimes appends a self-review paragraph addressed to the
  *    machinery — observed live 2026-07-12:
  *

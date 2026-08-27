@@ -4,8 +4,7 @@ import type { ContactSurfaceSide } from "../../contact";
 
 /**
  * The foot's semantic surface topology — an interaction map, not a
- * biomechanical mesh (romantic-contact-affordances.spec.foot.md §"Semantic
- * surface topology").
+ * biomechanical mesh.
  *
  * Two trees meet here and neither owns the other:
  *

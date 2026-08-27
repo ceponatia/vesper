@@ -70,7 +70,7 @@ export type TrialCellStatus = (typeof trialCellStatuses)[number];
 
 /**
  * Which identity-reference pack a cell renders from — the SECOND comparison
- * axis beside the strategy (spec.trial.md §"Fixed variables").
+ * axis beside the strategy.
  *
  * - `current` pins whatever pack revision is current for each character at
  *   planning time. This is the historical single-variant behavior and stays the
@@ -149,11 +149,10 @@ export const trialResolvedControlsSchema = z.object({
 export type TrialResolvedControls = z.infer<typeof trialResolvedControlsSchema>;
 
 /**
- * The spec-time identity of one comparison cell
- * (spec.trial.md §"Trial manifest"): everything held constant plus the variables
- * under test (`identityStrategy` and `packVariantKey`), snapshotted at planning
- * time so the cell stays explainable after the pack, profile, or model version
- * moves on.
+ * The spec-time identity of one comparison cell: everything held constant plus
+ * the variables under test (`identityStrategy` and `packVariantKey`),
+ * snapshotted at planning time so the cell stays explainable after the pack,
+ * profile, or model version moves on.
  *
  * Three fields are load-bearing in ways their names understate:
  *
@@ -324,7 +323,7 @@ export const imageIdentityPackTrialResultSchema = z.object({
 export type ImageIdentityPackTrialResult = z.infer<typeof imageIdentityPackTrialResultSchema>;
 
 /**
- * The eleven review dimensions, verbatim from spec.trial.md §"Review procedure".
+ * The eleven review dimensions a graded pair is scored on.
  * `overall_preference` is the one win/tie/loss is computed from; the rest exist
  * because a strong face does not compensate for a changed outfit, body, or
  * setting, and the drift has to be visible per-axis to prove that.
@@ -372,7 +371,7 @@ export function perTrialGradeDimension<T>(
 }
 
 /**
- * One relative judgment on the small anchored ordinal scale the spec calls for:
+ * One relative judgment on a small anchored ordinal scale:
  * -2 strongly favors one side, 0 is a tie, +2 strongly favors the other. Which
  * side is which depends on the record it sits in — left/right in a blinded
  * submission, A/B once unblinded — and is documented there.
@@ -392,7 +391,7 @@ export type TrialPairGrades = z.infer<typeof trialPairGradesSchema>;
  * Free-text catastrophic-defect labels for one side of a pair ("second person",
  * "changed outfit", "extra limb"). Recorded separately from the ordinal grades
  * because one catastrophic regression can veto a promotion that the means alone
- * would have allowed (spec.trial.md §"Promotion rules").
+ * would have allowed.
  */
 export const trialCatastrophicListSchema = z.array(z.string().trim().min(1).max(120)).max(8);
 
@@ -411,10 +410,8 @@ export const trialPairGradeSchema = z.object({
 export type TrialPairGrade = z.infer<typeof trialPairGradeSchema>;
 
 /**
- * The verdict vocabulary from spec.trial.md §"Version promotion", in the
- * snake_case every Vesper vocabulary uses — the spec doc spells the middle two
- * with hyphens (`retained-current`, `experimental-admin-only`); these are the
- * same four values.
+ * The four version-promotion verdicts a reviewed trial can end in, in the
+ * snake_case every Vesper vocabulary uses.
  */
 export const trialVerdicts = ["promoted", "retained_current", "experimental_admin_only", "rejected"] as const;
 export const trialVerdictValueSchema = z.enum(trialVerdicts);
@@ -607,7 +604,7 @@ export type ImageIdentityPackTrialRunDetail = z.infer<typeof imageIdentityPackTr
  * The next unreviewed pair, BLINDED: image ids, the shared task, and the shared
  * prompt fixture — deliberately no strategy, pack, crop, or pack-variant fields,
  * because the reviewer must not know which reference strategy or which pack
- * revision produced which side (spec.trial.md §"Review procedure"). The pack
+ * revision produced which side. The pack
  * variant axis changes nothing here on purpose: "this side used the newer pack"
  * would bias a grade exactly as effectively as naming the strategy. The client
  * resolves `promptFixtureId` against the checked-in fixture list to show the

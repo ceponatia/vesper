@@ -37,7 +37,7 @@ import { applyTriggerScheduledEvent } from "./trigger-projector";
  * BOTH actors + one arrival trigger. "Together" is true by construction — the
  * projectors and the arrival resolver already fan out over `Journey.actorIds`, so
  * they need no change. The deterministic `decideAccompany` policy re-runs INSIDE
- * this locked view (§14.2), closing the read-vs-commit agency race.
+ * this locked view, closing the read-vs-commit agency race.
  */
 
 export interface MoveTogetherStoreOptions {
@@ -60,7 +60,7 @@ function rejected(
   };
 }
 
-/** Execute one MoveTogether against PostgreSQL authority (spec §11.1 shell). */
+/** Execute one MoveTogether against PostgreSQL authority (the command shell). */
 export async function submitDurableMoveTogether(
   rawCommand: unknown,
   options: MoveTogetherStoreOptions = {},

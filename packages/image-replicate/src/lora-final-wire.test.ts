@@ -18,10 +18,9 @@ import { DEFAULT_PREDICTION_TIMEOUT_MS } from "./config";
 import { buildPayload, previewRegistryModelInput } from "./payload";
 
 /**
- * The FINAL WIRE for a curated LoRA (image-model-adapters.spec.md §"Invariant
- * coverage"): a library row travels row → evaluation → render intent → compiled
- * plan → the payload builder the transport actually POSTs, and the two provider
- * fields arrive verbatim.
+ * The FINAL WIRE for a curated LoRA: a library row travels row → evaluation →
+ * render intent → compiled plan → the payload builder the transport actually
+ * POSTs, and the two provider fields arrive verbatim.
  *
  * It exists because of a specific incident. Every unit test on this path passed
  * for months — the row parsed, the evaluator resolved, the mapper wrote its two

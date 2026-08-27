@@ -10,7 +10,7 @@ import { log } from "../log";
 import { recordCompositionFallback } from "./composition-diagnostics";
 
 /**
- * World beats (world-ui.plan.md slice 2) — the durable transcript trace of a
+ * World beats — the durable transcript trace of a
  * world event the player caused or witnessed (travel, a time skip, a scene
  * ending), successor-lane only. A beat is an ordinary `character_chat_messages`
  * row (NO migration): `role = "assistant"` (a legal enum value, `speakerCharacterId`
@@ -80,8 +80,8 @@ export async function writeWorldBeat(input: {
    */
   fallbacks?: readonly CompositionFallbackCode[];
   /**
-   * A deterministic message id derived from the client request key (command-integrity
-   * A1, slice 4). When set, the insert is idempotent (`ON CONFLICT DO NOTHING` on the
+   * A deterministic message id derived from the client request key. When set,
+   * the insert is idempotent (`ON CONFLICT DO NOTHING` on the
    * primary key), so a crash-window retry that re-executes the command writes exactly
    * one beat. Omitted (NL choreographies, durable jobs) ⇒ a fresh `newId()` per call.
    */

@@ -197,7 +197,7 @@ describe("stateDispositionOverlays", () => {
   });
 });
 
-describe("regardDispositionOverlays (§7.1 soft coloring, re-keyed to regard bands)", () => {
+describe("regardDispositionOverlays (soft coloring, re-keyed to regard bands)", () => {
   const traits: TraitValue[] = [
     trait("temperament.warmth", 10),
     trait("social.guardedness", 40),

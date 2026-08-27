@@ -12,8 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The character editor's Relationships tab (relationship-model.plan.md, owner
- * ruling 2026-07-07): the character's DEFAULT edges toward other library
+ * The character editor's Relationships tab (owner ruling 2026-07-07): the
+ * character's DEFAULT edges toward other library
  * characters, stored in `character_relationships` (FK cascade — deleting a
  * character never leaves dangling edges). Creating a conversation seeds its
  * matrix from these for every roster pair; the in-chat matrix overrides on top.

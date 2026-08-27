@@ -7,9 +7,9 @@ import { z } from "zod";
  * are tolerated but second-class (no autocomplete, no guaranteed card-override
  * match).
  *
- * Cards aren't built yet (social-reaction-cards.plan.md), so in v1 tags are
+ * Cards aren't built yet, so in v1 tags are
  * authored, stored, and surfaced for autocomplete only — functionally inert until
- * a card (or the Slice-2 puppet guardrail) reads them. The data model is in place
+ * a card (or the puppet guardrail) reads them. The data model is in place
  * now so neither needs a schema change.
  */
 export const dispositionTagSchema = z.object({
@@ -20,8 +20,8 @@ export const dispositionTagSchema = z.object({
   group: z.enum(["temperament", "social", "intimate"]).catch("temperament"),
   /**
    * Coarse affective lean — the first slice of machine-readable "what this tag
-   * means", read by the puppet guardrail (personality-and-state.spec.md §6,
-   * Note 2): a `warm` puppeted act onto a `cold` character (or a `hostile` act
+   * means", read by the puppet guardrail: a `warm` puppeted act onto a `cold`
+   * character (or a `hostile` act
    * onto a `warm` one) is out of character. `neutral` ⇒ no warmth-based clash.
    */
   warmth: z.enum(["cold", "neutral", "warm"]).catch("neutral").default("neutral"),

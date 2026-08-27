@@ -14,8 +14,7 @@ import {
 import { findOwnedCharacter } from "../owned";
 
 /**
- * The vocabulary every identity-pack route speaks
- * (image-identity-packs.spec.lifecycle.md §"User routes", §"Admin routes").
+ * The vocabulary every identity-pack route speaks.
  *
  * Four owner routes and one admin override all resolve the same character, map
  * the same service result, and answer with the same `{ summary }` body. Written
@@ -31,7 +30,7 @@ export type OwnedCharacter = NonNullable<Awaited<ReturnType<typeof findOwnedChar
 
 /**
  * The authorization root for every pack operation: the CHARACTER, never a pack
- * or image id a client supplied (spec.lifecycle.md §"Authorization root").
+ * or image id a client supplied.
  * `withAuthorizedResource` collapses "not yours" and "does not exist" into one
  * 404, which is also the shape `pnpm lint:authz` requires of a resource-ID route.
  */
@@ -60,7 +59,7 @@ export async function readIdentityPackSummary(
  * wait window — is invisible in the re-read summary: it reports the previous
  * pack, or `none`, and an owner who just clicked Prepare is shown the state they
  * started in with no reason for it. So the body widens by one optional field
- * (contracts §`identityPackBlockedSchema`) rather than the status changing: an
+ * (`identityPackBlockedSchema`) rather than the status changing: an
  * unusable pack stays product feedback at 200, and `{ summary }` alone stays the
  * exact shape for every route and every success.
  */

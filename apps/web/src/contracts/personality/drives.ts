@@ -2,7 +2,7 @@ import { z } from "zod";
 import { familiarityBandById, regardBandById } from "../relationships/bands";
 
 /**
- * Character drives (character-drives.plan.md): the wants a character PURSUES
+ * Character drives: the wants a character PURSUES
  * across exchanges — the inner life `mindNote` (one transient note) and
  * `openLoops` (conversational leftovers) never carried. Authored on the profile
  * (≤3), seeded into chat state with runtime `progress`/`revealed`, updated by

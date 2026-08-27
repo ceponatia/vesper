@@ -12,14 +12,14 @@ import { commandIdSchema, storySecondSchema, worldCharacterIdSchema } from "./id
  * work the engine performs for an actor) and inference LOD (how much model
  * attention an actor may receive) are independent axes on one branch-scoped,
  * fully-evented row per actor. LOD is a performance choice, not permission to
- * violate invariants (§27.1) — an unassigned actor reads the versioned
- * registry defaults, which reproduce pre-Gate-6 behavior exactly.
+ * violate invariants — an unassigned actor reads the versioned registry
+ * defaults, which reproduce pre-Gate-6 behavior exactly.
  */
 
 export const actorLodDerivationVersion = "actor-lod-v1" as const;
 
 // ---------------------------------------------------------------------------
-// Simulation LOD vocabulary (§27.1) — closed, ordered, versioned
+// Simulation LOD vocabulary — closed, ordered, versioned
 // ---------------------------------------------------------------------------
 
 export const simulationLods = ["exact", "event", "aggregate", "dormant"] as const;
@@ -31,7 +31,7 @@ export function compareSimulationLods(a: SimulationLod, b: SimulationLod): numbe
   return simulationLods.indexOf(a) - simulationLods.indexOf(b);
 }
 
-/** A demotion moves toward less resolution (§27.3) and must pass the guards. */
+/** A demotion moves toward less resolution and must pass the guards. */
 export function isSimulationLodDemotion(from: SimulationLod, to: SimulationLod): boolean {
   return compareSimulationLods(to, from) > 0;
 }
@@ -65,7 +65,7 @@ export type ActorLodDefaults = z.infer<typeof actorLodDefaultsSchema>;
 
 /**
  * v1 defaults: every named actor simulates exact and may reach the
- * deliberator — exactly what both pre-Gate-6 §19.3 call sites hardcoded, so
+ * deliberator — exactly what both pre-Gate-6 call sites hardcoded, so
  * shipping the ledger changes no outcome until someone assigns a row. Tuning
  * these is a data edit under a bumped registry version, never a migration.
  */
@@ -137,15 +137,15 @@ export const assignActorLodCommandSchema = createCommandEnvelopeSchema(
 );
 
 /**
- * The §27.3 demotion guards, checked in this fixed order — the first blocker
- * names the rejection. Inference-axis changes never guard (a model-budget
- * dial), and a simulation-axis promotion never guards either: for a named
- * actor whose full state already exists, raising resolution is bookkeeping —
- * real promotion-with-sampling from an aggregate is E6.4 (§27.2).
+ * The demotion guards, checked in this fixed order — the first blocker names
+ * the rejection. Inference-axis changes never guard (a model-budget dial), and
+ * a simulation-axis promotion never guards either: for a named actor whose
+ * full state already exists, raising resolution is bookkeeping — real
+ * promotion-with-sampling from an aggregate is E6.4.
  * `demotion_blocked_active_condition` (E6.3) guards only a move BELOW `event`:
- * an active self-expiring body condition is a near-boundary hazard (§27.3) —
- * retiring its expiry alarm would leave the projection lying about when it
- * ends, so a sleeping actor cannot be tucked into dormancy until they wake.
+ * an active self-expiring body condition is a near-boundary hazard — retiring
+ * its expiry alarm would leave the projection lying about when it ends, so a
+ * sleeping actor cannot be tucked into dormancy until they wake.
  */
 export const assignActorLodRejectionCodes = [
   "invalid_command",

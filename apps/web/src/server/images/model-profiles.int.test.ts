@@ -12,8 +12,7 @@ import {
 } from "./model-profiles";
 
 /**
- * The profile registry against a migrated database (image-model-capabilities.spec.md
- * §`image_model_profiles`). Two jobs:
+ * The profile registry against a migrated database. Two jobs:
  *
  * 1. BEHAVIOR PRESERVATION. Slice 1 ships the profile layer dormant, and the whole
  *    claim is that resolving a task's profile picks the model that task's lane

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Deterministic comparison fixtures (sd-rendering-package.plan.md §3).
+ * Deterministic comparison fixtures.
  *
  * **The package owns fixture DEFINITIONS; it does not own results.** A fixture
  * is the fixed half of a comparison — the same prompt, the same seed, the same
@@ -15,7 +15,7 @@ import { z } from "zod";
  * The seed is required rather than optional, and that is the entire point of the
  * type. A comparison run without one measures the sampler's luck: two images
  * that differ because they started from different noise say nothing about
- * whether identity weight 0.65 beats 0.80, and the plan's tuning discipline —
+ * whether identity weight 0.65 beats 0.80, and the tuning discipline —
  * "only one variable should move at a time" — is unenforceable without it.
  */
 

@@ -13,8 +13,7 @@ import {
 import { PROBE_ACTOR, PROBE_TARGET, probeBodySurface } from "./test-support";
 
 /**
- * The channel leakage law (romantic-contact-affordances.spec.effects.md §3,
- * §16 "Channel leakage"): only `channel: "visual"` may adapt into the
+ * The channel leakage law: only `channel: "visual"` may adapt into the
  * visual-state observation path; tactile, olfactory, and gustatory candidates
  * remain diagnostic-only results until their sibling sensory owners exist.
  *

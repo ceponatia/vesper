@@ -10,8 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The Supporting Cast panel (chat-supporting-cast.plan.md, dev/testing surface):
- * the scenario's recurring named side characters, listed below "In this story".
+ * The Supporting Cast panel (a dev/testing surface): the scenario's recurring
+ * named side characters, listed below "In this story".
  * Names accrete as the archivist establishes people; this panel is the manual
  * override — add someone before their first mention, fix a relation, or remove
  * an entry the system minted erroneously. Tapping a name opens a lightbox

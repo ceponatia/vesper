@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 
-// Degradation contract (memory-callbacks.plan.md): a failed callback retrieval —
+// Degradation contract: a failed callback retrieval —
 // db down, embedding failure — is an ordinary turn with a diagnostic, never a
 // failed reply. The memory module is mocked to throw like a down database would.
 vi.mock("../memory", async (importOriginal) => {

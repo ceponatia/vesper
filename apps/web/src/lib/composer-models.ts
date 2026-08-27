@@ -29,9 +29,9 @@
  *
  * Nothing here needs tool calling or `response_format`: `generateChecked` sends the
  * JSON Schema as TEXT and parses the reply locally, deliberately not using
- * provider-side constrained decoding (which degenerated on some models —
- * followups.phase2.md #20). That is why Aion 2.0, which advertises no structured-output
- * support, is a legitimate candidate.
+ * provider-side constrained decoding (which degenerated on some models). That is
+ * why Aion 2.0, which advertises no structured-output support, is a legitimate
+ * candidate.
  */
 
 export interface SceneComposerModelOption {
@@ -131,8 +131,8 @@ export const DEFAULT_SCENE_COMPOSER_MODEL_ID = "deepseek/deepseek-v4-flash-0731"
 
 /**
  * Resolve a persisted/over-the-wire composer id to a curated one. STRICT, for the
- * reason every other model resolver in this app is strict (codebase-review B3):
- * without it an authenticated user could bill arbitrary OpenRouter slugs — frontier
+ * reason every other model resolver in this app is strict: without it an
+ * authenticated user could bill arbitrary OpenRouter slugs — frontier
  * models included — to the deployment's key through a chat PATCH.
  *
  * An empty value means "no override", which is the overwhelmingly common case and not

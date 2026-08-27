@@ -3,8 +3,7 @@ import { isPersonalityAttributeId } from "@/contracts";
 import type { FillableDraft } from "./character-fill";
 
 /**
- * Per-tab Re-draft scopes (character-sheet-forge.plan.md; semantics re-ruled
- * 2026-07-12 — multi-character-chat.followups.md ruling 1): the five content
+ * Per-tab Re-draft scopes (semantics re-ruled 2026-07-12): the five content
  * tabs of the character sheet, each re-draftable from the whole sheet. Unlike
  * the sheet Forge's fill (additive-only), a Re-draft is a FULL re-sync of its
  * tab — the tool for "I changed the other tabs; bring this one in line" — so
@@ -18,8 +17,8 @@ import type { FillableDraft } from "./character-fill";
  * mismatch: `disposition` still owns `preferences` (they ride the profile forge
  * leg with tags + traits) even though the editor shows likes/dislikes on the
  * Personality tab since 2026-07-11 — a Disposition re-draft re-derives them.
- * `disposition` also owns `drives` (desires & secrets, character-drives.plan.md)
- * — the editor card and the forge output both live on that tab's scope.
+ * `disposition` also owns `drives` (desires & secrets) — the editor card and the
+ * forge output both live on that tab's scope.
  */
 export const characterSheetScopes = ["profile", "attributes", "personality", "disposition", "outfit"] as const;
 export const characterSheetScopeSchema = z.enum(characterSheetScopes);
@@ -37,11 +36,10 @@ export function mergeRedraftScope<T extends FillableDraft>(
 ): T {
   switch (scope) {
     case "profile":
-      // Ruling 1: prose fields only — name/age/aliases/tags are not this tab's
-      // re-sync surface (rename by hand; age is a fact, not formatting). The voice
-      // micro-exemplars (character-fidelity slice 6), structured voice anchors
-      // (slice 7), and the intimate disposition (intimacy-notes.spec.md) ride this
-      // prose scope too — all live on the Profile tab.
+      // Prose fields only — name/age/aliases/tags are not this tab's re-sync
+      // surface (rename by hand; age is a fact, not formatting). The voice
+      // micro-exemplars, structured voice anchors, and the intimate disposition
+      // ride this prose scope too — all live on the Profile tab.
       return {
         ...base,
         profile: {

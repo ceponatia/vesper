@@ -202,7 +202,7 @@ describe("projectBodyLanguageFeatures", () => {
     for (const relation of relations) {
       // Exact equality is the disclosure gate: pressure, motion, permission
       // state, and authority reads exist on the fixture contact, and NONE of
-      // them may surface here (effects spec §5's must-not list).
+      // them may surface here — the projection's must-not list.
       expect(relation.value).toEqual({
         actionKind: "affectionate",
         source: {

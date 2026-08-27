@@ -148,7 +148,7 @@ describe.runIf(harness.ready)("E3.3 durable commitments and temporal pressure", 
     expect(projection.pressures[0]).toMatchObject({ severity: "urgent", noticeAt: NOTICE_AT });
   });
 
-  it("keeps the shift when the actor departs in time (the §15.3 arc)", async () => {
+  it("keeps the shift when the actor departs in time", async () => {
     const ids = await seedShiftCase();
     await submitDurableCreateCommitment(createCommand(ids));
     await advanceBranchStoryTime(ids.branchId, NOTICE_AT, { workerId: "w-kept-notice" });
@@ -196,7 +196,7 @@ describe.runIf(harness.ready)("E3.3 durable commitments and temporal pressure", 
     const projection = await readDurableCommitments(ids.branchId);
     expect(projection.commitments[0]?.status).toBe("missed");
     expect(projection.pressures[0]?.resolvedAt).toBe(SHIFT_AT);
-    // Spec §3.1 invariant 5: the schedule boundary changed no location.
+    // Invariant: the schedule boundary changed no location.
     const space = await readDurableSpaceBranch(ids.branchId);
     expect(space.loci[0]).toMatchObject({ kind: "at", zoneId: ids.zoneHome });
   });
@@ -239,7 +239,7 @@ describe.runIf(harness.ready)("E3.3 durable commitments and temporal pressure", 
     }
     const firstProjection = await readDurableCommitments(first.branchId);
     const secondProjection = await readDurableCommitments(second.branchId);
-    // Partition invariance of the material outcome (§12.4).
+    // Partition invariance of the material outcome.
     expect(firstProjection.commitments[0]?.status).toBe("missed");
     expect(secondProjection.commitments[0]?.status).toBe("missed");
     expect(firstProjection.pressures[0]?.severity).toBe(secondProjection.pressures[0]?.severity);

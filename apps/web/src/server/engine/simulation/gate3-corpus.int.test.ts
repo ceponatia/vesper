@@ -35,12 +35,12 @@ import {
 } from "@/server/test-support";
 
 /**
- * The Gate 3 exit corpus (engine.plan §"Gate 3 scenario corpus"): every
- * scenario runs against the durable stores with zero model calls, and each
- * asserts the exit invariants — one body, one physical locus, causal
- * movement, access separation, actor control, perspective safety, and
- * deadline consequences. Runs on the shared `simulationSuiteHarness` scaffold
- * (probe + legacy-player guard + world teardown + pool close).
+ * The Gate 3 exit corpus: every scenario runs against the durable stores with
+ * zero model calls, and each asserts the exit invariants — one body, one
+ * physical locus, causal movement, access separation, actor control,
+ * perspective safety, and deadline consequences. Runs on the shared
+ * `simulationSuiteHarness` scaffold (probe + legacy-player guard + world
+ * teardown + pool close).
  */
 
 const harness = await simulationSuiteHarness({ suite: "gate3-corpus.int.test", table: "sim_access_grants" });
@@ -356,11 +356,11 @@ describe.runIf(harness.ready)("Gate 3 scenario corpus", () => {
       proposedArmedEffects: [apology, strayEffect],
     });
     expect(reread).toEqual(turn.cut);
-    // §22.3 on the durable row: the persisted cut re-reads bit-identical.
+    // Immutability on the durable row: the persisted cut re-reads bit-identical.
     expect(await loadPersistedCut(ids.branchId, turn.cut.id)).toEqual(turn.cut);
     expect(space.headSequence).toBe(turn.cut.throughSequence);
 
-    // Ruling 9 / §23.3: confirmation names armed-effect IDS, revalidated
+    // Ruling 9: confirmation names armed-effect IDS, revalidated
     // against the persisted cut — an id the cut never armed is ignored.
     const apologyEffectId = turn.cut.armedEffects[0]?.id ?? "armed-missing";
     const confirmCommand = command(ids, "confirm", "confirm_narrator_result", principalFor("system", []), {
@@ -417,7 +417,7 @@ describe.runIf(harness.ready)("Gate 3 scenario corpus", () => {
       workerId: "w-corpus-stay",
     });
 
-    // §15.3: the stay request defers to the last moment — actBy 101_200 is
+    // The stay request defers to the last moment — actBy 101_200 is
     // outside the bare turn (100_400), so Mara stays and nothing is enacted.
     expect(turn.departures).toEqual([]);
     expect(turn.cut.mustEnact).toEqual([]);
@@ -427,7 +427,7 @@ describe.runIf(harness.ready)("Gate 3 scenario corpus", () => {
     expect((await readDurableEngagements(ids.branchId)).engagements[0]?.state).toBe("active");
 
     // Staying has the consequence: past the deadline the shift is missed,
-    // and Mara is still at the cafe (§3.1 invariant 5 — no teleport).
+    // and Mara is still at the cafe (no teleport).
     const outcome = await advanceBranchStoryTime(ids.branchId, LATEST_ARRIVAL + 100, {
       workerId: "w-corpus-stay-drain",
     });
@@ -565,7 +565,7 @@ describe.runIf(harness.ready)("Gate 3 scenario corpus", () => {
       );
     }
 
-    // Forced entry in a non-permitting world is a stated rule (§14.3), not a
+    // Forced entry in a non-permitting world is a stated rule, not a
     // disguised physical impossibility.
     const shoulder = await submitDurableAttemptEntry(
       command(ids, "shoulder", "attempt_entry", principalFor("player", [ids.player]), {
@@ -577,7 +577,7 @@ describe.runIf(harness.ready)("Gate 3 scenario corpus", () => {
     );
     expectRejected(shoulder, "trespass_not_permitted", "forcing the door in a non-permitting world");
 
-    // §14.4 redaction: no refusal names the shower or the person behind the door.
+    // Redaction: no refusal names the shower or the person behind the door.
     for (const refusal of [walkIn, knock, shoulder]) {
       if (refusal.status !== "rejected") continue;
       expect(refusal.publicReason).not.toMatch(/shower/iu);
@@ -639,7 +639,7 @@ describe.runIf(harness.ready)("Gate 3 scenario corpus", () => {
     expectRejected(rival, "participant_already_engaged", "a rival scene competing for Mara's body");
   });
 
-  // command-integrity.plan.md slice 2 (A2). Ruling A2-1 — the world's clock wins.
+  // Ruling A2-1 — the world's clock wins.
   it("lands a co-present turn overtaken by a concurrent drain instead of crashing (A2)", async () => {
     const ids = await seedCorpusCase();
     const opened = await submitDurableOpenEngagement(chatCommand(ids), ADMIT_AT_LOCKED_VERSION);

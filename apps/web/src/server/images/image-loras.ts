@@ -22,8 +22,7 @@ import { db, imageLoras } from "../db";
 import { parseRegistryRows } from "./models";
 
 /**
- * The LoRA library's server seam (image-model-capabilities.spec.md
- * §`image_loras`).
+ * The LoRA library's server seam.
  *
  * Two jobs, and the split matters. The CRUD half is an ordinary owner-admin
  * registry: rows in, rows out, parsed at the trust boundary so one bad row costs
@@ -151,8 +150,7 @@ export interface ImageLoraRenderContext {
    * second. The Image Generator has no task at all, so it borrowed one, and a
    * mechanically perfect LoRA was refused for breaking a curation rule about a
    * lane the bench is not in. The evaluator now applies task policy only where
-   * the context says a lane exists (image-model-adapters.spec.md §"Execution
-   * context").
+   * the context says a lane exists.
    */
   execution: ImageExecutionContext;
 }
@@ -169,7 +167,7 @@ export type ImageLoraResolution =
  * to learn something the library already knew. The lab pre-resolves and passes
  * the binding on the intent; `renderImageIntent` resolves for every other caller.
  *
- * The diagnostic carries the REDACTED locator (spec §`image_loras`), so a signed
+ * The diagnostic carries the REDACTED locator, so a signed
  * URL's query parameters never reach a log line — and it is pushed here rather
  * than at each caller so a refusal is reported exactly once, in the vocabulary the
  * evaluator decided it in.

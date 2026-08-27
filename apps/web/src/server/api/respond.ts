@@ -76,7 +76,7 @@ export function withUser<P = Record<string, never>>(
  *
  * The IP window runs **first**, ahead of both CSRF and `withUser`'s session
  * resolution, so an unauthenticated flood costs a map lookup rather than a
- * database round trip (rate-limits.plan.md slice 2).
+ * database round trip.
  */
 export function withRoute<P = Record<string, never>>(
   handler: (req: NextRequest, ctx: RouteContext<P>) => Promise<Response>,

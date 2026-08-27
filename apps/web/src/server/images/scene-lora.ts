@@ -5,14 +5,14 @@ import { pairProfileWithNsfwLora, type NsfwLoraMissingLeg } from "./nsfw-lora";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 
 /**
- * The intimate-scene LoRA route (intimate-scene-lora.spec.md §Algorithm).
+ * The intimate-scene LoRA route.
  *
  * ~45 owner-graded probe renders settled two things at once: the staged prompts
  * are right, and the stock scene model is the ceiling. `qwen-image-edit-2511`
  * follows every compositional instruction and cannot draw explicit anatomy, so
  * a chat that stages an act gets a picture of a near-miss. One LoRA — run
  * through Replicate's LoRA-capable Qwen edit wrapper — rendered every acceptance
- * act on the same prompts (finished/scene-composition.spec.md §Probe results).
+ * act on the same prompts.
  *
  * This module owns WHICH chat renders take the LoRA and what a missing piece of
  * the configuration costs them. Assembling the pairing itself — wrapper model,

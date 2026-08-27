@@ -1,6 +1,5 @@
 /**
- * What the projection dropped, and why (visual-state.spec.md §Snapshot,
- * §Diagnostics and degraded behavior).
+ * What the projection dropped, and why.
  *
  * A leaf module: both the snapshot assembler and the composition resolver
  * record suppressions, and neither may import the other

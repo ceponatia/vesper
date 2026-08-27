@@ -1,6 +1,6 @@
 /**
  * Visual state — the lane-neutral projection of what a character looks like
- * right now (visual-state.plan.md, visual-state.spec.md).
+ * right now.
  *
  * This package owns the SHAPE of a visual fact: its layer, locus, source,
  * stability, key, fingerprint, typed composition, attention priors, and the

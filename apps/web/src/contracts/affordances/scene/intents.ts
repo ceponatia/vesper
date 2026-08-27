@@ -27,8 +27,7 @@ import {
 } from "./vocabulary";
 
 /**
- * Structured movement intents, and the actor-control law that gates them
- * (romantic-contact-affordances.spec.scene.md §"Actor-control law").
+ * Structured movement intents, and the actor-control law that gates them.
  *
  * A movement enters the scene as a TYPED intent — a posture, an orientation, a
  * distance, a support change — and never as a sentence. That is the whole point
@@ -36,8 +35,7 @@ import {
  * described, and the lane that produced the prose still has to decide, on the
  * side that owns the body, whether it happened.
  *
- * **The law** (owner ruling, 2026-07-30 —
- * romantic-contact-affordances.audit.md §"Owner decisions needed" 2):
+ * **The law** (owner ruling, 2026-07-30):
  *
  * - a **player** intent may move only a **player-controlled** participant;
  * - an **NPC** movement must originate NPC- or simulation-side;

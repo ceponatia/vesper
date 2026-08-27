@@ -2,7 +2,7 @@ import { z } from "zod";
 import { narratorPromptLanguageSchema } from "./template";
 
 /**
- * What produced this take (narrator-prompt-lab.plan.md §Provenance).
+ * What produced this take.
  *
  * Prompt experimentation is worthless if the app cannot later answer "which
  * prompt wrote this?". Every generated assistant take carries a compact record:

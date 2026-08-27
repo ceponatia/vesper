@@ -69,7 +69,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   const [drafting, setDrafting] = useState(false);
   /** A ✦ draft landed and awaits review — autosave pauses (forge-draft discipline). */
   const [stagedDraft, setStagedDraft] = useState(false);
-  /** Where the item is referenced — fetched when the delete dialog opens (slice 6). */
+  /** Where the item is referenced — fetched when the delete dialog opens. */
   const [usage, setUsage] = useState<{
     wornBy: { id: string; name: string }[];
   } | null>(null);
@@ -134,8 +134,8 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
   };
 
   /**
-   * ✦ Draft from description (ux-improvements.plan.md slice 5): the classify
-   * seam extended into the editor — propose category/layer/wearer/color/
+   * ✦ Draft from description: the classify seam extended into the editor —
+   * propose category/layer/wearer/color/
    * opacity, explicit coverage (carve-outs included) and the three sensory
    * lines from name + description. Fill-EMPTY-only merge into the unsaved
    * form; the SaveBar stays the review/undo step (Forge-the-rest discipline).
@@ -203,7 +203,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
     }
   };
 
-  // Autosave (slice 7): silent saves on change/blur; paused while a ✦ draft
+  // Autosave: silent saves on change/blur; paused while a ✦ draft
   // awaits review. The SaveBar's Save stays the loud manual flush.
   const autosave = useAutosave({
     enabled: !stagedDraft,
@@ -258,7 +258,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
 
   // A public item owned by someone else: read-only preview + a clone-to-library
   // CTA (the discovery gallery's copy-on-use path — the social-card pattern;
-  // edits would 404 server-side anyway). Slice 6.
+  // edits would 404 server-side anyway).
   if (detail.data && !detail.data.mine) {
     return (
       <PageContainer>

@@ -10,7 +10,7 @@ import {
 } from "./sim-narrator";
 
 /**
- * Pure render-loop tests (presentation-charter.plan.md slice 3) — the cut is
+ * Pure render-loop tests — the cut is
  * injected (`loadCut`) and the model seam is stubbed, so no DB or live call runs.
  * The stubs declare no armed effects, so the confirm path (the only DB write) is
  * never reached.
@@ -87,8 +87,8 @@ describe("renderCommittedCut — targeted retry", () => {
   });
 
   /**
-   * ONE exchange, ONE instruction revision (narrator-prompt-lab.plan.md slice 5 and
-   * spec §Algorithms). The retry loop rebuilds the prompt on every attempt, so the
+   * ONE exchange, ONE instruction revision. The retry loop rebuilds the prompt
+   * on every attempt, so the
    * frozen thing has to be the resolved SOURCE carried on the context — never a
    * template id re-read per attempt.
    *
@@ -199,7 +199,7 @@ describe("buildConfirmCommand — one confirm per cut", () => {
   });
 });
 
-describe("renderSoloNarration — solo cut (world-ui.plan.md slice 0)", () => {
+describe("renderSoloNarration — solo cut", () => {
   const FALLBACK = "You look around the quiet square.\n\nElsewhere, Nora goes about her morning.";
 
   const soloSeam = (replies: string[]): { seam: SoloRenderSeam; calls: number[] } => {

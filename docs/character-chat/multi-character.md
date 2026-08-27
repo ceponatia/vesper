@@ -6,10 +6,7 @@ the ensemble prompt frame, and the per-conversation relationship matrix.
 ## Multi-character (the ensemble)
 
 A conversation holds up to **4 full characters**
-(`multi-character-chat.plan.md` +
-the matrix slice of
-`relationship-model.plan.md`,
-both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-1
+(shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-1
 (asserted in `prompts/character-chat.test.ts`); everything below arms only at roster > 1.
 
 - **Roster** (`chat_participants`, sort 0 = primary): created multi-select or grown later —
@@ -25,7 +22,7 @@ both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-
   played; `quiet_exchanges` counts activity recency (deterministic stamping —
   `mentionsCharacter`/`spokeInReply` in `chat-intent.ts` — reset by a name/alias mention
   or a tagged spoken line), and for away members it doubles as the tier-3 salience window.
-  Since chat-offscreen-life an away member also carries a **whereabouts** phrase
+  An away member also carries a **whereabouts** phrase
   (`character_chat_state.whereabouts` — the presence proposal's optional `where` on a
   departure, refreshed by the meanwhile pass): the roster line renders "Away, living
   their own lives: Kira (at her studio)", the salient-away block gets a "Right now
@@ -33,15 +30,14 @@ both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-
   one-turn **"just got back — was …"** license in their state line, then it clears.
   Off-screen **NPC↔NPC developments** (the meanwhile pass's two-name entries) file as
   relationship FACTS to both members' own memory groups — the shipped v2 pattern; the
-  authored matrix is never machine-edited
-  (`chat-offscreen-life.spec.md`).
+  authored matrix is never machine-edited.
 - **Ensemble prompt** (`buildChatPromptPartsForRoster` → `buildEnsembleChatPromptParts`):
   one continuous narrative, the narrator omniscient over the roster; THIRD-person member
   sheets (full / quiet-compressed at `ENSEMBLE_QUIET_EXCHANGES` / away-dropped while
   anyone is present, cutaway sheets when nobody is), `ENSEMBLE_CHAT_RULES` (universal
   `[Name]` tag discipline — nothing auto-attributes in a group; characters alive to each
   other; presence law), and the ruling-3 authority block: the player is never written, and
-  with no character present the reply is a **cutaway**. The §9 prefix/tail cache split
+  with no character present the reply is a **cutaway**. The prefix/tail cache split
   survives (sheets re-render on roster/presence/tier/band change).
 - **Scoped dynamics**: the reaction pulse runs **referenced-only** (members the player's
   turn names; the primary as anchor fallback when nobody is), resolving reactions against
@@ -68,7 +64,7 @@ both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-
   exposure, presence toggle); the state routes take `?characterId=` targeting. The
   Scenario modal holds only the chat-wide fields (premise, presets, house rules,
   auto-scene + scene model).
-- **Plan-driven arrivals & exits** (chat-plans-promises.plan.md Slice 3): a chat-wide plan
+- **Plan-driven arrivals & exits**: a chat-wide plan
   ([state.md](state.md) §Plans & promises) that is DUE/imminent is the fiction's own reason
   to move a character — `buildPlanPresenceLicense` (ensemble tail) grants the presence law's
   ONE principled exception to the don't-teleport guard: a plan involving an **away** roster

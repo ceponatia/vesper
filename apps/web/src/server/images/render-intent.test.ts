@@ -232,8 +232,7 @@ describe("sent-reference provenance", () => {
 
 describe("LoRA credential completion", () => {
   /**
-   * The seam that makes a stored PUBLIC locator into a fetchable one
-   * (intimate-scene-lora.spec.md §Decisions, "Secret handling"). The credential
+   * The seam that makes a stored PUBLIC locator into a fetchable one. The credential
    * may exist in exactly one place in a render — the provider payload — and
    * these cases assert both halves of that: it arrives there, and it arrives
    * nowhere else.

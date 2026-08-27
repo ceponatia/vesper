@@ -15,8 +15,7 @@ const ownedCharacter = async (user: { id: string }, params: Params) =>
  *
  * Defense in depth: the wrapper authorizes the parent character (and is what
  * `pnpm lint:authz` requires of a resource-ID route), and `promoteVariant`
- * re-verifies both rows against the same owner
- * (security-authz.plan.md §Follow-ups item 2). It also queues identity-pack
+ * re-verifies both rows against the same owner. It also queues identity-pack
  * preparation for the new canonical source, so this route does not.
  */
 export const POST = withAuthorizedResource<Params, OwnedCharacter>(

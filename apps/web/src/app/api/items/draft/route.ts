@@ -23,9 +23,9 @@ const draftBodySchema = z
   });
 
 /**
- * ✦ Draft from description (ux-improvements.plan.md slice 5): propose the
- * item's structured record — category/layer/wearer/color/opacity, explicit
- * coverage with carve-outs, the three sensory lines — from name + description.
+ * ✦ Draft from description: propose the item's structured record —
+ * category/layer/wearer/color/opacity, explicit coverage with carve-outs,
+ * the three sensory lines — from name + description.
  * Stateless: nothing is written; the editor fill-merges into the unsaved form
  * so the SaveBar stays the review step (the Forge-the-rest discipline).
  */

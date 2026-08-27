@@ -3,11 +3,10 @@ import { multiplyUnits, toUnitInterval, type UnitInterval } from "../../core";
 import { footSubstanceKinds, type FootSubstanceKind, type FootSurfaceSubstanceRead } from "./condition";
 
 /**
- * Substance-specific friction, and the reason there is no global rule
- * (romantic-contact-affordances.spec.foot.md §`foot.glide_response`:
+ * Substance-specific friction, and the reason there is no global rule:
  * *"the domain must not apply a global 'more wetness means less friction' rule.
  * In particular, small amounts of water or sweat may increase skin drag before a
- * thicker film reduces it."*).
+ * thicker film reduces it."*
  *
  * Each substance gets its own three-point curve on the film amount:
  *

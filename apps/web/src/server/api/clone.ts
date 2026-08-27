@@ -5,7 +5,7 @@ import { queueEmbedRefresh } from "./library";
 import { findViewable, type ShareableKind } from "./visibility";
 
 /**
- * Clone-to-library (auth.plan.md slice 7). The source may be **public** (read
+ * Clone-to-library. The source may be **public** (read
  * via findViewable) or your own; the result is always a new **owned, private**
  * row with `clonedFromId` provenance and self-contained, duplicated images — so
  * deleting the source later can never break your copy (the world-instances
@@ -13,7 +13,7 @@ import { findViewable, type ShareableKind } from "./visibility";
  *
  * A character clone copies the **whole** authored `profile` — narrator guidance,
  * drives, intimacy notes, voice anchors and all — and that is an explicit
- * product decision (security-authz.plan.md OQ2), not an oversight: publishing a
+ * product decision, not an oversight: publishing a
  * character offers it as a full authored starting point, so a clone is richer
  * than the public *preview*, which `toPublicCharacterProfile` narrows to
  * presentation data only.
@@ -55,8 +55,7 @@ export async function cloneToLibrary(kind: ShareableKind, srcId: string, userId:
         await db().update(characters).set({ avatarImageId: newAvatar }).where(eq(characters.id, copy.id));
         // The copy derives its OWN pack from its own copied portrait: pack rows
         // and hidden crops never cross an owner boundary, and origin review
-        // actors, overrides and trial status do not transfer
-        // (image-identity-packs.spec.lifecycle.md §"Copy and publish behavior").
+        // actors, overrides and trial status do not transfer.
         queueIdentityPackPreparation(copy.id, userId);
       }
       queueEmbedRefresh("character", copy.id);
@@ -111,7 +110,7 @@ export async function cloneToLibrary(kind: ShareableKind, srcId: string, userId:
       return { ok: true, id: copy.id };
     }
     case "social_card": {
-      // Cards carry no images (social-reaction-cards.plan.md) — no cloneEntityImages step.
+      // Cards carry no images — no cloneEntityImages step.
       const src = await findViewable("social_card", srcId, userId);
       if (!src) return { ok: false, code: "not_found" };
       const [copy] = await db()

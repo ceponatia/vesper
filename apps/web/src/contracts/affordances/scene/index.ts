@@ -1,7 +1,5 @@
 /**
- * The scene / body-relations owner
- * (romantic-contact-affordances.plan.md slice 3A;
- * romantic-contact-affordances.spec.scene.md).
+ * The scene / body-relations owner.
  *
  * One lane-neutral owner for the physical facts a contact decision needs and
  * nobody in either lane holds today: where the bodies are, how they are

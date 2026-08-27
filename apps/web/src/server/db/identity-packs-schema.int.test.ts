@@ -11,8 +11,8 @@ import {
 } from "@/server/test-support";
 
 /**
- * The `image_identity_packs` constraints against a migrated database
- * (image-identity-packs.spec.data.md §Persistence model). These are the four
+ * The `image_identity_packs` constraints against a migrated database. These are
+ * the four
  * guarantees the service layer is allowed to ASSUME rather than re-check, so
  * nothing short of a real Postgres can prove them:
  *
@@ -21,14 +21,13 @@ import {
  *    leaving two "current" packs for the sweep to find;
  * 2. a revision number is used once per character;
  * 3. deleting the character deletes its packs (operational data, which does not
- *    inherit the Gallery-retention exception — spec.lifecycle.md §Character
- *    deletion);
+ *    inherit the Gallery-retention exception);
  * 4. deleting an image NULLs the pointers instead of blocking or cascading — the
  *    safety net that turns a vanished source into an unusable pack rather than a
  *    pack that keeps serving a crop it can no longer justify.
  *
- * The second describe block covers `image_identity_lora_bindings`
- * (sd-rendering-package.plan.md §9), which lives here rather than in a file of
+ * The second describe block covers `image_identity_lora_bindings`, which lives
+ * here rather than in a file of
  * its own because it is the same data family: it exists only to point at a pack
  * REVISION, its whole meaning is supersession, and it dies with the pack. Its two
  * storage guarantees are the ones `identity-lora-bindings.ts` deliberately

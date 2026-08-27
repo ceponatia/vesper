@@ -12,9 +12,7 @@ emotional weather, plans, off-screen life, and drives — is in [state.md](state
 
 ## Scene environment & body surface
 
-Two authoritative owners the lane simply did not have
-(`body-attribute-affordances.plan.md`
-· `body-attribute-affordances.audit.md`, slice 4, migration
+Two authoritative owners the lane simply did not have (migration
 0091). Both exist so the visual-affordance layer reads *state*, never prose: the law is
 that **narrator prose is never parsed at read time** — the continuity extraction leg
 proposes typed ops and the fold commits them through `parseOr`, exactly as the garment
@@ -281,9 +279,7 @@ forearm") — standing truth after the physical cues, never competing with them.
   experiment's flag can never write the other's state.
 - **Production-silent today**: the perception view asserts exposure only for garment-covered
   locations and hair, so bare skin (nose, face, forearms) reads `unknown` and recognition fails
-  closed — the same shape of missing-owner gap as garment fit above. See
-  `body-attribute-affordances.plan.md`
-  §Slice 7.
+  closed — the same shape of missing-owner gap as garment fit above.
 
 ### The narrator's own cue record
 
@@ -357,10 +353,7 @@ cut it already has —
   way to tell which head the verb belongs to, and ambiguity is silence.
 
 Both render as ONE binding-tier prompt block with explicit precedence over the general
-sensory allowances — see [prompts.md](prompts.md) §"Physical consistency". Wording rules,
-the detector's guards, and the verdict laws live in
-`narrator-physical-guidance.spec.md`
-§"Slice 2".
+sensory allowances — see [prompts.md](prompts.md) §"Physical consistency".
 
 **A standing fence is stated only when the turn is about it.** A braid is true all day, and
 repeating its prohibition on every exchange spends prompt bytes on inventory and risks

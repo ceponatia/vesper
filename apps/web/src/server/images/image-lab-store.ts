@@ -31,8 +31,7 @@ import { characters, chatParticipants, db, imageLabExperiments } from "../db";
 import { deleteOwnedImage, imageMeta } from "./assets";
 
 /**
- * The Advanced Image Lab's experiment service
- * (qwen-advanced-image-subsystem.spec.md §Algorithms, §Persistence).
+ * The Advanced Image Lab's experiment service.
  *
  * One experiment is one deliberate render whose every input, setting and outcome
  * is written down. The bench exists because a question nobody can answer from a
@@ -45,10 +44,10 @@ import { deleteOwnedImage, imageMeta } from "./assets";
  * and it never enqueues a lane's own job type. A lab run leaves the app exactly
  * as it found it, minus one hidden image and one row.
  *
- * Stage 0 renders bypass the render-intent path for `control_probe` (spec
- * §"Rulings this build settles"): the runner calls `runRegistryImageModel`
+ * Stage 0 renders bypass the render-intent path for `control_probe`: the runner
+ * calls `runRegistryImageModel`
  * directly with an explicit ordered reference list and a pinned `versionId`,
- * a ruling made while the capabilities plan's role-aware selection did not
+ * a ruling made while role-aware selection did not
  * exist and kept for the probe because an exact ordered list is what a probe
  * IS. The two BASELINE kinds do the opposite on purpose — they go through the
  * very path their lane goes through, since a baseline that compiled its
@@ -67,8 +66,7 @@ import { deleteOwnedImage, imageMeta } from "./assets";
  * `staged_scene` rides it as well, and is the one kind whose PROMPT is compiled
  * rather than typed: the lane assembles a scene render plan around one staging
  * registry entry and hands the chat lane's own builder the job of wording it, so
- * the bench sends the sentence production sends (intimate-scene-lora.spec.md
- * §"Slice 2").
+ * the bench sends the sentence production sends.
  *
  * The job seam lives at the ROUTE, not here: `@/server/api` imports
  * `@/server/images`, so a `startJob` call from this module would close an import

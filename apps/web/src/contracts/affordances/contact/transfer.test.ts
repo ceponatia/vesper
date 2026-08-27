@@ -8,9 +8,8 @@ import type { CommittedContactRead, ContactActionIntent } from "./types";
 import { probeAttempt, probeBodySurface, PROBE_ACTOR, PROBE_EVENT, PROBE_TARGET } from "./test-support";
 
 /**
- * The conserved-transfer producer (romantic-contact-affordances.spec.effects.md
- * §9): a pure derivation from a genuinely COMMITTED contact plus two reads this
- * layer is not allowed to author.
+ * The conserved-transfer producer: a pure derivation from a genuinely COMMITTED
+ * contact plus two reads this layer is not allowed to author.
  *
  * Three claims are worth permanent protection here, and each names a defect a
  * plausible implementation would have:
@@ -20,8 +19,8 @@ import { probeAttempt, probeBodySurface, PROBE_ACTOR, PROBE_EVENT, PROBE_TARGET 
  *    never touched, and a path that ends somewhere the contact never reached.
  *    Either one would let contact move material off or onto a surface it has no
  *    committed authority over.
- * 2. **Motion qualifies only when it is RELATIVE** (§16: "no relative motion ->
- *    no glide"). Falsified against a producer that treated `pressing` as motion
+ * 2. **Motion qualifies only when it is RELATIVE** — no relative motion, no
+ *    glide. Falsified against a producer that treated `pressing` as motion
  *    because it is a member of the motion vocabulary — a hand bearing down
  *    without travelling has wiped nothing off.
  * 3. **Two substances off one hand are two identities.** Falsified against a key

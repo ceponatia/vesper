@@ -12,9 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Dashboard (docs/ui.md): conversations lead (the companion experience is the
- * front door — character-chat-standalone D12), then the successor-engine worlds
- * entry and the cast strip. (The legacy world/session hero was deleted with the
- * session lane, 2026-07-22 — engine.rollout.plan.md.)
+ * front door — D12), then the successor-engine worlds entry and the cast strip.
+ * (The legacy world/session hero was deleted with the session lane, 2026-07-22.)
  */
 export function Dashboard() {
   const chats = useAsyncData(() => chatsApi.list(), []);
@@ -48,7 +47,7 @@ export function Dashboard() {
                     {latestChat.characterName}
                     {latestChat.title ? <span className="text-paper-400"> — {latestChat.title}</span> : null}
                   </h1>
-                  {/* "Has something to say" (§8.4) — the dot opens the chat with ?say=1 */}
+                  {/* "Has something to say" — the dot opens the chat with ?say=1 */}
                   {latestChat.say ? <ChatSayMarker chatId={latestChat.id} say={latestChat.say} /> : null}
                 </div>
                 {latestChat.lastLine ? (
@@ -85,7 +84,7 @@ export function Dashboard() {
       ) : null}
 
       {/* Worlds — the successor engine's front door (the legacy world-model
-          library that lived here was deleted 2026-07-22; engine.rollout.plan.md). */}
+          library that lived here was deleted 2026-07-22). */}
       <section className="mb-10">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="prose-display text-xl">Worlds</h2>

@@ -91,8 +91,8 @@ export function intimateAnatomySummary(
 }
 
 /**
- * Identity-critical attributes for the reference-anchored render (chat-scene-fidelity.plan.md
- * slice 3): the features an identity-locked edit drifts on ever so slightly — facial identity
+ * Identity-critical attributes for the reference-anchored render: the features
+ * an identity-locked edit drifts on ever so slightly — facial identity
  * plus skin and hair. Deliberately a whitelist (a full appearance dump would fight the
  * reference image and blow the prompt budget).
  */
@@ -219,7 +219,7 @@ export function apparentAgeAnchor(name: string, attributes: ReadonlyArray<Attrib
 const VIEWER_BODY_CHARS = 200;
 
 /**
- * The viewer's own body facts (scene-pov-embodiment.plan.md slice 4) — **only for the parts
+ * The viewer's own body facts — **only for the parts
  * actually in frame**, so a shot of their hands on her cheek doesn't state their leg hair.
  *
  * Without this the viewer's arms change colour between shots, which reads as a different

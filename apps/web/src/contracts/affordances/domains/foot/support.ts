@@ -11,11 +11,10 @@ import { footwearRestrictsArticulation, type FootwearContactRead } from "./footw
 import { footSideOf, footSideSchema, footSides, type FootSide } from "./topology";
 
 /**
- * Support and articulation (romantic-contact-affordances.spec.foot.md
- * §"Support and articulation").
+ * Support and articulation.
  *
- * Both are READS. Neither lane owns pose today (audit §"Capability matrix":
- * pose, posture and articulation are **absent** in both), so in production the
+ * Both are READS. Neither lane owns pose today (pose, posture and articulation
+ * are **absent** in both), so in production the
  * articulation phenomenon is silent — which is the correct answer, not a gap.
  *
  * The support vocabulary is the contact core's own. Slice 1 lifted it from this

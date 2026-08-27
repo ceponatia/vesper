@@ -36,7 +36,7 @@ import {
 } from "./sim-render";
 
 /**
- * The successor SOLO-cut narrator prompt (world-ui.plan.md slice 0, ruling 21).
+ * The successor SOLO-cut narrator prompt.
  * When a turn runs WITHOUT a co-present primary, the render is dual-block: (a) a
  * second-person player-side block reacting to the player's own zone, and (b) a
  * third-person AWAY VIGNETTE of the primary living their routine, bounded by the

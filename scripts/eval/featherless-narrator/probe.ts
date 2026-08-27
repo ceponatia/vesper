@@ -5,7 +5,7 @@ import { streamCharacterChat } from "@/server/engine";
 
 /**
  * Opt-in live probe of one exact Featherless narrator — the evidence behind a
- * Featherless row's request policy (narrator-model-bench.spec.md §The Featherless rows).
+ * Featherless row's request policy.
  * Not part of any suite and never run by CI: it makes real, billed calls.
  * Without `FEATHERLESS_API_TOKEN` it prints why it skipped and exits 0, so a clean
  * checkout can run it harmlessly.

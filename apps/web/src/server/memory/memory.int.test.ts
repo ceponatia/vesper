@@ -284,7 +284,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
   });
 
-  // Chat-lane keying (character-chat-standalone.spec.md §1.3): facts + episodes keyed on
+  // Chat-lane keying: facts + episodes keyed on
   // a memory-group id, and isolated from every other group.
   describe("chat-scope memory (memory groups)", () => {
     const groupId = "int-test-memory-group";
@@ -320,7 +320,7 @@ describe.skipIf(!ready)("memory integration", () => {
       expect(otherSees.map((h) => h.text)).not.toContain(factText);
     });
 
-    it("deleteFactsForScope / deleteEpisodesForScope purge only the chat's memory (Clear Chat — §4)", async () => {
+    it("deleteFactsForScope / deleteEpisodesForScope purge only the chat's memory (Clear Chat)", async () => {
       const scope = chatScope(groupId);
       expect(await latestEpisodeNumber(scope)).toBeGreaterThan(0);
       await deleteFactsForScope(scope);
@@ -330,7 +330,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
   });
 
-  // Slice 7 (character-chat-standalone.spec.md §6.3 retrieval quality + §6.4 pinned facts).
+  // Slice 7 (retrieval quality + pinned facts).
   // pseudoEmbed is hash-based: hits need near-identical text, misses need clearly different text.
   describe("retrieval quality + pinned facts (slice 7)", () => {
     it("applies the relevance floor: a dissimilar fact is a candidate but never a hit", async () => {
@@ -552,7 +552,7 @@ describe.skipIf(!ready)("memory integration", () => {
     });
   });
 
-  // Slice 6 (player-input-perception.plan.md): the RAG visibility fence. pseudoEmbed is
+  // Slice 6: the RAG visibility fence. pseudoEmbed is
   // hash-based, so query each fact with its exact stored text to score a recall hit.
   describe("fact channel — the RAG visibility fence (slice 6)", () => {
     const groupId = "int-test-channel-fence-group";

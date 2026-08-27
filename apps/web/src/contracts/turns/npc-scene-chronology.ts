@@ -2,9 +2,7 @@ import type { NpcContactCandidate, NpcMovementCandidate, NpcRef } from "./npc-sc
 import type { NpcSceneReplySpan } from "./npc-scene-evidence";
 
 /**
- * NPC reply-scene CHRONOLOGY
- * (romantic-contact-affordances.spec.actor-control.md §"Chronology and
- * folding").
+ * NPC reply-scene CHRONOLOGY — ordering and folding.
  *
  * The old fixed floor→movement→contact order is gone. Every admitted floor
  * result and tier-2 candidate carries ONE action span in the reply, and the

@@ -11,8 +11,7 @@ import {
 
 /**
  * A model-neutral positive claim: one thing the image MUST contain, said in
- * concepts rather than in any model's words
- * (model-aware-image-prompts.plan.md §"Positive claims").
+ * concepts rather than in any model's words.
  *
  * This is the seam that decides whether a new model is a day of work or a week.
  * `ImagePromptSegment` already classifies prompt content semantically, but its
@@ -65,9 +64,9 @@ const OPERATION_SOURCE: ImageSourceRef = { owner: "image.operation", key: "opera
 
 /**
  * Turn one immutable world digest into the ordered positive claims a dialect
- * compiles (plan §"Fact selection").
+ * compiles.
  *
- * Selection follows the plan's order — operation first, then subjects, camera,
+ * Selection follows the canonical order — operation first, then subjects, camera,
  * relations, items, location, style — but that order is about which claim is
  * BUILT first, not which sentence comes first. Emission order is the prompt
  * segment vocabulary's canonical order, applied by

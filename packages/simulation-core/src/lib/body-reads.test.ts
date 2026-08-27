@@ -274,7 +274,7 @@ describe("E5.2 intimacy pulse and visible signs (OQ2)", () => {
   });
 });
 
-describe("E5.2 wash crossings — the §25.5 window law", () => {
+describe("E5.2 wash crossings — the window law", () => {
   function hygieneView(valueFixedPoint: number, lastIntegratedAt: number): MeterIntegrationView {
     return {
       definition: registryDefinition("hygiene"),

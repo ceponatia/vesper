@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 /**
- * Saved narrator prompt templates and their immutable revisions
- * (narrator-prompt-lab.plan.md §Persistence).
+ * Saved narrator prompt templates and their immutable revisions.
  *
  * A template is a stable identity plus an append-only chain of revision bodies.
  * Editing never overwrites: **Save** writes revision `N + 1`. A conversation

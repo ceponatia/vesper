@@ -9,10 +9,9 @@ import { imageModelProbeFields, loadImageModelProfiles, loadImageModels } from "
 import { newId } from "@/lib/ids";
 
 /**
- * The image-model registry's admin surface (image-model-registry.spec.md).
- * Owner-admin only, and only beneath `/api/admin/self` — `withOwnerAdmin` fails
- * closed with a hidden 404 anywhere else, so the client-side gate on the
- * settings page is UX rather than security.
+ * The image-model registry's admin surface. Owner-admin only, and only beneath
+ * `/api/admin/self` — `withOwnerAdmin` fails closed with a hidden 404 anywhere
+ * else, so the client-side gate on the settings page is UX rather than security.
  *
  * GET lists every model row AND every profile row beneath them — one response,
  * because the admin page reads them together (each model card nests its

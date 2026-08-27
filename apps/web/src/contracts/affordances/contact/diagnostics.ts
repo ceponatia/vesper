@@ -1,8 +1,6 @@
 /**
- * Contact diagnostic codes
- * (romantic-contact-affordances.spec.md §"Degraded behavior", renamed into the
- * house dotted convention that `affordance.input.unavailable` and
- * `guidance.disclosure.leak` already use).
+ * Contact diagnostic codes, named in the house dotted convention that
+ * `affordance.input.unavailable` and `guidance.disclosure.leak` already use.
  *
  * Only the codes this layer actually emits live here. A constant for a code
  * nobody pushes is a promise the diagnostics surface cannot keep, and the later
@@ -10,9 +8,8 @@
  *
  * Severity follows one rule, inherited from the guidance layer:
  *
- * - **`warn`** — an owner could not answer. Expected today (the audit records
- *   pose, reach, and material-between as unowned in both lanes), degraded, and
- *   worth counting.
+ * - **`warn`** — an owner could not answer. Expected today (pose, reach, and
+ *   material-between are unowned in both lanes), degraded, and worth counting.
  * - **`error`** — a value nobody meant. A malformed intent or a stored contact
  *   that no longer parses can only come from an adapter, a store, or an older
  *   release; it is a bug, not a policy.
@@ -45,8 +42,8 @@ export const CONTACT_SUPPORT_UNAVAILABLE = "contact.support_unavailable";
 /**
  * No owner could say what lies between the surfaces. `warn`.
  *
- * The spec sketched this as `contact_wardrobe_unavailable`. It is not a wardrobe
- * code here: the core deals in material layers and has no idea whether a layer is
+ * An earlier sketch called this `contact_wardrobe_unavailable`. It is not a
+ * wardrobe code here: the core deals in material layers and has no idea whether a layer is
  * a garment, a blanket, or a table, and naming a domain in a shared code is the
  * first step to the shared layer learning that domain.
  */
@@ -86,8 +83,8 @@ export const CONTACT_STATE_RECOMPUTED = "contact.state_recomputed";
  * Nonvisual contact phenomena were withheld at the routing boundary. `info`.
  *
  * The designed permanent state until the sibling sensory presentation owners
- * exist (romantic-contact-affordances.spec.effects.md §3): a tactile, olfactory,
- * or gustatory candidate is a pure/diagnostic result, never a presented cue.
+ * exist: a tactile, olfactory, or gustatory candidate is a pure/diagnostic
+ * result, never a presented cue.
  * Reported so the withheld volume is measurable, not because anything degraded.
  */
 export const CONTACT_CHANNEL_UNROUTED = "contact.channel_unrouted";

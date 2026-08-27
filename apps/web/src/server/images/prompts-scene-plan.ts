@@ -63,7 +63,7 @@ export interface SceneRenderPlan {
   lighting: string;
   mood: string;
   /**
-   * Where the camera stands (scene-composition.plan.md slice 1). REQUIRED, and defaulted
+   * Where the camera stands. REQUIRED, and defaulted
    * rather than optional: an absent camera is the state the whole plan exists to end, so
    * every plan states one and `DEFAULT_SCENE_CAMERA` is what "nothing moved it" looks like.
    * The render layer emits no shot line for the default, keeping today's prompts unchanged.
@@ -141,7 +141,7 @@ export function scrubPlayerFromAction(action: string, opts: { embodied?: boolean
 
 /**
  * Skin-colour words an image model paints as COSMETICS, not physiology
- * (scene-pov-embodiment.plan.md slice 0, owner report): "flushed"/"blushing" comes
+ * (owner report): "flushed"/"blushing" comes
  * back as stage blusher — a clown-makeup face. Deliberately the state-language
  * family only; `skin.undertone: rosy` is an *authored identity attribute* and is
  * never scrubbed (the registry is the author's intent, not the composer's slip).
@@ -413,7 +413,7 @@ function groundViewerBody(
 }
 
 // ---------------------------------------------------------------------------
-// Camera and staging (scene-composition.plan.md slices 1–3)
+// Camera and staging
 // ---------------------------------------------------------------------------
 
 /**
@@ -619,7 +619,7 @@ function resolveSceneStaging(
     );
     return undefined;
   }
-  // A provenance-carrying fact beats a prose quote (spec §Committed-state mapping): a
+  // A provenance-carrying fact beats a prose quote: a
   // staging earns its shot from narration, and committed state outranks narration — so a
   // committed facing or posture-derived height that contradicts the geometry the entry
   // stages refuses the whole entry rather than letting its camera overwrite the fact.

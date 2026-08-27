@@ -5,12 +5,11 @@ import { regardBandMidpoint } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { characterChats, characterChatState, characters, chatScenarioPresets, db } from "@/server/db";
 
-// Scenario-presets integration suite (character-chat-standalone.spec.md §1.5):
-// the /api/chat-presets CRUD handlers plus the create-a-chat-with-presetId
-// seeding path (POST /api/chats writes the new conversation's state row from the
-// preset exactly the way the scenario modal would). Invoked directly with mocked
-// auth against DATABASE_URL; AI_FAKE keeps everything provider-free. Self-skips
-// when the database is unreachable.
+// Scenario-presets integration suite: the /api/chat-presets CRUD handlers plus
+// the create-a-chat-with-presetId seeding path (POST /api/chats writes the new
+// conversation's state row from the preset exactly the way the scenario modal
+// would). Invoked directly with mocked auth against DATABASE_URL; AI_FAKE keeps
+// everything provider-free. Self-skips when the database is unreachable.
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Preset Int", role: "admin" as const },
@@ -77,7 +76,7 @@ afterAll(async () => {
   await endTestPool();
 });
 
-describe.runIf(ready)("chat-presets CRUD (spec §1.5)", () => {
+describe.runIf(ready)("chat-presets CRUD", () => {
   it("creates, lists (round-tripping every field), and deletes a preset", async () => {
     const res = await presetCreate(
       createReq({
@@ -147,7 +146,7 @@ describe.runIf(ready)("chat-presets CRUD (spec §1.5)", () => {
   });
 });
 
-describe.runIf(ready)("POST /api/chats with presetId — scenario seeding (spec §1.5)", () => {
+describe.runIf(ready)("POST /api/chats with presetId — scenario seeding", () => {
   it("seeds the new conversation's state row from the preset's full record (bands + texture)", async () => {
     const created = await presetCreate(
       createReq({
@@ -174,7 +173,7 @@ describe.runIf(ready)("POST /api/chats with presetId — scenario seeding (spec 
     );
     const { id: chatId } = await expectJson<{ id: string }>(chatRes, 201);
 
-    // The chat-wide half seeds the SCENARIO on the chat row (followups ruling 8)…
+    // The chat-wide half seeds the SCENARIO on the chat row…
     const [scenario] = await db()
       .select({ premise: characterChats.premise, activeSocialCards: characterChats.activeSocialCards })
       .from(characterChats)
@@ -197,7 +196,7 @@ describe.runIf(ready)("POST /api/chats with presetId — scenario seeding (spec 
     expect(state?.outfit).toBe("an oversized flannel shirt");
     expect(state?.outfitExposed).toBe(false);
     expect(state?.regard).toBe(regardBandMidpoint("friendly")); // never the raw band string
-    // The texture rides too (followups ruling 4).
+    // The texture rides too.
     expect(state?.relationshipRecord).toMatchObject({ kind: "ski-trip acquaintances" });
   });
 

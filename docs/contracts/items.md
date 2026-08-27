@@ -54,7 +54,7 @@ Implemented once in `items/visibility.ts` (`resolveWardrobeVisibility` for the o
 `exposedRegions` → `RegionExposure` for per-region bare/sheer/covered, plus the shared
 `FULLY_COVERED` constant and `intimateRegionsBare` predicate), and used by the chat prompt builders,
 the chat state extraction, image prompts, and the UI. The **character-chat lane** feeds it via
-`resolveChatWardrobe` (`server/engine/chat-wardrobe.ts`, chat-wardrobe-parity 2026-07-14): the
+`resolveChatWardrobe` (`server/engine/chat-wardrobe.ts`, 2026-07-14): the
 chat's worn item ids run through `exposedRegions` for coverage-computed exposure and
 `wardrobeOutfitText` for the rendered garment phrase ([../character-chat/state.md](../character-chat/state.md)
 §Wardrobe). The pure garment-phrase matcher + worn-list reducer the chat archivist's add/remove
@@ -280,8 +280,7 @@ regions as evidence.
 
 The vocabulary and persisted shape live here because the wardrobe owns coverage;
 the **derivation** is the affordance layer's, because it needs current
-saturation-dependent opacity (`contracts/affordances/domains/garment` —
-`body-attribute-affordances.spec.garment-interaction.md`).
+saturation-dependent opacity (`contracts/affordances/domains/garment`).
 One direction only: items never import affordances.
 
 Two rules worth knowing:

@@ -14,7 +14,7 @@ import type { NarrationShapeId } from "./constants";
 import { UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * The narrator charter (presentation-charter.plan.md slice 1): the lane-AGNOSTIC craft
+ * The narrator charter: the lane-AGNOSTIC craft
  * law shared by BOTH narrator lanes — the legacy character-chat narrator and the
  * successor (simulated-world) narrator. Each unit is a small pure function (or const)
  * that renders one piece of the rulebook from explicit params, never from a whole
@@ -35,7 +35,7 @@ import { UNTRUSTED_DATA_NOTICE } from "./untrusted";
  */
 
 // ---------------------------------------------------------------------------
-// The replaceable-instruction seam (narrator-prompt-lab.plan.md slice 1)
+// The replaceable-instruction seam
 // ---------------------------------------------------------------------------
 
 /**
@@ -118,7 +118,7 @@ function renderProduction(nodes: readonly NarratorPromptNode[]): string {
  * has: intimate anatomy is still gated per character by realizeBody, so
  * this never invents anatomy a character lacks.
  */
-// Scoped since character-fidelity slices 1–2: the old universal "every character
+// Scoped: the old universal "every character
 // is a fictional adult" flattened authored minors into adult voices (and directly
 // contradicted "You are 12."). Adulthood now attaches to intimate-content
 // PARTICIPANTS; a minor primary flips to the hard romance-out-of-scope frame, and
@@ -139,8 +139,8 @@ export const ENSEMBLE_MINOR_CAST_LINE =
   "Some characters in this cast are minors: they are part of the story's world, never of its romance — no romantic, flirtatious, or sexual content involves them, and intimate scenes between adult characters never include or reference them.";
 
 /**
- * The content-integrity fence, as a node. `runtime_invariant` in BOTH arms and
- * for a reason the plan states as product law (§4): the minor/content fences are
+ * The content-integrity fence, as a node. `runtime_invariant` in BOTH arms, and
+ * that is product law: the minor/content fences are
  * required independently of prose style, so no handwritten experiment can reach
  * them. The adult framing is equally unreplaceable — it licenses the territory a
  * custom prompt is most likely to be written for.
@@ -155,7 +155,7 @@ export function untrustedDataNoticeNode(): NarratorPromptUnit {
 }
 
 /**
- * The binding life-stage register block (character-fidelity slice 2): rendered only
+ * The binding life-stage register block: rendered only
  * for bands that carry rules (child/teen/elder). Authored-age-keyed, so it lives in
  * the stable prefix. Second person for the 1-on-1 lane; the ensemble sheets render
  * the third-person variant via `lifeStageSheetLines`.
@@ -302,8 +302,8 @@ export function narratorCameraNode({
 }
 
 /**
- * The "Reading the player's message" perception block (player-input-perception.plan.md
- * slice 1 — the input side): quoted text is heard, unquoted narration is seen only where
+ * The "Reading the player's message" perception block (the input side): quoted
+ * text is heard, unquoted narration is seen only where
  * visible, interiority reaches no one (no mind-reading), a no-quotes message degrades
  * gracefully to speech, with one worked example (these narrators respond better to a
  * concrete example than to three abstract rules).
@@ -335,7 +335,7 @@ export function readingPlayerMessageNode(args: { characterName: string; player: 
 // ---------------------------------------------------------------------------
 
 // Legacy rule 3 provenance:
-// Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 1 — rollback: restore this line):
+// Pre-2026-07-10 wording (rollback: restore this line):
 // `${name}'s spoken dialogue always goes in quotes. The [${name}] tag is optional in this one-on-one conversation — the app attributes ${name}'s dialogue automatically — so reach for it only when who is speaking would genuinely be unclear; a plain quoted line, e.g. "It's good to see you.", is read as ${name}'s. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Incidental people in the scene (a passing waiter, a voice on the phone) may speak too — give them their line inside the narration with a plain attribution (the waiter asks if you've decided), never a [bracketed] tag; bracketed tags belong to ${name} alone.`
 // 2026-07-10 tightening (Fly screenshot): "reach for the tag only when who is speaking is
 // unclear" let the model judge clarity like a reader, but the attribution is mechanical —
@@ -370,7 +370,7 @@ export function attributionTagNode(args: { characterName: string; player: string
 }
 
 /**
- * The "Message notation" legend (player-input-perception.plan.md slice 4 — the optional
+ * The "Message notation" legend (the optional
  * sigil grammar): quotes = speech, `*…*` = thought (or a text when `Name:`-shaped),
  * `_…_` = italics only, `((…))` = OOC to the storyteller, and the house reversal of the
  * RP "asterisks = actions" habit (unquoted prose is the action channel here). It also
@@ -510,8 +510,8 @@ export function naturalDialogueNode(args: { characterName: string }): NarratorPr
 }
 
 /**
- * The per-shape length story for the "Shaping each reply" block
- * (narrator-prompt-consolidation.plan.md slice 2). The old unconditional
+ * The per-shape length story for the "Shaping each reply" block.
+ * The old unconditional
  * "about three paragraphs" baseline (owner-instructed 2026-07-09) contradicted
  * `aggressive_concise`'s "as few sentences as it honestly needs" in rule 5 —
  * concrete beats vague, so the baseline quietly re-established a floor the
@@ -529,7 +529,7 @@ export function chatLengthStory(shape: NarrationShapeId, name: string): string {
 }
 
 /**
- * The dominance-keyed forward-move clause (character-fidelity slice 5): dominance decides
+ * The dominance-keyed forward-move clause: dominance decides
  * who owns the one forward move — a dominant character takes it and sets the terms; a
  * submissive one gives ground and follows the lead. Neutral ⇒ "" (no clause). Appended to
  * the "Resolve, then one move" bullet.
@@ -543,8 +543,7 @@ function forwardMoveClause(dominance: number, player: string): string {
 }
 
 /**
- * The "Shaping each reply" block (deliverable A / narrator-prompt-consolidation slice 2):
- * the resolve-then-one-move bullet (with the dominance-keyed forward-move clause), the
+ * The "Shaping each reply" block: the resolve-then-one-move bullet (with the dominance-keyed forward-move clause), the
  * two-ending worked example, the per-shape length story (`chatLengthStory`), and the
  * freshness rule.
  */
@@ -562,12 +561,12 @@ export function shapingBlock({
   const name = characterName;
   return [
     "Shaping each reply (how much to give, and how to land it):",
-    // Absorbs the retired rule 8 (chat-agent-improvements slice 5): "respond directly to what
+    // Absorbs the retired rule 8: "respond directly to what
     // ${name} just heard and saw before adding anything new" said exactly this bullet's first
     // clause, one rule block earlier and without the "then what?" the bullet supplies.
     `- Resolve, then one move. FIRST answer what ${name} just heard and saw — that comes before anything new enters the reply; then make AT MOST ONE forward move — an action or gesture ${player} can react to, an offer, a disclosure, a shift in the scene — or a question, but only when ${name} genuinely wants that answer right now. Never stack moves; never answer-then-ask-then-act in one reply; vary how replies end so they don't all close the same way.${forwardMoveClause(dominance, player)}`,
     `- Worked example, two endings: ${player} mentions they quit their job today — here a question IS the move: ${name} looks up, "You actually did it. What did they say when you told them?" — ${name} genuinely wants the answer, so the question earns its place. But when ${player} finally kisses ${name} after weeks of circling it, ending on "Was that okay?" is filler that kills the beat — the move is an action hook instead: ${name} pulls them back in without a word. Match the ending to the moment; never default to a question.`,
-    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 2 — the unconditional
+    // Pre-2026-07-10 wording (the unconditional
     // three-paragraph baseline contradicted the aggressive_concise profile in rule 5; the length
     // story is now per-shape via chatLengthStory. Rollback: restore this line, drop the call):
     // `- Baseline shape: about three paragraphs — an opening beat, ${name}'s line or action, and a paragraph or two to land the turn. Run longer ONLY when it earns it: establishing a brand-new scene, or a genuinely major event. Ordinary small talk stays lean — ${name}'s line plus a beat can be the whole reply.`,

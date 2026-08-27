@@ -99,14 +99,13 @@ import {
 } from "./prompts/constants";
 
 /**
- * THE COMMON NPC REPLY-SCENE DECISION LEG — the shadow wiring of
- * romantic-contact-affordances.spec.actor-control.md (delivery-order step 3):
+ * THE COMMON NPC REPLY-SCENE DECISION LEG — the shadow wiring:
  * one classifier call per persisted nonempty assistant reply across EVERY
  * included reply kind, an authoritative post-settle presence cut, and NO new
  * authority — shadow evaluates and records, it never changes the scene beyond
  * what the frozen floor already does today.
  *
- * The leg runs in two halves around settlement, matching the spec's execution
+ * The leg runs in two halves around settlement, matching its execution
  * order ("launch the single classifier call concurrently with normal
  * post-reply settlement; resolution waits for the post-settle cut"):
  *
@@ -162,7 +161,7 @@ export const NPC_SCENE_DECISION_SCHEMA_VERSION = 1;
 /** The one leg id every diagnostic/telemetry row of the classifier call files under. */
 const CLASSIFY_LEG_ID = "npc_scene_decision.classify";
 
-/** The envelope-level degradation code (spec §"Diagnostics"). */
+/** The envelope-level degradation code. */
 export const NPC_SCENE_DECISION_DEGRADED = "npc_scene_decision.degraded";
 
 // ---------------------------------------------------------------------------
@@ -172,9 +171,9 @@ export const NPC_SCENE_DECISION_DEGRADED = "npc_scene_decision.degraded";
 /**
  * Which decision mode this exchange runs under, or `null` for "the leg does
  * not exist" (both flags off ⇒ the legacy reply-side ending block runs
- * byte-identically). Authority wins when both flags are on (spec §"Execution,
- * flags, and cost gate"); note the authority flag is itself effective only
- * with `CHAT_CONTACT_ACTIONS=on` (`chatNpcSceneDecisionsEnabled`).
+ * byte-identically). Authority wins when both flags are on; note the authority
+ * flag is itself effective only with `CHAT_CONTACT_ACTIONS=on`
+ * (`chatNpcSceneDecisionsEnabled`).
  */
 export function chatNpcSceneDecisionMode(): NpcSceneDecisionMode | null {
   if (chatNpcSceneDecisionsEnabled()) return "authority";
@@ -187,9 +186,9 @@ export function chatNpcSceneDecisionMode(): NpcSceneDecisionMode | null {
 // ---------------------------------------------------------------------------
 
 /**
- * The trigger's verb-stem lexicon — deliberately BROAD AND SLOPPY (spec §"The
- * fence": "the trigger may use a broader verb-stem list because it controls
- * cost, not authority"). Prefix-matched, so `step` covers steps/stepped/
+ * The trigger's verb-stem lexicon — deliberately BROAD AND SLOPPY, because it
+ * controls cost rather than authority and so may use a broader verb-stem list
+ * than the floor. Prefix-matched, so `step` covers steps/stepped/
  * stepping. It is a SUPERSET of the frozen floor's withdraw/separate verbs and
  * of every congruence lexicon, so a sentence the floor or the verifiers could
  * act on can never be a trigger miss; the false positives it also admits cost
@@ -280,8 +279,8 @@ function firstNameOf(name: string): string {
  *
  * Roster naming is deliberately presence-AGNOSTIC: previously-away members
  * remain in the digest precisely so an arrival narrated in THIS reply can be
- * classified (spec §"Compact digest and stable references"), and a trigger
- * that required pre-settle presence would miss exactly those replies. Misses
+ * classified, and a trigger that required pre-settle presence would miss
+ * exactly those replies. Misses
  * are measured — the durable `trigger_miss` tombstone is the metric — and
  * never cause fallback extraction.
  */
@@ -339,9 +338,8 @@ export interface NpcSceneClassifierResult {
  * JSON Schema cannot express, and the slot-independent contract parser
  * (`parseNpcSceneDecisionOutput`) is the ONE judge of shape: a schema strict
  * enough to reject a malformed slot here would erase its valid sibling and
- * launder "malformed" into "degraded", which the durable slot trace forbids
- * (spec §"Closed decision schema"). The closed schema reaches the model
- * through the system prompt instead.
+ * launder "malformed" into "degraded", which the durable slot trace forbids.
+ * The closed schema reaches the model through the system prompt instead.
  */
 const classifierTransportSchema = z.record(z.string(), z.unknown());
 
@@ -428,7 +426,7 @@ function launchNpcSceneClassifier(input: {
 
 /**
  * The envelope's telemetry for one classifier outcome, with the spend figures
- * the cost gate reads (spec §"Execution, flags, and cost gate").
+ * the cost gate reads.
  *
  * Every spend field is OMITTED when unknown rather than defaulted to zero: the
  * gate treats them as measurements, and a zero would report an unmeasured call
@@ -622,9 +620,9 @@ export function admitNpcSceneDecision(input: NpcSceneDecisionAdmissionInput): Np
           );
           return "parsed";
         }
-        // Presence precedence (spec §"Authoritative post-settle cut"): a
-        // participant not present in the POST-settle cut cannot act or be a
-        // target — no name, pre-settle presence, or model output rescues them.
+        // Presence precedence: a participant not present in the POST-settle cut
+        // cannot act or be a target — no name, pre-settle presence, or model
+        // output rescues them.
         const away = candidateParticipantRefs(candidate).filter((ref) => !present.has(ref));
         if (away.length > 0) {
           pushDrop(
@@ -841,9 +839,9 @@ export function emptyChatNpcSceneSettleReport(): ChatNpcSceneSettleReport {
  * state fan-out, so the classifier races settlement.
  *
  * The reuse check comes FIRST — before any classifier spend — and an existing
- * envelope is never reclassified, whatever the current flags say (spec
- * §"Durable decision envelope and transaction"). An existing envelope whose
- * `reply_hash` does not match the persisted bytes is a foreign tombstone the
+ * envelope is never reclassified, whatever the current flags say. An existing
+ * envelope whose `reply_hash` does not match the persisted bytes is a foreign
+ * tombstone the
  * retake prune should have removed: it files a warn and the leg still does
  * nothing, because a second opinion under the same key would only die on
  * predicate 3.
@@ -970,10 +968,9 @@ const npcSceneWardrobeRowSchema = z.object({
 
 /**
  * Every body's material answer at the POST-settle garment cut — the read a
- * contact start's two-sided material composes (actor-control spec
- * §"Authoritative post-settle cut": "current garment store and per-actor
- * coverage"; §"Resolution laws → Contact start": "the read uses the reloaded
- * post-settle garment cut, never the pre-settle scenario").
+ * contact start's two-sided material composes. It is the current garment store
+ * and per-actor coverage taken from the RELOADED post-settle garment cut, never
+ * from the pre-settle scenario.
  *
  * Reloaded, not carried. `finalizeChatState`, the per-member settle, and the
  * ensemble garment reconcile all rewrite the wardrobe AFTER the digest was cut,
@@ -1273,8 +1270,8 @@ async function finishLive(
       const parsed = parseNpcSceneDecisionOutput(handle.digest, result.raw);
       if (parsed.status === "malformed_envelope") {
         // No slots to save — "malformed output" is a degraded tombstone by
-        // ruling (spec §"Execution, flags, and cost gate"); the issues live in
-        // the diagnostic, the payload stays empty-slotted.
+        // ruling; the issues live in the diagnostic, the payload stays
+        // empty-slotted.
         status = "degraded";
         sink?.push(
           diag("warn", NPC_SCENE_DECISION_DEGRADED, "classifier output envelope malformed; recording a degraded tombstone", {

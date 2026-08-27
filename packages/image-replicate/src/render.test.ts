@@ -21,7 +21,7 @@ import { replicatePredictionTarget, type ReplicateImageResult } from "./predicti
 /**
  * The transport's cases, as CONFIG cases rather than environment cases: the
  * package reads no `process.env`, so a deployment posture is something a test
- * constructs and hands to `createReplicateClient` (spec.replicate.md §Tests).
+ * constructs and hands to `createReplicateClient`.
  */
 
 afterEach(() => {
@@ -222,7 +222,7 @@ describe("per-call deadlines", () => {
 
 describe("control input overlay", () => {
   it("merges mapped fields over the built payload, later winning", () => {
-    // The capabilities spec's merge order: model `extraInput` first, the
+    // The capability merge order: model `extraInput` first, the
     // profile's resolved controls after it.
     const built = buildInput(model({ extraInput: { guidance_scale: 3 } }), "p", [], "3:4");
     const merged = overlayControlInput(built, { guidance_scale: 7, negative_prompt: "blurry" }, model());
@@ -706,7 +706,7 @@ describe("runRegistryImageModel", () => {
   });
 
   it("prefers the request's own prediction budget over the configured default", async () => {
-    // The capabilities spec's order: profile timeout, then the deployment's.
+    // The capability resolution order: profile timeout, then the deployment's.
     expect(await predictionRequest({ timeoutMs: 90_000 }, { predictionTimeoutMs: 600_000 })).toMatchObject({
       headers: { "Cancel-After": "90s" },
     });

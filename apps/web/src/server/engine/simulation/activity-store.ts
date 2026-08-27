@@ -92,7 +92,7 @@ import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 /**
  * E3.2 durable activity authority. Action definitions are branch-scoped
  * authored data; activity rows are event-projected state whose claims are
- * derived, never separately stored (spec §16.3).
+ * derived, never separately stored.
  */
 
 export interface ActivityStoreOptions {
@@ -265,7 +265,7 @@ async function loadCoLocatedActorIds(
 }
 
 /**
- * E5.5 slice 2 (§5.8, §21.4): the (target → actor) directional ledger slice
+ * E5.5 slice 2: the (target → actor) directional ledger slice
  * a `consent_covered` precondition reads — narrowed to the three
  * consent-relevant kinds at the SQL layer, never the whole ledger.
  */
@@ -290,7 +290,7 @@ async function loadConsentDyadLedgerEntries(
 }
 
 // ---------------------------------------------------------------------------
-// §26.5–26.6 material facts — loaded here rather than through
+// Material facts — loaded here rather than through
 // material-store.ts's whole-branch `loadMaterialResolutionView` because both
 // call sites already know exactly which items they need (the definition's
 // requested kinds at start, the activity's own reservation at completion),
@@ -301,7 +301,7 @@ async function loadConsentDyadLedgerEntries(
 // ---------------------------------------------------------------------------
 
 /**
- * §26.5 start-time eligibility: extant items whose `materialKindKey` matches
+ * Start-time eligibility: extant items whose `materialKindKey` matches
  * one of the definition's requested resource costs, joined to their current
  * holding locus. Scoped to the requested kinds — never the whole branch's
  * item graph — so a start with no `resourceCosts` issues no query at all.
@@ -330,7 +330,7 @@ async function loadMaterialItemsByKind(
 }
 
 /**
- * §26.5–26.6 completion-time re-validation + consumption: exactly the
+ * Completion-time re-validation + consumption: exactly the
  * activity's own reserved items (bounded by its resource costs, at most
  * 4 costs × 8 quantity) — never the whole branch.
  */
@@ -471,7 +471,7 @@ export async function submitDurableStartActivity(
         ? await loadCoLocatedActorIds(tx, branch.id, zoneRow.zoneId, [command.payload.actorId])
         : [];
 
-      // E5.5 slice 2 (§5.8): the consent-coverage pre-check — resolved here,
+      // E5.5 slice 2: the consent-coverage pre-check — resolved here,
       // BEFORE `resolveStartActivity`, into a plain boolean the pure resolver
       // consumes (mirrors `heldClaims`/`coLocatedActorIds` already being
       // pre-resolved facts, not live queries). Only queried when the
@@ -498,7 +498,7 @@ export async function submitDurableStartActivity(
             })
           : false;
 
-      // §26.5: eligibility scoped to the definition's requested material
+      // Eligibility scoped to the definition's requested material
       // kinds (a no-cost definition issues no query at all), and the live
       // reservation index built from the claim-holding activities already
       // loaded above for the claims check — no second query needed.
@@ -597,8 +597,8 @@ export async function submitDurableCompleteActivity(
         ? await loadCoLocatedActorIds(tx, branch.id, activity.zoneId, activity.actorIds)
         : [];
 
-      // §26.5 fire-time re-validation needs every reserved item (bounded by
-      // the activity's own reservation, never the whole branch). §26.6's
+      // Fire-time re-validation needs every reserved item (bounded by the
+      // activity's own reservation, never the whole branch). The consumption's
       // trailing body effects need the consuming actor's body ONLY when the
       // captured definition still names a consume-disposition cost — and
       // only when that body is actually initialized (an uninitialized body
@@ -621,7 +621,7 @@ export async function submitDurableCompleteActivity(
         ? loadedBodyView
         : undefined;
 
-      // §26.7: learn — BEFORE calling the resolver — exactly which reserved
+      // Learn — BEFORE calling the resolver — exactly which reserved
       // items will receive a use-condition delta this completion, so any
       // never-touched (LAZY init) ones among them get an `item_condition_
       // initialized` event built and sequenced ahead of `activity_completed`
@@ -689,14 +689,14 @@ export async function submitDurableCompleteActivity(
       );
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
-      // §26.5–26.7: walk the resolved events in order, applying each one's
-      // side effect right after appending it — the collapse-store multi-
-      // write idiom (body-store.ts's `submitDurableResolveBodyCollapse`).
+      // Walk the resolved events in order, applying each one's side effect
+      // right after appending it — the collapse-store multi-write idiom
+      // (body-store.ts's `submitDurableResolveBodyCollapse`).
       // A meter's stale alarm is retired the moment its `body_source_applied`
       // lands, strictly before that same meter's re-arm `trigger_scheduled`
-      // (its very next entry in the array) gets applied below. Any §26.7
-      // lazy-init events precede everything else — they were sequenced ahead
-      // of `activity_completed` itself, above.
+      // (its very next entry in the array) gets applied below. Any
+      // item-condition lazy-init events precede everything else — they were
+      // sequenced ahead of `activity_completed` itself, above.
       const allEvents: (ItemConditionInitializedEvent | CompleteResolution["events"][number])[] = [
         ...conditionInitEvents,
         ...resolution.events,
@@ -912,8 +912,8 @@ export async function submitDurableCancelActivity(
         .returning({ activityInstanceId: simActivities.activityInstanceId });
       if (!updated) throw new Error("Locked activity changed before its cancellation update");
 
-      // Retire the pending completion trigger in the same transaction (spec
-      // §11.1 step 10) so it can never fire against the cancelled activity.
+      // Retire the pending completion trigger in the same transaction so it
+      // can never fire against the cancelled activity.
       // Prefix-matched: a resumed activity's alarm carries an attempt-
       // versioned key the un-versioned key is a strict prefix of (E5.2).
       await tx

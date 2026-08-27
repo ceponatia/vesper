@@ -4,8 +4,7 @@ import { defineImageModel, type ImageModelQuirk } from "./composer";
 import type { ImageFeature } from "./features";
 
 /**
- * The composer's merge contract (image-model-adapters.spec.md §"Composer and
- * Qwen family").
+ * The composer's merge contract.
  *
  * Two defects are worth a permanent test here, and both are silent:
  *

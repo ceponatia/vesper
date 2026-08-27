@@ -13,9 +13,9 @@ import {
 } from "@/contracts";
 
 /**
- * SLICE-6 MEASUREMENT (visual-state.plan.md §Slice 6): missing-owner frequency,
- * duplicate facts, and disagreement with the current summaries the audit
- * catalogued — computed from one shadow build, surfaced as one structured log
+ * SLICE-6 MEASUREMENT: missing-owner frequency,
+ * duplicate facts, and disagreement with the current summaries — computed from
+ * one shadow build, surfaced as one structured log
  * line per shadowed turn and recomputed on demand by the inspector. Nothing
  * here is persisted; accumulation happens over the deploy's log stream, which
  * is the same place every other turn measurement already lands.

@@ -13,7 +13,7 @@ import {
 } from "@/contracts";
 
 /**
- * Sheet-fill merge policy (character-sheet-forge.plan.md): the in-sheet Forge
+ * Sheet-fill merge policy: the in-sheet Forge
  * completes a partially-authored character WITHOUT overwriting anything already
  * entered. Pure and shared — the server applies it as the authoritative
  * post-generation filter (prompt discipline is an optimization; this merge is
@@ -24,7 +24,7 @@ import {
  * - free-text scalars (name, bio, personality, voice, age): non-empty ⇒ fixed,
  *   whoever wrote them — predictable beats clever. The per-tab Re-draft is the
  *   tool that rewrites text.
- * - microExemplars (character-fidelity slice 6): all-or-nothing like the outfit —
+ * - microExemplars: all-or-nothing like the outfit —
  *   worked voice examples are a coherent set, so any authored row keeps them all
  *   and generation only fills a blank slot.
  * - lists (library tags, disposition tags, aliases): additive — existing
@@ -43,13 +43,13 @@ import {
  * - outfit cluster (defaultOutfit + suggestedItems): all-or-nothing — an
  *   outfit is a coherent set, so any authored garment keeps the whole cluster
  *   (no generated extras that double up coverage).
- * - schedule: all-or-nothing like the outfit (chat-initiative.plan.md slice 4)
- *   — a daily rhythm is one coherent day, and an additive union could stack
- *   overlapping windows; any authored row keeps the whole set.
- * - playerRelationship (forge-gaps.plan.md gap 1): adopted from the generated
+ * - schedule: all-or-nothing like the outfit — a daily rhythm is one coherent
+ *   day, and an additive union could stack overlapping windows; any authored row
+ *   keeps the whole set.
+ * - playerRelationship: adopted from the generated
  *   draft only while the base's is still the untouched default — any authored
  *   band, text, or mask freezes the whole record (mirrors the species cluster).
- * - socialCards (gap 2): additive, deduped by normalized label — authored
+ * - socialCards: additive, deduped by normalized label — authored
  *   cards never change; generated ones append.
  */
 
@@ -174,12 +174,12 @@ export function mergeFillDraft<T extends FillableDraft>(base: T, incoming: Filla
       bio: keepText(base.profile.bio, incoming.profile.bio),
       personality: keepText(base.profile.personality, incoming.profile.personality),
       voice: keepOptionalText(base.profile.voice, incoming.profile.voice),
-      // Intimate disposition (intimacy-notes.spec.md): a free-text scalar like voice —
+      // Intimate disposition: a free-text scalar like voice —
       // an authored note is fixed; a blank one takes the generated one.
       intimacy: keepOptionalText(base.profile.intimacy, incoming.profile.intimacy),
       microExemplars:
         base.profile.microExemplars.length > 0 ? base.profile.microExemplars : incoming.profile.microExemplars,
-      // Voice anchors (character-fidelity slice 7): all-or-nothing like the outfit — any
+      // Voice anchors: all-or-nothing like the outfit — any
       // authored anchor keeps the whole authored block, else take the generated one.
       voiceAnchors: hasVoiceAnchors(base.profile.voiceAnchors) ? base.profile.voiceAnchors : incoming.profile.voiceAnchors,
       age: keepText(base.profile.age, incoming.profile.age),

@@ -10,7 +10,7 @@ import type { ClothingLayer } from "./item";
  * HARD RULE: category names never enter gameplay prompts. The narrator and
  * state agents see only the item's name, description, and resolved coverage —
  * a "top" edited into a tank top must read as sleeveless, not as whatever the
- * template name suggests (docs/prompts.md).
+ * template name suggests (docs/character-chat/prompts.md).
  *
  * Straddling garments pick the closest coverage match and adjust: an abaya is
  * `dress` with an outer layer, not `outerwear`.

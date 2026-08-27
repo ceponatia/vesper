@@ -10,7 +10,7 @@ import type { GarmentAffordanceFrame } from "./frame";
 
 /**
  * Stage 4 — effective opacity plus authored coverage produce the final
- * `EffectiveCoverageRead` (spec.garment-interaction.md §"Resolution order" step 4).
+ * `EffectiveCoverageRead`.
  *
  * This is the ONE place the answer is computed. `garment.effective_opacity`
  * projects a semantic band from the same mechanics, and the lane CAPTURES this

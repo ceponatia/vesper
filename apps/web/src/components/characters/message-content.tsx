@@ -5,7 +5,7 @@ import { parseEmphasisRuns, type MessageSpanContext } from "@/lib/message-spans"
 import { messageRenderModel, type RenderPiece } from "./message-markup";
 
 /**
- * The chat transcript span renderer (player-input-perception.plan.md slice 5), applied
+ * The chat transcript span renderer, applied
  * to both player messages and narrator replies. Thoughts / `_italic_` render italic with
  * their sigils hidden, `*Name:*` comms read as a text message (label visible, body
  * italic), and `((OOC))` gets an out-of-fiction amber aside. Everything else (speech

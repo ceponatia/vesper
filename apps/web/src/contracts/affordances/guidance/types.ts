@@ -2,9 +2,7 @@ import type { Diagnostic } from "../../diagnostics";
 import type { AffordanceEvidence, AffordanceSubjectId } from "../core";
 
 /**
- * Narrator physical guidance — the shared candidate surface
- * (narrator-physical-guidance.plan.md §Architecture 2; the as-built contracts
- * are recorded in narrator-physical-guidance.spec.md).
+ * Narrator physical guidance — the shared candidate surface.
  *
  * This layer is a PROJECTION and an action-result carrier, never a second
  * physics engine. Domains and resolvers own physical truth and emit stable ids,
@@ -118,7 +116,7 @@ export interface PhysicalNarrationConstraint extends GuidanceCandidateShape {
  */
 export interface PhysicalPremiseCorrection extends GuidanceFingerprinted {
   readonly id: string;
-  /** Which input authority produced the claim (plan §Architecture 3). */
+  /** Which input authority produced the claim. */
   readonly source: "player_dialogue" | "ordinary_player_narration";
   readonly claimCode: string;
   readonly verdict: "contradicted" | "unsupported";
@@ -184,8 +182,8 @@ export interface GuidanceCandidates {
 }
 
 /**
- * The compiled result. Array order encodes the plan's selection order
- * (§Architecture 6): mandatory action outcomes, then corrections, then
+ * The compiled result. Array order encodes the selection order: mandatory
+ * action outcomes, then corrections, then
  * constraints, then at most one transition. `diagnostics` explains what was
  * withheld or dropped and is debug output — it never reaches a prompt.
  */

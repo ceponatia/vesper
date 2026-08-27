@@ -13,8 +13,7 @@ import {
 } from "@vesper/image-core";
 
 /**
- * PURE. The Image Generator's run contracts
- * (image-lab-general-model-trials.spec.md §"Generator run contracts").
+ * PURE. The Image Generator's run contracts.
  *
  * The Generator is the raw prompt/model bench: one run is one immutable paid
  * attempt against one registered model, with the admin's whole prompt and every

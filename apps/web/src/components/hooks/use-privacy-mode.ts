@@ -23,7 +23,7 @@ function persistPrivacyMode(value: boolean): void {
 }
 
 /**
- * Privacy mode (mobile-ux.plan.md ruling 4): a client-side toggle that makes the
+ * Privacy mode: a client-side toggle that makes the
  * chat screen safe to have open around company — hides the standing portrait,
  * swaps the header/feed avatars for a first-initial monogram, and hides scene
  * imagery entirely. Persisted in localStorage, default OFF.

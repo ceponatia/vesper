@@ -52,7 +52,7 @@ export interface AttemptEntryResolutionView extends AccessBranchMeta {
   destinationZone?: SimulationZone;
   /**
    * The actor's WELL-FORMED grants only: the store drops malformed rows
-   * before this view is built, so bad data denies rather than admits (§13.1).
+   * before this view is built, so bad data denies rather than admits.
    */
   grants: readonly AccessGrant[];
   worldPermitsTrespass: boolean;
@@ -84,7 +84,7 @@ function entryRejection(
 }
 
 /**
- * Resolve one threshold crossing (§14.1): a route ends at the doorstep; this
+ * Resolve one threshold crossing: a route ends at the doorstep; this
  * separate validated action carries the actor through the private door — by
  * right, by grant, or (where the world type permits) by explicit witnessed
  * force that never auto-succeeds against a person, only a barrier.
@@ -133,7 +133,7 @@ export function resolveAttemptEntry(
   let basis: "public" | "granted" | "forced";
   if (forced) {
     if (!view.worldPermitsTrespass) {
-      // §14.3: a product restriction is stated as a rule, never disguised as
+      // A product restriction is stated as a rule, never disguised as
       // physical impossibility.
       return entryRejection(
         "trespass_not_permitted",
@@ -154,7 +154,7 @@ export function resolveAttemptEntry(
       }),
     );
     if (!admitted) {
-      // The public reason names no private cause (§14.4); the alternatives
+      // The public reason names no private cause; the alternatives
       // are the playable next moves.
       return entryRejection(
         "entry_denied",
@@ -205,7 +205,7 @@ export function resolveAttemptEntry(
 }
 
 // ---------------------------------------------------------------------------
-// Storyteller relocation (§7, ruling 4)
+// Storyteller relocation (ruling 4)
 // ---------------------------------------------------------------------------
 
 export interface StorytellerRelocationResolutionView extends AccessBranchMeta {

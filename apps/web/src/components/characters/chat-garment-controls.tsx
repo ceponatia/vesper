@@ -11,8 +11,8 @@ import {
 import type { GarmentPartControl, GarmentReadout } from "@/lib/client/api";
 
 /**
- * The chat Character sheet's garment PRESENTATION controls
- * (clothing-state-graph.plan.md slice 3). A sibling of `ChatWardrobeEditor`: that
+ * The chat Character sheet's garment PRESENTATION controls. A sibling of
+ * `ChatWardrobeEditor`: that
  * one decides *which* garments are worn, this one decides *how each is currently
  * arranged* — closures, rolls, tucks, strap/hem displacement, and putting a part
  * back the way it was.
@@ -75,8 +75,8 @@ function Pill({ on, label, onClick }: { on: boolean; label: string; onClick: () 
 }
 
 /**
- * Material state, DISPLAY ONLY (clothing-state-graph slice 4). Condition changes
- * arrive through the API — from continuity (slice 5) and from the world, never
+ * Material state, DISPLAY ONLY. Condition changes
+ * arrive through the API — from continuity and from the world, never
  * from a pill on this sheet — so this is a read of last-saved truth, in bands.
  * Renders nothing at all for a garment with nothing to report: a dry, clean,
  * unmarked shirt should not add a line to the sheet every turn.

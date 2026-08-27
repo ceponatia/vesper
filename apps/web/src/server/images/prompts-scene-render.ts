@@ -33,7 +33,7 @@ export const SCENE_POV_RULE =
   "First-person POV through the player's own eyes; the player is never visible in the image.";
 
 /**
- * The shot's framing rule (scene-pov-embodiment.plan.md slice 1) — the disembodied
+ * The shot's framing rule — the disembodied
  * form when the viewer has no body in frame, the **embodied** variant when they do.
  *
  * BOTH forms are built from positives (the "no camera" scar: a negative anchors the
@@ -157,7 +157,7 @@ function joinPhrases(items: readonly string[], conjunction: "and" | "or" = "and"
 }
 
 /**
- * The selfie framing (chat-selfies.plan.md) — the exact INVERSE of the scene POV
+ * The selfie framing — the exact INVERSE of the scene POV
  * rule: the subject's own phone camera, subject aware of the lens and composing
  * the shot. Positive phrasing only (a literal "no camera" would anchor the model
  * on cameras); a mirror shot may legitimately show the phone.
@@ -168,7 +168,7 @@ export const SELFIE_FRAMING =
 export interface SceneRenderOptions {
   /**
    * Shot framing: the default player-POV scene rule, or the selfie inversion
-   * (chat-selfies.plan.md — the subject's own camera). Applies on every route.
+   * (the subject's own camera). Applies on every route.
    */
   framing?: "pov" | "selfie";
   /**
@@ -182,7 +182,7 @@ export interface SceneRenderOptions {
   /** Uncensored route: emit exposed intimate-anatomy detail (Decision 3). Off for the moderated text-to-image fallback. */
   allowIntimate?: boolean;
   /**
-   * Multi-reference edit (spec §5): the ordered
+   * Multi-reference edit: the ordered
    * reference images fed to the provider — the present characters' avatars plus
    * the location image — so the prompt can map each image to who/what it depicts.
    * When set, builds the multi-reference composition prompt (every listed
@@ -208,9 +208,9 @@ export interface SceneMultiReference {
  * self-imposed quality bound rather than a provider constraint: 1500 is well
  * inside every current model's limit, and shorter prompts demonstrably steer
  * these models better than exhaustive ones. Untruncated garment descriptions
- * (followups.phase3.md §1) dominate the length, so a rich outfit or several
+ * dominate the length, so a rich outfit or several
  * NPCs blows the budget — buildSceneRenderPrompt shrinks the variable fields to
- * fit (followups.phase3.md §6).
+ * fit.
  */
 export const EDIT_RENDER_PROMPT_LIMIT = 1500;
 
@@ -545,7 +545,7 @@ function budgetRenderPrompt(assemble: (outfitCap: number, settingCap: number) =>
 }
 
 /**
- * Multi-reference composition prompt for the multi-reference edit rung (spec §5):
+ * Multi-reference composition prompt for the multi-reference edit rung:
  * every reference image is enumerated and its subject identity-locked, then each
  * featured character's pose/outfit/exposure is stated. Characters WITHOUT a
  * reference image (e.g. a third character beyond the 3-ref cap) fall back to a
@@ -582,7 +582,7 @@ function assembleMulti(
   if (shot) pieces.push(shot);
   pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
   pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");
-  // The cast-integrity clause (qwen-advanced-image-subsystem.spec.md, Stage 6).
+  // The cast-integrity clause (Stage 6).
   // The count assertion above already says how many people and names them; this
   // says what must not happen to them, which is a different failure. A render
   // handed two faces has three ways to go wrong a viewer notices instantly —

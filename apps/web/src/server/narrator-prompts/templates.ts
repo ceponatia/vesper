@@ -16,8 +16,7 @@ import { parseOrNull } from "@/lib/parse";
 import { characterChats, db, narratorPromptRevisions, narratorPromptTemplates } from "@/server/db";
 
 /**
- * Narrator Prompt Lab persistence — templates and their immutable revisions
- * (narrator-prompt-lab.plan.md slice 2).
+ * Narrator Prompt Lab persistence — templates and their immutable revisions.
  *
  * Every function is **owner-scoped by parameter**, never by ambient session:
  * `ownerId` is an argument, it lands in the `where` of every read and every
@@ -311,7 +310,7 @@ export async function createNarratorPromptTemplate(
 }
 
 /**
- * Save revision `baseRevision + 1` — the optimistic-concurrency path (plan §8).
+ * Save revision `baseRevision + 1` — the optimistic-concurrency path.
  *
  * The whole race is closed by step 1's **conditional UPDATE**, which is a
  * compare-and-swap: it claims `base + 1` only while the committed row still says
@@ -406,7 +405,7 @@ export async function saveNarratorPromptRevision(
 }
 
 /**
- * Branch an independent experiment (plan §6): a new template id, revision 1
+ * Branch an independent experiment: a new template id, revision 1
  * holding the source's CURRENT body and notes, `duplicated_from_id` provenance,
  * and no conversations attached.
  *
@@ -436,7 +435,7 @@ export async function duplicateNarratorPromptTemplate(
 }
 
 /**
- * Soft delete (plan §7): hide the template, and clear it from every conversation
+ * Soft delete: hide the template, and clear it from every conversation
  * of this owner currently selecting it, in ONE transaction.
  *
  * Clearing the selections is the load-bearing half. `ON DELETE SET NULL` on the

@@ -38,9 +38,7 @@ import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./
 import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
- * THE CHAT SCENE LANE'S VISUAL-DIGEST CUTOVER
- * (image-lane-consolidation.plan.md Stages 3–4; spec.prompts.md §Lane migration
- * order → Single-character scene, then multi-character scene) — the pure seam
+ * THE CHAT SCENE LANE'S VISUAL-DIGEST CUTOVER — the pure seam
  * that makes the visual image digest the character-fact source for EVERY person
  * a chat scene draws, with the plan's committed scene camera bound into the
  * selection.
@@ -110,7 +108,7 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  * segment is deliberately NOT consumed: the transport already states coverage
  * once, from the queue's canonical readout (`formatExposure`).
  *
- * ## Failure behavior (spec.prompts.md §Failure behavior)
+ * ## Failure behavior
  *
  * A failed shadow assembly, or a REQUIRED digest fact with no resolvable
  * clause, refuses the WHOLE render before provider spend — for any subject, not
@@ -311,7 +309,7 @@ export interface SceneSubjectVisualBuild {
   readonly plan: SceneRenderPlan;
   /** The merged `meta.visualState` fragment the scene row records at reserve time. */
   readonly digestMeta?: Record<string, unknown>;
-  /** Non-null refuses the render before provider spend (spec §Failure behavior). */
+  /** Non-null refuses the render before provider spend. */
   readonly refusal: string | null;
   /** Every fact a policy or the resolver excluded, and why — the degradation record. */
   readonly suppressions: readonly VisualStateSuppression[];

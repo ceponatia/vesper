@@ -21,7 +21,7 @@ export const interactionConceptSchema = z.object({
   verb: z.string().min(1),
   /**
    * Coarse affective direction of the act, regardless of who performs it — the
-   * signal the puppet guardrail (personality-and-state.spec.md §6, Note 2) reads
+   * signal the puppet guardrail reads
    * to judge whether a player-puppeted NPC behaviour clashes with disposition.
    * warm = affection/support/courtship; hostile = aggression/transgression;
    * neutral = ambiguous (e.g. teasing).
@@ -117,7 +117,7 @@ export const interactionConcepts: readonly InteractionConcept[] = [
     verb: "apologized to",
     polarity: "warm",
     // Distinct from `reassure` (comfort after distress): an apology addresses a wrong
-    // the speaker committed. The chat bruise mechanic (emotional-weather.plan.md) keys
+    // the speaker committed. The chat bruise mechanic keys
     // early forgiveness on THIS concept — comfort is not repair.
     triggers: ["I'm so sorry", "that was my fault", "I shouldn't have said that", "can you forgive me"],
     defaultHint: "",

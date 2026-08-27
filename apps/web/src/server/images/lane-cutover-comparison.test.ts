@@ -50,10 +50,9 @@ import {
 } from "./scene-subject-visual";
 
 /**
- * THE LEGACY-vs-DIGEST CUTOVER COMPARISON (image-lane-consolidation
- * spec.prompts.md §Characterization and comparison: "Comparison should
- * normalize intentional wording changes but fail on lost, duplicated, newly
- * exposed, or route-specific character facts") — the gate the spec requires
+ * THE LEGACY-vs-DIGEST CUTOVER COMPARISON: comparison normalizes intentional
+ * wording changes but fails on lost, duplicated, newly
+ * exposed, or route-specific character facts — the gate that must pass
  * before the legacy fallback assemblies can ever be removed.
  *
  * `lane-characterization.test.ts` freezes what the NEW path emits; this file
@@ -192,7 +191,7 @@ const VARIANT_DELTA: CutoverDelta = { removed: [], added: ["horns", "wings", "ta
  * What this delta deliberately does NOT list is the cataloged distinctive mark.
  * The chat SHADOW road projects none (the standalone snapshot road does), so
  * this lane states none, and the asymmetry is a measured projection fact left
- * to `visual-state.plan.md` rather than a delta to be allowlisted away here.
+ * to the visual-state projection rather than a delta to be allowlisted away here.
  * `lane-characterization.test.ts` owns the pin for it, over the marked profile
  * this fixture deliberately does not use.
  */

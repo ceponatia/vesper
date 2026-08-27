@@ -9,7 +9,7 @@ import { parseOr } from "@/lib/parse";
 import { characterChats, events, db, type Db } from "@/server/db";
 
 /**
- * R1 (engine.rollout.plan.md) — the one seam a chat's engine authority is
+ * The one seam a chat's engine authority is
  * read and flipped through. Reads pass the fail-closed boundary (a malformed
  * or missing value degrades to `legacy_chat`, never throws — resilience.md),
  * and every flip lands an audit row in the app `events` table in the same

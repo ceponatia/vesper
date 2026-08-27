@@ -35,7 +35,7 @@ import type { SimTx } from "./trigger-projector";
  * The E5.1 body ROW layer: every `sim_body_*` row mapping, the per-actor load,
  * the material-boundary meter write, and the alarm retirements — the substrate
  * body-store.ts's command shells, body-reads.ts's layer-3 reads, and the
- * material/activity lanes' own §26.6 consumption paths all build on.
+ * material/activity lanes' own consumption paths all build on.
  *
  * This module is deliberately a LEAF: it imports no sibling store, which is
  * what lets activity-store.ts and material-store.ts share one copy of the body
@@ -207,7 +207,7 @@ export async function loadActorBody(tx: DbExecutor, branchId: string, actorId: s
 }
 
 /**
- * Build one actor's §26.6 `ConsumptionBodyView` — meters, modifiers, rhythms,
+ * Build one actor's `ConsumptionBodyView` — meters, modifiers, rhythms,
  * and the collapse context's last-real-sleep fact — over the same rows every
  * body command loads. The ONE copy: the material lane's `consume_item`, the
  * activity lane's completion-time consumption, and the E6.2 routine
@@ -337,7 +337,7 @@ export async function upsertMeterRow(
 
 /**
  * Co-located same-zone actors (excluding the subject) for witness capture.
- * Exported: material-store.ts's item-condition commands (E5.3 slice 3, §26.7)
+ * Exported: material-store.ts's item-condition commands (E5.3 slice 3)
  * reuse this same zone join for their own noticeable-threshold witnessing —
  * an item condition command's acting actor is always co-located with the
  * item's root zone (the `root_not_colocated` check enforces it), so this is

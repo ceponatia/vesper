@@ -13,7 +13,7 @@ describe("CHAT_PULSE_SYSTEM", () => {
     expect(CHAT_PULSE_SYSTEM).toContain("untrusted DATA");
   });
 
-  it("asserts the state-agent exemption: interiority is in scope as an intent signal (player-input-perception.plan.md slice 3)", () => {
+  it("asserts the state-agent exemption: interiority is in scope as an intent signal", () => {
     // The narrator's perception partition (quoted = heard, narration = seen,
     // interiority = invisible) must NOT be ported into the pulse by symmetry —
     // the pulse reads the whole message, and interiority is a strong intent cue.

@@ -66,7 +66,7 @@ export function engagementFromRow(row: typeof simEngagements.$inferSelect): Enga
     attentionClaim: row.attentionClaim,
     // E5.5 slice 3: round-trip the acknowledged-pressure set — without this
     // the schema's `.default([])` would silently mask every stored
-    // acknowledgment on every read (found while wiring §4.6's real fold).
+    // acknowledgment on every read (found while wiring the real fold).
     acknowledgedPressureIds: [...row.acknowledgedPressureIds].sort(),
     sourceCommandId: row.sourceCommandId,
   });
@@ -148,7 +148,7 @@ function rejectedResult<TCode extends string>(commandId: string, code: TCode, pu
   };
 }
 
-/** Open one engagement, reserving participant attention atomically (§11.3). */
+/** Open one engagement, reserving participant attention atomically. */
 export async function submitDurableOpenEngagement(
   rawCommand: unknown,
   options: EngagementStoreOptions = {},
@@ -217,7 +217,7 @@ export async function submitDurableOpenEngagement(
         };
       });
 
-      // E6.4 dependency wake (§27.7): an engagement REACHING a below-event
+      // E6.4 dependency wake: an engagement REACHING a below-event
       // participant promotes them to `event` — attention cannot be claimed
       // from an actor at a resolution that performs no scheduled work. Trains
       // are prepared first (their events precede the open event in sequence)
@@ -341,7 +341,7 @@ export async function submitDurableEndEngagement(
 }
 
 /**
- * E5.5 slice 3 (§15.3, §18.1, §4.6): mark a live temporal pressure "looked at
+ * E5.5 slice 3: mark a live temporal pressure "looked at
  * and not resolved" by an open engagement's participant. The event's two
  * domain projectors — `Engagement.acknowledgedPressureIds`
  * (`lib/simulation/engagements.ts`) and `TemporalPressure.acknowledgedAt`/

@@ -32,8 +32,7 @@ import {
 } from "./topology";
 
 /**
- * Stage 1 — the stable regional structure of one character's feet
- * (romantic-contact-affordances.spec.foot.md §"Profile compilation").
+ * Stage 1 — the stable regional structure of one character's feet.
  *
  * ## Sparse parent, calibrated child
  *

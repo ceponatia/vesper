@@ -19,16 +19,16 @@ import { simulationMaterialItemSchema } from "./materials";
  * E5.4 — households, means, and money at LOD.
  * Households are first-class branch-scoped entities; fungible material lots
  * are branch-scoped accounts with fixed-point/count conserved quantities;
- * means bands are a coarse read for low-detail subjects; promotion (§27.2) is
- * the ONLY path an aggregate fact becomes an explicit `sim_items` row; the
- * household restock routine (§26.11) is a scheduler-armed, self-reconfiguring
- * replenishment cycle.
+ * means bands are a coarse read for low-detail subjects; promotion is the ONLY
+ * path an aggregate fact becomes an explicit `sim_items` row; the household
+ * restock routine is a scheduler-armed, self-reconfiguring replenishment
+ * cycle.
  */
 
 export const householdsDerivationVersion = "households-v1" as const;
 
 // ---------------------------------------------------------------------------
-// Household + membership (§26.8)
+// Household + membership
 // ---------------------------------------------------------------------------
 
 export const householdMemberRoles = ["resident", "dependent", "guest"] as const;
@@ -44,7 +44,7 @@ const householdStockAllowListSchema = createStableStringSetSchema(
   "Household stock allow-list actor IDs",
 );
 
-/** Fail-closed §26.8 access on a household's shared stores. */
+/** Fail-closed access on a household's shared stores. */
 export const householdStockAccessPolicySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("members_only") }).strict(),
   z.object({ kind: z.literal("allow_list"), actorIds: householdStockAllowListSchema }).strict(),
@@ -87,7 +87,7 @@ export const householdMembershipSchema = z
 export type HouseholdMembership = z.infer<typeof householdMembershipSchema>;
 
 // ---------------------------------------------------------------------------
-// Material kind registry (§26.9) — quantity representation, registry-as-data
+// Material kind registry — quantity representation, registry-as-data
 // ---------------------------------------------------------------------------
 
 export const materialQuantityKinds = ["fixed_point", "count"] as const;
@@ -111,7 +111,7 @@ export const materialKindDefinitionSchema = z
 export type MaterialKindDefinition = z.infer<typeof materialKindDefinitionSchema>;
 
 /**
- * Unregistered keys default to `count` (§26.9) — this list only needs entries
+ * Unregistered keys default to `count` — this list only needs entries
  * that are NOT `count`, i.e. today just currency. Extending it is a data edit.
  */
 export const materialKindRegistryV1: readonly MaterialKindDefinition[] = [
@@ -125,7 +125,7 @@ export const materialKindRegistryByVersion: Record<
 };
 
 // ---------------------------------------------------------------------------
-// Lot locus + substrate (§26.9) — flat, no container nesting, zero is not terminal
+// Lot locus + substrate — flat, no container nesting, zero is not terminal
 // ---------------------------------------------------------------------------
 
 export const lotLocusSchema = z.discriminatedUnion("kind", [
@@ -151,7 +151,7 @@ export const materialLotStateSchema = z
 export type MaterialLotState = z.infer<typeof materialLotStateSchema>;
 
 // ---------------------------------------------------------------------------
-// Means bands (§26.10) — closed, ordered, versioned world-type vocabulary
+// Means bands — closed, ordered, versioned world-type vocabulary
 // ---------------------------------------------------------------------------
 
 export const meansBandKeys = [
@@ -178,7 +178,7 @@ export function compareMeansBands(a: MeansBandKey, b: MeansBandKey): number {
 /**
  * A means subject: actor, household, or — E6.3 — a population cohort, whose
  * coarse economics are always band-tracked (lot loci never name a cohort, so
- * the §26.10 lot-wins precedence can structurally never fire for one).
+ * the lot-wins precedence can structurally never fire for one).
  */
 export const meansSubjectSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("actor"), actorId: worldCharacterIdSchema }).strict(),
@@ -197,7 +197,7 @@ export const meansBandStateSchema = z
   .strict();
 export type MeansBandState = z.infer<typeof meansBandStateSchema>;
 
-/** The three read outcomes (§26.10) — a discriminated union, never a bare number+flag. */
+/** The three read outcomes — a discriminated union, never a bare number+flag. */
 export const meansReadSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -212,7 +212,7 @@ export const meansReadSchema = z.discriminatedUnion("kind", [
 export type MeansRead = z.infer<typeof meansReadSchema>;
 
 // ---------------------------------------------------------------------------
-// Restock routine (§26.11) — authored per-household-per-kind, registry-as-data ROWS
+// Restock routine — authored per-household-per-kind, registry-as-data ROWS
 // ---------------------------------------------------------------------------
 
 export const restockFundingSchema = z.discriminatedUnion("kind", [
@@ -245,7 +245,7 @@ export const householdRestockRoutineSchema = z
 export type HouseholdRestockRoutine = z.infer<typeof householdRestockRoutineSchema>;
 
 // ---------------------------------------------------------------------------
-// Promotion funding (§26.10 / §27.2)
+// Promotion funding
 // ---------------------------------------------------------------------------
 
 export const promotionFundingSchema = z.discriminatedUnion("kind", [
@@ -269,7 +269,7 @@ export const promotedItemInputSchema = simulationMaterialItemSchema.omit({ id: t
 });
 export type PromotedItemInput = z.infer<typeof promotedItemInputSchema>;
 
-/** §6.3/§6.4 derivation capture — replay reads the recorded draw, never resamples. */
+/** Derivation capture — replay reads the recorded draw, never resamples. */
 export const promotionSampledDetailSchema = z
   .object({
     stream: z.string().min(1).max(512),
@@ -300,7 +300,7 @@ export const householdsProjectionSchema = z
 export type HouseholdsProjection = z.infer<typeof householdsProjectionSchema>;
 
 // ---------------------------------------------------------------------------
-// create_household (§26.8)
+// create_household
 // ---------------------------------------------------------------------------
 
 const createHouseholdPayloadSchema = z
@@ -332,7 +332,7 @@ export const createHouseholdCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// set_household_membership (§26.8)
+// set_household_membership
 // ---------------------------------------------------------------------------
 
 export const setHouseholdMembershipCommandSchema = createCommandEnvelopeSchema(
@@ -356,7 +356,7 @@ export const setHouseholdMembershipCommandResultSchema = createCommandResultSche
 );
 
 // ---------------------------------------------------------------------------
-// adjust_material_lot (§26.9) — privileged authoring, exempt from co-location
+// adjust_material_lot — privileged authoring, exempt from co-location
 // ---------------------------------------------------------------------------
 
 /**
@@ -364,8 +364,7 @@ export const setHouseholdMembershipCommandResultSchema = createCommandResultSche
  * `promotion_cost` debits a promotion's funding lot; `restock_purchase`
  * debits/credits a `lot`-funded restock cycle's two causally-linked
  * adjustments; `restock_topup_unconserved` credits a `means_band_envelope`-
- * funded restock cycle's single, deliberately non-conserved top-up (slice 2,
- * §26.11).
+ * funded restock cycle's single, deliberately non-conserved top-up (slice 2).
  */
 export const materialLotAdjustReasons = [
   "authoring",
@@ -405,7 +404,7 @@ export const adjustMaterialLotCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// transfer_lot_quantity (§26.9) — same-kind conserved movement between lots
+// transfer_lot_quantity — same-kind conserved movement between lots
 // ---------------------------------------------------------------------------
 
 const transferLotQuantityPayloadSchema = z
@@ -443,7 +442,7 @@ export const transferLotQuantityCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// set_means_band (§26.10)
+// set_means_band
 // ---------------------------------------------------------------------------
 
 const setMeansBandPayloadSchema = z
@@ -471,7 +470,7 @@ export const setMeansBandRejectionCodeSchema = z.enum(setMeansBandRejectionCodes
 export const setMeansBandCommandResultSchema = createCommandResultSchema(setMeansBandRejectionCodeSchema);
 
 // ---------------------------------------------------------------------------
-// configure_restock_routine (§26.11)
+// configure_restock_routine
 // ---------------------------------------------------------------------------
 
 export const configureRestockRoutineCommandSchema = createCommandEnvelopeSchema(
@@ -493,7 +492,7 @@ export const configureRestockRoutineCommandResultSchema = createCommandResultSch
 );
 
 // ---------------------------------------------------------------------------
-// promote_item_from_stock (§26.10 / §27.2) — the only path an aggregate fact
+// promote_item_from_stock — the only path an aggregate fact
 // becomes an explicit `sim_items` row
 // ---------------------------------------------------------------------------
 
@@ -530,7 +529,7 @@ export const promoteItemFromStockCommandResultSchema = createCommandResultSchema
 );
 
 // ---------------------------------------------------------------------------
-// run_household_restock (§26.11) — trigger-dispatched, system principal only
+// run_household_restock — trigger-dispatched, system principal only
 // ---------------------------------------------------------------------------
 
 const runHouseholdRestockPayloadSchema = z
@@ -564,7 +563,7 @@ export const runHouseholdRestockCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// Household event family (§9.2, §26.8–26.9)
+// Household event family
 // ---------------------------------------------------------------------------
 
 const householdCreatedPayloadSchema = z
@@ -668,7 +667,7 @@ const itemInstantiatedFromPromotionPayloadSchema = z
     item: simulationMaterialItemSchema,
     sourceLocus: lotLocusSchema,
     sourceMaterialKindKey: z.string().trim().min(1).max(64),
-    /** Absent when the caller supplied an explicit `item.name` (§27.2 step 5). */
+    /** Absent when the caller supplied an explicit `item.name`. */
     sampledDetail: promotionSampledDetailSchema.optional(),
   })
   .strict();

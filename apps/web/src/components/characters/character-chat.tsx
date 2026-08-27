@@ -40,8 +40,8 @@ export interface CharacterChatProps {
 }
 
 /**
- * The editor's Chat tab, post-standalone (character-chat-standalone.spec.md §2.2):
- * a summary surface, not the conversation itself — the editor is where you *author*,
+ * The editor's Chat tab, post-standalone: a summary surface, not the conversation
+ * itself — the editor is where you *author*,
  * the Chats page (`/chat`) where you *play*. Two cards: **Chat defaults** (the
  * narrator model + the authored Starting Relationship) and **Conversations** (this
  * character's active chats, each linking to its full-screen page, plus New

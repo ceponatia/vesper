@@ -4,7 +4,7 @@ import type { SoloCutContext } from "@vesper/simulation-core/solo-cut";
 import { buildSimSoloRenderPrompt, type SimSoloRenderContext } from "./sim-solo-render";
 
 /**
- * Pure solo-cut prompt tests (world-ui.plan.md slice 0, ruling 21). No IO — the
+ * Pure solo-cut prompt tests. No IO — the
  * whole prompt is asserted from a fixture context. The focus is the dual-block
  * shape, the charter-law invariants (second person to the player, third person
  * for the primary, no raw ids), and the standing limits on the vignette.

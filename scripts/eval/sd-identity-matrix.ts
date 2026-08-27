@@ -14,12 +14,11 @@ import {
 import { z } from "zod";
 
 /**
- * The Stage 3 identity matrix (sd-rendering-package.plan.md §20, Stage 3) —
- * PAID, owner-run, and not a test gate.
+ * The Stage 3 identity matrix — PAID, owner-run, and not a test gate.
  *
  * Stage 3 asks one question before any ControlNet is allowed near the renderer:
- * how hard should identity conditioning be pushed? §7 names three PuLID test
- * points — 0.65 / 0.80 / 0.95 — and §8 says neither identity layer should
+ * how hard should identity conditioning be pushed? The recipe registry names
+ * three PuLID test points — 0.65 / 0.80 / 0.95 — and neither identity layer should
  * automatically run at maximum strength, because the layers fail in opposite
  * directions: pushing identity up improves `face` while destroying
  * `clothing_flexibility` and `pose_flexibility`. So the run renders every
@@ -31,11 +30,11 @@ import { z } from "zod";
  *
  * FOUR ARMS, and the control is the one with a rule attached. `sdxl/base-portrait`
  * carries no identity weight, and the renderer REFUSES a reference image sent to
- * a recipe that has none (packages/image-sd/deployment/README.md §"Identity
- * conditioning is recipe-gated"). That refusal is deliberate — a control arm
- * that silently conditioned at some default strength would be a fourth identity
- * cell, and the comparison would measure nothing — so this script sends the base
- * arm no reference at all and checks that it did not before spending anything.
+ * a recipe that has none (packages/image-sd/deployment/README.md). That refusal
+ * is deliberate — a control arm that silently conditioned at some default
+ * strength would be a fourth identity cell, and the comparison would measure
+ * nothing — so this script sends the base arm no reference at all and checks
+ * that it did not before spending anything.
  *
  * THE LoRA ARMS ARRIVE WITH THEIR WEIGHTS. Stage 3's matrix also has LoRA-only
  * and LoRA+PuLID arms, and neither exists until somebody hands this script a
@@ -124,11 +123,11 @@ interface Arm {
 }
 
 /**
- * The control plus §7's three PuLID test points.
+ * The control plus the three PuLID test points.
  *
  * The identity arms differ from each other in `identityWeight` and in nothing
  * else — the recipe registry copies every other value verbatim between them, per
- * §7's "only one variable should move at a time". Whether that is still true is
+ * the rule that only one variable should move at a time. Whether that is still true is
  * checked below rather than trusted.
  */
 const BASE_ARMS: readonly Arm[] = [
@@ -145,13 +144,13 @@ const BASE_ARMS: readonly Arm[] = [
 /**
  * The two arms one trained character LoRA adds.
  *
- * Two rather than one because §8's identity architecture is two LAYERS with
+ * Two rather than one because the identity architecture is two LAYERS with
  * different jobs — the LoRA teaches the model the person, the adapter anchors an
  * individual render to a reference — and Stage 3 grades them separately for
  * exactly that reason. Running only the combined arm would leave "is the LoRA
  * doing anything?" unanswerable.
  *
- * The scale is left to the recipe. Both recipes already carry §7's mid-band 0.8,
+ * The scale is left to the recipe. Both recipes already carry the mid-band 0.8,
  * and an override here would make two LoRAs comparable only if the operator
  * remembered to pass the same number twice.
  */
@@ -434,8 +433,8 @@ function resolveArms(arms: readonly Arm[]): ResolvedArm[] {
  *    (identity weight, LoRA) pair, not the weight alone — `w080` and
  *    `identity-lora-r8` share a weight and are a real comparison, while two arms
  *    agreeing on both are a duplicated cell.
- * 5. **The identity arms differ in something besides weight and LoRA.** §7 allows
- *    one variable to move; a recipe edit that also changed steps or CFG would
+ * 5. **The identity arms differ in something besides weight and LoRA.** Only
+ *    one variable may move; a recipe edit that also changed steps or CFG would
  *    make every difference in the grading unattributable.
  */
 function assertMatrixIsHonest(cells: readonly Cell[]): void {
@@ -494,7 +493,7 @@ function assertMatrixIsHonest(cells: readonly Cell[]): void {
         throw new Error(
           `identity arms "${first.id}" and "${recipe.id}" differ in more than identity weight and LoRA (${drifted
             .map(([field]) => field)
-            .join(", ")}) — §7 allows one variable to move at a time, so this run's differences would be unattributable`,
+            .join(", ")}) — only one variable may move at a time, so this run's differences would be unattributable`,
         );
       }
     }
@@ -702,7 +701,7 @@ function runNotes(
 
 Status: rendered ${today} — ungraded.
 
-The controlled matrix from sd-rendering-package.plan.md §20, Stage 3: base SDXL
+The controlled identity matrix, Stage 3: base SDXL
 against the identity layers — PuLID at three strengths, and any character LoRA
 this run was given, alone and combined — over ${String(fixtures.length)} fixed scenes at fixed seeds.
 Rendered by \`scripts/eval/sd-identity-matrix.ts\`.

@@ -7,8 +7,8 @@ import { hasReplicate, replicateClient } from "@/server/ai";
 import { negativeBlockDelta, parseNegativeBlockCsv, summarizeNegativeBlockRows } from "./negative-block-report";
 
 /**
- * Per-block negative-prompt induction trials for Qwen Image 2512
- * (model-aware-image-prompts.plan.md §"Stage 6 — negative transport promotion").
+ * Per-block negative-prompt induction trials for Qwen Image 2512, for the
+ * negative transport promotion.
  *
  * The first production-pack A/B proved the transport plumbing and nothing else:
  * its no-negative arms mostly lacked the failures the blocks exist to suppress,

@@ -7,7 +7,7 @@ import {
 } from "./training-manifest";
 
 /**
- * Whether a training set looks curated (sd-rendering-package.plan.md §8).
+ * Whether a training set looks curated.
  *
  * The failure this exists to catch is not a crash — an uncurated dataset trains
  * perfectly happily. It produces a LoRA that learned the wrong thing: twenty
@@ -18,8 +18,8 @@ import {
  * curator can still act on it.
  *
  * **A report, never a refusal.** Nothing here throws, and nothing here is a
- * schema rule: §8's window is explicitly "approximately 12–20", a trial value
- * that no comparison has confirmed yet. A curator with eleven excellent images
+ * schema rule: the curation window is explicitly "approximately 12–20", a trial
+ * value that no comparison has confirmed yet. A curator with eleven excellent images
  * should be able to train; the assessment's job is to make sure they know they
  * did that on purpose.
  *

@@ -22,9 +22,8 @@ import {
 import { appearanceFeatureKindRegistry } from "./registry";
 
 /**
- * The recognizability projection — normalized, truth-level feature records
- * (body-attribute-affordances.spec.recognizable-features.md §Recognition
- * candidate; §Core ruling: recognizability is a projection).
+ * The recognizability projection — normalized, truth-level feature records.
+ * Recognizability is a projection, never a stored list.
  *
  * Source records (attributes, located facts, anatomy state, conditions,
  * presentation) describe the body. This module's output is the lane-neutral
@@ -343,7 +342,7 @@ export function projectAppearanceTruth(input: AppearanceProjectionInput): readon
 }
 
 // ---------------------------------------------------------------------------
-// Derived body-area view (spec §Derived body-area view)
+// Derived body-area view
 // ---------------------------------------------------------------------------
 
 /** A nested, assembled-on-demand editor/diagnostics view. Never persisted. */

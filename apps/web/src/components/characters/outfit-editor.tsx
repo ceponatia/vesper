@@ -47,12 +47,11 @@ function itemEntry(item: ItemSummary): EntityPickerEntry {
 }
 
 /**
- * Outfit-preset builder (ux-improvements slice 8, on the library-ux §6 slot
- * design): a **preset switcher** (casual / work / date night / sleep — the
- * FIRST preset is the default the forge targets and the avatar/sessions/chat
- * wear) over the slot-based item editor (tops / bottoms / underwear / footwear
- * / accessories), each slot adding from the shared EntityPicker pre-filtered
- * to its categories and the character's wearer target.
+ * Outfit-preset builder: a **preset switcher** (casual / work / date night /
+ * sleep — the FIRST preset is the default the forge targets and the
+ * avatar/sessions/chat wear) over the slot-based item editor (tops / bottoms /
+ * underwear / footwear / accessories), each slot adding from the shared
+ * EntityPicker pre-filtered to its categories and the character's wearer target.
  */
 export function OutfitEditor({ outfits, onChange, suggestedItems, onChangeSuggested, wearerHint }: OutfitEditorProps) {
   // A characterless blank profile has no presets yet — the editor shows one
@@ -199,7 +198,7 @@ export function OutfitEditor({ outfits, onChange, suggestedItems, onChangeSugges
     <div className="flex flex-col gap-5">
       {referenced.error ? <ErrorState error={referenced.error} onRetry={() => referenced.reload()} /> : null}
 
-      {/* Preset switcher (slice 8): pickup skips and schedule day-parts dress by
+      {/* Preset switcher: pickup skips and schedule day-parts dress by
           preset name; the FIRST preset is the default everywhere. */}
       <div className="flex flex-col gap-2 rounded-card border border-ink-600 bg-ink-850 p-3">
         <div className="flex flex-wrap items-center gap-1.5">

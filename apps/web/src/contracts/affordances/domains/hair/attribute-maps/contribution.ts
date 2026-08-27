@@ -1,9 +1,8 @@
 import { unitIntervalSchema, type UnitInterval } from "../../../core";
 
 /**
- * The one bounds proof every hair axis runs at definition time (architecture
- * spec §"Attribute contribution definitions": *"contributions are bounded and
- * typed"*).
+ * The one bounds proof every hair axis runs at definition time: every
+ * contribution an axis writes is bounded and typed.
  *
  * The tables below are hand-written integers, so the type alone is not the
  * proof — a typo of `90_000` for `9_000` type-checks through `toUnitInterval`'s

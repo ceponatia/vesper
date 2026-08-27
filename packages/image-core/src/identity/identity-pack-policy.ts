@@ -24,8 +24,8 @@ import type { IdentityPackIntrinsicPolicy, IdentityPackProfilePolicy } from "./i
  * that "the crop moved" is always a deliberate act.
  *
  * The v1 numbers are deliberately conservative placeholders: the fixed trial
- * corpus (`image-identity-packs.spec.trial.md`) calibrates them, and until it has,
- * a refused reference is cheaper than a stranger's face in a render.
+ * corpus calibrates them, and until it has, a refused reference is cheaper than a
+ * stranger's face in a render.
  */
 
 /** The serialized pack contract's version (`ImageIdentityPackV1.version`). */
@@ -50,8 +50,8 @@ export const IDENTITY_BLUR_ALGORITHM_VERSION = "laplacian_v1";
  * notices first; bottom (0.45) buys jaw, chin and a little neck without turning
  * the crop into a torso shot.
  *
- * `squareGrowthTopShare` is the vertical-centre shift the spec calls for, expressed
- * where it actually acts: when a wide requested rectangle has to grow taller to
+ * `squareGrowthTopShare` is the vertical-centre shift, expressed where it
+ * actually acts: when a wide requested rectangle has to grow taller to
  * become square, 60% of the added height goes above the face. Symmetric growth
  * (0.5) would spend half the new pixels on shoulders.
  *

@@ -4,9 +4,9 @@ import { cloneToLibrary, findViewable, searchLibraryIds } from "@/server/api";
 import { db, socialCards } from "@/server/db";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 
-// Integration suite for the social-card library reuse slice
-// (social-reaction-cards.plan.md step 6): the discovery `scope` query
-// (owned/public/all), owner-or-public `findViewable`, and clone-on-use. Two
+// Integration suite for the social-card library reuse slice: the discovery
+// `scope` query (owned/public/all), owner-or-public `findViewable`, and
+// clone-on-use. Two
 // owners so cross-account visibility is exercised. Self-skips when the database
 // is unreachable, except under strict integration mode (`pnpm test:int:strict`),
 // where it fails instead.

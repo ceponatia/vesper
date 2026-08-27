@@ -19,24 +19,22 @@ import { gate3RouteVersionSchema } from "./space";
 /**
  * E3.3 — commitments and temporal pressure. A commitment is an obligation
  * with earliest/target/latest boundaries; pressure derives from it
- * deterministically; a schedule boundary never sets location (spec §3.1
- * invariant 5) — the deadline trigger only *evaluates* where the actor
- * actually is.
+ * deterministically; a schedule boundary never sets location (invariant 5) —
+ * the deadline trigger only *evaluates* where the actor actually is.
  *
  * Deliberate E3.3 boundaries: the ruled per-commitment `flexibility` dial is
  * stored and drives severity now, and richer decision behavior (warn,
  * negotiate, depart via NPC policy) is E3.4's arbiter; `late → kept` repair
  * on a subsequent arrival is recorded in-table but its evaluator lands with
- * E3.4 arrival integration; acknowledgment (§15.3) is an E3.4 engagement
- * concern.
+ * E3.4 arrival integration; acknowledgment is an E3.4 engagement concern.
  *
- * E5.5 slice 2 (§15.1, §15.4) makes `destinationZoneId` optional — a
- * destinationless commitment carries no spatial obligation and can only ever
- * resolve `kept` (via `fulfill_commitment`) or `missed`, never `late`. An
- * optional `promisedToActorId` names the counterpart a promise runs toward
- * (the social ledger's directional evidence target); an optional
- * `repairsCommitmentId` links a new commitment to the `missed` one it repairs
- * (§15.4: history is not rewritten — the original stays `missed` forever).
+ * E5.5 slice 2 makes `destinationZoneId` optional — a destinationless
+ * commitment carries no spatial obligation and can only ever resolve `kept`
+ * (via `fulfill_commitment`) or `missed`, never `late`. An optional
+ * `promisedToActorId` names the counterpart a promise runs toward (the social
+ * ledger's directional evidence target); an optional `repairsCommitmentId`
+ * links a new commitment to the `missed` one it repairs (history is not
+ * rewritten — the original stays `missed` forever).
  */
 
 // --- Vocabulary (ruling 2) --------------------------------------------------
@@ -62,7 +60,7 @@ export const commitmentStatuses = [
 export const commitmentStatusSchema = z.enum(commitmentStatuses);
 export type CommitmentStatus = z.infer<typeof commitmentStatusSchema>;
 
-/** The §15.4 legal-transition table, exported so kernel and tests share one truth. */
+/** The legal-transition table, exported so kernel and tests share one truth. */
 export const commitmentStatusTransitions: Record<CommitmentStatus, readonly CommitmentStatus[]> = {
   planned: ["noticed", "accepted", "declined", "cancelled", "missed", "kept", "late"],
   noticed: ["accepted", "declined", "cancelled", "missed", "kept", "late"],
@@ -76,15 +74,15 @@ export const commitmentStatusTransitions: Record<CommitmentStatus, readonly Comm
 };
 
 /**
- * Why the actor may act on this commitment (spec §15.1). `authored` is setup
- * the actor is deemed to know. `observed` (E4.1) names a perceptible event —
- * a spoken invitation, a witnessed exchange — and the notice trigger fires
- * only if the actor holds a §20 observation of it: an obligation made where
- * you weren't can't pressure you. `asserted` and `believed` (E4.2) route
- * through the §21 knowledge ledger — the promised no-schema-change
- * tightening: `asserted` names a claim and requires the actor to hold a live
- * (active or doubted) belief in it; `believed` names the exact belief row and
- * requires it live. All non-authored members fail closed.
+ * Why the actor may act on this commitment. `authored` is setup the actor is
+ * deemed to know. `observed` (E4.1) names a perceptible event — a spoken
+ * invitation, a witnessed exchange — and the notice trigger fires only if the
+ * actor holds an observation of it: an obligation made where you weren't can't
+ * pressure you. `asserted` and `believed` (E4.2) route through the knowledge
+ * ledger — the promised no-schema-change tightening: `asserted` names a claim
+ * and requires the actor to hold a live (active or doubted) belief in it;
+ * `believed` names the exact belief row and requires it live. All non-authored
+ * members fail closed.
  */
 export const commitmentKnowledgeSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("authored") }).strict(),
@@ -127,7 +125,7 @@ export const commitmentSchema = z
     destinationZoneId: zoneIdSchema.optional(),
     /** E5.5 slice 2: the counterpart a promise runs toward — the social ledger's directional target. */
     promisedToActorId: worldCharacterIdSchema.optional(),
-    /** E5.5 slice 2: the `missed` commitment this one repairs (§15.4 — history is not rewritten). */
+    /** E5.5 slice 2: the `missed` commitment this one repairs (history is not rewritten). */
     repairsCommitmentId: commitmentIdSchema.optional(),
     window: commitmentWindowSchema,
     expectedDurationSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
@@ -161,7 +159,7 @@ export const temporalPressureSchema = z
     actBy: storySecondSchema,
     severity: pressureSeveritySchema,
     acknowledgedAt: storySecondSchema.optional(),
-    /** E5.5 slice 3 (§18.1): the severity captured at acknowledgment time —
+    /** E5.5 slice 3: the severity captured at acknowledgment time —
      * the cut's acknowledgment-aware pressure filter compares this against
      * the pressure's live `severity` to decide whether it re-surfaces. */
     acknowledgedSeverity: pressureSeveritySchema.optional(),
@@ -175,7 +173,7 @@ export const temporalPressureSchema = z
 
 export type TemporalPressure = z.infer<typeof temporalPressureSchema>;
 
-/** Deterministic §15.2 derivation. Clamped at zero so a too-tight window is due immediately. */
+/** Deterministic derivation. Clamped at zero so a too-tight window is due immediately. */
 export function deriveCommitmentTimes(input: {
   latestArrival: number;
   minimumRouteDurationSeconds: number;
@@ -313,10 +311,10 @@ const fulfillCommitmentPayloadSchema = z
   .strict();
 
 /**
- * E5.5 slice 2 (§15.1, §7.4): the destinationless analogue of the deadline
- * evaluator — an explicit self-report that keeps a commitment with no locus
- * to check. Rejects `commitment_has_destination` for a spatial commitment
- * (those resolve only through `resolve_commitment_deadline`).
+ * E5.5 slice 2: the destinationless analogue of the deadline evaluator — an
+ * explicit self-report that keeps a commitment with no locus to check. Rejects
+ * `commitment_has_destination` for a spatial commitment (those resolve only
+ * through `resolve_commitment_deadline`).
  */
 export const fulfillCommitmentCommandSchema = createCommandEnvelopeSchema(
   "fulfill_commitment",
@@ -357,7 +355,7 @@ const commitmentCreatedPayloadSchema = z
     reliabilityBufferSeconds: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     noticeLeadSeconds: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     knowledgeSource: commitmentKnowledgeSourceSchema,
-    /** Captured §15.2 derivation (spec §6.4: derived values that cause history). */
+    /** Captured derivation — a derived value that causes history is captured, never re-derived. */
     derived: z
       .object({
         latestDeparture: storySecondSchema,
@@ -402,7 +400,7 @@ const commitmentOutcomePayloadSchema = z
     commitmentId: commitmentIdSchema,
     actorId: worldCharacterIdSchema,
     resolvedAt: storySecondSchema,
-    /** Captured evaluation inputs: where the actor actually was (spec §6.4). */
+    /** Captured evaluation inputs: where the actor actually was. */
     evaluation: z.discriminatedUnion("basis", [
       z.object({ basis: z.literal("at_destination") }).strict(),
       z

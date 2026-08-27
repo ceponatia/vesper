@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import { resolveOverrideDirection } from "./validate";
 
 /**
- * The developer-override direction rules, pure
- * (romantic-contact-affordances.spec.permission.md §"Authorship and developer
- * controls"; plan ruling 1): targets are roster NPCs only — never the player —
- * actors are the player or a roster NPC, and a direction needs two different
- * participants.
+ * The developer-override direction rules, pure: targets are roster NPCs only —
+ * never the player — actors are the player or a roster NPC, and a direction
+ * needs two different participants.
  */
 
 const PLAYER = "player";

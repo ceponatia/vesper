@@ -18,9 +18,8 @@ import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The candidate-version corner of one model card (image-model-capabilities.spec.md
- * §"Version candidate and promotion flow", §"Admin UI"): what version the row
- * is on, what latest looks like, and the three actions between them.
+ * The candidate-version corner of one model card: what version the row is on,
+ * what latest looks like, and the three actions between them.
  *
  * The order is the safe promotion ladder and the panel keeps it visible:
  * **Check latest** (read-only, one schema probe) shows the capability diff and

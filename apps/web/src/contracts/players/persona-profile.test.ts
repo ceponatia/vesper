@@ -52,7 +52,7 @@ describe("personaProfileSchema", () => {
 
 });
 
-describe("seedNewPersonaProfile (create-time body seeding — intimate-defaulting.md §3b)", () => {
+describe("seedNewPersonaProfile (create-time body seeding)", () => {
   const attributeIds = (profile: { attributes: readonly { id: string }[] }) => profile.attributes.map((a) => a.id);
   const valueOf = (profile: { attributes: readonly { id: string; value: unknown }[] }, id: string) =>
     profile.attributes.find((a) => a.id === id)?.value;
@@ -100,8 +100,9 @@ describe("seedNewPersonaProfile (create-time body seeding — intimate-defaultin
   });
 
   it("survives the adapter, so the realized player body gates intimate attributes ON", () => {
-    // The whole point of §3b: every character-shaped consumer reads the persona through
-    // this adapter, and an unseeded persona left them all with no intimate anatomy.
+    // The whole point of create-time body seeding: every character-shaped consumer
+    // reads the persona through this adapter, and an unseeded persona left them all
+    // with no intimate anatomy.
     const profile = personaToCharacterProfile(seedNewPersonaProfile(emptyPersonaProfile()));
     expect(profile.intimateRegions).toEqual(["vulva", "breasts"]);
     expect(realizeBody(profile).hasIntimateRegion("vulva")).toBe(true);

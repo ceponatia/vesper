@@ -148,7 +148,7 @@ export function excerpt(text: string, max: number): string {
 }
 
 /**
- * Garment phrasing for image prompts (followups.phase3.md §1): the item's
+ * Garment phrasing for image prompts: the item's
  * description is the primary text — it usually restates the name and carries
  * more visual detail — with the bare name as the fallback when there is no
  * description, and the sensory appearance appended in parentheses. Untruncated:

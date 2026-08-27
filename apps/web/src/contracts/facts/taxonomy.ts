@@ -50,8 +50,8 @@ export const factStatusSchema = z.enum(["active", "superseded", "retracted"]);
 export type FactStatus = z.infer<typeof factStatusSchema>;
 
 /**
- * The channel a fact was established through (player-input-perception.plan.md slice 6 —
- * the RAG visibility fence). Forward-compatible TEXT vocabulary, NOT a pg enum
+ * The channel a fact was established through — the RAG visibility fence.
+ * Forward-compatible TEXT vocabulary, NOT a pg enum
  * (forward-compatible-schema preference), so widening it is a data/prompt edit:
  *
  * - `perceived` — quoted speech / visible action the character actually saw or heard.

@@ -47,8 +47,7 @@ import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * The conversation-state API (character-chat-state.spec.md §5 + slice 4), keyed per
- * participant (character-chat-standalone.spec.md §1.2), a sibling of the plain-text
+ * The conversation-state API, keyed per participant, a sibling of the plain-text
  * reply stream so state never inlines into prose:
  *
  * - **GET** → the strip / premise-bar / state-tools snapshot, with the same
@@ -58,8 +57,8 @@ type Params = { chatId: string };
  *   the provided fields (seeding the rest if absent).
  *
  * The action chips no longer POST here — a tap is now a narrated `action_beat`
- * exchange through the character-chat pipeline (chat-action-beats.plan.md), which
- * applies the same deterministic effect pre-narration so the reply reflects it.
+ * exchange through the character-chat pipeline, which applies the same
+ * deterministic effect pre-narration so the reply reflects it.
  */
 
 const editBodySchema = z.object({
@@ -71,27 +70,27 @@ const editBodySchema = z.object({
   mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
   meters: z.record(z.string(), z.number()).optional(),
   conditions: z.array(activeConditionSchema).optional(),
-  /** Structured worn item-definition ids (chat-wardrobe-parity rung 3) — the sheet's equip editor. */
+  /** Structured worn item-definition ids — the sheet's equip editor. */
   wornItemIds: z.array(z.string().trim().min(1)).max(40).optional(),
-  /** The active outfit preset id (rung 1) — the sheet's preset switcher. */
+  /** The active outfit preset id — the sheet's preset switcher. */
   outfitPresetId: z.string().max(120).optional(),
   outfit: z.string().optional(),
   outfitExposed: z.boolean().optional(),
   /**
-   * Typed garment operations (clothing-state-graph slice 3) — the sheet's
+   * Typed garment operations — the sheet's
    * presentation controls. `garmentOperationListSchema` is the trust boundary:
    * it drops each malformed operation individually and caps the list, so one bad
    * entry never voids the save (docs/resilience.md §1).
    */
   garmentOperations: garmentOperationListSchema.optional(),
   activeSocialCards: z.array(socialReactionCardSchema).optional(),
-  // Inspector-grade fields (character-chat-standalone.spec.md §6.1): the dev/state-tools
+  // Inspector-grade fields: the dev/state-tools
   // surface can rewrite everything stored — including the D11 gate bypass via `regard`.
   openLoops: z.array(z.string().trim().max(200)).max(6).optional(),
   memoryQueries: z.array(z.string().trim().max(200)).max(6).optional(),
   surfacedCues: z.record(z.string(), z.string()).optional(),
   attributeOverlays: z.array(attributeValueSchema).optional(),
-  /** Auto scene-generation mode (slice 9): "off" | "milestones" (the scenario modal's toggle). */
+  /** Auto scene-generation mode: "off" | "milestones" (the scenario modal's toggle). */
   sceneAuto: z.enum(["off", "milestones"]).optional(),
   /**
    * Scene-image model pick (the scene strip's save-on-select dropdown). A
@@ -100,28 +99,28 @@ const editBodySchema = z.object({
    * admin page just added. Unknown ids degrade to the scene default at render.
    */
   sceneModel: z.string().trim().max(64).optional(),
-  /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit. */
+  /** Memory-callback ring — inspector-grade reset/edit. */
   callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
-  /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear. */
+  /** Emotional weather — inspector-grade set/clear. */
   feeling: chatFeelingStateSchema.optional(),
-  /** Selfie-send ring (chat-selfies.plan.md) — inspector-grade reset/edit. */
+  /** Selfie-send ring — inspector-grade reset/edit. */
   selfieHistory: selfieHistorySchema.optional(),
-  /** Runtime drives (character-drives.plan.md) — scenario/state-tools edit surface. */
+  /** Runtime drives — scenario/state-tools edit surface. */
   drives: chatDrivesSchema.optional(),
-  /** Who the player is here + what they're wearing (persona-library.plan.md) — the "Playing as" pick. */
+  /** Who the player is here + what they're wearing — the "Playing as" pick. */
   playerState: chatPlayerStateSchema.optional(),
-  /** Recurring named side characters (chat-supporting-cast.plan.md) — the panel's whole-list save. */
+  /** Recurring named side characters — the panel's whole-list save. */
   supportingCast: supportingCastSchema.optional(),
-  /** Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's whole-list save. */
+  /** Tracked plans & promises — the Plans panel's whole-list save. */
   plans: chatPlansSchema.optional(),
-  /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card's editor. */
+  /** The story-calendar anchor — the clock card's editor. */
   calendarStart: calendarStartSchema.optional(),
-  /** Where an away member is (chat-offscreen-life) — author-correctable phrase. */
+  /** Where an away member is — author-correctable phrase. */
   whereabouts: z.string().trim().max(120).optional(),
 });
 
 /**
- * Mood-chip inputs for the snapshot (mood.spec §4): the character's `social.dominance`
+ * Mood-chip inputs for the snapshot: the character's `social.dominance`
  * tilts a low-valence read angry vs sad, and chat — a private intimate-capable 1-on-1 —
  * permits the `aroused` label (then gated purely on the arousal meter).
  */
@@ -131,7 +130,7 @@ const snapshotOpts = (profile: CharacterProfile) => ({
 });
 
 /**
- * Resolve the TARGET participant (followups ruling 13 — per-character sheets):
+ * Resolve the TARGET participant (per-character sheets):
  * `?characterId=` picks any roster member's state; absent ⇒ the primary (the
  * pre-roster shape every 1-on-1 caller keeps using). Null ⇒ not in this roster.
  */
@@ -160,10 +159,10 @@ export const GET = withOwnedChat<Params, OwnedChat>(
     const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
     const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
     const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
-    // R5 slices 4+7: a sim-routed chat's meters come from the ruling-15 body
-    // substrate and its regard/familiarity from the §21 relationship ledger —
-    // the mood chip, pips, and disposition bands then all DERIVE from world
-    // truth, since the snapshot computes from whatever state it is handed.
+    // A sim-routed chat's meters come from the body substrate and its
+    // regard/familiarity from the relationship ledger — the mood chip, pips,
+    // and disposition bands then all DERIVE from world truth, since the
+    // snapshot computes from whatever state it is handed.
     const isPrimaryTarget = target.characterId === owned.participant.characterId;
     const [simMeters, simRelationship] = isPrimaryTarget
       ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])
@@ -173,7 +172,7 @@ export const GET = withOwnedChat<Params, OwnedChat>(
       ...(simMeters === null ? {} : { meters: { ...drifted.meters, ...simMeters } }),
       ...(simRelationship === null ? {} : { regard: simRelationship.regard, familiarity: simRelationship.familiarity }),
     };
-    // Rendered garment phrase for the read-only strip chip (chat-wardrobe-parity): the structured
+    // Rendered garment phrase for the read-only strip chip: the structured
     // worn items resolved through the shared seam, else the free-text overlay.
     const wardrobe = await resolveChatWardrobe(
       { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
@@ -181,12 +180,12 @@ export const GET = withOwnedChat<Params, OwnedChat>(
       profile,
       sink,
     );
-    // R5 slice 5: a routed chat's outfit chip reads the simulation world's WORN items.
+    // A routed chat's outfit chip reads the simulation world's WORN items.
     const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
     return jsonOk({
       ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
       outfitLabel: simOutfit ?? wardrobe.garments,
-      // The presentation graph for this member's worn garments (slice 3): the
+      // The presentation graph for this member's worn garments: the
       // controls the sheet offers plus the coverage they currently produce.
       garments: garmentReadoutsFor(
         scenario.garments,

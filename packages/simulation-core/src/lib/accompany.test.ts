@@ -4,11 +4,11 @@ import { commitmentSchema, type Commitment } from "../contracts/commitments";
 import { decideAccompany, ACCOMPANY_ARRIVAL_BUFFER_SECONDS } from "./accompany";
 
 /**
- * Pure walk-with-me acceptance-policy tests (world-ui.plan.md slice 5). No IO —
- * the decision matrix is body-claim × commitment-firmness/due × arrival estimate
- * → accept / decline + PUBLIC face, so every cell is asserted from fixtures. The
- * privacy invariant (a body claim and a due commitment must decline with the SAME
- * public reason — never the private cause) is asserted directly.
+ * Pure walk-with-me acceptance-policy tests. No IO — the decision matrix is
+ * body-claim × commitment-firmness/due × arrival estimate → accept / decline +
+ * PUBLIC face, so every cell is asserted from fixtures. The privacy invariant
+ * (a body claim and a due commitment must decline with the SAME public reason —
+ * never the private cause) is asserted directly.
  */
 
 const PRIMARY = "actor-primary";
@@ -141,7 +141,7 @@ describe("decideAccompany", () => {
     expect(byCommitment.accept).toBe(false);
     if (byClaim.accept || byCommitment.accept) throw new Error("expected declines");
     expect(byClaim.publicReason).toBe("Nora can't come with you right now.");
-    // The two causes are indistinguishable to the player — no private leak (§14.4).
+    // The two causes are indistinguishable to the player — no private leak.
     expect(byCommitment.publicReason).toBe(byClaim.publicReason);
     expect(byClaim.legalAlternatives).toEqual(["go on your own", "wait a while"]);
     expect(byClaim.publicReason).not.toMatch(/shift|commitment|activity|rest|claim/i);

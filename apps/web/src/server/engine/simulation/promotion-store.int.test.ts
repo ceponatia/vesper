@@ -157,7 +157,7 @@ async function pendingTriggersFor(branchId: string, actorId: string) {
   return rows.filter((row) => row.uniquenessKey?.includes(actorId));
 }
 
-describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
+describe.runIf(ready)("E6.4 durable actor promotion", () => {
   it("promotes with the reservation debit, presence legality, conservation, and fork parity", async () => {
     const ids = await seedCase();
     const marketId = newId();
@@ -202,7 +202,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
     );
     expectRejected(ghostZone, "zone_not_found", "promoting into a zone that does not exist");
     // Mid-window at share 10 000 the whole crowd is at the square — the
-    // tavern's read says none of them are there (§27.2 step 5).
+    // tavern's read says none of them are there.
     const notPresent = await submitDurablePromoteActorFromCohort(
       command(ids, "not-present", "promote_actor_from_cohort", {
         cohortId: marketId,
@@ -318,7 +318,7 @@ describe.runIf(ready)("E6.4 durable actor promotion (§27.2/§27.7)", () => {
     expect((cohortRow?.population ?? 0) + 1).toBe(50);
 
     // A bodiless promotion arms nothing; embodiment afterwards arms the
-    // routine alarm too (§27.7 catch-up: event LOD + tracked body ⇒ exactly
+    // routine alarm too (the catch-up law: event LOD + tracked body ⇒ exactly
     // one live routine alarm, on every path order).
     expect(await pendingTriggersFor(ids.branchId, actorId)).toHaveLength(0);
     const embodied = await submitDurableInitializeActorBody(

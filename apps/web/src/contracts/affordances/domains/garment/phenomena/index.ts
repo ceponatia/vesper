@@ -24,10 +24,9 @@ export * from "./effective-opacity";
  * **Deliberately absent**: `garment.wind_or_motion_response` and
  * `garment.pose_drape`. Both need current wind, subject motion, or a pose
  * transition, and no lane owns any of them until the shared scene/body-relations
- * owner exists (architecture spec §"Scene/body-relations owner"). Their shared
- * mechanics (`effectiveFlutterLoad`, `effectiveDrapeStiffness`) are already
- * derived and fixture-tested; registering the phenomena would only add two
- * permanently-suppressed rows to every read.
+ * owner exists. Their shared mechanics (`effectiveFlutterLoad`,
+ * `effectiveDrapeStiffness`) are already derived and fixture-tested; registering
+ * the phenomena would only add two permanently-suppressed rows to every read.
  */
 export const garmentPhenomena: readonly RegisteredAffordancePhenomenon<GarmentAffordanceFrame>[] = [
   garmentWetSurfaceState,

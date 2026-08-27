@@ -16,7 +16,7 @@ import type { DetectedFaceCandidate } from "./identity-pack";
 
 export interface IdentityFaceDetector {
   /** Stamped onto every detector revision; a change here is evaluated against the
-   * derivation version (spec.lifecycle.md §"Staleness rules"). */
+   * derivation version, and stale crops are re-derived. */
   version: string;
   detect(image: Buffer): Promise<DetectedFaceCandidate[]>;
 }
@@ -31,15 +31,14 @@ export interface IdentityFaceDetector {
  *
  * Two reasons the real detector is not here yet:
  *
- * 1. **Library selection is a trial-slice decision.** The fixed corpus
- *    (`image-identity-packs.spec.trial.md`) is what decides whether a given
- *    detector is good enough, and the pack contract deliberately does not depend
- *    on one library — so picking before there is anything to measure would be
- *    picking blind.
+ * 1. **Library selection is a trial-slice decision.** The fixed identity-trial
+ *    corpus is what decides whether a given detector is good enough, and the pack
+ *    contract deliberately does not depend on one library — so picking before
+ *    there is anything to measure would be picking blind.
  * 2. **The portrait must never leave this machine.** Any candidate adapter runs
  *    locally; uploading a user's canonical portrait to an unreviewed third-party
- *    face-analysis service is a separate privacy and provider review
- *    (spec.lifecycle.md §"Privacy boundary"), never a configuration flip.
+ *    face-analysis service is a separate privacy and provider review, never a
+ *    configuration flip.
  *
  * Until then the seam is exercised in full by injected test detectors, so the
  * detector code path is proven before any library lands behind it.

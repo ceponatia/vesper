@@ -16,7 +16,7 @@ import { recordCommandSoftCanon } from "./soft-canon-recorder";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * The shared §11.1 command transaction shell: idempotency fast path, branch
+ * The shared command transaction shell: idempotency fast path, branch
  * row lock, locked-version admission, duplicate-command defense, optimistic
  * version check, and durable result persistence. Domain stores supply only
  * the view load + resolution + projection writes (`execute`).
@@ -81,11 +81,11 @@ export async function runSimulationCommand<
   const submitted = parsed.data;
   const database = args.database ?? db();
 
-  // security-authz.plan.md §Follow-ups item 1 — ownership is proven HERE, above
-  // the idempotency fast path and the transaction that owns every write, so a
-  // refused command leaves no command row, no ledger entry, no projection, no
-  // outbox row, no scheduler row and no event behind. It also sits above the
-  // cached-result read: replaying someone else's stored result would leak it.
+  // Ownership is proven HERE, above the idempotency fast path and the
+  // transaction that owns every write, so a refused command leaves no command
+  // row, no ledger entry, no projection, no outbox row, no scheduler row and no
+  // event behind. It also sits above the cached-result read: replaying someone
+  // else's stored result would leak it.
   const authorization = await authorizeSimulationCommand(
     { branchId: submitted.branchId, commandId: submitted.id, type: submitted.type, principal: submitted.principal },
     database,
@@ -170,14 +170,14 @@ export async function runSimulationCommand<
     }
 
     // E4.1: perception commits atomically with truth — derive who perceived
-    // this command's events against the post-command locus rows (§20). Then
+    // this command's events against the post-command locus rows. Then
     // E4.2: fold any disclosures through the knowledge ledgers against those
-    // fresh observation rows (§21) — order matters, beliefs rest on evidence.
-    // E5.5: fold relationship-ledger entries (§21.3) — after knowledge, before
+    // fresh observation rows — order matters, beliefs rest on evidence.
+    // E5.5: fold relationship-ledger entries — after knowledge, before
     // soft canon, so a newly-recorded entry is visible to memory-index
     // eligibility in the same transaction. E4.3: fold soft-canon snapshots
-    // into the bounded store (§23.4). Last, E4.4: enqueue memory-index
-    // obligations for the appended events (§24.3) — indexing itself runs
+    // into the bounded store. Last, E4.4: enqueue memory-index
+    // obligations for the appended events — indexing itself runs
     // later, off the outbox, never under this lock.
     if (commandResult.status === "accepted") {
       await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
@@ -208,7 +208,7 @@ export async function runSimulationCommand<
   });
 }
 
-/** Compare-and-swap the branch head after appending events (spec §11.1 step 12). */
+/** Compare-and-swap the branch head after appending events. */
 export async function advanceLockedBranch(
   tx: SimTx,
   branch: LockedBranchView,

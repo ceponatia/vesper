@@ -6,10 +6,10 @@ import {
   provisioningRequestIdSchema,
 } from "./provisioning";
 
-// successor-world-lifecycle.plan.md slice 3: the whole resume story rests on
-// these three pure derivations — a stamp that is stable per key and distinct
-// across keys, a payload hash that catches a reused key carrying a different
-// request, and a token schema that keeps both safe as database/hash material.
+// The whole resume story rests on these three pure derivations — a stamp that
+// is stable per key and distinct across keys, a payload hash that catches a
+// reused key carrying a different request, and a token schema that keeps both
+// safe as database/hash material.
 
 describe("deriveProvisioningStamp", () => {
   it("is stable for one (owner, request) key", () => {

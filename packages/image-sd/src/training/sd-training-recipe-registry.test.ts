@@ -6,8 +6,8 @@ import { sdTrainingRecipeSchema } from "./training-manifest";
  * **The rank-comparison arms may differ in rank and in nothing else.**
  *
  * This is the invariant Stage 4's whole result rests on. The comparison asks one
- * question — is rank 8 or rank 16 the better character LoRA — and §7's rule for
- * the entire plan is that only one variable moves at a time. The bad
+ * question — is rank 8 or rank 16 the better character LoRA — and the rule
+ * throughout is that only one variable moves at a time. The bad
  * implementation this kills is not a crash and not a typecheck failure: it is
  * somebody retuning one arm's `steps` or `resolution` while tuning, shipping two
  * recipes that differ in two ways, and producing a graded run whose winner

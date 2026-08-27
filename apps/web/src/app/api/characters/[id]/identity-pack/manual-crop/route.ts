@@ -12,14 +12,12 @@ import {
 } from "../shared";
 
 /**
- * Save an owner's hand-drawn crop as a new `manual` revision
- * (image-identity-packs.spec.derivation.md §"Manual crop revisions").
+ * Save an owner's hand-drawn crop as a new `manual` revision.
  *
  * The body's `packId`/`revision`/`sourceContentHash` are a concurrency guard and
- * nothing more — authorization comes from the character in the URL
- * (spec.lifecycle.md §"Authorization root"), so a client naming another user's
- * pack id gets the same 404 as one naming a character that does not exist, and
- * never learns which.
+ * nothing more — authorization comes from the character in the URL, so a client
+ * naming another user's pack id gets the same 404 as one naming a character that
+ * does not exist, and never learns which.
  *
  * `adminOverride: false`, unconditionally. An owner correction may fix framing;
  * waiving a reviewed quality threshold is the admin route's recorded act, with

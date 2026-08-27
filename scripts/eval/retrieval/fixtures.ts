@@ -1,9 +1,8 @@
 import type { FactKind, FactSubjectKind } from "@/contracts/facts/taxonomy";
 
 /**
- * Fixture corpora for the retrieval eval harness
- * (character-chat-standalone.spec.md §6.3 #6) — the measurement precondition
- * for the §6.3 retrieval-quality work (FACT_MIN_SCORE floor, pinned
+ * Fixture corpora for the retrieval eval harness — the measurement precondition
+ * for the retrieval-quality work (FACT_MIN_SCORE floor, pinned
  * force-include, per-query embedding + RRF fusion).
  *
  * Each fixture is a small chat-shaped memory corpus (1-on-1 romance-chat
@@ -29,7 +28,7 @@ export interface FixtureFact {
   subjectKind: FactSubjectKind;
   /** Fact taxonomy kind; the runner defaults to "knowledge". */
   kind?: FactKind;
-  /** Seeded pinned with origin "player" — must be force-included regardless of similarity (spec §6.4). */
+  /** Seeded pinned with origin "player" — must be force-included regardless of similarity. */
   pinned?: boolean;
   tags?: string[];
 }
@@ -49,7 +48,7 @@ export interface FixtureEpisode {
 export interface RetrievalFixture {
   id: string;
   title: string;
-  /** Which retrieval behavior this fixture measures (spec §6.3 #6 coverage letter). */
+  /** Which retrieval behavior this fixture measures (coverage letter). */
   covers: string;
   facts: FixtureFact[];
   episodes: FixtureEpisode[];
@@ -190,7 +189,7 @@ export const RETRIEVAL_FIXTURES: RetrievalFixture[] = [
   {
     id: "pinned-force-include",
     title: "Pinned force-include — a pinned fact dissimilar to every query still surfaces",
-    covers: "(d) pinned force-include: spec §6.4 'remember this' rides ahead of the top-k, floor-exempt",
+    covers: "(d) pinned force-include: 'remember this' rides ahead of the top-k, floor-exempt",
     facts: [
       {
         key: "nadia-callsign",

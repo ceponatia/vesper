@@ -135,7 +135,7 @@ export function garmentFixturePayload(
 }
 
 /**
- * Case 1 — a fitted cotton shirt in the rain (spec §"Worked cases").
+ * Case 1 — a fitted cotton shirt in the rain.
  *
  * Saturation is high, so the shirt darkens and goes translucent by its authored
  * `wetOpacityResponse`, and its `fitted` regions establish contact from wardrobe
@@ -160,7 +160,7 @@ export function fittedCottonShirtInRain(): GarmentFixture {
 }
 
 /**
- * Case 2 — a leather jacket in the SAME rain (spec §"Worked cases").
+ * Case 2 — a leather jacket in the SAME rain.
  *
  * Identical exposure, materially different read: leather barely absorbs, so the
  * water stays on the surface (beading/runoff), its opacity does not move, and
@@ -187,11 +187,10 @@ export function leatherJacketInRain(): GarmentFixture {
 }
 
 /**
- * Case 3 — a soaked LOOSE skirt (spec §"Worked cases", the wind case minus its
- * wind).
+ * Case 3 — a soaked LOOSE skirt: the wind case minus its wind.
  *
- * The mechanics half of the spec's third case still holds and is tested: water
- * loading has raised `effectiveFlutterLoad` and dropped `effectiveDrapeStiffness`.
+ * The mechanics half of that case still holds and is tested: water loading has
+ * raised `effectiveFlutterLoad` and dropped `effectiveDrapeStiffness`.
  * What is missing is the force — no lane owns wind or motion, so
  * `garment.wind_or_motion_response` is not registered and nothing here narrates
  * movement.

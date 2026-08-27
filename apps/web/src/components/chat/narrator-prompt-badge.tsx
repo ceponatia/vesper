@@ -5,9 +5,9 @@ import type { NarratorPromptTemplateSummary } from "@/contracts/narrator-prompts
 import { NARRATOR_PROMPT_LAB_PATH } from "@/components/chat/narrator-prompt-select";
 
 /**
- * The persistent active-test badge (narrator-prompt-lab.plan.md §"Conversation
- * control"): `TEST PROMPT · Player Agency Minimal v4`, shown in the conversation
- * header whenever an admin has this chat on a handwritten narrator prompt.
+ * The persistent active-test badge: `TEST PROMPT · Player Agency Minimal v4`,
+ * shown in the conversation header whenever an admin has this chat on a
+ * handwritten narrator prompt.
  *
  * It sits OUTSIDE the menu on purpose. An override the owner has forgotten about
  * is how prompt-specific behavior becomes a false production bug report, so the

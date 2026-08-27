@@ -1,15 +1,14 @@
 import type { ScenePosture, SceneProximityBand, SceneFacing } from "@/contracts/affordances/scene";
 
 /**
- * The slice-7 trial matrix (visual-state.plan.md §Slice 7, §Trial matrix).
+ * The slice-7 trial matrix.
  *
  * ## Bait, not scenery — the round-1 lesson, inherited
  *
  * The affordance-cue trial's first round measured nothing because its control
  * arm had no contradictions to reduce: the scenes were true but never TEMPTED a
- * specific wrong claim, so both arms stayed vague and clean
- * (`body-attribute-affordances.trial.md` §Live results). This matrix is built
- * the rematch way instead. Every scenario belongs to a **bait family** naming
+ * specific wrong claim, so both arms stayed vague and clean. This matrix is
+ * built the rematch way instead. Every scenario belongs to a **bait family** naming
  * the wrong claim its scene invites, and arms that bait per exchange only where
  * the projection genuinely has something to say.
  *

@@ -44,7 +44,7 @@ export const sceneSpecSchema = z.object({
   lighting: z.string().default("soft natural light"),
   mood: z.string().default("calm"),
   /**
-   * The viewer's own body parts in frame (scene-pov-embodiment.plan.md slice 3) — ids
+   * The viewer's own body parts in frame — ids
    * from the viewer-body registry. Lenient: unknown ids and anything proposed when the
    * lane didn't ask for embodiment are clamped away in `resolveScenePlan`, so a confused
    * composer degrades to today's disembodied shot rather than failing the render.
@@ -64,7 +64,7 @@ export const sceneSpecSchema = z.object({
     .catch([])
     .default([]),
   /**
-   * Where the camera stands (scene-composition.plan.md slice 1) — ids from the camera
+   * Where the camera stands — ids from the camera
    * registry (`contracts/images/scene-camera.ts`), plus one verbatim quote grounding any
    * non-default orientation or height. Lenient like `viewerBody` for the same reason: a
    * confused composer must degrade to today's front-facing shot, never to a failed render.
@@ -123,8 +123,8 @@ export interface ScenePresentCharacter {
   /** Occlusion-filtered wardrobe — the only permitted source of outfit truth. */
   wornVisible: ReadonlyArray<SceneWornItem>;
   /**
-   * Free-text outfit that **overrides** the structured `wornVisible` summary when set
-   * (character-chat-scenario.plan.md): the character chat has no equippable wardrobe, so it
+   * Free-text outfit that **overrides** the structured `wornVisible` summary when
+   * set: the character chat has no equippable wardrobe, so it
    * supplies a described outfit directly. Sessions never set this (they have item state).
    */
   outfitDescription?: string;
@@ -173,7 +173,7 @@ export interface SceneComposerContext {
   /** The last 1–2 turns' narration, oldest first. Budgeted by the prompt builder. ASSISTANT rows only. */
   recentNarration?: ReadonlyArray<string>;
   /**
-   * The player's own recent messages, oldest first (scene-composition.plan.md slice 1).
+   * The player's own recent messages, oldest first.
    *
    * A separate corpus from `recentNarration` because they answer different questions and
    * every consumer must state which one it grounds against. "I come up behind her" is almost
@@ -183,8 +183,7 @@ export interface SceneComposerContext {
    */
   recentPlayerMessages?: ReadonlyArray<string>;
   /**
-   * Committed scene facts per present character, keyed by `normalizeName(name)`
-   * (scene-composition.plan.md slice 3).
+   * Committed scene facts per present character, keyed by `normalizeName(name)`.
    *
    * Authoritative, and read-only: where a fact exists it outranks anything the composer
    * proposes, and where none exists nothing changes. Sparse coverage is expected while the
@@ -192,9 +191,9 @@ export interface SceneComposerContext {
    */
   committedScene?: ReadonlyMap<string, CommittedSceneFacts>;
   /**
-   * **Embodied POV** (scene-pov-embodiment.plan.md slice 3): may the viewer's own body
+   * **Embodied POV**: may the viewer's own body
    * enter frame? Set by the **chat lane only** — the session lane keeps the absolute
-   * player-is-invisible rule (and its tests), per the plan's lane scope. When false or
+   * player-is-invisible rule (and its tests). When false or
    * absent the composer sees the original rules verbatim and `viewerBody` is clamped away,
    * so the session prompt is byte-identical.
    */
@@ -268,7 +267,7 @@ const describedIds = (entries: readonly { id: string; hint: string }[]): string 
   entries.map((entry) => `"${entry.id}" (${entry.hint})`).join("; ");
 
 /**
- * The camera rule (scene-composition.plan.md slice 1) — stated to BOTH lanes, because where
+ * The camera rule — stated to BOTH lanes, because where
  * the camera stands is a fact about the shot rather than about whether the viewer's own body
  * is in it.
  *
@@ -332,7 +331,7 @@ const composerRules = (embodied: boolean): readonly string[] => {
 
 /**
  * The composer's system prompt. `embodied` opts into the viewer's-own-body rules — the
- * **chat lane only** (scene-pov-embodiment.plan.md §Lane scope).
+ * **chat lane only**.
  */
 export function sceneComposerSystem(embodied = false): string {
   return composerRules(embodied).join("\n");

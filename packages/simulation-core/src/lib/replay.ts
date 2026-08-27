@@ -60,7 +60,7 @@ export function composeAncestryEventBounds(
  * item to the `fromLocus` its earliest post-boundary event captured — a
  * transfer's source or a destruction's pre-gone locus. Items no event moved
  * keep their current locus; that placement is seed data the event stream
- * cannot validate (plan R3).
+ * cannot validate (R3).
  */
 export function itemHoldingsAtSequence(
   currentHoldings: ReadonlyMap<string, ItemLocus>,
@@ -109,7 +109,7 @@ export interface BranchReplayResult {
 export interface BranchReplayInput {
   /**
    * The projection state just before the first replayed event. For a
-   * from-zero replay this is the (unvalidatable, plan R3) seed; for a resumed
+   * from-zero replay this is the (unvalidatable, R3) seed; for a resumed
    * replay it is a snapshot payload.
    */
   seed: MaterialsProjection;
@@ -126,7 +126,7 @@ export interface BranchReplayInput {
 
 /**
  * Deterministic replay of one branch's logical history through the same pure
- * projectors that produced it live (plan R1). Re-applies recorded events; it
+ * projectors that produced it live (R1). Re-applies recorded events; it
  * never re-runs decisions, so replaying is not a reroll. The materials
  * projection folds through `applyMaterialEvent` (which mutates the material
  * events and passes every other family through as a boundary advance), while
@@ -293,7 +293,7 @@ export function replayBranchHistory(input: BranchReplayInput): BranchReplayResul
         retire(`household_restock_due:${event.payload.householdId}:${event.payload.materialKindKey}`, event.commandId);
       } else if (event.type === "household_restock_routine_configured") {
         // Reconfiguring unconditionally retires any stale pending alarm
-        // (§5.6's store-layer idiom mirrored here for replay parity) — a
+        // (the store-layer idiom mirrored here for replay parity) — a
         // reconfigure that also re-arms emits its OWN fresh trigger_scheduled,
         // recognized by the branch above.
         retire(

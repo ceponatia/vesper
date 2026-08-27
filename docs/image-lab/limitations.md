@@ -38,5 +38,3 @@ The lab form has no seed control and no clone/rerun-with-one-change workflow. Ev
 ## Scene baseline is not exact scene-state replay
 
 `baseline_scene` uses the newest available chat-look reference and may add the newest chat-place reference. It does not reproduce every wardrobe/cache-key decision of the full player-facing scene lane. It is a production-profile/configuration baseline rather than a byte-for-byte replay of a past scene render.
-
-The working-tier owner for changes to these constraints is `image-lab-general-model-trials.plan.md`.

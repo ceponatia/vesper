@@ -12,8 +12,7 @@ import {
 } from "./phenomena/bands";
 
 /**
- * The hair domain's NARRATOR CLAIM lexicon (narrator-physical-guidance.plan.md
- * §Architecture 4, slice 2).
+ * The hair domain's NARRATOR CLAIM lexicon.
  *
  * Physical truth stays domain-owned, and so does the vocabulary for talking about
  * it. The shared guidance compiler treats every claim code as opaque — it carries,

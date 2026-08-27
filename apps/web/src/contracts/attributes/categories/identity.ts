@@ -12,8 +12,7 @@ export const identityGroup = defineAttributeGroup("identity", [
     // underlying build — an androgynous presentation reads very differently on a
     // natal-female vs natal-male frame. Pick the variant matching the character's
     // natal sex; female / male presentations imply it. (A structured
-    // `identity.natal_sex` scaffold below will take this over later — see
-    // deferred.plan.md §Natal sex.)
+    // `identity.natal_sex` scaffold below will take this over later.)
     description:
       "Presented gender. For an androgynous or nonbinary presentation, choose the variant matching the character's sex at birth.",
     mutability: "inherent",
@@ -56,8 +55,8 @@ export const identityGroup = defineAttributeGroup("identity", [
     // (`excludeFromPrompts`) — the gender `…_born_…` variant carries natal sex
     // into image gen for now. The editor surfaces this only for an androgynous /
     // nonbinary presentation (redundant for plain female / male). Planned
-    // expansion (intersex, trans handling, model-facing meaning of each gender,
-    // possibly superseding the gender born-variants): deferred.plan.md §Natal sex.
+    // expansion: intersex, trans handling, model-facing meaning of each gender,
+    // possibly superseding the gender born-variants.
     description:
       "Sex assigned at birth (structured scaffold — not yet used in image or narrator prompts; the gender born-variant steers rendering for now).",
     mutability: "inherent",

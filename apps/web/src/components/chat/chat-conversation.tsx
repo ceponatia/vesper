@@ -88,11 +88,11 @@ const toLine = (m: ChatMessage): ChatLine => ({
   stopped: m.meta.stopped,
   attachmentIds: m.meta.attachments?.ids.length ? m.meta.attachments.ids : undefined,
   narrator: m.meta.inputMode === "narrator" || undefined,
-  // World beat (world-ui.plan.md slice 2): the muted travel/skip/scene-ended trace.
+  // World beat: the muted travel/skip/scene-ended trace.
   worldBeat: m.meta.worldBeat?.kind,
 });
 
-/** Open-eye glyph — the privacy-mode toggle, off state (mobile-ux.plan.md ruling 4). */
+/** Open-eye glyph — the privacy-mode toggle, off state. */
 function EyeIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className}>
@@ -113,11 +113,10 @@ function EyeOffIcon({ className }: { className?: string }) {
 }
 
 /**
- * The full-screen conversation page (`/chat/[chatId]`,
- * character-chat-standalone.spec.md §2.2): mobile-first single column filling the
- * full viewport below `md` (the global app header is suppressed on this route at
- * that width — mobile-ux.plan.md W1 — so this page's own header is the only one)
- * and the viewport below the 3.25rem app header at `md`+, where that header comes
+ * The full-screen conversation page (`/chat/[chatId]`): mobile-first single
+ * column filling the full viewport below `md` (the global app header is
+ * suppressed on this route at that width, so this page's own header is the only
+ * one) and the viewport below the 3.25rem app header at `md`+, where that header comes
  * back (the bottom tab bar stays suppressed on this route at every width — the
  * composer owns the bottom edge). Header row: back to the Chats hub,
  * portrait, name/title, and a menu (bottom Sheet on phones, popover at ≥md) holding
@@ -134,7 +133,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const router = useRouter();
   const toast = useToast();
   const isMobile = useIsMobile();
-  // Privacy mode (mobile-ux.plan.md ruling 4): owned here, passed down to every
+  // Privacy mode: owned here, passed down to every
   // consumer as props — see use-privacy-mode.ts for why that's the single source
   // of truth instead of a module-level store.
   const [privacyMode, setPrivacyMode] = usePrivacyMode();
@@ -165,7 +164,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // gate below exists to prevent.
   const bootstrapChat = bootstrap.data?.chat ?? null;
   const simRouted = bootstrapChat !== null && bootstrapChat.id === chatId && bootstrapChat.simRouted;
-  // The player-facing world envelope (world-ui.plan.md slice 1): fetched only once
+  // The player-facing world envelope: fetched only once
   // the bootstrap proves the chat sim-routed — a legacy chat never issues the
   // request (the server would just 409 `not_sim_enabled`, which the browser logs
   // as console noise) and settles on null, so the ChatWorldCard hides itself.
@@ -184,7 +183,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // chat-switch reset applies — one list, one set of at-rest values, so a switch
   // can't carry an item into the next chat by omission.
   const [lines, setLines] = useState(PER_CHAT_DEFAULTS.lines);
-  // Transcript pagination (ux-improvements.plan.md slice 2): the GET returns the
+  // Transcript pagination: the GET returns the
   // newest page; "Load earlier" keysets older pages via `nextBefore`.
   const [hasEarlier, setHasEarlier] = useState(PER_CHAT_DEFAULTS.hasEarlier);
   const [earlierCursor, setEarlierCursor] = useState(PER_CHAT_DEFAULTS.earlierCursor);
@@ -195,16 +194,16 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [chatModel, setChatModel] = useState(PER_CHAT_DEFAULTS.chatModel);
   const [input, setInput] = useState(PER_CHAT_DEFAULTS.input);
   // True while the composer caret sits inside a `((…))` OOC block — drives the
-  // amber affordance (player-input-perception slice 5). A plain flag, not caret
+  // amber affordance. A plain flag, not caret
   // state: recomputed from the live textarea on every edit / selection change.
   const [oocActive, setOocActive] = useState(PER_CHAT_DEFAULTS.oocActive);
-  // Composer register (chat-supporting-cast.plan.md §Narrator input): narrator mode
-  // sends the line as story narration authored as the storyteller, not the player's POV.
+  // Composer register: narrator mode sends the line as story narration authored
+  // as the storyteller, not the player's POV.
   const [narratorMode, setNarratorMode] = useState(PER_CHAT_DEFAULTS.narratorMode);
   const [sending, setSending] = useState(PER_CHAT_DEFAULTS.sending);
   // True from a Stop click until the truncated stream settles (disables the button).
   const [stopping, setStopping] = useState(PER_CHAT_DEFAULTS.stopping);
-  // Light chat state (character-chat-state.spec.md): the strip + premise. Held in
+  // Light chat state: the strip + premise. Held in
   // local state (not useAsyncData) so a post-send refresh can drive the
   // stage-change toast off the value it just fetched.
   const [chatState, setChatState] = useState(PER_CHAT_DEFAULTS.chatState);
@@ -215,10 +214,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // Dedicated responsive world sheet. Below `lg` this is the first-class path
   // to location, clock, inventory, travel, and activities; Roster stays people.
   const [worldOpen, setWorldOpen] = useState(PER_CHAT_DEFAULTS.worldOpen);
-  // Roster sheet (multi-character-chat.plan.md slice 1) — the phone-width path to
-  // the roster panel; desktop also gets it inline in the aside.
+  // Roster sheet — the phone-width path to the roster panel; desktop also gets it
+  // inline in the aside.
   const [rosterOpen, setRosterOpen] = useState(PER_CHAT_DEFAULTS.rosterOpen);
-  // Per-character sheet (followups ruling 13): tapping a roster member opens THEIR
+  // Per-character sheet: tapping a roster member opens THEIR
   // sheet — their state fetched fresh on open, edited via characterId targeting.
   const [sheetMember, setSheetMember] = useState(PER_CHAT_DEFAULTS.sheetMember);
   const [sheetSnapshot, setSheetSnapshot] = useState(PER_CHAT_DEFAULTS.sheetSnapshot);
@@ -226,32 +225,31 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const [deleteOpen, setDeleteOpen] = useState(PER_CHAT_DEFAULTS.deleteOpen);
   const [deleting, setDeleting] = useState(PER_CHAT_DEFAULTS.deleting);
   const [archiveBusy, setArchiveBusy] = useState(PER_CHAT_DEFAULTS.archiveBusy);
-  // Attached photos staged for the next send (chat-image-input.plan.md): uploaded
+  // Attached photos staged for the next send: uploaded
   // eagerly on pick (the ids preview via the immutable file route), sent as ids.
   // Removing a staged photo only unstages it — the orphaned upload row is cleaned
   // up with the conversation, never surfaced anywhere.
   const [attachments, setAttachments] = useState(PER_CHAT_DEFAULTS.attachments);
   const [attachBusy, setAttachBusy] = useState(PER_CHAT_DEFAULTS.attachBusy);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
-  // "Remember this" (spec §6.4): the pinned-note dialog, openable from the composer
+  // "Remember this": the pinned-note dialog, openable from the composer
   // affordance (blank) or a message hover action (prefilled with that line).
   const [rememberOpen, setRememberOpen] = useState(PER_CHAT_DEFAULTS.rememberOpen);
   const [rememberText, setRememberText] = useState(PER_CHAT_DEFAULTS.rememberText);
   const [rememberBusy, setRememberBusy] = useState(PER_CHAT_DEFAULTS.rememberBusy);
-  // The Relationship panel (spec §7) + the reopen pickup strip / time skips (spec §8.1).
+  // The Relationship panel + the reopen pickup strip / time skips.
   const [relationshipOpen, setRelationshipOpen] = useState(PER_CHAT_DEFAULTS.relationshipOpen);
-  // Admin-only romantic_touch permission override panel
-  // (romantic-contact-affordances.spec.permission.md §"Authorship and developer controls").
+  // Admin-only romantic_touch permission override panel.
   const [permissionsOpen, setPermissionsOpen] = useState(PER_CHAT_DEFAULTS.permissionsOpen);
   const [pickupDismissed, setPickupDismissed] = useState(PER_CHAT_DEFAULTS.pickupDismissed);
   const [skipBusy, setSkipBusy] = useState(PER_CHAT_DEFAULTS.skipBusy);
-  // "Has something to say" (spec §8.4): a marker tap arrives as ?say=1 — surfaced as a
+  // "Has something to say": a marker tap arrives as ?say=1 — surfaced as a
   // one-tap opener banner (generation stays player-triggered), the param stripped so a
   // reload doesn't re-offer it.
   const [wantsSay, setWantsSay] = useState(PER_CHAT_DEFAULTS.wantsSay);
   const isAdmin = useIsAdmin();
-  // The conversation's narrator-prompt experiment (narrator-prompt-lab.plan.md
-  // slice 4), shared by the menu picker and the header badge so the two can never
+  // The conversation's narrator-prompt experiment, shared by the menu picker and
+  // the header badge so the two can never
   // disagree about which instructions this chat is narrating with. Admin-gated —
   // a player issues neither request. Deliberately NOT in `PerChatState`: the hook
   // stamps the value with its own chat id, so a switch reads as loading rather
@@ -386,7 +384,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     setChatState(null);
   }
 
-  // Read (and strip) the ?say=1 marker-tap param once per chat mount (spec §8.4).
+  // Read (and strip) the ?say=1 marker-tap param once per chat mount.
   // Deferred past a microtask per the strict hooks rule (no sync setState in effects).
   useEffect(() => {
     let cancelled = false;
@@ -399,7 +397,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         setWantsSay(true);
       }
     })();
-    // Stamp the §8.4 seen-cursor once per conversation OPEN (fire-and-forget):
+    // Stamp the "has something to say" seen-cursor once per conversation OPEN
+    // (fire-and-forget):
     // milestones landing later in this visit stay "unseen", so the hub marker can
     // light on the next visit and clears the next time the chat is opened.
     void chatsApi.update(chatId, { seen: true });
@@ -425,7 +424,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     };
   }, [chatId, chatState]);
 
-  // Per-character sheet (followups ruling 13): fetch the tapped member's own
+  // Per-character sheet: fetch the tapped member's own
   // snapshot on open — never the primary's cached one.
   useEffect(() => {
     if (!sheetMember) return;
@@ -587,7 +586,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
    * Another take: stream the reply into an assistant bubble, then reconcile against
    * the persisted transcript and refresh the state strip. `userLine` appends the
    * player's optimistic line first (a normal send); omitted ⇒ a character-only beat.
-   * `replaceId` (Another take, spec §4.1) streams into the EXISTING last reply
+   * `replaceId` (Another take) streams into the EXISTING last reply
    * instead of appending — the server updates that row in place, and the post-settle
    * transcript reload picks up the recorded takes.
    */
@@ -606,7 +605,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     opts: { userLine?: string; replaceId?: string; attachmentIds?: string[]; narrator?: boolean } = {},
   ): Promise<ChatStreamOutcome> => {
     const { userLine, replaceId } = opts;
-    // Any exchange consumes the reopen affordances (spec §8.1/§8.4) for this visit.
+    // Any exchange consumes the reopen affordances (the pickup strip and the
+    // "has something to say" opener) for this visit.
     setPickupDismissed(true);
     setWantsSay(false);
     // An exchange the player initiates re-pins the transcript (even from a scrolled-up
@@ -636,7 +636,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     // server's first-token watchdog tripping on a stalled provider) persists no reply
     // row, so without an explicit signal the pending bubble would just vanish.
     let received = false;
-    // Reply pacing (emotional-weather.plan.md slice 3, UI-only): hold the "…" bubble
+    // Reply pacing (UI-only): hold the "…" bubble
     // briefly before revealing tokens — a cold or hurt character lets the message sit,
     // a warm one answers at once. Tokens buffer during the hold; nothing is lost.
     const holdUntil = Date.now() + replyRevealHoldMs(chatState ? { regard: chatState.regard, feeling: chatState.feeling.current } : null);
@@ -881,7 +881,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   /**
-   * Tap an action chip (chat-action-beats.plan.md): a narrated `action_beat` exchange —
+   * Tap an action chip: a narrated `action_beat` exchange —
    * the character plays a small beat and the paired deterministic state effect applies
    * pre-narration server-side (the post-settle refresh shows the shift). No player line
    * is persisted; `actionBusy` marks which chip is streaming.
@@ -902,7 +902,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   /**
-   * Stop (spec §4.2): cut the streaming reply short SERVER-side — the model stream
+   * Stop: cut the streaming reply short SERVER-side — the model stream
    * aborts there, what already streamed persists as the reply (`meta.stopped`), and
    * our reader ends naturally with the truncated text. Deliberately NOT a client
    * abort: `abortRef` stays untouched so the settled prefix keeps its bubble. A 404
@@ -918,14 +918,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     }
   };
 
-  /** Go on (spec §4.2): ask for the character's next beat — no user line, same streaming flow as the opening beat. */
+  /** Go on: ask for the character's next beat — no user line, same streaming flow as the opening beat. */
   const goOn = async () => {
     if (sendingRef.current || !ready || archived) return;
     const outcome = await runStream({ kind: "continue", model: chatModel });
     if (!outcome.ok) toast.push({ title: "Couldn't continue", description: outcome.error?.message, tone: "error" });
   };
 
-  /** Another take (spec §4.1): regenerate the last reply in place; earlier takes stay browsable via the pager. */
+  /** Another take: regenerate the last reply in place; earlier takes stay browsable via the pager. */
   const anotherTake = async (id: string) => {
     if (sendingRef.current || !ready || archived) return;
     const outcome = await runStream({ kind: "regenerate", model: chatModel }, { replaceId: id });
@@ -935,7 +935,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   /**
-   * Show a different recorded take (spec §4.1) — display-only: state/memory follow
+   * Show a different recorded take — display-only: state/memory follow
    * the newest generated take, so this just swaps the row's content + activeId.
    */
   const switchTake = async (messageId: string, takeId: string) => {
@@ -1033,7 +1033,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     return false;
   };
 
-  /** Hard delete (spec §1.4): transcript, summary, state and memory go; back to the hub. */
+  /** Hard delete: transcript, summary, state and memory go; back to the hub. */
   const deleteChat = async () => {
     setDeleting(true);
     const result = await chatsApi.remove(chatId);
@@ -1053,7 +1053,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     setRememberOpen(true);
   };
 
-  /** Pin the note into the chat's long-term memory (spec §6.4, D15). */
+  /** Pin the note into the chat's long-term memory (D15). */
   const saveRemember = async () => {
     const content = rememberText.trim();
     if (!content) return;
@@ -1069,7 +1069,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     toast.push({ title: "Noted", description: `${who} will always remember that.` });
   };
 
-  /** Apply a player time skip (spec §8.1) — from the pickup strip or the header menu. */
+  /** Apply a player time skip — from the pickup strip or the header menu. */
   const skipTime = async (amount: ChatSkipAmount) => {
     if (skipBusy || archived) return;
     setSkipBusy(true);
@@ -1084,8 +1084,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         toast.push({ title: "Time skip failed", description: result.error.message, tone: "error" });
         return;
       }
-      // Slice 2 (world-ui.plan.md): the landing shows as a durable "Time passes…"
-      // beat in the transcript now, not a toast — pull it in with the world + clock.
+      // The landing shows as a durable "Time passes…" beat in the transcript
+      // now, not a toast — pull it in with the world + clock.
       await reloadTranscript();
       await refreshState();
       world.reload({ silent: true });
@@ -1100,14 +1100,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     }
     setChatState(result.data);
     stageRef.current = result.data.regardBand.label;
-    // Name the landing (chat-clock-calendar.plan.md): a skip is never a leap in the dark.
+    // Name the landing: a skip is never a leap in the dark.
     toast.push({
       title: "Time passes…",
       description: `It's now ${formatChatMoment(result.data.clockMinutes, result.data.calendarStart)}. ${who} will pick the scene up from there.`,
     });
   };
 
-  /** "Mark this moment" (spec §7.2): pin a player milestone on a message. */
+  /** "Mark this moment": pin a player milestone on a message. */
   const markMoment = async (messageId: string) => {
     const result = await chatsApi.markMoment(chatId, messageId);
     if (result.ok) {
@@ -1118,8 +1118,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   /**
-   * The §8.4 opener: let the character speak about their top open loop. With no
-   * loops standing (a milestone-keyed marker tap — §8.4 v2), fall through to the
+   * The "has something to say" opener: let the character speak about their top
+   * open loop. With no loops standing (a milestone-keyed marker tap), fall through to the
    * full initiative opener: the server builds her material (loops/wants/the
    * unseen shift) itself.
    */
@@ -1178,10 +1178,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const rosterNames = roster.length ? roster.map((m) => m.name) : name ? [name] : [];
 
   const premise = chatState?.premise.trim() ?? "";
-  // Another take targets the last assistant REPLY (spec §4.1) — only there, only
+  // Another take targets the last assistant REPLY — only there, only
   // idle. A trailing world beat (slice 2) is not a reply, so it's skipped.
   const lastAssistantId = [...lines].reverse().find((l) => l.role === "assistant" && !l.worldBeat)?.id ?? null;
-  // Go on (spec §4.2): the newest SETTLED message is a reply and nothing is streaming.
+  // Go on: the newest SETTLED message is a reply and nothing is streaming.
   const lastLine = lines[lines.length - 1];
   const canGoOn =
     !sending && ready && !archived && lastLine?.role === "assistant" && !lastLine.id.startsWith("tmp-");
@@ -1276,8 +1276,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               {/* Auto-title: an unnamed conversation is titled by its character. */}
               <p className="truncate text-sm text-paper-100">{title || name}</p>
               {title ? <p className="truncate text-[11px] text-paper-500">{name}</p> : null}
-              {/* The active narrator-prompt experiment (narrator-prompt-lab.plan.md
-                  slice 4) — under the name, so it is visible with the menu CLOSED and
+              {/* The active narrator-prompt experiment — under the name, so it is
+                  visible with the menu CLOSED and
                   never competes with the title for width. Admin + active selection only,
                   so an ordinary player's header is unchanged. */}
               {isAdmin ? <NarratorPromptBadge template={narratorPrompt.active} /> : null}
@@ -1365,7 +1365,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </div>
       </Sheet>
 
-      {/* Roster sheet (multi-character-chat.plan.md): the menu path to the roster
+      {/* Roster sheet: the menu path to the roster
           panel + the relationship matrix (roster > 1). */}
       <Sheet open={rosterOpen} onClose={() => setRosterOpen(false)} side="bottom" title="Roster">
         <div className="flex flex-col gap-4 p-3">
@@ -1410,7 +1410,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       ) : null}
 
       {/* Scene strip: a disclosure, collapsed by default so the transcript keeps the
-          room. Privacy mode (mobile-ux.plan.md ruling 4) removes the whole section —
+          room. Privacy mode removes the whole section —
           toggle included — while active: "no point showing it" if the images
           themselves never render. */}
       {!privacyMode ? (
@@ -1456,7 +1456,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         {ready && character ? (
           <aside className="hidden min-h-0 w-52 shrink-0 flex-col gap-4 overflow-y-auto p-4 lg:flex xl:w-64">
             {privacyMode ? (
-              // Privacy mode (mobile-ux.plan.md ruling 4): the standing portrait
+              // Privacy mode: the standing portrait
               // collapses to nothing — page background, no "[hidden]" placeholder —
               // leaving only this quiet toggle in its place to turn it back off.
               <button
@@ -1504,7 +1504,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 privacyMode={privacyMode}
               />
             ) : null}
-            {/* Supporting cast (chat-supporting-cast.plan.md): recurring side characters,
+            {/* Supporting cast: recurring side characters,
                 below "In this story" — the dev-visible add/edit/remove surface. */}
             <ChatSupportingCastPanel
               chatId={chatId}
@@ -1512,7 +1512,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               archived={archived}
               onSaved={(snapshot) => setChatState(snapshot)}
             />
-            {/* Plans & promises (chat-plans-promises.plan.md): tracked commitments that come
+            {/* Plans & promises: tracked commitments that come
                 due on the story clock — below Supporting Cast. */}
             <ChatPlansPanel
               chatId={chatId}
@@ -1581,7 +1581,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                       onEnlargeAvatar={!privacyMode && character?.avatarImageId ? () => setPortraitOpen(true) : undefined}
                       privacyMode={privacyMode}
                     />
-                    {/* Scene moments (mobile-ux.plan.md ruling 4): hidden under privacy
+                    {/* Scene moments: hidden under privacy
                         mode, same as the strip — no inline thumbnail, no reachable lightbox. */}
                     {!privacyMode && moments ? <SceneMomentRow images={moments} name={name} /> : null}
                   </div>
@@ -1600,7 +1600,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           </button>
         ) : null}
         </div>
-        {/* Right aside (chat-clock-calendar.plan.md): the transcript is a centered
+        {/* Right aside: the transcript is a centered
             max-w-3xl column, so the right gutter is free real estate at desktop
             widths — story time lives here, with the skip chips beside the display
             that makes them legible. */}
@@ -1626,7 +1626,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
 
       <div className="shrink-0 border-t border-ink-600 bg-ink-900/95 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto flex max-w-3xl flex-col gap-2">
-          {/* Reopen pickup (spec §8.1): a lightweight, dismissable choice — Continue is the default no-op. */}
+          {/* Reopen pickup: a lightweight, dismissable choice — Continue is the default no-op. */}
           {ready && !archived && lines.length > 0 && !pickupDismissed && !sending ? (
             <ChatPickupStrip
               who={who}
@@ -1642,7 +1642,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 else void skipTime(amount);
               }}
               onInitiative={() => {
-                // Reopen-opener initiative (chat-initiative.plan.md): a continue-kind
+                // Reopen-opener initiative: a continue-kind
                 // exchange whose cue the server builds from her loops/wants + the
                 // "a life meanwhile" license. Player-tapped, never background (D3).
                 void (async () => {
@@ -1652,7 +1652,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               }}
             />
           ) : null}
-          {/* "Has something to say" opener (spec §8.4): the tapped marker's one-tap beat.
+          {/* "Has something to say" opener: the tapped marker's one-tap beat.
               v2: the marker also fires on unseen milestones, so the banner no longer
               requires open loops — a loop-less tap runs the full initiative opener. */}
           {wantsSay && !archived && !sending ? (
@@ -1716,7 +1716,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             </div>
           ) : null}
           {narratorMode && !archived ? (
-            // Narrator-register affordance (chat-supporting-cast.plan.md §Narrator input).
+            // Narrator-register affordance.
             <div className="flex items-center gap-1.5 text-[11px]">
               <span className="rounded-sm border border-ink-500 bg-ink-750 px-1.5 py-0.5 font-medium tracking-wide text-paper-300 uppercase">
                 Narrator
@@ -1727,7 +1727,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
             </div>
           ) : null}
           {attachments.length ? (
-            // Staged photos for the next send (chat-image-input.plan.md).
+            // Staged photos for the next send.
             <div className="flex flex-wrap items-center gap-1.5">
               {attachments.map((imageId) => (
                 <div key={imageId} className="relative">
@@ -1749,15 +1749,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           ) : null}
           {/* Below `sm` the textarea owns its own full-width row (order-1) — sharing
               it with the persona toggle + two icon buttons + Send left it ~153px
-              wide at 390px (mobile-ux.plan.md W4 task 2); flex-wrap drops the rest to
+              wide at 390px; flex-wrap drops the rest to
               a row beneath (order-2+), Send pushed to that row's right edge so it
               stays the obvious primary action. At `sm`+ flex-nowrap plus each
               control's sm:order restore the original single-row layout, textarea
               back to flex-1. */}
           <div className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
             {!archived ? (
-              // Player ↔ narrator register toggle (chat-supporting-cast.plan.md §Narrator
-              // input): narrator sends the line as story narration, not the player's POV.
+              // Player ↔ narrator register toggle: narrator sends the line as story
+              // narration, not the player's POV.
               <button
                 type="button"
                 onClick={() => setNarratorMode((v) => !v)}
@@ -1906,7 +1906,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
                 containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
             {" remembers about you from it. Archiving keeps all of that — this can’t be undone."}
           </p>
-          {/* E20-1 (successor-world-lifecycle.plan.md): a world-bound chat owns its
+          {/* A world-bound chat owns its
               world 1:1, and the world is hard-deleted with it — say so here too. */}
           {simRouted ? (
             <p>
@@ -1976,7 +1976,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         />
       ) : null}
 
-      {/* Per-character sheet (followups ruling 13): a roster member's own state,
+      {/* Per-character sheet: a roster member's own state,
           fetched fresh on open and edited via characterId targeting. */}
       {sheetMember && sheetSnapshot ? (
         <ChatStateToolsModal
@@ -2079,21 +2079,20 @@ function ConversationMenu({
   skipBusy: boolean;
   onScenario: () => void;
   onStateTools: () => void;
-  /** The Relationship panel (spec §7): stage, sparkline, milestones, story so far. */
+  /** The Relationship panel: stage, sparkline, milestones, story so far. */
   onRelationship: () => void;
-  /** Mid-conversation time skip (spec §8.1) — the same options as the pickup strip. */
+  /** Mid-conversation time skip — the same options as the pickup strip. */
   onTimeSkip: (amount: ChatSkipAmount) => void;
   onRename: () => void;
   onArchiveToggle: () => void;
   onDelete: () => void;
-  /** Admin-only (spec §6.1): navigate to the dev memory inspector. Absent ⇒ item hidden. */
+  /** Admin-only: navigate to the dev memory inspector. Absent ⇒ item hidden. */
   onInspector?: () => void;
-  /** Admin-only (romantic-contact-affordances.spec.permission.md §"Authorship and
-   *  developer controls"): the romantic_touch permission override panel. Absent ⇒ hidden. */
+  /** Admin-only: the romantic_touch permission override panel. Absent ⇒ hidden. */
   onPermissions?: () => void;
-  /** The roster panel (multi-character-chat.plan.md): add/remove members, presence toggles. */
+  /** The roster panel: add/remove members, presence toggles. */
   onRoster: () => void;
-  /** Privacy mode (mobile-ux.plan.md ruling 4): the phone-menu path to the same
+  /** Privacy mode: the phone-menu path to the same
    *  toggle the desktop standing portrait carries — hides the portrait, feed
    *  avatars, and all scene imagery. */
   privacyMode: boolean;
@@ -2112,7 +2111,7 @@ function ConversationMenu({
         />
       </label>
       {/* The narrator experiments sit together: which model narrates, then which
-          instructions it narrates by (narrator-prompt-lab.plan.md slice 4). */}
+          instructions it narrates by. */}
       {narratorPromptControl}
       {agentReasoningControl}
       {sceneComposerControl}

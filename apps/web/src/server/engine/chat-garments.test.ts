@@ -43,8 +43,8 @@ import {
 } from "./chat-garments";
 
 /**
- * The slice-6 assembly (clothing-state-graph.plan.md): the store in, a digest +
- * ≤2 repeat-gated cues + per-scene notes out, and OQ8's pre/post key comparison.
+ * The garment-cue assembly: the store in, a digest +
+ * ≤2 repeat-gated cues + per-scene notes out, and the pre/post key comparison.
  *
  * Pure — every read integrates lazily and nothing is written back, so building a
  * prompt can never dry a garment. The database half (rollback, the enqueue) is

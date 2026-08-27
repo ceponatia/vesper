@@ -11,7 +11,7 @@ import {
   type ReplyTakes,
 } from "./chat-pipeline";
 
-// pushReplyTake (character-chat-standalone.spec.md §4.1) — the PURE takes-list
+// pushReplyTake — the PURE takes-list
 // core behind "another take": lazy seeding of the pre-regenerate reply, newest
 // take active, and the CHAT_REPLY_TAKES_CAP eviction that never drops the
 // active take. No DB — the persistence path is covered by chat.int.test.ts.
@@ -89,7 +89,7 @@ describe("pushReplyTake", () => {
   });
 
   /**
-   * Take provenance (narrator-prompt-lab.plan.md §Alternate takes). The whole point
+   * Take provenance. The whole point
    * of the Prompt Lab's manual A/B is: generate under production, select a test
    * template, ask for another take — and afterwards be able to tell the two apart.
    *

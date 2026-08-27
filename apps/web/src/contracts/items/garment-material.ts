@@ -2,8 +2,7 @@ import { z } from "zod";
 import { METER_FIXED_POINT_ONE, meterFixedPointSchema } from "@vesper/simulation-core/contracts/bodies";
 
 /**
- * Garment material profiles (clothing-state-graph.plan.md §Material profiles;
- * slice-0 audit OQ1). A registry-owned bundle of MECHANICS — never prompt
+ * Garment material profiles. A registry-owned bundle of MECHANICS — never prompt
  * adjectives. Narrator/image phrasing comes from derived semantic bands, so
  * nothing here is ever serialized into a prompt.
  *
@@ -18,7 +17,7 @@ import { METER_FIXED_POINT_ONE, meterFixedPointSchema } from "@vesper/simulation
 
 /**
  * The garment lane's fixed-point unit is the SAME 0–10_000 scale the successor
- * §25 meter kernel uses (`contracts/simulation/bodies.ts`) — one convention, not
+ * meter kernel uses (`contracts/simulation/bodies.ts`) — one convention, not
  * two. `0` is the low/absent end of every channel, `10_000` the full end.
  */
 export const garmentUnitSchema = meterFixedPointSchema;

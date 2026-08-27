@@ -1,6 +1,6 @@
 /**
- * Curated narrator model options (phase-2 T5 ruling): one pure list shared by
- * the client dropdown (components/play/world-tab.tsx) and the server's
+ * Curated narrator model options: one pure list shared by the client dropdown
+ * (components/play/world-tab.tsx) and the server's
  * narrativeModelId resolver default (server/ai/provider.ts). The planned BYOK
  * feature replaces this static list with a live-queried catalog; until then,
  * adding a narrator is one entry here.
@@ -57,7 +57,7 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   { id: "~deepseek/deepseek-v4-flash-latest", label: "DeepSeek 4 Flash" },
   { id: "z-ai/glm-5.2", label: "GLM 5.2" },
   { id: "google/gemini-3.5-flash", label: "Gemini 3.5 Flash" },
-  // Owner ask, 2026-07-21 (engine.rollout.plan.md ruling 4's side note).
+  // Owner ask, 2026-07-21.
   { id: "x-ai/grok-4.5", label: "Grok 4.5" },
 
   // ## The RP/low-refusal test bench (added 2026-08-17)
@@ -161,8 +161,8 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   },
   // Owner ask, 2026-08-19. A Mistral-Small-24B roleplay merge, and the first Featherless
   // row that is NOT a DavidAU Qwen3.6: it reopens a candidate this bench originally
-  // dropped as unreachable (narrator-model-bench.spec.md §Rejected candidates), and at
-  // $0.20/$0.32 per M it is the cheapest row on the whole bench, Featherless or not.
+  // dropped as unreachable, and at $0.20/$0.32 per M it is the cheapest row on
+  // the whole bench, Featherless or not.
   //
   // Probed on 2026-08-19 through the production seam: eleven warm calls, every one
   // `finish_reason: "stop"` with prose and **zero** reasoning tokens — no chain to

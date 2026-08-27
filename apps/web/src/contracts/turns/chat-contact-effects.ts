@@ -16,8 +16,7 @@ import {
 import type { ChatSurfaceTraceEntry } from "./chat-surface-ops";
 
 /**
- * The body-surface owner's side of the contact-effect transaction
- * (romantic-contact-affordances.spec.effects.md §8, §15 stage 5–6): validate a
+ * The body-surface owner's side of the contact-effect transaction: validate a
  * `BodyMarkProposal` against the owner's own vocabulary and current state, and
  * commit it — or refuse with a stable code.
  *
@@ -30,7 +29,7 @@ import type { ChatSurfaceTraceEntry } from "./chat-surface-ops";
  * `bodySurfaceMarkKinds` refuses with a diagnostic instead of committing the
  * nearest supported thing.
  *
- * Failure law (effects spec §14): every refusal is a drop with a stable
+ * Failure law: every refusal is a drop with a stable
  * `contact_effects.*` code, never a throw, and a refused proposal has NO
  * observable result — the returned surface is the input surface for that item.
  */
@@ -92,7 +91,7 @@ function isOwnedMarkKind(kind: string): kind is BodySurfaceMarkKind {
  *
  * - `applied` — validated and committed at the proposal's exact locus.
  * - `no_change` — a VALID mark already stands under this idempotency key: the
- *   designed retry answer (effects spec §13), reported without a diagnostic
+ *   designed retry answer, reported without a diagnostic
  *   because nothing degraded.
  * - `rejected` — refused with its `contact_effects.*` code and a diagnostic;
  *   the surface is untouched by that item.

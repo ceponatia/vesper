@@ -88,7 +88,7 @@ describe("asList", () => {
   });
 });
 
-// --- Slice 3: editor narrowing by species rule (attribute-mutability.spec.md §8) ---
+// --- Editor narrowing by species rule ---
 
 const attrDef = (id: string): AttributeDefinition => {
   const d = attributeRegistry.byId(id);
@@ -212,7 +212,7 @@ describe("isClearableAttribute — materialized baselines are never clearable", 
 });
 
 /**
- * The species/heritage patch builders (persona-library.plan.md slice 5): extracted so the
+ * The species/heritage patch builders: extracted so the
  * character and persona editors share one rule instead of two copies. Structural over
  * `BodyProfileParts`, so both CharacterProfile and PersonaProfile satisfy them.
  */

@@ -6,9 +6,7 @@ import { describe, expect, it } from "vitest";
 /**
  * The Next application is not the repository root any more, and a stale ESLint
  * scope fails OPEN: `eslint-config-next` would simply stop applying its rules to
- * `apps/web`, `pnpm lint` would stay green, and nothing would say so
- * (monorepo-image-core.spec.apps-web.md §"Tell Next-aware ESLint where the app
- * moved").
+ * `apps/web`, `pnpm lint` would stay green, and nothing would say so.
  *
  * So this asks the real config what it resolves for a real application file:
  * the Next rules must be enabled there, and `settings.next.rootDir` must point

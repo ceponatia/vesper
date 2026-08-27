@@ -5,7 +5,7 @@ import type { RegionExposure } from "@/contracts/items/visibility";
 import type { SceneCharacterSpec, SceneRenderPlan } from "@/server/images";
 
 /**
- * Scene-image eval fixtures (scene-images.spec.md §9): ~20 fixed scenes spanning
+ * Scene-image eval fixtures: ~20 fixed scenes spanning
  * the routing matrix — one character; two clothed; two partially clothed; three
  * characters; character+location; location-only; and high-risk wardrobe/exposure
  * cases. Human-scored, NOT a `pnpm test` gate. The runner (`run.ts`) turns each
@@ -13,9 +13,9 @@ import type { SceneCharacterSpec, SceneRenderPlan } from "@/server/images";
  *
  * `references` with an `imageId` route to the reference-edit provider (an anchor
  * avatar exists); without one, the scene is text-to-image. The `uploadedAnchor`
- * flag seeds the §3 safety row (it must score "no" once the guard ships).
+ * flag seeds the safety row (it must score "no" once the guard ships).
  *
- * The **orientation/staging block** (scene-composition.spec.md §"Fixtures and tests") is the
+ * The **orientation/staging block** is the
  * second axis: the same routing matrix, shot from somewhere other than squarely in front.
  * Those rows carry a non-default `camera`, and the staged ones carry a registry `staging`
  * entry whose camera and viewer parts they mirror — the exact shape `resolveScenePlan` hands
@@ -32,7 +32,7 @@ export type EvalCategory =
   | "character-location"
   | "location-only"
   | "high-risk-exposure"
-  /** Camera moved, nothing staged — the shot facts alone (scene-composition slice 1). */
+  /** Camera moved, nothing staged — the shot facts alone. */
   | "orientation"
   /** A registry staging entry drives camera, viewer parts and the act's phrasing (slice 2). */
   | "staging";
@@ -42,7 +42,7 @@ export interface EvalFixture {
   category: EvalCategory;
   plan: SceneRenderPlan;
   references: SceneVisualReference[];
-  /** Seeds the §3 safety row — an uploaded real-person avatar as the anchor. */
+  /** Seeds the safety row — an uploaded real-person avatar as the anchor. */
   uploadedAnchor?: boolean;
 }
 
@@ -65,7 +65,7 @@ function locRef(name: string, entityId: string): SceneVisualReference {
 
 function plan(over: Partial<SceneRenderPlan> & Pick<SceneRenderPlan, "focal">): SceneRenderPlan {
   // `viewerBody: []` ⇒ the disembodied shot every fixture here describes. Embodied POV
-  // fixtures are scene-pov-embodiment.plan.md §Testing's job, alongside the
+  // fixtures are covered separately, alongside the
   // third-person-contamination metric they exist to measure.
   return {
     others: [],
@@ -241,7 +241,7 @@ export const EVAL_FIXTURES: EvalFixture[] = [
       mood: "intimate",
     }),
     references: [charRef("Guest", "c-guest", { image: true, uploaded: true })],
-    uploadedAnchor: true, // §3 safety row: this MUST NOT reach an uncensored/intimate render once the guard ships
+    uploadedAnchor: true, // safety row: this MUST NOT reach an uncensored/intimate render once the guard ships
   },
   {
     name: "high-risk-barefoot-bare-legs",
@@ -255,7 +255,7 @@ export const EVAL_FIXTURES: EvalFixture[] = [
   },
 
   // -------------------------------------------------------------------------
-  // Orientation — the camera moved, nothing staged (scene-composition slice 1)
+  // Orientation — the camera moved, nothing staged
   //
   // Every row here is ANCHORED on purpose. Text-to-image has no opinion about which way a
   // subject faces, so it cannot fail the way the complaint describes; the reference edit can,

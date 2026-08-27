@@ -16,8 +16,7 @@ import type { ContactMaterialLayerRead, ContactMaterialTransmissionRead } from "
 import type { ContactBodySurfaceRef, ContactSurfaceRef } from "./surfaces";
 
 /**
- * The attempt / resolution / commitment boundary
- * (romantic-contact-affordances.spec.contact-core.md §"Boundary").
+ * The attempt / resolution / commitment boundary.
  *
  * Three types instead of one, because collapsing them is exactly how a
  * possibility reaches a narrator as a fact. The type system carries the
@@ -436,9 +435,7 @@ export type ContactEndedCommit = Extract<ContactLifecycleCommit, { kind: "contac
  * Named because the gesture-only lifecycle operation
  * (`modulateContactGesture`) can produce nothing else, and saying so in its
  * return type is what makes "an update never starts and never ends anything" a
- * compile error rather than a rule somebody has to remember
- * (romantic-contact-affordances.spec.actor-control.md §"Resolution laws →
- * Contact update").
+ * compile error rather than a rule somebody has to remember.
  */
 export type ContactUpdatedCommit = Extract<ContactLifecycleCommit, { kind: "contact_updated" }>;
 export type ContactContinuedCommit = Extract<ContactLifecycleCommit, { kind: "contact_continued" }>;

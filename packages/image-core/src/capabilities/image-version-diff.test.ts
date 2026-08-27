@@ -11,9 +11,8 @@ import {
 } from "./image-version-diff";
 
 /**
- * The version-candidate decision tables (image-model-capabilities.spec.md
- * §"Version candidate and promotion flow"): what the capability diff reports,
- * and which profile configurations block versus warn on activation.
+ * The version-candidate decision tables: what the capability diff reports, and
+ * which profile configurations block versus warn on activation.
  */
 
 function snapshot(overrides: Partial<ImageModelCapabilitySnapshot> = {}): ImageModelCapabilitySnapshot {

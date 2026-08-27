@@ -24,10 +24,9 @@ import {
 } from "./npc-scene-decision";
 
 /**
- * Evidence admission — the four gates and the fence
- * (romantic-contact-affordances.spec.actor-control.md §"Evidence admission").
+ * Evidence admission — the four gates and the fence.
  *
- * Organised by risk: the fixtures here are the spec's ADVERSARIAL minimum —
+ * Organised by risk: the fixtures here are the ADVERSARIAL minimum —
  * every one of them is a way a plausible model output could commit an act the
  * prose does not carry, and every one must die in the right gate with the
  * right bounded reason.

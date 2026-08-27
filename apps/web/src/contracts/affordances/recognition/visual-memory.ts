@@ -16,9 +16,7 @@ import {
 } from "./salience";
 
 /**
- * Observer visual memory — the structured, per-observer read model
- * (body-attribute-affordances.recognizable-features.memory.md §Structured
- * visual memory, §Update rules).
+ * Observer visual memory — the structured, per-observer read model.
  *
  * General semantic RAG is fine for callbacks and hopeless for deterministic
  * repetition control, so recognition keeps its own compact projection: what

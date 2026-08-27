@@ -5,8 +5,7 @@ import { createNarratorPromptTemplate, listNarratorPromptTemplates } from "@/ser
 import { narratorPromptFailure } from "./failure";
 
 /**
- * The Narrator Prompt Lab's collection surface (narrator-prompt-lab.plan.md
- * §API shape).
+ * The Narrator Prompt Lab's collection surface.
  *
  * Owner-admin, and re-checked SERVER-SIDE here rather than by the page that
  * links to it: `withOwnerAdmin` fails closed with a hidden 404 for a non-admin

@@ -11,7 +11,7 @@ import type { VisualStateRelationship } from "./relationships";
 import type { VisualStateSuppression } from "./suppression";
 
 /**
- * The composition resolver (visual-state.spec.md §Composition).
+ * The composition resolver.
  *
  * It answers one question for every feature in a snapshot: given the typed
  * edges the adapters asserted, what is still visible of this feature, and what

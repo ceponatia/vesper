@@ -9,9 +9,9 @@ import { traitCategorySchema } from "./category-ids";
  * so traits inherit base/creation/manual overlay precedence for free.
  */
 
-/** A declarative link from a trait to a state it shapes (§5). v1 metadata; the
- *  social-reaction `traitScale` math lives in `modulation.ts`, and the meter/mood
- *  coupling wires in Slice 4 — this records intent and gives that slice a data hook. */
+/** A declarative link from a trait to a state it shapes. v1 metadata; the
+ *  social-reaction `traitScale` math lives in `modulation.ts` — this records
+ *  intent and gives the meter/mood coupling a data hook. */
 export const traitModulationSchema = z.object({
   /** "affinity" or "meter:<id>" (e.g. "meter:arousal", "meter:mood"). */
   target: z.string().min(1),
@@ -47,16 +47,16 @@ export const personalityTraitDefinitionSchema = z.object({
   default: z.number(),
   /** Ascending by `max`; the last band must cover the axis maximum. */
   bands: z.array(traitBandSchema).min(1),
-  /** `core` never drifts; `developable` allows a slow arc (the drift rule is deferred — spec §11). */
+  /** `core` never drifts; `developable` allows a slow arc (the drift rule is deferred). */
   mutability: z.enum(["core", "developable"]),
   /** Marks the fenced, exposure-gated subset (redundant with the `intimate` category,
    *  which is the canonical fence). Optional so non-intimate defs omit it. */
   intimate: z.boolean().optional(),
   /** Phrasing guidance, deduped like attribute hints. */
   promptHints: z.array(z.string().min(1)).readonly().optional(),
-  /** Declarative state-dynamics links (§5); v1 metadata. */
+  /** Declarative state-dynamics links; v1 metadata. */
   modulates: z.array(traitModulationSchema).readonly().optional(),
-  /** Scored member-terms for forge expansion + free-text authoring (§3, Note 4). */
+  /** Scored member-terms for forge expansion + free-text authoring. */
   lexicon: z.array(traitLexiconEntrySchema).readonly().default([]),
 });
 export type PersonalityTraitDefinition = z.infer<typeof personalityTraitDefinitionSchema>;

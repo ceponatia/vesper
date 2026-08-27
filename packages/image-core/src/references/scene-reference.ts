@@ -23,7 +23,7 @@ export type SceneReference = z.infer<typeof sceneReferenceSchema>;
 export const sceneReferenceListSchema = z.array(sceneReferenceSchema).catch([]);
 
 /**
- * The render-input superset (spec §4): one reference the provider router may
+ * The render-input superset: one reference the provider router may
  * feed a backend. Broader than the Gallery DTO — it carries the actual asset
  * (`imageId`) and its provenance (`source`) plus a `role` and the intimate-route
  * gate. Only `character`/`location` kinds are produced today; `style`/`pose`/
@@ -32,7 +32,7 @@ export const sceneReferenceListSchema = z.array(sceneReferenceSchema).catch([]);
  *
  * `allowForIntimate` is the per-reference switch for the uncensored edit path.
  * It defaults to permissive today (preserving current behavior); the deferred
- * uploaded-avatar guard (spec §3) will flip it to `false` for uploaded
+ * uploaded-avatar guard will flip it to `false` for uploaded
  * provenance. The vocabulary arrays are shared with the `image_references`
  * table definition (`src/server/db/schema.ts`) so the column enums can't drift.
  */
@@ -45,14 +45,14 @@ export const sceneReferenceSourceSchema = z.enum(sceneReferenceSources);
 export type SceneReferenceSource = z.infer<typeof sceneReferenceSourceSchema>;
 
 /**
- * The scene's reference mode (scene-images.plan.md §"multi-reference toggle").
+ * The scene's reference mode.
  * `single` anchors the render on ONE identity avatar (a single-reference edit) — the
  * default. `multi` feeds up to three references (the present characters' avatars
  * + the location image) to a multi-reference edit so a two-character scene
  * can identity-lock both people at once. Multi falls back to single-edit when
  * fewer than two reference images are available, so the toggle never blocks a
  * render. Extensible (forward-compatible schema preference) — a future provider
- * with >3 refs (self-hosted ComfyUI, spec §7) slots in as a new mode.
+ * with >3 refs (self-hosted ComfyUI) slots in as a new mode.
  *
  * Lives beside the reference shapes rather than with the chat's scene-generation
  * state: the mode describes how many references a render may carry, which is an

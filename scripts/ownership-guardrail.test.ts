@@ -22,7 +22,7 @@ import { APPROVED_ROUTE_AUTHZ_WRAPPERS } from "./check-route-authz";
  */
 
 /**
- * S4's architectural tripwire (security-authz.plan.md slice 6). Ownership in
+ * S4's architectural tripwire. Ownership in
  * this app lives in application queries — there is no owner-aware repository
  * layer and no RLS — so one missed predicate on one mutation is a full IDOR.
  * This test turns that class of mistake into a failing build: it statically
@@ -346,7 +346,7 @@ const FIX_INSTRUCTIONS = [
  * invariant that actually holds is structural — every durable branch write goes
  * through one of four command shells, and each shell proves ownership via
  * `authorizeSimulationCommand` BEFORE it reads or writes anything
- * (security-authz.plan.md §Follow-ups 1; the helper itself is
+ * (the helper itself is
  * `src/server/engine/simulation/command-authz.ts`, re-verified 2026-07-26 —
  * it resolves the branch's anchoring chat and compares `characterChats.ownerId`
  * to the command principal).
@@ -672,7 +672,7 @@ describe("simulation command-shell invariant (security-authz S4)", () => {
       [
         "\nsim_* tables have no owner column, so a branch write is authorized structurally:",
         "every durable command shell must call authorizeSimulationCommand(...) above its",
-        "first transaction/insert/update. See security-authz.plan.md slice 6 + §Follow-ups 1.\n",
+        "first transaction/insert/update.\n",
       ].join("\n"),
     ).toBe("");
   });
@@ -703,8 +703,7 @@ describe("simulation command-shell invariant (security-authz S4)", () => {
         "\nA durable submit that does not go through runSimulationCommand (or one of the",
         "three stores that still keep an inlined copy of the shell) has no ownership gate",
         "at all — it would accept any principal for any branch. Call the shell.",
-        "See security-authz.plan.md slice 6 + §Follow-ups 1.\n",
-      ].join("\n"),
+        ].join("\n"),
     ).toBe("");
   });
 });

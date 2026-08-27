@@ -27,7 +27,7 @@ import { capitalizeFirst, formatAttribute, formatAttributeValue, isNonVisualAttr
 
 /**
  * THE lane-neutral clause table for digest facts (image-lane-consolidation
- * Stage 3, spec.prompts.md §Segment mapping). One resolver, shared by every
+ * Stage 3). One resolver, shared by every
  * character-bearing cutover: the avatar consumes it now, and the scene cutover
  * reuses this same module rather than growing a second wording table — the
  * reference-count ruling ("one segment builder") applied to phrasing.
@@ -90,8 +90,8 @@ export const VISUAL_CLAUSE_OMIT_GARMENT_NOTES = "route_garment_notes";
  * A body-language fact (posture, facing, support, contact) deliberately left to
  * the scene plan: committed scene facts already reach the shot through the
  * composer's authoritative context, the resolved camera, and the staging
- * registry — the pose policy this consolidation explicitly does not redesign
- * (image-lane-consolidation.plan.md §Boundaries). A digest clause beside the
+ * registry — the pose policy this consolidation explicitly does not redesign.
+ * A digest clause beside the
  * staged sentence would put the same body in two poses in one prompt.
  */
 export const VISUAL_CLAUSE_OMIT_SCENE_PLAN = "scene_plan_owned";
@@ -235,8 +235,7 @@ export function visualFactClauseResolver(sources: VisualFactClauseSources): Visu
     // No canonical phrasing arm yet (anatomy departures, located facts,
     // presentation choices, affordance observations). Degradation by design: a
     // required fact lands in `missingRequired` and the route refuses before
-    // spend rather than painting a fingerprint (spec.prompts.md §Failure
-    // behavior).
+    // spend rather than painting a fingerprint.
     return undefined;
   };
 }

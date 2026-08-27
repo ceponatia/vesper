@@ -5,8 +5,7 @@ import { bodyLocusKey, bodyLocusRefSchema, validateBodyLocusRefStrict } from "./
 
 /**
  * Realized anatomy / topology state — presence, absence, alteration, or
- * replacement of a body part (body-attribute-affordances.spec.recognizable-
- * features.md §Anatomy/topology state).
+ * replacement of a body part.
  *
  * Topology affects action validation as well as appearance, so it is EVENTED:
  * every row names the committed event that produced it (`sourceEventId` is

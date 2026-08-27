@@ -54,8 +54,8 @@ export interface RegistryModelRequest {
   /**
    * Already-mapped provider fields — the caller's resolved controls and
    * validated overrides, keyed by this version's real input names
-   * (`mapImageRenderControls` / `validateProviderOverrides`). Merged LAST, per
-   * the capabilities spec's merge order, so a profile's guidance beats the
+   * (`mapImageRenderControls` / `validateProviderOverrides`). Merged LAST in the
+   * capability merge order, so a profile's guidance beats the
    * model row's `extraInput` constant.
    *
    * It is deliberately opaque here: this module does not know a control from a
@@ -69,7 +69,7 @@ export interface RegistryModelRequest {
    * never the raw override bag. The strict arm's provider-input validation
    * extends its typed-owner trust to exactly these, which is how a curated
    * LoRA's probed weights field may carry a URI while a raw advanced value may
-   * not (image-model-adapters.spec.md).
+   * not.
    */
   typedControlFields?: readonly string[];
   /**
@@ -210,7 +210,7 @@ export function buildRegistryModelInput(
  * control fields written over it, then the caller's control overlay.
  *
  * Shared by both transports so the field-writing rules have one home. The ORDER
- * matters and is the capabilities spec's: controls are structural inputs the
+ * matters: controls are structural inputs the
  * render path owns, so they are written before `controlInput`, whose overlay
  * refuses reserved fields but is otherwise a later layer that wins.
  */

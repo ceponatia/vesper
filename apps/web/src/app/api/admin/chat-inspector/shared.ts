@@ -2,13 +2,12 @@ import { embedText } from "@/server/ai";
 import { facts } from "@/server/db";
 
 /**
- * Shared plumbing for the dev chat-inspector route family
- * (character-chat-standalone.spec.md §6.1): row → JSON serializers with a
- * structural row shape both `@/server/memory`'s list helpers and this family's
- * direct drizzle `.returning()` rows satisfy, plus the degrade-honestly
- * re-embed used by every content edit (docs/resilience.md — an embed failure
- * still saves the text; the row just drops out of similarity retrieval and the
- * response says so).
+ * Shared plumbing for the dev chat-inspector route family: row → JSON
+ * serializers with a structural row shape both `@/server/memory`'s list helpers
+ * and this family's direct drizzle `.returning()` rows satisfy, plus the
+ * degrade-honestly re-embed used by every content edit (docs/resilience.md — an
+ * embed failure still saves the text; the row just drops out of similarity
+ * retrieval and the response says so).
  */
 
 /** Everything the inspector shows about one fact row (list helper + `.returning()` both fit). */
@@ -24,7 +23,7 @@ export interface FactRowLike {
   status: string;
   pinned: boolean;
   origin: string;
-  /** The channel this fact was established through (slice 6) — surfaced so the inspector can label it. */
+  /** The channel this fact was established through — surfaced so the inspector can label it. */
   channel: string;
   sourceTurnId: string | null;
   sourceMessageId: string | null;

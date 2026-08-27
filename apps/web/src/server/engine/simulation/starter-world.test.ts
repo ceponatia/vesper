@@ -40,10 +40,10 @@ import {
 } from "./starter-world";
 
 /**
- * starter-world-seeds.plan.md (B8) — the starter world's authored seed is pure
+ * B8 — the starter world's authored seed is pure
  * data, so its shape is assertable without a database. Every payload here is
  * parsed through the SAME contract the durable seeder parses it with, and the
- * two behavioral claims from the plan's success criteria are proved against
+ * two behavioral claims the seed must satisfy are proved against
  * the real kernels: `eat_meal` is legal inside the seeded meal window
  * (`resolveRunRoutinePolicyFromView` / `selectRoutineMealItem`), and both
  * seeded commitments resolve into real departures away from home
@@ -62,7 +62,7 @@ const env = bindSimEnvelopes({
   rulesetVersion: STARTER_RULESET_VERSION,
 });
 
-/** The seeded topology, parsed — which also proves the zones/links satisfy §13.1. */
+/** The seeded topology, parsed — which also proves the zones/links are well-formed. */
 function topology(): SpaceTopology {
   return {
     locations: plan.topology.locations.map((location) => locationSchema.parse(location)),
@@ -112,7 +112,7 @@ function energyView(): MeterIntegrationView {
   };
 }
 
-/** The §26 authority view a fresh world presents at the meal boundary. */
+/** The material authority view a fresh world presents at the meal boundary. */
 function materialView(items: readonly SimulationMaterialItem[]): MaterialResolutionView {
   // Keyed as plain string: the view's `itemById` receives an unbranded id, and
   // widening the key beats casting the lookup argument into the brand.
@@ -195,7 +195,7 @@ describe("starter world seed: identity and shape", () => {
 
   it("parses and projects as a legal material branch seed", () => {
     // The same two calls `seedDurableMaterialBranch` makes before it writes a
-    // row: the contract parse, then the §26 invariant assertion (unique ids,
+    // row: the contract parse, then the material invariant assertion (unique ids,
     // resolvable container refs, capacity, no holding cycles).
     expect(() => materialsSeedProjection(plan.material)).not.toThrow();
     expect(materialBranchSeedSchema.parse(plan.material).items).toHaveLength(2);
@@ -206,13 +206,13 @@ describe("starter world seed: the meal (B8 group 1)", () => {
   it("seeds one consumable carrying a meal-source consumption effect", () => {
     const meal = seededMealItem();
     expect(meal.locus).toEqual({ kind: "held", actorId: plan.actors.primary });
-    // §26.5 requires an unowned-or-own item: an owner other than the eater is
+    // Meal selection requires an unowned-or-own item: an owner other than the eater is
     // exactly what makes a seeded meal invisible to the routine.
     expect(meal.ownerActorId).toBeNull();
     expect(meal.consumptionEffects?.some((effect) => effect.sourceKind === "meal")).toBe(true);
   });
 
-  it("is the item §26.5 selection picks for the primary", () => {
+  it("is the item selectRoutineMealItem picks for the primary", () => {
     const meal = seededMealItem();
     expect(selectRoutineMealItem(materialView([meal]), [meal.id], plan.actors.primary)?.id).toBe(
       plan.mealItemId,

@@ -11,8 +11,7 @@ import type { GarmentEffectiveMechanics, GarmentRegionStateRead } from "./mechan
 import type { GarmentStructuralProfile } from "./profile";
 
 /**
- * Stage 3 — one subject's garment view of one committed cut
- * (spec.garment-interaction.md §"Domain frame").
+ * Stage 3 — one subject's garment view of one committed cut.
  *
  * The live-input types are declared HERE, in the domain that consumes them, and
  * every one of them is something a LANE must assert. Absence is modelled as
@@ -63,7 +62,7 @@ export function garmentRegionState(input: {
 }
 
 /**
- * An ASSERTED garment/body contact (spec §Resolved, `GarmentBodyContactRead`).
+ * An ASSERTED garment/body contact.
  *
  * `basis` is the load-bearing field: it records WHY this contact is claimed, so
  * a debug read can tell a contact the wardrobe's own fit established from one a
@@ -95,8 +94,7 @@ export const GARMENT_FIT_CONTACT_STRENGTH = 5_000;
 export const GARMENT_TIGHT_CONTACT_STRENGTH = 7_500;
 
 /**
- * The contacts WARDROBE TRUTH ALONE establishes (spec §Resolved, "Establishment
- * law").
+ * The contacts WARDROBE TRUTH ALONE establishes.
  *
  * A `fitted` or `tight` worn garment lies against the body it covers, and that
  * is knowable from what the character has on. Everything else — `loose`,

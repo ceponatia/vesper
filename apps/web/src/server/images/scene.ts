@@ -57,7 +57,7 @@ export type SceneComposeInput = SceneComposerContext & {
 /**
  * Compose a validated render plan from the current scene context.
  *
- * TWO model calls at most, on two models (scene-composition.plan.md slice 2, owner ruling
+ * TWO model calls at most, on two models (owner ruling
  * 2026-08-10). The primary runs on the composer's own seam and is asked with **no fallback**
  * on purpose: `generateChecked` answers a missing fallback with the schema's own defaults,
  * which parse cleanly and would look exactly like a successful composition — the refusal
@@ -183,8 +183,7 @@ export interface RenderResolvedSceneInput {
   flavor?: string;
   /**
    * Identity-pack provenance for the anchors the caller PLANNED to send,
-   * persisted on the row's `meta.identityReferences`
-   * (image-identity-packs.spec.integration.md §"Render provenance"). Only the
+   * persisted on the row's `meta.identityReferences`. Only the
    * flag-on caller supplies it. What persists is narrowed to the references the
    * render actually sent: a refused render (`failedPrecondition`) records none,
    * and a fallback rung or a capacity trim drops the entries whose bytes never
@@ -345,8 +344,8 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           focalName: plan.focal?.name ?? null,
           referenceName: anchorRef?.name ?? null,
           model: primary ? modelFor(primary) : "none",
-          // The RESOLVED shot, for the dev lightbox and probe grading
-          // (scene-composition.spec.md §"Prompt emission"). Ids only — the phrasing
+          // The RESOLVED shot, for the dev lightbox and probe grading. Ids only
+          // — the phrasing
           // lives in the registries, and the prompt itself is already on the row.
           // Written once at reserve time: unlike the prompt and model, the camera is
           // the same on every rung, so a fallback needs no correction pass.

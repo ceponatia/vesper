@@ -20,7 +20,7 @@ import { MoodChip } from "@/components/ui/mood-chip";
 import { Tag, type TagTone } from "@/components/ui/tag";
 
 /**
- * Action chips (chat-action-beats.plan.md): a tap is a narrated one-beat exchange —
+ * Action chips: a tap is a narrated one-beat exchange —
  * the character plays a small beat and the paired deterministic effect applies
  * pre-narration. Each chip's `hint` (registry copy) is a tooltip saying what the tap
  * will do; `busy` marks the tapped chip while its reply streams.
@@ -60,7 +60,7 @@ const PIP_TONES: Record<string, TagTone> = { stress: "danger", arousal: "accent"
  * Compact, off-baseline meter pips for the status strip (only what's worth saying).
  * Bands + labels come from the meters registry (`pipLabel` on each threshold), so a
  * registry edit moves this strip and the narration cues together — the old hardcoded
- * copies silently desynced (codebase-review A10). Mood is the deliberate exception:
+ * copies silently desynced. Mood is the deliberate exception:
  * it has no registry thresholds (derived descriptor instead), so it reads the shared
  * valence band cuts.
  */
@@ -91,12 +91,11 @@ export function outfitSummary(outfit: string): string {
 
 /**
  * The status strip above the composer: an **ambient story-time chip**
- * (mobile-ux.plan.md ruling 3 — weekday-first, "Fri · 2:10pm", always visible
- * so the player can't silently disagree with the narrator about what day it
- * is; tap opens Scenario setup), a regard-band chip (heart) + meter pips,
- * shown only when off-baseline so casual chats stay clean
- * (character-chat-state.spec.md §7), plus a read-only **outfit chip**
- * (ux-improvements slice 3 — wardrobe finally visible during play): compact
+ * (weekday-first, "Fri · 2:10pm", always visible so the player can't silently
+ * disagree with the narrator about what day it is; tap opens Scenario setup),
+ * a regard-band chip (heart) + meter pips, shown only when off-baseline so
+ * casual chats stay clean, plus a read-only **outfit chip**
+ * (wardrobe finally visible during play): compact
  * garment summary, tap to expand to the full phrase, hidden when the outfit
  * text is empty. Editing stays in the Character sheet. Fed by GET …/state,
  * refetched per send — a pre-first-exchange snapshot is the server's
@@ -109,8 +108,8 @@ export function StatusStrip({ state, onOpenScenario }: { state: ChatStateSnapsho
   // free-text outfit for legacy/ad-hoc chats (chat-wardrobe-parity).
   const outfit = (state.outfitLabel || state.outfit).trim();
   const time = chatGameTime(state.clockMinutes, state.calendarStart);
-  // Sim-routed chats show the WORLD clock (R3 slice 4 + R5 calendar, ruling
-  // 17) — the branch's storySecond, the same truth the narrator colors by,
+  // Sim-routed chats show the WORLD clock (R3 + R5 calendar) — the branch's
+  // storySecond, the same truth the narrator colors by,
   // never the legacy clock. An anchored world reuses the legacy calendar
   // formatters verbatim via the adapter ("Mon · 8:01am"); unanchored stays
   // "Day N · 8:01am".

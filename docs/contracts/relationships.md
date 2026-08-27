@@ -35,7 +35,7 @@ A `first-meeting` classification means the pair start as strangers; `mutual` / `
 
 ## Two-axis model (familiarity × regard)
 
-The **character-chat lane** replaced the single affinity scalar with **two independent axes** (relationship-model.plan.md; migration 0028 renamed the `affinity` column to `regard` and added a `familiarity` column + a `relationship_record` jsonb to `character_chat_state`). Directed from day one — "A loves B, B secretly resents A" is a data state, never a schema change.
+The **character-chat lane** replaced the single affinity scalar with **two independent axes** (migration 0028 renamed the `affinity` column to `regard` and added a `familiarity` column + a `relationship_record` jsonb to `character_chat_state`). Directed from day one — "A loves B, B secretly resents A" is a data state, never a schema change.
 
 - **Familiarity** (`0..100`, slow **ratchet** — you can't un-know someone): how well two people know each other — address rights, what can be assumed/referenced, how well they read the other. It only ever climbs: exchange **trickle** (time together) lifts it at most to the top of `acquainted` (`FAMILIARITY_TRICKLE_CEILING`), while archivist **moments** (a real disclosure/shared experience) push past it, capped per scene (`FAMILIARITY_SCENE_CAP`). `tickFamiliarity` applies the ratchet.
 - **Regard** (`−100..100`, volatile — this **is** the old affinity scalar): how they feel — warmth of tone, the desire to initiate, patience, the escalation floor.
@@ -89,7 +89,7 @@ A **dev-defined canonical registry** of reusable labels (`bratty`, `prudish`, `f
 - a `warmth` lean — `cold` / `neutral` / `warm`, and
 - a `wontInitiate` list of concept families the character would not spontaneously perform — the signal the **puppet guardrail** reads.
 
-The editor/forge autocomplete from this registry. Free-form tags are tolerated but second-class — carrying no machine affect, they're invisible to the guardrail. `normalizeTag` / `canonicalTagId` map free text onto the canonical id. **Social-reaction cards** (`cards.ts`, shipped `social-reaction-cards.plan.md`) key their `reactionOverrides` on these tags — the foot-fetish flip: a `foot-fetish` taboo defaults to revulsion, but a character tagged `foot-fetish-positive` overrides it to *enjoy*.
+The editor/forge autocomplete from this registry. Free-form tags are tolerated but second-class — carrying no machine affect, they're invisible to the guardrail. `normalizeTag` / `canonicalTagId` map free text onto the canonical id. **Social-reaction cards** (`cards.ts`) key their `reactionOverrides` on these tags — the foot-fetish flip: a `foot-fetish` taboo defaults to revulsion, but a character tagged `foot-fetish-positive` overrides it to *enjoy*.
 
 ### Preferences (`preference.ts`)
 
@@ -118,7 +118,7 @@ A parallel registry on the shared spine ([attributes.md](attributes.md)), kept d
 
 ### Modulation (`modulation.ts`)
 
-Pure trait → coefficient functions (spec §5), kept deterministic in the reaction step — never agent-decided:
+Pure trait → coefficient functions, kept deterministic in the reaction step — never agent-decided:
 
 - **`socialTraitScale(reaction, traits)`** — Scales the reaction curve: agreeableness/composure soften (their negative poles sharpen) a **dislike**; possessiveness amplifies a **jealousy_trigger**. Clamped to `[0.4, 1.8]`.
 - **`personalizeMeters(defs, traits)`** — Resolves per-character meter dynamics ([meters.md](meters.md) §Meters): `optimism` → `mood.baseline`, `libido` → `arousal.baseline` + recovery, `composure` → `stress.recovery`.
@@ -133,7 +133,7 @@ Empty traits ⇒ unit/identity. The two `*DispositionOverlays` are wired into th
 
 `tags: string[]`, `preferences: Preference[]`, `traits: TraitValue[]`, and `socialCards: SocialReactionCard[]` (the character's own cards) all ride `CharacterProfile` JSONB (default `[]` ⇒ a character with no disposition authored plays with none of these effects).
 
-Cards are also **library content** — a user-owned `social_cards` table reusable across worlds and characters (mirrors `items`: visibility + clone-on-use + semantic search). A `/social-cards` library page + standalone **builder** author cards directly; the inline `SocialCardsEditor` (world `style.socialCards` / character `profile.socialCards`) carries **Import from library** (snapshot a row into the array via `cardFromLibraryParts`) and **Save to library** (the reverse). Every layer holds its own snapshot copy — editing or deleting the library card never reaches a world/character already using it. Discovery uses the shared `searchLibraryIds` `scope` (All/Public/Owned). See `social-reaction-cards.plan.md`.
+Cards are also **library content** — a user-owned `social_cards` table reusable across worlds and characters (mirrors `items`: visibility + clone-on-use + semantic search). A `/social-cards` library page + standalone **builder** author cards directly; the inline `SocialCardsEditor` (world `style.socialCards` / character `profile.socialCards`) carries **Import from library** (snapshot a row into the array via `cardFromLibraryParts`) and **Save to library** (the reverse). Every layer holds its own snapshot copy — editing or deleting the library card never reaches a world/character already using it. Discovery uses the shared `searchLibraryIds` `scope` (All/Public/Owned).
 
 The resolver lives in `reactions.ts` (cards in `cards.ts`):
 

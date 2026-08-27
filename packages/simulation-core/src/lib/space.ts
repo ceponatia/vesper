@@ -245,8 +245,8 @@ export interface MoveActorResolutionView extends SpaceBranchMeta {
   locus?: PhysicalLocus;
   /**
    * Whether a claim-holding activity currently occupies the actor's body
-   * (E3.2). Spec §3.1 invariant 4: departure would create incompatible
-   * exclusive claims, so the activity must end or be cancelled first.
+   * (E3.2). Departure would create incompatible exclusive claims, so the
+   * activity must end or be cancelled first.
    */
   actorHoldsBodyClaim: boolean;
 }
@@ -379,10 +379,10 @@ export function buildJourneyBatch(meta: JourneyBatchMeta, params: JourneyBatchPa
   });
 
   // The arrival is evaluated, never assumed: this schedules a durable trigger
-  // whose command re-validates the journey at fire time (spec §9.3; the E2.6
-  // stale-template caveat). Fork replay reconstructs the trigger from this
-  // event alone. ONE journey ⇒ ONE arrival uniqueness key ⇒ both travellers land
-  // together in a single arrival transaction.
+  // whose command re-validates the journey at fire time (the E2.6 stale-template
+  // caveat). Fork replay reconstructs the trigger from this event alone. ONE
+  // journey ⇒ ONE arrival uniqueness key ⇒ both travellers land together in a
+  // single arrival transaction.
   const templateId = composeSimulationId("template", [journeyId]);
   const triggerEvent = triggerScheduledEventSchema.parse({
     id: composeSimulationId("event", [meta.branchId, command.id, "arrival-trigger"]),
@@ -464,7 +464,7 @@ export function resolveMoveActor(
   }
   const locus = view.locus;
   // A registered actor without a locus is authority corruption, not a
-  // rejectable player mistake (spec §3.1 invariant 1).
+  // rejectable player mistake.
   if (!locus) throw new Error(`Actor ${command.payload.actorId} has no physical locus`);
   if (locus.kind === "in_transit") {
     return moveRejection("actor_in_transit", "They are already traveling.");
@@ -562,8 +562,8 @@ export function resolveJourneyArrival(
   if (journey.status !== "active" && journey.status !== "delayed") {
     return arrivalRejection("journey_not_active", "That journey is no longer underway.");
   }
-  // The scheduler steps the clock to the trigger's due second before resolving
-  // (spec §12.2 step 3), so firing early is corruption, not a rejection.
+  // The scheduler steps the clock to the trigger's due second before resolving,
+  // so firing early is corruption, not a rejection.
   if (view.storySecond < journey.earliestArrivalAt) {
     throw new Error(
       `Arrival for ${journey.id} fired at ${view.storySecond}, before its lower bound ${journey.earliestArrivalAt}`,
@@ -811,8 +811,8 @@ export function applySpaceEvent(
       });
     }
     case "actor_materialized_from_aggregate": {
-      // E6.4 (§27.2/§27.7): a promoted actor's FIRST locus — created, never
-      // replaced; a pre-existing locus here means replay double-materialized.
+      // E6.4: a promoted actor's FIRST locus — created, never replaced; a
+      // pre-existing locus here means replay double-materialized.
       if (projection.loci.some((locus) => locus.actorId === event.payload.actorId)) {
         throw new Error("Space replay double-materializes a promoted actor's locus");
       }
@@ -893,7 +893,7 @@ export function applySpaceEvent(
 }
 
 export interface SpaceReplayInput {
-  /** The space state just before the first replayed event (plan R3 seed rules). */
+  /** The space state just before the first replayed event (R3 seed rules). */
   seed: SpaceProjection;
   /** The contiguous full event stream after the seed boundary, any family mix. */
   events: readonly SimulationBranchEvent[];
@@ -928,7 +928,7 @@ export function replaySpaceHistory(input: SpaceReplayInput): SpaceProjection {
 }
 
 /**
- * Reverse-derive the space seed at the branch origin (plan R3): statics are
+ * Reverse-derive the space seed at the branch origin (R3): statics are
  * immutable copies, journeys are fully evented so the seed holds none, and
  * each moved actor's origin is the first zone their earliest journey_planned
  * departed from. Unmoved actors keep their current locus — that placement is

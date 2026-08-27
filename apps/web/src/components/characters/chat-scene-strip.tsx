@@ -20,8 +20,8 @@ function sceneError(image: ImageRecord): string | null {
 /**
  * Manual scene-image renderer + history strip for a conversation. Generate is
  * disabled until the first exchange — the scene is composed from the transcript.
- * The scene list is OWNED by the conversation page (slice 9 — one fetch/poll
- * shared with the inline transcript moments); this strip renders it and queues.
+ * The scene list is OWNED by the conversation page (one fetch/poll shared with
+ * the inline transcript moments); this strip renders it and queues.
  * The "Scene images" heading lives on the page's disclosure toggle, so the
  * strip's own header row is just the Generate action.
  */
@@ -54,7 +54,7 @@ export function SceneStrip({
    * PATCH, which 409s for the whole exchange (`chatBusyResponse`), so the
    * control is disabled rather than left clickable and guaranteed to fail —
    * the bug behind the owner's 2026-08-05 report of a false "still in progress"
-   * error (image-model-registry.spec.md §"Scene-picker busy bugs").
+   * error.
    */
   sending: boolean;
 }) {

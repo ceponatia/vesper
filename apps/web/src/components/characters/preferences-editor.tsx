@@ -12,9 +12,9 @@ export interface PreferencesEditorProps {
 }
 
 /**
- * Bespoke likes/dislikes (personality-and-state.spec.md §6) resolved against the
- * interaction-concept vocabulary — authored game data, not just prose. Lives on the
- * character editor's Personality tab (moved off Disposition 2026-07-11 for room).
+ * Bespoke likes/dislikes resolved against the interaction-concept vocabulary —
+ * authored game data, not just prose. Lives on the character editor's
+ * Personality tab (moved off Disposition 2026-07-11 for room).
  */
 export function PreferencesEditor({ preferences, onChange }: PreferencesEditorProps) {
   const update = (index: number, patch: Partial<Preference>) =>

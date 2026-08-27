@@ -3,8 +3,7 @@ import type { ViewerBodyPartId } from "./viewer-body";
 import type { SceneCameraSpec } from "./scene-camera";
 
 /**
- * The **staging catalog** — one entry per stageable intimate configuration
- * (scene-composition.plan.md slice 2).
+ * The **staging catalog** — one entry per stageable intimate configuration.
  *
  * During intimate play the picture and the text diverge worst: the narration describes a
  * specific act with a specific geometry, and the render comes back a nude portrait — right

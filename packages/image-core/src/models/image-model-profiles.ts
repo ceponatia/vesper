@@ -4,8 +4,7 @@ import { identityReferenceStrategySchema } from "../identity/identity-pack";
 import { imageModelOffersSurface, type ImageModel, type ImageModelSurface } from "./image-models";
 
 /**
- * Task profiles beneath a registered model (image-model-capabilities.spec.md
- * §`image_model_profiles`, §"Profile task eligibility", §"Profile resolution").
+ * Task profiles beneath a registered model (the `image_model_profiles` rows).
  *
  * A model row says what Replicate will ACCEPT. A profile says how Vesper should
  * USE that model for one job: portraits are not scenes, and the same Seedream row
@@ -135,8 +134,7 @@ export const imageReferencePolicySchema = z.object({
   roleOrder: z.array(imageReferenceRoleSchema).default((): ImageReferenceRole[] => []),
   maxPerRole: z.partialRecord(imageReferenceRoleSchema, z.number().int().min(0)).optional(),
   /**
-   * Which identity-pack roles this profile sends and in what order
-   * (image-identity-packs.spec.integration.md §"Profile identity strategies").
+   * Which identity-pack roles this profile sends and in what order.
    * A reviewed judgment about the model, never inferred from its provider
    * schema. Defaults to canonical-only so every stored row — all of which
    * predate the field — keeps sending exactly the reference it sends today; a

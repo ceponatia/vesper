@@ -3,10 +3,8 @@ import { garmentUnitSchema, type GarmentUnit } from "./garment-material";
 
 /**
  * The FINAL effective-coverage read — one shared answer to "what can still be
- * seen of this body location through what is over it"
- * (clothing-state-graph.plan.md §"Derived wardrobe and observation read" step 5;
- * body-attribute-affordances.spec.garment-interaction.md §Resolved, "Effective
- * coverage is captured, not reconstructed").
+ * seen of this body location through what is over it". Effective coverage is
+ * captured, not reconstructed.
  *
  * ## Why the SHAPE lives here and the DERIVATION does not
  *

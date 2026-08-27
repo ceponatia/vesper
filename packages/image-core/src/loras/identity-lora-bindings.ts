@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * The association between one identity pack revision and the character LoRA
- * trained from it (sd-rendering-package.plan.md §9).
+ * trained from it.
  *
  * **Why a binding exists at all.** The LoRA library already stores the weights
  * and the rules for sending them (`image-loras.ts`), and the identity pack
@@ -17,11 +17,11 @@ import { z } from "zod";
  * **Why it is not on `image_loras`.** The library is model-family-neutral and
  * holds style LoRAs, NSFW LoRAs and character LoRAs alike; most of its rows have
  * no identity pack and never will. Hanging six nullable training columns off it
- * would describe training on rows that were never trained, and the plan is
- * explicit that Vesper keeps ONE LoRA library rather than growing a second one
- * (§9, §22). A binding is a separate, small row that points at both sides.
+ * would describe training on rows that were never trained, and Vesper keeps ONE
+ * LoRA library rather than growing a second one. A binding is a separate, small
+ * row that points at both sides.
  *
- * **Why it is not in `@vesper/image-sd`.** §9 puts the association in the
+ * **Why it is not in `@vesper/image-sd`.** The association belongs in the
  * application/database layer. The SD package receives generic training manifests
  * and hands back generic provenance; it does not know that Vesper has identity
  * packs, characters, or a LoRA library. What lives here is the shape the
@@ -36,8 +36,8 @@ import { z } from "zod";
 /**
  * A binding's lifecycle.
  *
- * Three states rather than a boolean because the plan's Stage 4 trains SEVERAL
- * LoRAs per pack on purpose — rank 8 and rank 16 are compared against each other
+ * Three states rather than a boolean because Stage 4 trains SEVERAL LoRAs per
+ * pack on purpose — rank 8 and rank 16 are compared against each other
  * — and both of those exist at once, un-promoted, while the comparison runs.
  * `experimental` is that state, and it is the default: a freshly trained LoRA has
  * proven nothing yet. `active` is the one the render path would reach for, and at
@@ -53,8 +53,8 @@ export const identityLoraBindingStateSchema = z.enum(identityLoraBindingStates);
 export type IdentityLoraBindingState = (typeof identityLoraBindingStates)[number];
 
 /**
- * The fields a stored row and a create request share — §9's provenance list,
- * minus the two entries that live better elsewhere.
+ * The fields a stored row and a create request share — the binding's provenance
+ * list, minus the two entries that live better elsewhere.
  *
  * "Creation date" is `created_at`, storage bookkeeping like everywhere else in
  * this package's row schemas. "Model family/checkpoint compatibility" is
@@ -75,7 +75,7 @@ const identityLoraBindingFields = {
    */
   baseCheckpoint: z.string().trim().min(1).max(200),
   /**
-   * `fingerprintSdTrainingDataset` over the training set (§9).
+   * `fingerprintSdTrainingDataset` over the training set.
    *
    * Recorded, not yet compared. It is the evidence that answers "was this LoRA
    * trained from the images the pack holds now?" the day Vesper can rebuild a
@@ -83,7 +83,7 @@ const identityLoraBindingFields = {
    * re-curates, and the fingerprint is how they tell two curations apart.
    */
   datasetFingerprint: z.string().trim().min(1).max(64),
-  /** How many images the training set held — §8's 12–20 window, as it actually ran. */
+  /** How many images the training set held — the curated 12–20 window, as it actually ran. */
   datasetImageCount: z.number().int().positive(),
   /** The training recipe id, opaque here (`sdxl/character-lora-r8`). */
   trainingRecipeId: z.string().trim().min(1).max(120),

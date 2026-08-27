@@ -7,7 +7,7 @@ import { seedBodyConfigFromAttributes } from "../species/seed";
 import { characterProfileSchema, outfitPresetSchema, type CharacterProfile } from "../world/profile";
 
 /**
- * A **persona**'s profile (persona-library.plan.md) — the player's own body, wardrobe
+ * A **persona**'s profile — the player's own body, wardrobe
  * and bio, as a library entity.
  *
  * Deliberately a NARROW pick from {@link characterProfileSchema}, not the whole thing
@@ -123,8 +123,8 @@ export function seedNewPersonaProfile(profile: PersonaProfile): PersonaProfile {
 }
 
 /**
- * **The one seam** every character-shaped consumer goes through to take a persona
- * (persona-library.plan.md §"The contract + the adapter"): `resolveChatWardrobe`,
+ * **The one seam** every character-shaped consumer goes through to take a
+ * persona — the contract plus the adapter: `resolveChatWardrobe`,
  * `characterAppearanceSummary`, `sceneRevealAppearance`, `identityAnchorSummary`,
  * `AttributePicker`, `OutfitEditor` — all already take a `CharacterProfile` and none
  * are character-coupled, so this buys every one of them with no fork.

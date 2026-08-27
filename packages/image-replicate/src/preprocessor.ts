@@ -4,8 +4,8 @@ import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
 import { type ReplicateImageResult, runPrediction } from "./prediction";
 
 /**
- * One image-in, image-out PREPROCESSOR run — a pose skeleton renderer, a depth
- * estimator (qwen-advanced-image-subsystem.spec.md §"Control extraction").
+ * One image-in, image-out PREPROCESSOR run for control extraction — a pose
+ * skeleton renderer, a depth estimator.
  *
  * It is a separate entry point rather than a registry model with a profile
  * because a preprocessor is a LAB TOOL, not something a player can be rendered

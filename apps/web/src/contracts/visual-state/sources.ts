@@ -2,30 +2,29 @@ import { z } from "zod";
 import { appearanceSourceRefSchema, type AppearanceSourceRef } from "../appearance-features";
 
 /**
- * Which owner a visual feature was read from (visual-state.spec.md §Loci and
- * sources) — provenance, never a copy of the owner's value.
+ * Which owner a visual feature was read from — provenance, never a copy of the
+ * owner's value.
  *
- * SPEC DEVIATION, recorded here because it is load-bearing. The spec writes
- * this union as `AppearanceSourceRef | { kind: "presentation"; presentationId }
- * | { kind: "body_condition"; conditionId } | …`, which cannot be built: the
- * appearance union already owns `{ kind: "presentation"; itemId }` and
- * `{ kind: "condition"; conditionKey }`, so two arms would claim one
+ * The obvious shape, `AppearanceSourceRef | { kind: "presentation";
+ * presentationId } | { kind: "body_condition"; conditionId } | …`, cannot be
+ * built: the appearance union already owns `{ kind: "presentation"; itemId }`
+ * and `{ kind: "condition"; conditionKey }`, so two arms would claim one
  * discriminator with different shapes. Widening the appearance union instead is
  * not an option — it is a frozen seam whose two exhaustive `switch`es live in
  * the recognition layer.
  *
  * So appearance provenance is NESTED under one `appearance` arm rather than
  * spread. That keeps the frozen union untouched, makes "this fact came through
- * the truth-level appearance projection" explicit, and leaves every new arm the
- * spec names available at its own discriminator.
+ * the truth-level appearance projection" explicit, and leaves every new arm
+ * available at its own discriminator.
  */
 export const visualStateSourceRefSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("appearance"), ref: appearanceSourceRefSchema }),
   /**
-   * SPEC ADDITION. Species and heritage feature groups (wings, horns, a tail)
-   * are a real owner the spec's union does not name: they come from
-   * `realizeBody`, not from an attribute, a located fact, or anatomy state
-   * (visual-state.audit.md finding 11). Filing them under any existing arm would
+   * Species and heritage feature groups (wings, horns, a tail) are their own
+   * owner: they come from
+   * `realizeBody`, not from an attribute, a located fact, or anatomy state.
+   * Filing them under any existing arm would
    * claim a provenance that does not exist and would send a reader looking for
    * an attribute row that was never written.
    */
@@ -51,9 +50,9 @@ export const visualStateSourceRefSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("scene_relation"), relationId: z.string().min(1) }),
   z.object({ kind: z.literal("affordance"), observationKey: z.string().min(1) }),
   /**
-   * SPEC ADDITION. A committed contact — the contact lifecycle projection the
+   * A committed contact — the contact lifecycle projection the
    * scene state carries verbatim and never edits. Hand occupation and committed
-   * motion come from here (plan §First-release source map), and it is a
+   * motion come from here, and it is a
    * different owner from a scene relation: filing a contact under
    * `scene_relation` would name a relation row that was never written, and a
    * reader chasing the provenance would look in the wrong store.

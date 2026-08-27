@@ -5,8 +5,8 @@ import { fnv1a32, fnv1aHex } from "./hash";
  * GOLDEN DETERMINISM PINS — never "update to fix" a failure here.
  *
  * These values were computed from the five hand-rolled FNV-1a copies this module
- * replaced (image-pipeline-consolidation.plan.md C10), BEFORE any of them moved.
- * Two callers treat this hash as a contract, and both fail SILENTLY if it drifts:
+ * replaced, BEFORE any of them moved. Two callers treat this hash as a contract,
+ * and both fail SILENTLY if it drifts:
  *
  * - **The character forge's seed reproducibility.** `groundSocialCards` mints
  *   `card_<base36>` ids from the label hash, and `fillVisualDefaults` indexes a

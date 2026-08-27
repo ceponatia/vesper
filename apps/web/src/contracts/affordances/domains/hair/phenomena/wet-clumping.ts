@@ -16,8 +16,7 @@ import {
 } from "./bands";
 
 /**
- * `hair.wet_clumping` — wet hair gathering into strands and clumps
- * (hair spec §"Phenomena").
+ * `hair.wet_clumping` — wet hair gathering into strands and clumps.
  *
  * The cause is the delicate part: damp hair is damp whatever wet it, so a cause
  * tag is attached ONLY for a committed wetting event, and each event names

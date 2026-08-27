@@ -8,8 +8,7 @@ import {
 } from "../shared";
 
 /**
- * Prepare (or re-prepare) the character's pack on the owner's request
- * (image-identity-packs.spec.lifecycle.md §"Lazy backfill").
+ * Prepare (or re-prepare) the character's pack on the owner's request.
  *
  * `purpose: "identity_render"` because a person is waiting: that arm waits out
  * the bounded local derivation and answers with a settled pack, where

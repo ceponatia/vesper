@@ -23,9 +23,8 @@ import {
 } from "./chat-garment-ops";
 
 /**
- * Slice 5 — proposals over opaque handles become typed operations
- * (clothing-state-graph.plan.md §"Models propose semantic operations, never raw
- * state" / §"Typed mutation surface"; slice-0 audit OQ7 + R2, fixtures F15/F16/F21).
+ * Proposals over opaque handles become typed operations — models propose
+ * semantic operations, never raw state.
  *
  * The load-bearing claims: every proposal kind maps, an unresolvable handle DROPS
  * with the right stable code and leaves the store byte-identical, `introduce`

@@ -15,8 +15,7 @@ import { listNarratorPromptTemplates } from "./templates";
 /**
  * The per-conversation half of the Narrator Prompt Lab: which template a chat is
  * experimenting with, and the one function that turns that selection into the
- * instruction source an exchange runs on (narrator-prompt-lab.plan.md §3, §7 and
- * §"Narrator instruction source").
+ * instruction source an exchange runs on.
  *
  * The selection is **operational configuration, not story state** — it is not on
  * the scenario, no preset carries it, and no retake, regenerate, rerun, state
@@ -172,8 +171,8 @@ function fallback(
  * selection can fail to resolve — the template gone, soft-deleted, its current
  * revision missing, or written in a language this build does not know — degrades
  * to production instructions and emits `narrator_prompt_override_unavailable`
- * with the reason. That is the plan's hard rule (§"Failure and degradation
- * rules"): a prompt experiment must never be able to dead-end a conversation.
+ * with the reason. That is a hard rule: a prompt experiment must never be able
+ * to dead-end a conversation.
  *
  * A chat with no selection is the ordinary case, not a degradation, and emits
  * nothing.

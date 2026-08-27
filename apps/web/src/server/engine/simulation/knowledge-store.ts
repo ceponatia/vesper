@@ -19,7 +19,7 @@ import { assertionFromRow, beliefFromRow } from "./knowledge-recorder";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E4.2 — the §21 disclosure command. Validation and event minting only: the
+ * E4.2 — the disclosure command. Validation and event minting only: the
  * assertion/belief ledgers derive in the shell's `recordCommandKnowledge`
  * step (see `knowledge-recorder`), so the live write path and a fork's replay
  * are one code path by construction.
@@ -73,7 +73,7 @@ export async function loadSpeakerLiveBelief(
   return beliefs[0];
 }
 
-/** Speak a claim, relay gossip, or retract — the §21 disclosure command. */
+/** Speak a claim, relay gossip, or retract — the disclosure command. */
 export async function submitDurableMakeDisclosure(
   rawCommand: unknown,
   options: KnowledgeStoreOptions = {},

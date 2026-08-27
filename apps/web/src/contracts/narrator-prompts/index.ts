@@ -1,7 +1,6 @@
 /**
  * Narrator Prompt Lab contracts — the pure shapes shared by the prompt builders,
- * the admin API, the Prompt Lab UI and the take browser
- * (narrator-prompt-lab.plan.md).
+ * the admin API, the Prompt Lab UI and the take browser.
  *
  * Four groups, and nothing else: the prompt **authority IR** the builders emit,
  * the **template/revision** shapes and their API request schemas, the resolved

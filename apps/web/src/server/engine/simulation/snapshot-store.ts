@@ -25,9 +25,9 @@ export interface SnapshotStoreOptions {
 }
 
 /**
- * Checkpoint a branch's live projection at its current head (spec §10.4).
+ * Checkpoint a branch's live projection at its current head.
  * Capture trusts the live projection — that is the point of a snapshot — which
- * is why §10.4 requires the periodic from-zero rebuilds below: they are what
+ * is why the periodic from-zero rebuilds below are required: they are what
  * keeps a wrong snapshot from hiding a replay defect.
  */
 export async function captureBranchSnapshot(
@@ -94,7 +94,7 @@ export interface RebuildBranchProjectionOptions extends SnapshotStoreOptions {
 
 /**
  * Rebuild the authoritative projection from immutable events and compare it to
- * the live rows by checksum (§10.4). From-zero replays the entire ancestry
+ * the live rows by checksum. From-zero replays the entire ancestry
  * range through the pure projectors; from-snapshot resumes at the latest
  * checkpoint. Tests MUST keep exercising the from-zero path so a subtly wrong
  * snapshot cannot hide a replay defect by always being loaded.
@@ -148,7 +148,7 @@ export async function rebuildDurableBranchProjection(
       }
 
       const replay = replayBranchHistory({ seed, events: replayEvents, chainBranchIds });
-      // The story clock advances without events (spec §11.1 step 12 writes it
+      // The story clock advances without events (the command shell writes it
       // to the branch row), so the rebuilt projection stamps the live clock
       // rather than pretending events determine it.
       const rebuilt = materialsProjectionSchema.parse({

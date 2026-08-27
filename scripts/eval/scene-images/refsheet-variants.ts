@@ -5,8 +5,8 @@ import sharp from "sharp";
 import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 
 /**
- * Two follow-up reference-sheet experiments for qwen-image-2-edit
- * (scene-images.spec.md §6), after a labeled board got copied verbatim:
+ * Two follow-up reference-sheet experiments for qwen-image-2-edit, after a
+ * labeled board got copied verbatim:
  *
  *   exp2 — "seamless board": two halves side by side, NO label bars / no black
  *          structure, asking it to merge the person into the location. Isolates

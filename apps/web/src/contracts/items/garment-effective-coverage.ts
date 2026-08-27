@@ -36,11 +36,10 @@ import {
 } from "./garment-presentation";
 
 /**
- * The DERIVED wardrobe read (clothing-state-graph.plan.md §"Derived wardrobe and
- * observation read" steps 3–5).
+ * The DERIVED wardrobe read — steps 3–5 of the wardrobe and observation read.
  *
  * Step 1 (loading instances) belongs to the caller. This module owns step 2 —
- * **integrate condition to story time** (lazily, through slice 4's
+ * **integrate condition to story time** (lazily, through the
  * `garment-condition.ts`, and never persisting what a read derived) — and step 3,
  * **apply presentation behavior to per-part coverage**, which the per-garment
  * rollup steps 4–5 consume:
@@ -208,7 +207,8 @@ export interface GarmentReadoutOptions {
   registry?: BodyLocationRegistry;
   /**
    * Story minute to read AT. The condition is integrated to it lazily and the
-   * result is NOT persisted (the §25.2 law) — reading a garment can never dry it.
+   * result is NOT persisted — a query never persists, so reading a garment can
+   * never dry it.
    * Absent ⇒ read the stored state as last written.
    */
   atMinutes?: number;

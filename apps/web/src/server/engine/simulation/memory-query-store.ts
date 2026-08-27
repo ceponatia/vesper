@@ -22,7 +22,7 @@ import { memoryDocumentFromRow, memoryIndexLag } from "./memory-index-store";
 import { softCanonEntryFromRow } from "./soft-canon-recorder";
 
 /**
- * E4.4 — the §24.1 eligibility-before-similarity pipeline. Every gate before
+ * E4.4 — the eligibility-before-similarity pipeline. Every gate before
  * ranking is relational: branch ancestry bounds which documents exist for
  * this timeline, visibility resolves against the viewpoint (fixed actor
  * lists, or a live-belief join for assertion documents), and validity for
@@ -35,7 +35,7 @@ import { softCanonEntryFromRow } from "./soft-canon-recorder";
 const liveBeliefStatuses = ["active", "doubted"] as const;
 
 /**
- * Relational validity for ledger-backed documents (§24.1 steps 2–3): a
+ * Relational validity for ledger-backed documents (pipeline steps 2–3): a
  * document survives only if its source row is live on the QUERY branch.
  * Missing rows fail closed — a document without a live source is silence.
  */
@@ -144,7 +144,7 @@ export interface MemoryQueryOptions {
   database?: Db;
 }
 
-/** The §24.1 pipeline, steps 1–7 in order. */
+/** The recall pipeline, steps 1–7 in order. */
 export async function queryMemoryDocuments(
   rawInput: unknown,
   options: MemoryQueryOptions = {},
@@ -260,7 +260,7 @@ export async function queryMemoryDocuments(
     limit: input.limit,
   });
 
-  // Step 7 — provenance and epistemic label on every result, plus §24.3 lag.
+  // Step 7 — provenance and epistemic label on every result, plus index lag.
   const lag = await memoryIndexLag(input.branchId, { database });
   return memoryRecallResponseSchema.parse({
     branchId: input.branchId,

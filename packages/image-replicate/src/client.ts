@@ -14,8 +14,8 @@ import { runRegistryImageModel } from "./render";
  * Everything that needs credentials hangs off this object rather than reading
  * them per call, which is what makes the safety posture single-source: the value
  * a render's plan was fingerprinted with is the same immutable value the payload
- * builder writes, because both come from this client's config
- * (monorepo-image-core.spec.replicate.md §"One safety value from plan to send").
+ * builder writes, because both come from this client's config — one safety value
+ * from plan to send.
  */
 export interface ReplicateClient {
   /** False when no token was configured; every call fails before network work. */

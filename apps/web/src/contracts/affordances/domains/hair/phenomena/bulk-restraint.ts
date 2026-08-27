@@ -4,8 +4,7 @@ import { hairSuppressed, HAIR_NO_RESTRAINT } from "./bands";
 import { hairBulkRestraint } from "./restraint";
 
 /**
- * `hair.bulk_restraint` — what is currently holding this hair's bulk still
- * (narrator-physical-guidance.plan.md slice 2).
+ * `hair.bulk_restraint` — what is currently holding this hair's bulk still.
  *
  * The first phenomenon in the corpus that emits a **constraint** rather than an
  * observation, and the reason is the whole point of the constraint-first policy: a

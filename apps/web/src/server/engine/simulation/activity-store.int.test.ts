@@ -328,7 +328,7 @@ describe.runIf(harness.ready)("E3.2 durable activity authority", () => {
 });
 
 // -----------------------------------------------------------------------
-// E5.3 slice 2 (§26.5–26.6) — resource-cost reservation at start and
+// E5.3 slice 2 — resource-cost reservation at start and
 // consume-disposition consumption at completion.
 // -----------------------------------------------------------------------
 
@@ -576,7 +576,7 @@ describe.runIf(harness.ready)("E5.3 slice 2 — activity resource reservations a
       .loose()
       .parse(sourceEvent?.payload);
     expect(sourcePayload.meterKey).toBe("energy");
-    // Causation-chained to the item_consumed event, not to the completion (§26.6).
+    // Causation-chained to the item_consumed event, not to the completion.
     expect(sourceEvent?.causationId).toBe(consumedEvent?.id);
 
     const [meterRow] = await db()
@@ -665,8 +665,8 @@ describe.runIf(harness.ready)("E5.3 slice 2 — activity resource reservations a
     expectAccepted(start, "start the meal the collapse will interrupt");
     const activityId = deriveActivityId(ids.branchId, `cmd-eat-${ids.branchId}`);
 
-    // The collapse fires mid-meal. Reservations are phase-derived like claims
-    // (§26.5) — held across every claim-holding phase including interrupted.
+    // The collapse fires mid-meal. Reservations are phase-derived like claims —
+    // held across every claim-holding phase including interrupted.
     const collapseOutcome = await advanceBranchStoryTime(ids.branchId, collapseAlarm.dueStorySecond, {
       workerId: "w-eat-collapse",
     });
@@ -718,7 +718,7 @@ describe.runIf(harness.ready)("E5.3 slice 2 — activity resource reservations a
 });
 
 // -----------------------------------------------------------------------
-// E5.3 slice 3 (§26.7) — use-disposition item-condition deltas at completion.
+// E5.3 slice 3 — use-disposition item-condition deltas at completion.
 // -----------------------------------------------------------------------
 
 const CRAFT_SECONDS = 600;
@@ -822,7 +822,7 @@ async function itemConditionMeterRow(branchId: string, itemId: string, meterKey:
   return row;
 }
 
-describe.runIf(harness.ready)("E5.3 slice 3 — item condition use-deltas at completion (§26.7)", () => {
+describe.runIf(harness.ready)("E5.3 slice 3 — item condition use-deltas at completion", () => {
   it("lazily initializes and moves wear on a tracked reserved tool; the driftless meter never gets a scheduled rearm", async () => {
     const ids = await seedItemConditionCase({ conditionTracked: true, wearDeltaFixedPoint: 1_500 });
     const start = await submitDurableStartActivity(startCraftCommand(ids));
@@ -836,8 +836,8 @@ describe.runIf(harness.ready)("E5.3 slice 3 — item condition use-deltas at com
     const events = await readBranchEvents(ids.branchId);
     const types = events.map((event) => event.type);
     // RELATIVE order, never absolute offsets into the whole branch stream: the
-    // completion's lazy-init event lands immediately BEFORE activity_completed
-    // (§26.7 store note), after the start command's own train.
+    // completion's lazy-init event lands immediately BEFORE activity_completed,
+    // after the start command's own train.
     const startedAt = types.indexOf("activity_started");
     const completedAt = types.indexOf("activity_completed");
     const initializedAt = types.indexOf("item_condition_initialized");

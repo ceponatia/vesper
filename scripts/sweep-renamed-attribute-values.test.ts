@@ -13,8 +13,7 @@ import {
 } from "./sweep-renamed-attribute-values";
 
 /**
- * Pure tests for the one-off stored-value sweep (attribute-narrator-guidance.plan.md
- * slice 3). The DB glue in `main()` is thin; the risk lives in the pure remap tables
+ * Pure tests for the one-off stored-value sweep. The DB glue in `main()` is thin; the risk lives in the pure remap tables
  * and functions — chiefly that every rename TARGET is a real current registry value
  * (a typo would rewrite good data into a value that fails `parseValue`), and that the
  * sweep is id-scoped, provenance-preserving, and idempotent.

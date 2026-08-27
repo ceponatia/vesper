@@ -243,7 +243,7 @@ describe("E5.3 locus reverse-derivation", () => {
     ]);
     const atSeed = itemHoldingsAtSequence(current, events, 0);
     expect(atSeed.get("item_ring")).toEqual(BAG_LOCUS);
-    // Untouched placements pass through as seed data (plan R3).
+    // Untouched placements pass through as seed data (R3).
     expect(atSeed.get("item_coin")).toEqual(BAG_LOCUS);
 
     const atBoundary = itemHoldingsAtSequence(current, events, 3);
@@ -304,7 +304,7 @@ describe("E5.3 deterministic branch replay", () => {
       events,
       chainBranchIds: [BRANCH],
     });
-    // Two independent fold entry points must agree byte-for-byte (plan R1).
+    // Two independent fold entry points must agree byte-for-byte (R1).
     expect(simulationHash(replay.projection)).toBe(
       simulationHash(replayMaterialsHistory({ seed: seedProjection(), events })),
     );

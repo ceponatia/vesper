@@ -18,7 +18,7 @@ export * from "./condition";
  * Two hair attributes are deliberately absent and must stay absent:
  *
  * - `hair.color` is cue-realization metadata. It helps phrase an observation and
- *   must never influence whether one occurred (hair spec §"Narrator projection").
+ *   must never influence whether one occurred.
  * - `hair.style` is free display text; the core refuses a text attribute outright.
  *
  * `hair.arrangement` is also absent from this set: it is live PRESENTATION

@@ -5,11 +5,10 @@ import { withSelfOwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * The READ-ONLY affordance preview for an owner-admin's own chat
- * (body-attribute-affordances.spec.architecture.md §Resolved, "Developer
- * preview"): the staged calculation — source inputs → structural profile →
- * mechanics → observations or suppression reason → perception filtering →
- * selected cue — for every domain this lane can feed.
+ * The READ-ONLY affordance preview for an owner-admin's own chat: the staged
+ * calculation — source inputs → structural profile → mechanics → observations
+ * or suppression reason → perception filtering → selected cue — for every
+ * domain this lane can feed.
  *
  * Computes on demand and stores NOTHING: no cue memory is spent, no condition is
  * integrated forward into the store, and the `CHAT_AFFORDANCE_CUES` flag is

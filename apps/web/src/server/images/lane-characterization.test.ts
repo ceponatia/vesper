@@ -30,8 +30,7 @@ import type { VariantKind } from "./prompts-variant";
 import { applySceneCastVisual, applySceneSubjectVisual } from "./scene-subject-visual";
 
 /**
- * The pre-migration freeze for every character-bearing image lane
- * (image-lane-consolidation.plan.md Stage 1).
+ * The pre-migration freeze for every character-bearing image lane.
  *
  * One character is rendered through all six lanes and the same probe set is read
  * off each compiled prompt (`server/test-support/image-lane-probe.ts` states why
@@ -509,8 +508,8 @@ describe("image lane invariants that hold across the migration", () => {
     // identity reference, and the owner's ruling for its sibling edit lane is
     // that identity detail the reference photo already carries stays unstated
     // (2026-08-25 — the variant lane gains body-shape anchors only). Closing
-    // the projection asymmetry belongs to `visual-state.plan.md`, which owns
-    // the projection; when it lands, this lane gains the mark for free and
+    // the projection asymmetry belongs to the visual-state projection, which
+    // owns it; when that lands, this lane gains the mark for free and
     // this assertion flips to `toContain`.
     const look = chatLookPrompt(marked);
     expect(presentVisualFacts(look)).not.toContain("noseShape");

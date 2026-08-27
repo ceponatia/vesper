@@ -18,9 +18,8 @@ import {
 } from "./garment-handles";
 
 /**
- * Slice 5 — the continuity extractor's handle table
- * (clothing-state-graph.plan.md §"Models propose semantic operations, never raw
- * state"; slice-0 audit OQ7).
+ * The continuity extractor's handle table — models propose semantic operations,
+ * never raw state.
  *
  * The properties that make a handle usable by a model: deterministic, bounded,
  * collision-free inside one exchange, the ROOT always addressable, and no handle

@@ -11,10 +11,9 @@ import { ImageGeneratorRunDetail } from "./image-generator-run-detail";
 import { ImageGeneratorRunList } from "./image-generator-run-list";
 
 /**
- * The Image Generator's admin page
- * (image-lab-general-model-trials.spec.md §Code organization): the raw
- * prompt/model bench beside the Advanced Image Lab — form above, run history
- * below, one run's detail when selected.
+ * The Image Generator's admin page: the raw prompt/model bench beside the
+ * Advanced Image Lab — form above, run history below, one run's detail when
+ * selected.
  *
  * The `/api/admin/self/image-generator` family is the real gate (it 404s for
  * everyone else), so the check here is only so a non-admin gets an explanation

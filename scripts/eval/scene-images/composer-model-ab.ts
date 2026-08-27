@@ -16,7 +16,7 @@ import { type Beat, BEATS } from "./orientation-ab";
 import { type ComposerExpectation, gradeComposer, UNSCORED_CHECKS } from "./composer-model-score";
 
 /**
- * Composer-model A/B (composer-model.plan.md, NOT a test gate).
+ * Composer-model A/B (NOT a test gate).
  *
  * The scene composer — the text model that turns chat state into the structured spec every
  * scene render is built from — runs on Aion 3.0. It is the most permissive model in the
@@ -105,8 +105,8 @@ interface Arm {
  * for both. `~deepseek/…-latest` is the floating alias the repo already pins the agent lane to.
  *
  * Aion 2.0 advertises no structured-output support, and that is fine: `generateChecked` sends
- * the JSON Schema as TEXT and parses the reply locally (constrained decoding was rejected —
- * followups.phase2.md #20), so nothing in this call needs `tools` or `response_format`.
+ * the JSON Schema as TEXT and parses the reply locally (constrained decoding was rejected),
+ * so nothing in this call needs `tools` or `response_format`.
  */
 const ARMS: readonly Arm[] = [
   { key: "aion3", modelId: "aion-labs/aion-3.0", label: "Aion 3.0 (control)" },

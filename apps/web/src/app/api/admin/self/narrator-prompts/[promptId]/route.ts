@@ -9,7 +9,7 @@ import { narratorPromptFailure } from "../failure";
 
 /**
  * One saved narrator prompt: load it into the editor, save the next immutable
- * revision, or soft-delete it (narrator-prompt-lab.plan.md §API shape).
+ * revision, or soft-delete it.
  *
  * `withOwnerAdminResource` resolves the template through the owner-scoped
  * service BEFORE any handler runs, so a template id that is not the caller's and

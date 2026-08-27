@@ -258,7 +258,7 @@ function unitVector(hot: number): number[] {
   return vector;
 }
 
-describe("E4.4 ranking (§24.1 steps 5–6, inside the eligible set only)", () => {
+describe("E4.4 ranking (inside the eligible set only)", () => {
   it("ranks lexically by token overlap with stable ties", () => {
     const { ranked } = rankMemoryDocuments({
       candidates: [

@@ -4,7 +4,7 @@ import type { SimCalendarStart } from "./clock";
 import { worldBeatText, WORLD_BEAT_KINDS } from "./world-beat";
 
 /**
- * World-beat phrasing + transcript-row round-trip (world-ui.plan.md slice 2). Pure
+ * World-beat phrasing + transcript-row round-trip. Pure
  * — the phrasing composes the destination phrase with the shared `formatSimLanding`
  * stamp, and the schema check proves the `meta.worldBeat` marker survives the
  * transcript envelope both ways (present, absent, and a junk kind).

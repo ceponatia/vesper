@@ -7,9 +7,7 @@ import { AGENT_NARRATION_CAP } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * The NPC reply-scene decision classifier prompt
- * (romantic-contact-affordances.spec.actor-control.md §"Authority model" /
- * §"Closed decision schema"). One structured call per persisted assistant
+ * The NPC reply-scene decision classifier prompt. One structured call per persisted assistant
  * reply reads the reply plus the compact roster digest and may propose AT MOST
  * one movement (approach/depart) and one contact start/update — never an end
  * (the frozen deterministic floor owns endings), never authority (deterministic

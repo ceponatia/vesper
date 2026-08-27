@@ -78,8 +78,7 @@ export function hasLiveChatJob(type: JobType, chatId: string): Promise<boolean> 
  * The same dedupe keyed on a CHARACTER — identity-pack preparation is queued from
  * every canonical-portrait write (generate, upload/promote, clone), and a user
  * clicking through three portraits in a row must not start three derivations of
- * the same face (image-identity-packs.spec.lifecycle.md §"Creation after a
- * canonical portrait").
+ * the same face.
  *
  * Same staleness bound, for the same reason: a deploy that kills a derivation
  * mid-flight must not wedge that character's pack forever.

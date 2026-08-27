@@ -17,9 +17,8 @@ import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * The conversation's relationship matrix (relationship-model.plan.md §The
- * matrix + followups ruling 5). GET returns every stored NPC↔NPC directed
- * edge, the roster, AND each member's player edge (their state row's record) —
+ * The conversation's relationship matrix. GET returns every stored NPC↔NPC
+ * directed edge, the roster, AND each member's player edge (their state row's record) —
  * the matrix menu's full grid including the "them → you" column. PUT upserts
  * authored NPC↔NPC edges and/or player edges (band picks + texture → live
  * scalars at band midpoints; player edges write through `editChatState`, so
@@ -38,7 +37,7 @@ const putBodySchema = z
       )
       .max(24)
       .default([]),
-    /** "Them → you" rows (followups ruling 5): one per roster character. */
+    /** "Them → you" rows: one per roster character. */
     playerEdges: z
       .array(z.object({ characterId: z.string().min(1), record: authoredRelationshipRecordSchema }))
       .max(4)

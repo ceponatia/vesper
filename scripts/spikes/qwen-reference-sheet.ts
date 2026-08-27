@@ -6,7 +6,7 @@ import { evalEdit } from "../eval/scene-images/model";
 import { SCENE_POV_RULE } from "@/server/images";
 
 /**
- * SPIKE (scene-images.spec.md §6 — throwaway, manual): the direct test of
+ * SPIKE (throwaway, manual): the direct test of
  * "Strategy B". Composite two character portraits (+ an optional location panel)
  * into one labeled reference sheet and send it to the uncensored Qwen edit model
  * with a compose prompt, to see whether Qwen binds TWO identities from a contact

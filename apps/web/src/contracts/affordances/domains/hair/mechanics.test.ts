@@ -24,8 +24,7 @@ import {
 import { hairAttributeFixture } from "./fixtures";
 
 /**
- * Stage 2: the monotonicity laws the whole plan is judged on
- * (hair spec §"Acceptance tests"; plan §"How we will judge it").
+ * Stage 2: the monotonicity laws the hair domain is judged on.
  *
  * These sweep the FULL structural enum lattice — 8 lengths × 3 densities × 3
  * strand thicknesses × 5 textures × 7 conditions = 2 520 profiles — rather than

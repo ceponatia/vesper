@@ -11,7 +11,7 @@ import { characterChats, db, personas, users } from "@/server/db";
  * **`title` is deliberately not a field here.** That is what keeps the persona's
  * per-owner-unique library label away from agents — not a rule anyone has to remember,
  * but the shape itself: every prompt consumer reads this type, so there is no path for
- * a title to reach a model without someone adding a field (persona-library.plan.md).
+ * a title to reach a model without someone adding a field.
  */
 export interface PlayerPersona {
   /** The resolved `personas.id`; null when nothing resolved and we fell back to the account name. */
@@ -77,8 +77,8 @@ export async function chatPersonaId(chatId: string): Promise<string> {
 }
 
 /**
- * Resolve who the player is, for a chat or for the account at large
- * (persona-library.plan.md slice 6). A three-rung ladder, each rung degrading rather
+ * Resolve who the player is, for a chat or for the account at large. A
+ * three-rung ladder, each rung degrading rather
  * than throwing, so a turn always has someone to address (docs/resilience.md):
  *
  * 1. the **chat's** picked persona (`player_state.personaId`), when `chatId` is given;

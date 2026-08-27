@@ -48,8 +48,8 @@ export interface GenerateCheckedOptions<T> {
   /**
    * Send OpenRouter `reasoning:{enabled:false}`. For fast classifiers (intake)
    * where reasoning tokens blow the latency + output-token budget (the cause of
-   * the intake timeout/truncation flood — pre-narrator-agents.followups.md).
-   * Default false; the post-turn agents reason over the narration and keep it.
+   * the intake timeout/truncation flood). Default false; the post-turn agents
+   * reason over the narration and keep it.
    * Reliable on the curated agent models (deepseek-v4-flash, glm-5.2); a model
    * that *mandates* reasoning (gemini-3.5-flash, aion-2.0) rejects it and the
    * call degrades to the fallback — those are not in the agent-model list.
@@ -60,9 +60,9 @@ export interface GenerateCheckedOptions<T> {
    * provider endpoint for the model. For latency-critical callers (intake): the
    * model's *median* TTFT is fine (~0.7s) but default routing intermittently
    * lands a cold/slow endpoint (TTFT spiking to 3–13s), which blew the intake
-   * budget; latency-sorted routing flattened the tail to <0.8s in probes
-   * (pre-narrator-agents.followups.md §2d). `allow_fallbacks` stays on, so this
-   * only reorders preference — no reliability loss. Default false.
+   * budget; latency-sorted routing flattened the tail to <0.8s in probes.
+   * `allow_fallbacks` stays on, so this only reorders preference — no
+   * reliability loss. Default false.
    */
   lowLatencyRouting?: boolean;
   /**
@@ -136,9 +136,9 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   // Plain text + local parse, NOT provider-side constrained decoding
   // (`Output.object` / response_format json_schema): constrained decoding
   // degenerates on some models — Gemini 2.5 Flash returned hollow-but-valid
-  // objects that all-defaulted schemas accepted without ever tripping repair
-  // (followups.phase2.md #20). The model sees the JSON Schema as text; the
-  // resilience ladder below does the enforcement.
+  // objects that all-defaulted schemas accepted without ever tripping repair.
+  // The model sees the JSON Schema as text; the resilience ladder below does
+  // the enforcement.
   const schemaText = jsonSchemaText(opts.schema);
   // OpenRouter per-call routing/decoding knobs (see the option docs above).
   // providerRouting also applies any per-model provider exclusions (e.g. drop
@@ -250,8 +250,8 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
 
   // A TRANSPORT failure is not a schema failure. Everything used to land as
   // `${code}.parse_failed` — actively mislabeling a 429 / 402 / network drop as "the model
-  // can't produce JSON" (chat-reply-failures.plan.md §Follow-ups). Classify once and let the
-  // diagnostic, the log, and the recorded failure all tell the same true story.
+  // can't produce JSON". Classify once and let the diagnostic, the log, and the
+  // recorded failure all tell the same true story.
   const isTransport = APICallError.isInstance(lastErr) || RetryError.isInstance(lastErr);
   const providerClassification = isTransport ? classifyProviderError(lastErr) : null;
   const failureCode = isTransport ? `${opts.code}.api_error` : `${opts.code}.parse_failed`;

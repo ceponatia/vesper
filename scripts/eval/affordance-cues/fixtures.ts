@@ -214,9 +214,9 @@ export interface EvalTurn {
 }
 
 /**
- * The bait taxonomy (rematch spec §"Scenario families"). Every scenario belongs
- * to exactly one family: five BAIT families, each naming the specific wrong
- * claim its scenes tempt, plus the two structural controls.
+ * The bait taxonomy. Every scenario belongs to exactly one family: five BAIT
+ * families, each naming the specific wrong claim its scenes tempt, plus the two
+ * structural controls.
  *
  * - `provenance_bait` — wetness attributed to the salient weather when the
  *   committed cause is a bath, a burst standpipe, a wave over the bow.
@@ -897,8 +897,7 @@ export const EVAL_SCENARIOS: readonly EvalScenario[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Round 2's matrix, **v2** (`body-attribute-affordances.trial.rematch.md`, and
- * the §Rematch log entry for round R1).
+ * Round 2's matrix, **v2** (round R1).
  *
  * v1 of this matrix armed 22 baits and still measured nothing: the control arm
  * contradicted at 0.16/exchange and only coverage and binding ever tripped it.

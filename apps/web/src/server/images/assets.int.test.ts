@@ -380,8 +380,8 @@ async function imageRow(imageId: string): Promise<ImageRow | undefined> {
 }
 
 /**
- * The ruled normalization (image-pipeline-consolidation.plan.md §Review rulings
- * 2026-07-30): a generation failure records a warn diagnostic in EVERY lane, not
+ * The ruled normalization (2026-07-30): a generation failure records a warn
+ * diagnostic in EVERY lane, not
  * just the entity one. Both cases assert the fallback AND the code
  * (docs/resilience.md §8) — a failed row is only half the contract.
  */

@@ -26,7 +26,7 @@ import { errorText } from "./respond";
 import { itemExtrasSchema, type ItemExtras } from "./schemas";
 
 /**
- * Classify-items backfill (library-ux.plan.md §5): fill the facet fields the
+ * Classify-items backfill: fill the facet fields the
  * library organizes by (clothing category/layer/wearer/color, object
  * subtype/color) on items that lack them, inferred from name + description by
  * a cheap model. **Only absent fields are ever written** — a present value is
@@ -165,7 +165,7 @@ export function mergeClassifiedExtras(extras: ItemExtras, kind: ClassifyRow["kin
   return { merged, changed };
 }
 
-// --- ✦ Draft from description (ux-improvements.plan.md slice 5) --------------
+// --- ✦ Draft from description ------------------------------------------------
 
 /** What the draft model may propose — every field optional, degrading per-field. */
 const draftedItemSchema = z.object({

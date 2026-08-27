@@ -11,8 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ImageChoiceGrid } from "./image-lab-pickers";
 
 /**
- * The general owner-scoped image picker
- * (image-lab-general-model-trials.spec.md §"Owned-image sources endpoint"):
+ * The general owner-scoped image picker:
  * every ready image the source policy lists, not one character's portraits or
  * one chat's scenes. The Image Generator's inputs read it, and the lab reuses
  * it for the roles whose experiment contracts already accept a generic source

@@ -19,8 +19,7 @@ import {
 } from "../../core";
 
 /**
- * Stage 1 — the stable garment structure this domain reasons over
- * (spec.garment-interaction.md §"Structural profile").
+ * Stage 1 — the stable garment structure this domain reasons over.
  *
  * ## The wardrobe owns every number here
  *
@@ -38,9 +37,9 @@ import {
  * garment. One affordance read is about one SUBJECT, and a subject wears several
  * garments whose regions occlude and layer over each other, so the shipped
  * profile is a flat collection of regions across everything worn, each carrying
- * its own `garmentId`/`partId`. That is the architecture spec's own "regional
- * collections" pattern (§"Regional collections"): one typed region profile
- * instantiated per real region, never a separate implementation per garment.
+ * its own `garmentId`/`partId`. That is the shared "regional collections"
+ * pattern: one typed region profile instantiated per real region, never a
+ * separate implementation per garment.
  *
  * ## What is deliberately NOT here
  *

@@ -3,10 +3,10 @@ import type { SdModelFamily, SdRecipe } from "./sd-recipes";
 /**
  * The seeded Stable Diffusion recipes.
  *
- * **These are the plan's §7 trial STARTING POINTS, not tuned defaults.** Nothing
+ * **These are trial STARTING POINTS, not tuned defaults.** Nothing
  * below has been graded against anything yet; the numbers are where Stage 3's
- * controlled matrix begins, and the plan is explicit that "only one variable
- * should move at a time" while it runs. Whichever cell wins becomes revision 2
+ * controlled matrix begins, and only one variable
+ * should move at a time while it runs. Whichever cell wins becomes revision 2
  * of the recipe it belongs to. Reading a value here as an endorsement is the one
  * mistake this file can cause, which is why every entry is revision 1 and says so
  * in its own description.
@@ -48,8 +48,8 @@ export const sdRecipes: readonly SdRecipe[] = [
     revision: 1,
     description:
       "Vanilla SDXL portrait, no identity conditioning — the control arm of the Stage 3 identity matrix. Trial starting point, not a tuned default.",
-    // Base SDXL, deliberately. §6 requires a vanilla control in the first
-    // checkpoint evaluation, and it also refuses to lock Vesper to a community
+    // Base SDXL, deliberately. The first checkpoint evaluation requires a
+    // vanilla control, and it also refuses to lock Vesper to a community
     // checkpoint before licensing and hosted-product use are explicitly
     // reviewed — so the realistic checkpoint that will be compared against this
     // one is not named anywhere in this package yet.
@@ -74,9 +74,9 @@ export const sdRecipes: readonly SdRecipe[] = [
     cfg: 5,
     width: 832,
     height: 1216,
-    // Mid-band on both, per §8's "neither should automatically be run at maximum
-    // strength": 0.80 is the middle PuLID weight of the three Stage 3 tests
-    // (0.65 / 0.80 / 0.95), and 0.8 is the centre of §7's 0.7–0.9 LoRA band.
+    // Mid-band on both, because neither should automatically be run at maximum
+    // strength: 0.80 is the middle PuLID weight of the three Stage 3 tests
+    // (0.65 / 0.80 / 0.95), and 0.8 is the centre of the 0.7–0.9 LoRA band.
     identityWeight: 0.8,
     loraScale: 0.8,
     // No ControlNet, and this is a rule rather than an omission: Stage 3 says
@@ -85,8 +85,8 @@ export const sdRecipes: readonly SdRecipe[] = [
     // attributable.
   },
   {
-    // Stage 3's LoRA-ONLY arm (plan §20: "base SDXL; PuLID only; LoRA only; LoRA
-    // + PuLID"). It could not be seeded with the other three because no SDXL
+    // Stage 3's LoRA-ONLY arm — the matrix is base SDXL; PuLID only; LoRA only;
+    // LoRA + PuLID. It could not be seeded with the other three because no SDXL
     // character LoRA existed until Stage 4 trained one, and an arm named after a
     // thing that does not exist renders the control twice.
     //
@@ -94,7 +94,7 @@ export const sdRecipes: readonly SdRecipe[] = [
     // renderer gates identity conditioning on the recipe and REFUSES a reference
     // image sent to a recipe without a weight, so this arm cannot accidentally
     // receive the PuLID anchor and quietly become the fourth cell. Everything
-    // else is copied verbatim from `sdxl/identity-portrait` — §7's one-variable
+    // else is copied verbatim from `sdxl/identity-portrait` — the one-variable
     // rule, which here means the LoRA is the only difference from the control.
     id: "sdxl/lora-portrait",
     family: "sdxl",
@@ -110,7 +110,7 @@ export const sdRecipes: readonly SdRecipe[] = [
     height: 1216,
     loraScale: 0.8,
   },
-  // The other two arms of Stage 3's identity-strength trial. §7 names three
+  // The other two arms of Stage 3's identity-strength trial. There are three
   // PuLID test points — 0.65 / 0.80 / 0.95 — and `sdxl/identity-portrait` above
   // is the middle one, so these two complete the set.
   //
@@ -123,7 +123,7 @@ export const sdRecipes: readonly SdRecipe[] = [
   // an id that means "the 0.65 arm" has no meaning once the trial is over.
   //
   // Everything except `identityWeight` is copied verbatim from the middle arm,
-  // because §7 is explicit that only one variable moves at a time.
+  // because only one variable moves at a time.
   {
     id: "sdxl/identity-portrait-w065",
     family: "sdxl",
@@ -191,7 +191,7 @@ export function sdRecipeRevision(id: string, revision: number): SdRecipe | undef
  * one family. Retired revisions are deliberately absent: they exist to resolve
  * history, not to be offered to an operator picking a recipe to run.
  *
- * The family filter exists because §6 keeps SDXL and SD3.5 on separate internal
+ * The family filter exists because SDXL and SD3.5 stay on separate internal
  * workflows: a caller offering recipes for a registered SDXL deployment must not
  * be able to hand it an `sd35/*` name that the deployment has no nodes for.
  */

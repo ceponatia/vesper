@@ -1,14 +1,14 @@
 /**
- * R5 slice 2 (engine.rollout.plan.md) — deterministic input admission: map a
- * player's PROSE onto the typed legal command set BEFORE the turn prepares,
- * so "I hand her the keepsake" executes a real transfer instead of being
- * portrayed as an attempt. Deterministic by ruling (the budget line: one
- * narrator call per turn, zero routine state-agent calls) — this is pattern
- * matching against the world's ACTUAL surface (items the player holds, zones
- * that exist, actions in the catalog), never a model call and never a guess:
- * when nothing matches confidently, the answer is null and the narrator
- * portrays an attempt exactly as before. A wrongly-admitted command would be
- * a real world write, so every rule here prefers silence over cleverness.
+ * R5 slice 2 — deterministic input admission: map a player's PROSE onto the
+ * typed legal command set BEFORE the turn prepares, so "I hand her the
+ * keepsake" executes a real transfer instead of being portrayed as an attempt.
+ * Deterministic by ruling (the budget line: one narrator call per turn, zero
+ * routine state-agent calls) — this is pattern matching against the world's
+ * ACTUAL surface (items the player holds, zones that exist, actions in the
+ * catalog), never a model call and never a guess: when nothing matches
+ * confidently, the answer is null and the narrator portrays an attempt exactly
+ * as before. A wrongly-admitted command would be a real world write, so every
+ * rule here prefers silence over cleverness.
  */
 
 export interface AdmissionSurface {
@@ -24,9 +24,9 @@ export type AdmittedCommand =
   | { kind: "give_item"; itemId: string; itemName: string }
   | { kind: "move"; toZoneId: string; placeWord: string }
   /**
-   * A walk-with-me invite (world-ui.plan.md slice 5): the player asks the
-   * co-present primary to travel together. Carries the same zone fields a `move`
-   * does, so a NOT-co-present admission converts to a plain solo move cheaply.
+   * A walk-with-me invite: the player asks the co-present primary to travel
+   * together. Carries the same zone fields a `move` does, so a NOT-co-present
+   * admission converts to a plain solo move cheaply.
    */
   | { kind: "accompany"; toZoneId: string; placeWord: string }
   | { kind: "start_activity"; actionDefinitionId: string; verb: string };
@@ -35,8 +35,8 @@ export type AdmittedCommand =
  * Words that name a zone, by zone KIND — grows as world templates grow.
  *
  * `market` moved off `plaza` when the starter world grew a real market zone
- * (starter-world-seeds.plan.md / B8): a kind must not claim another kind's
- * word, or "I walk to the market" silently admits a move to the square.
+ * (B8): a kind must not claim another kind's word, or "I walk to the market"
+ * silently admits a move to the square.
  */
 const ZONE_KIND_WORDS: Record<string, readonly string[]> = {
   home: ["home", "house", "indoors", "inside"],

@@ -11,7 +11,7 @@ import type { ImageFeature, ImageModelRequestFacts } from "./image-feature";
  * all. Restating the cap here would be a second copy of a number an operator
  * edits on the admin page.
  *
- * The refusal is all-or-nothing on purpose (plan §11): a render that asked for
+ * The refusal is all-or-nothing on purpose: a render that asked for
  * three references and silently sent two has dropped somebody's identity, and
  * it has done so in a way no output inspection reveals. Trimming is a decision
  * for whoever built the reference list, not one to make at the model boundary.

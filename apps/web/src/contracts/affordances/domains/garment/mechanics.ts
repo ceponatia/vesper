@@ -9,8 +9,7 @@ import {
 import type { GarmentFitClass, GarmentRegionStructuralProfile, GarmentStructuralProfile } from "./profile";
 
 /**
- * Stage 2 — present garment capacity and material condition
- * (spec.garment-interaction.md §"Effective mechanics").
+ * Stage 2 — present garment capacity and material condition.
  *
  * Every term is derived ONCE PER CUT and shared, which is the reason this file
  * exists at all: water load, flutter load, conformance, and opacity are each

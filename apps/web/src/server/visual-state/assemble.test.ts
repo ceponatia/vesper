@@ -31,7 +31,7 @@ import {
 } from "./shadow";
 
 /**
- * Slice-6 assembly tests (visual-state.plan.md §Slice 6): the lane assembly is
+ * Slice-6 assembly tests: the lane assembly is
  * pure over a committed cut — deterministic, retake-reproducible, input-
  * preserving — the production viewing reads take the scene's own distance and
  * angle and the declared base for what nothing owns, the image mandatory lane
@@ -340,7 +340,7 @@ describe("safeBuildVisualStateShadow", () => {
 });
 
 /**
- * The Stage 2 server seam (image-lane-consolidation.spec.visual-state.md): a
+ * The Stage 2 server seam: a
  * live cut → the digest a character-bearing render consumes and the record it
  * stores. The digest's own rules are the contracts layer's
  * (`contracts/images/visual-digest.test.ts`); these three protect the GLUE.

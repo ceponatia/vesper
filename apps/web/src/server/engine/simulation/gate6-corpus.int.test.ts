@@ -26,11 +26,10 @@ import { submitDurablePromoteActorFromCohort } from "./promotion-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 
 /**
- * The Gate 6 exit corpus + scaling proof (engine-foundation.gate6.dual-lod.md §"Gate 6
- * exit", E6.5): deterministic scenarios, ZERO model calls — no model client
- * exists anywhere in this suite, and the routine controller is structurally
- * deterministic (§19.2.1: the §19.3 deliberator is never consulted) — proving
- * the two gate-exit claims:
+ * The Gate 6 exit corpus + scaling proof (E6.5): deterministic scenarios, ZERO
+ * model calls — no model client exists anywhere in this suite, and the routine
+ * controller is structurally deterministic (the deliberator is never
+ * consulted) — proving the two gate-exit claims:
  *
  *  1. promoted actors remain causally consistent with their aggregate
  *     history, reconstructible hop-by-hop from events alone (EXIT 1);
@@ -70,7 +69,7 @@ interface CorpusCase {
 
 /**
  * `extrasApart` places the background actors at their own zone. Perception is
- * deliberately NOT LOD-gated (§27.4: LOD is a performance choice, never
+ * deliberately NOT LOD-gated (LOD is a performance choice, never
  * permission to violate invariants — a dormant actor who was co-present must
  * still capture truth, or a later promotion would contradict what they
  * plainly saw), so a dormant crowd parked INSIDE an active scene records one
@@ -260,7 +259,7 @@ describe.runIf(harness.ready)(
       expect(decision.payload).toMatchObject({ actorId: maren, chosenCandidateId: "begin_sleep" });
 
       // Hop 2: the routine alarm that dispatched that decision was armed by
-      // Maren's embodiment — the init-time arm (§27.7 catch-up law).
+      // Maren's embodiment — the init-time arm (the catch-up law).
       const routineArm = events.find(
         (event) =>
           event.type === "trigger_scheduled" &&

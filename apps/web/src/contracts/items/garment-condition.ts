@@ -33,17 +33,17 @@ import {
 } from "./garment-instance";
 
 /**
- * The CONDITION reducer and its gradients (clothing-state-graph.plan.md §Slice 4
- * · §"Condition vector, regional overrides, and marks"; promotion ruling R4).
+ * The CONDITION reducer and its gradients — the condition vector, its regional
+ * overrides, and its marks.
  *
- * Slice 2 taught the store how a garment MOVES and slice 3 how it is ARRANGED;
- * this module owns what has HAPPENED to its material — how wet, how soiled, how
+ * The store already knows how a garment MOVES and how it is ARRANGED; this
+ * module owns what has HAPPENED to its material — how wet, how soiled, how
  * creased, how worn, what is stuck to it and what is torn.
  *
  * Five rules hold it together:
  *
  * 1. **One kernel, two lanes.** Every number here runs through the shared
- *    `lib/fixed-point.ts` primitives the successor's §25 meter substrate uses —
+ *    `lib/fixed-point.ts` primitives the successor's meter substrate uses —
  *    no floating-point turn math, no second implementation of exponential
  *    approach. The chat lane never imports a successor persistence contract.
  * 2. **No tick loop.** Integration is LAZY: an operation (or a read) integrates
@@ -338,9 +338,9 @@ function pruneOverride(
 
 /**
  * Integrate a condition forward to `toMinutes`. Pure and total; integrating to a
- * minute at or before the last write is the identity (the §25.2 "queries never
- * persist" law's other half — you can only ever move forward from a material
- * write).
+ * minute at or before the last write is the identity — the "queries never
+ * persist" law's other half, since you can only ever move forward from a
+ * material write.
  *
  * ONLY `wetness` moves. The base dries at the ROOT material's rate and each
  * region override at its own part's, which is how a leather-yoked cotton coat
@@ -418,7 +418,7 @@ export function sameGarmentCondition(a: GarmentConditionState, b: GarmentConditi
  * The operation kinds this slice owns — everything that addresses the material
  * gradients rather than a locus or an arrangement. `accept_transfer` joins them
  * because it writes the same deposit record `deposit` does; what makes it a
- * separate kind is the arithmetic, not the surface it touches (effects spec §9).
+ * separate kind is the conserving arithmetic, not the surface it touches.
  */
 export const garmentConditionOperationKinds = [
   "apply_condition",
@@ -622,8 +622,8 @@ function cleanedDeposit(
  *
  * At capacity a NEW identity is REFUSED (`garment_op.deposit_capacity`) rather
  * than evicting the oldest record. One material-capacity law now holds across
- * both surface owners (romantic-contact-affordances.spec.effects.md §9; owner
- * ruling 2026-08-26): an owner may update a record it already holds, or add one
+ * both surface owners (owner ruling 2026-08-26): an owner may update a record
+ * it already holds, or add one
  * while there is room, but may NEVER make room by destroying another material
  * fact. This path used to `.slice(-GARMENT_MAX_DEPOSITS)`, which read as a
  * policy and behaved as a continuity bug — the mud on her sleeve vanishing
@@ -693,8 +693,8 @@ function applyDeposit(
 
 /**
  * Credit an EXACT amount of material to a garment scope — the destination leg
- * of §9's conserved transfer (romantic-contact-affordances.spec.effects.md §9;
- * owner ruling 2026-08-22, "conserved transfer follows the pressure mark").
+ * of a conserved transfer (owner ruling 2026-08-22, "conserved transfer follows
+ * the pressure mark").
  *
  * Deliberately NOT `applyDeposit` with a mode flag. `applyDeposit` MAX-MERGES
  * because the sentence it compiles ("there is mud on her sleeve") establishes
@@ -723,24 +723,24 @@ function applyDeposit(
  *   someone else's mud.
  * - **A non-positive or over-unit amount REFUSES**
  *   (`garment_op.transfer_invalid_amount`). A zero leg is a planner bug, not a
- *   no-op to wave through: §9's transaction is an equation, and a leg that moves
- *   nothing should never have been written into it.
+ *   no-op to wave through: the transfer transaction is an equation, and a leg
+ *   that moves nothing should never have been written into it.
  *
  * Every refusal returns `null` with its stable code already on the sink, so the
  * caller drops the whole operation and NOTHING is written — not the deposit, not
  * the cleanliness floor, not even the integration `nextGarmentCondition`
- * computed on the way in. A partial write is precisely the unowned sink §9's
- * atomicity requirement exists to prevent.
+ * computed on the way in. A partial write is precisely the unowned sink the
+ * transfer's atomicity requirement exists to prevent.
  *
  * Two things this reducer deliberately does NOT own:
  *
  * - **Idempotency.** A conserving add is by construction not idempotent, and the
  *   deposit identity is minute-keyed, so a retry inside the same story minute
- *   WOULD credit twice. §9 puts source removal and destination deposition "under
- *   one idempotency key"; that key belongs to the transaction, which must dedupe
+ *   WOULD credit twice. Source removal and destination deposition sit under one
+ *   idempotency key; that key belongs to the transaction, which must dedupe
  *   before anything reaches here.
  * - **Whether the material should have reached cloth at all.** Path,
- *   permeability, and §9's "material blocked by a garment cannot teleport to
+ *   permeability, and "material blocked by a garment cannot teleport to
  *   skin" are the transaction's rulings. This leg credits what it is told, to
  *   the scope it is told, and refuses only when it cannot do so exactly.
  */
@@ -822,7 +822,7 @@ function acceptGarmentTransfer(
   const deposits = [...condition.deposits.filter((deposit) => deposit.id !== id), credited];
   // A conserved credit SOILS exactly as an ordinary deposit does. Cleanliness is
   // a derived presentation channel rather than a conserved quantity — nothing in
-  // §9's equation reads it — but a credit that left it alone would leave a
+  // the conservation equation reads it — but a credit that left it alone would leave a
   // garment carrying transferred mud still reading pristine to every band reader
   // and narrator, which launders the transfer at the only layer anyone sees. The
   // floor follows the MERGED total, not the credit, so a second leg in the same

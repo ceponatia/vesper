@@ -12,8 +12,7 @@ import {
 } from "../core";
 
 /**
- * Recognition salience — the whole scoring surface, in fixed point
- * (body-attribute-affordances.recognizable-features.memory.md §Scores).
+ * Recognition salience — the whole scoring surface, in fixed point.
  *
  * ```text
  * featureSalience  = visibility × (0.55 × uniqueness + 0.45 × importance)

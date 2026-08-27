@@ -10,7 +10,7 @@ import {
 } from "./summary";
 
 /**
- * The committed-record guard (narrator-physical-guidance.plan.md §Slice 0).
+ * The committed-record guard.
  *
  * `summary.json` is the only audit trail a paid round leaves behind in git, and
  * generation is not reproducible — so a summary that fails its own schema, or

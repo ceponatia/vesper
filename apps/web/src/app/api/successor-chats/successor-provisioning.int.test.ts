@@ -16,14 +16,14 @@ import {
   simWorlds,
 } from "@/server/db";
 
-// successor-world-lifecycle.plan.md slices 3–4 — resumable provisioning and the
-// honest quota. The front door used to be a five-step non-atomic sequence whose
-// world identity was minted fresh per call, so ANY failure left an unrouted chat
-// plus a live orphan world and every retry built a SECOND complete world. Now the
-// POST runs under `successor_provision:<ownerId>` behind a durable
-// `(ownerId, requestId)` record, and the world's ids are DERIVED from that key —
-// so a retry resumes, a replay returns the recorded 201, and a failure leaves
-// nothing behind. Self-skips without a database (AI_FAKE keeps it zero model calls).
+// Resumable provisioning and the honest quota. The front door used to be a
+// five-step non-atomic sequence whose world identity was minted fresh per call,
+// so ANY failure left an unrouted chat plus a live orphan world and every retry
+// built a SECOND complete world. Now the POST runs under
+// `successor_provision:<ownerId>` behind a durable `(ownerId, requestId)` record,
+// and the world's ids are DERIVED from that key — so a retry resumes, a replay
+// returns the recorded 201, and a failure leaves nothing behind. Self-skips
+// without a database (AI_FAKE keeps it zero model calls).
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Provisioning Int", role: "user" as "admin" | "user" },

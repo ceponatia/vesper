@@ -74,7 +74,7 @@ describe("supersedence gating — name path", () => {
   });
 });
 
-describe("supersedence gating — subjectId preference (spec §6.3 #4)", () => {
+describe("supersedence gating — subjectId preference", () => {
   it("matching ids pass even when the names differ (a rename is the same entity)", () => {
     expect(
       supersedes(draftRef({ subjectId: "char-a", subjectName: "Mara Vane" }), candidate({ subjectId: "char-a" }), 1),
@@ -92,7 +92,7 @@ describe("supersedence gating — subjectId preference (spec §6.3 #4)", () => {
   });
 });
 
-describe("supersedence gating — pinned asymmetry (spec §6.4)", () => {
+describe("supersedence gating — pinned asymmetry", () => {
   it("an extracted draft never retires a pinned candidate, even at similarity 1", () => {
     expect(supersedes(draftRef({ origin: "extracted" }), candidate({ pinned: true, origin: "player" }), 1)).toBe(
       false,

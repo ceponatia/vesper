@@ -36,8 +36,7 @@ import type { VisualStateSnapshot } from "./snapshot";
 import type { VisualStateSuppression } from "./suppression";
 
 /**
- * Observer/camera visibility over one snapshot (visual-state.spec.md
- * §Visibility; plan §Slice 4).
+ * Observer/camera visibility over one snapshot.
  *
  * This module answers ONE question per feature: given who or what is looking,
  * and the explicit lighting, distance, angle, motion and framing reads the
@@ -49,12 +48,12 @@ import type { VisualStateSuppression } from "./suppression";
  *
  * Three laws:
  *
- * - **Unknown and invalid cannot become positive visibility** (spec
- *   §Visibility). Every component read distinguishes `known`, `unknown` and
+ * - **Unknown and invalid cannot become positive visibility.**
+ *   Every component read distinguishes `known`, `unknown` and
  *   `invalid`, and a single unusable component fails the WHOLE read closed:
  *   with the lighting unknown, nothing is claimed visible, however exposed.
- *   No production owner asserts lighting or whole-subject motion as typed data
- *   (visual-state.audit.md finding 14), so the narrator lane supplies them as
+ *   No production owner asserts lighting or whole-subject motion as typed data,
+ *   so the narrator lane supplies them as
  *   DECLARED release defaults (`viewing.ts`) rather than as unknowns — a stated
  *   assertion the inspector and the diagnostics both name. An unmarked default
  *   remains forbidden; a marked one is the ruled first-release policy.

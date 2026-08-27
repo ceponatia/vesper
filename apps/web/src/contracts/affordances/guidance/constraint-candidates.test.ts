@@ -19,7 +19,7 @@ import { GUIDANCE_PROBE_DOMAIN_ID, GUIDANCE_PROBE_SUBJECT_ID } from "./test-supp
  * The mapping seam's two jobs: refuse to invent guidance from unmapped data, and
  * decide — by exposure alone — whether the committed truth may be stated.
  *
- * The second is plan §5's hard rule in its narrowest form: a fence over a fact
+ * The second is the disclosure rule in its narrowest form: a fence over a fact
  * the observer cannot perceive still ships, but it ships WITHOUT the cause. The
  * prohibition is what stops a contradiction; the cause is what would leak.
  */

@@ -11,12 +11,11 @@ import { CONTACT_CHANNEL_INVALID, CONTACT_CHANNEL_UNROUTED } from "./diagnostics
 import type { ContactBodySurfaceRef, ContactSurfaceRef } from "./surfaces";
 
 /**
- * The channel-tagged phenomenon seam
- * (romantic-contact-affordances.spec.effects.md §3, §15 stage 3).
+ * The channel-tagged phenomenon seam.
  *
  * Contact spans several senses, and the existing `AffordanceObservation` is
  * channel-neutral only because every producer so far was visual. The owner
- * ruling (effects spec §4) is that the shared contract does NOT grow a channel
+ * ruling is that the shared contract does NOT grow a channel
  * field: each sense owns its own observation contract, and contact preserves the
  * channel in ITS OWN result type before the visual adapter boundary — a routing
  * envelope, not a generalization of visual state into every sense.
@@ -29,8 +28,8 @@ import type { ContactBodySurfaceRef, ContactSurfaceRef } from "./surfaces";
  *
  * No producer registers phenomena yet — the effect slice is not live, and until
  * a domain's complete source → commitment → perception path exists its
- * phenomena stay fixture-only (spec §15 stage 10). The seam ships first so that
- * path has a contract to land on instead of widening the visual one.
+ * phenomena stay fixture-only. The seam ships first so that path has a contract
+ * to land on instead of widening the visual one.
  */
 
 // ---------------------------------------------------------------------------
@@ -39,8 +38,8 @@ import type { ContactBodySurfaceRef, ContactSurfaceRef } from "./surfaces";
 
 /**
  * The senses a contact phenomenon can be perceived through. Auditory is part of
- * the wider sensory architecture (spec §4) but this vocabulary does not yet
- * emit it — a member joins when a phenomenon actually produces one.
+ * the wider sensory architecture but this vocabulary does not yet emit it — a
+ * member joins when a phenomenon actually produces one.
  */
 export const contactPerceptionChannels = ["visual", "tactile", "olfactory", "gustatory"] as const;
 export type ContactPerceptionChannel = (typeof contactPerceptionChannels)[number];
@@ -54,11 +53,11 @@ export type ContactPerceptionChannel = (typeof contactPerceptionChannels)[number
  * owner reads, tagged with the sensory channel it could be perceived through.
  * Structured data, never prose — and never automatically presented: a candidate
  * says something IS true, not that anyone can perceive it or that it is worth
- * mentioning (spec §1).
+ * mentioning.
  *
- * Loci are the contact core's own surface refs rather than the spec sketch's
- * bare body locus: the same registry location ids, with the subject identity a
- * two-body phenomenon needs to stay unambiguous.
+ * Loci are the contact core's own surface refs rather than a bare body locus:
+ * the same registry location ids, with the subject identity a two-body
+ * phenomenon needs to stay unambiguous.
  */
 export interface ContactPhenomenonObservation {
   readonly phenomenonId: AffordancePhenomenonId;
@@ -76,7 +75,7 @@ export interface ContactPhenomenonObservation {
 }
 
 // ---------------------------------------------------------------------------
-// Routing (spec §15 stage 4)
+// Routing
 // ---------------------------------------------------------------------------
 
 /**
@@ -96,7 +95,7 @@ export interface ContactPhenomenonRouting {
   /**
    * Every nonvisual candidate, reduced to a diagnostic-only suppression. The
    * payload is deliberately gone: tactile/olfactory/gustatory presentation
-   * waits on sibling sensory owners (spec §11), and a withheld result that
+   * waits on sibling sensory owners, and a withheld result that
    * still carried its observation would be one convenient cast away from a
    * narrator prompt.
    */
@@ -121,7 +120,7 @@ function adaptVisualObservation(observation: ContactPhenomenonObservation): Affo
 /**
  * Split channel-tagged candidates at the presentation boundary: visual ones
  * adapt into the contract the visual-state observation adapter consumes,
- * everything else degrades to a suppression (effects spec §3's routing law).
+ * everything else degrades to a suppression.
  *
  * Fails CLOSED on the channel: only the literal `"visual"` routes, so a channel
  * this build does not know — a future member, a tampered stored value — is

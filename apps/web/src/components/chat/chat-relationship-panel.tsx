@@ -15,11 +15,11 @@ import { chatsApi, type ChatRelationship } from "@/lib/client/api";
 import { timeAgo } from "@/lib/relative-time";
 
 /**
- * The Relationship panel (character-chat-standalone.spec.md §7): the two axes +
- * region, the two-line history sparkline (§7.2), milestones, unfinished business
- * (open loops, §6.2), the story so far with the rebuild recovery lever (§7.3),
- * and transcript export (§7.4). Hosted in the shared Sheet — bottom on phones,
- * right on desktop, same split as the conversation header menu.
+ * The Relationship panel: the two axes + region, the two-line history
+ * sparkline, milestones, unfinished business (open loops), the story so far
+ * with the rebuild recovery lever, and transcript export. Hosted in the shared
+ * Sheet — bottom on phones, right on desktop, same split as the conversation
+ * header menu.
  *
  * The body mounts only while the Sheet is open (Sheet unmounts its children on
  * close), so the payload refetches on every open — no staleness, and a chatId
@@ -106,7 +106,7 @@ function PanelBody({ chatId }: { chatId: string }) {
         </section>
       ) : null}
 
-      {/* Drives (character-drives.plan.md, ruled): open wants + revealed secrets only —
+      {/* Drives: open wants + revealed secrets only —
           guarded/unrevealed drives stay hidden until play surfaces them. */}
       {data.wants.length > 0 ? (
         <section>
@@ -134,18 +134,18 @@ function SectionHeading({ children }: { children: string }) {
 }
 
 /**
- * The 2D relationship position (relationship-model v2 §UI, quadrant labels ruled
- * in): familiarity on x (0..100), regard on y (−100..100), the sampled history
- * as a faint trail behind the current point — enemies-to-lovers literally draws
- * its arc through the plane. Corner names come from the header's region label;
- * the plot itself stays quiet: axes, a zero line, the trail, the point.
+ * The 2D relationship position: familiarity on x (0..100), regard on y
+ * (−100..100), the sampled history as a faint trail behind the current point —
+ * enemies-to-lovers literally draws its arc through the plane. Corner names come
+ * from the header's region label; the plot itself stays quiet: axes, a zero
+ * line, the trail, the point.
  */
 function PositionPlot({ history, familiarity, regard }: { history: RelationshipSample[]; familiarity: number; regard: number }) {
   const x = (fam: number) => Math.max(0, Math.min(100, fam));
   const y = (reg: number) => (100 - Math.max(-100, Math.min(100, reg))) / 2;
   const trail = history.map((s) => `${x(s.familiarity)},${y(s.regard)}`).join(" ");
   return (
-    // Labeled axes as HTML around a stretched plot (ux-improvements slice 9):
+    // Labeled axes as HTML around a stretched plot:
     // the old in-SVG 5-unit text rendered ~6px, and the square viewBox
     // letterboxed inside the wide box — the whole chart read as a stamp.
     <div className="grid grid-cols-[auto_1fr] gap-x-1.5 text-[10px] leading-none text-paper-500">
@@ -188,7 +188,7 @@ function PositionPlot({ history, familiarity, regard }: { history: RelationshipS
 }
 
 /**
- * Relationship-over-time sparkline (§7.2, two axes since relationship-model v2):
+ * Relationship-over-time sparkline (two axes):
  * volatile regard as the accent polyline over a subtle zero line, the slow
  * familiarity ramp as a muted second line (0..100 mapped onto the same box).
  * `vector-effect: non-scaling-stroke` keeps line weight honest under the
@@ -240,7 +240,7 @@ function Sparkline({ history, currentBandLabel }: { history: RelationshipSample[
   );
 }
 
-/** Glyph + tone per milestone kind (§7.2) — small badges, not icon soup. */
+/** Glyph + tone per milestone kind — small badges, not icon soup. */
 const MILESTONE_GLYPHS: Record<MilestoneKind, { glyph: string; className: string }> = {
   first_exchange: { glyph: "✦", className: "text-accent-300" },
   stage_up: { glyph: "↑", className: "text-accent-300" },
@@ -277,7 +277,7 @@ function Milestones({ milestones }: { milestones: ChatRelationship["milestones"]
 }
 
 /**
- * The rolling summary, read-only (§7.3), plus the rebuild recovery lever:
+ * The rolling summary, read-only, plus the rebuild recovery lever:
  * two-click confirm → POST …/summary/rebuild → toast + silent panel refresh.
  */
 function StorySoFar({
@@ -343,7 +343,7 @@ function StorySoFar({
   );
 }
 
-/** Transcript export (§7.4): plain download anchors; the checkbox toggles the memory appendix. */
+/** Transcript export: plain download anchors; the checkbox toggles the memory appendix. */
 function ExportSection({ chatId }: { chatId: string }) {
   const [includeMemory, setIncludeMemory] = useState(false);
   const anchorClass =

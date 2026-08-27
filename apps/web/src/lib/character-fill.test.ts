@@ -62,7 +62,7 @@ describe("mergeFillDraft — scalars", () => {
     expect(mergeFillDraft(draftOf({}, { voice: "Bright." }), incoming).profile.voice).toBe("Bright.");
   });
 
-  it("fills the intimate disposition only when unset or blank (intimacy-notes.spec.md)", () => {
+  it("fills the intimate disposition only when unset or blank", () => {
     const incoming = draftOf({}, { intimacy: "Unhurried and quietly generous." });
     expect(mergeFillDraft(draftOf(), incoming).profile.intimacy).toBe("Unhurried and quietly generous.");
     expect(mergeFillDraft(draftOf({}, { intimacy: "Shy, then insatiable." }), incoming).profile.intimacy).toBe(
@@ -184,7 +184,7 @@ describe("mergeFillDraft — clusters", () => {
     expect(mergeFillDraft(draftOf({}, { intimateRegions: ["breasts"] }), incoming).profile.intimateRegions).toEqual(["breasts"]);
   });
 
-  it("schedule fills all-or-nothing like the outfit (chat-initiative slice 4)", () => {
+  it("schedule fills all-or-nothing like the outfit", () => {
     const authoredRow = { startMinute: 0, endMinute: 60, locationName: "the quay", activity: "inspection" };
     const generatedRow = { startMinute: 360, endMinute: 720, locationName: "the café", activity: "waiting tables" };
     const incoming = draftOf({}, { schedule: [generatedRow] });
@@ -193,7 +193,7 @@ describe("mergeFillDraft — clusters", () => {
   });
 });
 
-describe("mergeFillDraft — starting relationship and cards (forge-gaps)", () => {
+describe("mergeFillDraft — starting relationship and cards", () => {
   it("keeps an authored playerRelationship over a generated one", () => {
     const base = draftOf();
     base.profile.playerRelationship = { ...base.profile.playerRelationship, note: "Owes me a favor." };

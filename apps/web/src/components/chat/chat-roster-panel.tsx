@@ -7,15 +7,15 @@ import { cx } from "@/components/ui/cx";
 import { EntityImage } from "@/components/ui/entity-image";
 import { useToast } from "@/components/ui/toast";
 
-/** Mirrors the server's MAX_CHAT_PARTICIPANTS (multi-character-chat.plan.md). */
+/** Mirrors the server's MAX_CHAT_PARTICIPANTS. */
 const MAX_ROSTER = 4;
 
 /**
- * The conversation roster (multi-character-chat.plan.md slice 1): who is in this
- * story, with the manual present/away toggle (the dev-override philosophy — the
- * archivist will confirm transitions once slice 3 lands), add-from-library, and
- * remove (never the last member; the server promotes a removed primary's heir).
- * Mounted in the desktop aside and the menu's Roster sheet.
+ * The conversation roster: who is in this story, with the manual present/away
+ * toggle (a developer override — it sets presence directly rather than letting
+ * a story beat drive it), add-from-library, and remove (never the last member;
+ * the server promotes a removed primary's heir). Mounted in the desktop aside
+ * and the menu's Roster sheet.
  */
 export function ChatRosterPanel({
   chatId,
@@ -30,11 +30,10 @@ export function ChatRosterPanel({
   archived: boolean;
   /** Refetch the conversation envelope after a roster mutation. */
   onChanged: () => void;
-  /** Open THIS member's character sheet (followups ruling 13). */
+  /** Open THIS member's character sheet. */
   onOpenSheet?: (member: ChatRosterMember) => void;
-  /** Privacy mode (mobile-ux.plan.md ruling 4): monogram instead of the avatar
-   *  image — the sheet the tap opens carries no portrait, so the tap itself
-   *  stays live. */
+  /** Privacy mode: monogram instead of the avatar image — the sheet the tap
+   *  opens carries no portrait, so the tap itself stays live. */
   privacyMode?: boolean;
 }) {
   const toast = useToast();
@@ -110,7 +109,7 @@ export function ChatRosterPanel({
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm text-paper-200 group-hover:text-paper-50">{member.name}</span>
               {member.outfit.trim() ? (
-                // Read-only outfit line (ux-improvements slice 3) — per-member state.
+                // Read-only outfit line — per-member state.
                 <span className="truncate text-[10px] text-paper-500" title={member.outfit}>
                   {member.outfit}
                 </span>

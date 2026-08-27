@@ -4,8 +4,7 @@ One prediction internally loads a checkpoint, optionally patches it with a
 character LoRA, optionally conditions it on an identity reference through PuLID,
 optionally applies depth and pose ControlNets, samples, decodes and saves. From
 Vesper's side it was one image render, with one cost line, one provenance record
-and one retry — which is the whole point of owning the model
-(sd-rendering-package.plan.md §5).
+and one retry — which is the whole point of owning the model.
 
 The input names are snake_case on purpose: they are the vocabulary Vesper's
 existing Replicate capability probe reads, so this model registers as an
@@ -119,7 +118,7 @@ DOWNLOAD_TIMEOUT_S = 300
 #: sent to a recipe with no identity weight is refused, and a lab run that
 #: cannot name a recipe would otherwise be unable to use a reference at all.
 DEFAULT_RECIPE = "sdxl/identity-portrait"
-#: The native portrait size of every seeded recipe (plan §7).
+#: The native portrait size of every seeded recipe.
 DEFAULT_WIDTH = 832
 DEFAULT_HEIGHT = 1216
 #: Wide enough to make a collision irrelevant, small enough to read in a log.

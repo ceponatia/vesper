@@ -190,7 +190,7 @@ import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
 /**
  * The character-chat light-state engine. Grows the sessionless 1-on-1 chat into a
  * state-aware quick chat by reusing the pure contracts — meters, affinity stages,
- * conditions, and the §6 social-reaction curve — with one new table and at most
+ * conditions, and the social-reaction curve — with one new table and at most
  * one cheap structured pulse per exchange.
  * In-game time is the ONLY clock: a per-exchange tick decays meters within a visit,
  * player time skips (`applyTimeSkip`) are the one between-scene lever, and no time
@@ -201,12 +201,12 @@ import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
  */
 
 /**
- * The chat-wide SCENARIO (followups rulings 8-9): what belongs to the
- * conversation rather than any one character — the premise, the SETTING-wide
- * house rules (per-character divergence rides character tags, never
- * per-character rule lists), the shared scene memory, ONE story clock, the
- * one-shot skip note + skip history, and the scene render prefs. Lives on the
- * `character_chats` row; every roster member reads the same scenario.
+ * The chat-wide SCENARIO: what belongs to the conversation rather than any one
+ * character — the premise, the SETTING-wide house rules (per-character
+ * divergence rides character tags, never per-character rule lists), the shared
+ * scene memory, ONE story clock, the one-shot skip note + skip history, and the
+ * scene render prefs. Lives on the `character_chats` row; every roster member
+ * reads the same scenario.
  */
 export interface ChatScenario {
   premise: string;
@@ -215,21 +215,21 @@ export interface ChatScenario {
   sceneModel: string;
   sceneMemory: ChatSceneMemory;
   /**
-   * Who the PLAYER is in this conversation, and what they're wearing
-   * (persona-library.plan.md slices 7–8). It lives on the scenario — not on the
-   * per-character `ChatState` — because there is one player and many roster
-   * characters, and because the scenario IS the "another take" rollback snapshot
-   * (`pre_exchange_scenario`): riding it means a discarded reply can't leave the
-   * player undressed by a beat that no longer exists.
+   * Who the PLAYER is in this conversation, and what they're wearing. It lives
+   * on the scenario — not on the per-character `ChatState` — because there is
+   * one player and many roster characters, and because the scenario IS the
+   * "another take" rollback snapshot (`pre_exchange_scenario`): riding it means
+   * a discarded reply can't leave the player undressed by a beat that no longer
+   * exists.
    */
   playerState: ChatPlayerState;
   /**
-   * The conversation's GARMENT INSTANCES + their deduplicated blueprint snapshots
-   * (clothing-state-graph.plan.md slice 2; audit ruling P). Chat-wide for the same
-   * reason `playerState` is — a garment sits at loci no character owns (`scene`,
-   * `wardrobe`, `gone`) and moves between body, hands and room — and on the
-   * SCENARIO so it rides `pre_exchange_scenario` and rolls back with everything
-   * else, instances and blueprint map together, with no new snapshot machinery.
+   * The conversation's GARMENT INSTANCES + their deduplicated blueprint
+   * snapshots. Chat-wide for the same reason `playerState` is — a garment sits
+   * at loci no character owns (`scene`, `wardrobe`, `gone`) and moves between
+   * body, hands and room — and on the SCENARIO so it rides
+   * `pre_exchange_scenario` and rolls back with everything else, instances and
+   * blueprint map together, with no new snapshot machinery.
    *
    * The per-character `wornItemIds` / `playerState.wornItemIds` are now a DERIVED
    * projection of this store's worn-locus instances (the one-release compatibility
@@ -237,22 +237,21 @@ export interface ChatScenario {
    */
   garments: ChatGarmentStore;
   /**
-   * The scene's wind / precipitation / enclosure (body-attribute-affordances
-   * slice 4). Chat-wide for the same reason `sceneMemory` is — one imagined
-   * setting for the whole roster — and on the scenario, so it rides
-   * `pre_exchange_scenario`: a retake that discards the beat which opened the
-   * storm discards the storm.
+   * The scene's wind / precipitation / enclosure. Chat-wide for the same reason
+   * `sceneMemory` is — one imagined setting for the whole roster — and on the
+   * scenario, so it rides `pre_exchange_scenario`: a retake that discards the
+   * beat which opened the storm discards the storm.
    */
   environment: ChatEnvironment;
   /**
-   * What the affordance read has already offered the narrator, and in which band
-   * (body-attribute-affordances slice 4; the garment `cues` precedent).
+   * What the affordance read has already offered the narrator, and in which
+   * band (the garment `cues` precedent).
    *
    * It is on the SCENARIO rather than the state row because that is what makes
    * "another take" reproduce the identical read: the read is a pure function of
-   * committed state plus this memory, so both must roll back on one anchor.
-   * Slice 5 writes it when the read reaches the prompt; until then it rides
-   * through untouched.
+   * committed state plus this memory, so both must roll back on one anchor. The
+   * turn finalizer writes it when the read reaches the prompt, and rides it
+   * through untouched otherwise.
    */
   affordanceCues: AffordanceCueState;
   /**
@@ -279,15 +278,15 @@ export interface ChatScenario {
    * — so the projection may always be rebuilt and is never a second truth.
    */
   scene: SceneState;
-  /** Recurring named side characters (chat-supporting-cast.plan.md) — one cast for the roster. */
+  /** Recurring named side characters — one cast for the roster. */
   supportingCast: SupportingCast;
-  /** Tracked commitments that come due on the story clock (chat-plans-promises.plan.md). */
+  /** Tracked commitments that come due on the story clock. */
   plans: ChatPlan[];
   clockMinutes: number;
-  /** The story-calendar anchor (chat-clock-calendar.plan.md): minute 0 = this date+time. Author-editable. */
+  /** The story-calendar anchor: minute 0 = this date+time. Author-editable. */
   calendarStart: CalendarStart;
   pendingSkipNote: string;
-  /** The meanwhile pass's one-shot narrator note (chat-offscreen-life) — composes with the skip note, cleared with it. */
+  /** The meanwhile pass's one-shot narrator note — composes with the skip note, cleared with it. */
   pendingMeanwhileNote: string;
   /** Clock minute the meanwhile pass last ran (the cumulative gate's origin + the job's idempotency CAS). */
   meanwhilePassAtMinutes: number;
@@ -299,7 +298,7 @@ export interface ChatState {
   meters: Record<string, number>;
   /** The feeling axis (was `affinity`) — volatile, moved by the reaction pulse. −100..100. */
   regard: number;
-  /** The knowledge axis (relationship-model.plan.md) — a slow ratchet, 0..100, never down. */
+  /** The knowledge axis — a slow ratchet, 0..100, never down. */
   familiarity: number;
   /** Familiarity gained this scene (ratchet cap accounting); resets on a time skip. */
   familiaritySceneGain: number;
@@ -308,108 +307,108 @@ export interface ChatState {
   conditions: ActiveCondition[];
   mindNote: string;
   /**
-   * Where an AWAY member is, as a phrase (chat-offscreen-life §Whereabouts) — the
-   * presence read / meanwhile pass write it; the ensemble away lines render it; a
-   * PRESENT member with one pending gets a one-turn "just came from" license, then
-   * it clears. Never a location entity.
+   * Where an AWAY member is, as a phrase — the presence read / meanwhile pass
+   * write it; the ensemble away lines render it; a PRESENT member with one
+   * pending gets a one-turn "just came from" license, then it clears. Never a
+   * location entity.
    */
   whereabouts: string;
   /**
-   * Structured worn item-definition ids (chat-wardrobe-parity.plan.md rung 2), seeded from
-   * the active preset. When non-empty this is the wardrobe truth — the narrator renders these
-   * garments and exposure is COMPUTED from their coverage; empty ⇒ the free-text path applies.
+   * Structured worn item-definition ids, seeded from the active preset. When
+   * non-empty this is the wardrobe truth — the narrator renders these garments and
+   * exposure is COMPUTED from their coverage; empty ⇒ the free-text path applies.
    */
   wornItemIds: string[];
-  /** The active outfit preset id (rung 1) — which named look is "on"; "" ⇒ default/none. */
+  /** The active outfit preset id — which named look is "on"; "" ⇒ default/none. */
   outfitPresetId: string;
   /**
-   * Free-text outfit OVERLAY / fallback (chat-wardrobe-parity ruling): narrated-but-unowned
-   * garments ("a borrowed hoodie") ride alongside the worn list; legacy chats carry their whole
+   * Free-text outfit OVERLAY / fallback: narrated-but-unowned garments ("a borrowed
+   * hoodie") ride alongside the worn list; legacy chats carry their whole
    * look here until re-dressed. The scene-image outfit source when no items are worn.
    */
   outfit: string;
   /** Manual intimate-reveal flag — authoritative only on the free-text path (empty worn list); computed from coverage otherwise. */
   outfitExposed: boolean;
   /**
-   * Meter bands last surfaced to the narrator as a "just shifted" beat
-   * (character-chat-state-narration.spec.md §5): `{ meterId: band }`. The anti-repetition gate
-   * diffs current bands against this so an unchanged state never re-fires a beat.
+   * Meter bands last surfaced to the narrator as a "just shifted" beat:
+   * `{ meterId: band }`. The anti-repetition gate diffs current bands against
+   * this so an unchanged state never re-fires a beat.
    */
   surfacedCues: Record<string, string>;
   /**
-   * The archivist's memory-retrieval queries for the NEXT turn's RAG recall
-   * (character-chat-primary.spec.md §2), produced post-turn and consumed at the next prompt build.
+   * The archivist's memory-retrieval queries for the NEXT turn's RAG recall,
+   * produced post-turn and consumed at the next prompt build.
    */
   memoryQueries: string[];
   /**
-   * The character's unfinished business (character-chat-standalone.spec.md §6.2): ≤3 short
-   * phrases the archivist re-emits in full each exchange (resolved loops fall off). Rendered
-   * as an "Unfinished business" state line; read by "has something to say" (§8.4).
+   * The character's unfinished business: ≤3 short phrases the archivist re-emits
+   * in full each exchange (resolved loops fall off). Rendered as an "Unfinished
+   * business" state line; read by the "has something to say" initiative check.
    */
   openLoops: string[];
   /**
-   * Persisted narrative attribute overlays that evolve over the chat (spec §3): `source:"narrative"`
+   * Persisted narrative attribute overlays that evolve over the chat: `source:"narrative"`
    * values the attribute proposer merges in (inherent traits guarded), resolved on top of the
    * authored base at prompt-build time. Distinct from the transient condition overlays.
    */
   attributeOverlays: AttributeValue[];
   /**
-   * Persisted narrative TRAIT overlays that evolve over the chat (character-fidelity
-   * slice 10): `source:"narrative"` values the archivist proposes only at relationship
+   * Persisted narrative TRAIT overlays that evolve over the chat:
+   * `source:"narrative"` values the archivist proposes only at relationship
    * milestones, clamped one band from the authored value, resolved on top of the
    * authored traits at prompt build. Parallel to `attributeOverlays`; guarded to the
    * `developable` traits. Editable/rollback-safe — evolution becomes visible, not drift.
    */
   traitOverlays: TraitValue[];
   /**
-   * Voice-exemplar ring (character-fidelity slice 8): ≤5 distinctly in-voice lines the
-   * character actually said, one picked per exchange by the archivist — rendered as a
+   * Voice-exemplar ring: ≤5 distinctly in-voice lines the character actually
+   * said, one picked per exchange by the archivist — rendered as a
    * "How you sound" few-shot block past the events-only summary horizon. Rolls back
    * with the pre-exchange snapshot; per-character, so it composes in the ensemble.
    */
   voiceExemplars: VoiceExemplar[];
   lastPulseTrace: ChatPulseTrace;
-  /** Last-turn RAG debug trace for the dev inspector (character-chat-primary.spec.md §5). */
+  /** Last-turn RAG debug trace for the dev inspector. */
   lastMemoryTrace: ChatMemoryTrace;
-  /** Relationship arc samples (spec §7.2) — appended when affinity/stage moved; the sparkline. */
+  /** Relationship arc samples — appended when affinity/stage moved; the sparkline. */
   relationshipHistory: RelationshipSample[];
-  /** Recorded milestones (spec §7.2): first exchange, stage crossings, strong reactions, player-marked. */
+  /** Recorded milestones: first exchange, stage crossings, strong reactions, player-marked. */
   milestones: Milestone[];
   /**
-   * Memory-callback ring (memory-callbacks.plan.md): episode refs already offered as an
-   * unprompted "remember when" cue + the chat-clock minute each fired. The anti-repeat
+   * Memory-callback ring: episode refs already offered as an unprompted
+   * "remember when" cue + the chat-clock minute each fired. The anti-repeat
    * memory behind the cadence gate; rolls back with the pre-exchange snapshot.
    */
   callbackHistory: CallbackEntry[];
   /**
-   * Emotional weather (emotional-weather.plan.md): the persistent feeling (label +
-   * derived intensity + cause, exchange-decayed) and the bruise (damped positive
-   * regard gains after a betrayal at high regard). Pulse-proposed, curve-derived.
+   * Emotional weather: the persistent feeling (label + derived intensity +
+   * cause, exchange-decayed) and the bruise (damped positive regard gains after
+   * a betrayal at high regard). Pulse-proposed, curve-derived.
    */
   feeling: ChatFeelingState;
   /**
-   * Selfie-send ring (chat-selfies.plan.md): recorded request/offer sends + the
-   * chat-clock minute each queued — the unprompted-offer cooldown's memory.
+   * Selfie-send ring: recorded request/offer sends + the chat-clock minute each
+   * queued — the unprompted-offer cooldown's memory.
    */
   selfieHistory: SelfieEntry[];
   /**
-   * Runtime drives (character-drives.plan.md): the authored wants + play's
-   * progress/revealed/resolved — the drive prompt law and archivist updates.
+   * Runtime drives: the authored wants + play's progress/revealed/resolved —
+   * the drive prompt law and archivist updates.
    */
   drives: ChatDrive[];
   /**
-   * Per-body-location surface wetness (body-attribute-affordances slice 4) — the
-   * authoritative input the hair affordance domain had no owner for. Fixed point,
+   * Per-body-location surface wetness — the authoritative input the hair
+   * affordance domain had no owner for. Fixed point,
    * extraction-proposed, drying lazily on the story clock. PER CHARACTER: one head
    * of hair belongs to one person, so this is a state-row field rather than a
    * scenario one. Rides `storedChatStateSchema`, so a retake restores it.
    */
   bodySurface: BodySurfaceState;
   /**
-   * Narrative presence (multi-character-chat.plan.md): "present" shares the
-   * player's scene; "away" is offstage — meters freeze, no memory legs, only
-   * salience-gated relationship lines reach the prompt. Roster panel = manual
-   * override; the archivist confirms transitions (slice 3).
+   * Narrative presence: "present" shares the player's scene; "away" is offstage
+   * — meters freeze, no memory legs, only salience-gated relationship lines
+   * reach the prompt. Roster panel = manual override; the archivist confirms
+   * transitions.
    */
   presence: ChatPresence;
   /**
@@ -433,69 +432,69 @@ export interface ChatStateSnapshot {
   familiarityBand: { id: string; label: string };
   /** Authored relationship texture (kind/history/mask/looming). */
   relationship: RelationshipTexture;
-  /** Derived discrete emotion for the chat mood chip (mood.spec §4). */
+  /** Derived discrete emotion for the chat mood chip. */
   emotion: { label: EmotionLabel; intensity: number };
   conditions: ActiveCondition[];
   mindNote: string;
   premise: string;
-  /** Structured worn item-definition ids (chat-wardrobe-parity rung 2) — the Character sheet's equip editor. */
+  /** Structured worn item-definition ids — the Character sheet's equip editor. */
   wornItemIds: string[];
-  /** The active outfit preset id (rung 1) — the sheet's preset switcher state. */
+  /** The active outfit preset id — the sheet's preset switcher state. */
   outfitPresetId: string;
   /** Free-text outfit overlay/fallback (ad-hoc + legacy looks) — the sheet's free-text field. */
   outfit: string;
   /**
-   * The RENDERED garment phrase (worn items + overlay) for the read-only strip chip
-   * (chat-wardrobe-parity). Filled by the async state routes via the wardrobe seam; the
+   * The RENDERED garment phrase (worn items + overlay) for the read-only strip
+   * chip. Filled by the async state routes via the wardrobe seam; the
    * sync `chatStateSnapshot` defaults it to the overlay text.
    */
   outfitLabel: string;
   /** Manual intimate-reveal flag (free-text path); computed from coverage when items are worn. */
   outfitExposed: boolean;
-  /** Who the player is here + what they're wearing (persona-library.plan.md) — chat-wide. */
+  /** Who the player is here + what they're wearing — chat-wide. */
   playerState: ChatPlayerState;
   /** The cards live in THIS chat (editable in the scenario modal). */
   activeSocialCards: SocialReactionCard[];
-  /** Meter bands last surfaced as a "just shifted" beat (§5) — for the state-tools debug view. */
+  /** Meter bands last surfaced as a "just shifted" beat — for the state-tools debug view. */
   surfacedCues: Record<string, string>;
-  /** The character's unfinished business (spec §6.2) — relationship panel + "has something to say". */
+  /** The character's unfinished business — relationship panel + "has something to say". */
   openLoops: string[];
-  /** Next-turn RAG queries (the live column, not the trace) — editable in the state tools (§6.1). */
+  /** Next-turn RAG queries (the live column, not the trace) — editable in the state tools. */
   memoryQueries: string[];
-  /** Persisted narrative attribute overlays (character-chat-primary.spec.md §3) — for the inspector. */
+  /** Persisted narrative attribute overlays — for the inspector. */
   attributeOverlays: AttributeValue[];
-  /** Persisted narrative trait overlays (character-fidelity slice 10) — for the inspector/state tools. */
+  /** Persisted narrative trait overlays — for the inspector/state tools. */
   traitOverlays: TraitValue[];
-  /** Voice-exemplar ring (character-fidelity slice 8) — for the inspector/state tools. */
+  /** Voice-exemplar ring — for the inspector/state tools. */
   voiceExemplars: VoiceExemplar[];
   lastPulseTrace: ChatPulseTrace;
-  /** Last-turn RAG debug trace (retrieved + extracted) for the chat inspector (§5). */
+  /** Last-turn RAG debug trace (retrieved + extracted) for the chat inspector. */
   lastMemoryTrace: ChatMemoryTrace;
-  /** Read-only chat clock (the only time model, D3/D8) — the clock card + plan salience read it. */
+  /** Read-only chat clock (the only time model) — the clock card + plan salience read it. */
   clockMinutes: number;
-  /** The story-calendar anchor (chat-clock-calendar.plan.md) — the clock card formats + edits it. */
+  /** The story-calendar anchor — the clock card formats + edits it. */
   calendarStart: CalendarStart;
-  /** Auto scene-generation mode (slice 9) — the scenario modal's toggle. */
+  /** Auto scene-generation mode — the scenario modal's toggle. */
   sceneAuto: string;
   /** Scene-image model pick — the scene strip's save-on-select dropdown. */
   sceneModel: string;
   /** Accumulating scene memory (current place / time of day / known places) — for the state-tools/inspector view. */
   sceneMemory: ChatSceneMemory;
-  /** Recurring named side characters (chat-supporting-cast.plan.md) — the Supporting Cast panel's data. */
+  /** Recurring named side characters — the Supporting Cast panel's data. */
   supportingCast: SupportingCast;
-  /** Tracked plans & promises (chat-plans-promises.plan.md) — the Plans panel's data (salience derived client-side vs clockMinutes). */
+  /** Tracked plans & promises — the Plans panel's data (salience derived client-side vs clockMinutes). */
   plans: ChatPlan[];
-  /** Memory-callback ring (memory-callbacks.plan.md) — for the state-tools/inspector view. */
+  /** Memory-callback ring — for the state-tools/inspector view. */
   callbackHistory: CallbackEntry[];
-  /** Emotional weather (emotional-weather.plan.md) — the persistent feeling + bruise, for the strip/state tools. */
+  /** Emotional weather — the persistent feeling + bruise, for the strip/state tools. */
   feeling: ChatFeelingState;
-  /** Selfie-send ring (chat-selfies.plan.md) — for the state-tools/inspector view. */
+  /** Selfie-send ring — for the state-tools/inspector view. */
   selfieHistory: SelfieEntry[];
-  /** Runtime drives (character-drives.plan.md) — panel shows open ones; tools show all. */
+  /** Runtime drives — panel shows open ones; tools show all. */
   drives: ChatDrive[];
-  /** Narrative presence (multi-character-chat.plan.md) — the roster panel's toggle state. */
+  /** Narrative presence — the roster panel's toggle state. */
   presence: ChatPresence;
-  /** Where an away member is, as a phrase (chat-offscreen-life) — roster/tools view. */
+  /** Where an away member is, as a phrase — roster/tools view. */
   whereabouts: string;
   /** Exchanges since this character was last active (recency; for the roster/tools view). */
   quietExchanges: number;
@@ -523,7 +522,7 @@ const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.m
 const clamp01 = (n: number): number => clamp(n, 0, 1);
 
 /**
- * Seed a fresh state from the character's authored defaults (spec §1.1–1.2):
+ * Seed a fresh state from the character's authored defaults:
  * meters rested (`initialMeters`), both relationship axes + texture from the
  * authored `playerRelationship` record (band midpoints via
  * `authoredRecordToLive`; the strangers/neutral default ⇒ zeroed axes ⇒ today's
@@ -549,8 +548,8 @@ export async function resolveSeededOutfit(
 }
 
 /**
- * Match an archivist outfit description against the authored preset names
- * (ux-improvements slice 8.3). Conservative on purpose: a preset matches only
+ * Match an archivist outfit description against the authored preset names.
+ * Conservative on purpose: a preset matches only
  * when the text IS its name ("work") or names it with an outfit word ("changes
  * into her work clothes", "her date night outfit") — a bare name inside prose
  * ("work boots" naming no outfit word... does match "work clothes"-style
@@ -769,7 +768,7 @@ export function seedChatState(profile: CharacterProfile): ChatState {
     conditions: [],
     mindNote: "",
     whereabouts: "",
-    // Structured worn state (chat-wardrobe-parity rung 1/2): seed the worn list + active
+    // Structured worn state: seed the worn list + active
     // preset directly from the default outfit — no id-marker hack needed now that ids have
     // their own column. The free-text `outfit` overlay starts empty (the worn list is the
     // truth); exposure is computed from the seeded garments' coverage.
@@ -1001,9 +1000,9 @@ export async function saveChatScenario(
 }
 
 /**
- * The §8.4 v2 seen-cursor (chat-initiative.plan.md slice 2): when the player
- * last OPENED this conversation. Read at initiative-opener time so the cue can
- * name what shifted since; null when the chat row is gone.
+ * The initiative seen-cursor: when the player last OPENED this conversation.
+ * Read at initiative-opener time so the cue can name what shifted since; null
+ * when the chat row is gone.
  */
 export async function loadMilestonesSeenAt(chatId: string): Promise<Date | null> {
   const [row] = await db()
@@ -1052,9 +1051,9 @@ export async function savePreExchangeScenario(
  * author curation.
  *
  * `environment`, `affordanceCues` and `scene` ride `...anchor` too, and that is
- * the whole capture mechanism for the affordance read (architecture spec
- * §"Recompute and capture"): the read is a pure function of committed state plus
- * its cue memory, so restoring them here is what makes a retake reproduce the
+ * the whole capture mechanism for the affordance read: the read is a pure
+ * function of committed state plus its cue memory, so restoring them here is
+ * what makes a retake reproduce the
  * identical read rather than resolving against later weather or a pose from a
  * beat that no longer exists. `scene` carries the active-contact projection, so
  * the discarded take's touches un-happen with it — the ledger half of that
@@ -1185,8 +1184,8 @@ export async function loadChatState(
 }
 
 /**
- * The persisted-snapshot shape (spec §4.1). New fields are `.catch/.default`ed so
- * snapshots written before their slice keep parsing — a broken parse here would
+ * The persisted-snapshot shape. New fields are `.catch/.default`ed so snapshots
+ * written before the field existed keep parsing — a broken parse here would
  * silently kill every existing "another take" rollback anchor.
  */
 const storedChatStateSchema = z.object({
@@ -1222,14 +1221,14 @@ const storedChatStateSchema = z.object({
 });
 
 /**
- * Persist the "another take" rollback anchor (spec §4.1): the state as it stood
- * before the exchange. Targeted UPDATE — the row exists by the time the finalizer
+ * Persist the "another take" rollback anchor: the state as it stood before the
+ * exchange. Targeted UPDATE — the row exists by the time the finalizer
  * calls this (saveChatState upserted it just before). `null` ⇒ `{}` — the recorded
  * sentinel for "there was no pre-exchange state" (a first exchange seeded from the
  * authored defaults); `loadPreExchangeState` maps `{}` back to a null rollback
  * target (re-seed). With `guardMessageId` the write only lands while that prompting
- * message still exists (followups F5) — same guard as the paired `saveChatState`, so
- * a mid-stream delete can't leave the anchor pointing at a state that was never saved.
+ * message still exists — same guard as the paired `saveChatState`, so a mid-stream
+ * delete can't leave the anchor pointing at a state that was never saved.
  *
  * `writer` defaults to the root client; pass a transaction handle to fold the
  * anchor into a caller's atomic settlement (`persistSurfaceTransferSettlement`).
@@ -1285,9 +1284,8 @@ function isEmptyJsonObject(value: unknown): boolean {
 }
 
 /**
- * Advance the in-game state for one exchange (spec §3, re-ruled by
- * character-chat-standalone.spec.md §8.3 / D8: the between-visit wall-clock
- * recovery is GONE — no time passes between visits at all). PURE and idempotent
+ * Advance the in-game state for one exchange. There is no between-visit
+ * wall-clock recovery — no time passes between visits at all. PURE and idempotent
  * on read: without `advance` it is a pass-through projection, with it meters
  * decay CHAT_METER_DRIFT_MINUTES toward their *personalized* baselines (meter
  * pacing is exchange-keyed — deliberately NOT the 1-minute clock tick, see
@@ -1298,18 +1296,18 @@ export function driftChatState(
   profile: CharacterProfile,
   options: { advance?: boolean; clockMinutes: number },
 ): ChatState {
-  // Conditions expire against the SHARED story clock (followups ruling 8) even
-  // when this member's meters are frozen — one timeline for the roster.
+  // Conditions expire against the SHARED story clock even when this member's
+  // meters are frozen — one timeline for the roster.
   const conditions = state.conditions.filter((c) => !isConditionExpired(c, options.clockMinutes));
   if (!options.advance) return conditions.length === state.conditions.length ? state : { ...state, conditions };
   const meters = applyMeterDrift({ ...state.meters }, CHAT_METER_DRIFT_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
-  // Emotional weather decays per EXCHANGE, not clock minutes (emotional-weather.plan.md):
-  // one advance = one beat of the feeling fading and the bruise healing.
+  // Emotional weather decays per EXCHANGE, not clock minutes: one advance =
+  // one beat of the feeling fading and the bruise healing.
   return { ...state, meters, conditions, feeling: decayFeelingState(state.feeling) };
 }
 
 /**
- * Apply a player time skip (spec §8.1, D14 — flavor-only v1). PURE. Exactly three
+ * Apply a player time skip (flavor-only). PURE. Exactly three
  * effects: the clock advances (which lets already-running timed conditions expire
  * through the existing clock-keyed filter — no new wiring), the one-shot skip note
  * is stamped (worded by the CURRENT stage band), and the skip records itself into
@@ -1336,15 +1334,14 @@ export function applyTimeSkipToScenario(
 }
 
 /**
- * Rhythm auto-dress (ux-improvements slice 8.4, ruled: built with the slice):
- * a schedule row covering the skipped-to clock that names an outfit preset
- * re-dresses the character for that window — now in STRUCTURED form
- * (chat-wardrobe-parity), seeding the worn list + active preset from that
+ * Rhythm auto-dress: a schedule row covering the skipped-to clock that names an
+ * outfit preset re-dresses the character for that window — in STRUCTURED form,
+ * seeding the worn list + active preset from that
  * preset's items and clearing the free-text overlay. A skip is a scene boundary,
  * so the rhythm wins over the tracked outfit (undressed overnight → dressed for
  * the morning shift). The weekday and minute-of-day are REAL — resolved against
- * the scenario's calendar anchor (chat-clock-calendar.plan.md), replacing the old
- * `clock % 1440` / day-mod-7 pseudo-calendar.
+ * the scenario's calendar anchor rather than a `clock % 1440` / day-mod-7
+ * pseudo-calendar.
  */
 type ScheduleEntry = CharacterProfile["schedule"][number];
 
@@ -1406,8 +1403,8 @@ export function applyTimeSkip(
 }
 
 /**
- * Apply a parsed pulse to a drifted state via the deterministic §6 curve (PURE —
- * the testable core). A single-act mirror of merge.ts `planReactionAffinity`:
+ * Apply a parsed pulse to a drifted state via the deterministic social-reaction
+ * curve (PURE — the testable core). A single-act mirror of merge.ts `planReactionAffinity`:
  * resolve the classified concept against the character's preferences, evaluate it
  * through the affinity/mood/trait-aware curve, sign + clamp the affinity move to
  * ±AFFINITY_DELTA_CLAMP, and nudge mood. An unrecognised / null act ⇒ no
@@ -1432,11 +1429,11 @@ export function applyChatPulse(
   const changed: string[] = [];
 
   if (concept) {
-    // The shared §6 sequence (contracts/personality/act-reaction.ts — one implementation
-    // across both lanes; its `affinity` param IS the regard scalar — the shared-curve
-    // vocabulary renames with the sessions refactor, plan slice 7). World-less chat: the
-    // cards active in THIS chat (scenario modal) apply — seeded from the character's own
-    // `profile.socialCards`, then author-editable.
+    // The shared social-reaction sequence (contracts/personality/act-reaction.ts —
+    // one implementation across both lanes; its `affinity` param IS the regard
+    // scalar). World-less chat: the cards active in THIS chat (scenario modal)
+    // apply — seeded from the character's own `profile.socialCards`, then
+    // author-editable.
     const outcome = evaluateActReaction({
       act: { concept, target: characterName },
       disposition: { tags: profile.tags, preferences: profile.preferences, cards: [...activeSocialCards] },
@@ -1450,16 +1447,16 @@ export function applyChatPulse(
       regardDelta = outcome.affinityDelta;
       moodDelta = outcome.moodDelta;
     } else if (outcome.kind === "touch") {
-      // Welcome/unwelcome touch (mood.spec §5) — session-lane parity restored by the
-      // de-fork: an unmatched touch swings mood (+ stress) by affinity-stage welcome-ness.
+      // Welcome/unwelcome touch — session-lane parity restored by the de-fork:
+      // an unmatched touch swings mood (+ stress) by affinity-stage welcome-ness.
       moodDelta = outcome.moodDelta;
       stressDelta = outcome.stressDelta;
     }
   }
 
-  // Emotional weather (emotional-weather.plan.md): the standing feeling biases the
-  // curve's move (damped, ±10% max — owner ruling), a warmth streak compounds gains
-  // (cap ×1.5), and a live bruise halves them.
+  // Emotional weather: the standing feeling biases the curve's move (damped,
+  // ±10% max — owner ruling), a warmth streak compounds gains (cap ×1.5), and a
+  // live bruise halves them.
   if (regardDelta !== 0) {
     const scaled = scaleRegardDelta({
       delta: regardDelta,
@@ -1478,7 +1475,7 @@ export function applyChatPulse(
     changed.push("bruise");
   }
 
-  // Arousal-from-intimate-acts (slice 4): an intimate concept raises arousal — full
+  // Arousal-from-intimate-acts: an intimate concept raises arousal — full
   // for a flagged-intimate act (a proposition), half for courtship/physical
   // affection — unless the character disliked it.
   const arousalDelta = concept && valence !== "dislike" ? arousalBumpForConcept(concept) : 0;
@@ -1512,7 +1509,7 @@ export function applyChatPulse(
     changed.push("mindNote");
   }
 
-  // Persistent feeling proposal (emotional-weather.plan.md): the pulse names the
+  // Persistent feeling proposal: the pulse names the
   // label + cause; intensity derives from the curve's applied move (the beat's
   // measured charge). "neutral" clears; a weaker different label never displaces.
   const proposed = applyFeelingProposal(feeling, pulse.feeling, proposalIntensity(regardDelta, AFFINITY_DELTA_CLAMP));
@@ -1539,7 +1536,7 @@ export function applyChatPulse(
 }
 
 /**
- * The OPENER-scoped pulse fold (chat-initiative.plan.md slice 5): a reopen
+ * The OPENER-scoped pulse fold: a reopen
  * opener has no player act to react to, so the classifier runs only for its
  * reads — `sentPhoto` (did the opener actually attach the photo the license
  * armed?) and the mindNote refresh (her mind is on what she just raised).
@@ -1575,8 +1572,8 @@ export function applyOpenerPulse(state: ChatState, pulse: ChatPulse): { state: C
 const MAX_CHAT_ATTRIBUTE_CHANGES = 4;
 
 /**
- * Merge the archivist's proposed attribute changes into the persisted narrative-overlay set
- * (character-chat-primary.spec.md §3, D3). Each change passes the SAME inherent-trait guard the
+ * Merge the archivist's proposed attribute changes into the persisted narrative-overlay
+ * set. Each change passes the SAME inherent-trait guard the
  * session merge uses (`overlaySourceMayChange(def.mutability, "narrative")`), so eye colour /
  * species / gender can never be rewritten; an unknown or inherent change drops with a diagnostic.
  * Accepted changes become `source:"narrative"` overlays, deduped by attribute id (last write
@@ -1621,7 +1618,7 @@ export function applyChatAttributeOverlays(
 
 /**
  * Fold milestone-gated developable-trait nudges into the persisted narrative trait
- * overlays (character-fidelity slice 10) — the trait parallel to
+ * overlays — the trait parallel to
  * `applyChatAttributeOverlays`. Each accepted shift becomes a `source:"narrative"`
  * overlay, clamped to `TRAIT_OVERLAY_MAX_BAND_STEPS` bands from the AUTHORED value so a
  * long arc bends a character a bounded step without ever converting them (the slice-3
@@ -1693,7 +1690,7 @@ export interface ChatPulseInput {
    */
   scope?: "full" | "opener";
   /**
-   * Commitments that just came due this exchange (chat-plans-promises, ruling C): so the
+   * Commitments that just came due this exchange: so the
    * feeling proposal is informed — a just-missed plan is a hurt that lingers, a just-kept
    * one is warm. Model-mediated only; the curve/regard never move off this (no deterministic
    * penalty). Absent when nothing came due (the common case).
@@ -1741,7 +1738,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     playerName: input.playerName,
     mindNote: state.mindNote,
     // The standing feeling, so the model can judge resolution ("neutral" clears)
-    // instead of proposing blind (emotional-weather.plan.md).
+    // instead of proposing blind.
     feeling: state.feeling.current,
     commitmentsDue: input.commitmentsDue,
     exchange: input.exchange,
@@ -1827,7 +1824,7 @@ function arousalBumpForConcept(concept: string): number {
   return 0;
 }
 
-/** The archivist's outfit proposal shape (chat-wardrobe-parity) — structural, so the fold never imports the schema type. */
+/** The archivist's outfit proposal shape — structural, so the fold never imports the schema type. */
 interface OutfitProposal {
   description: string;
   /** The verbatim clause from this exchange stating the outfit changed ("" ⇒ no claim). */
@@ -1837,7 +1834,7 @@ interface OutfitProposal {
   added: readonly string[];
 }
 
-/** The player's outfit proposal (persona-library slice 8) — the same, minus `exposed` (always computed). */
+/** The player's outfit proposal — the same, minus `exposed` (always computed). */
 interface PlayerOutfitProposal {
   description: string;
   changeEvidence: string;
@@ -1876,7 +1873,7 @@ function restatementMessage(base: string, foreign: readonly string[]): string {
 }
 
 /**
- * Fold an archivist outfit proposal into a structured-wardrobe state patch (chat-wardrobe-parity).
+ * Fold an archivist outfit proposal into a structured-wardrobe state patch.
  * Three cases, all rollback-safe (the patched columns ride `storedChatStateSchema`):
  *
  * 1. `description` naming an authored preset → seed the worn list from it (rung 1, structured).
@@ -1913,8 +1910,8 @@ async function foldOutfitProposal(args: {
     // proposal must SHOW that THIS character's outfit changed: a verbatim clause
     // from this exchange saying so, attributable to them and not to another body
     // in the scene (owner ruling, 2026-08-01 — `outfitChangeEvidenceValidated`).
-    // The store is the worn truth once this actor is modelled
-    // (clothing-state-graph slice 2) and a paraphrase of the standing look is not
+    // The store is the worn truth once this actor is modelled, and a
+    // paraphrase of the standing look is not
     // a wardrobe action; demoting the structured list to prose on one was how a
     // dressed body silently became unmodellable — and therefore untouchable by
     // the contact leg — one settle into a fresh conversation.
@@ -1975,8 +1972,8 @@ async function foldOutfitProposal(args: {
 }
 
 /**
- * The same fold for the **PLAYER's** clothing (persona-library.plan.md slice 8) — "she
- * tugs you out of your shirt" is a state change, not just prose.
+ * The same fold for the **PLAYER's** clothing — "she tugs you out of your
+ * shirt" is a state change, not just prose.
  *
  * Reuses `applyWornGarmentChanges` verbatim: the reducer is already generic over
  * `{wornIds, worn, pool}` and knows nothing about characters, so the player needs no
@@ -2068,8 +2065,8 @@ async function foldPlayerOutfitProposal(args: {
 }
 
 /**
- * Close the turn: run the post-turn fan-out — the reaction pulse ‖ the archivist-lite
- * (character-chat-primary.spec.md §2, D2) — in PARALLEL on the drifted state + the
+ * Close the turn: run the post-turn fan-out — the reaction pulse ‖ the
+ * archivist-lite — in PARALLEL on the drifted state + the
  * just-finished exchange, write the extracted long-term memory (episode + facts), then
  * fold in the relationship samples/milestones + next turn's memory queries and persist (guarded). Called
  * from the chat route's stream finalizer after `persistAssistantReply`, so the whole
@@ -2079,16 +2076,16 @@ async function foldPlayerOutfitProposal(args: {
 export async function finalizeChatState(input: {
   chatId: string;
   characterId: string;
-  /** Chat owner — loads worn/pool items when the archivist proposes garment-level changes (chat-wardrobe-parity rung 2). */
+  /** Chat owner — loads worn/pool items when the archivist proposes garment-level changes. */
   ownerId: string;
-  /** The participant's memory group (character-chat-standalone.spec.md §1.3). */
+  /** The participant's memory group. */
   memoryGroupId: string;
-  /** Provenance anchor (spec §4.3): the assistant message row this exchange produced/updated. */
+  /** Provenance anchor: the assistant message row this exchange produced/updated. */
   assistantMessageId: string;
   /**
    * The STORED state as it stood before this exchange (null on a first exchange) —
    * persisted as the row's rollback snapshot so "another take" can undo the
-   * exchange's drift + fan-out effects (spec §4.1).
+   * exchange's drift + fan-out effects.
    */
   preExchangeState: ChatState | null;
   /**
@@ -2097,7 +2094,7 @@ export async function finalizeChatState(input: {
    */
   skipPulse?: boolean;
   /**
-   * Run the pulse OPENER-scoped (chat-initiative.plan.md slice 5): an initiative
+   * Run the pulse OPENER-scoped: an initiative
    * opener with the selfie license armed needs the pulse's `sentPhoto` read (and
    * takes the mindNote refresh), but none of the curve's moves. Only meaningful
    * when `skipPulse` is false.
@@ -2108,7 +2105,7 @@ export async function finalizeChatState(input: {
   characterName: string;
   playerName: string;
   /**
-   * The player's persona sheet (persona-library.plan.md slice 8) — the wardrobe pool the
+   * The player's persona sheet — the wardrobe pool the
    * archivist's `playerOutfit` deltas resolve against. Absent when the chat resolved to
    * the bare account name (no persona), in which case the player has no clothes to move
    * and the fold is a no-op.
@@ -2118,8 +2115,8 @@ export async function finalizeChatState(input: {
   now: Date;
   exchange: { player: string; assistant: string };
   /**
-   * The rolling summary as it stood for this exchange (chat-agent-improvements open
-   * question D): the memory scribe reads its durable ledger so a pronoun-heavy beat files
+   * The rolling summary as it stood for this exchange: the memory scribe reads
+   * its durable ledger so a pronoun-heavy beat files
    * a fact naming the person instead of a dangling referent. Scribe-only — the other legs
    * judge the exchange itself. Absent on an early chat ⇒ no block.
    */
@@ -2127,42 +2124,42 @@ export async function finalizeChatState(input: {
   /** What RAG retrieved for THIS turn (from the route's pre-turn recall), for the debug trace. */
   retrieved?: { facts: string[]; episodes: string[]; detail?: RetrievedMemoryDetail[] };
   /**
-   * This turn's selfie arming (chat-selfies.plan.md): the player asked, and/or the
+   * This turn's selfie arming: the player asked, and/or the
    * unprompted-offer gates held. The pulse's `sentPhoto` read only queues a render
    * when one of these armed it — a hallucinated "sending you a pic" on an unarmed
    * turn stays fiction.
    */
   selfie?: { requested: boolean; offerEligible: boolean };
   /**
-   * The roster with live presence (multi-character-chat.plan.md slice 3) — arms
-   * the archivist's presence-transition field. Absent/single ⇒ 1-on-1, unchanged.
+   * The roster with live presence — arms the archivist's presence-transition
+   * field. Absent/single ⇒ 1-on-1, unchanged.
    */
   roster?: readonly { name: string; presence: "present" | "away" }[];
   /**
-   * Present ensemble members' memory scopes beyond the primary's (ruling 5 —
-   * "each character's memory their own"): the ONE extraction files to every
+   * Present ensemble members' memory scopes beyond the primary's — each
+   * character's memory is their own, so the ONE extraction files to every
    * present witness's own group. Deduped against the primary's group here.
    */
   extraMemoryWrites?: readonly { groupId: string; characterId: string }[];
   /**
-   * The chat-wide scenario, ALREADY ticked/movement-switched for this exchange
-   * (followups ruling 8): finalize merges the archivist's scene proposal onto
-   * it, clears the one-shot skip note, and persists it beside the state.
+   * The chat-wide scenario, ALREADY ticked/movement-switched for this exchange:
+   * finalize merges the archivist's scene proposal onto it, clears the one-shot
+   * skip note, and persists it beside the state.
    */
   scenario: ChatScenario;
   /** The scenario as stored before this exchange — the rollback anchor's other half. */
   preExchangeScenario: ChatScenario | null;
   /**
-   * The garment cue memory this exchange's prompt surfaced (clothing-state-graph
-   * slice 6): repeat keys + the bands they were reported in + last-changed stamps.
+   * The garment cue memory this exchange's prompt surfaced: repeat keys + the
+   * bands they were reported in + last-changed stamps.
    * Persisted onto the store so it rides ONE rollback anchor with the garments it
    * describes — a retake restores mention history and wardrobe together or not at
    * all. Absent (the `CHAT_GARMENT_CUES` default) ⇒ the store's memory is untouched.
    */
   garmentCueState?: GarmentCueState;
   /**
-   * The AFFORDANCE cue memory this exchange's prompt surfaced
-   * (body-attribute-affordances slice 5): repeat keys, the band each was last
+   * The AFFORDANCE cue memory this exchange's prompt surfaced: repeat keys, the
+   * band each was last
    * reported in, and the story time each band moved. Persisted onto the SCENARIO
    * beside `environment`, so it rides `pre_exchange_scenario` with the state the
    * read was taken from — a retake restores both or neither, which is what makes
@@ -2172,8 +2169,8 @@ export async function finalizeChatState(input: {
   affordanceCueState?: AffordanceCueState;
   /**
    * The CAPTURED effective-coverage read this exchange derived, keyed by garment
-   * actor handle (body-attribute-affordances slice 6; the owner ruling
-   * "effective coverage is captured, not reconstructed").
+   * actor handle (the owner ruling: "effective coverage is captured, not
+   * reconstructed").
    *
    * Merged onto the garment store rather than stored beside it, so one JSONB
    * value — one rollback anchor — carries the garments AND the derived answer
@@ -2182,7 +2179,7 @@ export async function finalizeChatState(input: {
   affordanceCoverage?: Readonly<Record<string, EffectiveCoverageRead>>;
   /**
    * The contact-effect proposals this exchange's DURABLY committed contact
-   * derived (`CHAT_CONTACT_EFFECTS`, default off; effects spec §15 stage 6).
+   * derived (`CHAT_CONTACT_EFFECTS`, default off).
    * The body-surface owner transaction validates and commits them into the
    * primary's surface state HERE — after the wetness fold, inside the same
    * guarded state write — so a committed mark rides one rollback anchor with
@@ -2191,8 +2188,8 @@ export async function finalizeChatState(input: {
    */
   contactMarkProposals?: readonly BodyMarkProposal[];
   /**
-   * This exchange's conserved surface transfer (effects spec §9; §15 stage 8):
-   * the PROPOSALS, not a settlement. The owner transaction runs inside finalize,
+   * This exchange's conserved surface transfer: the PROPOSALS, not a
+   * settlement. The owner transaction runs inside finalize,
    * on the surface the surrounding folds just produced.
    *
    * That is deliberate and it is the whole reason this is a proposal input. A
@@ -2205,13 +2202,13 @@ export async function finalizeChatState(input: {
    * debited is byte-for-byte the value that gets written.
    *
    * A COMMITTED transfer moves the settle's writes inside ONE database
-   * transaction (`persistSurfaceTransferSettlement`), because §9's conservation
+   * transaction (`persistSurfaceTransferSettlement`), because the conservation
    * law spans two rows and cannot be proven across independent statements.
    * Absent — or present but committing nothing, which is every refusal and every
    * duplicate retry — ⇒ every write below runs exactly as it always has. That
-   * is the whole of production today: transfer is fixture-only under §9's escape
-   * clause, so no live caller sets this and the hot settle path is untouched
-   * (owner ruling 2026-08-26).
+   * is the whole of production today: transfer is fixture-only under the
+   * conservation law's escape clause, so no live caller sets this and the hot
+   * settle path is untouched (owner ruling 2026-08-26).
    */
   surfaceTransfer?: ChatSurfaceTransferInput;
   sink?: DiagnosticSink;
@@ -2227,7 +2224,7 @@ export async function finalizeChatState(input: {
    * PLAYER's worn list? Reported because only the writer knows: the store carries
    * the final clothes and nothing about when they changed, and the reply-scene
    * contact leg refuses to date a touch against a wardrobe that moved during the
-   * same reply (actor-control spec §"Resolution laws → Contact start").
+   * same reply.
    *
    * The comparison is the PROJECTION's, not the proposal's — the same rule the
    * ensemble members' `memberWornChanges` uses — so the free-text outfit fold,
@@ -2262,7 +2259,7 @@ export async function finalizeChatState(input: {
         }
       : undefined;
 
-  // Plans coming due (chat-plans-promises): the DETERMINISTIC transitions are knowable from
+  // Plans coming due: the DETERMINISTIC transitions are knowable from
   // the already-ticked clock before the fan-out, so the pulse — which runs in PARALLEL with
   // the archivist — can see a just-missed commitment and propose the hurt (consequences stay
   // model-mediated, ruling C: no deterministic regard penalty). The real fold below re-runs
@@ -2273,7 +2270,7 @@ export async function finalizeChatState(input: {
     const when = describePlanWhen(p.when, planLabelCtx);
     return `"${p.what}"${others ? ` ${others}` : ""}${when ? ` (${when})` : ""}`;
   };
-  // The grounded wardrobe lane (clothing-state-graph.plan.md slice 5): the exact
+  // The grounded wardrobe lane: the exact
   // garment/part handles this exchange may address. Built from the store as it
   // stands BEFORE the fan-out, because that is what the extractor's prompt shows.
   // Empty (an unmodelled chat, a first exchange) ⇒ the field never arms and the
@@ -2282,7 +2279,7 @@ export async function finalizeChatState(input: {
   // "Here" is the place the exchange STARTED in, not wherever the archivist's
   // scene proposal moved them: the enumeration and the `left_here` locus then mean
   // one and the same room, so a garment dropped this exchange is re-findable by
-  // exactly the handles the model was just shown (R3).
+  // exactly the handles the model was just shown.
   const scenePlaceName = currentScenePlace(input.scenario.sceneMemory)?.name;
   const garmentHandles = buildGarmentHandleTable({
     store: input.scenario.garments,
@@ -2300,8 +2297,8 @@ export async function finalizeChatState(input: {
       : { missed: preAdvance.justMissed.map(planPhrase), kept: [] as string[] };
 
   // The post-turn fan-out: the reaction pulse ‖ the three extraction legs (the memory
-  // scribe, the continuity tracker, the character tracker — chat-agent-improvements slice
-  // 1b), all in flight together after the reply has already flushed.
+  // scribe, the continuity tracker, the character tracker), all in flight
+  // together after the reply has already flushed.
   const [pulse, archivist] = await Promise.all([
     input.skipPulse
       ? Promise.resolve({ state: input.driftedState, degraded: false })
@@ -2325,17 +2322,17 @@ export async function finalizeChatState(input: {
       drives: input.driftedState.drives,
       roster: input.roster,
       supportingCast: input.scenario.supportingCast.map((m) => ({ name: m.name, relation: m.relation })),
-      // Open commitments the archivist can mark kept/canceled (chat-plans-promises).
+      // Open commitments the archivist can mark kept/canceled.
       openPlans: input.scenario.plans
         .filter((p) => p.status === "upcoming")
         .map((p) => ({ what: p.what, who: p.participants.join(", "), when: describePlanWhen(p.when, planLabelCtx) })),
       developableTraits,
       voiceReference,
-      // The in-scope garment handles (clothing-state-graph slice 5) — present ⇒ the
+      // The in-scope garment handles — present ⇒ the
       // continuity leg proposes typed operations instead of free-text garments.
       garmentHandles,
-      // The recap's ledger grounds the scribe's facts in NAMES (chat-agent-improvements
-      // open question D — a pronoun-heavy beat used to file a dangling referent).
+      // The recap's ledger grounds the scribe's facts in NAMES (a pronoun-heavy
+      // beat used to file a dangling referent).
       priorSummary: input.priorSummary,
       // Failure telemetry only — never reaches a prompt (agent-failure.ts).
       trace: { chatId: input.chatId, messageId: input.assistantMessageId },
@@ -2391,22 +2388,22 @@ export async function finalizeChatState(input: {
   }
 
   // Record the meter bands the narrator saw THIS turn (from the drifted, pre-pulse meters)
-  // as next turn's `prevBands`, so an unchanged state never re-fires a "just shifted" beat
-  // (character-chat-state-narration.spec.md §5). Carry the archivist's memory queries for the
+  // as next turn's `prevBands`, so an unchanged state never re-fires a "just shifted" beat.
+  // Carry the archivist's memory queries for the
   // next turn's RAG recall (drop them on a degraded archivist so stale queries don't linger),
-  // and fold any proposed attribute change into the evolving narrative overlays (§3).
+  // and fold any proposed attribute change into the evolving narrative overlays.
   const surfacedCues = splitStateCues(input.driftedState.meters, input.driftedState.surfacedCues).nextBands;
   const attributeOverlays = archivist.value
     ? applyChatAttributeOverlays(input.driftedState.attributeOverlays, archivist.value.attributeChanges, input.sink)
     : input.driftedState.attributeOverlays;
-  // Voice-exemplar ring (slice 8): the archivist's picked in-voice line joins the ≤5 ring
+  // Voice-exemplar ring: the archivist's picked in-voice line joins the ≤5 ring
   // (a "" pick / degraded archivist is a no-op via appendVoiceExemplar). Rolls back with the snapshot.
   const voiceExemplars = archivist.value
     ? appendVoiceExemplar(input.driftedState.voiceExemplars, archivist.value.voiceExemplar, input.scenario.clockMinutes)
     : input.driftedState.voiceExemplars;
-  // Open loops are full-list-each-time (spec §6.2) — but a degraded leg emits an empty
+  // Open loops are full-list-each-time — but a degraded leg emits an empty
   // list that must NOT wipe the standing loops; keep the prior list on degrade. Keyed on
-  // the CHARACTER leg specifically (slice 1b): a failed scribe or continuity leg has
+  // the CHARACTER leg specifically: a failed scribe or continuity leg has
   // nothing to say about loops, and must not cost them.
   const openLoops =
     archivist.legs.character || !archivist.value ? input.driftedState.openLoops : archivist.value.openLoops;
@@ -2419,7 +2416,7 @@ export async function finalizeChatState(input: {
     ? mergeSceneMemory(input.scenario.sceneMemory, archivist.value.scene)
     : input.scenario.sceneMemory;
 
-  // Supporting cast (chat-supporting-cast.plan.md): same accrete-only shape as the
+  // Supporting cast: same accrete-only shape as the
   // scene merge — a degraded/empty proposal is a no-op, and roster members + the
   // player can never be minted as cast entries (full characters stay full characters).
   const supportingCast = archivist.value
@@ -2430,7 +2427,7 @@ export async function finalizeChatState(input: {
       ])
     : input.scenario.supportingCast;
 
-  // Plans (chat-plans-promises): merge the archivist's struck/changed/canceled commitments
+  // Plans: merge the archivist's struck/changed/canceled commitments
   // (new ids via `newId`), then advance deterministically as the ticked clock passes each
   // due-time — an overdue player plan the archivist did NOT resolve becomes `missed`, an
   // overdue NPC↔NPC plan is assumed kept (ruling E). A degraded archivist proposes nothing
@@ -2445,16 +2442,16 @@ export async function finalizeChatState(input: {
   const planAdvance = advancePlans(planMerge.plans, input.scenario.clockMinutes, input.playerName);
   const plans = planAdvance.plans;
 
-  // Outfit change (chat-wardrobe-parity.plan.md): the archivist proposes wardrobe changes two
+  // Outfit change: the archivist proposes wardrobe changes two
   // ways, folded by `foldOutfitProposal`. A whole-outfit `description` naming an authored preset
-  // ("her work clothes" → the "Work" preset) seeds the STRUCTURED worn list (rung 1); an
+  // ("her work clothes" → the "Work" preset) seeds the STRUCTURED worn list; an
   // unmatched description is a free-text full replacement. Garment-level `removed`/`added`
-  // (rung 2) fold individual pieces against the loaded worn items + wardrobe pool. Empty
+  // fold individual pieces against the loaded worn items + wardrobe pool. Empty
   // proposal / degraded archivist keeps the prior wardrobe; "another take" rolls it back via
   // the pre-exchange snapshot (wornItemIds/outfitPresetId ride `storedChatStateSchema`).
   //
   // Which of the two wardrobe-mutation paths runs is decided ONCE, for the whole
-  // exchange (clothing-state-graph slice 5): typed proposals win, and when they
+  // exchange: typed proposals win, and when they
   // are present the free-text folds are skipped entirely — so no actor is ever
   // mutated twice in one exchange.
   const lane = garmentMutationLane({
@@ -2503,7 +2500,7 @@ export async function finalizeChatState(input: {
     sink: input.sink,
   });
 
-  // The PLAYER's clothing (persona-library.plan.md slice 8) — the same fold against the
+  // The PLAYER's clothing — the same fold against the
   // persona's wardrobe. Chat-wide, so it lands on the scenario (and therefore on the
   // "another take" rollback snapshot) rather than the per-character state row. No
   // persona ⇒ no body to dress ⇒ a no-op.
@@ -2522,13 +2519,13 @@ export async function finalizeChatState(input: {
     sink: input.sink,
   });
 
-  // --- The garment store (clothing-state-graph.plan.md slice 2) ---------------
+  // --- The garment store -----------------------------------------------------
   // The chat-wide store is the wardrobe TRUTH; the worn-id lists become its
   // projection. Both folds above still produce id lists — they are compiled here
   // into instance transfers (kept / re-donned with their condition / minted /
   // doffed to the wardrobe), never a free-text replacement of the wardrobe.
   //
-  // Migration is lazy and happens on THIS write, never on a read (audit P.2): an
+  // Migration is lazy and happens on THIS write, never on a read: an
   // unseeded store first materializes from the PRE-fold worn sets, so a garment
   // this exchange took off exists at a locus rather than never having existed.
   const playerStateAfterFold: ChatPlayerState = { ...input.scenario.playerState, ...playerOutfitPatch };
@@ -2561,8 +2558,8 @@ export async function finalizeChatState(input: {
   // Mention history rides the store (slice 6): the cue memory the PROMPT produced,
   // written onto the POST-fold store so one JSONB value carries the wardrobe and
   // what has already been said about it. Flag off ⇒ the prior memory passes through.
-  // The CAPTURED effective-coverage read (body-attribute-affordances slice 6)
-  // rides the same value for the same reason: it is derived from these garments,
+  // The CAPTURED effective-coverage read rides the same value for the same
+  // reason: it is derived from these garments,
   // at this cut, and restoring it one exchange out of step with them would give
   // narration, images, and a retake three different answers about what is still
   // concealed. Absent (the `CHAT_AFFORDANCE_CUES` default, or an unmodelled
@@ -2594,7 +2591,7 @@ export async function finalizeChatState(input: {
       : garmentSync.playerState;
   const garmentTrace: GarmentOperationTraceEntry[] = garmentFold.trace;
 
-  // --- Scene environment + body surface (body-attribute-affordances slice 4) ---
+  // --- Scene environment + body surface ---
   // The same shape as the garment fold above: a pure apply over typed proposals,
   // a trace, and diagnostics — never a re-read of the narrator's prose.
   //
@@ -2648,7 +2645,7 @@ export async function finalizeChatState(input: {
     sink: input.sink,
   });
   // --- Contact-effect owner transaction (`CHAT_CONTACT_EFFECTS`, default off) ---
-  // The pressure-mark commit (effects spec §8): the body-surface owner
+  // The pressure-mark commit: the body-surface owner
   // validates each proposal against its own vocabulary and commits at most one
   // mark per idempotency identity. Runs AFTER the wetness fold so both modules
   // land in one state value under one rollback anchor, and only when the
@@ -2663,11 +2660,11 @@ export async function finalizeChatState(input: {
           ...(input.sink === undefined ? {} : { sink: input.sink }),
         })
       : { surface: depositFold.surface, trace: [] };
-  // --- Conserved surface transfer (effects spec §9; §15 stage 8) ---
+  // --- Conserved surface transfer ---
   // The second effect proof, and the one that spans owners: material leaves one
   // body's surface and lands on another body, or on a garment layer in between.
   //
-  // It runs HERE, last in the fold chain and inside this function, because §9's
+  // It runs HERE, last in the fold chain and inside this function, because the
   // conservation law is a statement about exact quantities: the debit has to come
   // off the same surface value that gets persisted. `effectFold.surface` is that
   // value — it already carries this exchange's drying, deposits and pressure
@@ -2758,12 +2755,12 @@ export async function finalizeChatState(input: {
   applyTick("trickle");
   if ((archivist.value?.facts.length ?? 0) > 0) applyTick("moment");
 
-  // Relationship arc (spec §7.2): sample when the exchange moved regard or crossed a
+  // Relationship arc: sample when the exchange moved regard or crossed a
   // band (or it's the first exchange — the sparkline's baseline), and derive the
   // exchange's milestones. When the pulse was skipped (a "go on" beat) or degraded,
   // `lastPulseTrace` is stale/empty — treat the move as zero rather than re-reading it.
   const at = input.now.toISOString();
-  // "First exchange" for the arc baseline + first_exchange milestone (followups F4):
+  // "First exchange" for the arc baseline + first_exchange milestone:
   // no relationship sample has been recorded yet. Robust to a state row that
   // pre-exists the first send — a premise Save, an opening beat, a pickup skip all
   // create the row, so keying on `preExchangeState === null` would miss them and
@@ -2795,7 +2792,7 @@ export async function finalizeChatState(input: {
     regardDelta: pulseTrace?.regardDelta ?? 0,
     concept: pulseTrace?.concept ?? null,
   });
-  // Drive movement (character-drives.plan.md): fold the archivist's driveUpdates
+  // Drive movement: fold the archivist's driveUpdates
   // into the runtime set; a degraded archivist keeps the prior drives (the loops
   // rule). Newly-revealed secrets land as `secret_shared` milestones — the spoken
   // reveal itself files as an ordinary extracted fact (ruled: no special wiring).
@@ -2810,7 +2807,7 @@ export async function finalizeChatState(input: {
       messageId: input.assistantMessageId,
     });
   }
-  // Plan resolutions land milestones (chat-plans-promises, ruling D): a kept/missed plan
+  // Plan resolutions land milestones: a kept/missed plan
   // INVOLVING THE PLAYER mints `plan_kept`/`plan_missed` — callback-boosted like
   // `secret_shared`, so "remember our first real date" emerges from the callback system.
   // NPC↔NPC keeps (assume-kept) carry no player milestone (they reach the story as facts).
@@ -2831,7 +2828,7 @@ export async function finalizeChatState(input: {
     archivist.value && milestoneLanded
       ? applyChatTraitOverlays(input.profile.traits, input.driftedState.traitOverlays, archivist.value.traitShifts, { minor }, input.sink)
       : input.driftedState.traitOverlays;
-  // Selfie send (chat-selfies.plan.md): the pulse read the reply as actually sending
+  // Selfie send: the pulse read the reply as actually sending
   // a photo AND a deterministic gate armed it. Recording the send here (the cooldown
   // ring) rides the same guarded state write; "another take" rolls it back.
   const selfieKind =
@@ -2856,7 +2853,7 @@ export async function finalizeChatState(input: {
     memoryQueries: archivist.value?.memoryQueries ?? [],
     attributeChanges: (archivist.value?.attributeChanges ?? []).map((c) => `${c.attributeId}=${String(c.value)}`),
     retrievedDetail: input.retrieved?.detail ?? [],
-    // Every garment proposal's fate (clothing-state-graph slice 5): proposed →
+    // Every garment proposal's fate: proposed →
     // resolved → applied / no_change / rejected + code. Riding the memory trace
     // puts it in the admin inspector's existing view AND inside the rollback
     // snapshot, so a retake discards the record along with the operations.
@@ -2864,13 +2861,13 @@ export async function finalizeChatState(input: {
     garmentLane: lane,
     // The MEMORY trace's degraded flag tracks the leg that owns memory (the scribe): its
     // other fields — summary, facts, queries — all come from that leg, so a failed
-    // continuity/character leg must not flag the memory read as degraded (slice 1b).
+    // continuity/character leg must not flag the memory read as degraded.
     degraded: archivist.legs.memory,
-    // Character-consistency corrective (slice 9): this exchange's slip note (or "") rides the
+    // Character-consistency corrective: this exchange's slip note (or "") rides the
     // trace so NEXT turn's prompt build renders a one-turn corrective tail; rolls back safely.
     characterSlip: archivist.value?.characterSlip ?? "",
   };
-  // Presence transitions (multi-character-chat.plan.md slice 3): the archivist's
+  // Presence transitions: the archivist's
   // confirmed reads. The primary's own transition folds into THIS save; the
   // caller applies the others' to their member states.
   const presenceChanges = archivist.value?.presence ?? [];
@@ -2878,7 +2875,7 @@ export async function finalizeChatState(input: {
     (p) => p.name.trim().toLowerCase() === input.characterName.trim().toLowerCase(),
   );
   const selfPresence = selfChange?.presence;
-  // Whereabouts (chat-offscreen-life §Whereabouts): a member who was PRESENT with a
+  // Whereabouts: a member who was PRESENT with a
   // pending whereabouts just spent it on this exchange's return license — clear it;
   // an away departure that named where it went records the phrase.
   const whereabouts =
@@ -2902,23 +2899,23 @@ export async function finalizeChatState(input: {
     selfieHistory,
     drives: driveResult.drives,
     // A committed transfer's DEBITED source surface wins over the effect fold's:
-    // the owner transaction (effects spec §9) removed the transferred material
+    // the owner transaction removed the transferred material
     // from it and wrote the idempotency receipt onto that same value, so
     // persisting the fold's copy instead would un-remove what was moved AND drop
     // the receipt, letting the next retry transfer the same material again.
     bodySurface: transferSettled?.bodySurface ?? effectFold.surface,
     ...outfitPatch,
-    // The worn list is a PROJECTION of the garment store (slice 2), re-derived
+    // The worn list is a PROJECTION of the garment store, re-derived
     // after the reconcile AND the typed operations above so the column can never
     // become a second truth.
     wornItemIds,
   };
-  // The scenario save (followups ruling 8): the merged scene memory, the ticked
+  // The scenario save: the merged scene memory, the ticked
   // clock the pipeline already applied, and the one-shot skip note clearing —
   // guarded like the state save.
   const settledScenario: ChatScenario = {
     // Both one-shot notes clear together: the exchange that rendered the skip
-    // note also rendered the meanwhile note (chat-offscreen-life).
+    // note also rendered the meanwhile note.
     ...input.scenario,
     sceneMemory,
     supportingCast,
@@ -2929,8 +2926,8 @@ export async function finalizeChatState(input: {
     // is only half-recorded.
     garments: transferSettled?.garments ?? garmentStore,
     environment: environmentFold.environment,
-    // Mention history rides the scenario beside the weather it was read against
-    // (slice 5). Flag off ⇒ the prior memory passes through, exactly as the
+    // Mention history rides the scenario beside the weather it was read
+    // against. Flag off ⇒ the prior memory passes through, exactly as the
     // garment cue map does.
     ...(input.affordanceCueState ? { affordanceCues: input.affordanceCueState } : {}),
     pendingSkipNote: "",
@@ -2939,11 +2936,11 @@ export async function finalizeChatState(input: {
   // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert
   // column list — an author edit must not clobber them): repeated "another take"s
   // keep rolling back to the same pre-exchange point. Guarded on the same prompting
-  // message as saveChatState (F5), so a mid-stream delete leaves neither half written.
+  // message as saveChatState, so a mid-stream delete leaves neither half written.
   //
   // Two persistence shapes, one ruling (2026-08-26). A settle that COMMITTED a
-  // transfer moves all of this into ONE transaction, because §9 demands the debit
-  // and the credit commit together and they live in two different rows. Every
+  // transfer moves all of this into ONE transaction, because conservation demands
+  // the debit and the credit commit together and they live in two different rows. Every
   // other exchange — which is all of them today, transfer being fixture-only —
   // keeps the four independent writes exactly as they were: this is the hot path,
   // and there is no cross-row invariant to protect when nothing moved between rows.
@@ -2970,7 +2967,7 @@ export async function finalizeChatState(input: {
     await savePreExchangeScenario(input.chatId, input.preExchangeScenario, input.promptMessageId);
   }
 
-  // Location sketch (chat-scene-fidelity.plan.md slice 2b): a current place without a
+  // Location sketch: a current place without a
   // sketch gets one from the detached background agent. Enqueued AFTER the state write so
   // the job reads the just-merged memory; fire-and-forget (a lost write re-fires here
   // while the sketch stays absent).
@@ -2983,7 +2980,7 @@ export async function finalizeChatState(input: {
       placeName: sketchPlace.name,
     });
   }
-  // Current-look refresh (chat-scene-references.plan.md): the fiction re-dressed
+  // Current-look refresh: the fiction re-dressed
   // the character or landed a lasting appearance change — mint a fresh look anchor.
   // The job itself gates on image-active chats + key match (ruled), so this enqueue
   // is cheap and idempotent; fire-and-forget after the state write it reads.
@@ -3025,8 +3022,7 @@ export async function finalizeChatState(input: {
     // all — a soaked blouse, a displaced hem, a damage mark — which shift the
     // coverage a contact's material read would compose. Either one is a wardrobe
     // this reply authoritatively moved, and a same-reply contact start must not
-    // date its material against it (actor-control spec §"Resolution laws →
-    // Contact start").
+    // date its material against it.
     wardrobeChanged: {
       character: wornItemIds.join(",") !== input.driftedState.wornItemIds.join(",") || characterLookChanged,
       player:
@@ -3174,7 +3170,7 @@ export function settleEnsembleMember(args: {
     }
     next = {
       ...next,
-      // Full-list-each-time (spec §6.2); a degraded pass never reaches here, so
+      // Full-list-each-time; a degraded pass never reaches here, so
       // an emitted [] is a real "everything resolved".
       openLoops: args.personal.openLoops,
       attributeOverlays: applyChatAttributeOverlays(next.attributeOverlays, args.personal.attributeChanges, args.sink),
@@ -3198,8 +3194,8 @@ export function settleEnsembleMember(args: {
 /**
  * Upsert the state row — the ONE place the full column list lives, so the guarded
  * (mid-exchange) and unguarded (author-edit) paths can never drift apart
- * (codebase-review A2: the guarded insert once omitted the outfit/cards columns,
- * so a fresh chat's first exchange silently discarded the seeded social cards).
+ * (the guarded insert once omitted the outfit/cards columns, so a fresh chat's
+ * first exchange silently discarded the seeded social cards).
  * With `guardMessageId`, the write only lands while that prompting user message
  * still exists — the same `INSERT … WHERE EXISTS` shape as `persistAssistantReply`,
  * so a clear (Reset All) landing mid-stream can't resurrect a deleted state row.
@@ -3316,7 +3312,7 @@ export async function persistChatState(
 
 /**
  * What a caller hands `finalizeChatState` to attempt a conserved surface
- * transfer (effects spec §9): proposals and the OTHER side, never a settlement.
+ * transfer: proposals and the OTHER side, never a settlement.
  * The owner transaction runs inside finalize so it settles against the same
  * folded surface that gets persisted.
  */
@@ -3357,9 +3353,9 @@ export interface ChatSurfaceTransferInput {
  * and re-writing them would restore the material the transfer removed while
  * leaving the credit standing, creating substance out of a stale object.
  *
- * The atomic boundary is the point. `romantic-contact-affordances.spec.effects.md`
- * §9 requires source removal and destination/intermediate deposition to commit
- * atomically under one idempotency key, and that law is simply unprovable across
+ * The atomic boundary is the point. The conservation law requires source removal
+ * and destination/intermediate deposition to commit atomically under one
+ * idempotency key, and that law is simply unprovable across
  * two independent statements: skin lives in `character_chat_state.body_surface`
  * and garments in
  * `character_chats.garments`, so a crash, a lost connection, or a deploy between
@@ -3367,12 +3363,11 @@ export interface ChatSurfaceTransferInput {
  * other — a silent, permanent conservation violation that no retry can detect,
  * because the transfer's receipt rides the surface that DID get written. One
  * transaction makes the pair all-or-nothing, which is the only shape in which
- * "conservation holds" is a checkable claim rather than a hope. This is the
- * third of the three gaps §15 stage 8 names.
+ * "conservation holds" is a checkable claim rather than a hope.
  *
  * The receiving character's ROLLBACK ANCHOR is inside the boundary for the same
- * reason the credit is. §9 requires that a retake "removes both sides or
- * neither", and a retake restores each character's row from its own
+ * reason the credit is. Conservation requires that a retake "removes both sides
+ * or neither", and a retake restores each character's row from its own
  * `pre_exchange_state`: an anchor that was never written, or written outside this
  * transaction and lost to the crash that rolled the credit back, leaves the
  * retake able to undo the debit while the credit stands — precisely the
@@ -3385,7 +3380,7 @@ export interface ChatSurfaceTransferInput {
  * subqueries takes its OWN snapshot. So a Clear/Reset that deletes the prompting
  * message part-way through the settlement can let the first upsert land while
  * every later write silently no-ops — and the transaction still COMMITS the
- * difference. That is the same half-applied shape §9 forbids, arrived at from
+ * difference. That is the same half-applied shape conservation forbids, arrived at from
  * the other direction: a debit with no credit, and a rollback anchor that was
  * never written, so the retake has nothing to restore and "removes both sides or
  * neither" becomes unprovable. The `for update` lock below collapses the six
@@ -3407,7 +3402,7 @@ export interface ChatSurfaceTransferInput {
  * wrapping four writes that already succeed independently in a transaction would
  * hold a pooled connection open across the whole settle to buy nothing — there
  * is no cross-row invariant to protect when nothing moved between rows. Transfer
- * is fixture-only under §9's escape clause, so the cost of the boundary is paid
+ * is fixture-only under the conservation law's escape clause, so the cost of the boundary is paid
  * only by the path that needs it and the hot path stays byte-identical.
  *
  * Fire-and-forget follow-ups (sketch/look enqueues) stay OUTSIDE: they are not
@@ -3475,7 +3470,7 @@ export async function persistSurfaceTransferSettlement(args: {
     await savePreExchangeSnapshot(args.chatId, args.characterId, args.preExchangeState, args.promptMessageId, tx);
     if (destination !== undefined) {
       // The credited character's retake anchor — same transaction as their
-      // credit, so §9's "removes both sides or neither" stays provable.
+      // credit, so "removes both sides or neither" stays provable.
       await savePreExchangeSnapshot(
         args.chatId,
         destination.characterId,
@@ -3489,10 +3484,10 @@ export async function persistSurfaceTransferSettlement(args: {
 }
 
 /**
- * A partial edit to a chat state from the premise Save or the state-tools modal
- * (slice 4), extended to inspector-grade coverage of every stored column
- * (character-chat-standalone.spec.md §6.1 — full editability is the dev tooling's
- * contract; the gate bypass for stage floors is simply editing `affinity` here, D11).
+ * A partial edit to a chat state from the premise Save or the state-tools modal,
+ * extended to inspector-grade coverage of every stored column — full
+ * editability is the dev tooling's contract, and the gate bypass for stage
+ * floors is simply editing `affinity` here.
  */
 export interface ChatStateEdit {
   premise?: string;
@@ -3503,7 +3498,7 @@ export interface ChatStateEdit {
   mindNote?: string;
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
-  /** Structured worn item-definition ids (chat-wardrobe-parity rung 3) — the sheet's equip editor. */
+  /** Structured worn item-definition ids — the sheet's equip editor. */
   wornItemIds?: string[];
   /** The active outfit preset id (rung 1) — the sheet's preset switcher. */
   outfitPresetId?: string;
@@ -3511,7 +3506,7 @@ export interface ChatStateEdit {
   outfit?: string;
   outfitExposed?: boolean;
   /**
-   * Typed garment operations (clothing-state-graph slice 3) — the sheet's
+   * Typed garment operations — the sheet's
    * presentation controls, applied in fiction order AFTER the worn-set reconcile
    * so a doff and a roll in one save land in the order they were authored.
    */
@@ -3521,9 +3516,9 @@ export interface ChatStateEdit {
   memoryQueries?: string[];
   surfacedCues?: Record<string, string>;
   attributeOverlays?: AttributeValue[];
-  /** Persisted narrative trait overlays (character-fidelity slice 10) — inspector-grade reset/edit. */
+  /** Persisted narrative trait overlays — inspector-grade reset/edit. */
   traitOverlays?: TraitValue[];
-  /** Voice-exemplar ring (character-fidelity slice 8) — inspector-grade reset/edit. */
+  /** Voice-exemplar ring — inspector-grade reset/edit. */
   voiceExemplars?: VoiceExemplar[];
   /** Auto scene-generation mode (slice 9): "off" | "milestones". */
   sceneAuto?: string;
@@ -3535,27 +3530,27 @@ export interface ChatStateEdit {
   playerState?: ChatPlayerState;
   /** Recurring named side characters (chat-wide) — the Supporting Cast panel's whole-list save. */
   supportingCast?: SupportingCastMember[];
-  /** Tracked plans & promises (chat-wide) — the Plans panel's whole-list save (chat-plans-promises.plan.md). */
+  /** Tracked plans & promises (chat-wide) — the Plans panel's whole-list save. */
   plans?: ChatPlan[];
-  /** Memory-callback ring (memory-callbacks.plan.md) — inspector-grade reset/edit surface. */
+  /** Memory-callback ring — inspector-grade reset/edit surface. */
   callbackHistory?: CallbackEntry[];
-  /** Emotional weather (emotional-weather.plan.md) — inspector-grade set/clear surface. */
+  /** Emotional weather — inspector-grade set/clear surface. */
   feeling?: ChatFeelingState;
-  /** Selfie-send ring (chat-selfies.plan.md) — inspector-grade reset/edit surface. */
+  /** Selfie-send ring — inspector-grade reset/edit surface. */
   selfieHistory?: SelfieEntry[];
-  /** Runtime drives (character-drives.plan.md) — scenario/state-tools edit surface. */
+  /** Runtime drives — scenario/state-tools edit surface. */
   drives?: ChatDrive[];
-  /** Narrative presence (multi-character-chat.plan.md) — the roster panel's manual toggle. */
+  /** Narrative presence — the roster panel's manual toggle. */
   presence?: ChatPresence;
-  /** Where an away member is, as a phrase (chat-offscreen-life) — author-correctable. */
+  /** Where an away member is, as a phrase — author-correctable. */
   whereabouts?: string;
   /** The story-calendar anchor (chat-wide) — the clock card's "story starts on…" editor. */
   calendarStart?: CalendarStart;
 }
 
 /**
- * Apply an author edit to a chat (spec §1.2 Save + slice 4 state-tools modal).
- * ONE patch surface over the split stores (followups ruling 8): per-character
+ * Apply an author edit to a chat (the premise Save + the state-tools modal).
+ * ONE patch surface over the split stores: per-character
  * fields load-or-seed and persist that character's state row; chat-wide fields
  * (premise, house rules, scene prefs/memory) write the scenario. Returns both.
  * Not guarded on a message — there is no exchange in flight.
@@ -3644,7 +3639,7 @@ export async function editChatState(args: {
     nextScenario.calendarStart = calendarStartSchema.parse(patch.calendarStart);
   }
 
-  // The garment store is the wardrobe truth (clothing-state-graph slice 2): this
+  // The garment store is the wardrobe truth: this
   // edit's worn sets — the equip editor's add/remove, a preset switch, the player
   // wardrobe — compile to instance transfers, then the id columns are re-derived
   // from the store. An unseeded chat materializes here, on the write.
@@ -3664,7 +3659,7 @@ export async function editChatState(args: {
   nextScenario.playerState = garmentSync.playerState;
   nextScenario.garments = garmentSync.store;
 
-  // Typed garment operations (clothing-state-graph slice 3) ride the SAME write:
+  // Typed garment operations ride the SAME write:
   // the equip editor's worn-set reconcile lands first (so a garment this save
   // added exists to be addressed), then the presentation controls apply in the
   // order the sheet sent them, and the id projections are re-derived once —
@@ -3730,8 +3725,8 @@ function upsertCondition(conditions: readonly ActiveCondition[], next: ActiveCon
 }
 
 /**
- * Fill a condition's structured effects from the catalog (character-chat-state-narration.spec.md
- * §2) when the author gave none, so a recognised label (e.g. "disheveled") arrives with the
+ * Fill a condition's structured effects from the catalog when the author gave
+ * none, so a recognised label (e.g. "disheveled") arrives with the
  * attribute overlays that actually shift grooming/scent/hair in the prompt. Author-supplied
  * effects always win; an unrecognised label is left untouched.
  */

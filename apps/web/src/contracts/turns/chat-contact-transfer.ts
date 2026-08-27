@@ -19,13 +19,12 @@ import type { SurfaceDepositKind } from "../materials/surface-deposits";
 import type { ChatSurfaceTraceEntry } from "./chat-surface-ops";
 
 /**
- * The conserved-transfer transaction — §9's second effect proof
- * (romantic-contact-affordances.spec.effects.md §9, §15 stage 8; owner rulings
+ * The conserved-transfer transaction — the second effect proof (owner rulings
  * 2026-08-25 and 2026-08-26).
  *
  * The pressure mark's transaction validates one proposal against one owner. A
  * transfer is a different animal: it debits one owner, credits one to several
- * others, and §9's law is that all of that is true together or none of it is.
+ * others, and the law is that all of that is true together or none of it is.
  *
  * **The governing rule is: planning may degrade, transactions may not.** Before
  * anything moves, this module may discover an unresolvable layer, an absent
@@ -33,7 +32,7 @@ import type { ChatSurfaceTraceEntry } from "./chat-surface-ops";
  * thing. Once it has taken material off the source, every remaining leg must
  * land exactly, or the entire settlement is discarded and the caller receives
  * the owners it passed in, by reference. There is no partial success and no
- * "committed but degraded" state — those would make §9's "retake removes both
+ * "committed but degraded" state — those would make "retake removes both
  * sides or neither" unprovable, because there would be nothing exact to undo.
  *
  * That all-or-nothing property is STRUCTURAL here, not checked afterwards: every
@@ -58,7 +57,7 @@ import type { ChatSurfaceTraceEntry } from "./chat-surface-ops";
  *
  * **Where the boundary between owners is enforced.** Contact never edits worn
  * layers, and neither does this module: an intermediate leg becomes a typed
- * operation that the layer's own owner validates and commits (§10). And every
+ * operation that the layer's own owner validates and commits. And every
  * credit is verified by reading the owner BACK — the delta it actually applied
  * must equal the exact number this transaction planned. That check is what
  * makes the law independent of any owner's internal merge or capacity policy;
@@ -202,7 +201,7 @@ function layerDepositTotal(store: ChatGarmentStore, instanceId: string, kind: Su
  *    debit under any rollback.
  *
  * Never throws. Every refusal is a drop with a stable `surface_transfer.*` code
- * and no observable result (docs/resilience.md; effects spec §14).
+ * and no observable result (docs/resilience.md).
  */
 export function applySurfaceTransferProposal(input: {
   proposal: SurfaceTransferProposal;

@@ -10,9 +10,7 @@ import {
 } from "../core";
 
 /**
- * What lies between the two surfaces, and what it lets through
- * (romantic-contact-affordances.spec.contact-core.md §"Material-between
- * composition").
+ * What lies between the two surfaces, and what it lets through.
  *
  * The core knows about LAYERS, not clothes. A layer is anything an owner says is
  * interposed — a sock, a skirt, a blanket, a wet towel — reduced to what a

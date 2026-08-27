@@ -1,6 +1,5 @@
 /**
- * The chat lane's **intimate gate** (persona-library.plan.md follow-up; the chat-lane
- * port the shipped [intimacy-notes.plan.md] §"Leftover — chat lane" predicted).
+ * The chat lane's **intimate gate** — the chat-lane port of the session lane's.
  *
  * The session lane gates its authored intimate notes on the turn's four-axis
  * `ExposureMask` (`buildIntimateDispositionBlock` — any of appearance/touch/taste at the
@@ -14,7 +13,7 @@
  *
  * 1. **The character's coverage** — their intimate regions read bare.
  * 2. **The player's coverage** — likewise. Only possible since the player got a real
- *    wardrobe (persona-library.plan.md slice 8); before that the lane was half-blind here.
+ *    wardrobe; before that the lane was half-blind here.
  * 3. **Arousal** — the lane's own "this is turning intimate" scalar.
  *
  * Both coverage signals are COMPUTED from worn items, never a manual flag, so the gate
@@ -31,8 +30,8 @@ import { intimateRegionsBare, type RegionExposure } from "../items/visibility";
  * meter registry's own `above: 0.55` "visibly affected" threshold — the point the lane
  * already considers legible from outside — but held as its own constant deliberately:
  * that threshold exists to trigger a *narrator hint*, and retuning the hint should not
- * silently move a content gate. (chat-meter-economy.plan.md intends to regrade arousal;
- * revisit this number there, on purpose.)
+ * silently move a content gate. (A future regrade of arousal should revisit this
+ * number on purpose.)
  */
 export const CHAT_INTIMATE_AROUSAL_AT = 0.55;
 
@@ -47,7 +46,7 @@ export interface ChatIntimateSignals {
 
 /**
  * Has this scene reached the intimate tier? Any one signal is enough — the session lane's
- * "any axis" ruling (intimacy-notes.spec.md §Rulings, owner 2026-07-13) transposed: a
+ * "any axis" ruling (owner, 2026-07-13) transposed: a
  * scene is intimate the moment it is *physically* intimate, even if the other signals
  * lag. Defaults to **false** on missing input: a chat with no state and no wardrobe has
  * shown nothing, so it earns nothing.

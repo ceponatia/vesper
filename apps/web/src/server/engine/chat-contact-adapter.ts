@@ -93,8 +93,7 @@ import { chatEvidenceSentences } from "@/lib/chat-input-evidence";
 import { chatGarmentCoverageForCut } from "./chat-garment-affordances";
 
 /**
- * The CHAT LANE's contact adapter — the affectionate integration proof
- * (romantic-contact-affordances.plan.md §"Continuation order" 1).
+ * The CHAT LANE's contact adapter — the affectionate integration proof.
  *
  * Everything here is PURE and deterministic: a scene in, a player line in, a
  * seeded scene / a movement intent / a release's ends / a resolved attempt / an
@@ -127,9 +126,9 @@ import { chatGarmentCoverageForCut } from "./chat-garment-affordances";
  *    whole — a kiss beside a shoulder-touch is not an affectionate touch with
  *    decoration, it is a sentence this proof has no business committing.
  * 4. **No restraint, no pinning.** `trapped` mobility has no producer in the
- *    scene owner (spec §"Open design questions"), so the veto list closes the
- *    door on the scenarios that would need one rather than letting them resolve
- *    against a mobility model that cannot represent them.
+ *    scene owner, so the veto list closes the door on the scenarios that would
+ *    need one rather than letting them resolve against a mobility model that
+ *    cannot represent them.
  * 5. **Silence beats a guess.** Every gate below fails toward "no act detected".
  *    A hypothetical, a question, a negation, an ambiguous target, an unknown body
  *    part, a possessed destination ("her desk"), a wardrobe nobody enumerated:
@@ -157,11 +156,11 @@ import { chatGarmentCoverageForCut } from "./chat-garment-affordances";
  * (`chatActorControl`), the material composer (`chatContactMaterialBetween`),
  * the NPC act builder (`chatNpcContactAct`) and the attempt resolver
  * (`resolveChatContactAttempt`) are all ACTOR-GENERIC, and the reply-scene
- * decision leg (`chat-npc-scene-execute.ts`) calls them for an NPC actor
- * (actor-control spec §"Resolution laws"). That is deliberate and it does not
- * weaken law 1: a band law is a property of a PAIR of bodies rather than of
- * whose turn it is, a control fact is read from the scene either way, and what
- * lies between two surfaces is a question about clothes rather than about turns.
+ * decision leg (`chat-npc-scene-execute.ts`) calls them for an NPC actor. That
+ * is deliberate and it does not weaken law 1: a band law is a property of a
+ * PAIR of bodies rather than of whose turn it is, a control fact is read from
+ * the scene either way, and what lies between two surfaces is a question about
+ * clothes rather than about turns.
  * Keeping one implementation is what stops the two lanes from drifting into
  * different distance, control, or material rules.
  *
@@ -222,9 +221,9 @@ export function chatContactEventRef(guardMessageId: string): ContactEventRef {
  *
  * The ACTOR is part of the key because one event ref no longer covers one
  * actor's acts. A reply-scene decision's event ref (`contact-reply:<message>`)
- * spans the whole roster (actor-control spec §"Resolution laws → Contact
- * start"), so two NPCs resting a hand on the same shoulder in one reply would
- * otherwise mint the identical action id — and an acknowledgment for one would
+ * spans the whole roster, so two NPCs resting a hand on the same shoulder in
+ * one reply would otherwise mint the identical action id — and an acknowledgment
+ * for one would
  * verify the other's write. The contact ID itself is unaffected either way: it
  * is derived from the surface pair and the start event, never from this id.
  */
@@ -904,11 +903,10 @@ function contactProvesCloseness(scene: SceneState, left: AffordanceSubjectId, ri
  * The band a departure may state about one pair, or `null` for "say nothing".
  *
  * ACTOR-GENERIC: `mover` is whichever body the sentence moved — the player on
- * the player leg, the NPC actor on the reply-scene leg (actor-control spec
- * §"Resolution laws → Movement": "`departedBand` mirrors the player helper").
- * The law is a property of the PAIR, not of whose turn it is, and proximity
- * facts are pair-symmetric, so one helper serves both and neither lane can
- * quietly acquire a different distance rule.
+ * the player leg, the NPC actor on the reply-scene leg, where `departedBand`
+ * mirrors the player helper exactly. The law is a property of the PAIR, not of
+ * whose turn it is, and proximity facts are pair-symmetric, so one helper serves
+ * both and neither lane can quietly acquire a different distance rule.
  *
  * **Never invent a distance** (law 2). Two sources can license the claim and
  * nothing else can:
@@ -946,8 +944,7 @@ export function departedBand(
 /**
  * The mirror: the band an APPROACH may state about one pair, or `null`.
  *
- * The departure helper's inverse, and the same law read the other way round
- * (actor-control spec §"Resolution laws → Movement"):
+ * The departure helper's inverse, and the same law read the other way round:
  *
  * 1. **A first fact may be created.** Unlike a departure, an approach that
  *    lands on an unplaced pair is not a guess — the admitted evidence is the
@@ -1094,10 +1091,10 @@ export interface ChatContactActShape {
  *
  * Actor-generic by construction, and it always was: the player-line detector
  * fills `actorSubject` with the player, and the reply-scene leg's
- * `chatNpcContactAct` fills it with the NPC an admitted `start` candidate named
- * (actor-control spec §"Resolution laws → Contact start"). Nothing downstream of
- * this shape asks whose turn it is — `resolveChatContactAttempt` reads the
- * scene's own control fact for whichever body is acting.
+ * `chatNpcContactAct` fills it with the NPC an admitted `start` candidate named.
+ * Nothing downstream of this shape asks whose turn it is —
+ * `resolveChatContactAttempt` reads the scene's own control fact for whichever
+ * body is acting.
  */
 export interface ChatContactAct extends ChatContactActShape {
   readonly actionId: string;
@@ -1106,9 +1103,9 @@ export interface ChatContactAct extends ChatContactActShape {
    * The two kinds this lane has a PRODUCER for — never the core's full
    * `ContactActionKind`.
    *
-   * A kind the core supports and the lane cannot author is exactly the gap the
-   * plan calls out (§"The first romantic proof is currently impossible"): the
-   * permission owner became an authoritative answer with no attempt to answer.
+   * A kind the core supports and the lane cannot author is exactly the gap that
+   * makes the first romantic proof impossible: the permission owner became an
+   * authoritative answer with no attempt to answer.
    * Naming only the producible kinds here keeps that gap a compile error rather
    * than a silent `unresolved` at runtime, so `incidental`, `casual` and
    * `intimate` cannot be smuggled in ahead of their producers and their owners.
@@ -1211,8 +1208,7 @@ export function detectChatAffectionateTouch(
 
 // ---------------------------------------------------------------------------
 // Romantic touch — the narrow player-authored producer
-// (romantic-contact-affordances.plan.md §"Design corrections from this review"
-// 4; boundary owned by spec.permission.md §"First romantic action boundary")
+// (the first-romantic-action boundary is owned by the permission module)
 // ---------------------------------------------------------------------------
 
 /**
@@ -1802,12 +1798,11 @@ export const CHAT_CONTACT_COVERAGE_DERIVE_FAILED = "chat_contact.coverage.derive
  * derivation, fenced, shared by both legs that need it.
  *
  * The pre-prompt player leg derives it from the exchange's resolved wardrobes;
- * the reply-scene decision leg derives it again from the POST-settle scenario
- * (actor-control spec §"Authoritative post-settle cut": "current garment store
- * and per-actor coverage"). Those are two different cuts and must stay two
- * different reads — but they are the SAME derivation, and two copies of it is how
- * one leg quietly acquires a different answer to "is this body dressed in
- * something nobody modelled".
+ * the reply-scene decision leg derives it again from the POST-settle scenario's
+ * current garment store and per-actor coverage. Those are two different cuts and
+ * must stay two different reads — but they are the SAME derivation, and two
+ * copies of it is how one leg quietly acquires a different answer to "is this
+ * body dressed in something nobody modelled".
  *
  * `coverage` rides out beside the material because settlement persists the exact
  * object the resolver consumed rather than recomputing one, and because a caller
@@ -1932,9 +1927,9 @@ export interface ChatContactMaterialSide {
 
 /**
  * What lies between the two surfaces, composed from every side this lane can
- * read (actor-control spec §"Resolution laws → Contact start": "material is
- * resolved from both sides … compose the NPC-hand coverage (gloves, source
- * first) with target-surface coverage (target garments after it)").
+ * read: material is resolved from BOTH sides, composing the actor-hand coverage
+ * (gloves, source first) with the target-surface coverage (target garments
+ * after it).
  *
  * **One unreadable side makes the whole read unavailable.** A hand whose glove
  * nobody modelled is exactly as unknown as a shoulder whose blouse nobody
@@ -1991,9 +1986,9 @@ export type ChatContactControlRequirement = "player_controlled" | "npc_controlle
  * control fact says something other than what this origin requires produces a
  * refusal, whatever the calling lane believes.
  *
- * ACTOR-GENERIC, with the origin as an argument rather than a second copy
- * (actor-control spec §"Resolution laws → Contact start": "actor control is read
- * from the scene and is allowed only for `npc_controlled`"). Two copies of this
+ * ACTOR-GENERIC, with the origin as an argument rather than a second copy: actor
+ * control is read from the scene, and an NPC-origin start is allowed only for
+ * `npc_controlled`. Two copies of this
  * function would be two places for the "missing fact ⇒ unresolved, wrong fact ⇒
  * denied" rule to drift, and the mirrored rule is the whole content of both.
  */
@@ -2032,8 +2027,7 @@ export interface ChatContactPolicyAttempt {
 
 /**
  * The lane's REAL permission read, closed over the exchange's folded projection
- * (`CHAT_ROMANTIC_PERMISSION` — romantic-contact-affordances.spec.permission.md
- * §"Resolver adapter"). Supplied by the pipeline ONLY when the flag is on;
+ * (`CHAT_ROMANTIC_PERMISSION`). Supplied by the pipeline ONLY when the flag is on;
  * consulted ONLY for action kinds that require a grant. Absent, or for
  * permission-neutral kinds, the resolver keeps the historical stub verbatim —
  * which is also the whole flag-off story.
@@ -2073,9 +2067,8 @@ export interface ChatContactAttemptInput {
  * whoever the actor is. Nothing is proposed on the other person's side, so there
  * is no movement of theirs for their own authority to allow, and an
  * `adjustments` list that proposed one would need it. That argument is identical
- * for an NPC-origin start (actor-control spec §"Resolution laws → Contact
- * start": "target agencies stay empty because only the NPC's own hand moves"),
- * which is why one resolver serves both legs.
+ * for an NPC-origin start — target agencies stay empty there too, because only
+ * the NPC's own hand moves — which is why one resolver serves both legs.
  */
 
 /**
@@ -2086,8 +2079,7 @@ export interface ChatContactAttemptInput {
 
 /**
  * One admitted NPC `start` candidate as an act — the reply-scene leg's builder,
- * and the counterpart of `detectChatAffectionateTouch` on the player leg
- * (actor-control spec §"Resolution laws → Contact start").
+ * and the counterpart of `detectChatAffectionateTouch` on the player leg.
  *
  * There is no detection here and there never will be: the actor, the target, the
  * gesture, and the canonical target location all arrive already proven by the
@@ -2352,8 +2344,8 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
   // leg has never modelled the player's wardrobe into coverage, and reading their
   // side would turn every touch by an unmodellable player into silence — a
   // behavior change to shipped authority that the actor-control work has no
-  // business making. The reply-scene leg reads both sides because it must
-  // (spec §"Resolution laws → Contact start"), through the same composer.
+  // business making. The reply-scene leg reads both sides because it must,
+  // through the same composer.
   const target = input.characters.find((member) => member.subjectId === act.targetSubject);
   const resolution = resolveChatContactAttempt({
     scene,
@@ -2464,8 +2456,7 @@ const CHAT_CONTACT_LEXICON: Readonly<Record<string, ChatContactPhrase>> = {
   "contact.blocked.actor_control_denied": { kind: "blocked", phrase: "that is not the player's body to move" },
   // Permission refusals. These had no producer until the romantic action lane
   // existed; they word the REFUSAL and never the record behind it — the prompt
-  // is told the touch did not land, not what the ledger says about why (the
-  // permission spec's §"Mandatory stop handoff" disclosure rule).
+  // is told the touch did not land, not what the ledger says about why.
   // Agentless on purpose: the target may be any character, so a phrase naming
   // "she" would misgender whoever the scene actually holds.
   "contact.blocked.permission_denied": { kind: "blocked", phrase: "that has not been allowed" },

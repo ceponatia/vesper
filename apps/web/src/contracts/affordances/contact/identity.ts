@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 /**
- * Lane-neutral identity for the contact core
- * (romantic-contact-affordances.spec.contact-core.md §"Boundary").
+ * Lane-neutral identity for the contact core.
  *
  * Three ids, all opaque strings the core never interprets:
  *

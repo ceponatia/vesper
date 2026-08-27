@@ -11,8 +11,7 @@ import {
 import { sceneSpecSchema } from "./prompts-scene-composer";
 
 /**
- * The composer's model seam and its refusal fallback (scene-composition.plan.md slice 2,
- * owner ruling 2026-08-10).
+ * The composer's model seam and its refusal fallback (owner ruling 2026-08-10).
  *
  * `generateChecked` is stubbed rather than reached: what is under test is the LADDER — which
  * model is asked first, what makes the second model be asked at all, and that the terminal

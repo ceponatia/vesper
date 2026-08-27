@@ -7,7 +7,7 @@ import { duplicateNarratorPromptTemplate, getNarratorPromptTemplate } from "@/se
 import { narratorPromptFailure } from "../../failure";
 
 /**
- * Branch an independent experiment (narrator-prompt-lab.plan.md §6).
+ * Branch an independent experiment.
  *
  * The copy starts at revision 1 holding the source's current body and notes,
  * records `duplicated_from_id`, and has no conversations attached. Nothing is

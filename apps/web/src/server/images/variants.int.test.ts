@@ -11,8 +11,8 @@ import {
 } from "@/server/test-support";
 import { promoteVariant } from "./variants";
 
-// Ownership coverage for the avatar-promotion seam (security-authz.plan.md
-// §Follow-ups item 2). `promoteVariant` is a destructive-ish mutation — it
+// Ownership coverage for the avatar-promotion seam. `promoteVariant` is a
+// destructive-ish mutation — it
 // repoints a character's canonical avatar — so it verifies BOTH rows against
 // the caller's owner id in its own queries rather than trusting the route's
 // `findOwnedCharacter` gate. Two owners, so every cross-account shape is

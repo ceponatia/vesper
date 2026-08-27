@@ -17,8 +17,7 @@ import {
 } from "@/contracts";
 
 /**
- * THE CHAT-LANE RECOGNITION ADAPTER (body-attribute-affordances slice 7;
- * body-attribute-affordances.spec.code-organization.md §Recognition ownership).
+ * THE CHAT-LANE RECOGNITION ADAPTER.
  *
  * One function, three contract calls, one sentence out:
  *

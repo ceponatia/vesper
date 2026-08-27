@@ -49,8 +49,7 @@ import type {
 
 /**
  * The attempt gate — the single function that decides whether a contact may be
- * committed (romantic-contact-affordances.spec.contact-core.md §"Action context",
- * §"Access result", §"Implicit adjustment policy").
+ * committed.
  *
  * Pure and total. Same intent + same context ⇒ same resolution, in any process,
  * on a retake. It reads no clock, holds no state, and throws for nothing: a
@@ -309,8 +308,8 @@ export function resolveContactAttempt(request: ContactResolveRequest): ContactRe
 
   if (interpersonal && contactActionRequiresPermission(intent.actionKind)) {
     evidence.push(context.policy.evidence);
-    // The ruled player-target exception (owner, 2026-08-04 — spec.permission.md
-    // §"Resolver adapter"): a target who IS the player grants nothing in advance,
+    // The ruled player-target exception (owner, 2026-08-04): a target who IS
+    // the player grants nothing in advance,
     // because the player writes their own next reaction. Only the EXPLICIT basis
     // passes — a bare `not_required` on a permission-requiring action is still an
     // owner that was never consulted, and falls through to `unresolved` below.

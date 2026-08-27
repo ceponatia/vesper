@@ -16,7 +16,7 @@ export const meterDefinitionSchema = z.object({
   /** Signed drift per game hour; clamped to [0,1] after application. */
   perHour: z.number(),
   /**
-   * Resting target the meter drifts toward (personality-and-state.spec.md §4).
+   * Resting target the meter drifts toward.
    * Absent ⇒ today's implied pole (perHour < 0 ⇒ 0, else 1), so old defs are
    * unchanged. Per-character traits shift this at drift time (`personalizeMeters`).
    */
@@ -31,7 +31,7 @@ export type MeterDefinition = z.infer<typeof meterDefinitionSchema>;
 /**
  * Starter meters. Worlds may override fields or disable a meter entirely via
  * WorldStyle.meterOverrides (null disables). The old app's hygiene vectors
- * collapse into `hygiene` + conditions; see docs/contracts/meters-actions.md.
+ * collapse into `hygiene` + conditions.
  */
 export const meterDefinitions: readonly MeterDefinition[] = [
   {
@@ -89,7 +89,7 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     ],
   },
   {
-    // Emotional valence (personality-and-state.spec.md §4): 0 = low/down, 0.5 = even,
+    // Emotional valence: 0 = low/down, 0.5 = even,
     // 1 = bright. Drifts back to an even keel; trait `optimism` shifts the resting point,
     // and the social-reaction curve nudges it. Surfaced via a *derived* descriptor
     // (deriveMoodDescriptor) blended with stress/energy — not raw threshold hints.
@@ -158,7 +158,7 @@ export const MOOD_BRIGHT_MIN = 0.65;
 export const MOOD_LOW_MAX = 0.35;
 
 /**
- * A derived mood phrase (personality-and-state.spec.md §4): blends valence (`mood`)
+ * A derived mood phrase: blends valence (`mood`)
  * with activation (`energy`) and tension (`stress`) — mood is a *read* over state,
  * not a second source of truth. "" when there's no `mood` meter or nothing notable
  * (an even, unstressed keel), so it adds no noise.
@@ -200,11 +200,11 @@ export function crossedThresholdHints(
 }
 
 /**
- * A graded meter cue (character-chat-state-narration.spec.md §3): the single **deepest**
+ * A graded meter cue: the single **deepest**
  * crossed threshold for one meter, as a stable `band` key + the `hint` prose + an
  * `intensity` (0–1, how far past the crossed bound the value sits, for "slightly tipsy" →
  * "badly drunk" scaling). Unlike `crossedThresholdHints` (every crossed hint as flat text),
- * this yields ONE band per meter whose key the chat anti-repetition gate (§5) diffs across
+ * this yields ONE band per meter whose key the chat anti-repetition gate diffs across
  * turns. The band vocabulary stays in `meterDefinitions` (a new band is a threshold edit,
  * not code). Returns null when no threshold is crossed.
  */
@@ -258,7 +258,7 @@ export function meterStateCue(
   };
 }
 
-/** The anti-repetition split (character-chat-state-narration.spec.md §5). */
+/** The anti-repetition split. */
 export interface StateCueSplit {
   /** The single cue to mark as a fresh "just shifted" beat this turn (band changed), or null. */
   foreground: MeterCue | null;

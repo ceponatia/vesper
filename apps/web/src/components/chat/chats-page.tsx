@@ -24,7 +24,7 @@ import { timeAgo } from "@/lib/relative-time";
 type Shelf = "active" | "archived";
 
 /**
- * "Has something to say" marker (character-chat-standalone.spec.md §8.4, D4):
+ * "Has something to say" marker:
  * a small accent dot on rows whose `ChatSummary.say` is non-empty — the
  * character's top open loop, surfaced as the tooltip/aria reason. Clicking it
  * bypasses plain row navigation and opens the chat with `?say=1`, so they can
@@ -61,7 +61,7 @@ const SHELVES: { id: Shelf; label: string }[] = [
 ];
 
 /**
- * The Chats hub (character-chat-standalone.spec.md §2.2): every conversation,
+ * The Chats hub: every conversation,
  * newest first — portrait, name, last-line snippet, mood + stage chips — with
  * per-row rename / archive-or-restore / delete and the "New conversation"
  * entry into `NewChatDialog`. `newCharacterId` (the `?new=` param, read by the
@@ -203,7 +203,8 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
         <div className="flex flex-col gap-3">
           {chats.map((chat) => {
             const stamp = chat.lastMessageAt ? timeAgo(chat.lastMessageAt) : null;
-            // §8.4 marker — active shelf only (an archived chat has nothing pending to surface).
+            // "Has something to say" marker — active shelf only (an archived
+            // chat has nothing pending to surface).
             const say = archived ? "" : chat.say;
             return (
               <Card key={chat.id} interactive className="group relative">

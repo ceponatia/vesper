@@ -10,9 +10,8 @@ import { withSelfOwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * The READ-ONLY visual-state inspector for an owner-admin's own chat
- * (visual-state.plan.md slice 6; spec §Consumer digests — "the inspector
- * exposes the complete source-to-selection staircase without changing state").
+ * The READ-ONLY visual-state inspector for an owner-admin's own chat: it
+ * exposes the complete source-to-selection staircase without changing state.
  *
  * Serves BOTH lanes from one route: a sim-routed chat previews the successor
  * assembly against its branch, everything else previews the legacy chat cut.

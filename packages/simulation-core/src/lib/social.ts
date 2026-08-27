@@ -37,19 +37,18 @@ import { sortedUnique } from "./hash";
  *
  * Slice 1 folded `speech_act_delivered`, `disclosure_made`, `engagement_ended`,
  * `relationship_entry_authored`, and `relationship_change_recorded`. Slice 2
- * (§4.2, §10) added the `activity_started`/`consentGrant` arm and the
+ * added the `activity_started`/`consentGrant` arm and the
  * `commitment_kept`/`commitment_missed`/`commitment_created` arms — all three
  * real, `commitmentById` genuinely wired by every caller (`social-recorder.ts`'s
  * incremental recorder and `branch-store.ts`'s fork replay both resolve it
- * from a real commitments load, never a stub). Slice 3 (§4.7, §5.6) closes
- * the loop: `deriveConsentEscalationCandidates` scores the bounded
- * grant/decline pair the §19.3 deliberator seam chooses between, and the
- * `consent_escalation_resolved` fold arm below lands the outcome back in the
- * ledger either way (ruling 16).
+ * from a real commitments load, never a stub). Slice 3 closes the loop:
+ * `deriveConsentEscalationCandidates` scores the bounded grant/decline pair the
+ * deliberator seam chooses between, and the `consent_escalation_resolved` fold
+ * arm below lands the outcome back in the ledger either way (ruling 16).
  */
 
 // ---------------------------------------------------------------------------
-// Ledger entry id (§4.2) — length-prefixed composition, deterministic, replay-stable
+// Ledger entry id — length-prefixed composition, deterministic, replay-stable
 // ---------------------------------------------------------------------------
 
 /**
@@ -84,21 +83,21 @@ export function deriveRelationshipLedgerEntryId(
 }
 
 // ---------------------------------------------------------------------------
-// Ledger fold (§4.2) — one entry per causing fact, pure, total
+// Ledger fold — one entry per causing fact, pure, total
 // ---------------------------------------------------------------------------
 
 export interface DeriveLedgerEntriesInput {
   /** Events to fold — a slice (this command's new events), or the whole
-   * branch (fork replay, §6) — the fold is total and stateless either way. */
+   * branch (fork replay) — the fold is total and stateless either way. */
   events: readonly SimulationBranchEvent[];
   /** Commitment rows resolved for `commitment_kept`/`commitment_missed`/
-   * `commitment_created` events — narrowly loaded by the store (§5.7), never
-   * the whole projection. */
+   * `commitment_created` events — narrowly loaded by the store, never the
+   * whole projection. */
   commitmentById: (commitmentId: string) => { kind: string; promisedToActorId?: string } | undefined;
 }
 
 /** Exhaustive speech-act → ledger-kind mapping; `null` marks acts that carry
- * no relationship evidence (§4.2's widened 10-member table). */
+ * no relationship evidence (the widened 10-member table). */
 function speechActLedgerKind(effectType: SpeechActType): RelationshipLedgerKind | null {
   switch (effectType) {
     case "promise_offered":
@@ -153,7 +152,7 @@ function pushEntry(
 }
 
 /**
- * The §21.3 ledger fold: derives typed, directional, causally-provenanced
+ * The ledger fold: derives typed, directional, causally-provenanced
  * entries from events already in the branch's history, plus a verbatim mirror
  * of every `relationship_entry_authored`/`relationship_change_recorded`
  * event. An if-chain, not an exhaustive switch (mirrors the deleted
@@ -202,10 +201,10 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
         }
       }
     } else if (event.type === "commitment_kept" || event.type === "commitment_missed") {
-      // E5.5 slice 2 (§15.1 amendment): only a `promise` naming a
-      // `promisedToActorId` produces evidence — a shift/appointment/routine
-      // has no interpersonal stake, and the ledger records evidence between
-      // actors, never a fact about one actor alone.
+      // E5.5 slice 2: only a `promise` naming a `promisedToActorId` produces
+      // evidence — a shift/appointment/routine has no interpersonal stake, and
+      // the ledger records evidence between actors, never a fact about one
+      // actor alone.
       const commitment = input.commitmentById(event.payload.commitmentId);
       if (commitment && commitment.kind === "promise" && commitment.promisedToActorId !== undefined) {
         const kind = event.type === "commitment_kept" ? "promise_kept" : "promise_missed";
@@ -215,7 +214,7 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
         });
       }
     } else if (event.type === "commitment_created") {
-      // §15.4: a repair is new evidence, not a correction — only fires when
+      // A repair is new evidence, not a correction — only fires when
       // this NEW commitment both repairs a prior one AND itself names a
       // `promisedToActorId` (the same interpersonal-stake gate as above).
       if (event.payload.repairsCommitmentId !== undefined && event.payload.promisedToActorId !== undefined) {
@@ -225,7 +224,7 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
         });
       }
     } else if (event.type === "activity_started") {
-      // §21.4: a `consent_covered` precondition that passed is itself
+      // A `consent_covered` precondition that passed is itself
       // evidence the target respected their own prior boundary/permission.
       if (event.payload.consentGrant) {
         const { granterActorId, granteeActorId, scopeKey } = event.payload.consentGrant;
@@ -254,7 +253,7 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
         { detail: event.payload.detail },
       );
     } else if (event.type === "consent_escalation_resolved") {
-      // §4.2/ruling 16: the outcome lands as ledger evidence either way — a
+      // Per ruling 16, the outcome lands as ledger evidence either way — a
       // grant folds as `permission_granted`, a decline as `consent_declined`.
       // Directional per every other consent-scoped entry: `fromActorId` is
       // the party whose consent was decided (the target), `toActorId` is the
@@ -270,7 +269,7 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
     // access, pressure_acknowledged, ...) carries no relationship evidence
     // and defaults to "none" without a ruling — see this file's header doc
     // for the commitment/activity/escalation arms specifically.
-    // `pressure_acknowledged` in particular is deliberately excluded (§1.7):
+    // `pressure_acknowledged` in particular is deliberately excluded:
     // acknowledgment is a pure engagement/commitment cross-domain fact, never
     // ledger evidence.
   }
@@ -278,21 +277,21 @@ export function deriveRelationshipLedgerEntries(input: DeriveLedgerEntriesInput)
 }
 
 /**
- * Fork/replay parity (§6): the relationship ledger is a derived-and-persisted
+ * Fork/replay parity: the relationship ledger is a derived-and-persisted
  * projection with no incremental state machine to replay — a full rebuild
  * re-derives from scratch, so "replay the whole branch" and "fold this
  * command's new events" are literally the same function at different input
  * sizes. `commitmentById` MUST be resolved from a real commitments load by
  * every caller (`branch-store.ts`'s fork replay resolves it from the
- * already-rebuilt child commitments projection, §6) — never a stub, now that
- * the commitment-sourced arms are real (§4.2).
+ * already-rebuilt child commitments projection) — never a stub, now that
+ * the commitment-sourced arms are real.
  */
 export function replaySocialLedgerHistory(input: DeriveLedgerEntriesInput): RelationshipLedgerEntry[] {
   return deriveRelationshipLedgerEntries(input);
 }
 
 // ---------------------------------------------------------------------------
-// Read: trust/attraction/resentment (§21.3, decay law) — derived, never persisted
+// Read: trust/attraction/resentment (decay law) — derived, never persisted
 // ---------------------------------------------------------------------------
 
 export interface RelationshipReadWeightOverride {
@@ -332,11 +331,11 @@ function bandFor<K extends string>(value: number, thresholds: readonly number[],
 }
 
 /**
- * The §21.3 derived read: sums each relevant ledger entry's per-axis weight
+ * The derived read: sums each relevant ledger entry's per-axis weight
  * under a per-axis analytic decay, directional ("how much X trusts Y" sums
  * only entries where `fromActorId = Y, toActorId = X` — evidence of Y's
  * conduct toward X), fixed-point, story-clock-keyed, never wall-clock or
- * floating point (§6.4).
+ * floating point.
  */
 export function deriveRelationshipRead(input: {
   /** All entries for the branch, or a pre-filtered dyad slice — either way
@@ -349,7 +348,7 @@ export function deriveRelationshipRead(input: {
     Record<Exclude<RelationshipLedgerKind, "authored_prior" | "relationship_change_recorded">, RelationshipLedgerWeight>
   >;
   /** `authored_prior` entries needing their own weight, loaded alongside the
-   * entry's own `weightOverride` (§5.6's `loadAuthoredPriorWeights`, a later
+   * entry's own `weightOverride` (`loadAuthoredPriorWeights`, a later
    * slice). Every real caller of this function MUST load and pass this. */
   authoredPriorWeights?: readonly RelationshipReadWeightOverride[];
 }): RelationshipRead {
@@ -412,7 +411,7 @@ export function deriveRelationshipRead(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Consent coverage (§21.4) — the fail-closed gate. Pure and small; nothing
+// Consent coverage — the fail-closed gate. Pure and small; nothing
 // calls it yet in Slice 1 (the `consent_covered` precondition wiring is
 // Slice 2).
 // ---------------------------------------------------------------------------
@@ -434,7 +433,7 @@ export function deriveRelationshipRead(input: {
  * entry's sequence forward.
  */
 export function resolveConsentCoverage(input: {
-  /** Pre-filtered to the (granter, grantee) dyad — see §5.5. */
+  /** Pre-filtered to the (granter, grantee) dyad. */
   entries: readonly RelationshipLedgerEntry[];
   granterActorId: string;
   granteeActorId: string;
@@ -452,10 +451,9 @@ export function resolveConsentCoverage(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Consent-escalation utility (§4.7, §19.2) — the bounded legal candidate set
-// the §19.3 deliberator seam chooses between. Scoped ONLY to this call site
-// — a general §19.2 routine-policy scorer is explicitly deferred (§11 open
-// decision 6).
+// Consent-escalation utility — the bounded legal candidate set the
+// deliberator seam chooses between. Scoped ONLY to this call site — a general
+// routine-policy scorer is explicitly deferred.
 // ---------------------------------------------------------------------------
 
 /** Versioned, tunable — net-neutral evidence still leans decline. */
@@ -463,7 +461,7 @@ const BASE_CONSENT_RELUCTANCE_FIXED_POINT = 500;
 
 /**
  * The two-candidate `[grant, decline]` pair `attempt_consent_escalation`
- * admits into the deliberator seam (§5.6). `grant`'s score is the target's
+ * admits into the deliberator seam. `grant`'s score is the target's
  * read of the actor — trust plus attraction, minus resentment, minus the
  * base reluctance constant — clamped to the same safe-integer band every
  * `deterministicScoreFixedPoint` uses; `decline` is a fixed zero. A
@@ -544,7 +542,7 @@ function relationshipEventEnvelope(
 }
 
 // ---------------------------------------------------------------------------
-// record_relationship_entry (§5.2) — storyteller/system-privileged authoring
+// record_relationship_entry — storyteller/system-privileged authoring
 // ---------------------------------------------------------------------------
 
 export interface RecordRelationshipEntryResolutionView extends RelationshipsBranchMeta {
@@ -589,7 +587,7 @@ export function resolveRecordRelationshipEntryFromView(
 }
 
 // ---------------------------------------------------------------------------
-// record_relationship_change (§5.3) — storyteller/system-privileged, v1
+// record_relationship_change — storyteller/system-privileged, v1
 // ---------------------------------------------------------------------------
 
 export interface RecordRelationshipChangeResolutionView extends RelationshipsBranchMeta {

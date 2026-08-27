@@ -69,7 +69,7 @@ export interface AvatarWardrobeItem {
   /**
    * `clothingCategories` id. NEVER prompt-bearing (docs/prompts.md) — it rides
    * here only so the garment store can pick a part template when it instantiates
-   * this definition (clothing-state-graph.plan.md slice 2).
+   * this definition.
    */
   category?: string;
   /** Authoring tags — a material-inference input for the garment store, never prompt text. */
@@ -101,7 +101,7 @@ export interface AvatarWardrobeItem {
  * trousers tempts a full-body shot against the "waist-up portrait" instruction.
  * A garment that also covers the torso (dress, coat, abaya) and coverage-less
  * props (jewelry) stay. Scene images never call this, so they keep full-body
- * garments (docs/images/pipelines.md §Avatar generation, followups.phase3.md §1).
+ * garments (docs/images/pipelines.md §Avatar generation).
  */
 /**
  * The GARMENT key for one wardrobe row — the instance id when the garment store

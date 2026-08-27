@@ -28,8 +28,8 @@ export const MODEL_DEFAULTS = {
   state: DEFAULT_AGENT_MODEL_ID,
   tool: DEFAULT_AGENT_MODEL_ID,
   /**
-   * The scene composer's OWN seam (scene-composition.plan.md slice 2), now backed by a
-   * curated list (lib/composer-models.ts) so a chat can be moved onto a candidate without
+   * The scene composer's OWN seam, now backed by a curated list
+   * (lib/composer-models.ts) so a chat can be moved onto a candidate without
    * a deploy.
    *
    * It used to ride `tool`, and that was the wrong bed for it: the shot planner reads the
@@ -45,10 +45,10 @@ export const MODEL_DEFAULTS = {
    */
   sceneComposer: DEFAULT_SCENE_COMPOSER_MODEL_ID,
   embedding: "openai/text-embedding-3-small",
-  // Image UNDERSTANDING (portrait → attributes, character-sheet-forge.plan.md)
-  // — the first vision-input capability; distinct from the Replicate image
-  // GENERATION stack. Qwen3-VL 235B instruct: strong closed-vocabulary visual
-  // extraction, cheap ($0.20/M prompt), no mandatory reasoning tokens.
+  // Image UNDERSTANDING (portrait → attributes) — the first vision-input
+  // capability; distinct from the Replicate image GENERATION stack. Qwen3-VL
+  // 235B instruct: strong closed-vocabulary visual extraction, cheap ($0.20/M
+  // prompt), no mandatory reasoning tokens.
   vision: "qwen/qwen3-vl-235b-a22b-instruct",
 } as const;
 
@@ -97,7 +97,7 @@ const PROVIDER_IGNORE: Readonly<Record<string, readonly string[]>> = {
  * The list is **fp8-or-better on purpose.** Two endpoints undercut these by ~2%
  * (Decart, OpenInference) and both serve fp4; the composer's entire output is a
  * structured object that has to parse, this repo already refused provider-side
- * constrained decoding because models degenerate under it (followups.phase2.md #20), and
+ * constrained decoding because models degenerate under it, and
  * 2% is not worth spending on the most aggressive quantization on the board. US-hosted
  * endpoints are preferred over the two marginally cheaper CN-hosted ones (StreamLake,
  * Baidu) for the same reason: the saving is ~2% and the composer is handed the most
@@ -117,7 +117,7 @@ export type OpenRouterRouting = Record<string, JSONValue>;
 
 /**
  * Per-model narrator `reasoning` knob, keyed by model id. Ruled from the behavioral
- * eval (narrator-prompt-focus.eval-results.md, Run 2 — the pairwise re-judge, 2026-06-29):
+ * eval (Run 2 — the pairwise re-judge, 2026-06-29):
  *
  * - **Aion 2.0** (session default) → `effort:"low"`: Run 2 ranked it 67% vs 33% for
  *   default — it suppresses the residual "hi"-beat doting/errand-invention at no quality

@@ -2,9 +2,8 @@
 // The one way the Next application is launched from the repository root.
 //
 // Two repository-root facts have to survive the app living in apps/web, and
-// this launcher is the single place that establishes both (
-// monorepo-image-core.spec.apps-web.md §"Environment ownership" and
-// §"Persistent image storage and process working directory"):
+// this launcher is the single place that establishes both — environment
+// ownership, and persistent image storage plus the process working directory:
 //
 //   1. DATA_ROOT. `dataRoot()` falls back to `<cwd>/data`, and Next runs with
 //      apps/web as its project directory, so an unset DATA_ROOT would start

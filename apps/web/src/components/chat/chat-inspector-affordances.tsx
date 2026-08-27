@@ -12,8 +12,7 @@ import {
 } from "@/lib/api-inspector";
 
 /**
- * The READ-ONLY affordance preview (body-attribute-affordances.spec.architecture.md
- * §Resolved, "Developer preview"), built after the garment domain proved the
+ * The READ-ONLY affordance preview, built after the garment domain proved the
  * architecture twice.
  *
  * It shows the staircase a developer reads in code, in order —

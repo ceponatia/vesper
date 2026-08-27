@@ -19,10 +19,8 @@ import {
 } from "./chat-contact-vocabulary";
 
 /**
- * The shared chat-contact vocabulary
- * (romantic-contact-affordances.spec.actor-control.md §"Closed decision
- * schema": one vocabulary for the detector, the classifier schema, the
- * evidence verifiers, and the adapter).
+ * The shared chat-contact vocabulary: one vocabulary for the detector, the
+ * classifier schema, the evidence verifiers, and the adapter.
  *
  * These tests pin the two things a shared vocabulary exists for: the derived
  * artifacts (canonical-id enum, noun alternation) can never drift from the

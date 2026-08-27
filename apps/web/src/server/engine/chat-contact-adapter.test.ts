@@ -79,8 +79,7 @@ import { chatContactActionsEnabled } from "./prompts/constants";
 import { probePermissionEvent } from "@/contracts/affordances/permission/test-support";
 
 /**
- * The chat lane's contact adapter (romantic-contact-affordances.plan.md
- * §"Continuation order" 1).
+ * The chat lane's contact adapter.
  *
  * Organised by risk, like the premise detector's tests are. The GUARDS come
  * first, because every one of them stops a durable row claiming a contact the
@@ -748,7 +747,7 @@ describe("the material adapter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Two-sided material (actor-control spec §"Resolution laws → Contact start")
+// Two-sided material
 // ---------------------------------------------------------------------------
 
 describe("chatContactMaterialBetween — both wardrobes, one stack", () => {
@@ -1547,7 +1546,7 @@ describe("the departure's proximity law — never invent a distance", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The actor-generic band laws (actor-control spec §"Resolution laws → Movement")
+// The actor-generic band laws
 // ---------------------------------------------------------------------------
 
 describe("the approach band law — nearer only, and a contact outranks a sentence", () => {
@@ -2175,8 +2174,7 @@ describe("scene discontinuities clear pair relations", () => {
 
 // ---------------------------------------------------------------------------
 // The romantic action producer
-// (romantic-contact-affordances.plan.md §"Track B — first genuinely romantic
-// contact proof" items 5-7)
+// (the first genuinely romantic contact proof)
 // ---------------------------------------------------------------------------
 
 const ROMANTIC_BRANCH = "chat_probe_branch";

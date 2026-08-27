@@ -201,8 +201,8 @@ describe("the gates each entry carries", () => {
 });
 
 /**
- * The three configurations the owner pinned to slice 2's pass/fail acceptance scenes
- * (scene-composition.spec.md §"Acceptance scenes"). Their camera, viewer parts, and the
+ * The three configurations the owner pinned as the pass/fail acceptance scenes.
+ * Their camera, viewer parts, and the
  * elements their templates have to be able to express are graded in the probe, so they are
  * pinned here rather than left to a later phrasing pass.
  */

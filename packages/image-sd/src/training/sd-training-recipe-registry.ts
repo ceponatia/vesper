@@ -2,11 +2,10 @@ import type { SdModelFamily } from "../recipes/sd-recipes";
 import type { SdTrainingRecipe } from "./training-manifest";
 
 /**
- * The seeded character-LoRA training recipes
- * (sd-rendering-package.plan.md §20, Stage 4).
+ * The seeded character-LoRA training recipes (Stage 4).
  *
  * **Two entries, differing in exactly one number.** Stage 4 asks one question —
- * rank 8 or rank 16 — and §7's rule for the whole plan is that only one variable
+ * rank 8 or rank 16 — and the rule throughout is that only one variable
  * moves at a time. So every other value below is copied verbatim between the two,
  * and `sd-training-recipe-registry.test.ts` checks that it stayed that way rather
  * than trusting a reader to notice a drifted digit.
@@ -48,12 +47,12 @@ export const sdTrainingRecipes: readonly SdTrainingRecipe[] = [
     learningRate: 0.0001,
     // 1024 rather than the more common 768: the deployed renderer's native
     // portrait is 832x1216, and a LoRA trained smaller than the size it will be
-    // sampled at learns detail the render then has to invent. §7 fixes the
-    // render size, so the training size follows it rather than the other way
-    // round.
+    // sampled at learns detail the render then has to invent. The recipe fixes
+    // the render size, so the training size follows it rather than the other
+    // way round.
     resolution: 1024,
     batchSize: 4,
-    // No trigger token by default. §22 makes textual inversion a non-goal for
+    // No trigger token by default. Textual inversion is a non-goal for
     // the first training pass, and the deployed renderer loads LoRA weights
     // only — it has no embedding loader — so a token trained as an embedding
     // would be a prompt word pointing at nothing. The operator supplies a plain

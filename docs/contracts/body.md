@@ -155,7 +155,7 @@ Each species carries three optional, **model-facing** notes — all empty by def
 - **`intimacy`** — audience: narrator (**intimate-tier only**).
   - *Contents:* How that kind of being tends to read as a lover — innate temperament, instincts, quirks. Bare text (no `Label —` prefix).
   - *Surfaced via:* `speciesIntimacyNote(speciesId, heritageId)`.
-  - *Feeds:* The **exposure-gated** intimate-disposition block (`engine/scene.ts` `buildIntimateDispositionBlock`), appended with the per-character `profile.intimacy` and surfaced to the narrator **only when the turn's `ExposureMask` reaches the intimate tier on any axis** (appearance/touch/taste — ruled 2026-07-13). Zero tokens in every ordinary scene. See `intimacy-notes.spec.md`.
+  - *Feeds:* The **exposure-gated** intimate-disposition block (`engine/scene.ts` `buildIntimateDispositionBlock`), appended with the per-character `profile.intimacy` and surfaced to the narrator **only when the turn's `ExposureMask` reaches the intimate tier on any axis** (appearance/touch/taste — ruled 2026-07-13). Zero tokens in every ordinary scene.
 
 The narrator's *physical* detail comes from per-character attributes (`buildGlanceImpressions`), so via `lore` it gets culture here, not looks. `appearance` and `lore` surface only for **non-human** casts (label-only when the field is unauthored); the unmarked `human` default surfaces nothing. `intimacy` is the odd one out on merge — it returns **bare** text and is gated by the exposure mask, not by presence alone; a human character with no species archetype still contributes its own `profile.intimacy` at the gate.
 
@@ -188,4 +188,4 @@ with a small synonym map for colloquialisms that match neither (`mouth` → lips
 | `expandBodyTarget(term, isApplicable)` | The expansion filtered through a character's realized body — pass `realizeBody(...).isAttributeApplicable`, so "chest" on a flat-chested character omits breast attributes. |
 | `detectBodyTargets(text)`              | Scans free prose (whole-word, longest-phrase-first).                                                                                                                        |
 
-Consumers: the **chat lane's Sensory-focus block** (`buildSensoryFocusSection`, prompts/character-chat.ts — `expandBodyTarget` over the detected focus `region` surfaces the target's own attributes, sensory-grounding 2026-07-12; the resolver also handles **singular forms** of plural locations — "foot" → `feet` — for exactly this).
+Consumers: the **chat lane's Sensory-focus block** (`buildSensoryFocusSection`, prompts/character-chat.ts — `expandBodyTarget` over the detected focus `region` surfaces the target's own attributes, 2026-07-12; the resolver also handles **singular forms** of plural locations — "foot" → `feet` — for exactly this).

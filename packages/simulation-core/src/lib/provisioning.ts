@@ -5,8 +5,7 @@ import { composeSimulationId } from "../contracts/identity";
 import { simulationHash } from "./hash";
 
 /**
- * Pure identity derivation for successor-world provisioning
- * (successor-world-lifecycle.plan.md slice 3, ruling E20-3).
+ * Pure identity derivation for successor-world provisioning (ruling E20-3).
  *
  * Provisioning used to mint `stamp = newId()` per call, so every retry after a
  * partial failure built a SECOND complete world and the seeders'

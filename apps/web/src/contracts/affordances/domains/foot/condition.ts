@@ -21,7 +21,7 @@ import {
 
 /**
  * Current regional condition, and the one rule that makes distributing a coarse
- * read safe (romantic-contact-affordances.spec.foot.md §"Current condition").
+ * read safe.
  *
  * ## The domain owns none of this
  *
@@ -66,8 +66,8 @@ import {
  * ## What is deliberately absent
  *
  * No temperature band and no pressure-mark list. Contact temperature has no
- * authoritative read in either lane (audit §"What slice 1 therefore builds"), and
- * marks are a slice-4 effect. A channel this domain cannot fill is a channel a
+ * authoritative read in either lane, and marks are an effect this domain does
+ * not own. A channel this domain cannot fill is a channel a
  * resolver would eventually read; the vocabulary having no such member is what
  * makes inventing one impossible.
  */

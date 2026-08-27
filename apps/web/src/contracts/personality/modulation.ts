@@ -5,10 +5,10 @@ import { effectiveTraitValue, resolveTraits, type TraitValue } from "./traits/va
 
 /**
  * Trait modulation: pure functions mapping a character's trait values → the coefficients
- * the merge applies. This is §5's "f(traits)" — kept deterministic in the merge, never
- * decided by an agent (resilience.md §3). Wires the **social-reaction `traitScale`** (the
- * seam Slice 1 stubbed at 1, Slice 3), the **meter baseline/recovery** coefficients
- * (Slice 4), and the **affinity gain asymmetry + decay retention** coefficients (Slice 5).
+ * the merge applies. This is the "f(traits)" half — kept deterministic in the merge, never
+ * decided by an agent (resilience.md §3). Wires the **social-reaction `traitScale`**,
+ * the **meter baseline/recovery** coefficients, and the **affinity gain asymmetry +
+ * decay retention** coefficients.
  *
  * Constants are tunable placeholders (like the response-curve constants in
  * `reactions.ts`); they live here because `src/contracts` is IO-free and may not
@@ -50,7 +50,7 @@ export function socialTraitScale(reaction: SocialReaction, traits: readonly Trai
 }
 
 // ---------------------------------------------------------------------------
-// Meter dynamics — trait-derived baselines + recovery (spec §4).
+// Meter dynamics — trait-derived baselines + recovery.
 // ---------------------------------------------------------------------------
 
 /** Optimism ±100 shifts the mood resting point ±this around 0.5 (so +100 ⇒ ~0.75). */
@@ -65,7 +65,7 @@ export const STRESS_RECOVERY_FACTOR = 0.5;
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 
 /**
- * Resolve a character's traits into per-character meter dynamics (spec §4): the
+ * Resolve a character's traits into per-character meter dynamics: the
  * global `MeterDefinition` is the no-trait default; traits shift the resting
  * baseline (mood←optimism, arousal←libido) and recovery rate (arousal←libido,
  * stress←composure). Empty traits ⇒ the defs unchanged ⇒ exactly today's drift.
@@ -95,8 +95,7 @@ export function personalizeMeters(defs: readonly MeterDefinition[], traits: read
 }
 
 // ---------------------------------------------------------------------------
-// Transient disposition shift — the "inhibition" lever
-// (character-chat-state-narration.spec.md §4).
+// Transient disposition shift — the "inhibition" lever.
 // ---------------------------------------------------------------------------
 
 /** Traits a high intoxication/arousal state temporarily relaxes (in points, down). */
@@ -109,7 +108,7 @@ export const DISINHIBITION_FLOOR = 0.35;
 export const AROUSAL_DISINHIBITION_WEIGHT = 0.3;
 
 /**
- * Render-time disposition overlays from physical state (spec §4): high `intoxication`
+ * Render-time disposition overlays from physical state: high `intoxication`
  * (and, lighter, `arousal`) temporarily lowers `intimate.inhibition`, `social.guardedness`,
  * and `temperament.composure` so a drunk character reads looser, less guarded, and more
  * volatile — without ever writing the authored sliders. Returns `source:"condition"`
@@ -140,12 +139,12 @@ export function stateDispositionOverlays(
 
 // ---------------------------------------------------------------------------
 // Regard soft-coloring — regard band → trait overlay
-// (character-chat-standalone.spec.md §7.1; re-keyed by relationship-model v2).
+// (re-keyed by relationship-model v2).
 // ---------------------------------------------------------------------------
 
 /**
  * Per-regard-band trait shifts (in points) — the render-time "soft coloring
- * everywhere" of spec §7.1, mirroring `stateDispositionOverlays`' shape: warm
+ * everywhere", mirroring `stateDispositionOverlays`' shape: warm
  * regard reads as warmer/less guarded/less inhibited than the authored resting
  * sliders; hostile regard colder and more walled-off. Deliberately modest — the
  * band *colors* disposition, the authored sliders remain the character.
@@ -187,8 +186,8 @@ export const REGARD_TRAIT_SHIFTS: Readonly<Record<string, Readonly<Record<string
 };
 
 /**
- * Render-time disposition overlays from the regard band (spec §7.1 "soft
- * coloring everywhere"). Same contract as `stateDispositionOverlays`: **only traits
+ * Render-time disposition overlays from the regard band ("soft coloring
+ * everywhere"). Same contract as `stateDispositionOverlays`: **only traits
  * the character actually authored are shifted** (never fabricate a disposition),
  * `source:"condition"` overlays consumed by `dispositionBands` at prompt build. The
  * D11 invariant lives elsewhere: this loosens *tone* only — the escalation floor is
@@ -216,7 +215,7 @@ export function regardDispositionOverlays(bandId: string, traits: readonly Trait
 }
 
 // ---------------------------------------------------------------------------
-// Affinity dynamics — trait-scaled gain asymmetry + decay retention (spec §4/§5).
+// Affinity dynamics — trait-scaled gain asymmetry + decay retention.
 // These ride the *simulant's* raw, event-grounded affinity deltas (the unrecognized
 // edges; recognized social acts are scaled by `socialTraitScale` in the curve instead)
 // and the time-driven decay. Empty traits ⇒ unit factors ⇒ exactly today's behavior.
@@ -236,7 +235,7 @@ export const AFFINITY_GAIN_SCALE_MAX = 1.8;
 
 /**
  * Scale a simulant affinity delta by how this particular character metabolises events
- * (spec §4 gain/loss asymmetry). **Gains** (delta > 0): `warmth`/`agreeableness` amplify,
+ * (the gain/loss asymmetry). **Gains** (delta > 0): `warmth`/`agreeableness` amplify,
  * `guardedness` damps — a guarded character warms slowly, a warm one quickly. **Losses**
  * (delta < 0): `composure` damps the sting, volatility sharpens it. Returns the *scaled*
  * delta (pre-clamp; the merge still clamps to ±AFFINITY_DELTA_CLAMP). No relevant traits ⇒
@@ -266,8 +265,8 @@ export const COMPOSURE_DECAY_RETENTION = 0.4;
 export const AFFINITY_DECAY_RETENTION_MAX = 0.7;
 
 /**
- * How strongly a character resists affinity decay (spec §4 "a loyal character decays
- * slower / toward a higher floor than a fickle one"). `warmth` + `composure` raise it;
+ * How strongly a character resists affinity decay — a loyal character decays
+ * slower, toward a higher floor, than a fickle one. `warmth` + `composure` raise it;
  * `≥ 0` only (fickle/cold/volatile characters decay at the baseline rate to the stage
  * boundary — they are never *faster* than baseline, which keeps decay stage-preserving).
  * The merge reads this as the fraction of the gap between the value and its stage's

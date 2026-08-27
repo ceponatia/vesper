@@ -89,8 +89,7 @@ export const RESERVATION_JOIN_MS = 5_000;
 type ResolveSourceResult = { ok: true; source: ResolvedSource } | { ok: false; code: ImageIdentityPackFailureCode };
 
 /**
- * Idempotent, authorization-aware pack preparation
- * (`.spec.derivation.md` §"`ensureIdentityPack`").
+ * Idempotent, authorization-aware pack preparation.
  *
  * The flow, and why each step exists:
  *
@@ -166,7 +165,7 @@ export async function runDerivation(input: EnsureIdentityPackInput, opts: Deriva
     return await acquired.held;
   } catch (err) {
     // Containment boundary: nothing about a face crop may throw into a render
-    // route or a portrait save (docs/resilience.md §"diagnostics over exceptions").
+    // route or a portrait save — a failure degrades to a diagnostic instead.
     log.warn("images", "identity pack preparation threw", {
       characterId,
       ownerId,

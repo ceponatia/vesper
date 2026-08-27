@@ -9,9 +9,8 @@ import { probePermissionEvent } from "./test-support";
 /**
  * The chronology comparator — the pure device behind "a grant may authorize a
  * clearly later action in the same committed reply, never an earlier one, and
- * ambiguous ordering fails closed" (spec.permission.md §"Chronology and
- * non-retroactivity"). Every rung of the lexicographic order gets a case, and
- * so does every way the order can fail to exist.
+ * ambiguous ordering fails closed". Every rung of the lexicographic order gets
+ * a case, and so does every way the order can fail to exist.
  */
 
 function at(overrides: Partial<RomanticPermissionChronologyPosition> = {}): RomanticPermissionChronologyPosition {

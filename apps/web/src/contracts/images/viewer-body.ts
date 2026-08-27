@@ -1,7 +1,7 @@
 import type { RegionExposure } from "../items/visibility";
 
 /**
- * The **viewer's own body** in a POV scene image (scene-pov-embodiment.plan.md slice 2).
+ * The **viewer's own body** in a POV scene image.
  *
  * Scene images are shot through the player's eyes, and until now the player was
  * *absolutely* absent — a useful lie, since the fiction constantly puts their hands on

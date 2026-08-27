@@ -69,8 +69,7 @@ export interface CompileIdentityReferencePromptInput {
    * Off by default for the reason the compiler's own doc gives: with one image
    * there is nothing to disambiguate. It exists for exactly one caller — the
    * `multi_reference_compose` prompt strategy, whose defining semantic is that it
-   * explicitly names the purpose and order of EACH reference
-   * (image-model-capabilities.spec.md §"Prompt strategies"). A strategy that
+   * explicitly names the purpose and order of EACH reference. A strategy that
    * emitted nothing at one reference would be `instruction_edit` wearing a second
    * name, so a profile could claim a different configuration while sending
    * byte-identical text — which is precisely the drift the strategy enum exists

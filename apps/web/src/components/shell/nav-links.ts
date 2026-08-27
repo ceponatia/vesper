@@ -10,8 +10,8 @@ export interface NavDest {
 
 /**
  * The Library hub — one nav entry over the collection routes, which keep their
- * URLs and share a tab strip inside the library shell (library-ux.plan.md
- * §Follow-up pass: header becomes Chats · Worlds · Library · Gallery).
+ * URLs and share a tab strip inside the library shell; the header reads
+ * Chats · Worlds · Library · Gallery.
  */
 const LIBRARY_DEST: NavDest = {
   href: "/characters",
@@ -35,9 +35,8 @@ export const NAV_LINKS: readonly NavDest[] = [
 
 /**
  * Bottom-tab-bar primary slots (4) — Home included; rest go to the More sheet.
- * Chats takes a primary slot (the companion experience is the front door —
- * character-chat-standalone.plan.md area 1 / D12); the Library hub covers the
- * four collections, so only Gallery overflows.
+ * Chats takes a primary slot (the companion experience is the front door — D12); the
+ * Library hub covers the four collections, so only Gallery overflows.
  */
 export const PRIMARY_NAV: readonly NavDest[] = [
   { href: "/", label: "Home", icon: "home" },

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteChatPermissionEventsForGuard } from "./chat-permission-events";
 
 /**
- * The retake prune's fail-closed retry (spec.permission.md §"Build hardening").
+ * The retake prune's fail-closed retry.
  *
  * This delete is the only thing between a discarded take's grant and the ledger
  * a later exchange reads as authority, and the caller's suppression covers just

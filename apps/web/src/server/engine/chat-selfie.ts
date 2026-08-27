@@ -4,7 +4,7 @@ import { parseMessageSpans } from "@/lib/message-spans";
 import { CHAT_TICK_MINUTES } from "./constants";
 
 /**
- * Chat selfies (chat-selfies.plan.md): the pure half of character-sent photo
+ * Chat selfies: the pure half of character-sent photo
  * messages. Two triggers share one queue decision: the PLAYER asked for a photo
  * (regex, any register — handing one over face-to-face is the player's call), or
  * the character may OFFER one unprompted — gated APART-ONLY (owner ruling: an
@@ -74,8 +74,8 @@ export function chatSelfieOfferEligible(input: SelfieOfferGateInput): boolean {
 }
 
 /**
- * May a reopen OPENER attach a selfie (chat-initiative.plan.md slice 5 — the
- * "thinking of you" photo)? Warm-or-better regard + the same cooldown ring; no
+ * May a reopen OPENER attach a selfie (the "thinking of you" photo)?
+ * Warm-or-better regard + the same cooldown ring; no
  * comms-span requirement — a reopen has no fresh exchange to read the register
  * from, so the license line is register-CONDITIONAL instead ("if you open as a
  * text…") and the fiction enforces apartness: an in-scene opener never "sends"

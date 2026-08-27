@@ -16,8 +16,7 @@ import {
 import { hairBulkRestraint } from "./restraint";
 
 /**
- * `hair.wind_or_motion_response` — hair actually moving, now
- * (hair spec §"Phenomena").
+ * `hair.wind_or_motion_response` — hair actually moving, now.
  *
  * ```text
  * response = current force × mobilityCapacity × exposedFreeArea

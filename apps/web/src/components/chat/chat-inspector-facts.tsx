@@ -9,8 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { chatInspectorApi, type InspectorFact, type InspectorFactPatch } from "@/lib/api-inspector";
 
 /**
- * The inspector's Facts section (character-chat-standalone.spec.md §6.1): every
- * fact in the chat's memory group — active, superseded, and retracted — with
+ * The inspector's Facts section: every fact in the chat's memory group —
+ * active, superseded, and retracted — with
  * status/origin/pinned chips, click-to-edit text (re-embeds on save),
  * retract/restore, an immediate pinned toggle, and an ad-hoc "New fact" form.
  * Errors surface as inline text (never a throw); the parent reload refreshes

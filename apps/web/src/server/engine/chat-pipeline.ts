@@ -147,8 +147,8 @@ import { chatSelfieOfferEligible, chatSelfieOpenerEligible, detectSelfieRequest,
 import { CHAT_ATTACHMENTS_MAX, describeChatPhotos } from "./chat-vision";
 import {
   buildChatReplyGates,
-  // chatCueInviteLine — retired by narrator-prompt-consolidation slice 4 (the sensory-allowance
-  // line supersedes its sensory arms); re-import to roll back.
+  // chatCueInviteLine — retired (the sensory-allowance line supersedes its
+  // sensory arms); re-import to roll back.
   deriveChatSensoryAllowance,
   detectChatCue,
   detectSceneMovement,
@@ -251,20 +251,20 @@ import {
 
 /**
  * The character-chat exchange pipeline (docs/character-chat/pipeline.md) — the chat lane's
- * `submitTurn` analogue (character-chat-standalone.spec.md §3, codebase-review D1).
+ * `submitTurn` analogue.
  * Owns everything between "a validated send arrived" and "the reply stream settled":
  * the per-chat exchange lock, the user-line insert, summary + verbatim-window
  * assembly, state drift, RAG recall, prompt build, the model stream, and the settle
  * work (reply persistence + the post-turn fan-out). The HTTP route stays a thin
- * parse → auth → stream shell. Keyed on the conversation (spec §1): the route
+ * parse → auth → stream shell. Keyed on the conversation: the route
  * resolves chat + participant + character and hands their slices in.
  *
- * Six exchange kinds (spec §4):
+ * Six exchange kinds:
  * - **send** — the normal player turn.
  * - **open** — the opening beat ("Prompt character"): no player line, no fan-out.
  * - **continue** — "go on": no player line; the archivist runs (new narrative is
  *   worth remembering) but the reaction pulse is skipped (no player act).
- * - **action_beat** — a tapped action chip (chat-action-beats.plan.md): no player
+ * - **action_beat** — a tapped action chip: no player
  *   line; the server builds a register-aware synthetic cue from the chip id and
  *   applies the chip's deterministic state effect to the drifted state PRE-narration
  *   (so the reply reflects it), rollback-safe via the pre-exchange snapshot. The
@@ -344,23 +344,23 @@ export interface ChatContactTurnRecord {
 export interface SubmitChatMessageInput {
   /** The conversation (already authorized + not archived — the route owns both checks). */
   chatId: string;
-  /** The participant's memory group (spec §1.3) — the RAG scope for recall + writes. */
+  /** The participant's memory group — the RAG scope for recall + writes. */
   memoryGroupId: string;
   /** The (v1 single) participant character row slice. */
   character: { id: string; name: string; profile: unknown };
   /**
-   * The full sort-ordered roster (multi-character-chat.plan.md) — the first entry
+   * The full sort-ordered roster — the first entry
    * describes the same primary as `character`/`memoryGroupId`. Absent or length 1
    * ⇒ the 1-on-1 path, byte-identical prompts. Length > 1 ⇒ the ensemble frame:
-   * per-member state (present members drift, away freeze — ruling 6), tier-1
-   * memory legs (ruling 5), and per-member activity-recency stamping post-turn.
+   * per-member state (present members drift, away freeze), tier-1
+   * memory legs, and per-member activity-recency stamping post-turn.
    */
   roster?: readonly { characterId: string; memoryGroupId: string; name: string; profile: unknown }[];
   kind: ChatExchangeKind;
   /** The player's line — required for `send`, ignored for the other kinds. */
   content?: string;
   /**
-   * Composer register (chat-supporting-cast.plan.md §Narrator input) — `send` only:
+   * Composer register — `send` only:
    * "narrator" marks `content` as story narration authored by the player as
    * storyteller, never their own POV. Persisted on the user line's meta (the stored
    * text stays byte-verbatim); regenerate/rerun recover it from the stored line.
@@ -382,20 +382,20 @@ export interface SubmitChatMessageInput {
   /** Optional narrator-model override (a curated NARRATIVE_MODELS id). */
   model?: string;
   /**
-   * "Has something to say" opener (spec §8.4): the open loop the player tapped,
+   * "Has something to say" opener: the open loop the player tapped,
    * threaded as the continue beat's cue line so the character opens about exactly
    * that. Only read for `kind: "continue"`.
    */
   cue?: string;
   /**
-   * Reopen-opener initiative (chat-initiative.plan.md) — `continue` only: the
+   * Reopen-opener initiative — `continue` only: the
    * character reaches out first with a server-built cue (open loops + wants +
    * the "a life meanwhile" license, comms register when apart). Player-tapped;
-   * generation is never background (D3).
+   * generation is never background.
    */
   initiative?: boolean;
   /**
-   * Action-beat chip (chat-action-beats.plan.md) — `action_beat` only: the tapped
+   * Action-beat chip — `action_beat` only: the tapped
    * chip id. The server builds a register-aware synthetic cue for it and applies the
    * chip's deterministic state effect to the primary's drifted state pre-narration —
    * so the reply reflects the shift — rollback-safe via the pre-exchange snapshot. No
@@ -403,28 +403,28 @@ export interface SubmitChatMessageInput {
    */
   action?: ChatActionId;
   /**
-   * Player-attached photo ids (chat-image-input.plan.md) — `send` only. Validated +
+   * Player-attached photo ids — `send` only. Validated +
    * claimed against this chat's ready `chat_upload` rows (foreign ids dropped), then
    * described by ONE batched vision call whose output rides the user line's meta.
    */
   attachmentIds?: readonly string[];
   /**
-   * "Auto at big moments" hook (slice 9): fired fire-and-forget after the finalizer
+   * "Auto at big moments" hook: fired fire-and-forget after the finalizer
    * when the exchange landed a stage crossing / strong reaction AND the chat's
    * `sceneAuto` mode is "milestones". The route owns what happens (queue a scene
    * render anchored to this reply) — the engine only signals.
    */
   onBigMoment?: (info: { assistantMessageId: string }) => void;
   /**
-   * Selfie hook (chat-selfies.plan.md): fired fire-and-forget after the finalizer
+   * Selfie hook: fired fire-and-forget after the finalizer
    * when the reply actually sent a photo (pulse-read + gate-armed). The route
    * queues the selfie render anchored to this reply. `characterId` names the
-   * SENDER (followups ruling 12): in a group the addressed member sends it, so
+   * SENDER: in a group the addressed member sends it, so
    * the render must use that character, not always the primary.
    */
   onSelfie?: (info: { assistantMessageId: string; characterId: string }) => void;
   /**
-   * Post-settle hook (R4 shadow — engine.rollout.plan.md): fired fire-and-forget
+   * Post-settle hook (the successor shadow leg): fired fire-and-forget
    * after the finalizer on EVERY successfully settled exchange. The route owns
    * what happens (the shadow comparison leg for `successor_shadow` chats); the
    * engine only signals. `content` is the player's line ("" for synthetic-cue
@@ -486,7 +486,7 @@ const INTIMATE_AROUSAL_FLOOR = 0.55;
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 // ---------------------------------------------------------------------------
-// Reply takes (spec §4.1) — alternate generations browsable on the message row
+// Reply takes — alternate generations browsable on the message row
 // ---------------------------------------------------------------------------
 
 const replyTakeSchema = z.object({
@@ -494,12 +494,12 @@ const replyTakeSchema = z.object({
   content: z.string(),
   createdAt: z.string(),
   /**
-   * What produced this take (narrator-prompt-lab.plan.md §Provenance) — the lane,
+   * What produced this take — the lane,
    * the effective narrator model, and the exact prompt revision when a Prompt Lab
    * template was active.
    *
-   * Optional **and** `.catch(undefined)`: every take written before slice 6 has
-   * none, and a malformed record must degrade this one take to "unlabelled"
+   * Optional **and** `.catch(undefined)`: every take written before provenance
+   * existed has none, and a malformed record must degrade this one take to "unlabelled"
    * rather than reject the whole ring and lose the player's browsable history.
    */
   provenance: narratorRunProvenanceSchema.optional().catch(undefined),
@@ -567,8 +567,7 @@ export function pushReplyTake(
 
 /**
  * Build one take's narrator-run provenance (PURE) — the record that answers
- * "which prompt and which model wrote this?" months later
- * (narrator-prompt-lab.plan.md §Provenance).
+ * "which prompt and which model wrote this?" months later.
  *
  * Shared by all four prose narrator paths (legacy 1:1/ensemble, successor
  * co-present, successor solo) so the four cannot drift into describing the same
@@ -635,7 +634,7 @@ export function buildNarratorRunProvenance(args: {
 
 /**
  * Make one recorded take the displayed reply: the row's `content` is updated to
- * mirror it (spec §4.1 — transcript reads stay one-column). Returns the take's
+ * mirror it (transcript reads stay one-column). Returns the take's
  * content, or null when the message/take doesn't exist. Display-only: state and
  * memory keep reflecting the last GENERATED take (regenerate to re-run effects).
  *
@@ -667,7 +666,7 @@ export async function switchReplyTake(chatId: string, messageId: string, takeId:
 }
 
 // ---------------------------------------------------------------------------
-// Stop (spec §4.2) — abort the in-flight reply, keep what streamed
+// Stop — abort the in-flight reply, keep what streamed
 // ---------------------------------------------------------------------------
 
 /** In-flight reply aborts by chat id — in-process, like the exchange lock itself. */
@@ -759,7 +758,7 @@ export async function* withStreamTimeouts(
 
 /**
  * Run one chat exchange. Returns `chat_busy` if a reply is still streaming for this
- * chat (codebase-review A6 — without the lock, two concurrent submits each load +
+ * chat (without the lock, two concurrent submits each load +
  * drift the same state row and the finalizers land last-write-wins). On success the
  * returned generator streams reply tokens; when it is drained to completion — the
  * route keeps draining even after a client disconnect (docs/resilience.md §5) — the
@@ -836,13 +835,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
      * would double-roll-back.
      */
     let rerunSnapshotApplies = false;
-    /** Attached photos on this exchange's prompting line (chat-image-input.plan.md). */
+    /** Attached photos on this exchange's prompting line. */
     let attachmentFiles: { id: string; path: string }[] = [];
     let attachmentDescriptions: string[] | null = null;
-    /** Narrator-mode input (chat-supporting-cast.plan.md): the line is story narration, not the player's POV. */
+    /** Narrator-mode input: the line is story narration, not the player's POV. */
     let narratorInput = kind === "send" && input.inputMode === "narrator";
     /**
-     * For an action beat (chat-action-beats.plan.md): the tapped chip. Set for a fresh
+     * For an action beat: the tapped chip. Set for a fresh
      * `action_beat`, or recovered from the reply's meta when regenerating one. Drives the
      * register-aware cue + the deterministic effect, both applied below once the recent
      * replies (the apart/co-present signal) and the drifted state are in hand.
@@ -949,7 +948,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
     }
 
-    // --- Attached photos (chat-image-input.plan.md) --------------------------
+    // --- Attached photos -----------------------------------------------------
     // Regenerate/rerun reuse the prompting line's stored attachments (+ any stored
     // vision read); a fresh send described them here. ONE batched vision call per
     // message, persisted onto the line's meta so a retake never re-spends — but a
@@ -988,12 +987,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const exchangeGuardMessageId = promptMessageId ?? assistantMessageId;
 
     // --- State: load (or roll back), then drift -----------------------------
-    // Regenerate restores the pre-exchange snapshot (spec §4.1) so the old take's
+    // Regenerate restores the pre-exchange snapshot so the old take's
     // drift + pulse effects don't double-apply, and retracts the old take's
-    // extracted memory (spec §4.3) so it can't prime the new one. A missing
+    // extracted memory so it can't prime the new one. A missing
     // snapshot degrades to no-rollback with a diagnostic — never a failed reply.
     // Restore the pre-exchange snapshot, or degrade to the current live state with a
-    // diagnostic when no snapshot was recorded (F3). Shared by regenerate and an
+    // diagnostic when no snapshot was recorded. Shared by regenerate and an
     // applicable rerun. A found `state: null` means the anchor was `{}` — a first
     // exchange with no prior state — so drift re-seeds from the authored defaults below,
     // exactly as the original first exchange did.
@@ -1016,8 +1015,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // (A failed-reply rerun — no successors — skips the restore entirely: that
       // exchange never settled, so the live state IS the correct starting point.)
       storedState = await restoreOrDegrade(characterId);
-      // Retract the extracted memory of every assistant reply this rerun deleted
-      // (spec §4.3 — provenance), like regenerate does for the single old take.
+      // Retract the extracted memory of every assistant reply this rerun deleted,
+      // like regenerate does for the single old take.
       for (const deletedId of rerunDeletedAssistantIds) {
         await reconcileMessageMemory(deletedId, sink);
       }
@@ -1038,7 +1037,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // the readable garment phrase before the narrator or archivist see it.
     const owner = await chatOwnerId(chatId);
 
-    // --- The exchange's narrator instructions (narrator-prompt-lab.plan.md) ----
+    // --- The exchange's narrator instructions --------------------------------
     // ONE instruction source, resolved here and frozen for the whole exchange.
     // "Here" is load-bearing twice over: the exchange lock is already held (this
     // whole function runs inside it), and no narrator prompt has been built yet, so
@@ -1080,9 +1079,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // cannot be: a stranded discarded grant would authorize later turns. The
       // permission prune therefore retries and refuses this retake if it still
       // cannot commit.
-      // The discarded take's PERMISSION rows go with its contact rows
-      // (romantic-contact-affordances.spec.permission.md §"Retakes and
-      // branches"): the projection is a fold over these rows, so pruning them
+      // The discarded take's PERMISSION rows go with its contact rows:
+      // the projection is a fold over these rows, so pruning them
       // IS the restoration — a discarded reply's grant, denial, or withdrawal
       // must not survive into the replacement take. UNCONDITIONAL like every
       // prune in this block, and for the same reason: hygiene of state that
@@ -1174,7 +1172,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       void enqueueChatSummary({ chatId });
     }
 
-    // Who the player is in THIS chat (persona-library.plan.md): the chat's own
+    // Who the player is in THIS chat: the chat's own
     // persona pick, else the owner's default, else their account name — so the
     // character addresses someone by name instead of a faceless "the user".
     const player = await resolveChatPersona({ ownerId: owner, chatId });
@@ -1186,7 +1184,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const describedPlayerContent = attachmentDescriptions?.length
       ? `${playerContent}\n\n[${player.name} attached ${attachmentDescriptions.length === 1 ? "a photo" : `${attachmentDescriptions.length} photos`} — as ${characterName} sees ${attachmentDescriptions.length === 1 ? "it" : "them"}: ${attachmentDescriptions.map((d, i) => `(${i + 1}) ${d}`).join(" ")}]`
       : playerContent;
-    // Narrator-mode input (chat-supporting-cast.plan.md): label the player half so the
+    // Narrator-mode input: label the player half so the
     // post-turn agents read it as authored story events, never the player's own
     // speech/act. Prompt-side the wrap is `wrapNarratorInput` on the history line.
     const agentPlayerContent =
@@ -1194,10 +1192,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         ? `[${player.name} wrote this as STORYTELLER NARRATION — story events, not ${player.name}'s own words or actions]\n${describedPlayerContent}`
         : describedPlayerContent;
 
-    // --- Ensemble roster (multi-character-chat.plan.md slices 2–4) -----------
+    // --- Ensemble roster -----------------------------------------------------
     // The members beyond the primary: load each one's state (seeding from their
     // authored defaults like a fresh 1-on-1), and tick ONLY present members —
-    // presence gating the advance IS the away-freeze (ruling 6).
+    // presence gating the advance IS the away-freeze.
     const ensembleActive = (input.roster?.length ?? 0) > 1;
     const others = ensembleActive
       ? await Promise.all(
@@ -1236,8 +1234,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         )
       : [];
 
-    // --- RAG recall (spec §2): per-participant memory groups ------------------
-    // 1-on-1 keeps the default k. An ensemble runs tier-1 legs only (ruling 5):
+    // --- RAG recall: per-participant memory groups ---------------------------
+    // 1-on-1 keeps the default k. An ensemble runs tier-1 legs only:
     // the primary always gets a leg; other members earn one while present and
     // recently active, each against their OWN group, with per-leg k tightened as
     // the active count grows — cost tracks the scene, not the roster.
@@ -1245,7 +1243,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       (o) => o.state.presence === "present" && o.state.quietExchanges < ENSEMBLE_QUIET_EXCHANGES,
     );
     const legLimit = ensembleActive ? Math.max(2, 5 - activeOthers.length) : undefined;
-    // ONE embed for the whole turn (chat-agent-improvements slice 3): every retrieval leg
+    // ONE embed for the whole turn: every retrieval leg
     // below searches over the same texts — the player's input plus each participant's
     // persisted `memoryQueries` — and each leg used to embed its own copy (the fact leg,
     // the episode leg, every member's pair of legs, and the callback picker's third read of
@@ -1314,7 +1312,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         : undefined;
     const firstExchange = !opening && !recentReplies.length;
 
-    // --- Action beat (chat-action-beats.plan.md) -----------------------------
+    // --- Action beat ---------------------------------------------------------
     // A tapped chip is a narrated one-beat exchange. Build its register-aware cue —
     // apart ⇒ answer as a text, co-present ⇒ in-scene, derived from the last reply's
     // comms spans (the same signal the selfie offer reads) — and apply the chip's
@@ -1331,7 +1329,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       driftedState = applyChatAction(driftedState, actionBeatId, scenario.clockMinutes);
     }
 
-    // --- Perk targeting (followups ruling 12) --------------------------------
+    // --- Perk targeting ------------------------------------------------------
     // The "addressed" member: a group perk aims at whoever the player's message
     // names. The primary wins when named; otherwise the first PRESENT other
     // member named; nobody named ⇒ undefined (the perk falls to the lead).
@@ -1340,12 +1338,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         ? others.find((o) => o.state.presence === "present" && mentionsCharacter(playerContent, o.name, o.profile.aliases))
         : undefined;
 
-    // --- Selfie arming (chat-selfies.plan.md) --------------------------------
+    // --- Selfie arming -------------------------------------------------------
     // Request: the player asked for a photo (any register — their call). Offer:
     // APART-ONLY (owner ruling — the comms register is the "not in the same place"
     // signal) + warm regard + the cooldown ring. Either arms a one-turn license
     // line; the post-turn pulse decides whether the reply actually sent one.
-    // Group scenes (ruling 12): a request routes to the addressed member —
+    // Group scenes: a request routes to the addressed member —
     // unaddressed falls to the lead; offers stay lead-gated.
     // Narrator-mode input arms no selfie: "she asks for a photo" in authored narration
     // is story fabric, not the player requesting one (and the skipped pulse could never
@@ -1361,7 +1359,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         playerComms: hasCommsSpans(playerContent),
         lastReplyComms: hasCommsSpans(recentReplies.at(-1) ?? ""),
       });
-    // Opener selfie (chat-initiative.plan.md slice 5): a warm reopen opener may
+    // Opener selfie: a warm reopen opener may
     // attach the "thinking of you" photo — warm + cooldown here; the apart
     // condition lives in the license line ("if you open as a text"), and the
     // opener-scoped pulse's `sentPhoto` read decides post-turn whether one
@@ -1375,12 +1373,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         selfieHistory: driftedState.selfieHistory,
       });
 
-    // --- Memory callback (memory-callbacks.plan.md): the unprompted "remember when" cue ---
+    // --- Memory callback: the unprompted "remember when" cue -----------------
     // Gate first (pure, no cost), then pay one embedding + one query to pick an old,
     // milestone-boosted, topic-DISTANT episode. An offered callback burns into the ring
     // immediately — it rides this exchange's ordinary state write, so "another take"
     // rolls the burn back with the snapshot and the retake gets the same opportunity.
-    // Group scenes (ruling 12): the memory belongs to ONE member — the addressed one,
+    // Group scenes: the memory belongs to ONE member — the addressed one,
     // else the most-recently-active present member — drawn from THEIR group and gated
     // on THEIR ring. (A member burn rides their ordinary save; member rings aren't
     // rollback-managed, so a retake simply skips the already-burned episode.)
@@ -1406,13 +1404,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         intimateBeat,
         hasSensoryFocus: Boolean(sensoryFocus),
         lastReplyEndsInQuestion: replyEndsInQuestion(recentReplies.at(-1) ?? ""),
-        // The crowded-turn arms (chat-agent-improvements slice 4): the tail's flavor slot
+        // The crowded-turn arms: the tail's flavor slot
         // is single-occupancy, and the callback is what yields — decided HERE, before the
         // ring burns, so a deferred callback is never spent unseen.
         hasAttachments: Boolean(attachmentDescriptions?.length),
         narratorInput,
         photoBeat: selfieRequested || selfieOfferEligible || openerSelfieEligible,
-        // A commitment near this turn owns the beat (chat-plans-promises) — the callback yields.
+        // A commitment near this turn owns the beat — the callback yields.
         planSalient: hasSalientPlan(derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart)),
       })
     ) {
@@ -1446,7 +1444,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         }
       }
     }
-    // §8.4 v2 (chat-initiative.plan.md slice 2): an initiative opener may
+    // An initiative opener may
     // acknowledge what shifted since the player last OPENED the chat — the
     // seen-cursor names which milestones are still fresh for her. One indexed
     // read, initiative beats only.
@@ -1454,10 +1452,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       ? unseenMilestoneReason(driftedState.milestones, (await loadMilestonesSeenAt(chatId)) ?? new Date())
       : null;
 
-    // Structured wardrobe (chat-wardrobe-parity): resolve the drifted worn state into its
+    // Structured wardrobe: resolve the drifted worn state into its
     // rendered garment phrase + coverage-computed exposure — the ONE seam the prompt, scene
     // image, and look key share (reusing the session renderers, never re-forking them).
-    // The garment store is the worn truth once this actor is modelled (slice 2);
+    // The garment store is the worn truth once this actor is modelled;
     // an unmodelled actor falls back to the projection column, unchanged.
     const wardrobe = await resolveChatWardrobe(
       { ...driftedState, garments: scenario.garments, garmentActorId: garmentActorForCharacter(characterId) },
@@ -1465,7 +1463,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       profile,
       sink,
     );
-    // The player's own wardrobe (persona-library.plan.md slice 8) — same seam, so the
+    // The player's own wardrobe — same seam, so the
     // narrator knows what it can take off them. Empty without a persona.
     const playerWardrobe = await resolvePlayerWardrobe(
       scenario.playerState,
@@ -1492,8 +1490,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       memberWardrobes.set(member.characterId, resolved);
       return resolved;
     };
-    // The garment digest + cue block (clothing-state-graph slice 6, `CHAT_GARMENT_CUES`,
-    // default OFF). Built from the store as it stands BEFORE the fan-out — the cut the
+    // The garment digest + cue block (`CHAT_GARMENT_CUES`, default OFF). Built from the store as it stands BEFORE the fan-out — the cut the
     // narrator is actually writing from — and re-derived identically by the finalizer,
     // which persists the cue memory the same way `surfacedCues` is persisted.
     const narrationPlaceName = currentScenePlace(scenario.sceneMemory)?.name;
@@ -1511,8 +1508,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           }),
         })
       : null;
-    // The affordance cue block (body-attribute-affordances slice 5,
-    // `CHAT_AFFORDANCE_CUES`, default OFF). Same committed pre-fan-out cut as the
+    // The affordance cue block (`CHAT_AFFORDANCE_CUES`, default OFF). Same committed pre-fan-out cut as the
     // garment narration above — the drifted state row, the ticked scenario, the
     // wardrobe rows this turn already resolved — because that is exactly what the
     // two rollback anchors restore, so "another take" rebuilds an identical read.
@@ -1542,8 +1538,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       previousCues: scenario.affordanceCues,
       sink,
     };
-    // Constraint-first narrator guidance (narrator-physical-guidance slice 2,
-    // `CHAT_PHYSICAL_CONSTRAINTS`, default OFF) reads the SAME cut. Hoisted here
+    // Constraint-first narrator guidance (`CHAT_PHYSICAL_CONSTRAINTS`, default
+    // OFF) reads the SAME cut. Hoisted here
     // because it is also the second reason to take the read at all.
     const physicalConstraintsEnabled = chatPhysicalConstraintsEnabled();
     const affordanceRead =
@@ -1625,8 +1621,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const bodyCues = recognition?.cueLine ? [...affordanceCues, recognition.cueLine] : affordanceCues;
 
     // --- Affectionate contact (`CHAT_CONTACT_ACTIONS`, default OFF) ----------
-    // The deterministic contact leg (romantic-contact-affordances.plan.md
-    // §"Continuation order" 1): end what this exchange ended, seed the scene, fold the
+    // The deterministic contact leg: end what this exchange ended, seed the
+    // scene, fold the
     // movements the player wrote — a departure widening the distance and ending what
     // it separated, then an approach closing it — detect a plainly affectionate
     // hand-touch on a present roster member, resolve it against the scene owner's
@@ -1665,10 +1661,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // independent recompute.
     let contactCoverageCaptures: Readonly<Record<string, EffectiveCoverageRead>> = {};
     // The effect proposals this exchange's DURABLE contact derived
-    // (`CHAT_CONTACT_EFFECTS`, default OFF — effects spec §15 stage 6). Held
+    // (`CHAT_CONTACT_EFFECTS`, default OFF). Held
     // here and committed at SETTLE through the body-surface owner transaction
     // inside `finalizeChatState`, never applied pre-prompt: the committed mark
-    // becomes observable on the NEXT cut's reads, exactly the §12 law that the
+    // becomes observable on the NEXT cut's reads, exactly the law that the
     // result of a proposal cannot be observed in the cut that proposed it.
     let contactEffectProposals: readonly BodyMarkProposal[] = [];
     if (chatContactActionsEnabled()) {
@@ -1809,9 +1805,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
         // --- The permission owner's read (`CHAT_ROMANTIC_PERMISSION`, OFF) -----
         // Flag ON only: the chat's permission ledger is loaded ONCE per exchange
-        // and folded into the active projection, and the plan's resolver derives
-        // the REAL policy read for any attempt whose kind requires a grant
-        // (spec.permission.md §"Resolver adapter"). For a player attempt every
+        // and folded into the active projection, and the resolver derives
+        // the REAL policy read for any attempt whose kind requires a
+        // grant. For a player attempt every
         // committed ledger event is chronologically effective — they all precede
         // the new attempt — so no cutoff is passed; the pure comparator exists
         // for same-reply ordering and is exercised in its own unit tests. Flag
@@ -1922,7 +1918,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           }
         }
         // --- Contact effects (`CHAT_CONTACT_EFFECTS`, default OFF) ------------
-        // The pure derivation (effects spec §12): committed contact → effect
+        // The pure derivation: committed contact → effect
         // proposal. Gated on the ACKNOWLEDGMENT, not the plan — a proposal may
         // only be derived from a contact the ledger provably recorded, so the
         // rolled-back-append path (no acknowledgment) derives nothing, exactly
@@ -1931,8 +1927,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // owner validates and commits them into the PRIMARY character's state
         // row — the one surface owner this release implements. A proposal
         // addressed to any other body (the player, an ensemble member) has no
-        // implemented destination owner and commits nothing (§14), on the
-        // record.
+        // implemented destination owner and commits nothing, on the record.
         if (chatContactEffectsEnabled() && acknowledgment !== undefined && committed !== null) {
           const proposals = contactMarkProposals(committed.contact);
           const primarySubject = affordanceSubjectId(characterId);
@@ -2023,8 +2018,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
     }
 
-    // --- Pending revocation stop (permission spec §"Revocation during active
-    // contact" step 4, `chat-permission-guidance.ts`) -------------------------
+    // --- Pending revocation stop (`chat-permission-guidance.ts`) -------------
     // A withdrawal that ended contact lands AFTER the reply it was read from
     // (the decision leg runs at settle) or between exchanges (an override), so
     // THIS reply is the "next narrator cut" that must portray the stop.
@@ -2060,8 +2054,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     //
     // Nothing is persisted: the selection is recomputable from the same cut and the
     // same message, so the existing rollback anchors already make a retake reproduce
-    // it (plan §"State and retakes") — and the stop transitions above are a fold
-    // over durable rows the retake prunes, so they reproduce with everything else.
+    // it — and the stop transitions above are a fold over durable rows the retake
+    // prunes, so they reproduce with everything else.
     let physicalGuidanceLines: readonly string[] = [];
     if ((physicalConstraintsEnabled && affordanceRead !== null) || permissionStopTransitions.length > 0) {
       try {
@@ -2352,8 +2346,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     };
 
     const promptInput: CharacterChatPromptInput = {
-      // The exchange's frozen narrator instructions (narrator-prompt-lab.plan.md
-      // slice 5). This object reaches ONLY the three prose-narrator builds below —
+      // The exchange's frozen narrator instructions.
+      // This object reaches ONLY the three prose-narrator builds below —
       // every helper agent (pulse, extractors, notes, classifiers, scene composer,
       // meanwhile) assembles its own prompt from its own inputs and cannot see it.
       instructionSource,
@@ -2372,18 +2366,18 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // renders the one-turn establish-the-scene directive. Opening beats carry their own
       // scene-opening instruction instead.
       firstExchange,
-      // The one-turn memory callback (memory-callbacks.plan.md), already ring-burned above.
+      // The one-turn memory callback, already ring-burned above.
       callback,
-      // Attached photos (chat-image-input.plan.md): the vision read, injected as
+      // Attached photos: the vision read, injected as
       // seen-channel content the perception partition's rule 16 governs.
       attachments: attachmentDescriptions?.length ? { descriptions: attachmentDescriptions } : undefined,
-      // One-turn selfie license (chat-selfies.plan.md), armed above; "opener" is
-      // the initiative beat's register-conditional arm (chat-initiative slice 5).
+      // One-turn selfie license, armed above; "opener" is
+      // the initiative beat's register-conditional arm.
       selfie: selfieRequested ? "request" : selfieOfferEligible ? "offer" : openerSelfieEligible ? "opener" : undefined,
-      // One-turn cue invitation, now the continue-cue only (§8.4): a "has something to say"
+      // One-turn cue invitation, now the continue-cue only: a "has something to say"
       // continue threads its tapped open loop here so the character opens about exactly the
-      // right thing. The sensory arms were superseded by `sensoryAllowance` below
-      // (narrator-prompt-consolidation slice 4). Pre-slice-4 arm (rollback):
+      // right thing. The sensory arms were superseded by `sensoryAllowance` below.
+      // The superseded arm (rollback):
       //   cueInvite: cueHint ? chatCueInviteLine(cueHint, characterName) : <the continue arm below>
       cueInvite: initiativeOpener
         ? buildInitiativeCue({
@@ -2392,15 +2386,15 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             openLoops: driftedState.openLoops,
             drives: driftedState.drives,
             skipPending: Boolean(scenario.pendingSkipNote.trim()),
-            // Plans near this turn LEAD the opener material (chat-plans-promises): "is
+            // Plans near this turn LEAD the opener material: "is
             // tonight still on?" / the cold open after being stood up.
             openPlans: derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart),
-            // Slice-2/4 material: the unseen shift + the authored daily rhythm.
+            // The unseen shift + the authored daily rhythm.
             recentShift,
             rhythm: formatScheduleRhythm(profile.schedule),
-            // Slice 5: extraversion colors the opener's cadence (eager vs. reticent).
+            // Extraversion colors the opener's cadence (eager vs. reticent).
             extraversion: effectiveTraitValue(profile.traits, "social.extraversion"),
-            // Off-screen life (§1 + dedupe rule F): established people ground improvised
+            // Off-screen life: established people ground improvised
             // beats, and a meanwhile-pass note REPLACES free invention for this gap.
             cast: scenario.supportingCast
               .slice(0, 3)
@@ -2411,7 +2405,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         : effectiveKind === "continue" && input.cue?.trim()
           ? `There is unfinished business you might open about: "${input.cue.trim()}" — bring it up naturally, in your own voice, if the moment allows.`
           : undefined,
-      // The deterministic per-turn sensory allowance (narrator-prompt-consolidation slice 4):
+      // The deterministic per-turn sensory allowance:
       // one binding line derived from the detectors already running this turn. Only real
       // player turns carry one — opening/continue beats fall to the rules' conservative default.
       sensoryAllowance: playerContent
@@ -2423,22 +2417,22 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       gateNotes: playerContent
         ? buildChatReplyGates({ recentReplies, intimate: intimateBeat, name: characterName })
         : undefined,
-      // Derived-fact tail note (player-input-perception.plan.md slice 4): the shared span
+      // Derived-fact tail note: the shared span
       // parser reads the current message's markup and renders a comms/OOC one-liner. The
       // raw message is never touched — this only feeds the prompt tail.
       notationNote: playerContent
         ? chatNotationNote(playerContent, { name: characterName, player: player.name, knownNames: [characterName] })
         : undefined,
-      // Narrator-mode input (chat-supporting-cast.plan.md): the one-turn tail note that
+      // Narrator-mode input: the one-turn tail note that
       // suspends the player-input perception rules for THIS message.
       narratorInput,
-      // Physical consistency (narrator-physical-guidance slice 2). Conditional spread,
+      // Physical consistency. Conditional spread,
       // the same discipline the cue block uses: absent when the flag is off, so the
       // prompt is byte-identical to the pre-feature build.
       ...(physicalGuidanceLines.length > 0 ? { physicalGuidance: physicalGuidanceLines } : {}),
     };
 
-    // The relationship matrix (relationship-model.plan.md): tier-1 pair lines for
+    // The relationship matrix: tier-1 pair lines for
     // present×present edges; tier-3 conditional lines for present→away edges
     // whose away endpoint is SALIENT — mentioned within the window (the recency
     // stamp keeps counting for away members) or flagged looming on the edge.
@@ -2499,7 +2493,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             presence: driftedState.presence,
             quietExchanges: driftedState.quietExchanges,
           },
-          // Each present member resolves their OWN worn state (chat-wardrobe-parity) — same
+          // Each present member resolves their OWN worn state — same
           // owner library, so the shared loader keys their garments too. Through the
           // shared cache: a member the contact leg already resolved this turn renders
           // from that SAME resolve rather than a second one.
@@ -2516,7 +2510,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         ]
       : undefined;
 
-    // Prompt layout (narrator-prompt-consolidation slice 5, default `system_tail`): the
+    // Prompt layout (default `system_tail`): the
     // experimental `turn_context` layout sends system = stable prefix only and moves the
     // volatile tail + the fenced current input into a final user message (the session
     // lane's shape), so system + history form an append-only cached prefix. Real player
@@ -2610,7 +2604,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Settle work (runs once the reply has fully streamed) ----------------
     const settle = async (full: string, stopped: boolean): Promise<void> => {
-      // What produced THIS take (narrator-prompt-lab.plan.md slice 6). The completion
+      // What produced THIS take. The completion
       // record is best-effort: a player Stop or a watchdog trip leaves it null, and
       // those fields are then simply absent rather than guessed. The effective model
       // is the one the generation actually ran, not the id the request asked for.
@@ -2640,13 +2634,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       const meta = stopped ? { ...beatMeta, stopped: true } : beatMeta;
       if (regenerateTarget) {
         // Update the row in place: the old take stays browsable, the new one is
-        // active (spec §4.1). Row-existence is the guard — a delete landing
+        // active. Row-existence is the guard — a delete landing
         // mid-stream makes this a no-op.
         const takes = await currentReplyTakes(chatId, regenerateTarget.id);
         if (takes === null) return; // row deleted mid-stream
         const next = pushReplyTake(takes, regenerateTarget.content, full, now.toISOString(), {
           // The take being displaced keeps the run that wrote it; a row from before
-          // slice 6 has none, and that take is simply unlabelled.
+          // provenance existed has none, and that take is simply unlabelled.
           ...(regenerateTarget.narratorRun === undefined ? {} : { current: regenerateTarget.narratorRun }),
           fresh: narratorRun,
         });
@@ -2668,7 +2662,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // --- NPC reply-scene decision leg: launch (actor-control step 3, SHADOW) --
       // Started HERE — after the reply row is durable, before the state fan-out —
       // so the one classifier call per reply runs BESIDE settlement and is awaited
-      // only after the post-settle cut (spec §"Execution, flags, and cost gate").
+      // only after the post-settle cut.
       // The digest is assembled from the PRE-settle cut on purpose (prompt-time
       // roster presence, the scene exactly as the player leg left it): the
       // authoritative presence/scene cut is reloaded fresh inside
@@ -2722,7 +2716,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // Opening beat: fold drift into the state — no fan-out, there was no
         // player act and barely any narrative to archive. Record the surfaced
         // bands so the first real turn doesn't re-announce them, clear the
-        // one-shot skip note this beat just rendered (spec §8.1), and store the
+        // one-shot skip note this beat just rendered, and store the
         // rollback anchor so even an opening beat can be regenerated.
         try {
           const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
@@ -2739,9 +2733,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // the same reason: an opening beat is a cut the narrator looked at.
         await commitRecognitionMemory();
         await commitVisualStateCues();
-        // The common reply-scene leg runs for opening beats too (spec
-        // §"Authoritative post-settle cut": "the current opening branch must call
-        // the common leg before returning") — AFTER the opening's own state and
+        // The common reply-scene leg runs for opening beats too — the opening
+        // branch must call the common leg before returning — AFTER the opening's
+        // own state and
         // scenario persists above, so the leg's fresh reload IS this beat's
         // settled cut, and it stays the beat's last scene writer (nothing after
         // this return touches the column). Internally fenced; a noop handle
@@ -2834,7 +2828,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           driftedState: ensembleActive ? { ...driftedState, quietExchanges: primaryQuiet } : driftedState,
           now,
           exchange: { player: agentPlayerContent, assistant: full },
-          // The recap ledger grounds the memory scribe's fact names (chat-agent-improvements).
+          // The recap ledger grounds the memory scribe's fact names.
           priorSummary: summaryState?.summary,
           retrieved: memory,
           // A member-addressed selfie request (ruling 12) never burns the
@@ -2879,7 +2873,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // the wetness it lives beside. Absent (the default) ⇒ the surface
           // fold's result persists untouched, byte-identical to today.
           ...(contactEffectProposals.length > 0 ? { contactMarkProposals: contactEffectProposals } : {}),
-          // The ensemble context (multi-character-chat.plan.md): the roster line
+          // The ensemble context: the roster line
           // arms the archivist's presence field; every present witness's group
           // gets the same extraction filed as their own memory.
           roster: ensembleActive
@@ -2909,7 +2903,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // everyone who pulsed), the archivist's confirmed presence transition, and
         // the recency stamp — saved under the same prompt-row guard as the primary.
         //
-        // Members settle CONCURRENTLY (chat-agent-improvements slice 2): each member's
+        // Members settle CONCURRENTLY: each member's
         // legs read only their own row and write only their own row, and the whole settle
         // runs while the exchange lock is held — so settling a full roster one member at a
         // time stacked up to four back-to-back agent round-trips inside the lock window,
@@ -2922,8 +2916,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // read-modify-writes of it would lose updates).
         const memberWornChanges: ChatGarmentWardrobeChange[] = [];
         // Whose wardrobe this exchange AUTHORITATIVELY rewrote — the reply-scene
-        // leg's contact-start chronology veto (actor-control spec §"Resolution
-        // laws → Contact start"). Collected from the settle's own writers because
+        // leg's contact-start chronology veto. Collected from the settle's own
+        // writers because
         // they are the only place the answer exists: the post-settle garment store
         // shows the FINAL clothes and cannot say when they changed, and a final
         // wardrobe does not prove which layers a touch mid-reply landed through.
@@ -3018,7 +3012,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               promptMessageId: guardMessageId,
               state: {
                 ...memberState,
-                // Whereabouts (chat-offscreen-life): a present member's pending whereabouts
+                // Whereabouts: a present member's pending whereabouts
                 // was spent on this exchange's return license; an away departure that named
                 // where it went records the phrase (the set wins over the clear).
                 ...(member.state.presence === "present" && member.state.whereabouts ? { whereabouts: "" } : {}),
@@ -3048,8 +3042,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           }
           }),
         );
-        // Fold the members' new looks into the chat-wide garment store
-        // (clothing-state-graph slice 2). Sequential and after the settle, on the
+        // Fold the members' new looks into the chat-wide garment
+        // store. Sequential and after the settle, on the
         // scenario the finalizer just wrote — the members' own `worn_item_ids`
         // columns are already the projection (identical to what went in), so only
         // the store needs the write. Fenced: a failed reconcile costs the store's
@@ -3239,7 +3233,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
    * Wrap the model stream so persistence + fan-out + lock release ride the
    * generator's own completion: the route (or any consumer) just drains it. A
    * model-stream failure keeps whatever accumulated (persisted if non-empty); a
-   * player Stop (spec §4.2) is not a failure — the truncated prefix persists with
+   * player Stop is not a failure — the truncated prefix persists with
    * `meta.stopped`. An empty reply skips settle but records WHY it was empty
    * (`last_reply_failure` — the client's post-exchange refetch reads it for the
    * failure popup); the lock releases on every path.
@@ -3379,7 +3373,7 @@ async function saveReplyFailure(
   }
 }
 
-/** Defensive parse of a user line's meta: attachments (chat-image-input.plan.md) + input mode. */
+/** Defensive parse of a user line's meta: attachments + input mode. */
 const messageAttachmentsMetaSchema = z.object({
   attachments: z
     .object({
@@ -3387,7 +3381,7 @@ const messageAttachmentsMetaSchema = z.object({
       descriptions: z.array(z.string()).optional(),
     })
     .optional(),
-  /** Narrator-mode marker (chat-supporting-cast.plan.md §Narrator input). */
+  /** Narrator-mode marker. */
   inputMode: z.enum(["player", "narrator"]).optional().catch(undefined),
 });
 
@@ -3415,8 +3409,8 @@ async function loadMessageAttachments(
  * Defensive parse of an assistant reply's meta: the action-beat chip id (regenerate
  * recovery) and the run that produced the content currently on the row — which the
  * first regenerate hands to the historical take it seeds, so the old take keeps
- * saying which prompt actually wrote it (narrator-prompt-lab.plan.md §Alternate
- * takes). Rows written before slice 6 have none; absent is legal, never an error.
+ * saying which prompt actually wrote it. Rows written before provenance existed
+ * have none; absent is legal, never an error.
  */
 const assistantReplyMetaSchema = z.object({
   actionBeat: chatActionIdSchema.optional().catch(undefined),
@@ -3582,7 +3576,7 @@ async function chatOwnerId(chatId: string): Promise<string> {
  * WHERE EXISTS`), so a chat delete or a single-message delete that lands while
  * the stream is still draining can't leave an orphan row. Beat replies
  * (open/continue) have no prompting line and insert unguarded. `id` is supplied
- * explicitly: it is the memory-provenance anchor (spec §4.3), minted before the
+ * explicitly: it is the memory-provenance anchor, minted before the
  * fan-out needs it.
  *
  * Exported as a test seam: a real mid-stream delete isn't deterministically
@@ -3608,11 +3602,11 @@ export async function persistAssistantReply(args: {
 }
 
 /**
- * Memory reconciliation for an edited assistant reply (spec §4.3): retract the
+ * Memory reconciliation for an edited assistant reply: retract the
  * old extraction, then re-file the edited exchange's long-term memory
  * fire-and-forget — same resilience as the live fan-out (a degraded re-extract
  * just leaves the exchange unremembered, with the retraction already honest).
- * Only the MEMORY SCRIBE leg runs (chat-agent-improvements slice 1b): this path
+ * Only the MEMORY SCRIBE leg runs: this path
  * rewrites no state row, so the continuity/character reads would be discarded.
  */
 export async function reextractEditedReply(args: {
@@ -3652,7 +3646,7 @@ export async function reextractEditedReply(args: {
 }
 
 /**
- * The prompt builder's player slice (persona-library.plan.md slice 8): the resolved persona
+ * The prompt builder's player slice: the resolved persona
  * plus what they have on right now. Built in one place so the live turn and the dev prompt
  * preview can't drift — and so `title` has exactly one shape to be absent from.
  */
@@ -3673,7 +3667,7 @@ function playerPromptSlice(
 
 /**
  * The prompt builder's per-turn state slice from a drifted ChatState + the chat-wide scenario.
- * The `wardrobe` (chat-wardrobe-parity) supplies the RENDERED garment phrase + coverage-computed
+ * The `wardrobe` supplies the RENDERED garment phrase + coverage-computed
  * exposure — the narrator sees the actual worn garments (subtype-led, occlusion-filtered), and
  * the exposure steer is coverage-accurate rather than the manual toggle.
  */
@@ -3684,13 +3678,13 @@ function promptStateSlice(
   profile?: CharacterProfile,
   /** The slice-6 digest + cues; null/absent (the flag-off default) renders neither block. */
   garments?: ChatGarmentNarration | null,
-  /** The affordance cue lines (body-attribute-affordances slice 5); empty/absent renders no block. */
+  /** The affordance cue lines; empty/absent renders no block. */
   affordanceCues?: readonly string[],
   /** The visual-state pair (visual-state slice 7); empty/absent renders neither block. */
   visualState?: ChatVisualStateLines | null,
 ): NonNullable<CharacterChatPromptInput["state"]> {
   return {
-    // Authority + attention (clothing-state-graph slice 6) — flag-gated upstream, so
+    // Authority + attention — flag-gated upstream, so
     // the fields are simply absent when off and the prompt is unchanged.
     ...(garments?.digest ? { garmentDigest: garments.digest } : {}),
     ...(garments && garments.cues.length > 0 ? { garmentCues: garments.cues } : {}),
@@ -3716,33 +3710,33 @@ function promptStateSlice(
     outfitExposed: wardrobe.exposed,
     activeSocialCards: scenario.activeSocialCards,
     attributeOverlays: state.attributeOverlays,
-    // Persisted narrative trait overlays (character-fidelity slice 10) — resolved into the
+    // Persisted narrative trait overlays — resolved into the
     // prefix Disposition bands so the character's bounded evolution reaches the narrator.
     traitOverlays: state.traitOverlays,
-    // Voice-exemplar ring (slice 8) — rendered as the "How you sound" few-shot block.
+    // Voice-exemplar ring — rendered as the "How you sound" few-shot block.
     voiceExemplars: state.voiceExemplars,
-    // One-turn character-consistency corrective (slice 9): last exchange's slip note, if any.
+    // One-turn character-consistency corrective: last exchange's slip note, if any.
     slipNote: state.lastMemoryTrace.characterSlip,
     openLoops: state.openLoops,
     skipNote: scenario.pendingSkipNote,
-    // The authoritative story moment (chat-clock-calendar.plan.md): the narrator reads
+    // The authoritative story moment: the narrator reads
     // the same clock + calendar anchor the player's clock card shows.
     storyMoment: formatStoryMoment(scenario.clockMinutes, scenario.calendarStart),
-    // Off-screen life (chat-offscreen-life): the one-shot meanwhile note, this member's
-    // daily rhythm (§4), and the pending whereabouts (the one-turn return license).
+    // Off-screen life: the one-shot meanwhile note, this member's
+    // daily rhythm, and the pending whereabouts (the one-turn return license).
     meanwhileNote: scenario.pendingMeanwhileNote,
     rhythm: profile ? formatScheduleRhythm(profile.schedule) : undefined,
     whereabouts: state.whereabouts,
     sceneMemory: scenario.sceneMemory,
     supportingCast: scenario.supportingCast,
-    // Plans near this turn (chat-plans-promises): derived against the ticked story clock.
+    // Plans near this turn: derived against the ticked story clock.
     plans: derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart),
     feeling: state.feeling,
     drives: state.drives,
   };
 }
 
-/** The dev inspector's "what reaches the narrator" view (spec §5/§6.1). */
+/** The dev inspector's "what reaches the narrator" view. */
 export interface ChatPromptPreview {
   prefix: string;
   tail: string;
@@ -3751,9 +3745,9 @@ export interface ChatPromptPreview {
 }
 
 /**
- * Rebuild "what would reach the narrator now" for the dev inspector (spec §5 dev
- * affordance, §6.1): the same assembly as a live exchange — stored state (read-only
- * drift), rolling summary, persona, RAG recall — rendered into the §9 prompt parts,
+ * Rebuild "what would reach the narrator now" for the dev inspector: the same
+ * assembly as a live exchange — stored state (read-only
+ * drift), rolling summary, persona, RAG recall — rendered into the prompt parts,
  * without touching state, history, or the exchange lock. Reflects the POST-exchange
  * state (i.e. the NEXT turn's prompt), which is what comparing live play against the
  * eval fixtures wants.
@@ -3857,8 +3851,7 @@ export interface ChatVisualStateCut {
 }
 
 /**
- * ONE committed chat cut as a visual-state shadow input (visual-state.plan.md
- * slice 6; image-lane-consolidation Stage 3, WP-C) — the chat lane's mirror of
+ * ONE committed chat cut as a visual-state shadow input — the chat lane's mirror of
  * `simVisualStateShadowInput`. The inspector preview and the scene render's
  * digest build both go through here, so "what would a picture of her use"
  * cannot quietly assemble two different cuts.
@@ -3933,8 +3926,8 @@ export function chatVisualStateShadowInput(input: {
 }
 
 /**
- * The read-only developer preview of the staged affordance calculation
- * (body-attribute-affordances.spec.architecture.md §Resolved). Computes on
+ * The read-only developer preview of the staged affordance calculation.
+ * Computes on
  * demand from the stored cut and stores NOTHING — in particular it never
  * persists `nextCues`, so looking at a read cannot spend the repeat gate.
  */
@@ -3960,14 +3953,14 @@ export async function previewChatAffordances(input: {
 const VISUAL_STATE_PREVIEW_GUARD = "visual_state_preview";
 
 /**
- * The read-only visual-state inspector payload for one legacy chat
- * (visual-state.plan.md slice 6): the same shadow build the flagged live turn
+ * The read-only visual-state inspector payload for one legacy chat: the same
+ * shadow build the flagged live turn
  * runs — snapshot, composition, suppressions, staircase, both consumer
  * selections, measurements — recomputed on demand from the stored cut.
  *
  * Computes on demand and stores NOTHING: the memory load is read-only, no
  * notice or mention state is spent, and `CHAT_VISUAL_STATE_SHADOW` is reported
- * rather than obeyed (the inspector rule in visual-state.spec.md §Flags).
+ * rather than obeyed — an inspector never changes what it inspects.
  */
 export async function previewChatVisualState(input: {
   chatId: string;
@@ -4062,8 +4055,7 @@ function previewSensoryFocus(input: {
 }
 
 /**
- * This turn's resolved contact, re-derived READ-ONLY for a preview
- * (romantic-contact-affordances.plan.md §"Continuation order" 1).
+ * This turn's resolved contact, re-derived READ-ONLY for a preview.
  *
  * The live leg does four things: plan, write the ledger, advance the scene
  * projection, and word the outcome. A preview may only do the first and the last, so
@@ -4207,9 +4199,8 @@ async function previewChatContactOutcomes(input: {
 }
 
 /**
- * The read-only developer preview of narrator physical guidance
- * (narrator-physical-guidance.plan.md slice 2: source resolution → candidate →
- * disclosure → selection → rendered instruction).
+ * The read-only developer preview of narrator physical guidance (source
+ * resolution → candidate → disclosure → selection → rendered instruction).
  *
  * Computes on demand from the stored cut and the newest player line, and stores
  * NOTHING — there is nothing to store, because the live path recomputes this every
@@ -4288,8 +4279,8 @@ export async function previewChatPrompt(input: {
 }): Promise<ChatPromptPreview> {
   const sink = new DiagnosticCollector();
   // The inspector SHOWS the narrator prompt, so it has to show the one the next
-  // exchange would actually build — including a Prompt Lab override
-  // (narrator-prompt-lab.plan.md). §Agent isolation does not apply here: that rule
+  // exchange would actually build — including a Prompt Lab override. Agent
+  // isolation does not apply here: that rule
   // keeps the resolved source away from HELPER AGENTS (pulse, extractors,
   // classifiers, composer, deliberator), which produce structured state rather
   // than prose. This surface renders the prose narrator's own prompt, and an
@@ -4338,7 +4329,7 @@ export async function previewChatPrompt(input: {
         }),
       })
     : null;
-  // Same for the physical-guidance block (narrator-physical-guidance slice 2): the
+  // Same for the physical-guidance block: the
   // inspector must show what a live turn would build, so it runs the same compile
   // over the stored cut and the newest player line — the message a live turn would
   // have been holding. Nothing is stored either way; guidance never was.
@@ -4413,19 +4404,19 @@ export async function previewChatPrompt(input: {
 }
 
 /**
- * Hard-delete a conversation (character-chat-standalone.spec.md §1.4 — archive is
- * the everyday action; this is the one destructive verb). One transaction: the
+ * Hard-delete a conversation (archive is the everyday action; this is the one
+ * destructive verb). One transaction: the
  * chat row's FK cascades take the transcript, summary, participant rows, and
  * per-participant state; the scene-image prompt text is scrubbed (assets survive
  * in the Gallery, but their prompts embed chat lines — chat-keyed rows scrub
- * per-conversation; legacy pre-slice-9 rows have no chatId, so those still scrub
+ * per-conversation; legacy rows have no chatId, so those still scrub
  * character-wide, hitting sibling conversations' legacy scenes too); and each
  * participant's memory group is purged **only when no other conversation
  * references it** — shared-history siblings keep the relationship's memory
- * alive (D7).
+ * alive.
  *
  * A SUCCESSOR chat takes its whole simulated world with it
- * (successor-world-lifecycle.plan.md, owner ruling E20-1): the front door is
+ * (owner ruling): the front door is
  * 1:1 chat↔world and nothing else can ever reach that world again, so the
  * `sim_worlds` row is deleted in the same transaction. One statement suffices —
  * `sim_branches` cascades from `sim_worlds` and every branch-scoped table
@@ -4433,8 +4424,8 @@ export async function previewChatPrompt(input: {
  * because the chat row dies in the same tx. Every delete confirm dialog (Worlds
  * page, Chats hub, in-conversation) states that consequence before the call.
  *
- * Ownership is re-read here rather than trusted from the caller
- * (security-authz.plan.md slice 2): a destructive service takes only ids and
+ * Ownership is re-read here rather than trusted from the caller: a destructive
+ * service takes only ids and
  * proves the pairing itself, so no route-supplied `ownerId` — or an anomalous
  * cross-owner participant row — can route a foreign conversation into deletion.
  * A miss is a warn-level no-op, never a throw (docs/resilience.md).

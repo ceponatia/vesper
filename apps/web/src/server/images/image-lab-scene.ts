@@ -58,7 +58,7 @@ const HALF_CONTROL_POINTER =
 
 /**
  * A two-character scene: two identity references, one per character, plus an
- * OPTIONAL structural control (plan §"Two-character recipe", §"Stage 6").
+ * OPTIONAL structural control.
  *
  * It is the controlled runner's shape with three differences, each of which is
  * the point of the kind rather than an incidental variation:

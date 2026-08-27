@@ -30,8 +30,8 @@ import type { PhysicalLocus } from "../contracts/space";
 
 /**
  * E3.4 slice 1 pure engagement kernel: open/end resolution over the claim
- * arithmetic, plus the projectors replay uses. One body, one physical scene
- * (spec §11.3); a conversation claims attention but freezes nothing.
+ * arithmetic, plus the projectors replay uses. One body, one physical scene;
+ * a conversation claims attention but freezes nothing.
  */
 
 function compareStableText(left: string, right: string): number {
@@ -49,7 +49,7 @@ export function deriveEngagementId(branchId: string, commandId: string): string 
 }
 
 /**
- * The pair's STANDING scene test (spec §11.3, one body one physical scene): a
+ * The pair's STANDING scene test (one body one physical scene): a
  * claim-holding co-present engagement binding both actors. Shared by the chat
  * exchange's `findStandingEngagement` and the world read's `sceneOpen` flag so
  * the two can never disagree about whether a scene is open.
@@ -64,7 +64,7 @@ export function isStandingCoPresentEngagement(engagement: Engagement, actorA: st
   );
 }
 
-/** Claims an actor holds through open engagements (held until `ended`, §18.2). */
+/** Claims an actor holds through open engagements (held until `ended`). */
 export function engagementClaimsForActor(
   engagements: readonly Engagement[],
   actorId: string,
@@ -78,7 +78,7 @@ export function engagementClaimsForActor(
     .map((engagement) => engagement.attentionClaim);
 }
 
-/** Open co-present engagements an actor occupies — at most one may exist (§11.3). */
+/** Open co-present engagements an actor occupies — at most one may exist. */
 export function openCoPresentEngagementsForActor(
   engagements: readonly Engagement[],
   actorId: string,
@@ -181,7 +181,7 @@ export function resolveOpenEngagement(
         return openRejection("participants_not_co_located", "They are not in the same place.");
       }
       if (participant.inOpenCoPresentEngagement) {
-        // One body, one physical scene (spec §11.3).
+        // One body, one physical scene.
         return openRejection("participant_already_engaged", "They are already in a conversation.");
       }
     }
@@ -271,8 +271,8 @@ function endRejection(code: EndEngagementRejectionCode, publicReason: string): E
  * The `engagement_ended` event for one open engagement at a chosen sequence.
  * Shared by `resolveEndEngagement` (the ordinary end command) and the composed
  * `move_together` resolver (which ends the standing scene as `participant_choice`
- * in the SAME batch that departs both travellers — §18.2 grace, one indivisible
- * action). Ending releases claims but moves no one (§18.2); the mover's departure
+ * in the SAME batch that departs both travellers — grace, one indivisible
+ * action). Ending releases claims but moves no one; the mover's departure
  * events do the moving.
  */
 export function buildEngagementEndedEvent(input: {
@@ -305,7 +305,7 @@ export function buildEngagementEndedEvent(input: {
   });
 }
 
-/** Ending releases claims but moves no one (§18.2). */
+/** Ending releases claims but moves no one. */
 export function resolveEndEngagement(
   view: EndEngagementResolutionView,
   command: EndEngagementCommand,
@@ -345,7 +345,7 @@ export function resolveEndEngagement(
 }
 
 // ---------------------------------------------------------------------------
-// AcknowledgePressure resolution (§15.3, §18.1, E5.5 slice 3)
+// AcknowledgePressure resolution (E5.5 slice 3)
 // ---------------------------------------------------------------------------
 
 export interface AcknowledgePressureResolutionView extends EngagementBranchMeta {
@@ -374,8 +374,8 @@ function acknowledgePressureRejection(
 }
 
 /**
- * Mark a live temporal pressure "looked at and not resolved" (§15.3) by one
- * of an open engagement's participants. Mechanical, arbiter-driven — like
+ * Mark a live temporal pressure "looked at and not resolved" by one of an
+ * open engagement's participants. Mechanical, arbiter-driven — like
  * `confirm_narrator_result`, this resolves off the turn machinery rather
  * than any single participant's own agency, so only a `system` principal is
  * authorized (deviation-flagged design choice: the blueprint names the
@@ -406,10 +406,10 @@ export function resolveAcknowledgePressure(
       "That pressure has nothing to do with this conversation.",
     );
   }
-  // §9.4: re-acknowledging at the SAME severity is a no-op rejection; a
-  // severity change since the last acknowledgment is new evidence and is
-  // legally re-acknowledgeable (mirrors `compileNarrativeCut`'s own
-  // acknowledgedSeverity-vs-severity comparison, narrative.ts §9.4).
+  // Re-acknowledging at the SAME severity is a no-op rejection; a severity
+  // change since the last acknowledgment is new evidence and is legally
+  // re-acknowledgeable (mirrors `compileNarrativeCut`'s own
+  // acknowledgedSeverity-vs-severity comparison, narrative.ts).
   if (pressure.acknowledgedAt !== undefined && pressure.acknowledgedSeverity === pressure.severity) {
     return acknowledgePressureRejection("already_acknowledged", "That has already been acknowledged.");
   }
@@ -543,7 +543,7 @@ export function applyEngagementEvent(
     });
   }
   if (event.type === "pressure_acknowledged") {
-    // §4.6: the sibling real case to `commitments.ts`'s — appends this
+    // The sibling real case to `commitments.ts`'s — appends this
     // event's `pressureId` to the matching engagement's
     // `acknowledgedPressureIds`. `sortedUnique` makes a duplicate append
     // (a defensive replay-safety property, not a live failure mode — each
@@ -565,7 +565,7 @@ export function applyEngagementEvent(
 }
 
 export interface EngagementsReplayInput {
-  /** Engagements are fully evented: a branch-origin seed holds none (plan R3). */
+  /** Engagements are fully evented: a branch-origin seed holds none (R3). */
   seed: EngagementsProjection;
   events: readonly SimulationBranchEvent[];
 }

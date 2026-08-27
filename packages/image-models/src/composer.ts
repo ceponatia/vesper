@@ -3,7 +3,7 @@ import type { ImageFeature, ImageModelRequestFacts } from "./features";
 
 /**
  * Rewrite a prompt at the MODEL BOUNDARY, after every prompt decision has been
- * made (spec §"Prompt-preparation hook").
+ * made.
  *
  * It receives the reference count because dialects are usually about how the
  * references are addressed — "image 1 is the identity reference" reads as a
@@ -22,7 +22,7 @@ export type ImageRequestValidator = (model: ImageModel, request: ImageModelReque
 
 /**
  * What a family knows about how its endpoints BEHAVE under load, as opposed to
- * what they accept (spec §"Provider execution policy").
+ * what they accept.
  *
  * Every field is optional and every absent field means "the lane's own default
  * governs" — never zero, never unlimited. An adapter states a hint only where
@@ -92,7 +92,7 @@ type QuirkHook = (typeof QUIRK_HOOKS)[number];
 
 /**
  * Compose one model family's endpoint out of the capabilities it expresses and
- * the quirks it carries (plan §3).
+ * the quirks it carries.
  *
  * **Merge order.** Quirks are visited in declaration order, and each optional
  * hook may be claimed by exactly ONE of them. There is no last-wins and no

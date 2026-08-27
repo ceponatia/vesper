@@ -9,7 +9,7 @@ import {
 } from "./bands";
 
 /**
- * The directed relationship record (relationship-model.plan.md): ONE shape for
+ * The directed relationship record: ONE shape for
  * every edge — character→player (on `character_chat_state`), character→character
  * (the per-conversation matrix), library defaults (the character editor's
  * Relationships tab), and later the sessions lane. Directed from day one:

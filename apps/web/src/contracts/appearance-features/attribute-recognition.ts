@@ -4,12 +4,11 @@ import { defineAppearanceRecognitionPriors, type AppearanceRecognitionPriors } f
 import type { AppearanceBodyAreaPath } from "./definitions";
 
 /**
- * The attribute → recognition catalog (body-attribute-affordances.spec.
- * recognizable-features.md §Canonical attributes: "Optional recognition
- * metadata lives beside the definition; the character profile continues to
- * store only the ordinary `AttributeValue`").
+ * The attribute → recognition catalog. Optional recognition metadata lives
+ * beside the definition; the character profile continues to store only the
+ * ordinary `AttributeValue`.
  *
- * V1 CHOICE (documented deviation): the metadata is a COLOCATED catalog keyed
+ * V1 CHOICE: the metadata is a COLOCATED catalog keyed
  * by `attributeId` rather than new optional fields on
  * `AttributeDefinition`. Same effect, far smaller blast radius — the attribute
  * registry is read by the forge, the editor, every prompt builder, and the

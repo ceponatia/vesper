@@ -16,8 +16,7 @@ import {
 import { visualStateKindRegistry } from "./registry";
 
 /**
- * Species and heritage feature groups as identity features
- * (visual-state.audit.md finding 11).
+ * Species and heritage feature groups as identity features.
  *
  * Wings, horns and a tail are the app's real answer to "intentional extra
  * anatomy", and they are NOT anatomy state: `anatomyPartStateValues` has

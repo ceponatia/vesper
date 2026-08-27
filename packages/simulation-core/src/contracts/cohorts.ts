@@ -14,8 +14,8 @@ import { cohortIdSchema, commandIdSchema, storySecondSchema, zoneIdSchema } from
  * from authored windows at read time: zero rows written, zero triggers
  * armed, zero model calls, ever. Population changes only through events
  * (`cohort_created` / `cohort_adjusted`), which is what lets E6.4's actor
- * promotion reserve conserved quantities from it (§27.2 step 2) without
- * ever contradicting aggregate history.
+ * promotion reserve conserved quantities from it without ever contradicting
+ * aggregate history.
  */
 
 export const cohortDerivationVersion = "cohort-v1" as const;
@@ -67,8 +67,8 @@ export type SimulationCohortInput = z.input<typeof simulationCohortSchema>;
 /**
  * Why a population moved — closed vocabulary with headroom for the known
  * futures: `authoring` (storyteller world-building), `influx` / `attrition`
- * (authored demographic flows), and `promotion_reservation` (E6.4 §27.2
- * step 2: a named actor materializes out of the aggregate, debiting it).
+ * (authored demographic flows), and `promotion_reservation` (E6.4: a named
+ * actor materializes out of the aggregate, debiting it).
  */
 export const cohortAdjustmentReasons = [
   "authoring",

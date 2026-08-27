@@ -45,9 +45,9 @@ vi.mock("ai", async (importOriginal) => {
 
 import { extractJsonObject, generateChecked } from "./generate-checked";
 
-// The text-mode parse seam (followups.phase2.md #20): provider-side
-// constrained decoding degenerated on some models, so generateChecked now
-// reads plain text and extracts the object itself.
+// The text-mode parse seam: provider-side constrained decoding degenerated on
+// some models, so generateChecked now reads plain text and extracts the object
+// itself.
 describe("extractJsonObject", () => {
   it("passes a bare JSON object through", () => {
     expect(extractJsonObject('{"a":1}')).toBe('{"a":1}');

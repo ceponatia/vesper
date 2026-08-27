@@ -3,9 +3,8 @@ import { AGENT_NARRATION_CAP } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * The NPC romantic-permission decision classifier prompt
- * (romantic-contact-affordances.spec.permission.md §"Grant, denial, absence,
- * and withdrawal"; plan rulings 4 and 5; implementation-order step 3). One
+ * The NPC romantic-permission decision classifier prompt (grant, denial,
+ * absence, and withdrawal). One
  * structured call per qualifying committed assistant reply reads the reply
  * plus a compact digest (roster refs + current standing grants) and reports
  * whether an NPC's OWN dialogue or conduct granted, denied, or withdrew

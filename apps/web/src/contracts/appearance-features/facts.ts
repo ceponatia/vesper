@@ -7,8 +7,7 @@ import type { AppearanceFeatureKindRegistry } from "./registry";
 /**
  * Located appearance facts — the lane-neutral typed rows for repeatable,
  * multi-instance, patterned marks that would otherwise explode an attribute
- * enum (body-attribute-affordances.spec.recognizable-features.md §Located
- * appearance facts).
+ * enum.
  *
  * Owner ruling 2026-07-28: prose RAG facts are NEVER authoritative body truth.
  * These rows are; semantic-memory documents are generated downstream from

@@ -14,8 +14,8 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { sceneStagingById } from "@/contracts/images/scene-staging";
 
 /**
- * The intimate-scene LoRA route's own decisions (intimate-scene-lora.spec.md
- * §Algorithm): who takes it, and what every missing leg costs.
+ * The intimate-scene LoRA route's own decisions: who takes it, and what every
+ * missing leg costs.
  *
  * Two collaborators are mocked because they are IO and are tested where they
  * live — the model registry read and the library resolution. Everything the
@@ -53,7 +53,7 @@ const mockResolveLora = vi.mocked(resolveImageLoraForRender);
 const CIVITAI_LOCATOR = "https://civitai.com/api/download/models/3160956?type=Model&format=SafeTensor";
 
 /**
- * The LoRA wrapper as its registered row stands (docs/image-models/qwen-image-edit-plus-lora.md):
+ * The LoRA wrapper as its registered row stands (docs/image-models/models/qwen-image-edit-plus-lora.md):
  * pinned community slug, edit-only, three references, and the two probed LoRA
  * bindings that make it the only endpoint this route can use.
  */
@@ -360,8 +360,7 @@ describe("the row 0108 seeds", () => {
 /**
  * TRIPWIRE — the probe's `lora` arm and this route must send the same wrapper
  * and the same weights, or the owner's acceptance grades describe a render
- * production does not make (intimate-scene-lora.spec.md §"Fixtures and tests":
- * probe parity).
+ * production does not make.
  *
  * Read as TEXT rather than imported: `intimate-model-ab.ts` runs `main()` on
  * import and would fire a paid probe from a test process.

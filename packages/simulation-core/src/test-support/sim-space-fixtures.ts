@@ -57,7 +57,7 @@ export function atLocus(
   });
 }
 
-/** An actor mid-leg. Not at the origin and not at the destination — one row, per §13.2. */
+/** An actor mid-leg. Not at the origin and not at the destination — one row. */
 export function transitLocus(
   actorId: string,
   journeyId: string,

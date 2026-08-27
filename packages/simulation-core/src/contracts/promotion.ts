@@ -15,14 +15,14 @@ import {
 } from "./identity";
 
 /**
- * E6.4 — actor promotion out of the aggregate. The §26.10 item-promotion shape
+ * E6.4 — actor promotion out of the aggregate. The item-promotion shape
  * generalized to actors: `promote_actor_from_cohort` is the ONLY path a named
  * actor comes to exist mid-branch. It reserves a conserved unit from the
- * source cohort (§27.2 step 2), samples any detail the caller did not supply
- * from a named deterministic stream with the draw captured on the event (step
- * 3), emits `actor_materialized_from_aggregate` (step 4), and may only
- * materialize where the analytic presence read admits a person — a promoted
- * actor can never contradict aggregate history (step 5).
+ * source cohort (step 2), samples any detail the caller did not supply from a
+ * named deterministic stream with the draw captured on the event (step 3),
+ * emits `actor_materialized_from_aggregate` (step 4), and may only materialize
+ * where the analytic presence read admits a person — a promoted actor can
+ * never contradict aggregate history (step 5).
  */
 
 export const actorPromotionDerivationVersion = "actor-promotion-v1" as const;
@@ -54,7 +54,7 @@ const promoteActorFromCohortPayloadSchema = z
     cohortId: cohortIdSchema,
     /** Where the actor materializes — checked against the presence read. */
     zoneId: zoneIdSchema,
-    /** Omit to sample from the cohort's authored name pool (§26.10 step 3). */
+    /** Omit to sample from the cohort's authored name pool (step 3). */
     name: z.string().trim().min(1).max(200).optional(),
     landing: promotionLandingLodSchema,
   })
@@ -67,7 +67,7 @@ export const promoteActorFromCohortCommandSchema = createCommandEnvelopeSchema(
 );
 
 /**
- * `cohort_not_present` is §27.2 step 5 made deterministic: the aggregate's own
+ * `cohort_not_present` is step 5 made deterministic: the aggregate's own
  * presence read must admit a person at the named zone — `presentCount ≥ 1`
  * there, or a dispersed remainder ≥ 1 anywhere else. A zone the read declares
  * empty ("the square is empty tonight") cannot yield a person.
@@ -90,11 +90,11 @@ export const promoteActorFromCohortCommandResultSchema = createCommandResultSche
 );
 
 // ---------------------------------------------------------------------------
-// actor_materialized_from_aggregate — §27.2 step 4. The ONLY event that
-// creates a `sim_characters` row mid-branch (the branch seed is the only
-// other path an actor exists at all). Causation-chained to the
-// `cohort_adjusted` reservation debit that funded it; the landing LOD rides
-// the chained `actor_lod_assigned` that follows in the same command.
+// actor_materialized_from_aggregate — step 4. The ONLY event that creates a
+// `sim_characters` row mid-branch (the branch seed is the only other path an
+// actor exists at all). Causation-chained to the `cohort_adjusted` reservation
+// debit that funded it; the landing LOD rides the chained `actor_lod_assigned`
+// that follows in the same command.
 // ---------------------------------------------------------------------------
 
 const actorMaterializedFromAggregatePayloadSchema = z
@@ -105,7 +105,7 @@ const actorMaterializedFromAggregatePayloadSchema = z
     zoneId: zoneIdSchema,
     /** The zone's location at materialization — the locus is (location, zone). */
     locationId: locationIdSchema,
-    /** Absent when the caller supplied an explicit `name` (§27.2 step 5). */
+    /** Absent when the caller supplied an explicit `name` (step 5). */
     sampledDetail: promotionSampledDetailSchema.optional(),
   })
   .strict();

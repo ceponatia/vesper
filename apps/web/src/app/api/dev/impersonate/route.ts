@@ -5,7 +5,7 @@ import { jsonError, readBody, withRoute } from "@/server/api";
 const impersonateSchema = z.object({ userId: z.string().min(1) });
 
 /**
- * Dev/QA session minting (auth.plan.md) — replaces the old `vesper_user` cookie
+ * Dev/QA session minting — replaces the old `vesper_user` cookie
  * switch. Mints a **real signed Better Auth session** for the target user via
  * the shared dev credential and returns the Set-Cookie response. Dev-only:
  * **404 in production** (security Cluster A1). The target must have been

@@ -402,8 +402,7 @@ The page's `?run=<id>` parameter deep-links one run's detail.
 The runner builds a synthetic in-memory profile per run (pass-through prompt
 strategy, caller seed policy, the run's advanced values as provider
 overrides) so `compileProfileRenderPlan` stays the only control mapper and no
-production profile is consulted. The working-tier design record is
-`image-lab-general-model-trials.plan.md` and its spec.
+production profile is consulted.
 
 ## Related
 

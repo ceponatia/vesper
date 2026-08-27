@@ -20,7 +20,7 @@ const sample = (regard: number, i = 0): RelationshipSample => ({
 
 });
 
-describe("appendRelationshipSample / appendMilestones (capped rings, spec §7.2)", () => {
+describe("appendRelationshipSample / appendMilestones (capped rings)", () => {
   it("appends and keeps the newest RELATIONSHIP_HISTORY_CAP samples", () => {
     const full = Array.from({ length: RELATIONSHIP_HISTORY_CAP }, (_, i) => sample(i));
     const next = appendRelationshipSample(full, sample(999, 9));
@@ -39,7 +39,7 @@ describe("appendRelationshipSample / appendMilestones (capped rings, spec §7.2)
   });
 });
 
-describe("unseenMilestoneReason (§8.4 v2 seen-cursor)", () => {
+describe("unseenMilestoneReason (v2 seen-cursor)", () => {
   const seenAt = new Date("2026-07-12T12:00:00Z");
   const m = (at: string, kind: Milestone["kind"], label: string): Milestone => ({ at, kind, label });
 
@@ -60,7 +60,7 @@ describe("unseenMilestoneReason (§8.4 v2 seen-cursor)", () => {
   });
 });
 
-describe("deriveExchangeMilestones (spec §7.2)", () => {
+describe("deriveExchangeMilestones", () => {
   const base = {
     at: "2026-07-02T12:00:00Z",
     messageId: "msg1",

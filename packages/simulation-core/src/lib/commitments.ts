@@ -41,11 +41,10 @@ import { planRoute, type SpaceTopology } from "./space";
 import type { Journey, PhysicalLocus } from "../contracts/space";
 
 /**
- * E3.3 pure commitment kernel: creation with captured §15.2 derivation,
+ * E3.3 pure commitment kernel: creation with captured act-by derivation,
  * fire-time pressure raising gated on knowledge availability, and the
  * deterministic deadline evaluator (ruling 6 — rules, no model call). The
- * deadline only *evaluates* the actor's actual locus; it never moves anyone
- * (spec §3.1 invariant 5).
+ * deadline only *evaluates* the actor's actual locus; it never moves anyone.
  */
 
 function compareStableText(left: string, right: string): number {
@@ -111,7 +110,7 @@ export interface CreateCommitmentResolutionView extends CommitmentBranchMeta {
   destinationZoneExists: boolean;
   topology: SpaceTopology;
   /**
-   * E5.5 slice 2 (§15.4): the `repairsCommitmentId` referent, loaded only
+   * E5.5 slice 2: the `repairsCommitmentId` referent, loaded only
    * when the payload names one — a `missed` commitment of the same actor and
    * kind. Absent (not just `undefined`-shaped) means "no such commitment,"
    * which is exactly `repair_target_not_found`'s trigger.
@@ -199,14 +198,14 @@ export function resolveCreateCommitment(
   if (!view.actorExists) return createRejection("actor_not_found", "That actor is unavailable.");
   const principal = command.principal;
   // Players and NPC policy speak only for controlled actors; system and
-  // director principals may schedule obligations for anyone (spec §7).
+  // director principals may schedule obligations for anyone.
   if (
     (principal.kind === "player" || principal.kind === "npc_policy" || principal.kind === "npc_deliberator") &&
     !principal.controlledActorIds.includes(command.payload.actorId)
   ) {
     return createRejection("unauthorized_actor", "You cannot commit that actor.");
   }
-  // E5.5 slice 2 (§15.1): a destinationless commitment names no destination
+  // E5.5 slice 2: a destinationless commitment names no destination
   // to look up — only check existence when one was actually supplied.
   if (command.payload.destinationZoneId !== undefined && !view.destinationZoneExists) {
     return createRejection("destination_not_found", "That destination is unknown.");
@@ -214,7 +213,7 @@ export function resolveCreateCommitment(
   if (command.payload.window.latestArrival <= view.storySecond) {
     return createRejection("window_in_past", "That obligation is already over.");
   }
-  // E5.5 slice 2 (§15.4): a repair must reference a real, same-actor,
+  // E5.5 slice 2: a repair must reference a real, same-actor,
   // same-kind, `missed` commitment — history is not rewritten, so this only
   // ever links a NEW commitment to the old one it repairs, never edits it.
   if (command.payload.repairsCommitmentId !== undefined) {
@@ -244,7 +243,7 @@ export function resolveCreateCommitment(
   const originZoneId = view.originZoneId;
   if (!originZoneId) throw new Error(`Actor ${command.payload.actorId} has no origin zone for derivation`);
 
-  // Route assumption at creation time (spec §15.2). Unreachable or same-zone
+  // Route assumption at creation time. Unreachable or same-zone
   // destinations derive as zero travel — conservative, and recomputation on
   // material change is E3.4's concern.
   let minimumRouteDurationSeconds = 0;
@@ -384,11 +383,11 @@ export interface RaisePressureResolutionView extends CommitmentBranchMeta {
   topology: SpaceTopology;
   /**
    * Whether the actor actually holds the commitment's non-authored knowledge
-   * source: a §20 observation of the named event (`observed`, E4.1), a live
+   * source: an observation of the named event (`observed`, E4.1), a live
    * belief in the named assertion (`asserted`, E4.2), or the named belief row
    * itself, live and their own (`believed`, E4.2). The store resolves the
    * lookup per kind; absent means not looked up — the gate fails closed
-   * (§3.3: a pressure is salient only if the actor can know).
+   * (a pressure is salient only if the actor can know).
    */
   knowledgeSourceHeld?: boolean;
 }
@@ -410,7 +409,7 @@ function raiseRejection(code: RaisePressureRejectionCode, publicReason: string):
   return { ok: false, code, publicReason };
 }
 
-/** Pure fire-time pressure resolver. A pressure is salient only if the actor can know (§3.3). */
+/** Pure fire-time pressure resolver. A pressure is salient only if the actor can know. */
 export function resolveRaisePressure(
   view: RaisePressureResolutionView,
   command: RaisePressureCommand,
@@ -426,7 +425,7 @@ export function resolveRaisePressure(
   if (commitment.status !== "planned") {
     return raiseRejection("commitment_not_open", "That obligation is no longer awaiting notice.");
   }
-  // The knowledge gate (§15.1): authored setup is deemed known; every other
+  // The knowledge gate: authored setup is deemed known; every other
   // source requires the actor to genuinely hold it — an E4.1 observation of
   // the named event, or an E4.2 live belief in the named assertion or the
   // named belief row. All of them fail closed.
@@ -445,7 +444,7 @@ export function resolveRaisePressure(
   const originZoneId = view.originZoneId;
   if (!originZoneId) throw new Error(`Actor ${commitment.actorId} has no origin zone for pressure derivation`);
 
-  // Fire-time §15.2 derivation: actBy is latestDeparture from the actor's
+  // Fire-time derivation: actBy is latestDeparture from the actor's
   // CURRENT origin — the notice second is a natural recompute point for the
   // route assumption. Unreachable or same-zone destinations derive as zero
   // travel, exactly as at creation; a notice that fires past its own act-by
@@ -629,9 +628,8 @@ export function resolveCommitmentDeadline(
 }
 
 // ---------------------------------------------------------------------------
-// FulfillCommitment resolution (§15.1 amendment, §7.4) — the destinationless
-// analogue of the deadline evaluator: an explicit self-report keeps a
-// commitment with no locus to check.
+// FulfillCommitment resolution — the destinationless analogue of the deadline
+// evaluator: an explicit self-report keeps a commitment with no locus to check.
 // ---------------------------------------------------------------------------
 
 export interface FulfillCommitmentResolutionView extends CommitmentBranchMeta {
@@ -655,13 +653,13 @@ function fulfillRejection(code: FulfillCommitmentRejectionCode, publicReason: st
 }
 
 /**
- * A destinationless commitment (§15.1 amendment) carries no spatial
- * obligation, so its deadline trigger has no locus to evaluate — it can only
- * ever resolve `kept` through this explicit self-report, or `missed` when the
- * deadline passes with no report (`resolveCommitmentDeadline`'s existing
- * `absent` fallthrough, unchanged). A commitment that DOES name a
- * `destinationZoneId` rejects here — those resolve only through
- * `resolve_commitment_deadline`'s at-destination/en-route/absent evaluation.
+ * A destinationless commitment carries no spatial obligation, so its deadline
+ * trigger has no locus to evaluate — it can only ever resolve `kept` through
+ * this explicit self-report, or `missed` when the deadline passes with no
+ * report (`resolveCommitmentDeadline`'s existing `absent` fallthrough,
+ * unchanged). A commitment that DOES name a `destinationZoneId` rejects here —
+ * those resolve only through `resolve_commitment_deadline`'s
+ * at-destination/en-route/absent evaluation.
  */
 export function resolveFulfillCommitment(
   view: FulfillCommitmentResolutionView,
@@ -881,11 +879,11 @@ export function applyCommitmentEvent(
       // Non-commitment families advance the boundary without touching this projection.
       return commitmentsProjectionSchema.parse(bumped);
     case "pressure_acknowledged": {
-      // §4.6: the cross-domain real case — stamps the matching pressure's
+      // The cross-domain real case — stamps the matching pressure's
       // `acknowledgedAt`/`acknowledgedSeverity` from the event payload. The
       // sibling real case in `engagements.ts` appends the same event's
       // `pressureId` to `Engagement.acknowledgedPressureIds` — one event, two
-      // domain projectors, each picking its own slice (§4.6).
+      // domain projectors, each picking its own slice.
       const pressures = projection.pressures.map((pressure) =>
         pressure.id === event.payload.pressureId
           ? temporalPressureSchema.parse({
@@ -901,7 +899,7 @@ export function applyCommitmentEvent(
 }
 
 export interface CommitmentsReplayInput {
-  /** Commitments are fully evented: a branch-origin seed holds none (plan R3). */
+  /** Commitments are fully evented: a branch-origin seed holds none (R3). */
   seed: CommitmentsProjection;
   events: readonly SimulationBranchEvent[];
 }

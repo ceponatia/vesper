@@ -49,12 +49,12 @@ export const GET = withAuthorizedResource(
       )
       .orderBy(desc(images.createdAt));
     // The strip here is a render list, so it ships the public image shape for
-    // EVERY viewer (security-authz.plan.md slice 4): no client reads `path`,
-    // `prompt` or the provider internals from this response — the portrait studio
-    // loads full rows from the owner-strict `GET /characters/:id/portraits`.
+    // EVERY viewer: no client reads `path`, `prompt` or the provider internals from
+    // this response — the portrait studio loads full rows from the owner-strict
+    // `GET /characters/:id/portraits`.
     const portraits = portraitRows.map(toPublicEntityImage);
-    // `mine` — read-only preview + duplicate CTA for foreign public rows (the
-    // item/location slice-6 pattern; edits would 404 server-side anyway). A
+    // `mine` — read-only preview + duplicate CTA for foreign public rows (the same
+    // pattern items and locations use; edits would 404 server-side anyway). A
     // foreign viewer gets the allow-listed public representation, not the row.
     const mine = row.ownerId === user.id;
     return jsonOk({ character: mine ? row : toPublicCharacter(row), portraits, mine });
@@ -119,9 +119,9 @@ export const DELETE = withAuthorizedResource(
     // last-reference memory purge), so route every referencing chat through it while the
     // participant rows still exist. Today every chat is 1:1; when multi-character chats
     // land, this becomes "remove the participant, delete the chat only when it empties".
-    // The join is owner-scoped (security-authz.plan.md slice 2) so an anomalous cross-owner
-    // participant row can never route another user's chat into deletion — it is skipped and
-    // survives, correctly; `deleteChat` re-proves the pairing anyway.
+    // The join is owner-scoped so an anomalous cross-owner participant row can never
+    // route another user's chat into deletion — it is skipped and survives,
+    // correctly; `deleteChat` re-proves the pairing anyway.
     const chats = await db()
       .select({ id: characterChats.id })
       .from(chatParticipants)
@@ -130,16 +130,15 @@ export const DELETE = withAuthorizedResource(
     for (const chat of chats) {
       await deleteChat(chat.id, user.id);
     }
-    // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
-    // library delete never breaks them and never hits a FK — no in-use guard.
+    // Worlds/sessions hold their own snapshots, so a library delete never breaks
+    // them and never hits a FK — no in-use guard.
     await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));
     void deleteEntityImages("character", id, user.id).catch(() => undefined);
     // Hidden identity assets are named explicitly even though `deleteEntityImages`
-    // takes every image of this character today: the data-lifecycle plan will make
+    // takes every image of this character today: planned retention will let
     // Gallery-visible images SURVIVE their character, and that retention must never
-    // extend to an internal render input nobody browses
-    // (image-identity-packs.spec.lifecycle.md §"Character deletion"). The pack rows
-    // themselves cascade with the character row.
+    // extend to an internal render input nobody browses. The pack rows themselves
+    // cascade with the character row.
     void deleteCharacterIdentityAssets(id, user.id).catch(() => undefined);
     return jsonOk({ ok: true });
   },

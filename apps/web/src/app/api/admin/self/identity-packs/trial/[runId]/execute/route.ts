@@ -6,9 +6,8 @@ import { executeIdentityPackTrialCells } from "@/server/images";
 type Params = { runId: string };
 
 /**
- * One bounded execution pass over a run's planned cells
- * (image-identity-packs.spec.trial.md §"Execution"). This is the surface where
- * the trial spends money, so THIS route owns the guard function — the service
+ * One bounded execution pass over a run's planned cells. This is the surface
+ * where the trial spends money, so THIS route owns the guard function — the service
  * cannot call `imageRenderRejection` itself, because the guard needs the
  * request and its user — but the service decides WHEN to invoke it and for HOW
  * MANY cells: inside the run lock, sized to exactly the planned cells the pass

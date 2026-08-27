@@ -1,6 +1,6 @@
 # Garment cue narrator comparison
 
-This is the missing instrument for `clothing-state-graph.plan.md` slice 6. It compares the production garment treatment against the current legacy outfit path without changing `CHAT_GARMENT_CUES` or touching a real chat.
+This is the missing instrument for the garment-cue lane. It compares the production garment treatment against the current legacy outfit path without changing `CHAT_GARMENT_CUES` or touching a real chat.
 
 The treatment arm receives the production authoritative wardrobe digest and the production bounded, repeat-gated garment cue block. The control arm receives the same character, premise, scene, story time, legacy outfit phrase and player turns, but neither graph block. Each arm keeps its own generated history.
 

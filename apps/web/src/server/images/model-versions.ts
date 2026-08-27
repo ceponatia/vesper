@@ -24,8 +24,7 @@ import { loadImageModel } from "./models";
 import { renderImageIntent, type RenderImageIntentResult } from "./render-intent";
 
 /**
- * Version candidate probing, smoke testing, and atomic activation
- * (image-model-capabilities.spec.md §"Version candidate and promotion flow").
+ * Version candidate probing, smoke testing, and atomic activation.
  *
  * Production rows follow their slug's floating latest until an admin pins them
  * through this flow; the controlled comparisons refuse an unpinned row. The

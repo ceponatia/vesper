@@ -1,6 +1,5 @@
 /**
- * The shared contact core (romantic-contact-affordances.plan.md slice 1;
- * romantic-contact-affordances.spec.contact-core.md).
+ * The shared contact core.
  *
  * One lane-neutral lifecycle for physical contact between two surfaces:
  *
@@ -35,12 +34,12 @@
  *
  * What is deliberately NOT here: cue ranking, effect commits, perception
  * filtering, and any lane wiring or storage. `phenomena.ts` carries only the
- * channel-tagged observation SEAM and its visual-only routing (effects spec §3);
- * no phenomenon producer is registered until its complete source → commitment →
- * perception path exists. `effects.ts` carries effect PROPOSALS — requests the
+ * channel-tagged observation SEAM and its visual-only routing; no phenomenon
+ * producer is registered until its complete source → commitment → perception
+ * path exists. `effects.ts` carries effect PROPOSALS — requests the
  * body-surface owner validates and commits in `turns/chat-contact-effects.ts`;
- * contact itself persists no aftermath. The audit records pose, reach, support,
- * and material-between as unowned in both lanes, so the resolver takes them as
+ * contact itself persists no aftermath. Pose, reach, support, and
+ * material-between are unowned in both lanes, so the resolver takes them as
  * `AdapterRead`s and answers `unresolved` when nobody can speak.
  */
 export * from "./identity";

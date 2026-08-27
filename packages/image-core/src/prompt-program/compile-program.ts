@@ -37,8 +37,7 @@ import {
 
 /**
  * THE prompt compile step: one immutable world digest plus one profile binding
- * in, one positive prompt and one negative field out
- * (model-aware-image-prompts.plan.md §"Compilation pipeline").
+ * in, one positive prompt and one negative field out.
  *
  * It is one function for the same reason `compileProfileRenderPlan` is: the
  * guarantees only hold if the stages cannot be reordered or skipped by a caller.
@@ -303,7 +302,7 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     sink,
   });
   // A dialect may claim a dedicated field the CURRENT version does not expose —
-  // an endpoint schema change is exactly the drift the plan says must never be
+  // an endpoint schema change is exactly the drift that must never be
   // guessed at. The field's real availability is a probe fact supplied by the
   // caller, and it wins.
   const negativeText = input.negativeFieldAvailable ? negativeCompiled.text : null;
@@ -452,7 +451,7 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
 }
 
 /**
- * The program's identity (plan §"Prompt program"): ordered claims, ordered
+ * The program's identity: ordered claims, ordered
  * constraints, both pack versions, the binding, and the world it came from.
  *
  * Claims contribute id, concept and VALUE. Value rather than id alone because

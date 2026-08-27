@@ -24,9 +24,9 @@ import { ImageModelProfilesSection } from "./image-model-profiles-section";
 import { ImageModelVersionPanel } from "./image-model-version-panel";
 
 /**
- * One registry model's card (image-model-capabilities.spec.md §"Admin UI"):
- * identity and probed facts, the owner-set controls, the two REVIEWED ratings
- * and the operator warning, the version corner, and the nested profiles.
+ * One registry model's card: identity and probed facts, the owner-set controls,
+ * the two REVIEWED ratings and the operator warning, the version corner, and
+ * the nested profiles.
  *
  * The reviewed controls are presented as what they are — judgments from looking
  * at output, which no probe writes and no re-probe overwrites. `editKind` keeps

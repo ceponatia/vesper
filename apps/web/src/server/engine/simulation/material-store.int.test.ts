@@ -41,7 +41,7 @@ import { advanceBranchStoryTime } from "./scheduler-store";
 
 /**
  * E5.3 durable material lane: transfers, destruction, ownership, consumption
- * (§26.6) and item condition (§26.7). Every principal here is `npc_policy` or
+ * and item condition. Every principal here is `npc_policy` or
  * `storyteller`, neither of which needs the branch-owner match, so the suite
  * runs without the legacy-player opt-in (`legacyPlayerMode: false`).
  *
@@ -515,7 +515,7 @@ describe.runIf(harness.ready)("E5.3 durable material branch transaction", () => 
 });
 
 // ---------------------------------------------------------------------------
-// E5.3 slice 2 — consume_item (§26.6)
+// E5.3 slice 2 — consume_item
 // ---------------------------------------------------------------------------
 
 interface ConsumeCase {
@@ -618,7 +618,7 @@ async function pendingDepletedTriggers(branchId: string) {
     .then((rows) => rows.filter((row) => row.uniquenessKey.includes("depleted")));
 }
 
-describe.runIf(harness.ready)("E5.3 slice 2 — consume_item (§26.6)", () => {
+describe.runIf(harness.ready)("E5.3 slice 2 — consume_item", () => {
   it("consumes a held meal: holdings go gone/consumed, the body meter moves, the stale alarm retires and a fresh one arms, and the feed carries item_consumed", async () => {
     const ids = await seedConsumeCase();
     const initialized = await submitDurableInitializeActorBody(initializeBodyCommand(ids));
@@ -735,7 +735,7 @@ describe.runIf(harness.ready)("E5.3 slice 2 — consume_item (§26.6)", () => {
     expect(events).toHaveLength(1);
   });
 
-  // The end-to-end §26.5 leg: a start-time reservation held by a live
+  // The end-to-end reservation leg: a start-time reservation held by a live
   // activity must block a bystander's consume_item with item_reserved.
   it("rejects consuming an item a live activity has reserved", async () => {
     const ids = await seedConsumeCase();
@@ -774,7 +774,7 @@ describe.runIf(harness.ready)("E5.3 slice 2 — consume_item (§26.6)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// E5.3 slice 3 — item condition (§26.7)
+// E5.3 slice 3 — item condition
 // ---------------------------------------------------------------------------
 
 // Registry v1: cleanliness 10 000 → grimy at 3 000, +250/h while worn ⇒
@@ -908,7 +908,7 @@ async function pendingItemConditionTriggers(branchId: string) {
     .where(and(eq(simTriggers.branchId, branchId), eq(simTriggers.kind, "item_condition_threshold_due")));
 }
 
-describe.runIf(harness.ready)("E5.3 slice 3 — item condition (§26.7)", () => {
+describe.runIf(harness.ready)("E5.3 slice 3 — item condition", () => {
   it("dons a tracked garment: meters lazily initialize, the worn-window modifier applies, and the grimy alarm arms at the exact solved second", async () => {
     const ids = await seedConditionCase();
 

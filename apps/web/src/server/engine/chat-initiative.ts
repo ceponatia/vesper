@@ -3,16 +3,16 @@ import { traitPole } from "@/contracts/personality/traits";
 import type { SalientPlan } from "@/contracts/turns/chat-plans";
 
 /**
- * Chat initiative (chat-initiative.plan.md): the reopen opener's cue — the
- * character reaches out FIRST, with her own material. Grows §8.4 v1 (the
- * loops-keyed "has something to say" continue) into real initiative while
- * staying inside the standing rulings: **D8** (no wall clock in the fiction)
- * and **D3** (wall-clock absence is never a trigger) — the opener fires only
+ * Chat initiative: the reopen opener's cue — the character reaches out FIRST,
+ * with her own material. Grows the loops-keyed "has something to say" continue
+ * into real initiative while
+ * staying inside the standing rulings: no wall clock in the fiction, and
+ * wall-clock absence is never a trigger — the opener fires only
  * when the player taps it, and what the gap meant in-fiction comes from the
  * pending skip note, never real time.
  *
- * The life-event beat is folded into the license itself (build decision,
- * recorded in the plan): rather than a separate minting agent, the cue invites
+ * The life-event beat is folded into the license itself: rather than a separate
+ * minting agent, the cue invites
  * the narrator to weave in ONE small thing from her life since — grounded in
  * scenario, personality, and drives — which costs nothing and stays exactly as
  * consistent as the narrator already is.
@@ -21,10 +21,10 @@ import type { SalientPlan } from "@/contracts/turns/chat-plans";
 export interface InitiativeCueInput {
   characterName: string;
   playerName: string;
-  /** The standing open loops (§6.2) — the opener's strongest material. */
+  /** The standing open loops — the opener's strongest material. */
   openLoops: readonly string[];
   /**
-   * Plans near this turn (chat-plans-promises), already derived against the story clock:
+   * Plans near this turn, already derived against the story clock:
    * an imminent commitment ("is tonight still on?") or a just-missed one (the cold open
    * after being stood up) is first-class opener material — it LEADS the list. Absent/empty
    * ⇒ the pre-plans cue byte-identical.
@@ -35,20 +35,20 @@ export interface InitiativeCueInput {
   /** True when a time skip is pending (its note already rides the tail) — the gap is real in-fiction. */
   skipPending: boolean;
   /**
-   * The newest milestone the player hasn't seen (§8.4 v2 seen-cursor) — what
+   * The newest milestone the player hasn't seen (the seen-cursor) — what
    * shifted between them since the chat was last opened. Extra material only;
-   * absent ⇒ the pre-slice-2 cue byte-identical.
+   * absent ⇒ no shift line.
    */
   recentShift?: string | null;
   /**
-   * The authored daily rhythm (profile.schedule — chat-initiative.plan.md
-   * slice 4), pre-rendered as a compact line ("mornings: waiting tables at the
+   * The authored daily rhythm (profile.schedule), pre-rendered as a compact
+   * line ("mornings: waiting tables at the
    * Dockside Café; evenings: sketching at the pier"). Grounds the "a life
    * meanwhile" license; empty ⇒ no rhythm line.
    */
   rhythm?: string;
   /**
-   * The character's `social.extraversion` (character-fidelity slice 5) — colors the
+   * The character's `social.extraversion` — colors the
    * initiative CADENCE: an extravert opens readily and warmly, an introvert reaches
    * out on quieter, more reticent terms (still reaching, just not gushing). Mid /
    * absent (0) ⇒ no cadence line, so the cue is byte-identical to before.
@@ -56,12 +56,12 @@ export interface InitiativeCueInput {
   extraversion?: number;
   /**
    * The supporting cast, pre-rendered compact ("Mira (her sister — just started a new
-   * job)") — chat-offscreen-life §1: the sister is who she'd have seen, so improvised
+   * job)"): the sister is who she'd have seen, so improvised
    * life beats attach to established people instead of minting strangers. "" ⇒ no line.
    */
   cast?: string;
   /**
-   * The meanwhile pass's note (chat-offscreen-life, dedupe rule F): what ACTUALLY
+   * The meanwhile pass's note: what ACTUALLY
    * happened off-screen this gap. When present, the life-meanwhile license draws
    * from it instead of free invention — same-beat dedupe by construction.
    */
@@ -82,7 +82,7 @@ export function buildInitiativeCue(input: InitiativeCueInput): string {
     .filter(Boolean)
     .slice(0, 2);
   const shift = input.recentShift?.trim() ?? "";
-  // Plans lead (chat-plans-promises): a commitment coming due — or just missed — is the
+  // Plans lead: a commitment coming due — or just missed — is the
   // strongest reason to reach out first. Only the near ones (never a far-off upcoming).
   const planMaterial = (input.openPlans ?? [])
     .filter((s) => s.salience !== "upcoming")

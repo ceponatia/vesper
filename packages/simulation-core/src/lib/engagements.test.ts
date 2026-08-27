@@ -208,7 +208,7 @@ describe("E3.4 resolveEndEngagement and interrupts", () => {
       events: [open.event, interrupt] as SimulationBranchEvent[],
     });
     expect(replayed.engagements[0]?.state).toBe("interrupted");
-    // Interrupted scenes still hold their claims (§18.2 — only ended releases).
+    // Interrupted scenes still hold their claims — only ended releases.
     expect(engagementClaimsForActor(replayed.engagements, "actor-2")).toHaveLength(1);
   });
 });
@@ -241,7 +241,7 @@ describe("E3.4 engagements replay", () => {
     expect(simulationHash({ ...wholesale, version: 0 })).toBe(simulationHash({ ...stepwise, version: 0 }));
   });
 
-  it("keeps the §18.2 transition table total with ended terminal", () => {
+  it("keeps the transition table total with ended terminal", () => {
     expect(engagementStateTransitions.ended).toEqual([]);
     expect(engagementStateTransitions.interrupted).toContain("active");
   });

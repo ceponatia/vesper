@@ -20,8 +20,7 @@ const MENU_ITEM_CLASS = "block px-3 py-2 text-sm text-paper-200 transition-color
  * server-side, so hiding the links is tidiness rather than access control.
  *
  * The list holds the three image benches, the Narrator Prompt Lab (handwritten
- * narrator instruction prompts, narrator-prompt-lab.plan.md), and the Engine
- * Comparison review screen.
+ * narrator instruction prompts), and the Engine Comparison review screen.
  *
  * The `/settings/*` tools still answer at those routes. Only the navigation
  * moved; relocating the URLs is deliberate future work, so existing
@@ -32,17 +31,17 @@ const ADMIN_LINKS = [
   { href: "/settings/image-lab", label: "Image lab" },
   { href: "/settings/image-models", label: "Image models" },
   { href: "/settings/narrator-prompts", label: "Narrator prompts" },
-  // R4, engine.rollout.plan.md: the Engine Comparison review screen — reports
-  // and rulings without touching the API by hand.
+  // The Engine Comparison review screen — reports and rulings without touching
+  // the API by hand.
   { href: "/admin/shadow", label: "Engine Comparison" },
 ] as const;
 
 /**
- * Header identity control (auth.plan.md): the signed-in user's name as a
- * dropdown trigger — opening a small menu to **Settings** (the profile / default
- * player character, player-character.plan.md), the owner-admin tools, and
- * **Sign out** — or a "Sign in" link when there's no session. Reads Better
- * Auth's reactive session, so it tracks sign-in/out without a reload.
+ * Header identity control: the signed-in user's name as a dropdown trigger —
+ * opening a small menu to **Settings** (the profile / default player character),
+ * the owner-admin tools, and **Sign out** — or a "Sign in" link when there's no
+ * session. Reads Better Auth's reactive session, so it tracks sign-in/out
+ * without a reload.
  */
 export function AccountMenu() {
   const { data, isPending } = useSession();

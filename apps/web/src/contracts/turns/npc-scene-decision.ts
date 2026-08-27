@@ -8,9 +8,8 @@ import {
 } from "./chat-contact-vocabulary";
 
 /**
- * The NPC reply-scene decision contract
- * (romantic-contact-affordances.spec.actor-control.md §"Compact digest and
- * stable references" / §"Closed decision schema").
+ * The NPC reply-scene decision contract — a compact digest with stable
+ * references, and a closed decision schema.
  *
  * One structured classifier call per persisted assistant reply reads the reply
  * plus a compact roster digest and may propose AT MOST one movement and one

@@ -8,8 +8,7 @@ import {
 } from "../shared";
 
 /**
- * Discard a manual crop and re-derive automatically
- * (image-identity-packs.spec.derivation.md §"Reset to automatic").
+ * Discard a manual crop and re-derive automatically.
  *
  * Not an undo: the current derivation runs against the current source as a NEW
  * revision, and the manual one becomes superseded rather than being deleted, so

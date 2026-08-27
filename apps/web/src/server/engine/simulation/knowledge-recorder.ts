@@ -20,8 +20,8 @@ import type { SimTx } from "./trigger-projector";
 /**
  * E4.2 — the durable knowledge ledgers. Assertion and
  * belief rows are derived projections of disclosure events, written in the
- * same transaction that commits the event: the §11.1 shell calls
- * `recordCommandKnowledge` right after the §20 observation recorder, so the
+ * same transaction that commits the event: the command shell calls
+ * `recordCommandKnowledge` right after the observation recorder, so the
  * belief fold always sees this command's observation rows. The fold itself is
  * pure (`lib/simulation/knowledge`); this module only loads the narrow seed
  * the fold's contract requires and upserts what it returns.
@@ -238,8 +238,8 @@ async function loadKnowledgeSeed(
 /**
  * Derive and persist assertion/belief updates for every disclosure event an
  * accepted command appended. Runs inside the command transaction, AFTER
- * `recordCommandObservations` — the belief fold consumes the §20 rows that
- * recorder just wrote. Non-disclosure commands return without loading.
+ * `recordCommandObservations` — the belief fold consumes the observation rows
+ * that recorder just wrote. Non-disclosure commands return without loading.
  */
 export async function recordCommandKnowledge(
   tx: SimTx,

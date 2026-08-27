@@ -59,7 +59,7 @@ export const attributeDefinitionSchema = z.object({
   aliases: z.array(z.string().min(1)).readonly().optional(),
   promptHints: z.array(z.string().min(1)).readonly().optional(),
   /**
-   * Per-VALUE narrator gloss (attribute-narrator-guidance.plan.md): a PARTIAL map from
+   * Per-VALUE narrator gloss: a PARTIAL map from
    * enum member → short authored meaning ("cheesy" → what that reads like *in this game*),
    * rendered inline as a parenthetical wherever a read-side prompt states the resolved
    * value — the same mechanism disposition bands use. Sparse by design: only ambiguous or
@@ -78,7 +78,7 @@ export const attributeDefinitionSchema = z.object({
    */
   coreVisual: z.boolean().optional(),
   /**
-   * Render-consistency visuals (forge-gaps.plan.md): the second always-filled
+   * Render-consistency visuals: the second always-filled
    * tier after `coreVisual`. Silhouette and face-structure attributes that a
    * scene render RE-INVENTS on every image when left unset (face shape, nose,
    * lips, hair length, waist, leg build …) — cross-scene drift, not sparseness.
@@ -147,7 +147,7 @@ export const attributeDefinitionSchema = z.object({
    * structured natal-sex handling (the gender `…_born_…` variant steers image
    * rendering for now). Each attribute-iterating prompt builder skips a flagged
    * def, the same per-surface pattern the `apparent_age` exclusions use. See
-   * docs/contracts/attributes.md + deferred.plan.md (§Natal sex).
+   * docs/contracts/attributes.md.
    */
   excludeFromPrompts: z.boolean().optional(),
   /**

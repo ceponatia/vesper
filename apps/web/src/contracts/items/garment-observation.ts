@@ -9,18 +9,18 @@ import {
 import type { WornVisibility } from "./visibility";
 
 /**
- * The bounded GARMENT CUE BLOCK (clothing-state-graph.plan.md §"Derived wardrobe
- * and observation read" steps 7–8, §"Narration and image policy").
+ * The bounded GARMENT CUE BLOCK — steps 7–8 of the derived wardrobe and
+ * observation read.
  *
  * Authority is the digest's job (`garment-digest.ts`). This file owns
  * **attention**: at most one or two perception-safe, ranked observations per
- * exchange, drawn from the plan's six families —
+ * exchange, drawn from six families —
  *
  *   closure_open · part_rolled · part_displaced ·
  *   surface_damp_or_wet · deposit_visible · damage_visible
  *
  * — and gated by exactly the pattern the meter cues already use
- * (`splitStateCues`, audit §1.6): a flat `key → band` map inside the rollback
+ * (`splitStateCues`): a flat `key → band` map inside the rollback
  * blob, `changed = band !== prevBands[key]`, and only changed reads surface.
  * Unchanged clothing therefore produces NO fresh cue (an acceptance criterion) —
  * it stays available in the digest, which is where consistency lives.
@@ -347,10 +347,10 @@ export function garmentPreviousBands(
 }
 
 /**
- * The compact per-scene image facts (plan §"Narration and image policy": "scene
- * images may consume the same semantic read"). Deliberately NOT repeat-gated — an
- * image has no repetition problem, it needs the whole current truth of the frame,
- * including the transient bands OQ8 keeps out of the identity key.
+ * The compact per-scene image facts — scene images consume the same semantic
+ * read. Deliberately NOT repeat-gated: an image has no repetition problem, it
+ * needs the whole current truth of the frame, including the transient bands the
+ * identity key deliberately leaves out.
  */
 export function garmentSceneNotes(
   actors: readonly GarmentObservationActor[],

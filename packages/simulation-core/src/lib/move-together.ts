@@ -15,18 +15,18 @@ import { buildEngagementEndedEvent } from "./engagements";
 import { buildJourneyBatch, planRoute, type SpaceTopology } from "./space";
 
 /**
- * command-integrity A4 — the pure `move_together` resolver. The walk-with-me
+ * A4 — the pure `move_together` resolver. The walk-with-me
  * choreography that once committed scene-end + the player move + the primary
  * move as THREE independent transactions (a crash between them stranded the
  * pair) collapses to ONE indivisible action over a shared journey.
  *
- * §14.2 preserved and STRENGTHENED: the player principal controls only the
- * player; the invited co-traveller is authorized not by the principal but by
+ * Player agency preserved and STRENGTHENED: the player principal controls only
+ * the player; the invited co-traveller is authorized not by the principal but by
  * `decideAccompany`, re-run HERE inside the locked authority view — closing the
  * read-vs-commit agency race the old pre-commit decision left open. Accept ⇒ one
- * `engagement_ended` (only when a scene stands, `participant_choice` — §18.2
+ * `engagement_ended` (only when a scene stands, `participant_choice` — scene-end
  * grace), one `journey_planned` carrying BOTH actors, one `actor_departed`, one
- * arrival `trigger_scheduled`. Decline ⇒ the command's own §14.4 refusal (one
+ * arrival `trigger_scheduled`. Decline ⇒ the command's own public refusal (one
  * surface handles accept and decline). Pure: no IO, no clock, no db — the store
  * loads the locked view and writes what this returns.
  */
@@ -46,7 +46,7 @@ export interface MoveTogetherResolutionView {
   playerLocus?: PhysicalLocus;
   /** The co-traveller's current locus. */
   coTravelerLocus?: PhysicalLocus;
-  /** The co-traveller's display name — the §14.4 decline face names them, never an id. */
+  /** The co-traveller's display name — the public decline face names them, never an id. */
   coTravelerName: string;
   /** Claim-holding activities (both actors' — the resolver filters per actor). */
   activities: readonly ActivityInstance[];
@@ -60,7 +60,7 @@ export interface MoveTogetherRejection {
   ok: false;
   code: MoveTogetherRejectionCode;
   publicReason: string;
-  /** Present only for a policy decline — the §14.4 legal alternatives. */
+  /** Present only for a policy decline — the public face's legal alternatives. */
   legalAlternatives?: readonly string[];
 }
 
@@ -95,7 +95,7 @@ export function resolveMoveTogether(
   }
   const { actorId: playerActorId, coTravelerActorId, destinationZoneId } = command.payload;
 
-  // The player — the principal's own actor (§14.2: a player directs only the player).
+  // The player — the principal's own actor (a player directs only the player).
   if (!view.playerExists) return reject("actor_not_found", "That actor is unavailable.");
   if (!command.principal.controlledActorIds.includes(playerActorId)) {
     return reject("unauthorized_actor", "You cannot direct that actor.");
@@ -112,7 +112,7 @@ export function resolveMoveTogether(
   const coTravelerLocus = view.coTravelerLocus;
   if (!coTravelerLocus) throw new Error(`Actor ${coTravelerActorId} has no physical locus`);
   if (coTravelerLocus.kind === "in_transit") return reject("co_traveler_in_transit", "They are already traveling.");
-  // Co-presence: the invite is only meaningful in each other's presence (§14.2).
+  // Co-presence: the invite is only meaningful in each other's presence.
   if (coTravelerLocus.zoneId !== playerLocus.zoneId) {
     return reject("not_copresent", `${view.coTravelerName} isn't here to walk with you.`);
   }
@@ -138,10 +138,10 @@ export function resolveMoveTogether(
   }
   const route = plan.route;
 
-  // NPC agency, re-run inside the locked view (§39 ruling 16): accept unless a
+  // NPC agency, re-run inside the locked view (ruling 16): accept unless a
   // body claim occupies the co-traveller or a firm/hard commitment falls due
-  // before arrival + a buffer. The arrival estimate is the route's lower bound
-  // (§17.1) — more faithful than the pre-commit single-hop estimate it replaces.
+  // before arrival + a buffer. The arrival estimate is the route's lower
+  // bound — more faithful than the pre-commit single-hop estimate it replaces.
   const decision = decideAccompany({
     primaryActorId: coTravelerActorId,
     primaryName: view.coTravelerName,
@@ -158,7 +158,7 @@ export function resolveMoveTogether(
   const firstLink = view.topology.links.find((link) => link.id === firstLinkId);
   if (!firstLink) throw new Error("A planned route references a missing link");
 
-  // §18.2 grace: an ended scene holds no claim, so the departure that follows
+  // Scene-end grace: an ended scene holds no claim, so the departure that follows
   // fires NO hard interrupt — a parting, not a rupture. Ends FIRST in the batch
   // (sequence headSequence+1), so the movement events start one later.
   const standingEngagement = view.standingEngagement;

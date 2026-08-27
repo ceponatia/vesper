@@ -62,18 +62,18 @@ import {
 } from "./prompts/chat-extractors";
 
 /**
- * Character-chat long-term memory (character-chat-primary.spec.md §2), the RAG half the
+ * Character-chat long-term memory, the RAG half the
  * sessionless chat previously lacked. Three concerns:
  *
- * - `retrieveChatMemory` — PRE-turn recall: cosine RAG over the participant's memory group
- *   (spec §1.3), keyed on last turn's `memoryQueries` + the player input.
+ * - `retrieveChatMemory` — PRE-turn recall: cosine RAG over the participant's memory
+ *   group, keyed on last turn's `memoryQueries` + the player input.
  * - `runChatExtraction` — POST-turn extraction: THREE cheap structured calls (the pulse recipe —
  *   reasoning off, latency-sorted routing, no repair, hard timeout) run in parallel with each
  *   other and with the reaction pulse — the memory scribe (episode + facts + next-turn queries),
  *   the continuity tracker (scene/outfit/appearance/presence/cast), and the character tracker
  *   (loops/drives/voice/slip/trait shifts). Composed from the field library
  *   (`prompts/chat-extractors.ts`) and merged back into one aggregate; formerly a single
- *   13-field `runChatArchivist` (chat-agent-improvements.plan.md).
+ *   13-field `runChatArchivist`.
  * - `writeChatMemory` — persists that extraction through the shared `appendEpisode` / `addFacts`
  *   memory API under the chat scope (`sourceTurnId = null`, the inner-note template).
  *
@@ -86,32 +86,32 @@ export interface ChatMemoryHits {
   facts: string[];
   /** Retrieved episode summaries (older than the recency window). */
   episodes: string[];
-  /** Per-hit retrieval detail (spec §6.3 #2 — scores + per-source attribution) for the trace. */
+  /** Per-hit retrieval detail (scores + per-source attribution) for the trace. */
   detail: RetrievedMemoryDetail[];
 }
 
 /**
- * Per-turn RAG recall (spec §6.3 #2): each query — last turn's `memoryQueries` plus
+ * Per-turn RAG recall: each query — last turn's `memoryQueries` plus
  * the player's input — is embedded separately and retrieved independently, then
  * fused by reciprocal rank (`retrieveFactsFused`/`retrieveEpisodesFused`); pinned
- * player facts (§6.4) ride ahead of the top-k regardless of similarity. With no
+ * player facts ride ahead of the top-k regardless of similarity. With no
  * usable queries (an opening beat) the recall is pinned-facts-only — a pinned note
  * always reaches the character.
  */
 export async function retrieveChatMemory(input: {
-  /** The participant's memory group (character-chat-standalone.spec.md §1.3). */
+  /** The participant's memory group. */
   groupId: string;
   /** Last turn's `memoryQueries` (persisted on the chat state). */
   queries: readonly string[];
   /** This turn's player input. */
   input: string;
   /**
-   * Per-leg k override (multi-character-chat.plan.md ruling 5): an ensemble
+   * Per-leg k override: an ensemble
    * tightens each member's leg as the active count grows. Absent ⇒ the defaults.
    */
   limit?: number;
   /**
-   * The turn's shared query-embedding cache (chat-agent-improvements slice 3) — one embed
+   * The turn's shared query-embedding cache — one embed
    * batch serves the fact leg, the episode leg, EVERY ensemble member's legs, and the
    * callback picker. Absent ⇒ each leg embeds its own (unchanged behavior).
    */
@@ -158,7 +158,7 @@ export async function retrieveChatMemory(input: {
 }
 
 /**
- * Pick this turn's memory callback (memory-callbacks.plan.md), if any: embed the
+ * Pick this turn's memory callback, if any: embed the
  * player's input once, fetch old episodes with their similarity to it, and run the
  * pure selector (old + milestone-boosted + topic-distant + never repeated). The
  * eligibility gate already passed (pipeline-side, pure) before this cost is paid.
@@ -173,7 +173,7 @@ export async function retrieveChatCallback(input: {
   /** Refs already offered (the state's callback ring) — never repeated. */
   usedRefs: readonly string[];
   /**
-   * The turn's shared query-embedding cache (chat-agent-improvements slice 3): the player's
+   * The turn's shared query-embedding cache: the player's
    * input is ALREADY embedded for the recall legs, so the callback picker reuses that vector
    * instead of paying for a third embed of the same text. Absent ⇒ it embeds its own.
    */
@@ -215,7 +215,7 @@ export interface ChatExtractionInput extends Omit<ChatExtractorContext, "persona
 }
 
 /**
- * Per-leg degradation (chat-agent-improvements slice 1b). The folds need to tell "the
+ * Per-leg degradation. The folds need to tell "the
  * model said nothing" from "we never heard back", and now they can do it PER LEG: a
  * degraded character leg keeps the standing open loops instead of wiping them, a degraded
  * scribe drops the stale memory queries. One leg failing costs only its own fields.
@@ -303,7 +303,7 @@ async function runExtractorLeg<T>(args: {
   return { value: degraded ? null : value, degraded };
 }
 
-/* Per-leg "describers" for the inspector's activity log (chat-plans-promises follow-up): the
+/* Per-leg "describers" for the inspector's activity log: the
  * one-line summary AND the detail sections behind it (the click-to-open "db viewer" — the
  * actual facts/loops/etc. the leg produced). Pure reads over each leg's own output. */
 type Section = AgentRunDetailSection;
@@ -435,7 +435,7 @@ function describePersonal(v: ChatPersonalNotes): AgentRunDescription {
 }
 
 /**
- * The post-turn extraction (chat-agent-improvements.plan.md slice 1b — formerly the single
+ * The post-turn extraction (formerly the single
  * 13-field `runChatArchivist`): three focused legs over the same exchange, run in PARALLEL
  * with each other AND with the reaction pulse, all inside the post-flush finalizer — so the
  * split costs two extra small calls and NO perceived latency. Each leg carries 3–5
@@ -573,9 +573,9 @@ export interface ChatPersonalNotesInput {
 }
 
 /**
- * Run one ensemble member's personal pass (multi-character-chat.followups.md ruling 10):
+ * Run one ensemble member's personal pass:
  * the four per-character fields the shared legs cover only for the primary — composed from
- * the SAME field library (slice 1a), so its instructions are no longer a second copy of the
+ * the SAME field library, so its instructions are no longer a second copy of the
  * shared ones. `null` on demo / timeout / parse failure, so the member keeps their prior
  * loops/outfit/drives. Cheap AGENT model.
  */
@@ -618,11 +618,11 @@ export async function runChatPersonalNotes(
  * the row's audit value, drops it from RAG).
  */
 export async function writeChatMemory(input: {
-  /** The participant's memory group (spec §1.3). */
+  /** The participant's memory group. */
   groupId: string;
   /** The speaking character — the interim write-only witness set. */
   characterId: string;
-  /** Provenance anchor (spec §4.3): the assistant message this exchange's memory came from. */
+  /** Provenance anchor: the assistant message this exchange's memory came from. */
   assistantMessageId: string | null;
   archivist: ChatArchivist | null;
   sink?: DiagnosticSink;
@@ -646,7 +646,7 @@ export async function writeChatMemory(input: {
 }
 
 /**
- * Undo one assistant message's extracted memory (spec §4.3): retract its facts
+ * Undo one assistant message's extracted memory: retract its facts
  * (status flip, audit kept) and delete its episode. The reconciliation behind
  * message delete/edit and "another take" — without it the recovery levers clean
  * the window but leave the poisoned memory in RAG.
@@ -667,8 +667,8 @@ export async function reconcileMessageMemory(messageId: string, sink?: Diagnosti
 
 /**
  * Purge a memory group's facts + episodes. Called by `deleteChat` when the deleted
- * conversation was the LAST one referencing its group (character-chat-standalone.spec.md
- * §1.4) — shared-history siblings keep the group alive.
+ * conversation was the LAST one referencing its group — shared-history siblings
+ * keep the group alive.
  */
 export async function deleteChatMemory(groupId: string, dbc?: DbWriter): Promise<void> {
   const scope = chatScope(groupId);

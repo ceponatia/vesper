@@ -10,8 +10,7 @@ import { fnv1aHex } from "@/lib/hash";
 import { IMAGE_ITEM_PROJECTION_OWNER, IMAGE_LOCATION_PROJECTION_OWNER } from "./world-projection";
 
 /**
- * Library item and location rows, projected into world-digest facts
- * (model-aware-image-prompts.plan.md §"Location facts", §"Item facts").
+ * Library item and location rows, projected into world-digest facts.
  *
  * This replaces `prompts-entity.ts`, which formatted a finished paragraph per
  * entity kind. The difference is not stylistic. That module knew both what a
@@ -64,14 +63,13 @@ export interface ItemProjectionInput {
  * say "presented on an invisible ghost mannequin", which is the industry term for
  * exactly this shot and which put a plainly visible dress form in the picture
  * every single time: 6 of 6 renders for a scarf and 6 of 6 for a coat, measured
- * against this replacement at matched seeds
- * (model-aware-image-prompts.trial.qwen-2512-negative.md, Trial B). The word
+ * against this replacement at matched seeds. The word
  * "invisible" does not subtract the mannequin; naming it is what summons it.
  *
  * Describing the desired outcome instead — the garment holding its own shape,
  * nothing else in frame — drops that to 0 of 6 on both fixtures, with drape
  * quality and the authored scorched cuffs unaffected. Affirmative replacement is
- * also the plan's default transport for an endpoint whose negative field does not
+ * also the default transport for an endpoint whose negative field does not
  * work, which this one's does not.
  */
 const ITEM_PRESENTATION: Readonly<Record<ItemProjectionInput["kind"], string>> = {

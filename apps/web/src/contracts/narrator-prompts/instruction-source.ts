@@ -3,7 +3,7 @@ import { narratorPromptLanguageSchema, type NarratorPromptLanguage } from "./tem
 
 /**
  * The ONE typed answer to "whose instructions is the narrator following this
- * exchange?" (narrator-prompt-lab.plan.md §Narrator instruction source).
+ * exchange?".
  *
  * Resolved **after the exchange lock is taken** and before any narrator prompt is
  * built, then reused unchanged by every attempt in that exchange — the first

@@ -1,6 +1,6 @@
 import { defineAttributeGroup } from "../types";
 
-// Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+// Narrator-gloss authoring batch — DRAFTS AWAITING
 // OWNER REVIEW. Each gloss stays strictly in its own dimension per the orthogonality
 // rule: frame speaks bone gauge (never height/weight), musculature speaks muscle only,
 // weight speaks adiposity only. Sparse — self-evident members (average) stay bare.

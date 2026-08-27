@@ -23,8 +23,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The blinded review screen (image-identity-packs.spec.trial.md §"Review
- * procedure"): two images side by side, eleven anchored relative grades,
+ * The blinded review screen: two images side by side, eleven anchored relative
+ * grades,
  * catastrophic-defect labels per side, notes, submit — then the next pair loads
  * automatically. Everything here is LEFT/RIGHT: the wire pair deliberately
  * carries no strategy fields, and the server unblinds the submission with its

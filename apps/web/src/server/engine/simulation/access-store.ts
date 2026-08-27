@@ -46,7 +46,7 @@ import type { SimTx } from "./trigger-projector";
 /**
  * E3.5 durable access authority: threshold entry (granted or explicitly
  * forced) and the audited storyteller relocation. Both flow through the same
- * §11.1 transaction shell as every other command.
+ * transaction shell as every other command.
  */
 
 export interface AccessStoreOptions {
@@ -85,7 +85,7 @@ export async function seedDurableAccessGrants(
   );
 }
 
-/** Well-formed grants only: a row that fails its schema admits no one (§13.1). */
+/** Well-formed grants only: a row that fails its schema admits no one. */
 async function loadActorGrants(tx: SimTx, branchId: string, actorId: string): Promise<AccessGrant[]> {
   const rows = await tx
     .select()
@@ -285,7 +285,7 @@ export async function submitDurableAttemptEntry(
   });
 }
 
-/** The privileged relocation (§7, ruling 4): storyteller principals only, audited. */
+/** The privileged relocation (ruling 4): storyteller principals only, audited. */
 export async function submitDurableStorytellerRelocation(
   rawCommand: unknown,
   options: AccessStoreOptions = {},

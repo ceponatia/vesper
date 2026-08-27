@@ -72,7 +72,7 @@ import { applyTriggerScheduledEvent } from "./trigger-projector";
  */
 
 // ---------------------------------------------------------------------------
-// adjust_material_lot (§26.9) — privileged authoring, exempt from co-location
+// adjust_material_lot — privileged authoring, exempt from co-location
 // ---------------------------------------------------------------------------
 
 export async function submitDurableAdjustMaterialLot(
@@ -153,7 +153,7 @@ export async function submitDurableAdjustMaterialLot(
 }
 
 // ---------------------------------------------------------------------------
-// transfer_lot_quantity (§26.9) — same-kind conserved movement between lots
+// transfer_lot_quantity — same-kind conserved movement between lots
 // ---------------------------------------------------------------------------
 
 export async function submitDurableTransferLotQuantity(
@@ -180,7 +180,7 @@ export async function submitDurableTransferLotQuantity(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command: TransferLotQuantityCommand) => {
       const context = await loadHouseholdsAuthorityContext(tx, branch.id);
-      // Deterministic order (§5.4): source, then destination.
+      // Deterministic order: source, then destination.
       const fromLazy = await loadOrInitializeLot(
         tx,
         branch,
@@ -262,7 +262,7 @@ export async function submitDurableTransferLotQuantity(
 }
 
 // ---------------------------------------------------------------------------
-// promote_item_from_stock (§26.10 / §27.2) — the only path an aggregate fact
+// promote_item_from_stock — the only path an aggregate fact
 // becomes an explicit `sim_items` row
 // ---------------------------------------------------------------------------
 
@@ -390,7 +390,7 @@ export async function submitDurablePromoteItemFromStock(
 }
 
 // ---------------------------------------------------------------------------
-// run_household_restock (§26.11) — trigger-dispatched, system principal only
+// run_household_restock — trigger-dispatched, system principal only
 // ---------------------------------------------------------------------------
 
 export async function submitDurableRunHouseholdRestock(

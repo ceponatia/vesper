@@ -3,10 +3,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The shared-compiler neutrality guardrail (narrator-physical-guidance.plan.md
- * slice 1: "no domain names in the shared compiler"; acceptance criteria: "Hair
- * and foot-contact fixtures use the same compiler without domain logic entering
- * the shared layer").
+ * The shared-compiler neutrality guardrail: no domain names in the shared
+ * compiler, and hair and foot-contact fixtures use the same compiler without
+ * domain logic entering the shared layer.
  *
  * `core/domain-neutrality.test.ts` polices `core/` only, and this layer is
  * deliberately OUTSIDE `core/` — so the same claim needs its own mechanical

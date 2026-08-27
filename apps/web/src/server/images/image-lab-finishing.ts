@@ -41,8 +41,7 @@ import {
 
 /**
  * The finishing pass: another experiment's RESULT, re-edited under an instruction
- * that forbids every change but the face (plan §"Stage 3 — optional identity
- * finishing", extended by §"Stage 5 — one character LoRA pilot").
+ * that forbids every change but the face.
  *
  * It is the one kind whose ordered inputs the RUNNER resolves rather than the
  * admin. Both of them are facts the client cannot supply honestly: the base is

@@ -1,7 +1,7 @@
 /**
  * Stick-to-bottom scroll math shared by the streaming transcript surfaces (the
- * session feed and the chat conversation — ux-improvements.plan.md slice 2).
- * Pure: components feed in measurements and apply the returned scrollTop.
+ * session feed and the chat conversation). Pure: components feed in
+ * measurements and apply the returned scrollTop.
  *
  * The pin model: while the reader is at (or within slack of) the bottom, new
  * content keeps the view pinned there; scrolling up releases the pin so

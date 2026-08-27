@@ -11,7 +11,7 @@ import { chatVisualCues, db } from "../db";
 import { visualMemoryGenerationFor, type ChatVisualMemoryKey } from "./visual-memory-store";
 
 /**
- * NARRATOR VISUAL CUE STATE, PERSISTED (visual-state.plan.md slice 7).
+ * NARRATOR VISUAL CUE STATE, PERSISTED.
  *
  * The IO half of `contracts/visual-state/cue-state.ts`: what the narrator has
  * had in view and what it has already said, for the families observer

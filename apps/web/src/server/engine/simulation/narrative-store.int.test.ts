@@ -30,7 +30,7 @@ import { submitDurableDemoteSoftCanon } from "./soft-canon-store";
  * E4.3 integration: persisted cuts (immutable, addressable, retryable),
  * narrator confirmation against the persisted row, the armed-disclosure
  * knowledge bridge, ruling-14 soft canon (record → reuse → audited
- * auto-promotion → storyteller demotion), fork replay parity, and the §19.3
+ * auto-promotion → storyteller demotion), fork replay parity, and the
  * deliberator seam driven by stubs — zero model calls anywhere.
  */
 
@@ -182,7 +182,7 @@ async function tableCounts(branchId: string): Promise<{ events: number; cuts: nu
 }
 
 describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", () => {
-  it("persists cuts immutably: retry re-reads the row, rerender creates nothing, tampering fails loudly (§22.3, ruling 8)", async () => {
+  it("persists cuts immutably: retry re-reads the row, rerender creates nothing, tampering fails loudly (ruling 8)", async () => {
     const ids = await seedNarrativeCase();
     const engagementId = await openChat(ids);
 
@@ -205,13 +205,13 @@ describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", ()
     expect(second.cut.fromStorySecond).toBe(first.cut.throughStorySecond);
 
     // Re-persisting the identical cut is idempotent; a same-id different-hash
-    // write is a §22.3 violation and throws a version diagnostic.
+    // write is an immutability violation and throws a version diagnostic.
     await expect(persistNarrativeCut(second.cut)).resolves.toEqual({ created: false });
     const tampered = narrativeCutSchema.parse({ ...second.cut, semanticHash: "deadbeef" });
     await expect(persistNarrativeCut(tampered)).rejects.toBeInstanceOf(NarrativeCutVersionError);
   });
 
-  it("confirms by id against the persisted cut, bridges armed disclosures into beliefs, and expires superseded cuts (§23.3, ruling 9)", async () => {
+  it("confirms by id against the persisted cut, bridges armed disclosures into beliefs, and expires superseded cuts (ruling 9)", async () => {
     const ids = await seedNarrativeCase();
     const engagementId = await openChat(ids);
     const turn = await prepare(ids, engagementId, {
@@ -256,7 +256,7 @@ describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", ()
     expect(speechRows.filter((row) => row.type === "disclosure_made")).toHaveLength(1);
 
     // The bridge landed in the knowledge substrate: the co-present listener
-    // now believes what Mara said, at the §20 reported-co-present grade.
+    // now believes what Mara said, at the reported-co-present grade.
     const beliefs = await db()
       .select()
       .from(simBeliefs)
@@ -269,7 +269,7 @@ describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", ()
       confidenceFixedPoint: 9_000,
     });
 
-    // The next turn's cut voices that belief back to the speaker (§22.1) —
+    // The next turn's cut voices that belief back to the speaker —
     // while the confirm's own events, being already-presented material from
     // the previous render, never re-enter a later cut as beats.
     const nextTurn = await prepare(ids, engagementId);
@@ -278,7 +278,7 @@ describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", ()
     expect(nextTurn.cut.mustEnact).toEqual([]);
     expect(nextTurn.cut.allowedTransitions).toEqual([]);
 
-    // Only the newest cut of an engagement is confirmable (§23.3 expiry).
+    // Only the newest cut of an engagement is confirmable (older ones expire).
     const stale = await confirm(ids, "confirm-stale", engagementId, turn.cut.id, {
       enactedArmedEffectIds: [disclosureEffect.id],
     });
@@ -376,7 +376,7 @@ describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", ()
     ).toHaveLength(1);
   });
 
-  it("lets an admitted stub deliberator pick among departure candidates, falling back deterministically when refused (§19.3)", async () => {
+  it("lets an admitted stub deliberator pick among departure candidates, falling back deterministically when refused", async () => {
     const seedCommitment = async (
       ids: NarrativeCase,
       name: string,

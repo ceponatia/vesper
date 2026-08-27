@@ -8,7 +8,7 @@ import { checkStorageQuota, consumeDailyBudget, type UsageCounterKind } from "./
 import { tooManyRequests, type LimitedResponse } from "./route-limits";
 
 /**
- * Durable cost guards, as route-facing helpers (rate-limits.plan.md slices 3–6).
+ * Durable cost guards, as route-facing helpers.
  *
  * These sit one layer above the burst limits in `route-limits.ts`: a per-minute
  * window bounds *rate*, these bound *total* — spend per day, disk per account,

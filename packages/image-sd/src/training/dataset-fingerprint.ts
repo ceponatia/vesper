@@ -5,9 +5,8 @@ import type { SdTrainingDataset, SdTrainingImage } from "./training-manifest";
  * The fingerprint of a training set.
  *
  * **This value is persisted in the application's identity-pack-to-LoRA binding
- * to detect staleness after an identity pack changes
- * (sd-rendering-package.plan.md §9), so its byte-level stability is a
- * compatibility contract.** A stored fingerprint is compared against a freshly
+ * to detect staleness after an identity pack changes, so its byte-level
+ * stability is a compatibility contract.** A stored fingerprint is compared against a freshly
  * computed one; if this function's serialization is ever changed, every stored
  * fingerprint stops matching, and every trained LoRA in the library is reported
  * stale on the same day. The opposite mistake is worse and quieter: a change

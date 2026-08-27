@@ -5,7 +5,7 @@ import { log } from "@/server/log";
 // (`pnpm lint:cycles`). The one-line error text is inlined below instead.
 
 /**
- * Abuse-signal recording (rate-limits.plan.md slice 7).
+ * Abuse-signal recording.
  *
  * The requirement is to log abuse signals *without* storing sensitive prompt
  * content. That is enforced structurally rather than by discipline: {@link

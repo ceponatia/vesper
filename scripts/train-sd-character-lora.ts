@@ -22,8 +22,8 @@ import {
 import { z } from "zod";
 
 /**
- * Train one SDXL character LoRA from a curated identity-pack dataset
- * (sd-rendering-package.plan.md §20, Stage 4) — PAID, owner-run, not a test gate.
+ * Train one SDXL character LoRA from a curated identity-pack dataset (Stage 4)
+ * — PAID, owner-run, not a test gate.
  *
  *   pnpm tsx scripts/train-sd-character-lora.ts \
  *     --dataset-dir ./sabrina --identity-pack-id <pack> --trigger-token sabrina \
@@ -39,11 +39,11 @@ import { z } from "zod";
  * beside the weights instead.
  *
  * WHAT THIS SCRIPT IS NOT ALLOWED TO DECIDE. Which twelve to twenty photographs
- * belong in a character's training set is the judgement §8 spends a page on:
+ * belong in a character's training set is a curation judgement:
  * spread the framings, spread the lighting, spread the clothing, and above all
  * avoid teaching the model that this character IS a shirt or IS a room. A script
- * cannot see any of that. It reports what the set looks like against §8's window
- * and coverage list and then trains what it was given, loudly.
+ * cannot see any of that. It reports what the set looks like against the curation
+ * window and coverage list and then trains what it was given, loudly.
  *
  * THE FOUR PROPERTIES CARRIED OVER FROM `train-image-lora.ts`, for the same
  * reasons recorded there: the source directory is never written to, the token is
@@ -62,7 +62,7 @@ import { z } from "zod";
  * trainer's pivotal-tuning pipeline learns both a LoRA and an embedding for the
  * trigger token, and ships them together in one archive. The deployed Vesper
  * renderer loads LoRA weights and nothing else — it has no embedding loader —
- * and plan §22 makes textual inversion a non-goal of the first training pass. So
+ * and textual inversion is a non-goal of the first training pass. So
  * only `lora.safetensors` is published. That is why `--trigger-token` should be
  * an ORDINARY WORD (a first name), not the trainer's default `TOK`: the LoRA is
  * trained on captions containing the token, and at render time the token resolves
@@ -275,7 +275,7 @@ Optional:
                              (${TRAINER_OWNER}/${TRAINER_NAME}, probed 2026-08-23)
   --mask-target-prompts <t>  Passed through to the trainer's CLIPSeg cropping.
   --use-face-detection       Crop on detected faces instead of salience. Off by default: it
-                             would crop the full-body and upper-body images §8 asks for down
+                             would crop the required full-body and upper-body images down
                              to faces, and the LoRA would never learn a build.
   --seed <int>               Omitted by default (the trainer picks one).
   --s3-bucket <name>         Publish the extracted ${PUBLISHED_WEIGHTS_NAME} here. Without it the run
@@ -462,7 +462,7 @@ function readDatasetManifest(manifestPath: string | undefined): z.infer<typeof d
 }
 
 /**
- * §8's curation report, printed rather than enforced.
+ * The curation report, printed rather than enforced.
  *
  * Every line here is advice a curator may knowingly ignore, which is why nothing
  * throws: the window is "approximately 12–20", and a set of eleven excellent
@@ -479,7 +479,7 @@ function reportCuration(dataset: SdTrainingDataset): void {
   }
   if (assessment.aboveTargetMax) {
     console.log(
-      `  ! above the plan's curation window of ${String(SD_TRAINING_DATASET_TARGET_MIN)}-${String(SD_TRAINING_DATASET_TARGET_MAX)} images — §8 asks for selection, not for every available image`,
+      `  ! above the plan's curation window of ${String(SD_TRAINING_DATASET_TARGET_MIN)}-${String(SD_TRAINING_DATASET_TARGET_MAX)} images — curation asks for selection, not for every available image`,
     );
   }
   if (assessment.missingViews.length > 0) {
@@ -962,7 +962,7 @@ async function settle(
     console.log("");
     console.log(
       `Note: the archive also holds trained textual-inversion embeddings (${embeddings.map((f) => basename(f)).join(", ")}). ` +
-        "Vesper does not publish or load them — plan §22 makes textual inversion a non-goal of the first training " +
+        "Vesper does not publish or load them — textual inversion is a non-goal of the first training " +
         "pass, and the deployed renderer has no embedding loader. The trigger token resolves through the base text encoder.",
     );
   }

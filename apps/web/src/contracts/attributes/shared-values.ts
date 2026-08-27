@@ -92,7 +92,7 @@ export const INTIMATE_TASTE_BASE = [
 ] as const;
 
 /**
- * Narrator glosses for the shared intimate SCENT core (attribute-narrator-guidance.plan.md)
+ * Narrator glosses for the shared intimate SCENT core
  * — each entry tells the narrator what the member means *in this game* so it elaborates
  * within the right register instead of paraphrasing a bare token into something milder.
  * Keys ⊆ `INTIMATE_SCENT_BASE`, so any definition spreading the base may spread this map

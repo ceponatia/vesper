@@ -9,11 +9,11 @@ import { characterRelationships, characters, db } from "@/server/db";
 type Params = { id: string };
 
 /**
- * Library-level default relationship edges (relationship-model.plan.md, owner
- * ruling 2026-07-07): the character editor's Relationships tab. Edges are
- * directed FROM this character toward other library characters; conversation
- * creation seeds its matrix from these for every roster pair. PUT is
- * replace-set: the sent list becomes the character's outgoing edges.
+ * Library-level default relationship edges (owner ruling 2026-07-07): the
+ * character editor's Relationships tab. Edges are directed FROM this character
+ * toward other library characters; conversation creation seeds its matrix from
+ * these for every roster pair. PUT is replace-set: the sent list becomes the
+ * character's outgoing edges.
  */
 
 const putBodySchema = z.object({

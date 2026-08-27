@@ -116,7 +116,7 @@ const bodyRhythmSeedSchema = z
 export type BodyRhythmSeed = z.input<typeof bodyRhythmSeedSchema>;
 
 /**
- * Seed or extend one branch's rhythm rows (§25.5). Rhythms are authored data
+ * Seed or extend one branch's rhythm rows. Rhythms are authored data
  * read at integration time; every material event captures its derivation, so
  * replay never needs the rows and adding them mid-history is safe — though
  * alarms armed before a seed re-validate at fire time and may retire stale.
@@ -370,7 +370,7 @@ export async function submitDurableApplyBodySource(
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
       const horizon = branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
       const meterView = buildMeterView(body, command.payload.meterKey, horizon);
-      // §25.4 coupling inputs: the hygiene view for exertion-on-energy, and
+      // Coupling inputs: the hygiene view for exertion-on-energy, and
       // whether an afterglow already holds for climax-on-arousal.
       const coupledHygiene =
         command.payload.sourceKind === "exertion" && command.payload.meterKey === "energy"
@@ -447,7 +447,7 @@ export async function submitDurableApplyBodySource(
   });
 }
 
-/** Attach one standalone §25.3 modifier (integrate → boundary write → re-arm). */
+/** Attach one standalone modifier (integrate → boundary write → re-arm). */
 export async function submitDurableApplyBodyModifier(
   rawCommand: unknown,
   options: BodyStoreOptions = {},
@@ -549,7 +549,7 @@ export async function submitDurableApplyBodyCondition(
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
       const meterViews = new Map<string, MeterIntegrationView>();
-      // The §25.4 sleep coupling adds an energy suspend to asleep conditions,
+      // The sleep coupling adds an energy suspend to asleep conditions,
       // so the energy view must load even when the caller sent no modifiers.
       for (const spec of normalizeConditionModifierSpecs(
         command.payload.conditionKey,

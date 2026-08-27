@@ -5,9 +5,8 @@ import type { GenerateCheckedOptions, GenerateCheckedResult } from "../ai";
 import type { AppendChatPermissionEventsInput, ChatPermissionEventRow } from "./chat-permission-events";
 
 /**
- * The NPC romantic-permission decision leg
- * (romantic-contact-affordances.spec.permission.md, implementation-order
- * step 3), orchestration-level: the flag/trigger gates, the FRESH reload of
+ * The NPC romantic-permission decision leg, orchestration-level: the
+ * flag/trigger gates, the FRESH reload of
  * committed state, the ONE-call-max classifier, the validator fence, and the
  * exact events handed to the atomic append — with `generateChecked` scripted
  * the same way the scene-decision leg's suite scripts it, and the ledger/append

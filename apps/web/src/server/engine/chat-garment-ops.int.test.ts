@@ -4,8 +4,7 @@ import { switchScenePlace } from "@/contracts/turns/chat-scene-memory";
 import { garmentActorForCharacter, garmentsAtScenePlace, wornGarmentDefinitionIds } from "@/contracts/items/garment-store";
 
 /**
- * Slice 5 — grounded continuity extraction, end to end
- * (clothing-state-graph.plan.md §Slice 5; audit OQ7 + R2).
+ * Grounded continuity extraction, end to end.
  *
  * What only a database can prove: that a faked continuity reply's typed
  * proposals reach the persisted store AND its worn-id projections in ONE write,

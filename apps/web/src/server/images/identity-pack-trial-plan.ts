@@ -494,8 +494,8 @@ function degenerateArmRefusal(
 }
 
 /**
- * Resolve one planned cell to a full spec, or to the refusal that stops it
- * (spec.trial.md §"Trial manifest"). The order is the design's: profile, then
+ * Resolve one planned cell to a full spec, or to the refusal that stops it.
+ * The order is the design's: profile, then
  * the fixture's task, then production offerability, then the version pin, then
  * the pack variant and its strategy evaluation, then capacity — each refusal
  * records everything that DID resolve, so the run report can say how far a cell

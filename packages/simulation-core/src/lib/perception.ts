@@ -257,39 +257,38 @@ export function deriveEventObservations(
       // perceive their subsequent actions through those events' own rules.
       // Scheduler and commitment-ledger bookkeeping is not perceptible; an
       // actor's knowledge of an obligation rides its commitment's `observed`
-      // knowledge source pointing at a perceptible event (§15.1, §20).
-      // Soft-canon records are presentation-lane audit entries (§23.4) —
-      // nothing in the world happened for anyone to witness. Body setup and
-      // modifier bookkeeping (E5.1) likewise derive nothing: the material
-      // cause of a modifier (a drink, an illness onset) is witnessed through
-      // its own causal event, never through the rate arithmetic it installs.
-      // An ownership reassignment (§26.3) is a social-ledger entry — nothing in
-      // the world moved for anyone to see. Item condition (§26.7) mirrors body
-      // modifier bookkeeping exactly — the worn-window modifier's cause (a
-      // transfer donning/doffing the item) is witnessed through its own
-      // item_transferred event; a clean/adjustment source is interoception with
-      // no subject to feel it (an item is not a witness of itself). Household
-      // founding/membership, a lazy lot init, and a privileged authoring
-      // adjustment (§26.8–26.9) are likewise off-screen authoring acts — a
-      // conserved transfer (below) is the one lot event with a physical actor
-      // to witness. A means band (§26.10) is a coarse authored fact about a
-      // subject's means, not a witnessed event. A restock routine's
+      // knowledge source pointing at a perceptible event. Soft-canon records
+      // are presentation-lane audit entries — nothing in the world happened for
+      // anyone to witness. Body setup and modifier bookkeeping (E5.1) likewise
+      // derive nothing: the material cause of a modifier (a drink, an illness
+      // onset) is witnessed through its own causal event, never through the
+      // rate arithmetic it installs. An ownership reassignment is a
+      // social-ledger entry — nothing in the world moved for anyone to see.
+      // Item condition mirrors body modifier bookkeeping exactly — the
+      // worn-window modifier's cause (a transfer donning/doffing the item) is
+      // witnessed through its own item_transferred event; a clean/adjustment
+      // source is interoception with no subject to feel it (an item is not a
+      // witness of itself). Household founding/membership, a lazy lot init, and
+      // a privileged authoring adjustment are likewise off-screen authoring
+      // acts — a conserved transfer (below) is the one lot event with a
+      // physical actor to witness. A means band is a coarse authored fact about
+      // a subject's means, not a witnessed event. A restock routine's
       // authoring, and its off-screen scheduled outcome — fulfilled or
-      // deferred — are the household's own bookkeeping cycle (§26.11), not a
-      // witnessed act (the top-up itself lands through its own
-      // `material_lot_adjusted` event, which carries no acting actor to
-      // witness it either). A relationship-ledger entry (§21.3, E5.5) —
-      // authored or derived, and a relationship-change marker alike — is an
-      // out-of-band ledger write, not a perceptible in-world event: an
-      // actor's live perception of the underlying fact (a promise spoken, a
-      // scene shared) already rides that fact's own causal event; the ledger
-      // entry it produces is audit bookkeeping, mirrors `body_initialized`.
-      // Pressure acknowledgment (E5.5 slice 3) is internal scheduling/turn
-      // bookkeeping — mirrors `trigger_scheduled`'s no-observation treatment.
-      // An actor-LOD assignment (E6.1, §27–28) is an engine performance
-      // dial, not a world event — LOD bookkeeping derives nothing. A routine
-      // decision (E6.2, §19.2) is the same: the chosen outcome's own events
-      // (condition onset, threshold) carry their own perception rulings.
+      // deferred — are the household's own bookkeeping cycle, not a witnessed
+      // act (the top-up itself lands through its own `material_lot_adjusted`
+      // event, which carries no acting actor to witness it either). A
+      // relationship-ledger entry (E5.5) — authored or derived, and a
+      // relationship-change marker alike — is an out-of-band ledger write, not
+      // a perceptible in-world event: an actor's live perception of the
+      // underlying fact (a promise spoken, a scene shared) already rides that
+      // fact's own causal event; the ledger entry it produces is audit
+      // bookkeeping, mirrors `body_initialized`. Pressure acknowledgment
+      // (E5.5 slice 3) is internal scheduling/turn bookkeeping — mirrors
+      // `trigger_scheduled`'s no-observation treatment. An actor-LOD assignment
+      // (E6.1) is an engine performance dial, not a world event — LOD
+      // bookkeeping derives nothing. A routine decision (E6.2) is the same: the
+      // chosen outcome's own events (condition onset, threshold) carry their
+      // own perception rulings.
       return [];
     case "journey_planned":
     case "journey_delayed":
@@ -313,8 +312,8 @@ export function deriveEventObservations(
     case "activity_cancelled":
     case "activity_failed": {
       // The captured payload set already encodes the action's noticeability
-      // profile (§16.1) — a private activity captured no one. Trusting it
-      // keeps replay exact and keeps private causes private.
+      // profile — a private activity captured no one. Trusting it keeps replay
+      // exact and keeps private causes private.
       for (const actorId of event.actorIds) collector.add(actorId, DIRECT_EMBODIED);
       for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
       break;
@@ -340,7 +339,7 @@ export function deriveEventObservations(
     }
     case "zone_entered": {
       // The threshold capture already holds both sides of the doorway,
-      // noticeability-filtered at commit (§14.1) — no blanket co-location.
+      // noticeability-filtered at commit — no blanket co-location.
       collector.add(event.payload.actorId, DIRECT_EMBODIED);
       for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
       break;
@@ -359,12 +358,12 @@ export function deriveEventObservations(
     case "item_destroyed":
     case "item_consumed":
     case "material_lot_transferred": {
-      // An obvious same-zone manipulation (§26.4, §26.6, §26.9): the acting
-      // actor has direct evidence, and everyone sharing their zone sees it
-      // clearly. The manipulation is always at the acting actor's zone —
-      // transfer law's root co-location guarantees both chains root there
-      // (§26.8's access check is the lot-locus equivalent) — so witnesses are
-      // derived live from presence rather than captured on the event.
+      // An obvious same-zone manipulation: the acting actor has direct
+      // evidence, and everyone sharing their zone sees it clearly. The
+      // manipulation is always at the acting actor's zone — transfer law's
+      // root co-location guarantees both chains root there (the lot access
+      // check is the lot-locus equivalent) — so witnesses are derived live
+      // from presence rather than captured on the event.
       const actorId = event.payload.actorId;
       collector.add(actorId, DIRECT_EMBODIED);
       const actorZoneId = atOccupants(space).find((occupant) => occupant.actorId === actorId)?.zoneId;
@@ -372,7 +371,7 @@ export function deriveEventObservations(
       break;
     }
     case "item_instantiated_from_promotion": {
-      // Same shape as item_transferred above (§26.10/§27.2): an obvious
+      // Same shape as item_transferred above: an obvious
       // same-zone manipulation by the acting actor. The payload has no
       // top-level actorId (unlike a transfer) — the acting actor is the
       // event's own actorIds entry instead (v1 always places the promoted
@@ -419,7 +418,7 @@ export function deriveEventObservations(
     }
     case "item_condition_threshold_crossed": {
       // An item has no interoceptive subject — only the captured co-located
-      // witness set (§20's noticeable capture idiom) perceives a crossing.
+      // witness set (the noticeable-capture idiom) perceives a crossing.
       for (const witnessId of event.payload.observerActorIds) collector.add(witnessId, SIGHT_WITNESS);
       break;
     }
@@ -436,7 +435,7 @@ export function deriveEventObservations(
       break;
     }
     case "consent_escalation_resolved": {
-      // §8/§21.4: participant-only — the two named actors both witness the
+      // Participant-only — the two named actors both witness the
       // outcome interoceptively. This is inherently a private negotiation
       // between the two parties, never surfaced to a co-located crowd even
       // if a shared engagement surrounds them (mirrors disclosure_made's

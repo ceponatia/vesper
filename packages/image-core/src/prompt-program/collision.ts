@@ -10,7 +10,7 @@ import type { ImagePositiveClaim } from "./positive-claims";
 import type { ImageCameraFact, ImageOperationContract } from "./world-digest";
 
 /**
- * The conflict linter (model-aware-image-prompts.plan.md §"Conflict linter").
+ * The conflict linter.
  *
  * This is the single place where the two independently-versioned prompt channels
  * are reconciled, and the reason they may be versioned independently at all: a
@@ -21,8 +21,8 @@ import type { ImageCameraFact, ImageOperationContract } from "./world-digest";
  * The mechanism is set subtraction over conflict keys, and it is deliberately
  * boring. A claim declares the keys it protects; a constraint declares the keys
  * it forbids; a key claimed on both sides is removed from the NEGATIVE, because
- * the plan's rule is that a conflict with authoritative world truth resolves in
- * favor of truth. A constraint that loses every key is dropped with a reason. A
+ * a conflict with authoritative world truth resolves in favor of truth. A
+ * constraint that loses every key is dropped with a reason. A
  * REQUIRED constraint that loses every key makes the profile ineligible before
  * any provider spend, rather than rendering something Vesper knows is wrong.
  *
@@ -82,7 +82,7 @@ export function imagePositiveProtections(input: {
     add(key, "operation.style.medium", "style.medium");
   }
 
-  // An ensemble. "No multiple people" against a two-hander is the plan's named
+  // An ensemble. "No multiple people" against a two-hander is the canonical
   // collision, and the cast size is on the operation contract precisely so this
   // check never has to count subject slices.
   if (input.operation.subjectCount > 1) add("multiple_people", "operation.subject_count", "operation.subject_count");
@@ -121,7 +121,7 @@ export interface ImageCollisionReport {
    * Required constraints the world contradicted outright.
    *
    * Non-empty means this profile may not render: a required exclusion that
-   * cannot be expressed is the plan's fail-closed case, and running anyway would
+   * cannot be expressed is a fail-closed case, and running anyway would
    * produce an image Vesper already knows disagrees with its own state.
    */
   readonly refusedRequired: readonly ImageNegativeBlockId[];

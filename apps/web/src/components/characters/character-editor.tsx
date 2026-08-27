@@ -56,7 +56,7 @@ export interface CharacterEditorProps {
   /** Forge mode shows per-section regenerate buttons (docs/authoring.md). */
   onRegenerate?: (section: CharacterForgeSection) => void;
   regenerating?: CharacterForgeSection | null;
-  /** Edit mode shows per-tab Re-draft buttons (character-sheet-forge.plan.md). */
+  /** Edit mode shows per-tab Re-draft buttons. */
   onRedraft?: (scope: CharacterSheetScope) => void;
   redrafting?: CharacterSheetScope | null;
   /** Portrait → attributes (Attributes tab, needs a ready avatar). */

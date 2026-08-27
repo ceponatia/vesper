@@ -87,7 +87,7 @@ function createTriggerRowSchema<TKind extends string, TCommand extends z.ZodType
     kind: z.literal(kind),
     schemaVersion: z.literal(scheduledTransferTriggerSchemaVersion),
     dueStorySecond: storySecondSchema,
-    /** Spec §12.1: lower is more urgent. Ties fall through to stableOrder. */
+    /** Lower is more urgent. Ties fall through to stableOrder. */
     priority: z.number().int().min(0).max(9_999).default(0),
     stableOrder: branchSequenceSchema,
     uniquenessKey: z.string().min(1).max(512),
@@ -131,7 +131,7 @@ export function deriveTriggerId(branchId: string, uniquenessKey: string): string
 }
 
 // ---------------------------------------------------------------------------
-// E2.5 — trigger creation as an event effect (plan R1 prerequisite)
+// E2.5 — trigger creation as an event effect (R1 prerequisite)
 // ---------------------------------------------------------------------------
 
 export const scheduleTransferTriggerCommandType = "schedule_transfer_item" as const;

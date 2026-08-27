@@ -1,7 +1,7 @@
 /**
- * Machine bookkeeping tags (library-ux.plan.md): written by seeds and forges
- * for provenance, never meaningful to browse by. Hidden from every filter UI
- * and card chip row; the data itself is untouched.
+ * Machine bookkeeping tags: written by seeds and forges for provenance, never
+ * meaningful to browse by. Hidden from every filter UI and card chip row; the
+ * data itself is untouched.
  */
 export function isMachineTag(tag: string): boolean {
   const t = tag.trim().toLowerCase();

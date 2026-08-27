@@ -31,7 +31,7 @@ import { db, items, locations } from "../db";
 
 /**
  * The item and location image lanes, compiled through the prompt-program
- * pipeline (model-aware-image-prompts.plan.md §"Item and location module").
+ * pipeline.
  *
  * This is the first production lane on the new system, and it is the right first
  * one for two reasons. It runs on `qwen/qwen-image-2512`, the endpoint whose

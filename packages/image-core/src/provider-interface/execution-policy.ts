@@ -1,7 +1,6 @@
 /**
  * How long one prediction may take, split into the two phases that fail for
- * completely different reasons (image-model-adapters.spec.md §"Provider
- * execution policy").
+ * completely different reasons.
  *
  * Provider-neutral on purpose. It lives here rather than in the transport so an
  * intent can CARRY a policy without importing a provider client, and so the two
@@ -27,7 +26,7 @@
  * Milliseconds, both budgets, matching every other timeout in the image stack.
  * Absent from a render entirely (`ImageRenderIntent.executionPolicy` unset) means
  * the transport's legacy single-budget behavior, byte for byte — which is what
- * production lanes deliberately keep (plan §8, owner ruling 2026-08-24).
+ * production lanes deliberately keep (owner ruling 2026-08-24).
  */
 export interface ProviderExecutionPolicy {
   /** Creation → first execution: queue and cold boot. */

@@ -25,9 +25,9 @@ import { observationConfidenceSchema } from "./perception";
  * possession, injury, access, or another actor's private state, and promotion
  * to authored canon is always an explicit, audited event.
  *
- * Rows are DERIVED like §20 observations and §21 knowledge: the confirm
- * command captures the full post-fold entry snapshot in each event (§6.4), so
- * the fold is a pure upsert and a rebuilt branch mints identical rows.
+ * Rows are DERIVED like observations and knowledge: the confirm command
+ * captures the full post-fold entry snapshot in each event, so the fold is a
+ * pure upsert and a rebuilt branch mints identical rows.
  */
 
 export const SOFT_CANON_DERIVATION_VERSION = "soft-canon-v1" as const;
@@ -231,7 +231,7 @@ export function deriveSoftCanonEntryId(
 // --- Events ------------------------------------------------------------------
 
 /**
- * §6.4 captured derivation: each event carries the full post-fold entry
+ * Captured derivation: each event carries the full post-fold entry
  * snapshot computed at command time, so live upsert and fork replay are the
  * same trivial fold and never re-read mutable rows.
  */
@@ -341,7 +341,7 @@ export const softCanonProjectionSchema = z
 
 export type SoftCanonProjection = z.infer<typeof softCanonProjectionSchema>;
 
-/** Why one proposal was refused — diagnostics, never a failed turn (§23.4). */
+/** Why one proposal was refused — diagnostics, never a failed turn. */
 export const softCanonRejectionCodes = [
   "value_unparseable",
   "confidence_below_minimum",

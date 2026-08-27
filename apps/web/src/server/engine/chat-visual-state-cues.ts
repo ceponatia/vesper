@@ -33,10 +33,9 @@ import {
 import { chatRecognitionDetailPhrase } from "./chat-recognition-adapter";
 
 /**
- * THE NARRATOR PROJECTION for visual state (visual-state.plan.md slice 7;
- * spec §Consumer digests — "narrator cues carry feature keys, fingerprints,
- * semantic values, evidence, and repeat keys, not finished literary sentences.
- * The prompt adapter realizes concise factual clauses").
+ * THE NARRATOR PROJECTION for visual state. Narrator cues carry feature keys,
+ * fingerprints, semantic values, evidence, and repeat keys, not finished
+ * literary sentences; the prompt adapter realizes concise factual clauses.
  *
  * This module is that adapter, and it is the ONLY place visual state becomes
  * words. Everything upstream of it — projection, composition, visibility,

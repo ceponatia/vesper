@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Chat supporting cast (chat-supporting-cast.plan.md): recurring named side
+ * Chat supporting cast: recurring named side
  * characters — the player's coworker, the character's sister — who are NOT
  * character entities and NOT roster members. The scene-memory pattern applied
  * to people: an accumulating, forward-compatible memory of who the fiction has

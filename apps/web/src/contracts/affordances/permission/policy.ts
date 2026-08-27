@@ -13,8 +13,7 @@ import type {
 } from "./projection";
 
 /**
- * The RESOLVER ADAPTER's pure half — projection → one attempt's policy read
- * (romantic-contact-affordances.spec.permission.md §"Resolver adapter").
+ * The RESOLVER ADAPTER's pure half — projection → one attempt's policy read.
  *
  * The required mapping, verbatim from the ruling:
  *

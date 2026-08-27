@@ -11,8 +11,7 @@ import {
 } from "./types";
 
 /**
- * Selection — risk first, inventory never (narrator-physical-guidance.plan.md
- * §Architecture 6).
+ * Selection — risk first, inventory never.
  *
  * The scarce resource is the narrator's attention, so a budget exists; the order
  * decides what survives it. Two properties are load-bearing:
@@ -55,8 +54,8 @@ export const GUIDANCE_MAX_CONSTRAINTS = 3;
  * deliberately not assumed here.
  */
 export const GUIDANCE_MAX_TRANSITIONS = 4;
-// Generic descriptive opportunities have NO constant on purpose: the plan parks
-// them ("zero generic opportunities", §Architecture 6). A budget of 0 would
+// Generic descriptive opportunities have NO constant on purpose: the design
+// parks them at zero. A budget of 0 would
 // invite someone to raise it; an absent concept has to be designed first.
 
 /** A budget dropped a candidate. `info`: the drop is the design working, not a fault. */

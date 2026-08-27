@@ -21,11 +21,10 @@ import { simulationHash } from "./hash";
 import { selectCutSoftCanon } from "./soft-canon";
 
 /**
- * E4.3 — the deterministic turn arbiter's pure parts: the departure policy
- * (§18.3 steps 4–6) and the full §22.1 NarrativeCut compiler, replacing the
- * Gate 3 deterministic subset. No IO, no model, no clock. Perspective safety
- * is by OMISSION: private facts never enter the cut, so no prompt instruction
- * has to hold the line (§22.1).
+ * E4.3 — the deterministic turn arbiter's pure parts: the departure policy and
+ * the full NarrativeCut compiler, replacing the Gate 3 deterministic subset. No
+ * IO, no model, no clock. Perspective safety is by OMISSION: private facts
+ * never enter the cut, so no prompt instruction has to hold the line.
  */
 
 /** Bounded views: a cut is a working set, never a dump. */
@@ -49,7 +48,7 @@ export function deriveCutId(input: {
 }): string {
   // Story-time bounds are part of the identity: two quiet turns can share a
   // sequence range (no events appended) while covering different spans, and
-  // each must persist as its own addressable cut (§22.3).
+  // each must persist as its own addressable cut.
   return composeSimulationId("cut", [
     input.branchId,
     input.engagementId,
@@ -82,7 +81,7 @@ export interface DeparturePolicyInput {
   /** How far past the turn the policy anticipates (world-type look-ahead). */
   horizonSeconds: number;
   /**
-   * Actors asked to stay (§15.3): the request defers departure to the last
+   * Actors asked to stay: the request defers departure to the last
    * possible moment — it never erases travel time or the commitment.
    */
   stayRequestedActorIds: readonly string[];
@@ -120,8 +119,8 @@ export function decideDepartures(input: DeparturePolicyInput): PolicyDeparture[]
 
 /**
  * Every pressure the policy could legally act on this turn, earliest-first —
- * the §19.1 bounded candidate list. `decideDepartures` takes the head per
- * actor; a §19.3-admitted deliberator may pick another member, never more.
+ * the bounded candidate list. `decideDepartures` takes the head per actor; an
+ * admitted deliberator may pick another member, never more.
  */
 export function departureCandidates(
   input: DeparturePolicyInput,
@@ -214,7 +213,7 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       // and witnessed — prose that skips it is lying about the scene.
       return { kind: "hard", summary: "Someone's body visibly gave out — they collapsed here." };
     case "item_ownership_set":
-      // Ownership is a social ledger entry (§26.3): nothing in the scene moved,
+      // Ownership is a social ledger entry: nothing in the scene moved,
       // so it never surfaces as a beat.
       return null;
     case "item_condition_threshold_crossed":
@@ -252,20 +251,19 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "relationship_change_recorded":
     case "consent_escalation_resolved":
     case "pressure_acknowledged":
-      // Household/lot/means bookkeeping (§26.8–26.11): a household founding, a
-      // membership change, a lazy lot init, a privileged authoring adjustment,
-      // a coarse means-band setting, a restock routine's authoring, an
-      // off-screen promotion/restock outcome — all social-ledger/authoring
-      // facts, nothing in the scene moved for a beat to portray (mirrors
-      // item_ownership_set). A relationship-ledger entry — authored or
-      // derived — is the same shape of off-screen authoring/bookkeeping fact
-      // (§21.3): nothing in the scene moved for a beat to portray. A consent
-      // escalation's grant/decline is a private negotiation outcome (§8) —
-      // the underlying speech act, if any, is its own beat; the resolution
-      // itself is not narrated as a fresh scene event. Pressure acknowledgment
-      // is pure turn bookkeeping (§8), mirrors trigger_scheduled. An
-      // actor-LOD assignment (E6.1, §27) is an engine performance dial —
-      // no scene fact exists to portray.
+      // Household/lot/means bookkeeping: a household founding, a membership
+      // change, a lazy lot init, a privileged authoring adjustment, a coarse
+      // means-band setting, a restock routine's authoring, an off-screen
+      // promotion/restock outcome — all social-ledger/authoring facts, nothing
+      // in the scene moved for a beat to portray (mirrors item_ownership_set).
+      // A relationship-ledger entry — authored or derived — is the same shape
+      // of off-screen authoring/bookkeeping fact: nothing in the scene moved
+      // for a beat to portray. A consent escalation's grant/decline is a
+      // private negotiation outcome — the underlying speech act, if any, is
+      // its own beat; the resolution itself is not narrated as a fresh scene
+      // event. Pressure acknowledgment is pure turn bookkeeping, mirrors
+      // trigger_scheduled. An actor-LOD assignment (E6.1) is an engine
+      // performance dial — no scene fact exists to portray.
       return null;
     case "actor_lod_assigned":
     case "routine_policy_resolved":
@@ -280,7 +278,7 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
       // to portray. Their subsequent ACTIONS are the beats.
       return null;
     case "material_lot_transferred":
-      // An actor-driven, co-located stock movement (§26.9) — visibly witnessed
+      // An actor-driven, co-located stock movement — visibly witnessed
       // the same way an item changes hands (mirrors item_transferred).
       return { kind: "hard", summary: "Stock visibly changed hands." };
   }
@@ -341,17 +339,17 @@ export interface CompileNarrativeCutInput {
   /** The branch's activity instances; the compiler keeps co-located live ones. */
   activities: readonly ActivityInstance[];
   /**
-   * The viewpoint's E4.1 observations across the turn interval — the §20
-   * perception engine's verdict on what this viewpoint perceived. An event
-   * enters the cut only through an observation of it; the compiler re-decides
-   * nothing about witnessing.
+   * The viewpoint's E4.1 observations across the turn interval — the perception
+   * engine's verdict on what this viewpoint perceived. An event enters the cut
+   * only through an observation of it; the compiler re-decides nothing about
+   * witnessing.
    */
   viewpointObservations: readonly Observation[];
-  /** The viewpoint's OWN live beliefs (§21), each joined with its assertion. */
+  /** The viewpoint's OWN live beliefs, each joined with its assertion. */
   viewpointBeliefs: readonly { belief: Belief; assertion: Assertion }[];
   /** The VIEWPOINT's own unresolved pressures only — privacy by omission. */
   viewpointPressures: readonly TemporalPressure[];
-  /** Public faces of this turn's failed attempts (§14.4) — pre-redacted by type. */
+  /** Public faces of this turn's failed attempts — pre-redacted by type. */
   failurePresentations: readonly PublicFailurePresentation[];
   /** The branch's soft-canon entries; the compiler licenses the in-scope live ones. */
   softCanonEntries: readonly SoftCanonEntry[];
@@ -364,7 +362,7 @@ export interface CompileNarrativeCutInput {
   bodilyReads?: CutBodilyReads;
 }
 
-/** Compile one immutable, perspective-safe §22.1 cut. Pure and rerenderable. */
+/** Compile one immutable, perspective-safe cut. Pure and rerenderable. */
 export function compileNarrativeCut(input: CompileNarrativeCutInput): NarrativeCut {
   const viewpointLocus = input.space.loci.find((locus) => locus.actorId === input.viewpointActorId);
   if (!viewpointLocus) throw new Error(`Viewpoint ${input.viewpointActorId} has no physical locus`);
@@ -443,7 +441,7 @@ export function compileNarrativeCut(input: CompileNarrativeCutInput): NarrativeC
   });
 
   // The speaker's working set of beliefs: strongest and freshest first when
-  // bounding, then id-ordered so the compiled cut hashes stably (§22.3).
+  // bounding, then id-ordered so the compiled cut hashes stably.
   const speakerBeliefs = input.viewpointBeliefs
     .filter(({ belief }) => belief.holderActorId === input.viewpointActorId)
     .filter(({ belief }) => belief.status === "active" || belief.status === "doubted")
@@ -545,7 +543,7 @@ export function compileNarrativeCut(input: CompileNarrativeCutInput): NarrativeC
         ...(effect.disclosureContent === undefined
           ? {}
           : { disclosureContent: effect.disclosureContent }),
-        // E5.5 (§21.3, §21.4): a consent-scoped proposed effect
+        // E5.5: a consent-scoped proposed effect
         // (boundary_expressed/permission_granted/permission_withdrawn) must
         // carry its scopeKey through to the armed effect, or
         // `armedEffectSchema`'s `consentScopeKeyRequiredOnConsentEffects`
@@ -560,12 +558,11 @@ export function compileNarrativeCut(input: CompileNarrativeCutInput): NarrativeC
 
   const relevantPressures = input.viewpointPressures
     .filter((pressure) => pressure.resolvedAt === undefined)
-    // §9.4 (E5.5 slice 3): a pressure "looked at and not resolved" (§15.3)
-    // stops re-entering the cut at the severity it was acknowledged at — but
-    // any live severity change since (compared against the captured
-    // `acknowledgedSeverity`, not mere presence of `acknowledgedAt`)
-    // re-surfaces it, since the acknowledging read no longer covers the
-    // pressure's current stakes.
+    // E5.5 slice 3: a pressure "looked at and not resolved" stops re-entering
+    // the cut at the severity it was acknowledged at — but any live severity
+    // change since (compared against the captured `acknowledgedSeverity`, not
+    // mere presence of `acknowledgedAt`) re-surfaces it, since the
+    // acknowledging read no longer covers the pressure's current stakes.
     .filter((pressure) => pressure.acknowledgedAt === undefined || pressure.acknowledgedSeverity !== pressure.severity)
     .map((pressure) => ({
       commitmentId: pressure.sourceCommitmentId,

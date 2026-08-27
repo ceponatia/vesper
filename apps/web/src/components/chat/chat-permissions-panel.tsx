@@ -12,20 +12,18 @@ import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The `romantic_touch` permission developer panel
- * (romantic-contact-affordances.spec.permission.md §"Authorship and developer
- * controls"; plan §"`romantic_touch` permission-owner rulings" 1 and 5) —
- * admin-gated (mounted only when `useIsAdmin` passes in the conversation menu),
- * talking to the self-scoped owner-admin override endpoint
+ * The `romantic_touch` permission developer panel — admin-gated (mounted only
+ * when `useIsAdmin` passes in the conversation menu), talking to the
+ * self-scoped owner-admin override endpoint
  * (`/api/admin/self/chat-permissions/:chatId`, `src/lib/api-permissions.ts`).
  *
  * One row per DIRECTION, in plain language — "Alex may touch Mara
- * romantically", never a symmetric checkbox (ruling 1): the player toward each
- * roster NPC, and each NPC toward each other NPC. Granting targets are NPCs
- * only — the ruled player-target exception means no player-directed grant
- * exists to edit. Grant/Withdraw write one audited `developer_overridden`
- * ledger event each through the production projection and
- * contact-invalidation path; chat text can never do this (ruling 5).
+ * romantically", never a symmetric checkbox: the player toward each roster NPC,
+ * and each NPC toward each other NPC. Granting targets are NPCs only — the
+ * player can never be a granting target, so no player-directed grant exists to
+ * edit. Grant/Withdraw write one audited `developer_overridden` ledger event
+ * each through the production projection and contact-invalidation path; chat
+ * text can never do this.
  *
  * Relationship values (regard/familiarity) already have their dev editors on
  * the Character sheet — this panel deliberately does not duplicate them.

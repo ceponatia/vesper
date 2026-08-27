@@ -3,9 +3,8 @@ import { apiGet, apiPost } from "@/lib/client/api";
 
 /**
  * Client data layer for the self-scoped owner-admin `romantic_touch` permission
- * override panel (romantic-contact-affordances.spec.permission.md §"Authorship
- * and developer controls") — the `api-inspector.ts` shape: forgiving zod (a
- * debug surface shows a gap, never an error page) over the
+ * override panel — the `api-inspector.ts` shape: forgiving zod (a debug surface
+ * shows a gap, never an error page) over the
  * `/api/admin/self/chat-permissions/:chatId` base.
  */
 

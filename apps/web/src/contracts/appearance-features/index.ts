@@ -1,8 +1,5 @@
 /**
- * Appearance features — body-truth contracts for recognizable features
- * (body-attribute-affordances.spec.recognizable-features.md; code layout in
- * body-attribute-affordances.spec.code-organization.md §Recognition
- * ownership).
+ * Appearance features — body-truth contracts for recognizable features.
  *
  * This package owns HOW identity details are recorded (fine locus, feature
  * kinds, located facts, evented anatomy state) and the truth-level

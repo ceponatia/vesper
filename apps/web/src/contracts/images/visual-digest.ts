@@ -48,11 +48,11 @@ import type { SceneCameraSpec, SceneShotDistanceId, SceneSubjectOrientationId } 
 
 /**
  * The image digest — what one committed visual moment hands a character-bearing
- * render (visual-state.spec.md §Consumer digests; plan §Slice 8).
+ * render.
  *
  * This module realizes `VisualImageDigest` from three inputs it does not own:
  * the snapshot (the projection's committed cut), the camera-relative attention
- * context, and the camera's `VisualImageSelection` (slice 5's mandatory lane
+ * context, and the camera's `VisualImageSelection` (the mandatory lane
  * plus scored optional candidates). It adds no truth and re-ranks nothing; it
  * flattens the selection into facts a render intent can consume, classifies
  * each fact by the prompt-segment kind its prose belongs to, and derives the
@@ -95,10 +95,10 @@ import type { SceneCameraSpec, SceneShotDistanceId, SceneSubjectOrientationId } 
  * A fact the snapshot marks mandatory could not reach the digest for a reason
  * that is degradation, not design (unknown kind, unusable locus). The digest is
  * still returned without it; the caller decides whether the render profile is
- * eligible at all (spec §Diagnostics: "missing mandatory identity or morphology
- * makes an image profile ineligible rather than guessed"). A consent-gated
- * exclusion is deliberately NOT this code — that absence is designed, final per
- * the plan's conservative ruling, and already recorded as
+ * eligible at all: missing mandatory identity or morphology makes an image
+ * profile ineligible rather than guessed. A consent-gated
+ * exclusion is deliberately NOT this code — that absence is designed, final by
+ * the conservative ruling, and already recorded as
  * `visual_state.intimate.gated`.
  */
 export const VISUAL_DIGEST_MANDATORY_MISSING = "visual_state.digest.mandatory_missing";
@@ -390,10 +390,8 @@ function angleBandOfOrientation(orientation: SceneSubjectOrientationId): VisualA
  *
  * Lighting and motion are deliberately ABSENT: the scene camera proves where
  * the frame is, not what the light does, and no production owner asserts
- * either as typed data (visual-state.audit.md finding 14). A caller that
- * cannot assert them passes unknown reads and the optional lane fails closed —
- * the intended shadow behavior, with the open question on relaxing it parked
- * in the visual-state plan.
+ * either as typed data. A caller that cannot assert them passes unknown reads
+ * and the optional lane fails closed — the intended shadow behavior.
  */
 export function visualCameraReadsOfSceneCamera(camera: SceneCameraSpec): VisualSceneCameraReads {
   return {
@@ -772,8 +770,7 @@ export const visualImageProvenanceSchema = z.object({
 });
 
 /**
- * The compact visual provenance a render stores (spec §Persistence and
- * capture; image-lane-consolidation.spec.visual-state.md §Provenance):
+ * The compact visual provenance a render stores:
  * identifiers and fingerprints only, never a second copy of source values.
  * Enough to answer, for a stored image, WHICH visual moment produced it and
  * WHAT was selected before provider execution — and, via the fingerprints,

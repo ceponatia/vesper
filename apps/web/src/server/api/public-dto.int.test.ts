@@ -19,9 +19,9 @@ import {
   seedTestUsers,
 } from "@/server/test-support";
 
-// Integration suite for the public-read hardening (security-authz.plan.md
-// slices 3 + 4): the allow-listed public representation a FOREIGN viewer gets
-// for each shareable kind, and the ownership binding on public-entity image
+// Integration suite for the public-read hardening: the allow-listed public
+// representation a FOREIGN viewer gets for each shareable kind, and the
+// ownership binding on public-entity image
 // access. The key-set assertions are the point — they are the tripwire that
 // makes adding a column to one of these tables a deliberate decision about the
 // public surface rather than a silent widening of it. Two owners so every
@@ -157,7 +157,7 @@ describe.skipIf(!ready)("public representations for foreign viewers", () => {
     const row = await findViewable("character", publicCharacterId, ownerB);
     expect(row).toBeTruthy();
     const profile: Record<string, unknown> = { ...toPublicCharacter(row!).profile };
-    // The allow-list (security-authz.plan.md OQ2), top level.
+    // The allow-list, top level.
     expect(Object.keys(profile).sort()).toEqual([
       "age",
       "attributes",

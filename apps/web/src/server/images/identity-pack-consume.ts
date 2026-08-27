@@ -15,8 +15,7 @@ import { imageMeta, readImageBytes } from "./assets";
 import { evaluateIdentityPackForProfile } from "./identity-pack-references";
 
 /**
- * The render lanes' identity-pack entry (image-identity-packs.spec.integration.md
- * §"Shared render intent", §"Eligibility timing"): evaluate the pack under the
+ * The render lanes' identity-pack entry: evaluate the pack under the
  * resolved profile's declared strategy, read the authorized bytes for what the
  * evaluation allowed, and hand back render-intent references with the provenance
  * that must travel to the output row's meta.
@@ -71,8 +70,8 @@ export interface IdentityPackRenderReferencesInput {
 /**
  * Resolve one character's identity references for one flag-on render.
  *
- * Evaluation runs before any byte read (spec §"Eligibility timing": a blocked
- * pack stops the render before budget is spent), and the bytes are read through
+ * Evaluation runs before any byte read (a blocked pack stops the render before
+ * budget is spent), and the bytes are read through
  * an owner-scoped, ready-only query — the same authorization the rest of the
  * image service applies, never a bare id read.
  *

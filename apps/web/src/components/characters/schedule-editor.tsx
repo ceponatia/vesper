@@ -15,7 +15,7 @@ import { Select } from "@/components/ui/select";
 export interface ScheduleEditorProps {
   schedule: readonly ScheduleEntry[];
   onChange: (schedule: ScheduleEntry[]) => void;
-  /** Outfit presets for the rhythm auto-dress pick (ux-improvements slice 8.4). */
+  /** Outfit presets for the rhythm auto-dress pick. */
   outfitPresets?: readonly { id: string; name: string }[];
 }
 
@@ -31,7 +31,7 @@ const fromTimeValue = (value: string, fallback: number): number => {
 };
 
 /**
- * The "Daily rhythm" card (chat-initiative.plan.md slice 4): light authoring for
+ * The "Daily rhythm" card: light authoring for
  * `profile.schedule` — rows, not a timetable grid. Each row is a day-part preset
  * (or a custom minute window; windows may wrap past midnight) + what they're
  * doing + where. Chat openers ground "a life meanwhile" in it; in sessions the
@@ -125,7 +125,7 @@ export function ScheduleEditor({ schedule, onChange, outfitPresets = [] }: Sched
                     )}
                   </Field>
                   {outfitPresets.length > 0 ? (
-                    // Rhythm auto-dress (slice 8.4): pickup skips landing in this
+                    // Rhythm auto-dress: pickup skips landing in this
                     // window dress the character in the picked preset.
                     <Field label="Wearing">
                       {(id) => (

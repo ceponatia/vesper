@@ -12,9 +12,7 @@ import type { VisualAttentionConsumer, VisualAttentionContext } from "./visual-a
 import type { VisualFeatureMemory, VisualMemoryState } from "./visual-memory";
 
 /**
- * Recognition fixtures — the worked cases the calibration was tuned against
- * (body-attribute-affordances.spec.recognizable-features.md §Purpose; the
- * memory doc's acceptance list).
+ * Recognition fixtures — the worked cases the calibration was tuned against.
  *
  * These live WITH the layer for the same reason the hair fixtures do: they are
  * calibration evidence, not test scaffolding. The crooked nose is the attribute

@@ -7,10 +7,10 @@ import { recordProviderOutcome, type ProviderLane } from "./backpressure";
 import type { ApiJobType } from "./job-types";
 
 /**
- * Which provider lane a job's failure is evidence about (rate-limits.plan.md
- * slice 6). The job runner is the honest place to feed the circuit breaker: a
- * settled job is a real provider outcome, and it lives on the `@/server/api`
- * side of the boundary that forbids `@/server/ai` from importing back.
+ * Which provider lane a job's failure is evidence about. The job runner is the
+ * honest place to feed the circuit breaker: a settled job is a real provider
+ * outcome, and it lives on the `@/server/api` side of the boundary that forbids
+ * `@/server/ai` from importing back.
  *
  * Jobs that touch no provider map to null and report nothing — their failures say
  * something about this app, not about an upstream. That is `image_sweep` (file
@@ -140,7 +140,7 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
  * Failures never propagate to the caller.
  *
  * When `ownerId` is set the insert goes through the per-user concurrency cap
- * (rate-limits.plan.md slice 5) and may be refused. The background work is
+ * and may be refused. The background work is
  * **not** started in that case, so callers must branch on the result rather
  * than assume a job exists.
  *

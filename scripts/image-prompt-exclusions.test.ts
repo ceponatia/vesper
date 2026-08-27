@@ -4,10 +4,9 @@ import { describe, expect, it } from "vitest";
 import { repoRelative, sourceFilesUnder } from "@/server/test-support";
 
 /**
- * The census of negative constraints written into POSITIVE prompt prose
- * (model-aware-image-prompts.plan.md §"Stage 0 — research and current-behavior
- * freeze": "add architecture tests preventing new embedded 'no X' boilerplate in
- * production prompt builders").
+ * The census of negative constraints written into POSITIVE prompt prose: this
+ * is the architecture test preventing new embedded "no X" boilerplate in
+ * production prompt builders.
  *
  * A phrase like "no text, no watermark" or "nobody else appears" is a negative
  * constraint. Written into a positive paragraph it is invisible to every guard

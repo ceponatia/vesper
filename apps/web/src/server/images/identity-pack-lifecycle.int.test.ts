@@ -55,10 +55,7 @@ import { POST as galleryDeleteBulk } from "@/app/api/gallery/delete/route";
 /**
  * The identity-pack LIFECYCLE against a real database and a sandboxed DATA_ROOT:
  * manual correction, reset, retention cleanup, bounded batches, canonical-source
- * and character deletion, and profile-aware reference evaluation
- * (image-identity-packs.spec.lifecycle.md §"Lifecycle tests",
- * `.spec.derivation.md` §"Manual crop revisions",
- * `.spec.integration.md` §"Render integration tests").
+ * and character deletion, and profile-aware reference evaluation.
  *
  * Derivation itself (coalescing, the finalization race, `parseOr` degradation)
  * is covered by `identity-packs.int.test.ts`; this suite starts from a derived
@@ -66,7 +63,7 @@ import { POST as galleryDeleteBulk } from "@/app/api/gallery/delete/route";
  *
  * The source-deletion cases are the one place this file calls ROUTE handlers
  * rather than the services beneath them, because the delete ordering they prove
- * is a property of the routes and their helpers together (§"Source deletion").
+ * is a property of the routes and their helpers together.
  *
  * Two seams make otherwise untestable rules reachable: an injected clock for the
  * retention window (nobody waits a week) and an injected intrinsic policy for the
@@ -529,7 +526,7 @@ describe.skipIf(!ready)("cleanupIdentityPackRevisions", () => {
 describe.skipIf(!ready)("canonical source deletion", () => {
   /**
    * What must hold after ANY of the three user-facing deletes takes a character's
-   * canonical portrait (spec.lifecycle.md §"Source deletion").
+   * canonical portrait.
    *
    * The routes are driven rather than the helpers underneath them because the
    * ordering rule is split across both layers — `purgeImagesWhere` owns it for the

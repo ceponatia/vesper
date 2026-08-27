@@ -92,7 +92,7 @@ function cmd(
   });
 }
 
-describe("resolvePromoteActorFromCohortFromView (E6.4, §27.2/§27.7)", () => {
+describe("resolvePromoteActorFromCohortFromView (E6.4)", () => {
   it("rejects branch mismatch, non-privileged principals, unknown cohorts and zones", () => {
     expect(
       resolvePromoteActorFromCohortFromView(view(), cmd({}, { branchId: "branch-2" })),
@@ -120,7 +120,7 @@ describe("resolvePromoteActorFromCohortFromView (E6.4, §27.2/§27.7)", () => {
     ).toMatchObject({ ok: false, code: "actor_already_exists" });
   });
 
-  it("enforces §27.2 step 5 as the presence read: an empty windowed zone yields no one", () => {
+  it("enforces the presence read: an empty windowed zone yields no one", () => {
     // Inside the window, someone can step out of the square crowd (160 there)
     // or out of the dispersed remainder (40 elsewhere).
     expect(resolvePromoteActorFromCohortFromView(view(), cmd({ zoneId: SQUARE }))).toMatchObject({

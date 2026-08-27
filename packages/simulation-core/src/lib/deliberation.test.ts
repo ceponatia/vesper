@@ -25,7 +25,7 @@ function admissionInput(overrides: Partial<DeliberatorAdmissionInput> = {}): Del
   };
 }
 
-describe("E4.3 admitDeliberator (§19.3 gates)", () => {
+describe("E4.3 admitDeliberator gates", () => {
   it("admits only when every gate passes, naming the first failure otherwise", () => {
     expect(admitDeliberator(admissionInput())).toMatchObject({
       admitted: true,

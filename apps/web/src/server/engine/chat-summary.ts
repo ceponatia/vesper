@@ -96,7 +96,7 @@ export async function loadVerbatimWindow(
     .orderBy(desc(characterChatMessages.createdAt))
     .limit(CHARACTER_CHAT_HISTORY_TURNS * 2);
   return rows.reverse().map((r) => {
-    // Narrator-mode flag (chat-supporting-cast.plan.md §Narrator input): read leniently off
+    // Narrator-mode flag: read leniently off
     // the meta jsonb — the pipeline wraps flagged lines at the model boundary.
     const narrator =
       r.role === "user" &&
@@ -135,7 +135,7 @@ export interface NormalizedFold {
 }
 
 /**
- * Clamp the model output to the feature's invariants (trust nothing, §3). A
+ * Clamp the model output to the feature's invariants (trust nothing). A
  * degraded result (demo / twice-failed) or an empty summary keeps the prior
  * summary and does NOT advance the watermark — the chunk stays verbatim and we
  * retry next cycle, so a bad fold can never replace a good summary (PURE).
@@ -230,7 +230,7 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   if (!last) return; // raced to empty; nothing to fold
 
   // Narrator-mode player lines fold as labeled story narration so the summary never
-  // attributes authored events to the player (chat-supporting-cast.plan.md).
+  // attributes authored events to the player.
   const chunk: ChatTurn[] = chunkRows.map((r) => {
     const narrator =
       r.role === "user" &&
@@ -297,8 +297,8 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
 const REBUILD_MAX_FOLDS = 50;
 
 /**
- * Re-fold the running summary from the FULL transcript (character-chat-standalone.spec.md
- * §7.3 — the recovery lever for folded-then-deleted lines). Under the same per-chat
+ * Re-fold the running summary from the FULL transcript (the recovery lever for
+ * folded-then-deleted lines). Under the same per-chat
  * keyed lock as the fold job: resets the summary row (empty summary, null watermark ⇒
  * every message is unsummarized again), then folds repeatedly until the tail is below
  * the trigger. A degraded/empty fold stalls the watermark, which ends the loop honestly
@@ -336,7 +336,7 @@ function errorText(err: unknown): string {
 registerJobHandler("chat_summary", async (job) => {
   const payload = parseOrNull(chatSummaryJobPayloadSchema, job.payload);
   if (!payload) throw new Error("chat_summary job missing payload");
-  // Serialize folds per chat (codebase-review A8): the enqueue dedupe is
+  // Serialize folds per chat: the enqueue dedupe is
   // check-then-insert, so two near-simultaneous exchanges can both enqueue.
   // Under the lock the second fold re-reads the advanced watermark and no-ops
   // below the trigger instead of paying a duplicate LLM call.

@@ -1,7 +1,7 @@
 import { log } from "@/server/log";
 
 /**
- * Magic-link delivery policy (security-authz.plan.md slice 1). A magic link is a
+ * Magic-link delivery policy. A magic link is a
  * temporary password, so no production process may ever write one into log
  * retention: the plugin registers only where delivery actually works, and the
  * production diagnostic carries the email and nothing else. Split out of

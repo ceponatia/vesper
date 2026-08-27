@@ -42,20 +42,19 @@ import { imageGeneratorRoleLabel } from "./image-generator-copy";
 import { OwnedImagePicker } from "./owned-image-picker";
 
 /**
- * The new-run form (image-lab-general-model-trials.plan.md §14): one raw
- * prompt against one explicitly chosen registered model, with every input and
- * control written down before the render is paid for.
+ * The new-run form: one raw prompt against one explicitly chosen registered
+ * model, with every input and control written down before the render is paid for.
  *
- * The form is CAPABILITY-DRIVEN, never model-slug-driven — that is the plan's
- * acceptance test (§20). The chosen row's probed `advancedCapabilities` decide
- * everything past the prompt: primary references appear only on a model that
- * can edit, dedicated structural slots only where the capability record
- * declares them, each normalized control only where the active version binds a
- * field for it, and advanced inputs only for described non-reserved provider
+ * The form is CAPABILITY-DRIVEN, never model-slug-driven — that is its acceptance
+ * test. The chosen row's probed `advancedCapabilities` decide everything past the
+ * prompt: primary references appear only on a model that can edit, dedicated
+ * structural slots only where the capability record declares them, each
+ * normalized control only where the active version binds a field for it, and
+ * advanced inputs only for described non-reserved provider
  * fields. Registering a new model changes this form through its capability
  * record, with no edit here.
  *
- * Everything starts UNSET (plan §8): the provider's own defaults rule until the
+ * Everything starts UNSET: the provider's own defaults rule until the
  * admin explicitly changes a value, and a value that cannot be represented at
  * run time refuses the run rather than being dropped — a silently trimmed
  * request would make every A/B built on it dishonest.
@@ -66,8 +65,8 @@ import { OwnedImagePicker } from "./owned-image-picker";
  * model by SLUG (the run record's snapshot); the form adopts the matching
  * registry row once the registry answers, and says so plainly when the slug no
  * longer resolves or its pin has moved since the original ran — comparison
- * honesty (plan §12) is a warning the admin reads before spending, never a
- * silent substitution.
+ * honesty is a warning the admin reads before spending, never a silent
+ * substitution.
  */
 
 /** A settled run's request, re-seeded into a fresh form. Values only. */
@@ -178,7 +177,7 @@ type StrictNumber = { kind: "unset" } | { kind: "invalid" } | { kind: "value"; v
  * "3.7" or "12abc" in an integer box is INVALID rather than truncated to 3 or
  * 12, and "1e10" means ten billion rather than 1. The caller renders invalid
  * as a visible per-field error that holds the run — withheld-but-typed would
- * be the same lie as silently trimmed (plan §8).
+ * be the same lie as silently trimmed.
  */
 function parseStrictNumber(raw: string, mode: "integer" | "number"): StrictNumber {
   const text = raw.trim();
@@ -560,13 +559,13 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // is read by `parseStrictNumber`; a value it calls invalid gets a per-field
   // error below and holds the run, never a silent rewrite or withhold.
   //
-  // Width/Height are deliberately NOT offered (spec §"Rulings the build
-  // settled"): the compile honors explicit dimensions only under
-  // `resolution: "custom"`, which this form cannot produce — the tier select
-  // filters `imageResolutionTiers` by the provider's own enumValues, which
-  // never include "custom" — so any set dimension was a guaranteed pre-spend
-  // `control_refused`. Withheld until the shared custom-resolution path works
-  // end to end; the contract keeps `width`/`height` for API callers.
+  // Width/Height are deliberately NOT offered: the compile honors explicit
+  // dimensions only under `resolution: "custom"`, which this form cannot
+  // produce — the tier select filters `imageResolutionTiers` by the provider's
+  // own enumValues, which never include "custom" — so any set dimension was a
+  // guaranteed pre-spend `control_refused`. Withheld until the shared
+  // custom-resolution path works end to end; the contract keeps `width`/`height`
+  // for API callers.
   const assembledControls: ImageGeneratorControls = {};
   const controlLines: string[] = [];
   const parsedSeed = parseStrictNumber(seed, "integer");
@@ -696,8 +695,8 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   const missingRequiredDedicated = dedicatedSlots.filter(
     (slot) => slot.binding.required && dedicated[slot.role] === undefined,
   );
-  // The runner's own rule (spec §Generator runner, step 4): a PRIMARY reference
-  // makes this an edit. A dedicated structural input does not — it is its own
+  // The runner's own rule: a PRIMARY reference makes this an edit. A dedicated
+  // structural input does not — it is its own
   // provider field, and a model that generates from a prompt while taking a
   // required pose map is still generating. Only a model that cannot generate at
   // all reads its structural image as the thing being edited.
@@ -720,7 +719,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   const promptRequired =
     selectedModel === null || promptDescriptor === undefined || (promptDescriptor.required && promptDescriptor.default === undefined);
 
-  // A duplicate whose model has drifted — comparison honesty (plan §12): the
+  // A duplicate whose model has drifted — comparison honesty: the
   // fact is surfaced BEFORE submit, never silently run on different weights.
   const prefillModelMissing =
     prefill !== null &&
@@ -1355,8 +1354,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
               ) : null}
               {/* No Width/Height here even where customWidth/customHeight are
                   bound — withheld until the shared custom-resolution path works
-                  end to end (spec §"Rulings the build settled"; rationale on
-                  the controls assembly above). */}
+                  end to end (rationale on the controls assembly above). */}
             </div>
               {/* Stated unconditionally, and deliberately not narrowed to the
                   endpoints known to ignore the field. A slug test here is the

@@ -8,7 +8,7 @@ import type { VisualStateSuppression } from "./suppression";
 import { visualStateAdapterRank, visualStateLayerRank, type VisualStateAdapterId } from "./vocabulary";
 
 /**
- * One committed visual moment (visual-state.spec.md §Snapshot).
+ * One committed visual moment.
  *
  * A snapshot is RECOMPUTED, not stored as truth. It is pure over a committed
  * cut, which is what makes a retake restore the whole visual moment: the same

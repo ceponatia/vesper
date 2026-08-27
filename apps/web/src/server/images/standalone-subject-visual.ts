@@ -27,8 +27,8 @@ import { apparentAgeAnchor } from "./prompts-appearance";
 import { visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
- * THE STANDALONE-CHARACTER DIGEST ASSEMBLY (image-lane-consolidation.plan.md
- * Stages 3–4) — one snapshot → one camera-bound selection → one digest → one
+ * THE STANDALONE-CHARACTER DIGEST ASSEMBLY — one snapshot → one camera-bound
+ * selection → one digest → one
  * subject's semantic segments, for every lane that renders a character with NO
  * chat behind it.
  *
@@ -60,8 +60,8 @@ import { visualFactClauseResolver } from "./visual-fact-clauses";
  * ## Failure behavior
  *
  * Non-empty `subject.missingRequired` means a required digest fact resolved no
- * clause: the CALLER must refuse before provider spend (spec.prompts.md
- * §Failure behavior) rather than render a character whose anchors quietly
+ * clause: the CALLER must refuse before provider spend rather than render a
+ * character whose anchors quietly
  * vanished. Nothing here throws for a degraded owner.
  *
  * Pure: no IO, no env, no clock — which is what lets the lane characterization

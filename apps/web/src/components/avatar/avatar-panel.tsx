@@ -12,8 +12,8 @@ export interface AvatarPanelProps {
 /**
  * The standing companion panel: a larger, portrait-sized view of the character's
  * canonical avatar beside the conversation / scene. Display-only — the mood-reactive
- * expression pipeline was rolled back (avatar-3d.plan.md); a missing image degrades
- * to the monogram fallback.
+ * expression pipeline was rolled back; a missing image degrades to the monogram
+ * fallback.
  */
 export function AvatarPanel({ name, avatarImageId, className }: AvatarPanelProps) {
   return (

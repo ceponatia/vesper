@@ -6,11 +6,10 @@ const MONTH = 30 * DAY;
 const YEAR = 365 * DAY;
 
 /**
- * Coarse wall-clock recency for list rows ("2h ago") — the Chats hub row stamp
- * (character-chat-standalone.spec.md §2.2). Deliberately bucketed and
- * locale-free so it stays pure and deterministic: sub-minute reads "just now",
- * then m/h/d/w/mo/y. Unparseable input degrades to "" (never throws); a
- * future timestamp (clock skew) reads "just now".
+ * Coarse wall-clock recency for list rows ("2h ago") — the Chats hub row stamp.
+ * Deliberately bucketed and locale-free so it stays pure and deterministic:
+ * sub-minute reads "just now", then m/h/d/w/mo/y. Unparseable input degrades to
+ * "" (never throws); a future timestamp (clock skew) reads "just now".
  */
 export function timeAgo(iso: string, now: number = Date.now()): string {
   const at = Date.parse(iso);

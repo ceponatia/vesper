@@ -3,8 +3,8 @@ import type { EscalationTier } from "./profile";
 import type { PresentedMask } from "./record";
 
 /**
- * The composed relationship law (relationship-model.plan.md §"What the LLM
- * sees"): two band-profile tables (5 familiarity + 10 regard) replace the 11
+ * The composed relationship law — what the LLM sees: two band-profile tables
+ * (5 familiarity + 10 regard) replace the 11
  * conflated stage profiles — composition happens in prose assembly, so there is
  * no M×N explosion. A sparse combo table covers the special corners. The
  * composition rules this encodes:
@@ -252,7 +252,7 @@ export function relationshipRegionLabel(familiarity: number, regard: number): st
 const CONTRAST_WARMTH_LEAN = 20;
 
 /**
- * The disposition-contrast line (plan §Disposition interplay 3): when regard's
+ * The disposition-contrast line: when regard's
  * sign disagrees with the authored warmth lean, the divergence is stated
  * explicitly — the contrast IS the characterization ("curt with everyone; Mara
  * is the exception") — instead of leaving the trope for the model to infer from
@@ -324,7 +324,7 @@ function presentedLine(name: string, presented: PresentedMask): string {
 }
 
 /**
- * The composed relationship law block (plan §"What the LLM sees"): history →
+ * The composed relationship law block: history →
  * familiarity → regard → mask → combo corner → escalation, each line keyed to
  * its own axis. Re-rendered only on a band change, so it lives in the prompt's
  * stable prefix.

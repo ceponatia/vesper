@@ -57,7 +57,7 @@ import { findPortrait, listOwnedPortraits } from "../../app/api/characters/[id]/
 import { findPersona } from "../../app/api/personas/[id]/owned";
 
 // =============================================================================
-// The two-user authorization matrix (security-authz.plan.md slice 5 / S7).
+// The two-user authorization matrix.
 //
 // Two owners are seeded once — A authors everything, B is the adversary — and
 // every owned resource reachable at the server-API seam is run through the same
@@ -682,11 +682,11 @@ describe.skipIf(!ready)("authorization matrix — adversarial cases", () => {
     expect(await db().select().from(images).where(eq(images.id, fixture.portrait)).limit(1)).toEqual(before);
 
     // Promotion binds image → character by the entity link AND matches both
-    // rows against the caller's owner id (security-authz.plan.md §Follow-ups
-    // item 2), so B cannot mount A's portrait onto B's own character even
-    // though B owns the character. The owner-strict image lookup is the first
-    // predicate to fail, so the miss is indistinguishable from a nonexistent
-    // id — no "that image exists but isn't yours" signal.
+    // rows against the caller's owner id, so B cannot mount A's portrait onto
+    // B's own character even though B owns the character. The owner-strict
+    // image lookup is the first predicate to fail, so the miss is
+    // indistinguishable from a nonexistent id — no "that image exists but
+    // isn't yours" signal.
     const promoted = await promoteVariant(fixture.bCharacter, fixture.portrait, ownerB);
     expect(promoted.ok).toBe(false);
     expect(promoted.ok ? "" : (promoted.error ?? "")).toBe("image not found");

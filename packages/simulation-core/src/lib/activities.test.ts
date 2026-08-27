@@ -97,7 +97,7 @@ function startCommand(overrides: Record<string, unknown> = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// E5.3 slice 2 fixtures — material items and bodies (§26.5–26.6)
+// E5.3 slice 2 fixtures — material items and bodies
 // ---------------------------------------------------------------------------
 
 function materialItem(input: Partial<SimulationMaterialItemInput> & { id: string }): SimulationMaterialItem {
@@ -109,7 +109,7 @@ function materialItem(input: Partial<SimulationMaterialItemInput> & { id: string
   });
 }
 
-/** A minimal §26.5 material view over a fixed item set, with optional reservations. */
+/** A minimal material view over a fixed item set, with optional reservations. */
 function materialLookup(
   items: readonly SimulationMaterialItem[],
   reservedBy: Record<string, string> = {},
@@ -318,7 +318,7 @@ function acceptedStart() {
   return resolution;
 }
 
-/** A fixture start whose definition carries §26.5 resource costs over a fixed item set. */
+/** A fixture start whose definition carries resource costs over a fixed item set. */
 function acceptedStartWithCost(resourceCosts: ActionResourceCost[], items: readonly SimulationMaterialItem[]) {
   const resolution = resolveStartActivity(
     startView({
@@ -581,7 +581,7 @@ describe("E3.2 activities replay", () => {
   });
 });
 
-describe("E5.3 slice 2 — resolveStartActivity resource reservation (§26.5)", () => {
+describe("E5.3 slice 2 — resolveStartActivity resource reservation", () => {
   it("selects deterministically: actor-held items first, lexicographic tie-break, spanning into zone-rooted items", () => {
     const items = [
       materialItem({ id: "herb-y", locus: heldBy("actor-1") }),
@@ -642,7 +642,7 @@ describe("E5.3 slice 2 — resolveStartActivity resource reservation (§26.5)", 
   });
 });
 
-describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => {
+describe("E5.3 slice 2 — resolveCompleteActivity consumption", () => {
   it("re-validates fire-time and throws corruption errors rather than rejecting", () => {
     const items = [materialItem({ id: "herb-a", locus: heldBy("actor-1") })];
     const started = acceptedStartWithCost([cost({ quantity: 1 })], items);
@@ -844,7 +844,7 @@ describe("E5.3 slice 2 — resolveCompleteActivity consumption (§26.6)", () => 
   });
 });
 
-describe("E5.3 slice 3 — resolveCompleteActivity use-condition deltas (§26.7)", () => {
+describe("E5.3 slice 3 — resolveCompleteActivity use-condition deltas", () => {
   function conditionView(itemId: string, wearValue = 0): ItemConditionView {
     return {
       itemId,
@@ -985,7 +985,7 @@ describe("E5.3 slice 3 — resolveCompleteActivity use-condition deltas (§26.7)
   });
 });
 
-describe("E5.3 slice 2 — reservation lives across claim-holding phases, releases terminally (§26.5)", () => {
+describe("E5.3 slice 2 — reservation lives across claim-holding phases, releases terminally", () => {
   function reservationBlocked(activity: {
     id: string;
     phase: ActivityPhase;

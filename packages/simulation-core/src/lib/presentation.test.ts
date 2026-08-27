@@ -61,7 +61,7 @@ const SUBSTANTIAL_PROSE =
   "her shoulders. She stops at the window, watching the street below, and when she finally speaks her voice is " +
   "quieter than before, worn thin by everything that has gone unsaid between them since dawn.";
 
-describe("E4.3 parseNarratorResult (§23.1 trust boundary)", () => {
+describe("E4.3 parseNarratorResult (trust boundary)", () => {
   it("degrades garbage to the empty result instead of failing the turn", () => {
     const sink: Diagnostic[] = [];
     const { result, proposals } = parseNarratorResult(42, fixtureCut(), sink);
@@ -113,7 +113,7 @@ describe("E4.3 parseNarratorResult (§23.1 trust boundary)", () => {
   });
 });
 
-describe("E4.3 auditPresentation (§23.2)", () => {
+describe("E4.3 auditPresentation", () => {
   it("accepts a render that declared every hard beat", () => {
     const audit = auditPresentation(fixtureCut(), {
       prose: SUBSTANTIAL_PROSE,

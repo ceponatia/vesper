@@ -3,8 +3,7 @@ import { simulationHash } from "@vesper/simulation-core/hash";
 import { garmentMaterialProfileIdSchema, GARMENT_MATERIAL_UNKNOWN } from "./garment-material";
 
 /**
- * The garment BLUEPRINT graph (clothing-state-graph.plan.md §"Two graphs, not
- * one universal property graph"; slice-0 audit OQ1/OQ2).
+ * The garment BLUEPRINT graph — two graphs, not one universal property graph.
  *
  * A blueprint describes stable construction: the parts that can independently be
  * manipulated, conditioned, hidden or used to change a coverage read — nothing
@@ -139,11 +138,11 @@ export type GarmentEdgeKind = GarmentEdge["kind"];
 // --- Behaviors ----------------------------------------------------------------
 
 /**
- * The narrow behavior registry (plan §"GarmentBehaviorBinding"; OQ6). Six
+ * The narrow behavior registry. Six
  * behaviors, no rules DSL: each one names a presentation channel and a fixed,
  * subtraction-only coverage law (garment-coverage.ts).
  *
- * `zipper_closure` is the audit's `zipper`; `liftable_hem` is its `hem_lift`.
+ * `zipper_closure` was once called `zipper`; `liftable_hem` was `hem_lift`.
  */
 export const garmentBehaviors = [
   "linear_front_closure",
@@ -271,8 +270,8 @@ export const garmentBlueprintSchema = garmentBlueprintShapeSchema.transform((sha
  * is read as unknown — on the modelled wardrobe path it would read as a
  * positive nudity claim, so consumers deriving exposure must check
  * `isDegradedGarmentBlueprint` (or `resolveGarmentBlueprint`'s `reliable`) and
- * degrade to covered, never to bare (plan §"Never let a free-text flag decide
- * intimate coverage").
+ * degrade to covered, never to bare: a free-text flag never decides intimate
+ * coverage.
  */
 export function degradedGarmentBlueprint(): GarmentBlueprint {
   return garmentBlueprintSchema.parse({

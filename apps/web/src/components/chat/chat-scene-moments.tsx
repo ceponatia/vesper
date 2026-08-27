@@ -6,9 +6,9 @@ import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 
 /**
- * Inline scene moments (character-chat-standalone plan area 8, slice 9): scene
- * images rendered IN the transcript, under the assistant message they were
- * anchored to at generation time — a long chat reads like an illustrated story.
+ * Inline scene moments: scene images rendered IN the transcript, under the
+ * assistant message they were anchored to at generation time — a long chat
+ * reads like an illustrated story.
  * Un-anchored (legacy) scenes stay strip-only; a dangling anchor (its message was
  * deleted or rerun-snipped) simply matches no line and degrades to strip-only too.
  */
@@ -16,7 +16,7 @@ import { ImageLightbox } from "@/components/ui/image-lightbox";
 /**
  * Group the anchored scenes by their anchor message id (oldest render first).
  * Ready renders always show; a FAILED selfie also shows — the "Failed"
- * placeholder the retry ruling calls for (chat-selfies.plan.md), enlarging to
+ * placeholder the retry ruling calls for, enlarging to
  * the sent prompt for debugging — because a photo message that silently never
  * arrives would leave the reply's "sending you this…" dangling.
  */
@@ -42,8 +42,8 @@ export function SceneMomentRow({ images, name }: { images: ImageRecord[]; name: 
   return (
     // overflow-x-auto (matching the sibling scene strip, chat-scene-strip.tsx):
     // 3+ fixed-width thumbnails would otherwise overflow the transcript column
-    // with no wrap or scroll (mobile-ux W3 task 8). shrink-0 keeps each thumb
-    // at its full w-36 instead of the flex row squeezing them to fit.
+    // with no wrap or scroll. shrink-0 keeps each thumb at its full w-36
+    // instead of the flex row squeezing them to fit.
     <div className="ml-10 flex gap-2 overflow-x-auto pb-1">
       {images.map((img) => {
         const selfie = img.meta.flavor === "selfie";
@@ -60,7 +60,7 @@ export function SceneMomentRow({ images, name }: { images: ImageRecord[]; name: 
             }`}
           >
             {failed ? (
-              // The retry-once policy exhausted (chat-selfies.plan.md §Rulings): a plain
+              // The retry-once policy exhausted: a plain
               // "Failed" tile; enlarging shows the sent prompt (admin panel) for debugging.
               <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-1 bg-ink-800 text-paper-500">
                 <span className="text-sm font-medium">Failed</span>

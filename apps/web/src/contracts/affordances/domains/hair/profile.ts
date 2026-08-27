@@ -21,7 +21,7 @@ import {
 
 /**
  * Stage 1 — the stable hair material and geometry compiled from resolved
- * canonical attributes (hair spec §"Structural profile").
+ * canonical attributes.
  *
  * What is NOT here is the point: no wetness, no binding, no coverage, no
  * contact, no wind. The profile is a pure function of the attribute snapshot,

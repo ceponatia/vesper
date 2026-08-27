@@ -24,8 +24,7 @@ import { characterChatMessages, characterChats, db } from "@/server/db";
 import { codes } from "@/test/diagnostics";
 
 /**
- * The affectionate integration proof (romantic-contact-affordances.plan.md
- * §"Continuation order" 1), end to end through `submitChatMessage`.
+ * The affectionate integration proof, end to end through `submitChatMessage`.
  *
  * The adapter's own unit suite already pins detection, resolution and the fold —
  * all of it pure. What only a database can prove is the half this file is about:

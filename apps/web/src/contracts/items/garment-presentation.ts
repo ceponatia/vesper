@@ -24,10 +24,9 @@ import {
 import { applyGarmentTransfers, garmentBlueprintFor, type GarmentOperationResult } from "./garment-store";
 
 /**
- * The PRESENTATION reducer (clothing-state-graph.plan.md §Slice 3 · §"Typed
- * mutation surface"; slice-0 audit OQ6/OQ7).
+ * The PRESENTATION reducer — the typed mutation surface for arrangement.
  *
- * Slice 2 taught the store how a garment MOVES; this module teaches it how a
+ * The store already knows how a garment MOVES; this module teaches it how a
  * garment is currently ARRANGED — closures opened, sleeves rolled, hems tucked,
  * straps and hems displaced, and the whole lot put back. It is the counterpart
  * to garment-coverage.ts: that file states what each behavior may subtract, this
@@ -218,10 +217,10 @@ export function nextGarmentPresentation(
   sink?: DiagnosticSink,
 ): GarmentPresentationState | null {
   if (operation.kind === "restore_presentation") {
-    // Empty `partIds` restores NOTHING (garment-instance.ts §GARMENT_ROOT_SCOPED_OPERATIONS):
-    // only the condition-class operations may mean "the whole garment" with an
-    // empty list, and the audit lists restore among those that never fall back.
-    // A whole-garment restore is authored by naming the parts.
+    // Empty `partIds` restores NOTHING (garment-instance.ts's
+    // `GARMENT_ROOT_SCOPED_OPERATIONS`): only the condition-class operations may
+    // mean "the whole garment" with an empty list, and restore is one of those
+    // that never fall back. A whole-garment restore is authored by naming the parts.
     if (operation.partIds.length === 0) {
       return drop(
         sink,
@@ -383,7 +382,7 @@ function applyConditionOperation(
 }
 
 /**
- * Apply typed garment operations in FICTION ORDER (plan §Typed mutation surface):
+ * Apply typed garment operations in FICTION ORDER:
  * a transfer may remove coverage before a part operation, and an impossible later
  * operation is dropped with a stable diagnostic rather than reordered or widened.
  *

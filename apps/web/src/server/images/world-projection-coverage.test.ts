@@ -10,9 +10,9 @@ import {
 import { items, locations } from "../db/schema";
 
 /**
- * The projection-coverage tripwire (model-aware-image-prompts.plan.md
- * §"'All information' means all image-eligible truth": "CI must fail when a new
- * image-relevant contract member has no projection decision").
+ * The projection-coverage tripwire: "all information" means all image-eligible
+ * truth, so CI must fail when a new
+ * image-relevant contract member has no projection decision.
  *
  * This is the one guarantee that a new world field cannot vanish from every
  * render in silence. Before it, adding a column to `items` was invisible to the

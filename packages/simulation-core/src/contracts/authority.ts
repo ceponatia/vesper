@@ -1,10 +1,9 @@
 import { z } from "zod";
 
 /**
- * R1 (engine.rollout.plan.md) — per-world engine authority. Which lane owns a
- * character chat's world truth is decided by ONE flag on the chat row and
- * nothing else (engine-foundation.plan.md §"Migration and rollout": authority is
- * assigned per world or branch by feature flag, never per row by accident).
+ * R1 — per-world engine authority. Which lane owns a character chat's world
+ * truth is decided by ONE flag on the chat row and nothing else — authority is
+ * assigned per world or branch by feature flag, never per row by accident.
  *
  * The four lanes are rollout STAGES, ordered — a chat normally walks left to
  * right and rollback is one flag flip back:
@@ -19,8 +18,8 @@ import { z } from "zod";
  *   migrated domains (R5).
  *
  * `successor_rag_eligibility` is deliberately NOT a lane: it is the one
- * orthogonal flag (§24 recall routing can flip independently once the
- * knowledge domain lands), so it rides a separate boolean column.
+ * orthogonal flag (recall routing can flip independently once the knowledge
+ * domain lands), so it rides a separate boolean column.
  */
 
 export const engineAuthorities = [
@@ -39,7 +38,7 @@ export const DEFAULT_ENGINE_AUTHORITY: EngineAuthority = "legacy_chat";
 export const chatEngineAuthorityStateSchema = z
   .object({
     authority: engineAuthoritySchema,
-    /** §24 recall routing — orthogonal to the lane, false until R5's knowledge domain. */
+    /** Recall routing — orthogonal to the lane, false until R5's knowledge domain. */
     ragEligibility: z.boolean(),
     /** The successor branch this chat's world maps onto; null until linked. */
     simBranchId: z.string().min(1).nullable(),

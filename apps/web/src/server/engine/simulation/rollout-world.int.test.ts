@@ -12,7 +12,7 @@ import {
 } from "./rollout-world";
 
 /**
- * R1 (engine.rollout.plan.md) — the standing internal test world: idempotent
+ * R1 — the standing internal test world: idempotent
  * provisioning under fixed ids, and a drain that runs the E6.2 routine life
  * exactly as the Gate 6 corpus does. This is the local half of R1's exit
  * criterion; the Fly half is the same two `pnpm sim:*` commands over SSH.

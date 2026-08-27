@@ -16,8 +16,7 @@ import { imageRenderRuntimeFacts } from "./model-adapters";
 import { renderWithModel, type RenderWithModelResult } from "./models";
 
 /**
- * THE production render entry point (image-model-capabilities.spec.md
- * §"Normalized render intent") — the IO half of the render path.
+ * THE production render entry point — the IO half of the render path.
  *
  * The planning half is `planImageRender` in `@vesper/image-core`: pure,
  * database-free, deployment-free. What is left here is everything that is not —
@@ -301,7 +300,7 @@ export async function renderImageIntent(
       ...(intent.versionId ? { versionId: intent.versionId } : {}),
       // PASSED THROUGH, never synthesized. A production lane deliberately
       // carries no execution policy and keeps the transport's single-budget
-      // shell (plan §8, owner ruling 2026-08-24); only the benches put one on
+      // shell (owner ruling 2026-08-24); only the benches put one on
       // their intent, and this is where theirs reaches the transport. Inventing
       // a default here would silently move every player-facing render onto
       // two-phase budgets and startup retries.

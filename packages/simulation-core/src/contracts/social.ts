@@ -22,13 +22,13 @@ import {
  * causally-provenanced fact — derived automatically from an event already in
  * the branch's history, or authored explicitly by a privileged command for
  * facts the live mechanics do not yet produce. Trust, attraction, and
- * resentment are READ-time projections over the ledger (§6.4: only material
+ * resentment are READ-time projections over the ledger (only material
  * transitions write; reads recompute), never persisted numbers.
  *
  * Consent is ledger-gated and fail-closed (ruling 16): a `consent_covered`
  * action precondition (contracts/simulation/activities.ts) checks the same
  * ledger this file owns for a covering `permission_granted` entry; an
- * uncovered escalation routes through the §19.3 deliberator seam with a
+ * uncovered escalation routes through the deliberator seam with a
  * deterministic fallback of decline, and the outcome lands back here as a
  * ledger entry either way.
  *
@@ -36,14 +36,14 @@ import {
  * the trust/attraction/resentment reads. Slice 2 wired the consent gate
  * (`consent_covered` precondition) and destinationless commitments. Slice 3
  * (this file's `attempt_consent_escalation`/`consent_escalation_resolved`)
- * closes the loop: an uncovered attempt routes through the §19.3 deliberator
+ * closes the loop: an uncovered attempt routes through the deliberator
  * seam and the outcome lands back in the ledger either way.
  */
 
 export const socialDerivationVersion = "social-v1" as const;
 
 // ---------------------------------------------------------------------------
-// Consent scope vocabulary (§21.4) — closed, versioned, registry-as-data
+// Consent scope vocabulary — closed, versioned, registry-as-data
 // ---------------------------------------------------------------------------
 
 export const consentScopeKeys = [
@@ -58,7 +58,7 @@ export type ConsentScopeKey = z.infer<typeof consentScopeKeySchema>;
 export const consentScopeRegistryVersion = "consent-scope-v1" as const;
 
 // ---------------------------------------------------------------------------
-// Relationship ledger entry (§21.3) — closed kind vocabulary, discriminated payload
+// Relationship ledger entry — closed kind vocabulary, discriminated payload
 // ---------------------------------------------------------------------------
 
 export const relationshipLedgerKinds = [
@@ -93,7 +93,7 @@ export const relationshipLedgerProvenances = ["derived", "authored"] as const;
 export const relationshipLedgerProvenanceSchema = z.enum(relationshipLedgerProvenances);
 export type RelationshipLedgerProvenance = z.infer<typeof relationshipLedgerProvenanceSchema>;
 
-/** The 7 authored-only kinds `record_relationship_entry` may write (§7.5). */
+/** The 7 authored-only kinds `record_relationship_entry` may write. */
 export const authoredRelationshipLedgerKinds = [
   "boundary_violated",
   "help_given",
@@ -129,7 +129,7 @@ export type RelationshipLedgerPayload = z.infer<typeof relationshipLedgerPayload
  * `promise_made`/`promise_accepted` map to `"none"`, NOT `"commitment"` —
  * a deviation from the blueprint's literal table, found and fixed here.
  * Both kinds are sourced ONLY from a spoken `promise_offered`/
- * `promise_accepted` speech act (§4.2's speech-act mapping); a speech act
+ * `promise_accepted` speech act (the speech-act mapping); a speech act
  * carries no `commitmentId` — a real `Commitment` row is created (or not)
  * by a wholly separate `create_commitment` command, and nothing links the
  * two. Only `promise_kept`/`promise_missed`/`promise_repaired` (Slice 2's
@@ -191,7 +191,7 @@ export const relationshipLedgerEntrySchema = z
 export type RelationshipLedgerEntry = z.infer<typeof relationshipLedgerEntrySchema>;
 
 // ---------------------------------------------------------------------------
-// Trust/attraction/resentment read (§21.3) — derived, signed, banded, decayed
+// Trust/attraction/resentment read — derived, signed, banded, decayed
 // ---------------------------------------------------------------------------
 
 export const relationshipAxisKeys = ["trust", "attraction", "resentment"] as const;
@@ -199,7 +199,7 @@ export const relationshipAxisKeySchema = z.enum(relationshipAxisKeys);
 export type RelationshipAxisKey = z.infer<typeof relationshipAxisKeySchema>;
 
 /** Fixed-point per-kind contribution to each axis; `authored_prior` is the one
- * kind excluded — its command supplies an explicit override instead (§7.5). */
+ * kind excluded — its command supplies an explicit override instead. */
 export interface RelationshipLedgerWeight {
   trustFixedPoint: number;
   attractionFixedPoint: number;
@@ -262,15 +262,15 @@ export const relationshipReadSchema = z
     /** Non-fatal read-time degradations (e.g. an `authored_prior` entry with no
      * matching `authoredPriorWeights` override) — reuses the SAME shape as
      * `DeliberationOutcome.diagnostics` (`contracts/simulation/deliberation.ts`),
-     * never a thrown error (§4.3, added on review — resilience.md: degraded
-     * defaults must be visible, not silent). */
+     * never a thrown error (added on review — resilience.md: degraded defaults
+     * must be visible, not silent). */
     diagnostics: z.array(z.string().min(1)).default([]),
   })
   .strict();
 export type RelationshipRead = z.infer<typeof relationshipReadSchema>;
 
 // ---------------------------------------------------------------------------
-// Commands (§7): authored entries, relationship-change marking, and (Slice 3)
+// Commands: authored entries, relationship-change marking, and (Slice 3)
 // consent escalation.
 // ---------------------------------------------------------------------------
 
@@ -280,7 +280,7 @@ const recordRelationshipEntryPayloadSchema = z
     toActorId: worldCharacterIdSchema,
     kind: authoredRelationshipLedgerKindSchema,
     detail: z.string().trim().min(1).max(500),
-    storySecond: storySecondSchema.optional(), // `authored_prior` only — see §7.5
+    storySecond: storySecondSchema.optional(), // `authored_prior` only
     weightOverride: z
       .object({
         trustFixedPoint: z.number().int(),
@@ -288,13 +288,13 @@ const recordRelationshipEntryPayloadSchema = z
         resentmentFixedPoint: z.number().int(),
       })
       .strict()
-      .optional(), // `authored_prior` only — see §7.5
+      .optional(), // `authored_prior` only
     /** `boundary_violated` only — that kind's declared payload variant is
      * `"consent"` (`relationshipLedgerKindPayloadKind`), which needs a scope;
      * a discovered amendment (mirrors narrative.ts's `consentScopeKey` on
      * consent-scoped speech acts) — the original draft omitted this, which
-     * would have made `boundary_violated` unauthorable despite §21.4 naming
-     * it authored-backfill-only, never live. */
+     * would have made `boundary_violated` unauthorable despite the authored-only
+     * kind list naming it authored-backfill-only, never live. */
     scopeKey: consentScopeKeySchema.optional(),
   })
   .strict()
@@ -361,11 +361,10 @@ export const recordRelationshipChangeCommandResultSchema = createCommandResultSc
 );
 
 /**
- * §19.2/§19.3's admission-gap policy constant for the consent-escalation
- * call site (§4.7/§5.6) — every escalation applies the same admission-gap
- * policy, so this is product tuning, not per-call business logic. Versioned
- * and tunable; `400` is the blueprint's recommended starting value pending
- * playtest.
+ * The admission-gap policy constant for the consent-escalation call site —
+ * every escalation applies the same admission-gap policy, so this is product
+ * tuning, not per-call business logic. Versioned and tunable; `400` is the
+ * blueprint's recommended starting value pending playtest.
  */
 export const CONSENT_ESCALATION_SCORE_GAP_THRESHOLD_FIXED_POINT = 400;
 
@@ -385,7 +384,7 @@ export const attemptConsentEscalationCommandSchema = createCommandEnvelopeSchema
 );
 /**
  * `unauthorized_actor` also covers a structural caller failure the store
- * layer (not this schema) is responsible for: ruling 16 §11 open decision 3
+ * layer (not this schema) is responsible for: ruling 16 open decision 3
  * requires every caller to pass `playerControlledActorIds` explicitly (no
  * silent default) — a caller that omits it is treated as a hard
  * `unauthorized_actor`-class rejection, never a silent "assume NPC" default.
@@ -406,7 +405,7 @@ export const attemptConsentEscalationCommandResultSchema = createCommandResultSc
 );
 
 // ---------------------------------------------------------------------------
-// Events (§9.2): `relationship_entry_authored` and
+// Events: `relationship_entry_authored` and
 // `relationship_change_recorded` (Slice 1), `consent_escalation_resolved`
 // (Slice 3, alongside `attempt_consent_escalation`).
 // ---------------------------------------------------------------------------
@@ -420,7 +419,7 @@ export const relationshipEntryAuthoredPayloadSchema = z
     toActorId: worldCharacterIdSchema,
     kind: authoredRelationshipLedgerKindSchema,
     detail: z.string().trim().min(1).max(500),
-    entryStorySecond: storySecondSchema, // captured §6.4 value — may predate this event
+    entryStorySecond: storySecondSchema, // captured value — may predate this event
     weightOverride: z
       .object({ trustFixedPoint: z.number().int(), attractionFixedPoint: z.number().int(), resentmentFixedPoint: z.number().int() })
       .strict()
@@ -467,7 +466,7 @@ const consentEscalationResolvedPayloadSchema = z
     targetActorId: worldCharacterIdSchema,
     scopeKey: consentScopeKeySchema,
     granted: z.boolean(),
-    /** The full §19.3 outcome, captured for audit — never re-derived on replay. */
+    /** The full deliberation outcome, captured for audit — never re-derived on replay. */
     outcome: deliberationOutcomeSchema,
   })
   .strict();

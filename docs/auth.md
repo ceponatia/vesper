@@ -42,8 +42,7 @@ The posture is safe **because** sign-up is off and the app runs a single
 instance: the only accounts are seeded/approved ones. Opening self-service sign-up
 changes who can reach these surfaces, so this list is the gate on that flag — every
 item must hold before `ALLOW_SIGNUP` is `true` for anything but a brief, supervised
-window. The hardening behind these items was built under
-`security-authz.plan.md`.
+window.
 
 1. **Required email verification** — `emailAndPassword.requireEmailVerification` plus a
    real transport, so an address can't be claimed without proving control of it.
@@ -52,9 +51,7 @@ window. The hardening behind these items was built under
    rejection of known-breached passwords. **Not in place.**
 3. **Shared (cross-instance) rate limiting** on sign-in, password reset, and magic-link
    requests. **Not in place, by ruling**: `apps/web/src/server/api/rate-limit.ts` is deliberately
-   process-local
-   (`security-hardening.plan.md`)
-   while Vesper runs a single instance. A second instance re-opens it, not sign-up.
+   process-local while Vesper runs a single instance. A second instance re-opens it, not sign-up.
 4. **Admin MFA / WebAuthn** — a second factor on `role: "admin"` accounts (Better Auth
    `twoFactor` / `passkey` plugin). **Not in place.**
 5. **Revoke all sessions on credential change** — password reset/change invalidates every
@@ -109,14 +106,14 @@ The two failure codes are distinct so clients can redirect-to-sign-in vs. retry
 ## Who the player is (`users.default_persona_id` → `personas`)
 
 The player is a **library entity** — a `personas` row with a body, a wardrobe and a
-bio ([database.md](database.md), `persona-library.plan.md`). `users.default_persona_id`
+bio ([database.md](database.md)). `users.default_persona_id`
 is a soft pointer (no FK) naming which one new chats start as; `PATCH /api/users/me`
 and the `/settings` page set it, and the persona editor authors the persona itself.
 
-> The old `users.playerPersona` JSONB blob (a light name + bio, one per account —
-> `finished/player-character.plan.md`) is **gone**: migration 0052 backfilled every
-> non-empty blob into a real persona row and set `default_persona_id`; 0053 dropped
-> the column. `StoredPlayerPersona` was deleted with it.
+> The old `users.playerPersona` JSONB blob (a light name + bio, one per account) is
+> **gone**: migration 0052 backfilled every non-empty blob into a real persona row and
+> set `default_persona_id`; 0053 dropped the column. `StoredPlayerPersona` was deleted
+> with it.
 
 Every consumer reads through **one resolver**, `resolveChatPersona({ownerId, chatId})`
 (`apps/web/src/server/players/`). It is a three-rung ladder, each rung degrading
@@ -156,10 +153,8 @@ the user + sign-out, or a sign-in link.
 
 ### Magic link (dev-only until a transport exists)
 
-A magic link **is a temporary password**, so it must never reach log retention
-(`security-authz.plan.md`).
-`apps/web/src/server/auth/magic-link.ts` owns the whole
-policy:
+A magic link **is a temporary password**, so it must never reach log retention.
+`apps/web/src/server/auth/magic-link.ts` owns the whole policy:
 
 - **One fact gates everything: a resolved transport object**, never the presence
   of an env var. `configuredMagicLinkTransport(): MagicLinkTransport | null` walks
@@ -228,8 +223,7 @@ One module owns the asymmetry — **reads widen, writes stay strict**:
   statically-known call site. `resolveLibraryScope` is the runtime backstop for
   dynamic kinds — an unsupported pair returns **no ids** plus an
   `api.library.scope_unsupported` warn diagnostic instead of emitting SQL
-  against a column the table doesn't have (security-authz.plan.md §Follow-ups
-  item 3; matrix in `library.test.ts`).
+  against a column the table doesn't have (matrix in `library.test.ts`).
 
 #### "Public" is a representation, not the row
 
@@ -249,7 +243,7 @@ because the edit surfaces need every column; everyone else gets the projection.
 - The character **`profile` jsonb is itself projected** — `toPublicCharacterProfile`
   in [`contracts/world/profile.ts`](../apps/web/src/contracts/world/profile.ts), beside the
   field definitions so adding a profile field puts the reviewer next to the
-  decision (security-authz.plan.md OQ2, ruled **conservative
+  decision (the ruling is **conservative
   private-by-default**). A public preview shows **presentation only**: `bio`,
   `personality`, `age`, `speciesId`, and an allow-listed slice of `attributes`
   (today just `identity.gender`, which the browse route already publishes as a
@@ -265,7 +259,7 @@ because the edit surfaces need every column; everyone else gets the projection.
 - **Clone is deliberately wider than preview**: `cloneToLibrary` copies the
   *whole* authored profile. Publishing a character offers it as a full authored
   starting point; the preview is the shop window, the clone is the goods (same
-  OQ2 ruling).
+  ruling).
 - Portrait rows beside a public character project to
   `{ id, kind, entityKind, entityId, createdAt }` — no `path`, no `prompt`, no
   provider internals ([images/asset-registry.md](images/asset-registry.md)).
@@ -286,8 +280,7 @@ because the edit surfaces need every column; everyone else gets the projection.
 
 ### Copy-on-use, not live references
 
-Because of the `world-instances.plan.md`,
-**using** a public entity *copies* it — there are **no live cross-owner
+**Using** a public entity *copies* it — there are **no live cross-owner
 references**. `cloneToLibrary` (`server/api/clone.ts`) deep-copies a viewable
 source into a new owned, private row. The source author can't push changes or
 break your copy: deleting the source leaves the clone intact (verified in
@@ -407,5 +400,4 @@ start` leaves unset — a running server always enforces the real values.
 Expansion is plugins, not rewrites: a public **browse/discovery** gallery (the
 read rule already supports it — only the list query + UI are missing), user
 profiles, an `unlisted` tier, selective update **propagation** to copies, and
-Better Auth plugins (organizations, 2FA, passkeys, API keys, more OAuth). Tracked
-in `auth.plan.md`.
+Better Auth plugins (organizations, 2FA, passkeys, API keys, more OAuth).

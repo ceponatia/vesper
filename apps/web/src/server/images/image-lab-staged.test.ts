@@ -22,8 +22,7 @@ import { applySceneSubjectVisual } from "./scene-subject-visual";
 import { portraitPerception } from "./standalone-subject-visual";
 
 /**
- * The staged bench's parity pin (intimate-scene-lora.spec.md §"Slice 2";
- * image-lane-consolidation.plan.md Stage 4; owner ruling 2026-08-25).
+ * The staged bench's parity pin (owner ruling 2026-08-25).
  *
  * This kind is only worth running if its prompt is production's prompt, so the
  * assertion that matters is BYTE EQUALITY against what the chat lane's own

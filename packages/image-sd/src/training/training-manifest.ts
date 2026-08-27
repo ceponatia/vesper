@@ -2,19 +2,18 @@ import { z } from "zod";
 import { sdModelFamilySchema } from "../recipes/sd-recipes";
 
 /**
- * How a character LoRA is described to this package
- * (sd-rendering-package.plan.md §8, layer 2).
+ * How a character LoRA is described to this package (layer 2).
  *
  * **The package receives a generic image manifest; it never loads a character.**
  * That is the whole boundary in one sentence. Vesper's identity pack stays the
- * canonical visual source (§8 forbids a separate Stable Diffusion reference
- * collection), and the application is what turns a pack into the list of images
+ * canonical visual source — a separate Stable Diffusion reference collection is
+ * forbidden — and the application is what turns a pack into the list of images
  * below. Nothing here knows what an identity pack is, who owns it, or that
  * characters exist — an `SdTrainingImage` is an id, a URI, and some optional
  * description of what the picture shows.
  *
- * The same rule decides what {@link sdTrainingResultSchema} carries. §9 keeps
- * the identity-pack-to-LoRA binding in the application database, with the pack
+ * The same rule decides what {@link sdTrainingResultSchema} carries. The
+ * identity-pack-to-LoRA binding stays in the application database, with the pack
  * id, the `image_loras` row id, creation date and active/retired state. What the
  * binding cannot derive for itself is what the TRAINING did — which recipe at
  * which revision, against which checkpoint, at which rank, over which dataset —
@@ -22,7 +21,7 @@ import { sdModelFamilySchema } from "../recipes/sd-recipes";
  */
 
 /**
- * The framings a curated training set should cover (§8).
+ * The framings a curated training set should cover.
  *
  * A closed list because it is used to answer "what is MISSING", and a free
  * string cannot answer that: `"3/4"`, `"three quarter"` and `"threequarter"`
@@ -46,8 +45,8 @@ export type SdTrainingView = (typeof sdTrainingViews)[number];
  * image, and guessing one would corrupt the coverage report that reads it. An
  * untagged image still trains; it just does not count toward any view.
  *
- * `tags` is deliberately free-form headroom for the variety axes §8 asks a
- * curator to spread — lighting, background, clothing, expression. They are not
+ * `tags` is deliberately free-form headroom for the variety axes a
+ * curator should spread — lighting, background, clothing, expression. They are not
  * an enum because the failure they exist to prevent is a CORRELATION ("this
  * character always wears this shirt", "always appears in this room"), and the
  * axis that turns out to be correlated in a real pack is not knowable in
@@ -94,12 +93,12 @@ export type SdTrainingDataset = z.infer<typeof sdTrainingDatasetSchema>;
 
 /**
  * How a LoRA is trained — the training-side equivalent of a render recipe, and
- * versioned for the same reason: §4's "record the training recipe" is only
+ * versioned for the same reason: recording the training recipe is only
  * useful if the recipe named is still the recipe that ran.
  *
  * Every field below the identifying four is optional, and that is the contract:
  * an absent value means "whatever the pinned trainer does by default". The
- * seeded recipes still fill them in, because §8's comparison moves ONE variable
+ * seeded recipes still fill them in, because the comparison moves ONE variable
  * — rank — and a value the recipe leaves unnamed is a value two arms could
  * silently disagree about the day the trainer is re-pinned.
  */
@@ -119,7 +118,8 @@ export const sdTrainingRecipeSchema = z.object({
    * Singular because a recipe pins ONE rate. Trainers that also expose a
    * separate base-model or embedding rate keep their own defaults for those:
    * the first pass does not move them, and a field per trainer knob would turn
-   * the recipe into a trainer schema — §17's rule, on the training side.
+   * the recipe into a trainer schema — a recipe is not a trainer schema, on the
+   * training side any more than on the render side.
    */
   learningRate: z.number().positive().optional(),
   /**
@@ -137,7 +137,7 @@ export const sdTrainingRecipeSchema = z.object({
 export type SdTrainingRecipe = z.infer<typeof sdTrainingRecipeSchema>;
 
 /**
- * The provenance a Vesper-side identity-pack-to-LoRA binding records (§9).
+ * The provenance a Vesper-side identity-pack-to-LoRA binding records.
  *
  * Enough to answer one question: **is this LoRA still the right one?** The
  * dataset fingerprint answers it when the identity pack changes, and the
@@ -160,7 +160,7 @@ export const sdTrainingResultSchema = z.object({
 export type SdTrainingResult = z.infer<typeof sdTrainingResultSchema>;
 
 /**
- * The curation window §8 asks for: "approximately 12–20 carefully selected
+ * The curation window: "approximately 12–20 carefully selected
  * images, rather than automatically using every available image".
  *
  * **Guidance, not a schema rule, and deliberately so.** These are trial values —

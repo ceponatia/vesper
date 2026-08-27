@@ -32,7 +32,7 @@ export const engagementStates = ["opening", "active", "winding_down", "ended", "
 export const engagementStateSchema = z.enum(engagementStates);
 export type EngagementState = z.infer<typeof engagementStateSchema>;
 
-/** The §18.2 legal-transition table, exported so kernel and tests share one truth. */
+/** The legal-transition table, exported so kernel and tests share one truth. */
 export const engagementStateTransitions: Record<EngagementState, readonly EngagementState[]> = {
   opening: ["active", "ended", "interrupted"],
   active: ["winding_down", "ended", "interrupted"],
@@ -41,7 +41,7 @@ export const engagementStateTransitions: Record<EngagementState, readonly Engage
   ended: [],
 };
 
-/** States whose attention claims are held; only `ended` releases them (§18.2). */
+/** States whose attention claims are held; only `ended` releases them. */
 export const claimHoldingEngagementStates: readonly EngagementState[] = [
   "opening",
   "active",
@@ -66,9 +66,9 @@ export const engagementSchema = z
     openedAt: storySecondSchema,
     /** The per-participant attention claim this engagement holds while open. */
     attentionClaim: activityClaimSchema,
-    /** E5.5 slice 3 (§18.1): temporal-pressure ids acknowledged within this
-     * engagement — a pressure "looked at and not resolved" this turn, per
-     * §15.3, so it stops nagging until severity or assumptions change. */
+    /** E5.5 slice 3: temporal-pressure ids acknowledged within this
+     * engagement — a pressure "looked at and not resolved" this turn, so it
+     * stops nagging until severity or assumptions change. */
     acknowledgedPressureIds: createStableStringSetSchema(
       z.string().min(1).max(1_024),
       "Acknowledged pressure IDs",
@@ -85,9 +85,9 @@ export type Engagement = z.infer<typeof engagementSchema>;
 
 /**
  * The attention an engagement claims per participant: full presence for a
- * co-present scene, partial for a remote channel (§16.4 — a walking text chat
- * coexists with a walk; a co-present conversation does not coexist with
- * another full-attention occupation).
+ * co-present scene, partial for a remote channel (a walking text chat coexists
+ * with a walk; a co-present conversation does not coexist with another
+ * full-attention occupation).
  */
 export function engagementAttentionClaim(channel: EngagementChannel): z.infer<typeof activityClaimSchema> {
   return channel === "co_present"
@@ -155,8 +155,8 @@ export const endEngagementCommandResultSchema = createCommandResultSchema(
   endEngagementRejectionCodeSchema,
 );
 
-/** E5.5 slice 3 (§18.1, §15.3): mark a live temporal pressure "looked at" by
- * an engagement's participant without resolving it. */
+/** E5.5 slice 3: mark a live temporal pressure "looked at" by an engagement's
+ * participant without resolving it. */
 const acknowledgePressurePayloadSchema = z
   .object({
     engagementId: engagementIdSchema,
@@ -253,17 +253,17 @@ export const engagementWindingDownEventSchema = createEventEnvelopeSchema(
   engagementWindingDownPayloadSchema,
 );
 
-/** E5.5 slice 3 (§15.3, §18.1): a pressure was looked at and not resolved —
- * the engagement's `acknowledgedPressureIds` and the pressure's own
+/** E5.5 slice 3: a pressure was looked at and not resolved — the engagement's
+ * `acknowledgedPressureIds` and the pressure's own
  * `acknowledgedAt`/`acknowledgedSeverity` (`contracts/simulation/commitments.ts`)
- * both fold from this one event (§4.6 — two domain projectors, one cause). */
+ * both fold from this one event — two domain projectors, one cause. */
 const pressureAcknowledgedPayloadSchema = z
   .object({
     engagementId: engagementIdSchema,
     pressureId: z.string().min(1).max(1_024),
     actorId: worldCharacterIdSchema,
     acknowledgedAt: storySecondSchema,
-    /** Captured §6.4 value — the narrative cut's acknowledgment-aware
+    /** Captured value — the narrative cut's acknowledgment-aware
      * pressure filter compares a live pressure's CURRENT severity against
      * this captured value, not merely presence/absence of acknowledgment. */
     acknowledgedSeverity: pressureSeveritySchema,

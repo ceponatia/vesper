@@ -167,7 +167,7 @@ describe("E5.3 slice 3 — the item-condition registry", () => {
   });
 });
 
-describe("E5.3 slice 3 — worn-window arc (§26.7)", () => {
+describe("E5.3 slice 3 — worn-window arc", () => {
   it("dons: applies the worn-window modifier and solves grimy at the exact hand-math second", () => {
     const condition = freshCondition();
     const don = buildWornWindowTransition({
@@ -289,7 +289,7 @@ describe("E5.3 slice 3 — worn-window arc (§26.7)", () => {
   });
 });
 
-describe("E5.3 slice 3 — use-disposition condition deltas (§26.5 completion path)", () => {
+describe("E5.3 slice 3 — use-disposition condition deltas (completion path)", () => {
   it("moves wear toward worn_out on each delta and detects the instant crossing (no drift-based re-arm is possible)", () => {
     const condition = freshCondition();
     const first = buildUseConditionDeltas({

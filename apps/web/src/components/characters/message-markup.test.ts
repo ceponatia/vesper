@@ -12,7 +12,7 @@ const flat = (content: string, ctx?: Parameters<typeof messageRenderModel>[1]) =
     })),
   );
 
-describe("messageRenderModel — span → display pieces (player-input-perception.plan.md slice 5)", () => {
+describe("messageRenderModel — span → display pieces", () => {
   it("re-adds the quotes to speech and leaves narration plain, spaced as one line", () => {
     expect(flat(`"Hey, Sabrina." I lean against the doorframe.`)).toEqual([
       [

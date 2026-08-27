@@ -48,7 +48,7 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
     expect(parsed.memoryQueries).toHaveLength(CHAT_ARCHIVIST_MAX_QUERIES);
   });
 
-  it("keeps, caps, and cleans openLoops (spec §6.2 — full-list-each-time)", () => {
+  it("keeps, caps, and cleans openLoops (full-list-each-time)", () => {
     const parsed = chatArchivistSchema.parse({
       openLoops: Array.from({ length: CHAT_ARCHIVIST_MAX_OPEN_LOOPS + 2 }, (_, i) => ` loop ${i} `),
     });
@@ -59,7 +59,7 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
     expect(degradedChatArchivist().openLoops).toEqual([]);
   });
 
-  it("parses the outfit proposal (chat-wardrobe-parity): whole swap + garment deltas, never rejected", () => {
+  it("parses the outfit proposal: whole swap + garment deltas, never rejected", () => {
     const changed = chatArchivistSchema.parse({
       outfit: {
         description: "  a black wrap dress and heels ",
@@ -91,7 +91,7 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
     expect(chatArchivistSchema.parse({ outfit: "naked" }).outfit).toEqual({ description: "", changeEvidence: "", exposed: false, removed: [], added: [] });
   });
 
-  it("parses the supporting-cast proposal (chat-supporting-cast.plan.md): lenient, [] on garbage", () => {
+  it("parses the supporting-cast proposal: lenient, [] on garbage", () => {
     const parsed = chatArchivistSchema.parse({
       cast: [{ name: "Abby", relation: "the player's coworker", details: ["covered a shift"] }],
     });
@@ -132,7 +132,7 @@ describe("chatArchivistSchema (parsed-empty IS the degraded fallback)", () => {
   });
 });
 
-describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
+describe("the extraction legs", () => {
   it("each leg's degraded parse equals the aggregate's, field for field", () => {
     const whole = degradedChatArchivist();
     const scribe = chatMemoryScribeSchema.parse({});
@@ -166,7 +166,7 @@ describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
    * The player's wardrobe is chat-wide, so it belongs to the SHARED continuity leg only.
    * The personal pass runs once per present ensemble member — if it carried playerOutfit,
    * three members would each propose changes to the one player's clothes and the last
-   * fold would win at random (persona-library.plan.md slice 8).
+   * fold would win at random.
    */
   it("keeps playerOutfit out of the per-member personal pass", () => {
     expect(chatPersonalNotesSchema.parse({})).not.toHaveProperty("playerOutfit");

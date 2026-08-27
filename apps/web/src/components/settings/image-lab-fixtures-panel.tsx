@@ -22,10 +22,10 @@ import { imageLabControlGeneratorLabel, imageLabControlKindLabel } from "./image
 import { OwnedImagePicker } from "./owned-image-picker";
 
 /**
- * The control-fixture panel (qwen-advanced-image-subsystem.spec.md §Stage 0
- * control-probe protocol, step 1): extract a pose skeleton or depth map from an
- * existing render, upload a hand-drawn one, and — the step the protocol actually
- * names — LOOK at what came out before a paid probe is built on it.
+ * The control-fixture panel, the first step of the control-probe protocol:
+ * extract a pose skeleton or depth map from an existing render, upload a
+ * hand-drawn one, and — the step it is easiest to skip — LOOK at what came out
+ * before a paid probe is built on it.
  *
  * Fixtures are shown whole (`contain`), never cropped, and every tile states its
  * provenance and whether anyone has reviewed it, because those are the two facts

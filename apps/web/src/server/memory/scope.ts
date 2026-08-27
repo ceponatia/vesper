@@ -4,8 +4,8 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 /**
  * Which memory owner a fact/episode belongs to (docs/memory.md §Memory keying).
  * The chat lane's memory group is the only scope now (the session lane is gone):
- * shared-history conversations share a group, fresh starts mint their own
- * (character-chat-standalone.spec.md §1.3). This is the single seam both memory
+ * shared-history conversations share a group, fresh starts mint their own.
+ * This is the single seam both memory
  * clients share; `addFacts`/`appendEpisode`/`retrieve*` take a scope, not a bare
  * id. Kept a one-armed discriminated union so a future scope (library/global)
  * is an additive arm, not a signature change.

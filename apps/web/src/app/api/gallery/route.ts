@@ -12,7 +12,7 @@ export type GalleryTab = "scenes" | "portraits" | "entity";
 
 /**
  * Keyset cursor `<createdAtMs>_<id>` over (created_at desc, id desc) — the
- * "Load more" seam past the old 500 cap (library-ux.plan.md §Follow-up pass).
+ * "Load more" seam past the old 500 cap.
  * An unparseable cursor degrades to the first page, never a failed request.
  */
 function parseCursor(raw: string | null): { at: Date; id: string } | null {

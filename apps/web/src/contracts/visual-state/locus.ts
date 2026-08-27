@@ -3,7 +3,7 @@ import { bodyLocusKey, bodyLocusRefSchema } from "../appearance-features";
 import type { VisualStateLocusKind } from "./vocabulary";
 
 /**
- * Where a visual feature sits (visual-state.spec.md §Loci and sources).
+ * Where a visual feature sits.
  *
  * Body paths, garment parts and relations are registry-validated committed
  * identities. There is deliberately no free-text `other` locus: a feature whose

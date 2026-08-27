@@ -26,8 +26,7 @@ import { toWornInputs } from "@/server/images";
 import { characterChats, db } from "@/server/db";
 
 /**
- * The chat garment store's persistence (clothing-state-graph.plan.md slice 2;
- * slice-0 audit ruling P + fixtures F13, F17).
+ * The chat garment store's persistence.
  *
  * What only a database can prove: that the store rides `pre_exchange_scenario`
  * and a retake restores it EXACTLY (the whole reason it is a scenario field and
@@ -311,7 +310,7 @@ describe.runIf(ready)("the scenario seed", () => {
 });
 
 /**
- * The presentation graph end-to-end (clothing-state-graph.plan.md slice 3).
+ * The presentation graph end-to-end.
  *
  * What only a database can prove: that the state route's write path applies typed
  * presentation operations and PERSISTS them, that the worn-id projection is
@@ -457,7 +456,7 @@ describe.runIf(ready)("slice 3 — presentation operations through the state rou
 });
 
 /**
- * The condition gradients end-to-end (clothing-state-graph.plan.md slice 4).
+ * The condition gradients end-to-end.
  *
  * What only a database can prove: that the state route's write path applies typed
  * CONDITION operations and persists the whole gradient state — base vector,

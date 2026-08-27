@@ -43,8 +43,7 @@ import {
 } from "./garment-store";
 
 /**
- * Slice 2 — chat-scoped instances, the worn-list projection, and whole-garment
- * loci (clothing-state-graph.plan.md; slice-0 audit fixtures F4, F5, F6, F21).
+ * Chat-scoped instances, the worn-list projection, and whole-garment loci.
  */
 
 const ALICE = garmentActorForCharacter("alice");

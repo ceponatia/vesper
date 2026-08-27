@@ -30,8 +30,8 @@ import {
 } from "./visual-segments";
 
 /**
- * The Stage 3 digest → segments builder (image-lane-consolidation.spec.prompts.md
- * §Segment mapping): the ONE assembly the avatar and scene cutovers share. What
+ * The digest → segments builder: the ONE assembly the avatar and scene cutovers
+ * share. What
  * these tests protect, per policy hook: a scene lane can never regain an age
  * statement (the #143 split), a waist-up portrait states nothing below the
  * waist while a pelvis-rooted tail stays, covered intimate SKIN stays silent on

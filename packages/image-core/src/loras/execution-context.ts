@@ -1,8 +1,7 @@
 import type { ImageProfileTask } from "../models/image-model-profiles";
 
 /**
- * WHERE a render is being run from, as the LoRA rules need to know it
- * (image-model-adapters.spec.md §"Execution context").
+ * WHERE a render is being run from, as the LoRA rules need to know it.
  *
  * It exists because "can these weights run here?" and "may Vesper run them
  * here?" are two different questions, and the library evaluator was answering
@@ -23,7 +22,7 @@ import type { ImageProfileTask } from "../models/image-model-profiles";
  * nothing a player sees; it exists to prove what a model can do. Before this
  * type it had to borrow some production task to ask its question, which meant a
  * mechanically perfect LoRA was refused for failing a curation rule about a lane
- * the bench is not in — the first defect the adapters plan records.
+ * the bench is not in.
  *
  * The three contexts, and why each answers the task question the way it does:
  *
@@ -37,7 +36,7 @@ import type { ImageProfileTask } from "../models/image-model-profiles";
  *
  * Runtime-only: nothing here is stored. A row's `allowedTasks` column is
  * unchanged, and so is the parsed `ImageLora` row — the concept split lives in the
- * evaluator and in these comments, not in a reshaped record (plan §22).
+ * evaluator and in these comments, not in a reshaped record.
  */
 export type ImageExecutionContext =
   | { kind: "production"; task: ImageProfileTask }

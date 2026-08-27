@@ -19,12 +19,10 @@ import {
 } from "./romantic-permission-decision";
 
 /**
- * The NPC-side romantic-permission decision contract
- * (romantic-contact-affordances.spec.permission.md §"Grant, denial, absence,
- * and withdrawal", §"Required fixtures and tests" — the Evidence and
- * authorship block; plan rulings 4, 5, 7).
+ * The NPC-side romantic-permission decision contract — grant, denial, absence,
+ * and withdrawal, plus the evidence and authorship rules.
  *
- * Adversarial and natural-language fixtures are REQUIRED here by the spec: the
+ * Adversarial and natural-language fixtures are REQUIRED here: the
  * first consent-classifier pass is expected to need refinement, and this suite
  * is the safety net that keeps refinement honest. The load-bearing claims:
  * evidence must ground verbatim in the reply's own dialogue/narration with an

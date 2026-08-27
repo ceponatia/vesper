@@ -81,8 +81,8 @@ export const inspectorPromptSchema = z.object({
 export type InspectorPrompt = z.infer<typeof inspectorPromptSchema>;
 
 /**
- * The read-only affordance preview (body-attribute-affordances slice 6): the
- * staged calculation for every domain this lane can feed. Every field heals —
+ * The read-only affordance preview: the staged calculation for every domain this
+ * lane can feed. Every field heals —
  * this is a debug surface, and a shape drift should show a gap, not an error page.
  */
 const previewValueSchema = z.object({ path: textOr(""), value: textOr("") });
@@ -141,10 +141,9 @@ export const affordancePreviewSchema = z.object({
 export type AffordancePreview = z.infer<typeof affordancePreviewSchema>;
 
 /**
- * The read-only narrator physical-guidance preview
- * (narrator-physical-guidance.plan.md slice 2): input authority → committed state →
- * candidates → selection → rendered lines. Every field heals, like the affordance
- * preview above — a debug surface should show a gap, never an error page.
+ * The read-only narrator physical-guidance preview: input authority → committed
+ * state → candidates → selection → rendered lines. Every field heals, like the
+ * affordance preview above — a debug surface should show a gap, never an error page.
  */
 const guidanceCandidateSchema = z.object({
   kind: z.enum(["constraint", "correction"]).catch("constraint"),
@@ -222,11 +221,10 @@ export const physicalGuidancePreviewSchema = z.object({
 export type PhysicalGuidancePreview = z.infer<typeof physicalGuidancePreviewSchema>;
 
 /**
- * The read-only visual-state preview (visual-state.plan.md slice 6): the
- * source-to-selection staircase — features, composition, suppressions,
- * attention scores, consumer selections, and the slice's measurements. Every
- * field heals, like the previews above — a debug surface should show a gap,
- * never an error page.
+ * The read-only visual-state preview: the source-to-selection staircase —
+ * features, composition, suppressions, attention scores, consumer selections, and
+ * the measurements taken along it. Every field heals, like the previews above — a
+ * debug surface should show a gap, never an error page.
  */
 const visualStateSuppressionSchema = z.object({
   key: textOr(""),
@@ -319,8 +317,8 @@ const visualStateSetComparisonSchema = z
 export type VisualStateSetComparisonRow = z.infer<typeof visualStateSetComparisonSchema>;
 
 /**
- * The realized image digest (image-lane-consolidation Stage 2): what a
- * character-bearing render would consume from this cut, and the compact record
+ * The realized image digest: what a character-bearing render would consume from
+ * this cut, and the compact record
  * it would store under `meta.visualState`. Nullable — a build that produced
  * nothing has no cut to realize a digest over.
  */

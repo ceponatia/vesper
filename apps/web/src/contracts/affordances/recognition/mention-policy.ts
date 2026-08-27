@@ -26,9 +26,7 @@ import {
 } from "./visual-memory";
 
 /**
- * Mention policy — at most ONE recognition cue per beat
- * (body-attribute-affordances.recognizable-features.memory.md §Narrator
- * behavior).
+ * Mention policy — at most ONE recognition cue per beat.
  *
  * Two decisions live here and they are deliberately not the same decision:
  *

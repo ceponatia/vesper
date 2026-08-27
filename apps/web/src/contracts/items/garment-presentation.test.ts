@@ -23,7 +23,7 @@ import {
 } from "./garment-presentation";
 
 /**
- * The presentation reducer (clothing-state-graph.plan.md slice 3).
+ * The presentation reducer.
  *
  * The matrix below is the contract: for every operation kind, the legal path AND
  * each way it can be rejected — an unresolvable part, a channel the part's
@@ -278,8 +278,8 @@ describe("restore_presentation", () => {
   });
 
   it("drops an EMPTY part list rather than restoring the whole garment", () => {
-    // garment-instance.ts §GARMENT_ROOT_SCOPED_OPERATIONS: only the condition-class
-    // operations may mean "the whole garment" with an empty list (OQ7).
+    // garment-instance.ts's `GARMENT_ROOT_SCOPED_OPERATIONS`: only the
+    // condition-class operations may mean "the whole garment" with an empty list.
     const store = dressed();
     const applied = run(store, { kind: "restore_presentation", garmentId: "g_top", partIds: [] });
     expect(applied.applied).toBe(0);

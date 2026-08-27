@@ -31,9 +31,8 @@ import type { VisualStateRelationship } from "./relationships";
 import type { VisualStateSourceRef } from "./sources";
 
 /**
- * Garment and item loci as presentation features
- * (visual-state.audit.md finding 10 — the wardrobe stack is complete and gated
- * off, and slices 2 and 3 consume it).
+ * Garment and item loci as presentation features. The wardrobe stack is
+ * complete and gated off, and this adapter is what consumes it.
  *
  * What this adapter projects is deliberately narrow: what a piece IS and WHERE
  * it sits. Closure, roll, tuck, displacement, wetness, deposits and damage are

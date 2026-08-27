@@ -17,8 +17,7 @@ import { codes, expectDiagnostic } from "@/test/diagnostics";
 
 /**
  * The NPC reply-scene decision leg's SHADOW wiring, end to end through
- * `submitChatMessage` with a scripted assistant reply and a scripted classifier
- * (romantic-contact-affordances.spec.actor-control.md, delivery-order step 3).
+ * `submitChatMessage` with a scripted assistant reply and a scripted classifier.
  *
  * The pure suite pins the trigger and the dry evaluation; what only a database
  * can prove is the durable envelope behavior around a real settle:
@@ -202,7 +201,7 @@ beforeAll(async () => {
     slug: "chat-npc-scene-decision-int",
     userName: "Scene Decision Int",
     // One glove pair, so the two-sided material read has an ACTOR-side layer to
-    // compose (actor-control spec §"Resolution laws → Contact start").
+    // compose.
     garments: [{ slug: "gloves", name: "leather gloves", category: "gloves", coverage: ["hands"], layer: 1 }],
   });
   mock.archivist = { value: chatArchivist(), degraded: false };

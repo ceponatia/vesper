@@ -42,10 +42,10 @@ export async function embedText(text: string): Promise<Embedded> {
  */
 export function pseudoEmbed(text: string): number[] {
   const vector = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
-  // Deliberately keeps its own FNV-1a loop rather than calling `lib/hash`
-  // (image-pipeline-consolidation.plan.md C10): this is a hash CHAIN, not a
-  // string hash — every intermediate state picks a bucket and a weight, so the
-  // shared helper's final value alone cannot express it.
+  // Deliberately keeps its own FNV-1a loop rather than calling `lib/hash`:
+  // this is a hash CHAIN, not a string hash — every intermediate state picks a
+  // bucket and a weight, so the shared helper's final value alone cannot
+  // express it.
   let hash = 2166136261;
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i);

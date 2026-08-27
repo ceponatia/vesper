@@ -40,8 +40,7 @@ import {
 } from "./support";
 
 /**
- * The foot domain — the romantic-contact plan's first proving domain
- * (romantic-contact-affordances.spec.foot.md).
+ * The foot domain — romantic contact's first proving domain.
  *
  * ```text
  * feet.arch / feet.nails / feet.toes            →  regional structural profile

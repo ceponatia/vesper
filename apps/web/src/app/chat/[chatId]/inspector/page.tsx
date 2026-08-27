@@ -4,7 +4,7 @@ import { ChatInspectorPage } from "@/components/chat/chat-inspector-page";
 export const metadata: Metadata = { title: "Chat inspector" };
 
 /**
- * The memory inspector (character-chat-standalone.spec.md §6.1) — admin-gated
+ * The memory inspector — admin-gated
  * client-side; the /api/admin/chat-inspector family it reads role-gates server-side
  * (404 for non-admins), so it works on the deployed build.
  */

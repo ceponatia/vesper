@@ -14,7 +14,7 @@ import {
   simWorlds,
 } from "@/server/db";
 
-// The successor front door (engine.rollout.plan.md, owner ask 2026-07-22):
+// The successor front door (owner ask 2026-07-22):
 // one POST provisions a fresh starter world, creates the chat, and routes it
 // to the successor lane — then an ordinary send plays a full sim turn in it
 // (AI_FAKE; zero live calls). Self-skips without a database.
@@ -66,7 +66,7 @@ beforeAll(async () => {
   const user = await seedTestUser("front-door");
   bindAuthUser(authState, user);
   ids.user = user.id;
-  // R5 slice 5: an authored default outfit — provisioning ports it into the
+  // R5: an authored default outfit — provisioning ports it into the
   // mirror world as WORN items, so the outfit chip reads world truth.
   const insertItem = async (name: string) => {
     const [row] = await db()
@@ -108,7 +108,7 @@ describe.runIf(ready)("successor-chats front door", () => {
   it("provisions a fresh world, routes the chat, and plays a full sim turn", async () => {
     const body = await expectJson<CreatedWorld>(
       await successorCreate(
-        // slice 3: `requestId` is the required per-intent idempotency key.
+        // `requestId` is the required per-intent idempotency key.
         apiRequest("/api/successor-chats", {
           body: { characterId: ids.characterId, title: "Front Door Test", requestId: "front-door-1" },
         }),
@@ -161,7 +161,7 @@ describe.runIf(ready)("successor-chats front door", () => {
     // The turn's 60s span moved the clock past the origin.
     expect(listed.storySecond).toBeGreaterThanOrEqual(STARTER_ORIGIN_STORY_SECOND);
 
-    // R5 calendar (ruling 17): fresh worlds carry the default anchor, the
+    // R5 calendar: fresh worlds carry the default anchor, the
     // state envelope serves it, and the editor PATCH replaces (or clears) it.
     const [world] = await db()
       .select({ calendarStart: simWorlds.calendarStart })
@@ -230,7 +230,7 @@ describe.runIf(ready)("successor-chats front door", () => {
     expect(holding).toMatchObject({ locusKind: "held", actorId: chatRow.primaryActorId });
 
     // A refused admission (resting mid-scene fights the engagement's claim)
-    // still renders a turn — the §14.4 face rides the cut, never a dead send.
+    // still renders a turn — the public refusal face rides the cut, never a dead send.
     const refused = await chatSend(
       apiRequest(`/api/chats/${body.id}`, { body: { kind: "send", content: "I lie down to rest right here." } }),
       ctx(body.id),
@@ -238,7 +238,7 @@ describe.runIf(ready)("successor-chats front door", () => {
     expect(refused.status).toBe(200);
     expect((await drainStream(refused)).replace(/\u200B/g, "").length).toBeGreaterThan(0);
 
-    // R5 slice 3 \u2014 presence reads the mirror's physical truth: co-located now\u2026
+    // R5 \u2014 presence reads the mirror's physical truth: co-located now\u2026
     const before = await expectJson<{ roster: { sort: number; presence: string }[] }>(
       await chatGet(apiRequest(`/api/chats/${body.id}`), ctx(body.id)),
     );
@@ -269,7 +269,7 @@ describe.runIf(ready)("successor-chats front door", () => {
     );
     expect(after.roster.find((m) => m.sort === 0)?.presence).toBe("away");
 
-    // R5 slice 4 \u2014 the strip's meters read the ruling-15 substrate: drop the
+    // R5 \u2014 the strip's meters read the WORLD substrate: drop the
     // primary's hygiene in WORLD truth and the state envelope must show it
     // (legacy chat-state would still say the seeded 0.9).
     const washed = await submitDurableApplyBodySource(
@@ -299,7 +299,7 @@ describe.runIf(ready)("successor-chats front door", () => {
     expect(stateAfter.meters.hygiene).toBeCloseTo(0.2, 5);
     expect(stateAfter.meters.mood).toBeCloseTo(0.5, 5);
 
-    // R5 slice 5 — the authored outfit was born as WORN world items, and the
+    // R5 — the authored outfit was born as WORN world items, and the
     // outfit chip reads them (transcript roster + state envelope alike).
     const worn = await db()
       .select({ itemId: simItemHoldings.itemId })
@@ -324,7 +324,7 @@ describe.runIf(ready)("successor-chats front door", () => {
     expect(stateOutfit.outfitLabel).toContain("denim jacket");
 
     // R5 knowledge/memory: successor chats are rag-eligible from birth, and
-    // the inline drain projected §24 documents (the give-transfer's events)
+    // the inline drain projected memory documents (the give-transfer's events)
     // during the SECOND exchange's recall.
     const [authorityRow] = await db()
       .select({ ragEligibility: characterChats.successorRagEligibility })
@@ -337,8 +337,8 @@ describe.runIf(ready)("successor-chats front door", () => {
       .where(eq(simMemoryDocuments.branchId, body.branchId));
     expect(docs.length).toBeGreaterThan(0);
 
-    // R5 slice 7 — relationships: the authored WARM prior round-trips through
-    // the §21 read (regard 57), and lived ledger evidence MOVES the chip
+    // R5 relationships: the authored WARM prior round-trips through
+    // the relationship-ledger read (regard 57), and lived ledger evidence MOVES the chip
     // where the frozen legacy seed could not.
     const ledger = await db()
       .select({ kind: simRelationshipLedger.kind })
@@ -348,7 +348,7 @@ describe.runIf(ready)("successor-chats front door", () => {
     const relStateBefore = await expectJson<{ regard: number; familiarity: number; regardBand: { label: string } }>(
       await stateGet(apiRequest(`/api/chats/${body.id}/state`), ctx(body.id)),
     );
-    // The §21 read time-decays evidence, so the authored 57 reads a hair
+    // The relationship-ledger read time-decays evidence, so the authored 57 reads a hair
     // lower as story time passes — the BAND is the stable assertion.
     expect(relStateBefore.regard).toBeGreaterThanOrEqual(53);
     expect(relStateBefore.regard).toBeLessThanOrEqual(57);

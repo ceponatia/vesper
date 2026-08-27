@@ -1,8 +1,7 @@
 import type { ImageLabControlKind, ImageLabFinishingVariant } from "./image-lab";
 
 /**
- * The Advanced Image Lab's numbered-role instruction template
- * (qwen-advanced-image-subsystem.spec.md §Algorithms step 4).
+ * The Advanced Image Lab's numbered-role instruction template.
  *
  * Neither Qwen edit model exposes a `pose` or `depth` field: a control map is
  * sent as one of the numbered images, and the PROMPT is the only place that says
@@ -110,9 +109,9 @@ export function imageLabProbeInstruction(input: ImageLabProbeInstructionInput): 
  * product rule's "and nothing else", written as the instruction the model is
  * given.
  *
- * The plan's promotion rule is that a finishing pass may be adopted only when it
- * "improves identity without materially changing structure, clothing, body,
- * camera, lighting, or setting". That sentence is not just how the result is
+ * The promotion rule is that a finishing pass may be adopted only when it
+ * improves identity without materially changing structure, clothing, body,
+ * camera, lighting, or setting. That sentence is not just how the result is
  * judged; it is what the run is asked to do, so the preamble names both halves
  * explicitly — what to correct ({@link finishingTargetClause}), and the list here
  * of everything that must survive untouched. Wording this half as a list rather

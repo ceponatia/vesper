@@ -10,9 +10,9 @@
  * The application still spells it `@/lib/hash`, a re-export barrel over this
  * file.
  *
- * It was hand-rolled five times in two spellings of the same constants
- * (image-pipeline-consolidation.plan.md C10). Two of those copies are
- * **determinism seams** whose divergence is invisible by construction:
+ * It was hand-rolled five times in two spellings of the same constants before
+ * this module replaced them. Two of those copies are **determinism seams** whose
+ * divergence is invisible by construction:
  *
  * - **The character forge's reproducibility** (`server/authoring/character-forge.ts`):
  *   social-card ids are `card_<base36 of the label hash>` and visual defaults index

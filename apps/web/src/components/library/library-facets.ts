@@ -2,10 +2,10 @@ import { interactionConceptById, interactionConcepts, severityToTier, speciesCat
 import type { FacetDef, FacetOption } from "./item-facets";
 
 /**
- * Facet + chip config for the character / location / social-card libraries
- * (library-ux.plan.md §Follow-up pass), riding the same client-side machinery
- * as item-facets.ts: facets filter the loaded set instantly; the server's job
- * is only to ship the facet columns on the list payload.
+ * Facet + chip config for the character / location / social-card libraries,
+ * riding the same client-side machinery as item-facets.ts: facets filter the
+ * loaded set instantly; the server's job is only to ship the facet columns on
+ * the list payload.
  */
 
 interface CharacterFacetCard {
@@ -100,7 +100,7 @@ export function socialCardFacetDefs<TCard extends SocialCardFacetCard>(): FacetD
   ];
 }
 
-/** Severity tier + the first trigger concepts (library-ux.plan.md: tier/trigger chips). */
+/** Severity tier + the first trigger concepts, as the card's chips. */
 export function socialCardChips(card: SocialCardFacetCard): { label: string }[] {
   if (!card.card) return [];
   const triggers = card.card.triggers.flatMap((id) => {

@@ -17,7 +17,7 @@ import {
 import type { CharacterDraft } from "./drafts";
 
 /**
- * Portrait → attributes (character-sheet-forge.plan.md slice 3): a vision
+ * Portrait → attributes: a vision
  * model reads the character's generated portrait and proposes appearance
  * attributes — the codebase's first image-understanding capability. Strictly
  * appearance: personality-tab categories (voice/presentation/movement) can't

@@ -28,7 +28,7 @@ import type { ImageGeneratorPrefill } from "./image-generator-form";
 
 /**
  * One generator run, whole: exactly what was requested, what was actually sent,
- * what ran, and what came back (image-lab-general-model-trials.plan.md §10).
+ * what ran, and what came back.
  *
  * The two version ids sit side by side for the lab detail's reason: a requested
  * pin and an executed version that disagree is an unannounced provider-side

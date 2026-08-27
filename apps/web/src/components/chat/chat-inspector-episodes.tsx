@@ -9,9 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { chatInspectorApi, type InspectorEpisode } from "@/lib/api-inspector";
 
 /**
- * The inspector's Episodes section (character-chat-standalone.spec.md §6.1):
- * every episode with its exchange ordinal, click-to-edit summary (re-embeds on
- * save), hard delete, and a "score against query" probe — the same cosine +
+ * The inspector's Episodes section: every episode with its exchange ordinal,
+ * click-to-edit summary (re-embeds on save), hard delete, and a "score against
+ * query" probe — the same cosine +
  * embedder-isolation math live retrieval uses, so retrieval quality can be
  * eyeballed per row. Scoring re-sorts the list best-first; rows without a
  * matching embedding show "—".

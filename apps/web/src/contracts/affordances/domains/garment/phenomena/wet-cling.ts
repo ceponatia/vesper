@@ -19,8 +19,7 @@ import { intimateFocusBlock, visibleGarmentRegions, type GarmentRegionView } fro
 import { garmentIntimateSuppression, garmentTag, GARMENT_REGION_TAG_PREFIX } from "./tags";
 
 /**
- * `garment.wet_cling` — wet fabric actually lying against the body
- * (spec.garment-interaction.md §Phenomena).
+ * `garment.wet_cling` — wet fabric actually lying against the body.
  *
  * ## Capacity is not proof
  *

@@ -4,10 +4,10 @@ import { scheduleDayPartById, type ScheduleDayPartId } from "../world/profile";
 import { chatMomentLabel, dayStartClockMinutes } from "./chat-clock";
 
 /**
- * Chat plans & promises (chat-plans-promises.plan.md / .spec.md): commitments the
+ * Chat plans & promises: commitments the
  * fiction strikes — "come over Friday", "I'll text you after my shift", "dinner at the
  * pier at sunset" — become tracked state that comes DUE on the story clock. The chat
- * descendant of the retired scheduled-arrivals spec, without the location model.
+ * descendant of the retired scheduled-arrivals design, without the location model.
  *
  * The frame: the story makes a commitment → the system records it deterministically →
  * the story clock makes it come due → the narration honors it.
@@ -229,7 +229,7 @@ export function buildWhenLabel(dayOffset: number, dayPart?: ScheduleDayPartId): 
   return `in ${dayOffset} days, ${dayPart}`;
 }
 
-/** Render context for calendar-aware plan labels (chat-clock-calendar.plan.md). */
+/** Render context for calendar-aware plan labels. */
 export interface PlanLabelContext {
   nowMinutes: number;
   calendarStart: CalendarStart;

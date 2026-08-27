@@ -6,7 +6,7 @@ emotional weather, and the character's drives.
 
 ## Tracked state
 
-Tracked state is **split in two** (followups rulings 8–9, 2026-07-12): what belongs to
+Tracked state is **split in two** (2026-07-12): what belongs to
 ONE character lives on their state row; what belongs to the CONVERSATION lives on the
 chat row as the shared **scenario**.
 
@@ -17,18 +17,18 @@ chat row as the shared **scenario**.
 `familiarity_scene_gain` budget — trickle capped at `acquainted`, archivist facts push
 past it, reset on a time skip) plus the authored `relationship_record` texture
 (kind/history/`presented` mask/looming — `contracts/relationships/record.ts`),
-self-expiring conditions, the `mindNote`, the **structured wardrobe** (chat-wardrobe-parity:
-`worn_item_ids` — the worn item-definition ids seeded from the active preset; `outfit_preset_id`
+self-expiring conditions, the `mindNote`, the **structured wardrobe**
+(`worn_item_ids` — the worn item-definition ids seeded from the active preset; `outfit_preset_id`
 — which named look is on; `outfit` repurposed as the free-text overlay/legacy fallback;
 `outfit_exposed` retained but authoritative only on the free-text path — computed from coverage
 otherwise; see §Wardrobe), the anti-repetition `surfacedCues` bands, the RAG carry-overs (`memoryQueries`,
 `open_loops` — the archivist's ≤3 "unfinished business" phrases, re-emitted in full each
 exchange so resolved loops fall off; persisted narrative `attributeOverlays`;
-persisted narrative `trait_overlays` (character-fidelity slice 10 — bounded personality
+persisted narrative `trait_overlays` (bounded personality
 evolution: `source:"narrative"` trait shifts the archivist proposes only at relationship
 milestones, clamped one band from the authored value, guarded to `developable` traits —
 resolved on top of the authored traits at prompt build, editable/rollback-safe); the
-`voice_exemplars` ring (character-fidelity slice 8 — ≤5 distinctly in-voice lines the
+`voice_exemplars` ring (≤5 distinctly in-voice lines the
 archivist picks ≤1 of per exchange, rendered as the "How you sound" few-shots past the
 events-only summary horizon; `lastMemoryTrace.characterSlip` is the one-turn
 character-consistency corrective, slice 9);
@@ -67,17 +67,16 @@ that come due on the story clock — see §Plans & promises), the time model (`c
 for the whole roster, D3/D8; away members skip meter decay, never fork the clock;
 `skip_history` ring ≤50; one-shot `pending_skip_note`; one-shot **`pending_meanwhile_note`**
 + **`meanwhile_pass_at_minutes`** — the meanwhile pass's narrator line and its
-cumulative-gate origin / idempotency CAS, migration 0050,
-`chat-offscreen-life.spec.md`), the **story-calendar anchor**
-(`calendar_start` jsonb, migration 0049 — chat-clock-calendar: minute 0 of the chat =
+cumulative-gate origin / idempotency CAS, migration 0050), the **story-calendar anchor**
+(`calendar_start` jsonb, migration 0049 — minute 0 of the chat =
 this date+time; `parseOr` heals `{}`/bad rows to `CHAT_DEFAULT_CALENDAR_START` = Jan 1,
 8:00am; author-editable via `ChatStateEdit.calendarStart` from the clock card, and
 rebasing is safe because nothing stores derived dates), and `pre_exchange_scenario`
 (the rollback anchor's chat-wide half). The calendar derivations are pure in
 `contracts/turns/chat-clock.ts` (`chatGameTime`/`timeOfDayFor`/`formatStoryMoment`/
 `chatMomentLabel` over `lib/clock.ts`'s Date-backed `resolveGameTime` — real month
-lengths, leap years, true weekday alignment). **Time-model constants** (chat-clock-calendar,
-2026-07-15): `CHAT_TICK_MINUTES = 1` (one exchange ≈ one story minute — skips are the
+lengths, leap years, true weekday alignment). **Time-model constants**
+(2026-07-15): `CHAT_TICK_MINUTES = 1` (one exchange ≈ one story minute — skips are the
 primary time mover), while meter pacing stays exchange-keyed via
 `CHAT_METER_DRIFT_MINUTES = 4` (drift per exchange unchanged by the tick drop; feelings
 already decay per exchange; conditions and plan windows stay story-real minutes). Beside the scenario the chat row also
@@ -118,7 +117,7 @@ before transcript mutation with `rerun_requires_branch`.
 
 ## Wardrobe
 
-Since chat-wardrobe-parity (2026-07-14) the chat lane carries **structured worn state**,
+Since 2026-07-14 the chat lane carries **structured worn state**,
 not one free-text string. A conversation holds `worn_item_ids` (the worn
 item-definition ids, seeded from the active outfit preset), `outfit_preset_id` (which named
 look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unowned garments —
@@ -221,9 +220,7 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
 
 ### The garment store — instances under the projection
 
-Since clothing-state-graph slices 0–4 (2026-07-27,
-`clothing-state-graph.plan.md` · audit:
-`clothing-state-graph.audit.md`) the worn
+Since 2026-07-27 the worn
 lists above are a **derived projection** of a deeper truth: the chat-wide garment store on
 `ChatScenario.garments` (`character_chats.garments` jsonb, migration 0090). Each worn
 definition materializes lazily — on the next state write, never on read — into a
@@ -268,7 +265,7 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
 
 ### The player's wardrobe
 
-The **player** has one too (persona-library.plan.md slice 8) — "she pulls your shirt over
+The **player** has one too — "she pulls your shirt over
 your head" is a state change, not just prose. It lives on `character_chats.player_state`
 (a `ChatPlayerState` jsonb: `personaId`, `wornItemIds`, `seeded`, `outfitPresetId`,
 `overlay`) rather than `character_chat_state`, because there is one player and many roster
@@ -279,7 +276,7 @@ snapshot for free, so "another take" can't leave the player undressed by a disca
   presets, so `resolvePlayerWardrobe` (the character seam's twin in `chat-wardrobe.ts`)
   always computes exposure from coverage. There is deliberately no `exposed` toggle: it
   would be a hole through the scene-image gate that decides whether the viewer's anatomy
-  renders (scene-pov-embodiment.plan.md). Their `overlay` carries garment-noun coverage on
+  renders. Their `overlay` carries garment-noun coverage on
   the same terms as the character's (§Wardrobe) — additive over worn items, and the read of
   last resort when there was nothing to resolve and the player was never stripped. Worn ids
   that FAILED to resolve are not that case: the same degradation gate keeps the covered
@@ -311,7 +308,7 @@ presence, or wardrobe state), so nothing kept an established setting consistent.
 (one jsonb column on the CHAT row — the shared scenario, one imagined setting for the whole
 roster; `contracts/turns/chat-scene-memory.ts` `ChatSceneMemory`) is an accumulating,
 forward-compatible memory: `{ current?, places: [{ name, details[], connections[] }] }`
-(`timeOfDay` was removed by chat-clock-calendar — time derives from the story clock, never
+(`timeOfDay` was removed — time derives from the story clock, never
 the archivist)
 with hard caps (≤12 places, ≤8 details/place, ≤6 connections, length caps) and a `parseOr`
 degraded default (empty memory) at the load boundary. It is maintained **deterministic-first**,
@@ -337,7 +334,7 @@ then reconciled by the archivist:
    parse; never the time of day) is merged onto the pre-turn memory in `finalizeChatState` via `mergeSceneMemory` (dedupe
    + caps, oldest-out; the current place is never evicted). A degraded/empty proposal is a no-op —
    the memory only ever accretes what the fiction established.
-4. **Background sketch (chat-scene-fidelity slice 2b).** After the state write, a current place
+4. **Background sketch.** After the state write, a current place
    without a `sketch` enqueues a detached `chat_scene_sketch` job (`chat-scene-sketch.ts`, deduped
    per chat like the summary fold): a small agent (`prompts/chat-scene-sketch.ts`) expands the
    place into a 2–4 sentence visual sketch — every established detail incorporated, only
@@ -362,8 +359,7 @@ Moved to [body-state.md](body-state.md) — the scene's weather and body-surface
 
 Emotions used to be meter-derived and reactive-only — a strong beat's deltas started
 decaying on the next tick, and regard moved on a flat ±5/turn clamp with no history.
-Emotional weather (`emotional-weather.plan.md`,
-owner rulings 2026-07-11) adds three layers, all in the pure `engine/chat-feeling.ts`:
+Emotional weather (owner rulings 2026-07-11) adds three layers, all in the pure `engine/chat-feeling.ts`:
 
 - **Persistent `feeling`** (`character_chat_state.feeling` jsonb): the pulse proposes a
   label (the locked 11-label `EmotionLabel`) + cause when an exchange lands a beat that
@@ -400,10 +396,7 @@ Rollback-safe like everything else: `feeling` rides `storedChatStateSchema`, so
 ## Plans & promises
 
 Commitments the fiction strikes — "come over Friday", "I'll text you after my shift" —
-become tracked state that comes DUE on the story clock
-(`chat-plans-promises.plan.md`
-· `chat-plans-promises.spec.md`): the chat descendant of the
-retired scheduled-arrivals spec, without the location model. The frame — *the story makes a
+become tracked state that comes DUE on the story clock. The frame — *the story makes a
 commitment → the system records it deterministically → the clock makes it come due → the
 narration honors it.*
 
@@ -421,7 +414,7 @@ narration honors it.*
   `targetMinutes` + a stored relative fallback label (`resolvePlanWhen` — day boundaries
   come from the calendar anchor, real midnight, not `clock % 1440`). Unscheduled plans
   never go missed. **Display labels are calendar-derived at render time**
-  (chat-clock-calendar: `describePlanWhen(when, {nowMinutes, calendarStart})` /
+  (`describePlanWhen(when, {nowMinutes, calendarStart})` /
   `SalientPlan.whenLabel` — "tomorrow evening" inside a day, the bare weekday
   ("Friday evening") 2–6 days out, the date ("Friday the 12th, evening") at 7+ —
   never stored, so editing the anchor rebases every label).
@@ -443,8 +436,7 @@ narration honors it.*
 
 ## Off-screen life (whereabouts + the meanwhile pass)
 
-The cast keeps living between visits (chat-offscreen-life — rulings in
-`chat-offscreen-life.spec.md`):
+The cast keeps living between visits:
 
 - **`character_chat_state.whereabouts`** (text ≤120, migration 0050): where an AWAY
   member is, as a phrase — written by the archivist presence read's optional `where`
@@ -466,8 +458,7 @@ The cast keeps living between visits (chat-offscreen-life — rulings in
 ## Drives (desires & secrets)
 
 The character's motive force
-(`character-drives.plan.md`,
-owner rulings 2026-07-11): ≤3 authored wants on `profile.drives`
+(owner rulings 2026-07-11): ≤3 authored wants on `profile.drives`
 (`contracts/personality/drives.ts` — `want`/`why`/`secrecy: open|guarded|secret` +
 an optional `revealBand`), seeded into `character_chat_state.drives` (migration
 0035) with runtime `progress`/`revealed`/`resolved`.

@@ -47,8 +47,7 @@ import {
 /**
  * `ensureIdentityPack` end to end against DATABASE_URL and a sandboxed
  * DATA_ROOT — the guarantees that only a real database and a real filesystem can
- * prove (image-identity-packs.spec.derivation.md §"Derivation tests", server
- * integration list).
+ * prove.
  *
  * What is under test here rather than in the pure suites: row-before-file crop
  * creation, compare-and-set promotion, single-flight coalescing, the
@@ -615,8 +614,7 @@ describe.skipIf(!ready)("ensureIdentityPack — failure containment", () => {
 
 /**
  * Cross-process coalescing — the half of the single flight the in-process keyed
- * lock cannot provide and cannot be tested through
- * (spec.derivation.md §"`ensureIdentityPack`" step 5).
+ * lock cannot provide and cannot be tested through.
  *
  * Every case here drives contenders through
  * `deriveIdentityPackWithoutProcessLockForTesting`, the seam that skips that lock.
@@ -1060,9 +1058,8 @@ describe.skipIf(!ready)("pack reads", () => {
 });
 
 /**
- * The read-time half of "`quality.accepted` is not persisted as eternal truth"
- * (spec.derivation.md §"Intrinsic quality measurement", spec.data.md
- * §"Schema-version behavior": a policy change re-evaluates existing packs).
+ * The read-time half of "`quality.accepted` is not persisted as eternal truth":
+ * a policy change re-evaluates existing packs.
  *
  * Only `policy_v1` exists today, so the branch is dormant in production and these
  * cases fabricate the condition it exists for: a stored revision stamped with an
@@ -1141,8 +1138,7 @@ describe.skipIf(!ready)("read-time policy projection", () => {
 });
 
 /**
- * Background preparation converging on the LATEST canonical portrait
- * (spec.lifecycle.md §"Creation after a canonical portrait").
+ * Background preparation converging on the LATEST canonical portrait.
  *
  * The dedupe and the derivation are individually correct and used to combine into
  * a hole: portrait B's trigger correctly invalidates A's pack and is then

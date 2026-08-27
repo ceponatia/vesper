@@ -11,8 +11,7 @@ import {
  * Deciding WHAT represents a configuration is `@vesper/image-core`'s job — it
  * reads the compiled plan and produces one deterministic string. Hashing that
  * string is Node work, and the package stays browser/server portable, so the
- * execution stays here (monorepo-image-core.spec.render-kernel.md §"Fingerprint
- * split": the package constructs, the application hashes).
+ * execution stays here: the package constructs, the application hashes.
  *
  * This is an ownership split, not a behavior change. `profileRenderControlsHash`
  * returns byte-for-byte what it returned when both halves lived in one function,

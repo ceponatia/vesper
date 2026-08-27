@@ -32,8 +32,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   const row = await findViewable("social_card", id, user.id);
   if (!row) return jsonError("not_found", "social card not found", 404);
   // `mine` tells the builder whether to offer edit/delete or a clone-to-library CTA.
-  // A foreign viewer gets the allow-listed public representation, not the row
-  // (security-authz.plan.md slice 4).
+  // A foreign viewer gets the allow-listed public representation, not the row.
   const mine = row.ownerId === user.id;
   return jsonOk({ socialCard: mine ? row : toPublicSocialCard(row), mine });
 });
@@ -70,8 +69,8 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const existing = await findCard(user.id, id);
   if (!existing) return jsonError("not_found", "social card not found", 404);
-  // Worlds/characters hold their own inline snapshots (social-reaction-cards.plan.md),
-  // so a library delete never breaks them and never hits a FK — no in-use guard.
+  // Worlds/characters hold their own inline snapshots, so a library delete never
+  // breaks them and never hits a FK — no in-use guard.
   await db().delete(socialCards).where(and(eq(socialCards.id, id), eq(socialCards.ownerId, user.id)));
   return jsonOk({ ok: true });
 });

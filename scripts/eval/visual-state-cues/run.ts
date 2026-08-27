@@ -36,7 +36,7 @@ import {
 } from "./judge";
 
 /**
- * Slice-7 narrator trial runner (visual-state.plan.md §Slice 7).
+ * Slice-7 narrator trial runner.
  *
  * Owner-gated LIVE comparison of the `CHAT_VISUAL_STATE_NARRATION` path — a
  * must-not-contradict fence plus at most two change-gated cues — against the

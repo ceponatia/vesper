@@ -95,9 +95,9 @@ describe("the romantic-permission owner composes over the contact lane", () => {
 });
 
 /**
- * The visual-state shadow (visual-state.plan.md slice 6) defaults OFF: with the
+ * The visual-state shadow defaults OFF: with the
  * env unset — the deployed default — production behavior is untouched to the
- * byte, which is the plan's own success criterion.
+ * byte, which is the whole point of a measurement-only projection.
  */
 describe("the visual-state shadow flag", () => {
   it("is OFF by default, and on anything other than the literal `on`", () => {

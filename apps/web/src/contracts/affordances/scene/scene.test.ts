@@ -66,8 +66,7 @@ import {
 } from "./vocabulary";
 
 /**
- * Fixture-driven proof of the scene owner
- * (romantic-contact-affordances.spec.scene.md).
+ * Fixture-driven proof of the scene owner.
  *
  * Four things are being proved, and they are the four the owner asked for: the
  * actor-control law holds in both directions, an absent fact produces

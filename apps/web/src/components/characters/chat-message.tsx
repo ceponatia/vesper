@@ -20,16 +20,16 @@ export interface ChatLine {
   id: string;
   role: "user" | "assistant";
   content: string;
-  /** Recorded alternate generations on an assistant reply (spec §4.1); absent on user/optimistic lines. */
+  /** Recorded alternate generations on an assistant reply; absent on user/optimistic lines. */
   takes?: ReplyTakes;
-  /** True when the player cut this reply short with Stop (spec §4.2). */
+  /** True when the player cut this reply short with Stop. */
   stopped?: boolean;
-  /** Attached-photo asset ids on a user line (chat-image-input.plan.md) — rendered as thumbs. */
+  /** Attached-photo asset ids on a user line — rendered as thumbs. */
   attachmentIds?: string[];
-  /** User line written in NARRATOR mode (chat-supporting-cast.plan.md): story narration, not the player's POV. */
+  /** User line written in NARRATOR mode: story narration, not the player's POV. */
   narrator?: boolean;
   /**
-   * World beat (world-ui.plan.md slice 2): a durable travel / time-skip / scene-ended
+   * World beat: a durable travel / time-skip / scene-ended
    * trace on a successor-chat transcript. Set ⇒ the line renders as a muted, compact
    * system line (no portrait, no bubble, no actions) — `content` is the phrased text.
    */
@@ -37,8 +37,7 @@ export interface ChatLine {
 }
 
 /**
- * The narrator-run provenance recorded on one take, when it has any
- * (narrator-prompt-lab.plan.md §Provenance / §"Alternate takes").
+ * The narrator-run provenance recorded on one take, when it has any.
  *
  * Read structurally rather than off the take type: the field is optional
  * everywhere, and every take generated before the Prompt Lab existed simply has
@@ -107,7 +106,7 @@ function ReplyBody({ content, knownNames }: { content: string; knownNames: reado
  * / still-streaming temp-id lines expose no actions: there is no server row to target
  * until ids reconcile.
  *
- * Beyond parity (spec §4.1–4.2): the newest reply (`takeTarget`) also offers
+ * Beyond parity: the newest reply (`takeTarget`) also offers
  * "Another take" — regenerate in place, keeping earlier takes browsable via the
  * always-visible `‹ 2/3 ›` pager in the footer — and a reply the player cut short
  * with Stop carries a subtle "stopped" chip inside the bubble.
@@ -154,13 +153,13 @@ export function MessageBubble({
   onRerun: (id: string) => void;
   onAnotherTake: (id: string) => void;
   onSwitchTake: (id: string, takeId: string) => Promise<void>;
-  /** "Remember this" (spec §6.4): opens the pinned-note dialog prefilled with this line. Absent ⇒ no action. */
+  /** "Remember this": opens the pinned-note dialog prefilled with this line. Absent ⇒ no action. */
   onRemember?: (content: string) => void;
-  /** "Mark this moment" (spec §7.2): pin a player milestone on this message. Absent ⇒ no action. */
+  /** "Mark this moment": pin a player milestone on this message. Absent ⇒ no action. */
   onMarkMoment?: (id: string) => void;
   /** Tap/click the circular avatar to enlarge the portrait (the mobile path to a full-size view). Absent ⇒ plain image. */
   onEnlargeAvatar?: () => void;
-  /** Privacy mode (mobile-ux.plan.md ruling 4): render a first-initial monogram
+  /** Privacy mode: render a first-initial monogram
    *  instead of the avatar image, and make the avatar inert — no lightbox tap. */
   privacyMode?: boolean;
 }) {
@@ -209,10 +208,10 @@ export function MessageBubble({
   };
 
   if (line.worldBeat) {
-    // A durable world beat (travel / time-skip / scene-ended, world-ui.plan.md
-    // slice 2): a muted, compact, non-bubble system line in the successor
-    // transcript — no portrait, no speaker label, no hover actions. The phrased
-    // text (with its story-time stamp) is server-rendered onto `content`.
+    // A durable world beat (travel / time-skip / scene-ended): a muted, compact,
+    // non-bubble system line in the successor transcript — no portrait, no
+    // speaker label, no hover actions. The phrased text (with its story-time
+    // stamp) is server-rendered onto `content`.
     return (
       <div className="flex justify-center px-4 py-1">
         <p className="text-center text-xs text-paper-500 italic">{line.content}</p>
@@ -224,7 +223,7 @@ export function MessageBubble({
     <div className={`group flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       {!isUser ? (
         privacyMode ? (
-          // Inert — no button, no lightbox tap (mobile-ux.plan.md ruling 4): the
+          // Inert — no button, no lightbox tap: the
           // monogram itself carries the "hidden on purpose" signal.
           <EntityImage
             imageId={avatarImageId}
@@ -277,12 +276,12 @@ export function MessageBubble({
               }`}
             >
               {isUser && line.narrator ? (
-                // Narrator-mode marker (chat-supporting-cast.plan.md): this line is story
+                // Narrator-mode marker: this line is story
                 // narration the player authored as storyteller, not their own POV.
                 <p className="mb-0.5 text-[10px] font-medium tracking-wide text-paper-400 uppercase">Narration</p>
               ) : null}
               {line.attachmentIds?.length ? (
-                // Attached photos (chat-image-input.plan.md): thumbs above the text.
+                // Attached photos: thumbs above the text.
                 <div className={`flex flex-wrap gap-1.5 ${line.content.trim() ? "mb-1.5" : ""}`}>
                   {line.attachmentIds.map((imageId) => (
                     <EntityImage
@@ -296,7 +295,7 @@ export function MessageBubble({
                 </div>
               ) : null}
               {pending ? (
-                // Animated typing indicator (ux-improvements slice 9): the pending
+                // Animated typing indicator: the pending
                 // bubble breathes during the reveal-hold, so "thinking" reads alive.
                 <span aria-label="typing" className="inline-flex items-center gap-1 text-paper-500">
                   {[0, 1, 2].map((i) => (
@@ -309,7 +308,7 @@ export function MessageBubble({
                   ))}
                 </span>
               ) : isUser ? (
-                // Span renderer (player-input-perception slice 5): italicize thoughts /
+                // Span renderer: italicize thoughts /
                 // `_italic_`, read `*Name:*` as a text, mark `((OOC))` — sigils hidden.
                 // (the roster seeds comms-recipient resolution — the player may text any member.)
                 <MessageContent
@@ -417,13 +416,13 @@ export function MessageBubble({
 }
 
 /**
- * The `‹ 2/3 ›` take browser (spec §4.1) — always visible (not hover-gated) so
+ * The `‹ 2/3 ›` take browser — always visible (not hover-gated) so
  * recorded takes stay discoverable. Switching is display-only: the conversation's
  * state and memory follow the newest generated take, so the arrows just swap which
  * take the bubble shows.
  *
  * For admins only, the pager also names what wrote the take on screen —
- * `aion-2.0 · Player Agency Minimal v4` (narrator-prompt-lab.plan.md slice 6).
+ * `aion-2.0 · Player Agency Minimal v4`.
  * That is the whole point of the manual A/B: generate on the production prompt,
  * switch the conversation to a test prompt, take again, then step through the
  * takes and watch the attribution change with them. Without it a pager reading

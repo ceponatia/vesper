@@ -1,11 +1,11 @@
 /**
- * Pre-turn intent cue for character chat (character-chat-state-narration.spec.md §7).
+ * Pre-turn intent cue for character chat.
  *
  * Chat has no pre-narrator agent; this is a cheap, regex-first read of the player's input
  * (mirroring `engine/intent.ts`) that raises a ONE-TURN hint when the beat invites an
  * opportunistic cue — the player drawing close, making contact, turning the moment
- * intimate, or putting their attention on the character's appearance
- * (chat-narrator-pov.plan.md). The narrator already carries an opportunistic-cue rule; this just tells it
+ * intimate, or putting their attention on the character's appearance.
+ * The narrator already carries an opportunistic-cue rule; this just tells it
  * *this* is a turn where a sensory detail or a state beat can land, so cues fire when the
  * beat earns it rather than whenever a band merely allows it. It must NOT persist into chat
  * history, and adds no model call. A blank/OOC input ⇒ no hint ⇒ today's behavior.
@@ -32,7 +32,7 @@ export interface ChatCueHint {
   intimate: boolean;
   /**
    * The player's attention is on the character's appearance — a look-over, a stare,
-   * a compliment, a mention of a feature or what they're wearing (chat-narrator-pov.plan.md).
+   * a compliment, a mention of a feature or what they're wearing.
    * Unlike the three above this is NOT proximity-gated: sight carries at any distance.
    */
   attention: boolean;
@@ -108,8 +108,8 @@ export function detectChatCue(input: string, context: ChatCueDetectionContext = 
 }
 
 /**
- * The deterministic per-turn sensory allowance (narrator-prompt-consolidation.plan.md
- * slice 4) — the chat-lane analogue of the session's exposure mask (`exposureRules`,
+ * The deterministic per-turn sensory allowance — the chat-lane analogue of the
+ * session's exposure mask (`exposureRules`,
  * prompts/narrative.ts): ONE binding per-turn statement of what person-level sensory /
  * appearance detail may land, instead of four scattered "one cue, earned" teachings.
  * - `focused_description` — a sense-targeted beat (`detectSensoryFocus` fired); the
@@ -143,9 +143,9 @@ export function deriveChatSensoryAllowance(args: {
  * intimate > touch > proximity > attention), or "" when the input invites nothing. The
  * route passes the rendered string to the prompt builder, so the builder stays a pure
  * function over a plain string. Each arm is worded as sensation ARRIVING in the
- * player's senses, never as the character's property (chat-narrator-pov.plan.md).
+ * player's senses, never as the character's property.
  *
- * RETIRED from the live pipeline by narrator-prompt-consolidation slice 4 (2026-07-10):
+ * RETIRED from the live pipeline (2026-07-10):
  * the deterministic `deriveChatSensoryAllowance` line supersedes these sensory arms.
  * Kept (with its tests) for rollback — restoring the pipeline's old
  * `chatCueInviteLine(cueHint, name)` arm re-enables it.
@@ -232,7 +232,7 @@ export interface SensoryFocusHint {
   intimate: boolean;
   /**
    * The body-registry term the target resolves to — the prompt builder joins it to the
-   * region's own authored attributes via `expandBodyTarget` (sensory-grounding.plan.md),
+   * region's own authored attributes via `expandBodyTarget`,
    * so "foot" surfaces `feet.smell`, not just the generic scent baseline. Absent for
    * garment targets (a dress has no anatomy to expand) and unmapped colloquialisms.
    */
@@ -627,7 +627,7 @@ export function buildChatReplyGates(args: {
 }
 
 /**
- * Deterministic mention/spoken-to stamping (multi-character-chat.plan.md slice 3):
+ * Deterministic mention/spoken-to stamping:
  * does this text name the character — display name or an authored alias — as a
  * whole word, case-insensitively? The activity-recency signal's cheap half; the
  * archivist's presence read is the confirming half.

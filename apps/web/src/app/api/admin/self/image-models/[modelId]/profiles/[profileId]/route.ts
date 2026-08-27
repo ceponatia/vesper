@@ -6,14 +6,13 @@ import { deleteImageModelProfile, updateImageModelProfile } from "@/server/image
 type Params = { modelId: string; profileId: string };
 
 /**
- * Edit or remove one task profile (image-model-capabilities.spec.md §"Admin
- * UI"). The cross-field rules a PATCH can break — an operation the model cannot
- * run, an override key the probe never declared, a second enabled default for a
- * task — are judged by the service against the MERGED row, because this route
- * cannot see the fields the request did not send. Configuration validity is
- * judged only when the merged row is ENABLED: a disabled row accepts any
- * schema-valid patch, which is what makes activation's "disable that profile
- * and retry" an action rather than advice.
+ * Edit or remove one task profile. The cross-field rules a PATCH can break — an
+ * operation the model cannot run, an override key the probe never declared, a
+ * second enabled default for a task — are judged by the service against the
+ * MERGED row, because this route cannot see the fields the request did not send.
+ * Configuration validity is judged only when the merged row is ENABLED: a
+ * disabled row accepts any schema-valid patch, which is what makes activation's
+ * "disable that profile and retry" an action rather than advice.
  *
  * Deleting or disabling a task's only default is deliberately allowed:
  * resolution degrades to the next offered profile (or reports

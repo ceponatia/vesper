@@ -18,8 +18,7 @@ import type { ProviderInputViolation, UnsentReferenceReport } from "./strict-req
  * (`@vesper/image-core`) to split the budget in two — queue time and render
  * time — and to allow a prediction that died IN the queue to be created again.
  * Hand in nothing and this is byte-for-byte the shell it always was, which is
- * deliberately what production lanes keep doing (plan §8, owner ruling
- * 2026-08-24).
+ * deliberately what production lanes keep doing (owner ruling 2026-08-24).
  */
 
 export interface ReplicateImageResult {
@@ -75,7 +74,7 @@ export interface ReplicateImageResult {
    * caller supplied an `executionPolicy`, because only then can one run create
    * more than one prediction. The provenance fields above keep describing the
    * FINAL attempt, so a caller that never reads this reads exactly what it
-   * always did (plan §8, owner ruling 2026-08-24).
+   * always did (owner ruling 2026-08-24).
    */
   attempts?: ReplicatePredictionAttempt[];
 }

@@ -20,7 +20,7 @@ export interface SocialCardsEditorProps {
 }
 
 /**
- * Inline editor for a SocialReactionCard array (social-reaction-cards.plan.md). Shared by the
+ * Inline editor for a SocialReactionCard array. Shared by the
  * world editor (`style.socialCards` — the world's social fabric) and the character Personality
  * tab (`profile.socialCards` — the character's own lines). The card's row-level label/description
  * live here; the mechanical fields (kind/severity/triggers/overrides + the live preview) come from

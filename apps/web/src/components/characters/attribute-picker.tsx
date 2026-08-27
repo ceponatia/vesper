@@ -79,7 +79,7 @@ const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATE
  * attribute group from @/contracts, controls keyed off valueType. Sections are
  * a **single-open accordion** — everything starts collapsed, expanding one
  * collapses the rest — and an open section shows EVERY applicable attribute as
- * a row (face-jewelry plan §accordion): set values are editable, unset ones
+ * a row: set values are editable, unset ones
  * render blank controls that materialize on first interaction, so storage
  * stays sparse without an "add attribute" select. Attributes are filtered
  * through the realized body (species/realize.ts): intimate groups appear only
@@ -113,8 +113,8 @@ export function AttributePicker({
   // `identity.natal_sex` is a scaffold surfaced only for an androgynous / nonbinary
   // presentation, where the gender label doesn't already imply sex at birth; for a
   // plain female / male gender it's redundant, so it's hidden (docs/contracts/attributes.md
-  // §Natal sex, deferred.plan.md). A definition is shown when the realized body says it's
-  // applicable AND it clears this conditional gate.
+  // §Natal sex). A definition is shown when the realized body says it's applicable AND it
+  // clears this conditional gate.
   const genderValue = byId.get("identity.gender")?.value;
   const natalSexRelevant = typeof genderValue === "string" && /^(androgynous|nonbinary)_born_/.test(genderValue);
   const isVisible = (def: AttributeDefinition): boolean =>
@@ -373,7 +373,7 @@ function setValueWords(definitions: readonly AttributeDefinition[], byId: Map<st
 const SECTION_PREVIEW_MAX = 64;
 
 /**
- * Collapsed-header summary (ux-improvements slice 7): the section's set values
+ * Collapsed-header summary: the section's set values
  * as a scannable phrase — "auburn, shoulder-length, wavy" — falling back to
  * "N set" when it gets long, with a distinct italic "empty" when nothing is
  * authored. What makes a fully-authored section distinguishable at a glance
@@ -398,7 +398,7 @@ function SectionCount({ count, open, preview }: { count: number; open: boolean; 
 
 /**
  * The attribute controls for one category — EVERY applicable definition as a
- * row, in registry order (face-jewelry plan §accordion). Set attributes edit
+ * row, in registry order. Set attributes edit
  * in place; unset ones render blank controls that write a value on first
  * interaction, so the stored list stays sparse without an "add" select. No
  * card chrome of its own, so it can head a top-level section *or* sit nested

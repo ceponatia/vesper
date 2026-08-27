@@ -466,7 +466,7 @@ describe("deriveRelationshipLedgerEntryId", () => {
 });
 
 // ---------------------------------------------------------------------------
-// deriveRelationshipLedgerEntries — speech-act mapping (§4.2's 10-member table)
+// deriveRelationshipLedgerEntries — speech-act mapping (the 10-member table)
 // ---------------------------------------------------------------------------
 
 describe("deriveRelationshipLedgerEntries — speech_act_delivered", () => {
@@ -769,7 +769,7 @@ describe("relationshipLedgerEntrySchema — payload/kind agreement", () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveConsentCoverage (§21.4)
+// resolveConsentCoverage
 // ---------------------------------------------------------------------------
 
 describe("resolveConsentCoverage", () => {
@@ -1114,7 +1114,7 @@ describe("deriveRelationshipRead — commitment kept/missed read interaction", (
 });
 
 // ---------------------------------------------------------------------------
-// Fork/replay parity (§6) — replaySocialLedgerHistory over the full stream
+// Fork/replay parity — replaySocialLedgerHistory over the full stream
 // matches the incremental per-command fold applied sequentially
 // ---------------------------------------------------------------------------
 
@@ -1181,8 +1181,8 @@ describe("replaySocialLedgerHistory — fork/replay parity", () => {
 });
 
 // ---------------------------------------------------------------------------
-// deriveConsentEscalationCandidates (§4.7) — the bounded [grant, decline]
-// pair the §19.3 deliberator seam chooses between.
+// deriveConsentEscalationCandidates — the bounded [grant, decline] pair the
+// deliberator seam chooses between.
 // ---------------------------------------------------------------------------
 
 describe("deriveConsentEscalationCandidates", () => {

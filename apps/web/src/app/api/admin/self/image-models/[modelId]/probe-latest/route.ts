@@ -4,8 +4,7 @@ import { probeLatestCandidate } from "@/server/images";
 type Params = { modelId: string };
 
 /**
- * Version-candidate probe (image-model-capabilities.spec.md §"Version candidate
- * and promotion flow"). Read-only despite the POST: it spends a Replicate
+ * Version-candidate probe. Read-only despite the POST: it spends a Replicate
  * schema read, mutates nothing, and answers with the candidate version, the
  * field-level capability diff, per-enabled-profile findings, and whether latest
  * differs from the row's pin. POST rather than GET because it performs an

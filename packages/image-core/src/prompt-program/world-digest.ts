@@ -14,7 +14,7 @@ import type { ImageStyleMedium } from "./conflict-keys";
 
 /**
  * The atomic world digest — ONE immutable set of facts both prompt channels
- * compile from (model-aware-image-prompts.plan.md §"Atomic world digest").
+ * compile from.
  *
  * The rule this shape exists to make structural: **facts are selected once and
  * prose is written last**. Before it, a location arrived at the prompt builder
@@ -49,8 +49,8 @@ import type { ImageStyleMedium } from "./conflict-keys";
 // ---------------------------------------------------------------------------
 
 /**
- * What one source field's projection decided about it
- * (plan §"'All information' means all image-eligible truth").
+ * What one source field's projection decided about it — "all information" means
+ * all image-eligible truth.
  *
  * The point of naming the negative answers is that they are DECISIONS. A field
  * classified `nonvisual` was looked at and ruled out; a field with no
@@ -258,7 +258,7 @@ export type ImageItemDigest = ImageEntityDigest & { readonly kind: "item" };
 // ---------------------------------------------------------------------------
 
 /**
- * The relation vocabulary (plan §"Relations are facts").
+ * The relation vocabulary — relations are facts, not prose.
  *
  * Ownership, containment, wearing, holding, contact and placement are not prose
  * glue. A model compiler needs them as data to bind the right person to the right

@@ -8,8 +8,7 @@ import {
 } from "@/server/images";
 
 /**
- * The fixed identity-reference trial's run collection
- * (image-identity-packs.spec.trial.md; design doc Wave 3).
+ * The fixed identity-reference trial's run collection.
  *
  * Owner-admin and self-scoped like the batch route beside it: the service
  * resolves every character against the requesting admin's own id, so a run can

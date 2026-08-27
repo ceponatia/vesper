@@ -94,11 +94,10 @@ describe.runIf(ready)("voice-exemplar ring + trait overlays persistence (slices 
 
 
 /**
- * The conserved-transfer persistence boundary
- * (romantic-contact-affordances.spec.effects.md §9, §15 stage 8).
+ * The conserved-transfer persistence boundary.
  *
- * §9 requires source removal and destination deposition to commit atomically
- * under one idempotency key. The pure transaction in
+ * Conservation requires source removal and destination deposition to commit
+ * atomically under one idempotency key. The pure transaction in
  * `contracts/turns/chat-contact-transfer.ts` owns the conservation arithmetic and
  * proves it exhaustively; what it cannot prove is the half this file is for.
  * Skin lives in `character_chat_state.body_surface` and worn layers in

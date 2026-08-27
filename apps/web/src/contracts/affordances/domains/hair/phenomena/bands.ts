@@ -81,11 +81,10 @@ export function hairSuppressed(
 }
 
 /**
- * The hair domain's suppression vocabulary (hair spec §"Constraints and
- * diagnostics"). Bare codes, not dotted: the dotted namespace belongs to the
- * core's input/perception laws, and keeping them visually distinct is how a
- * debug read tells "the lane could not answer" apart from "the lane answered and
- * the answer was no".
+ * The hair domain's suppression vocabulary. Bare codes, not dotted: the dotted
+ * namespace belongs to the core's input/perception laws, and keeping them
+ * visually distinct is how a debug read tells "the lane could not answer" apart
+ * from "the lane answered and the answer was no".
  */
 export const HAIR_NO_CURRENT_FORCE = "no_current_force";
 /** `hair.bulk_restraint`'s silence: nothing currently holds the bulk still. */

@@ -6,8 +6,7 @@ import type { ContactLifecycleCommit, ContactResolutionStatus } from "./types";
 
 /**
  * The contact core's half of the narrator seam — resolution → action-outcome
- * status (romantic-contact-affordances.spec.contact-core.md §"As built —
- * slice 3A").
+ * status.
  *
  * ## Why this is a function and not a lookup table
  *

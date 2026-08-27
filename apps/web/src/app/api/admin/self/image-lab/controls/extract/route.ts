@@ -5,8 +5,7 @@ import { imageLabPreprocessorFor, runImageLabControlExtraction } from "@/server/
 
 /**
  * Extract control fixtures from existing renders — one `lab_control_extract` job
- * per source image (qwen-advanced-image-subsystem.spec.md §"Control
- * extraction").
+ * per source image.
  *
  * The cost guard is charged for the whole batch BEFORE any job starts, sized to
  * the number of PAID PROVIDER CALLS the batch will make: every source image runs

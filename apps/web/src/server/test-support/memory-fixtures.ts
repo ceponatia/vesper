@@ -22,7 +22,7 @@ export function factDraft(over: Partial<FactDraft> & Pick<FactDraft, "subjectNam
 
 /**
  * The "remember this" draft: pinned, `origin: "player"`, full confidence — the
- * combination the supersedence asymmetry (spec §6.4) and the force-include path
+ * combination the supersedence asymmetry and the force-include path
  * both hinge on. Subject defaults to the player; `over` is applied last, so the
  * player-authored-fact-about-a-character case is `pinnedPlayerDraft(text, {
  * subjectName: "Mara", subjectKind: "character" })`.

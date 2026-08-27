@@ -21,8 +21,8 @@ import { describe, expect, it } from "vitest";
  * 2. A handler here that does not go through an owner-admin wrapper. The
  *    directory alone grants nothing; the wrapper is the whole gate.
  * 3. A handler that reads or serves image bytes. Admin history and batch
- *    payloads are metadata by contract (image-identity-packs.spec.lifecycle.md
- *    §"Privacy boundary"); a bulk payload is the easiest place to breach that
+ *    payloads are metadata only — counts, codes and revisions, never bytes and
+ *    never an image URL; a bulk payload is the easiest place to breach that
  *    and the hardest place to notice it.
  */
 

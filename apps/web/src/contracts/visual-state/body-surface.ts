@@ -43,14 +43,14 @@ import type { VisualStateRelationship } from "./relationships";
 import type { VisualStateSuppression } from "./suppression";
 
 /**
- * Body-surface state as current-layer features (visual-state.audit.md finding
- * 11 — "owned and written for the whole body but spent for hair alone"; this
- * adapter is the second reader the owner was built for).
+ * Body-surface state as current-layer features. The owner is written for the
+ * whole body but was spent for hair alone; this adapter is the second reader it
+ * was built for.
  *
  * The read is LAZY and pure: `bodySurfaceWetnessAt` integrates the flat drying
  * law forward to the cut's story minute and persists nothing, so the same
  * committed state at the same minute is byte-equal on every replay, and a
- * projection can never dry anyone (§25.2 — queries never persist).
+ * projection can never dry anyone — queries never persist.
  *
  * Bands, never fixed point. The band comes through the GARMENT wetness ladder
  * (`GARMENT_CONDITION_BAND_LADDERS.wetness`) rather than a ladder of this
@@ -67,8 +67,8 @@ import type { VisualStateSuppression } from "./suppression";
  * - **quarantined (`invalid`)** — silence PLUS a suppression and a diagnostic.
  *   A corrupt entry can never read as dry, and it can never read as wet either.
  *
- * The owner's MARKS module projects here too (effects spec §15 stage 6 — "later
- * visual observation reads committed mark state only"): one feature per marked
+ * The owner's MARKS module projects here too — later visual observation reads
+ * committed mark state only: one feature per marked
  * location carrying the STRONGEST unfaded mark's kind and band. Marks live
  * keyed by idempotency identity, not by location, so two marks at one locus
  * collapse to one feature — the feature key is per (subject, locus, kind), and

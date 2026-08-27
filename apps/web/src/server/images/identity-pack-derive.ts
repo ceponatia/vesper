@@ -152,8 +152,8 @@ export async function deriveRevision(input: DeriveInput): Promise<RevisionPatch>
   });
   const evaluation = evaluateIdentityPackIntrinsic({ method: plan.method, crop: plan.crop, quality }, intrinsicPolicy());
   // Measurements are kept whatever the verdict — that is the point of storing
-  // them rather than a boolean (`.spec.derivation.md` §"Intrinsic quality
-  // measurement"): a threshold change must be able to re-judge this revision.
+  // them rather than a boolean: a threshold change must be able to re-judge
+  // this revision.
   const measured: Partial<RevisionPatch> = {
     method: plan.method,
     detectorVersion: plan.detectorVersion,
@@ -212,7 +212,7 @@ interface HiddenCropAssetInput {
  * copy of that sequence, shared by automatic derivation and the manual editor so
  * the two can never drift on what a face-crop asset records.
  *
- * The meta block is the crop's provenance (spec.data.md §"Hidden image asset"),
+ * The meta block is the crop's provenance,
  * deliberately duplicating what the pack row already says: the pack row is the
  * authority, and this is what lets an operator reading `images` alone tell a
  * derived internal input from a user's portrait. A write failure fails the row

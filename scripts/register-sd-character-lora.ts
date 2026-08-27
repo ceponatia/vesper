@@ -14,7 +14,7 @@ import { createIdentityLoraBinding, createImageLora, setIdentityLoraBindingState
 
 /**
  * Put a trained character LoRA into Vesper's library and bind it to the identity
- * pack it was trained from (sd-rendering-package.plan.md §9, Stage 4).
+ * pack it was trained from (Stage 4).
  *
  *   pnpm tsx scripts/register-sd-character-lora.ts \
  *     --result ./sd-lora-training-output/<training-id>/training-result.json \
@@ -26,7 +26,7 @@ import { createIdentityLoraBinding, createImageLora, setIdentityLoraBindingState
  * label from costing a training run, and lets a training whose registration is
  * deferred lose nothing.
  *
- * **Two rows, both existing kinds.** §9 and §22 are explicit that Vesper keeps
+ * **Two rows, both existing kinds.** Vesper keeps
  * ONE LoRA library, so the weights become an ordinary `image_loras` row with the
  * same compatibility rules as every other. The binding is the small extra fact —
  * that this row is a likeness of a particular identity pack revision, trained
@@ -71,8 +71,8 @@ const DEFAULT_MODEL_SLUG = "ceponatia/sdxl-character-render";
 /**
  * The tasks an identity LoRA may serve, and the curated strength band.
  *
- * The tasks are §14's four SD profiles. The band brackets §7's "character LoRA
- * around 0.7–0.9" rather than pinning it: the library row is what a lab
+ * The tasks are the four SD profiles. The band brackets the "character LoRA
+ * around 0.7–0.9" guidance rather than pinning it: the library row is what a lab
  * comparison varies within, and a band exactly as wide as the default would make
  * the next tuning pass an edit to the row instead of a parameter of the run.
  */

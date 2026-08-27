@@ -31,8 +31,7 @@ import type { ChatCommittedHairState } from "./chat-affordances";
 import type { SensoryFocusHint } from "./chat-intent";
 
 /**
- * The chat lane's premise detector and compile adapter
- * (narrator-physical-guidance.plan.md slice 2).
+ * The chat lane's premise detector and compile adapter.
  *
  * The tests are organised the way the risk is: the GUARDS come first, because every
  * one of them exists to stop a false correction, and a false correction is the failure

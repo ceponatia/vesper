@@ -49,14 +49,12 @@ import {
  * [recognition-acceptance-safety.test.ts](./recognition-acceptance-safety.test.ts)
  * — carries retake safety, observer isolation, the gates, and degradation.
  *
- * Describe blocks are named after the acceptance-list items in
- * `body-attribute-affordances.spec.recognizable-features.md` §Acceptance tests
- * and `body-attribute-affordances.recognizable-features.memory.md` §Acceptance
- * tests, so a failure reads as a spec violation rather than a broken assertion.
+ * Describe blocks are named after the recognition layer's acceptance items, so
+ * a failure reads as a broken law rather than a broken assertion.
  */
 
 // ---------------------------------------------------------------------------
-// 1. No recognizability list (features spec §Acceptance; §Anti-patterns)
+// 1. No recognizability list
 // ---------------------------------------------------------------------------
 
 describe("acceptance 1 — no character profile contains a recognizability list", () => {
@@ -83,7 +81,7 @@ describe("acceptance 1 — no character profile contains a recognizability list"
 });
 
 // ---------------------------------------------------------------------------
-// 2. Determinism (features spec §Acceptance; memory doc §Acceptance "replay")
+// 2. Determinism — a replay reproduces the identical read
 // ---------------------------------------------------------------------------
 
 describe("acceptance 2 — identical body truth produces identical keys, fingerprints, and cue", () => {
@@ -119,7 +117,7 @@ describe("acceptance 2 — identical body truth produces identical keys, fingerp
 });
 
 // ---------------------------------------------------------------------------
-// 3. First notice, then repetition control (both docs §Acceptance)
+// 3. First notice, then repetition control
 // ---------------------------------------------------------------------------
 
 describe("acceptance 3 — first notice cues; ordinary repeated visibility does not", () => {
@@ -160,8 +158,8 @@ describe("acceptance 3 — first notice cues; ordinary repeated visibility does 
 });
 
 // ---------------------------------------------------------------------------
-// 4. Hidden-feature safety / leakage (features spec §Anti-patterns; memory doc
-//    "opaque coverage prevents visual-memory updates")
+// 4. Hidden-feature safety / leakage — opaque coverage prevents visual-memory
+//    updates
 // ---------------------------------------------------------------------------
 
 describe("acceptance 4 — a covered feature never leaks into memory, and never back-dates", () => {
@@ -220,7 +218,7 @@ describe("acceptance 4 — a covered feature never leaks into memory, and never 
 });
 
 // ---------------------------------------------------------------------------
-// 5. Occlusion is not disappearance (features spec §Anti-patterns; memory doc)
+// 5. Occlusion is not disappearance
 // ---------------------------------------------------------------------------
 
 describe("acceptance 5 — occlusion never produces a false disappearance", () => {
@@ -246,7 +244,6 @@ describe("acceptance 5 — occlusion never produces a false disappearance", () =
 
 // ---------------------------------------------------------------------------
 // 6. Change detection — the worked missing-ring-finger flow
-//    (memory doc §Acquired-feature example)
 // ---------------------------------------------------------------------------
 
 describe("acceptance 6 — the missing-ring-finger flow, truth to change cue", () => {
@@ -337,7 +334,7 @@ describe("acceptance 6 — the missing-ring-finger flow, truth to change cue", (
 
 // ---------------------------------------------------------------------------
 // 7. Long-absence recognition refresh + the recognition floor
-//    (memory doc §Resolved — freshness buckets, recognition floor)
+//    (freshness buckets, recognition floor)
 // ---------------------------------------------------------------------------
 
 describe("acceptance 7 — long absence refreshes recognition and never forgets a stable feature", () => {

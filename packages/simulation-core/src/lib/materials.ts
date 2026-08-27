@@ -63,10 +63,10 @@ export {
  * projector, replay, seed assembly, and the projection invariants. No IO,
  * no clock, no ambient randomness.
  *
- * Slice 2 (§26.5–26.6) adds `resolveConsumeItemFromView` and the shared
+ * Slice 2 adds `resolveConsumeItemFromView` and the shared
  * `buildConsumptionBodyEffects` helper `lib/simulation/activities.ts`'s
- * completion-time consumption path reuses — both drive the §25 body kernel
- * through `applySourceToMeter` (`lib/simulation/bodies.ts`).
+ * completion-time consumption path reuses — both drive the body kernel through
+ * `applySourceToMeter` (`lib/simulation/bodies.ts`).
  */
 
 // ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ function destinationWellFormed(view: MaterialResolutionView, toLocus: ItemLocus)
   }
 }
 
-/** Would placing `itemId` into `toLocus` close a containment cycle (§26.4)? */
+/** Would placing `itemId` into `toLocus` close a containment cycle? */
 function destinationWouldCycle(
   itemId: string,
   toLocus: ItemLocus,
@@ -149,7 +149,7 @@ function destinationWouldCycle(
 }
 
 // ---------------------------------------------------------------------------
-// TransferItem resolution (§26.4 — the fail-closed validation order)
+// TransferItem resolution (the fail-closed validation order)
 // ---------------------------------------------------------------------------
 
 interface TransferRejection {
@@ -160,10 +160,10 @@ interface TransferRejection {
 interface TransferAccepted {
   ok: true;
   /**
-   * §26.7: a worn-ness change on a condition-tracked item trails its
-   * worn-window modifier (applied or ended) plus a threshold re-arm — a
-   * breaking change from the bare `event` slice 1/2 shipped with (mirrors the
-   * `events` array `resolveCompleteActivity` gained in slice 2).
+   * A worn-ness change on a condition-tracked item trails its worn-window
+   * modifier (applied or ended) plus a threshold re-arm — a breaking change
+   * from the bare `event` slice 1/2 shipped with (mirrors the `events` array
+   * `resolveCompleteActivity` gained in slice 2).
    */
   events: [ItemTransferredEvent, ...(ItemConditionModifierAppliedEvent | ItemConditionModifierEndedEvent | TriggerScheduledEvent)[]];
 }
@@ -174,9 +174,9 @@ function transferReject(code: TransferItemRejectionCode, publicReason: string): 
 }
 
 /**
- * Pure TransferItem resolver over a lock-consistent authority view (§26.4).
- * `itemConditionView`, when the moved item is condition-tracked (§26.7),
- * drives the worn-window transition: donning/doffing trails a
+ * Pure TransferItem resolver over a lock-consistent authority view.
+ * `itemConditionView`, when the moved item is condition-tracked, drives the
+ * worn-window transition: donning/doffing trails a
  * `item_condition_modifier_applied`/`_ended` event plus cleanliness's
  * threshold re-arm after the primary `item_transferred` event.
  */
@@ -196,7 +196,7 @@ export function resolveTransferItemFromView(
   if (!command.principal.controlledActorIds.includes(actorId)) {
     return transferReject("unauthorized_actor", "You cannot direct that actor.");
   }
-  // 3. actor embodied at a zone (§13.2)
+  // 3. actor embodied at a zone
   const actorZoneId = view.actorZoneId(actorId);
   if (actorZoneId === null) return transferReject("actor_not_embodied", "They are not anywhere they can do that.");
   // 4. item extant + not gone
@@ -239,7 +239,7 @@ export function resolveTransferItemFromView(
   if (toLocus.kind === "container" && !containerAccessAllowed(view, toLocus.containerItemId, actorId)) {
     return transferReject("container_access_denied", "That container is closed to them.");
   }
-  // 10.5. reservation (§26.5) — only the reserving activity's own machinery may move it
+  // 10.5. reservation — only the reserving activity's own machinery may move it
   if (view.reservingActivityId(itemId) !== null) {
     return transferReject("item_reserved", "That is reserved for something else right now.");
   }
@@ -299,7 +299,7 @@ export function resolveTransferItemFromView(
 }
 
 // ---------------------------------------------------------------------------
-// DestroyItem resolution (§26.1 gone/terminal)
+// DestroyItem resolution (gone/terminal)
 // ---------------------------------------------------------------------------
 
 interface DestroyRejection {
@@ -378,7 +378,7 @@ export function resolveDestroyItemFromView(
 }
 
 // ---------------------------------------------------------------------------
-// ConsumeItem resolution (§26.6 — a material event with a body effect)
+// ConsumeItem resolution (a material event with a body effect)
 // ---------------------------------------------------------------------------
 
 /**
@@ -405,13 +405,13 @@ export interface ConsumptionBodyEffectsResult {
 }
 
 /**
- * Build the trailing §25 body-kernel events for one item's authored
+ * Build the trailing body-kernel events for one item's authored
  * `consumptionEffects`, causation-chained to the consumption event with one
  * running sequence counter (the `resolveBodyCollapse` precedent: every
  * trailing event chains to the SAME root cause, never to each other).
  * Shared by `resolveConsumeItemFromView` below and
  * `lib/simulation/activities.ts`'s completion-time consume-disposition path,
- * so the two consumption entry points can never drift apart (§26.5–26.6).
+ * so the two consumption entry points can never drift apart.
  */
 export function buildConsumptionBodyEffects(input: {
   view: BodyBranchMeta;
@@ -455,7 +455,7 @@ export function buildConsumptionBodyEffects(input: {
 }
 
 /**
- * Build one `item_consumed` event (§26.6). Shared by `resolveConsumeItemFromView`
+ * Build one `item_consumed` event. Shared by `resolveConsumeItemFromView`
  * below (the root event of its own transaction, no causation) and
  * `lib/simulation/activities.ts`'s completion-time consume path (one per
  * consumed item, causation-chained to the `activity_completed` event) — so an
@@ -519,9 +519,9 @@ function consumeReject(code: ConsumeItemRejectionCode, publicReason: string): Co
 }
 
 /**
- * Pure ConsumeItem resolver (§26.6): the destroy-law subset of validation
+ * Pure ConsumeItem resolver: the destroy-law subset of validation
  * (no caller-asserted source, so no staleness check) plus `not_consumable`
- * and `item_reserved`, followed by the trailing §25 body effects built
+ * and `item_reserved`, followed by the trailing body effects built
  * through `buildConsumptionBodyEffects`.
  */
 export function resolveConsumeItemFromView(
@@ -593,7 +593,7 @@ export function resolveConsumeItemFromView(
 }
 
 // ---------------------------------------------------------------------------
-// SetItemOwnership resolution (§26.3 — social, not physical)
+// SetItemOwnership resolution (social, not physical)
 // ---------------------------------------------------------------------------
 
 interface OwnershipRejection {
@@ -613,7 +613,7 @@ function ownershipReject(code: SetItemOwnershipRejectionCode, publicReason: stri
 
 /**
  * Pure SetItemOwnership resolver. Authorized only for the storyteller principal
- * or an actor principal that controls the item's CURRENT owner (§26.3). No
+ * or an actor principal that controls the item's CURRENT owner. No
  * physical checks: ownership is social and never blocks or requires movement.
  */
 export function resolveSetItemOwnershipFromView(
@@ -693,7 +693,7 @@ export interface ApplyMaterialEventOptions {
   /**
    * Branches whose events this projection accepts. Defaults to the projection's
    * own branch; ancestry replay onto a fork child passes the chain so inherited
-   * ancestor events apply (plan R4).
+   * ancestor events apply (R4).
    */
   acceptBranchIds?: readonly string[];
 }
@@ -776,7 +776,7 @@ export function applyMaterialEvent(
     }
     case "item_instantiated_from_promotion": {
       // The first material event that CREATES an item rather than mutating
-      // an existing one (E5.4 §26.10/§27.2) — no pre-existing row to find.
+      // an existing one (E5.4) — no pre-existing row to find.
       if (projection.items.some((item) => item.id === event.payload.item.id)) {
         throw new Error("Material event replay double-instantiates a promoted item");
       }
@@ -788,7 +788,7 @@ export function applyMaterialEvent(
       return next;
     }
     case "actor_materialized_from_aggregate": {
-      // E6.4 (§27.2/§27.7): the first event that CREATES an actor rather than
+      // E6.4: the first event that CREATES an actor rather than
       // referencing one — the actor lane's `item_instantiated_from_promotion`.
       if (projection.actors.some((actor) => actor.id === event.payload.actorId)) {
         throw new Error("Material event replay double-materializes a promoted actor");
@@ -864,7 +864,7 @@ export function applyMaterialEvent(
 }
 
 export interface MaterialsReplayInput {
-  /** Materials are fully evented past their origin seed (plan R3). */
+  /** Materials are fully evented past their origin seed (R3). */
   seed: MaterialsProjection;
   events: readonly SimulationBranchEvent[];
 }
@@ -911,7 +911,7 @@ function assertUniqueIds(kind: string, ids: readonly string[]): void {
 }
 
 /**
- * The projection's structural laws (§26): unique ids, container references
+ * The projection's structural laws: unique ids, container references
  * exist and are themselves containers, capacity respected, and no containment
  * cycle. Thrown from — never returned by — the projector, because a corrupt
  * projection is an engine bug, not a rejected command.

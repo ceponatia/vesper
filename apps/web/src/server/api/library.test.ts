@@ -4,11 +4,10 @@ import type { ShareableKind } from "./visibility";
 import type { LibraryKind } from "@/server/memory";
 
 /**
- * The `kind × scope` matrix for library discovery (security-authz.plan.md
- * §Follow-ups item 3). Only the shareable tables carry a `visibility` column,
- * so a non-`owned` scope on any other kind must be refused *before* SQL is
- * built — the old code emitted `visibility = 'public'` regardless of kind and
- * 500'd on the invalid statement.
+ * The `kind × scope` matrix for library discovery. Only the shareable tables
+ * carry a `visibility` column, so a non-`owned` scope on any other kind must be
+ * refused *before* SQL is built — the old code emitted `visibility = 'public'`
+ * regardless of kind and 500'd on the invalid statement.
  */
 
 /**

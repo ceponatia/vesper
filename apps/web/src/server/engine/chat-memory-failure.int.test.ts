@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-// Codebase-review A7: a hard infra throw in the long-term memory write must not
+// A hard infra throw in the long-term memory write must not
 // discard the exchange's state changes — `finalizeChatState` fences the write and
 // still persists. AI_FAKE degrades the pulse/extraction legs; the memory module is
-// mocked to throw like a down database would. Keyed on the conversation record
-// (character-chat-standalone.spec.md §1.2): the state row is (chatId, characterId)
+// mocked to throw like a down database would. Keyed on the conversation record:
+// the state row is (chatId, characterId)
 // and the memory write targets the participant's memory group.
 
-// Every extraction leg down (chat-agent-improvements slice 1b) — the pre-split
+// Every extraction leg down — the pre-split
 // whole-archivist degrade — plus a rejecting `writeChatMemory`.
 const mock = vi.hoisted(() => ({
   archivist: { value: null, degraded: true },

@@ -23,7 +23,7 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 
 /**
  * The shot line, the staged act, and the identity lock's adaptation to a face the camera
- * cannot see (scene-composition.plan.md slices 1–2, emission half).
+ * cannot see (the emission half).
  *
  * The pin the whole slice was accepted on is the FIRST test here: a default camera changes
  * no byte of any prompt. Everything else in this file describes what a prompt gains once

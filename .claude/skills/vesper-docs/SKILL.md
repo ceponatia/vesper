@@ -204,12 +204,20 @@ Before finishing any change this skill governed:
   print('broken:',n)"
   ```
 
-- **No reference doc links into `docs/developer-notes/`** (plain-text backtick
-  mentions are the correct form):
+- **No reference to a retired working document survives, in any form.** The
+  `docs/developer-notes/` tier is deleted, so a `*.plan.md` / `*.spec.md` name
+  points at nothing while still reading as authoritative — owner ruling
+  2026-08-27: the names go, links and plain text alike. State the rule instead.
+  The same applies to bare `§N` section numbers, which cited that tier's specs;
+  a `§` survives only when the sentence names a doc that still exists (a
+  `docs/resilience.md §2` citation is correct).
 
   ```bash
-  grep -rnE '\]\([^)]*developer-notes' docs --include="*.md" | grep -v "^docs/developer-notes/"
+  git grep -nE "[a-z0-9-]+\.(plan|spec|trial|audit|deferred|research|followups)\.md|§[0-9]" -- apps packages scripts docs
   ```
+
+  Every hit must name a file that exists under `docs/`, or be a doc's reference
+  to its own numbered sections.
 
 - **No dynamic state in any durable doc you touched** — check against the
   banned list above, and search touched files for `Status:`, `slice`,

@@ -4,8 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { stageMidpoint } from "@/contracts";
 import { characterChatMessages, characterChats, characterChatState, characters, db } from "@/server/db";
 
-// Conversation light-state integration suite (character-chat-state.spec.md §9,
-// re-keyed per participant — character-chat-standalone.spec.md §1.2): the POST
+// Conversation light-state integration suite (re-keyed per participant): the POST
 // exchange lifecycle + the GET/PATCH/POST state route on (chatId, characterId),
 // invoked directly with mocked auth against DATABASE_URL. AI_FAKE forces demo
 // mode, so the reply is the deterministic placeholder and the pulse degrades to
@@ -185,15 +184,15 @@ describe.runIf(ready)("POST seeds a state row from the authored stage", () => {
     const meters = row?.meters as Record<string, number>;
     // One CHAT_TICK_MINUTES of ordinary decay at most — nothing recovered toward rested.
     expect(meters.hygiene).toBeLessThanOrEqual(0.2);
-    expect(row?.regard).toBe(57); // regard unchanged — no between-visit decay (spec §10)
+    expect(row?.regard).toBe(57); // regard unchanged — no between-visit decay
   });
 });
 
-describe.runIf(ready)("POST …/time-skip (spec §8.1 — flavor-only v1, D14)", () => {
+describe.runIf(ready)("POST …/time-skip (flavor-only v1, D14)", () => {
   const skipReq = (chatId: string, amount: string): NextRequest =>
     apiRequest(`/api/chats/${chatId}/time-skip`, { body: { amount } });
 
-  it("degrades a skip on a missing state row to seed + skip (spec §11), persisting the seeded row", async () => {
+  it("degrades a skip on a missing state row to seed + skip, persisting the seeded row", async () => {
     expect(await stateRow(ids.skipper)).toBeNull(); // no exchange yet ⇒ no row
     const res = await timeSkip(skipReq(ids.skipper.chatId, "hours"), ctx(ids.skipper.chatId));
     const snapshot = await expectJson<{ clockMinutes: number }>(res, 200);
@@ -250,7 +249,7 @@ describe.runIf(ready)("sceneAuto toggle (slice 9)", () => {
 
 describe.runIf(ready)("creation seeds the scenario's setting-wide cards (followups ruling 9)", () => {
   it("seeds the primary's profile cards onto the chat row and the first exchange preserves them", async () => {
-    // The scenario seeds at CREATION from the primary's own cards (ruling 9).
+    // The scenario seeds at CREATION from the primary's own cards.
     const seeded = (await scenarioRow(ids.carded.chatId))?.activeSocialCards as { id: string }[];
     expect(seeded.map((c) => c.id)).toContain("card_feet");
 
@@ -377,7 +376,7 @@ describe.runIf(ready)("state-tools edit (PATCH)", () => {
   });
 });
 
-describe.runIf(ready)("action beats (chat-action-beats.plan.md) — a tapped chip is a narrated exchange", () => {
+describe.runIf(ready)("action beats — a tapped chip is a narrated exchange", () => {
   /** The newest message row (role + meta) for a chat. */
   async function lastMessage(chatId: string): Promise<{ role: string; meta: unknown } | null> {
     const [row] = await db()
@@ -452,7 +451,7 @@ describe.runIf(ready)("Prompt Character (opening beat)", () => {
   });
 });
 
-describe.runIf(ready)("DELETE — the one destructive verb (character-chat-standalone.spec.md §1.4)", () => {
+describe.runIf(ready)("DELETE — the one destructive verb", () => {
   it("removes the conversation with its messages AND its state row in one action", async () => {
     // Ensure a state row + a message exist.
     await chatSend(postReq(ids.warm.chatId, { content: "seed a message" }), ctx(ids.warm.chatId)).then(drainStream);

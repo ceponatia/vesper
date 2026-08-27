@@ -9,8 +9,7 @@ import { sceneStagingById } from "@/contracts/images/scene-staging";
 import { emptyCharacterProfile } from "@/contracts/world/profile";
 
 /**
- * The chat lane's half of the intimate-scene LoRA route
- * (intimate-scene-lora.spec.md §Algorithm): which renders leave
+ * The chat lane's half of the intimate-scene LoRA route: which renders leave
  * `renderCharacterSceneImage` on the wrapper carrying a binding, and — just as
  * load-bearing — which leave EXACTLY as they did before this route existed.
  *

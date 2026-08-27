@@ -1,13 +1,13 @@
 /**
- * Deterministic player-message span parser (player-input-perception.plan.md slice 4).
+ * Deterministic player-message span parser.
  *
  * Pure, IO-free, regex-first (in the spirit of `engine/chat-intent.ts`): it segments a
  * player message into ordered spans by its optional sigil grammar, turning the hardest
  * problem in the perception partition (semantic interiority / channel detection) into a
  * cheap parse WHEN the player opts into the sigils. A message with no sigils yields a
- * single narration span, so the prompt-only partition (slice 1) still carries the read.
+ * single narration span, so the prompt-only partition still carries the read.
  *
- * The sigil grammar (§Markup lane):
+ * The sigil grammar:
  * - `"..."`      → speech (the one required convention: dialogue goes in quotes)
  * - `*...*`      → thought (default), comms when `Name:`/`to Name:`-shaped, or styled
  *                  emphasis for a short mid-sentence span (the emphasis guard)
@@ -23,8 +23,8 @@
  * nested content: `*She said "no" — I can't believe it*` is one thought span, quotes and
  * all.
  *
- * This module is the SINGLE parser implementation — the tail-note renderer (slice 4), the
- * transcript renderer (slice 5), and the archivist fact-channel hint (slice 6) all consume
+ * This module is the SINGLE parser implementation — the tail-note renderer, the
+ * transcript renderer, and the archivist fact-channel hint all consume
  * these spans; none re-implements the grammar.
  */
 
@@ -65,7 +65,7 @@ export interface MessageSpanContext {
 }
 
 /**
- * The fact-store channel a span establishes knowledge through (slice 6's forward-compatible
+ * The fact-store channel a span establishes knowledge through (the forward-compatible
  * `channel` vocabulary, per the forward-compatible-schema preference): `perceived` facts
  * render as established knowledge to the narrator, `private` ones drop from the narrator
  * prompt, `ooc` never enters in-world memory. Exhaustive over every span kind.
@@ -85,7 +85,7 @@ export function spanChannel(kind: MessageSpanKind): "perceived" | "private" | "o
   }
 }
 
-/** The narrator's texted-reply output grammar (slice 4): round-trips through `parseMessageSpans` as a comms span. */
+/** The narrator's texted-reply output grammar: round-trips through `parseMessageSpans` as a comms span. */
 export function formatCommsReply(sender: string, text: string): string {
   return `*${sender.trim()}: ${text.trim()}*`;
 }

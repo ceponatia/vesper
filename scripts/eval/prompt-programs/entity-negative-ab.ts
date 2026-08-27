@@ -29,7 +29,7 @@ import {
 
 /**
  * The pinned item/location trial for Qwen Image 2512's negative transport
- * (model-aware-image-prompts.plan.md §"Stage 6 — negative transport promotion").
+ * promotion.
  *
  * Stage 5 is done: the item and location lanes compile guarded negative blocks,
  * lint them against world truth, and record a transport decision for each. Stage

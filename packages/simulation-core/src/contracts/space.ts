@@ -21,7 +21,7 @@ import {
 } from "./identity";
 
 /**
- * E3.1 — authoritative space (engine-foundation.plan.md §"Gate 3 build order").
+ * E3.1 — authoritative space.
  *
  * The first Gate 3 slice: topology, one physical locus per actor, deterministic
  * route planning with lower-bound durations, and the movement event family. It
@@ -134,7 +134,7 @@ export const linkSchema = z
 
 /**
  * Exactly one locus per actor per branch. An in-transit actor is not at the
- * origin or destination; projection queries return one row (§13.2).
+ * origin or destination; projection queries return one row.
  */
 export const physicalLocusSchema = z.discriminatedUnion("kind", [
   z
@@ -289,18 +289,18 @@ export const moveActorRejectionCodes = [
 export const moveActorRejectionCodeSchema = z.enum(moveActorRejectionCodes);
 export const moveActorCommandResultSchema = createCommandResultSchema(moveActorRejectionCodeSchema);
 
-// --- MoveTogether command (command-integrity A4, §14.2 / §17) ----------------
+// --- MoveTogether command (A4) -----------------------------------------------
 
 /**
- * The atomic walk-with-me command (command-integrity.plan.md A4): the PLAYER
- * principal moves the player actor AND an invited co-present co-traveler as ONE
- * indivisible action. `actorId` is the player (controlled by the principal);
- * `coTravelerActorId` is the invited primary — authorized NOT by the principal
- * (§14.2: a player never directs an NPC) but by the deterministic
- * `decideAccompany` policy the resolver re-runs inside the locked authority view.
- * Accept ⇒ ONE shared journey carries both (both land together by construction);
- * decline ⇒ the command's own §14.4 refusal. Replaces the former three-transaction
- * choreography that could strand the pair mid-move.
+ * The atomic walk-with-me command (A4): the PLAYER principal moves the player
+ * actor AND an invited co-present co-traveler as ONE indivisible action.
+ * `actorId` is the player (controlled by the principal); `coTravelerActorId` is
+ * the invited primary — authorized NOT by the principal (a player never directs
+ * an NPC) but by the deterministic `decideAccompany` policy the resolver re-runs
+ * inside the locked authority view. Accept ⇒ ONE shared journey carries both
+ * (both land together by construction); decline ⇒ the command's own public
+ * refusal. Replaces the former three-transaction choreography that could strand
+ * the pair mid-move.
  */
 const moveTogetherPayloadSchema = z
   .object({
@@ -334,11 +334,11 @@ export const moveTogetherRejectionCodes = [
   "no_route",
   "route_access_denied",
   "travel_mode_unavailable",
-  // Co-traveler-specific faces (§14.2 walk-with-me):
+  // Co-traveler-specific faces (walk-with-me):
   "co_traveler_not_found",
   "co_traveler_in_transit",
   "not_copresent",
-  // The deterministic acceptance policy declined — the command's own §14.4 face.
+  // The deterministic acceptance policy declined — the command's own public face.
   "accompany_declined",
 ] as const;
 export const moveTogetherRejectionCodeSchema = z.enum(moveTogetherRejectionCodes);

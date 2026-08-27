@@ -16,9 +16,9 @@ import {
 import { resolveNarratorInstructionSource, setChatNarratorPromptSelection } from "./selection";
 
 /**
- * The Prompt Lab's persistence layer against a real database
- * (narrator-prompt-lab.plan.md slice 2 gate: "CRUD/revision integration tests
- * prove no cross-owner read/write and no stale-save overwrite").
+ * The Prompt Lab's persistence layer against a real database: CRUD/revision
+ * integration tests prove no cross-owner read/write and no stale-save
+ * overwrite.
  *
  * Four claims, none of which can be proven without Postgres, and each naming the
  * bad implementation it kills:

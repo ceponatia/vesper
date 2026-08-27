@@ -30,7 +30,7 @@ interface CardForm {
 }
 
 /**
- * The standalone card builder (social-reaction-cards.plan.md). Edits one `social_cards` library
+ * The standalone card builder. Edits one `social_cards` library
  * row: the row-level name/description/tags + a publish toggle, plus the mechanical `definition`
  * via the shared {@link SocialCardFields} (kind/severity/triggers/overrides + live preview). Same
  * form-seeding pattern as the item editor — each card seeds once so refetches can't clobber edits.
@@ -104,8 +104,7 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
     }
   };
 
-  // Autosave (mobile-ux.plan.md ruling 5 — the social-card editor missed the
-  // slice-7 rollout): silent saves on change/blur. No forge/staged-draft state
+  // Autosave: silent saves on change/blur. No forge/staged-draft state
   // here, so there's nothing to pause it for.
   const autosave = useAutosave({
     enabled: true,

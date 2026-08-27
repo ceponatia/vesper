@@ -37,8 +37,7 @@ import {
 import { buildTrialSummary, digest, resolveFixtureCommit, trialSummarySchema } from "./summary";
 
 /**
- * Slice-5 narrator trial runner (body-attribute-affordances.plan.md, rematch
- * spec body-attribute-affordances.trial.rematch.md).
+ * Slice-5 narrator trial runner (rematch round).
  *
  * Owner-gated LIVE MODEL comparison of the `CHAT_AFFORDANCE_CUES` cue path
  * against the current appearance-only path. See ./README.md for how to rerun it

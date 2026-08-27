@@ -1,9 +1,7 @@
 import { z } from "zod";
 
 /**
- * Reviewed and probed capabilities of a registered image model
- * (image-model-capabilities.spec.md §"Extensions to `image_models`" and
- * §"Advanced capability contract").
+ * Reviewed and probed capabilities of a registered image model.
  *
  * `image-models.ts` already carries the MECHANICS of calling a model: field
  * names, arity, transport, offered shapes. Those are all derivable from a

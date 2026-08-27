@@ -46,7 +46,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const [forging, setForging] = useState(false);
   const [redrafting, setRedrafting] = useState<CharacterSheetScope | null>(null);
   const [derivingPortrait, setDerivingPortrait] = useState(false);
-  // The portrait review dialog (followups ruling 2): what the vision pass read —
+  // The portrait review dialog: what the vision pass read —
   // disagreements offered as current → proposed, auto-fills listed for testing
   // visibility. Opens after every read that saw anything.
   const [portraitReview, setPortraitReview] = useState<PortraitReview | null>(null);
@@ -127,7 +127,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   };
 
   /**
-   * In-sheet Forge (character-sheet-forge.plan.md): complete every empty part
+   * In-sheet Forge: complete every empty part
    * of the sheet from what the player entered; never overwrites it. Typed
    * content is committed BEFORE the LLM runs (save-first, abort on failure),
    * and the generated additions land as an unsaved draft — the save bar is the
@@ -155,7 +155,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   };
 
   /**
-   * Per-tab Re-draft (character-sheet-forge.plan.md): rewrite ONE tab from the
+   * Per-tab Re-draft: rewrite ONE tab from the
    * whole sheet, narrator-formatted. Same save-first discipline as the Forge;
    * the scope merge keeps player-set attribute/trait values and reports any
    * conflicts as diagnostics instead of applying them.
@@ -180,7 +180,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   };
 
   /**
-   * Portrait → attributes (character-sheet-forge.plan.md slice 3): a vision
+   * Portrait → attributes: a vision
    * pass over the canonical avatar fills unset appearance attributes;
    * disagreements with existing values surface as diagnostics, never applied.
    */
@@ -275,7 +275,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
     }
   };
 
-  // Autosave (ux-improvements slice 7): silent saves on change/blur; paused
+  // Autosave: silent saves on change/blur; paused
   // while a forge/re-draft/portrait result awaits review. Save stays manual flush.
   const autosave = useAutosave({
     enabled: !stagedForge,

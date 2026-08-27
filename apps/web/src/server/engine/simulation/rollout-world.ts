@@ -12,7 +12,7 @@ import { advanceBranchStoryTime } from "./scheduler-store";
 import { seedDurableSpaceTopology } from "./space-store";
 
 /**
- * R1 (engine.rollout.plan.md) — the standing internal test world: one fixed,
+ * R1 — the standing internal test world: one fixed,
  * re-runnable provisioning of a small successor world (topology, rhythms,
  * embodied cast at mixed LODs, a cohort) plus a bounded drain loop, shared by
  * the `pnpm sim:seed` / `pnpm sim:advance` scripts (local and over Fly SSH)

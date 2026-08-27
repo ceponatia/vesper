@@ -12,8 +12,7 @@ import { parseMessageSpans } from "@/lib/message-spans";
 import { contactSentenceEligible, endCoveredContacts, type ChatContactEnds } from "./chat-contact-adapter";
 
 /**
- * THE REPLY-SIDE NPC CONTACT ENDING — the minimal actor-control deliverable of
- * romantic-contact-affordances §"Continuation order" 3.
+ * THE REPLY-SIDE NPC CONTACT ENDING — the minimal actor-control deliverable.
  *
  * The trial's third bounded gap: when the NPC's own generated prose plainly ends
  * a contact ("She eases out from beneath your hand"), the projection kept
@@ -242,10 +241,10 @@ function endingPatterns(characters: readonly ChatNpcEndingCharacter[]): {
  * does not state it.
  *
  * The chronology planner orders every action by its exact source phrase, and
- * the floor's result "gains source offsets for ordering" without its language
- * growing (actor-control spec §"Authority model") — so this runs the SAME
- * compiled patterns detection runs, on a sentence detection already matched,
- * and reports the match range instead of the verdict. Offsets are relative to
+ * the floor's result gains source offsets for ordering without its language
+ * growing — so this runs the SAME compiled patterns detection runs, on a
+ * sentence detection already matched, and reports the match range instead of
+ * the verdict. Offsets are relative to
  * the sentence string handed in; quote normalization is one-to-one on length,
  * so they hold against the raw sentence too.
  */

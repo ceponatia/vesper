@@ -50,7 +50,7 @@ import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
  * E6.1 durable actor-LOD authority. One command on the
  * shared `runSimulationCommand` shell; the ledger row is a projection of
  * `actor_lod_assigned` events, and `readEffectiveActorLod` is the one read
- * seam every consumer (the §19.3 deliberator call sites today, the E6.2
+ * seam every consumer (the deliberator call sites today, the E6.2
  * background-life controller next) resolves an actor's LOD through.
  */
 
@@ -125,7 +125,7 @@ export async function readEffectiveActorLod(
 }
 
 /**
- * The actor's busy-ness counts — the §27.3 claim/engagement guards, shared by
+ * The actor's busy-ness counts — the claim/engagement guards, shared by
  * `assign_actor_lod`'s demotion check and the E6.2 routine controller's
  * begin-sleep legality gate.
  */
@@ -195,7 +195,7 @@ export async function submitDurableAssignActorLod(
         .limit(1);
       const current = await loadActorLodRow(tx, branch.id, actorId);
 
-      // The §27.3 demotion guards, loaded unconditionally: three cheap counts
+      // The demotion guards, loaded unconditionally: three cheap counts
       // against indexed projections, and the resolver only consults them on a
       // demotion — a promotion's counts are simply unused.
       const busy = await loadActorBusyCounts(tx, branch.id, actorId);
@@ -337,7 +337,7 @@ async function retireActorScheduledWork(
 }
 
 // ---------------------------------------------------------------------------
-// E6.4 dependency wake (§27.7) — a command whose dependency reaches a
+// E6.4 dependency wake — a command whose dependency reaches a
 // below-event actor promotes them to `event` inside its own transaction.
 // Prepared first (the wake events precede the reaching command's own event in
 // sequence), committed only once that command's resolution is known accepted.

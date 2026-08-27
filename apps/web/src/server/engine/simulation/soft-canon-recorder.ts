@@ -12,9 +12,9 @@ import type { SimTx } from "./trigger-projector";
 /**
  * E4.3 — the durable soft-canon ledger. Rows are derived
  * projections of soft_canon_* events, written in the same transaction that
- * commits them: the §11.1 shell calls `recordCommandSoftCanon` after the
+ * commits them: the command shell calls `recordCommandSoftCanon` after the
  * observation and knowledge recorders. Every event carries its full post-fold
- * snapshot (§6.4), so this module only upserts what the pure fold returns and
+ * snapshot, so this module only upserts what the pure fold returns and
  * a fork's replay mints identical rows.
  */
 
@@ -122,7 +122,7 @@ export async function recordCommandSoftCanon(
   let written = 0;
   for (const row of eventRows) {
     const event = branchEventFromRow(row);
-    // The §6.4 capture makes the fold a snapshot upsert — same shape the pure
+    // The post-fold capture makes the fold a snapshot upsert — same shape the pure
     // `applySoftCanonEvent` applies during a fork's replay.
     const entry =
       event.type === "soft_canon_recorded"

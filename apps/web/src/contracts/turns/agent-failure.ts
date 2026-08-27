@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Agent-failure telemetry (chat-agent-improvements.followups.md — the debug surface).
+ * Agent-failure telemetry — the debug surface behind every helper leg.
  *
  * Every helper leg behind a reply (the pulse, the three extraction legs, the per-member
  * personal pass, the summary fold, the scene sketch, the photo read, the session lane's
@@ -10,8 +10,7 @@ import { z } from "zod";
  * every single exchange looks exactly like a leg that never had anything to say: the state
  * row simply keeps its old values, and the only trace is one `log.info` line in `fly logs`
  * that nobody reads. (The 13-field archivist was timing out repeatedly in production for
- * days before a stray `fly logs` grep surfaced it — see chat-agent-improvements.plan.md
- * §Completion.)
+ * days before a stray `fly logs` grep surfaced it.)
  *
  * So a failed leg now leaves a **durable, queryable record** with a **suspected cause**,
  * tallied in the admin chat inspector. Nothing here changes behavior: recording is

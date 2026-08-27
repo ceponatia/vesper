@@ -99,7 +99,7 @@ function createCommand(spec: Partial<CommandEnvelopeSpec> = {}, payloadOverrides
 }
 
 describe("E3.3 derivation math", () => {
-  it("derives §15.2 times and clamps a too-tight window at zero", () => {
+  it("derives commitment times and clamps a too-tight window at zero", () => {
     const times = deriveCommitmentTimes({
       latestArrival: SHIFT_AT,
       minimumRouteDurationSeconds: WALK_AB,
@@ -258,7 +258,7 @@ describe("E3.3 resolveRaisePressure", () => {
     };
   }
 
-  it("raises pressure once with flexibility-derived severity and §15.2 act-by", () => {
+  it("raises pressure once with flexibility-derived severity and a route-derived act-by", () => {
     const commitment = acceptedCreate().commitment;
     const resolution = resolveRaisePressure(
       raiseView({ commitment }) as never,

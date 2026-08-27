@@ -34,8 +34,8 @@ import { enqueueJob, registerJobHandler } from "./jobs";
 import { buildChatMeanwhilePrompt, CHAT_MEANWHILE_SYSTEM } from "./prompts/chat-meanwhile";
 
 /**
- * The meanwhile pass (chat-offscreen-life.plan.md §2): the chat lane's "world
- * tick", D3-safe by construction — armed ONLY by a player time skip whose
+ * The meanwhile pass: the chat lane's "world
+ * tick", wall-clock-free by construction — armed ONLY by a player time skip whose
  * cumulative skipped time since the last pass crosses the gate, run as a
  * DETACHED job (the `chat_scene_sketch` pattern: nothing waits on it, it can
  * never 409 a send), keyed entirely to the story clock.

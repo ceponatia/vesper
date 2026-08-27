@@ -67,7 +67,7 @@ export type MemoryEmbedder = (
 ) => Promise<{ model: string; vectors: number[][] }>;
 
 /**
- * The §11.1 shell hook (also called by the pre-shell space and material
+ * The command shell hook (also called by the pre-shell space and material
  * stores): enqueue one memory-index obligation per appended event that is
  * knowledge-lane or produced at least one observation. Runs inside the
  * command transaction so obligations are exactly-once with the events.
@@ -304,7 +304,7 @@ async function embedDocuments(
       if (vector) embeddings.set(document.id, { model, vector });
     });
   } catch {
-    // §24.3 degradation: the documents still index for lexical recall; only
+    // Degradation: the documents still index for lexical recall; only
     // vector ranking quality degrades, and the query layer reports it.
   }
   return embeddings;
@@ -329,7 +329,7 @@ export type ConsumeMemoryIndexResult =
   | { status: "failed"; outboxId: string; retryAt: Date | null; terminal: boolean }
   | { status: "lease_lost"; outboxId: string };
 
-/** Claim and fulfil at most one memory-index obligation (§24.3). */
+/** Claim and fulfil at most one memory-index obligation. */
 export async function consumeNextMemoryIndexOutbox(
   options: ConsumeMemoryIndexOptions,
 ): Promise<ConsumeMemoryIndexResult> {
@@ -453,7 +453,7 @@ export async function drainMemoryIndexOutbox(
 // Seeded lore, lag diagnostics, rebuild
 // ---------------------------------------------------------------------------
 
-/** §24.2 authored lore: seeded documents with explicit visibility. */
+/** Authored lore: seeded documents with explicit visibility. */
 export async function seedAuthoredLoreDocuments(
   input: { branchId: string; seeds: readonly z.input<typeof authoredLoreSeedSchema>[] },
   options: { database?: Db | SimTx } = {},
@@ -475,7 +475,7 @@ export interface MemoryIndexLag {
   failedObligations: number;
 }
 
-/** §24.3: recall degradation must be visible, never inferred. */
+/** Recall degradation must be visible, never inferred. */
 export async function memoryIndexLag(
   branchId: string,
   options: { database?: Db | SimTx } = {},

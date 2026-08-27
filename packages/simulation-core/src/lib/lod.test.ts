@@ -119,7 +119,7 @@ const assignedRow: ActorLodState = {
   assignedAtStorySecond: 1_000,
 } as ActorLodState;
 
-describe("simulation LOD vocabulary (E6.1, §27.1)", () => {
+describe("simulation LOD vocabulary (E6.1)", () => {
   it("ranks resolution most-detail-first in declaration order", () => {
     expect(compareSimulationLods("exact", "event")).toBeLessThan(0);
     expect(compareSimulationLods("event", "aggregate")).toBeLessThan(0);
@@ -135,7 +135,7 @@ describe("simulation LOD vocabulary (E6.1, §27.1)", () => {
   });
 });
 
-describe("effectiveActorLod (E6.1, §27–28)", () => {
+describe("effectiveActorLod (E6.1)", () => {
   it("reads the registry defaults for an unassigned actor", () => {
     expect(effectiveActorLod(undefined)).toEqual({
       simulationLod: "exact",
@@ -374,7 +374,7 @@ describe("resolveAssignActorLodFromView (E6.1)", () => {
   });
 });
 
-describe("buildDependencyWakeTrain (E6.4, §27.7)", () => {
+describe("buildDependencyWakeTrain (E6.4)", () => {
   const dormantRow = actorLodStateSchema.parse({
     actorId: MARA,
     simulationLod: "dormant",

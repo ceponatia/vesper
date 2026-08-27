@@ -4,10 +4,9 @@ import { visualStateFeatureKey } from "./feature";
 import type { VisualStateSuppression } from "./suppression";
 
 /**
- * The current-state facts Vesper CANNOT answer, on the record
- * (visual-state.audit.md finding 14 — nine of thirteen current-state facts
- * have no owner, and the plan's ruling is that missing owners mean silence
- * plus a diagnostic, never invention).
+ * The current-state facts Vesper CANNOT answer, on the record. Nine of thirteen
+ * current-state facts have no owner, and the ruling is that missing owners mean
+ * silence plus a diagnostic, never invention.
  *
  * This module is the "as much code on suppression as projection" half of
  * slice 3 made structural: a fixed table of the unsupported fact families and

@@ -11,8 +11,8 @@ import {
 } from "./fixed-point";
 
 /**
- * The shared kernel (clothing-state-graph.plan.md slice 4 — *"Reuse the successor
- * §25 fixed-point integration kernel … generalize its pure numerics if needed"*).
+ * The shared kernel, extracted under the owner's ruling — *"Reuse the successor
+ * §25 fixed-point integration kernel … generalize its pure numerics if needed"*.
  *
  * The load-bearing claim is that the generalization changed NOTHING. Two proofs:
  * `lib/simulation/bodies.test.ts` and `material-condition.test.ts` still pass

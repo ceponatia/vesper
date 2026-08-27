@@ -2,7 +2,7 @@ import type { AffordanceObservation, AffordanceSuppression } from "./types";
 
 /**
  * Observer perception — the filter between physical truth and what one observer
- * may be told (body-attribute-affordances.spec.architecture.md §5).
+ * may be told.
  *
  * Two structural rulings, both inherited from the garment cue block
  * (`items/garment-observation.ts`, which drops `hidden` parts before ranking):

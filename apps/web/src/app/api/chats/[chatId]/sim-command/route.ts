@@ -51,18 +51,17 @@ import {
 type Params = { chatId: string };
 
 /**
- * R3 slice 2 (engine.rollout.plan.md) — typed player commands into the
- * successor: move, end the scene, hand an item over, start an activity. Every
- * admission is the ordinary durable command under the player principal; a
- * refusal returns the §14.4 PUBLIC face — code, public reason, and legal
- * alternatives — never a private cause.
+ * Typed player commands into the successor: move, end the scene, hand an item
+ * over, start an activity. Every admission is the ordinary durable command under
+ * the player principal; a refusal returns the PUBLIC face — code, public reason,
+ * and legal alternatives — never a private cause.
  *
  * command-integrity A1: every command runs UNDER the shared per-chat
- * `chat_exchange` lock (slice 1) so a skip/travel/activity can't interleave with
- * a live reply or another command (contention bounces `chat_busy`, ruling A1-1),
- * and behind a `(chatId, requestId)` idempotency record (slice 4) so a retry
- * replays the recorded response verbatim — one drain, one beat, one outcome —
- * instead of advancing the world twice. Step commands and the world beat carry
+ * `chat_exchange` lock so a skip/travel/activity can't interleave with a live
+ * reply or another command (contention bounces `chat_busy`, ruling A1-1), and
+ * behind a `(chatId, requestId)` idempotency record so a retry replays the
+ * recorded response verbatim — one drain, one beat, one outcome — instead of
+ * advancing the world twice. Step commands and the world beat carry
  * deterministic ids derived from the client request key, so even a crash between
  * execute and the `completed` record dedupes on re-execution.
  */
@@ -95,21 +94,21 @@ const bodySchema = z.discriminatedUnion("kind", [
       requestId: requestIdBodySchema,
     })
     .strict(),
-  // R3 slice 4 (ruling 17): the player's time skip — bounded minutes, capped at
-  // the storyteller advance's 30 days.
+  // The player's time skip — bounded minutes, capped at the storyteller
+  // advance's 30 days.
   z
     .object({ kind: z.literal("advance_time"), minutes: z.number().int().min(1).max(30 * 24 * 60), requestId: requestIdBodySchema })
     .strict(),
-  // world-ui.plan.md slice 1 (ruling 20): server-composed skip-style travel —
-  // move + a bounded advance to the journey's earliest arrival, atomically.
+  // Server-composed skip-style travel — move + a bounded advance to the
+  // journey's earliest arrival, atomically.
   z.object({ kind: z.literal("travel"), toZoneId: z.string().min(1).max(256), requestId: requestIdBodySchema }).strict(),
   // command-integrity A4: walk-with-me — invite the co-present primary to travel
   // together. ONE atomic `move_together` command (scene-end + one shared journey +
   // one arrival) can no longer strand the pair mid-move; NPC agency (the
   // deterministic acceptance policy) re-runs inside the locked authority view.
   z.object({ kind: z.literal("move_together"), toZoneId: z.string().min(1).max(256), requestId: requestIdBodySchema }).strict(),
-  // world-ui.plan.md slice 3 (ruling 20 spirit): server-composed skip-style
-  // activity — start_activity + a bounded drain through its duration, atomically.
+  // Server-composed skip-style activity — start_activity + a bounded drain
+  // through its duration, atomically.
   z.object({ kind: z.literal("do_activity"), actionDefinitionId: z.string().min(1).max(256), requestId: requestIdBodySchema }).strict(),
 ]);
 
@@ -135,7 +134,7 @@ const httpError = (code: string, message: string, status: number): CommandHttpRe
 });
 
 /**
- * The §14.4 PUBLIC refusal in the `ok` channel (HTTP 200), so the card reads
+ * The PUBLIC refusal face in the `ok` channel (HTTP 200), so the card reads
  * `publicReason` + `legalAlternatives` instead of a flattened HTTP-error body.
  * Shared by every card-facing composite (travel / give_item / do_activity) —
  * the card is the first real refusal consumer and needs the structured shape.
@@ -223,7 +222,7 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
         },
         { admitAtLockedVersion: true },
       );
-      // Slice 2: an explicitly-ended scene leaves a durable transcript beat (a
+      // An explicitly-ended scene leaves a durable transcript beat (a
       // skip folds its own scene close into the time-passes beat instead).
       if (outcome.status === "accepted") {
         await writeWorldBeat({ chatId, branchId: sim.branchId, kind: "scene_ended", dedupeId: beatDedupeId });
@@ -241,14 +240,14 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
         .where(and(eq(simItemHoldings.branchId, sim.branchId), eq(simItemHoldings.itemId, command.itemId)))
         .limit(1);
       if (!holding || holding.locusKind !== "held" || holding.actorId !== sim.playerActorId) {
-        // The §14.4 public face at 200 (matching travel) so the card renders it.
+        // The public refusal face at 200 (matching travel) so the card renders it.
         return httpOk({ status: "rejected", code: "not_held", publicReason: "You are not holding that.", legalAlternatives: [] });
       }
-      // The transfer resolver enforces giver/receiver co-location itself (§26.4
-      // step 7: the destination's root zone — the primary's zone — must equal
-      // the player's), so an absent primary yields `root_not_colocated` "That
-      // destination is not within reach." — no route-level co-location precheck
-      // needed. The card also disables the affordance when the primary is away.
+      // The transfer resolver enforces giver/receiver co-location itself (the
+      // destination's root zone — the primary's zone — must equal the player's),
+      // so an absent primary yields `root_not_colocated` "That destination is not
+      // within reach." — no route-level co-location precheck needed. The card
+      // also disables the affordance when the primary is away.
       const outcome = await submitDurableTransferItem(
         {
           ...stepEnvelope("give"),
@@ -265,7 +264,7 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       );
       if (outcome.status === "rejected") return publicRefusal(outcome);
       if (outcome.status !== "accepted") return httpError("sim_conflict", "the world moved; try again", 409);
-      // Slice 3: the handoff leaves a durable "You hand … " beat, named through
+      // The handoff leaves a durable "You hand … " beat, named through
       // the primary + the item's own display name (never a raw id).
       const [primary] = await db()
         .select({ name: simCharacters.name })
@@ -326,10 +325,10 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       // crash-remnant re-execution then lands the SAME absolute target instead of
       // advancing a second time (`advance_time` is the one relative-target command).
       const target = startedStorySecond + command.minutes * 60;
-      // A5 slice 4: NEVER a 500 after the clock committed, and no dead request grinding a 30-day
+      // A5: NEVER a 500 after the clock committed, and no dead request grinding a 30-day
       // drain. A bounded fast path finishes short skips in-request; a long skip hands its remainder
       // to a durable, server-owned job (which writes the landing beat on completion) and returns
-      // `catchingUp` so the client shows staged progress until the world settles (ruling 1–2).
+      // `catchingUp` so the client shows staged progress until the world settles.
       const skip = await runSkipWithEscalation({
         worldId: branch.worldId,
         branchId: sim.branchId,
@@ -354,12 +353,12 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       return httpOk({ status: "advanced", toStorySecond: skip.reachedStorySecond, drainShort: true, catchingUp: true });
     }
     case "travel": {
-      // Skip-style travel (ruling 20) + graceful departure (slice 4): if a scene
-      // stands, END it as a CHOICE first (participant_choice — the lawful two-step
-      // advance_time performs), so the move that follows fires no hard interrupt
-      // (spec §18.2: an ended scene holds no claim). Then submit the move and — on
-      // acceptance — drain the clock to the journey's earliest arrival (the §17
-      // arrival trigger fires inside the drain).
+      // Skip-style travel + graceful departure: if a scene stands, END it as a
+      // CHOICE first (participant_choice — the lawful two-step advance_time
+      // performs), so the move that follows fires no hard interrupt (an ended
+      // scene holds no claim). Then submit the move and — on acceptance — drain
+      // the clock to the journey's earliest arrival (the arrival trigger fires
+      // inside the drain).
       const standing = await findStandingEngagement(sim.branchId, sim.playerActorId, sim.primaryActorId);
       let parted = false;
       if (standing.engagementId !== null) {
@@ -408,10 +407,10 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       const arrived = settled.loci.some(
         (locus) => locus.actorId === sim.playerActorId && locus.kind === "at" && locus.zoneId === command.toZoneId,
       );
-      // Slice 2/4: the landing leaves ONE durable "You walk to …" beat in the
-      // transcript (replacing slice 1's toast), phrased with the parting when a
-      // scene was ended. The destination label resolves through the SAME kind→noun
-      // seam the world card uses — never a raw id.
+      // The landing leaves ONE durable "You walk to …" beat in the transcript,
+      // phrased with the parting when a scene was ended. The destination label
+      // resolves through the SAME kind→noun seam the world card uses — never a
+      // raw id.
       const destKind = settled.zones.find((zone) => zone.id === command.toZoneId)?.kind ?? "";
       await writeWorldBeat({
         chatId,
@@ -428,7 +427,7 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       // Walk-with-me (command-integrity A4): ONE atomic `move_together` command
       // (decide inside the locked view + scene-end grace + one shared journey +
       // one arrival) — the pair can no longer be stranded mid-move. A decline /
-      // refusal returns the §14.4 face at 200 so the card reads it; a landing
+      // refusal returns the public refusal face at 200 so the card reads it; a landing
       // refreshes the world + transcript. The command id + world beat carry
       // request-derived deterministic ids so a retry replays instead of moving twice.
       const [primary] = await db()
@@ -467,7 +466,7 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       return httpOk({ status: outcome.status, toStorySecond: outcome.toStorySecond, arrived: outcome.arrived });
     }
     case "do_activity": {
-      // Skip-style activity (ruling 20 spirit): submit the player's
+      // Skip-style activity: submit the player's
       // start_activity, then — on acceptance — drain the clock through the
       // activity's duration. Completion is trigger-scheduled AT start
       // (activity-store schedules the completion trigger at expectedCompleteAt),
@@ -481,8 +480,9 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
         },
         { admitAtLockedVersion: true },
       );
-      // A claim conflict (e.g. resting mid-scene) surfaces here as the §14.4
-      // public face at 200 — the card renders it via the slice-1 refusal surface.
+      // A claim conflict (e.g. resting mid-scene) surfaces here as the public
+      // refusal face at 200 — the card renders it through the same
+      // `publicRefusal` surface travel uses.
       if (outcome.status === "rejected") return publicRefusal(outcome);
       if (outcome.status !== "accepted") return httpError("sim_conflict", "the world moved; try again", 409);
       // The started activity's id is deterministic from this command; read its
@@ -497,7 +497,7 @@ async function resolveCommand(ctx: CommandContext): Promise<CommandHttpResult> {
       // completion trigger is durable, so it settles on a later beat if the drain stops short.
       const activityFallbacks = new CompositionFallbackCollector(chatId);
       noteDrainDiagnostics(activityFallbacks, "do_activity", drain);
-      // Slice 3: the settled activity leaves a durable "You rest a while." beat,
+      // The settled activity leaves a durable "You rest a while." beat,
       // phrased generically from the action's display label (never a raw id).
       const [definitionRow] = await db()
         .select({ payload: simActionDefinitions.payload })
@@ -551,7 +551,7 @@ async function markRequestFailed(chatId: string, requestId: string): Promise<voi
 }
 
 /**
- * The idempotency shell (slice 4), run under the chat_exchange lock so it is the
+ * The idempotency shell, run under the chat_exchange lock so it is the
  * single writer for this chat: look up `(chatId, requestId)`; a completed hit with
  * a matching payload replays verbatim; a hit with a DIFFERENT payload is an
  * `idempotency_mismatch`; a miss records `started` then executes and records
@@ -626,7 +626,7 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
   const gate = await requireSimChat(chatId, user.id);
   if (!gate.ok) return gate.response;
   const { sim } = gate;
-  // A5 slice 4: while a durable time job is catching this branch's world up, turn every mutation
+  // A5: while a durable time job is catching this branch's world up, turn every mutation
   // away — the in-process lock does not outlive the request that started the job, so the durable
   // job state IS the guard. Re-drive a crashed/backed-off job with a detached sweep on the way out.
   if (await hasActiveTimeJob(sim.branchId)) {
@@ -645,8 +645,8 @@ export const POST = withUser<Params>(async (user, req, ctx) => {
     log.warn("engine.sim.command_request", "malformed requestId; degraded to a server-minted id", { chatId });
   }
 
-  // Slice 1 (A1-2): serialize per chat under the SAME lock the reply lanes hold;
-  // a miss bounces `chat_busy` (A1-1), phrased by the current holder (slice 3).
+  // A1-2: serialize per chat under the SAME lock the reply lanes hold;
+  // a miss bounces `chat_busy` (A1-1), phrased by the current holder.
   const held = tryKeyedLock(
     chatExchangeLockKey(chatId),
     () => runIdempotent({ sim, chatId, userId: user.id, command, requestId }),

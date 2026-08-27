@@ -20,8 +20,7 @@ import { applyGarmentOperations } from "./garment-presentation";
 import { garmentEffectiveCoverage, garmentReadout } from "./garment-effective-coverage";
 
 /**
- * Per-part effective coverage (clothing-state-graph.plan.md slice 3, derived-read
- * steps 3–5; slice-0 audit fixtures F1–F3).
+ * Per-part effective coverage — the derived read's steps 3–5.
  *
  * The laws themselves live in garment-coverage.ts and are tested there. What is
  * proven here is the WIRING: that each part's behavior sees its OWN channel

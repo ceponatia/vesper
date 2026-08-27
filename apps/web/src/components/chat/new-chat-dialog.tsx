@@ -13,21 +13,19 @@ import { Select } from "@/components/ui/select";
 import { engineComparisonApi } from "@/lib/api-engine-comparison";
 import { charactersApi, chatPresetsApi, chatsApi, type ApiResult, type CharacterSummary, type ChatPreset } from "@/lib/client/api";
 
-/** Roster cap — mirrors the server's MAX_CHAT_PARTICIPANTS (multi-character-chat.plan.md "2–4 typical"). */
+/** Roster cap — mirrors the server's MAX_CHAT_PARTICIPANTS; 2–4 is the typical roster. */
 const MAX_PICKS = 4;
 
 /**
- * Start a conversation (character-chat-standalone.spec.md §2.2): pick one or more
- * characters (skipped when the caller already knows one — the editor tab / a
- * library card), choose the D7 memory mode, optionally start from a saved scenario
- * preset (spec §1.5 — the server seeds the new conversation's state from it),
- * optionally title it, then create + navigate to the full-screen conversation.
- * Selection order matters: the first pick is the conversation's primary
- * participant; every pick joins as a full roster member of the ensemble
- * exchange (multi-character chat — finished/multi-character-chat.plan.md). The memory choice is
- * always shown with "shared" as the default: for a first-ever chat the two are
- * equivalent (a fresh group is minted either way), so the copy speaks in "if any"
- * terms rather than probing for priors.
+ * Start a conversation: pick one or more characters (skipped when the caller
+ * already knows one — the editor tab / a library card), choose the D7 memory mode,
+ * optionally start from a saved scenario preset (the server seeds the new
+ * conversation's state from it), optionally title it, then create + navigate to the
+ * full-screen conversation. Selection order matters: the first pick is the
+ * conversation's primary participant; every pick joins as a full roster member of
+ * the ensemble exchange. The memory choice is always shown with "shared" as the
+ * default: for a first-ever chat the two are equivalent (a fresh group is minted
+ * either way), so the copy speaks in "if any" terms rather than probing for priors.
  */
 export function NewChatDialog({
   open,
@@ -56,7 +54,7 @@ export function NewChatDialog({
 
   // The filter re-queries the server (name/tag + semantic match) instead of
   // narrowing the capped first page — past LIST_LIMIT characters, a client-only
-  // filter can't see rows that never loaded (library-ux.plan.md §6).
+  // filter can't see rows that never loaded.
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {

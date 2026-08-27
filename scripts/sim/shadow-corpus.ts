@@ -27,7 +27,7 @@ import {
 } from "@/server/engine";
 
 /**
- * R4 slice 2 (engine.rollout.plan.md) — the FIXED comparison corpus: a scripted
+ * R4 slice 2 — the FIXED comparison corpus: a scripted
  * exchange set run through the real legacy pipeline on a fresh
  * `successor_shadow` chat, with each detached shadow leg awaited so the run is
  * deterministic and complete when it prints. Ends with the computed parity

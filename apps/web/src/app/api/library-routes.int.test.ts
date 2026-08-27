@@ -149,7 +149,7 @@ describe.skipIf(!ready)("characters CRUD + search", () => {
       coverage: ["torso", "arms"],
       layer: 3,
     };
-    // Materialized ids land in the DEFAULT preset (outfits[0] — ux-improvements slice 8).
+    // Materialized ids land in the DEFAULT preset (outfits[0]).
     type PresetProfile = { profile: { outfits: { id: string; items: string[] }[] } };
     const created = await expectJson<{ character: PresetProfile; diagnostics: { code: string }[] }>(
       await createCharacterRoute(
@@ -302,7 +302,7 @@ describe.skipIf(!ready)("characters CRUD + search", () => {
   });
 });
 
-describe.skipIf(!ready)("entity visibility (auth.plan.md)", () => {
+describe.skipIf(!ready)("entity visibility", () => {
   it("public entities read cross-owner but never write; private stay owner-only", async () => {
     const mkChar = async (name: string) =>
       (
@@ -422,7 +422,7 @@ describe.skipIf(!ready)("entity visibility (auth.plan.md)", () => {
   });
 });
 
-describe.skipIf(!ready)("library list facets, sort & scope (library-ux.plan.md §Follow-up pass)", () => {
+describe.skipIf(!ready)("library list facets, sort & scope", () => {
   it("character list carries speciesId/gender and honors ?sort=name", async () => {
     const mk = async (name: string) =>
       (
@@ -951,9 +951,9 @@ describe.skipIf(!ready)("personas CRUD", () => {
     expect(attributes.map((a) => a.id)).not.toContain("feet.smell");
   });
 
-  // intimate-defaulting.md §3b: a persona used to be born `intimateRegions: []` and stay
-  // there forever, so the player's own body reached every downstream consumer with no
-  // intimate anatomy. The create route now seeds it the way the character route does.
+  // A persona used to be born `intimateRegions: []` and stay there forever, so the
+  // player's own body reached every downstream consumer with no intimate anatomy.
+  // The create route now seeds it the way the character route does.
   it("seeds the body-config at persona creation — a blank persona is born with anatomy", async () => {
     const created = await expectJson<{
       persona: { profile: { intimateRegions: string[]; attributes: { id: string; value: unknown }[] } };

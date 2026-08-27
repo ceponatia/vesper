@@ -354,7 +354,7 @@ export async function insertSpaceRows(tx: SimTx, inserts: SpaceRowInserts): Prom
 
 /**
  * Seed one branch's topology and starting loci atomically. A seed is pre-event
- * state (plan R3): it must land before the branch's first event, and every
+ * state (R3): it must land before the branch's first event, and every
  * locus actor must already exist in the branch's character registry.
  */
 export async function seedDurableSpaceTopology(
@@ -466,7 +466,7 @@ async function loadTopologyView(tx: SimTx, meta: SpaceBranchMetaView) {
  * Execute one MoveActor against PostgreSQL authority: journey_planned,
  * actor_departed, and the arrival trigger_scheduled event commit atomically
  * with the locus flip, journey row, trigger row, branch advance, and command
- * result (spec §11.1).
+ * result.
  */
 export async function submitDurableMoveActor(
   rawCommand: unknown,
@@ -573,7 +573,7 @@ export async function submitDurableMoveActor(
       const locus = projection.loci.find((candidate) => candidate.actorId === command.payload.actorId);
 
       // E3.2 claim integration: departure is illegal while a claim-holding
-      // activity occupies the actor's body (spec §3.1 invariant 4).
+      // activity occupies the actor's body.
       const claimRows = await tx
         .select({ claims: simActivities.claims })
         .from(simActivities)
@@ -667,8 +667,7 @@ export async function submitDurableMoveActor(
         }
 
         // A departure breaks any open co-present scene the mover occupies:
-        // interrupted in the same transaction (spec §18.2 — one body, one
-        // physical scene).
+        // interrupted in the same transaction (one body, one physical scene).
         const lastSequence = await interruptCoPresentEngagementsForActor(tx, {
           branch: {
             worldId: branch.worldId,
@@ -687,7 +686,7 @@ export async function submitDurableMoveActor(
           startSequence: resolution.events[2].sequence,
         });
         // E4.1: derive who perceived the departure (and any scene interrupt)
-        // against the post-command loci, inside the same transaction (§20).
+        // against the post-command loci, inside the same transaction.
         await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
         await enqueueMemoryIndexObligations(tx, {
           id: branch.id,
@@ -739,7 +738,7 @@ export async function submitDurableMoveActor(
 
 /**
  * Resolve one journey arrival at fire time. The scheduler has already stepped
- * the branch clock to the trigger's due second (spec §12.2 step 3), so the
+ * the branch clock to the trigger's due second, so the
  * arrival event is stamped with the arrival time, not the submission time.
  */
 export async function submitDurableJourneyArrival(
@@ -928,7 +927,7 @@ export async function submitDurableJourneyArrival(
         }
 
         // E4.1: the arrival is perceived by whoever stands at the destination
-        // once the traveller does — graded against the flipped loci (§20).
+        // once the traveller does — graded against the flipped loci.
         await recordCommandObservations(tx, { id: branch.id, headSequence: branch.headSequence });
         await enqueueMemoryIndexObligations(tx, {
           id: branch.id,

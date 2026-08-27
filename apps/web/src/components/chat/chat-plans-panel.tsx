@@ -36,7 +36,7 @@ const DAY_OPTIONS: { value: number; label: string }[] = [
 ];
 
 /**
- * The Plans panel (chat-plans-promises.plan.md, Slice 4): the conversation's tracked
+ * The Plans panel: the conversation's tracked
  * commitments, listed below Supporting Cast. Plans accrete as the story strikes them and
  * come due on the story clock; this panel is the manual override — seed a plan the fiction
  * hasn't stated yet, fix a when, mark one kept/canceled, or remove a mis-minted entry.
@@ -55,7 +55,7 @@ export function ChatPlansPanel({
   plans: ChatPlan[];
   /** The story clock, so an edited "when" resolves to an absolute target and salience derives. */
   clockMinutes: number;
-  /** The story-calendar anchor — labels render as real weekdays (chat-clock-calendar.plan.md). */
+  /** The story-calendar anchor — labels render as real weekdays. */
   calendarStart: CalendarStart;
   archived: boolean;
   /** Receives the fresh state snapshot after a successful save. */

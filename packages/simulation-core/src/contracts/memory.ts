@@ -15,14 +15,14 @@ import { observationConfidenceSchema } from "./perception";
  * record. Every document carries its source id/kind, its branch + sequence
  * interval, its eligibility surface, validity/supersedence intervals, and
  * schema/model versions, so eligibility is always resolved relationally
- * BEFORE any similarity ranking (§24.1) and similarity can never decide
- * witness, truth, validity, or access.
+ * BEFORE any similarity ranking, and similarity can never decide witness,
+ * truth, validity, or access.
  */
 
 export const MEMORY_INDEX_CONSUMER_KIND = "memory_index" as const;
 export const MEMORY_DOCUMENT_SCHEMA_VERSION = 1 as const;
 
-/** §24.2 source classes shipped in E4.4; the enum is the extension point. */
+/** Source classes shipped in E4.4; the enum is the extension point. */
 export const memorySourceKinds = [
   "observation",
   "assertion",
@@ -47,7 +47,7 @@ export const memoryVisibilities = ["public", "actors", "belief_holders"] as cons
 export const memoryVisibilitySchema = z.enum(memoryVisibilities);
 export type MemoryVisibility = z.infer<typeof memoryVisibilitySchema>;
 
-/** §24.1 step 7: every result names how the viewpoint knows it. */
+/** Every result names how the viewpoint knows it. */
 export const epistemicLabels = [
   "observed",
   "glimpsed",
@@ -86,7 +86,7 @@ export const memoryDocumentSchema = z
     visibility: memoryVisibilitySchema,
     /** Non-empty exactly when visibility is `actors`. */
     eligibleActorIds: eligibleActorIdsSchema,
-    /** Structured relevance surface (§24.1 step 4): who/what this is about. */
+    /** Structured relevance surface: who/what this is about. */
     aboutEntityIds: aboutEntityIdsSchema,
     validFromSecond: storySecondSchema,
     validUntilSecond: storySecondSchema.optional(),
@@ -94,7 +94,7 @@ export const memoryDocumentSchema = z
     supersededAtSecond: storySecondSchema.optional(),
     epistemicLabel: epistemicLabelSchema,
     confidenceFixedPoint: observationConfidenceSchema.optional(),
-    /** Redacted text produced from authorized source data only (§24.3). */
+    /** Redacted text produced from authorized source data only. */
     text: z.string().min(1).max(4_000),
     /** Set when an embedding exists; ranking never mixes models. */
     embeddingModel: z.string().min(1).max(128).optional(),
@@ -126,7 +126,7 @@ export const memoryIndexOutboxPayloadSchema = z
   .object({ sourceEventId: eventIdSchema })
   .strict();
 
-// --- Query contract (§24.1) ----------------------------------------------------
+// --- Query contract -------------------------------------------------------------
 
 export const memoryQueryInputSchema = z
   .object({
@@ -134,7 +134,7 @@ export const memoryQueryInputSchema = z
     viewpointActorId: worldCharacterIdSchema,
     /** The story second recall happens at — validity is evaluated here. */
     atStorySecond: storySecondSchema,
-    /** Structured filters (§24.1 step 4), applied before ranking. */
+    /** Structured filters, applied before ranking. */
     sourceKinds: z.array(memorySourceKindSchema).optional(),
     aboutEntityIds: z.array(z.string().min(1).max(2_048)).max(16).optional(),
     /** Lexical ranking input; ignored when an embedding is supplied. */
@@ -142,7 +142,7 @@ export const memoryQueryInputSchema = z
     /** Vector ranking input — ranks only documents of the same model. */
     queryEmbedding: z.array(z.number()).length(1_536).optional(),
     queryEmbeddingModel: z.string().min(1).max(128).optional(),
-    /** Context budget (§24.1 step 6). */
+    /** Context budget. */
     limit: z.number().int().min(1).max(64).default(8),
     /** Eligible candidates considered before ranking, newest first. */
     maxCandidates: z.number().int().min(1).max(512).default(256),
@@ -172,7 +172,7 @@ export const memoryRecallResultSchema = z
 
 export type MemoryRecallResult = z.infer<typeof memoryRecallResultSchema>;
 
-/** §24.3: indexing failure degrades recall visibly, never silently. */
+/** Indexing failure degrades recall visibly, never silently. */
 export const memoryRecallDiagnosticsSchema = z
   .object({
     headSequence: z.number().int().nonnegative(),
@@ -197,7 +197,7 @@ export type MemoryRecallResponse = z.infer<typeof memoryRecallResponseSchema>;
 
 // --- Authored lore seed ---------------------------------------------------------
 
-/** §24.2 "authored lore explicitly available to the viewpoint" — seeded, not evented. */
+/** Authored lore explicitly available to the viewpoint — seeded, not evented. */
 export const authoredLoreSeedSchema = z
   .object({
     /** Stable caller identity for the lore entry (registry id, slug…). */

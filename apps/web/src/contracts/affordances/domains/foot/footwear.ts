@@ -18,8 +18,7 @@ import {
 import { footSurfaceIds, footSurfaceSubtree, type FootSurfaceId } from "./topology";
 
 /**
- * Footwear as a FILTER, never as a fact about the whole foot
- * (romantic-contact-affordances.spec.foot.md §"Footwear integration").
+ * Footwear as a FILTER, never as a fact about the whole foot.
  *
  * The wardrobe supplies sparse semantic parts and this file maps them onto the
  * surfaces they contain. That mapping is the entire point: a peep-toe pump and a

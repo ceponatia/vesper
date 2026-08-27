@@ -28,16 +28,16 @@ import {
 import { narratorPromptsApi, readNarratorPromptFailure } from "./narrator-prompts-api";
 
 /**
- * The Narrator Prompt Lab (narrator-prompt-lab.plan.md, slice 3): the
- * owner-admin master/detail screen for handwritten narrator instruction
- * prompts — library on the left, one prompt's editor on the right.
+ * The Narrator Prompt Lab: the owner-admin master/detail screen for handwritten
+ * narrator instruction prompts — library on the left, one prompt's editor on the
+ * right.
  *
  * `/api/admin/self/narrator-prompts` is role-gated server-side and is the REAL
  * gate — `withOwnerAdmin` fails closed with a hidden 404. The check here is only
  * so a non-admin gets an explanation instead of a page of failed requests;
  * hiding the menu entry is tidiness, not authorization.
  *
- * Three rules from the plan shape everything below:
+ * Three rules shape everything below:
  *
  * - **No autosave.** A saved body is an experimental revision that reaches live
  *   conversations on their next reply, so Save is always a button someone pressed

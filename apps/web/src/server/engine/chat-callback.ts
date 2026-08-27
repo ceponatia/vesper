@@ -3,7 +3,7 @@ import type { Milestone, MilestoneKind } from "@/contracts/relationships/history
 import { CHAT_TICK_MINUTES } from "./constants";
 
 /**
- * Memory callbacks (memory-callbacks.plan.md): the pure half of the unprompted
+ * Memory callbacks: the pure half of the unprompted
  * "remember when" cue. Fused RAG recall is strictly input-relevance-driven, so
  * shared history never resurfaces on its own — this module gates WHEN a callback
  * may fire (low-frequency, lull-only) and picks WHICH old episode to offer
@@ -62,25 +62,25 @@ export interface ChatCallbackGateInput {
   /** The character's last reply ended on a question — the player is mid-answer. */
   lastReplyEndsInQuestion: boolean;
   /**
-   * The player attached photos (chat-agent-improvements slice 4): the reply owes them a
+   * The player attached photos: the reply owes them a
    * reaction — the one thing the turn is actually about — so a "remember when" aside
    * would be competing with the beat the player just opened.
    */
   hasAttachments: boolean;
   /**
-   * The message is storyteller narration, not the player's own words (§Narrator input):
+   * The message is storyteller narration, not the player's own words:
    * authored story events are not a lull to fill with reminiscence.
    */
   narratorInput: boolean;
   /**
    * A photo beat is armed this turn (a selfie request, an unprompted offer, or the
-   * opener's photo license — chat-agent-improvements slice 4): the turn already has its
+   * opener's photo license): the turn already has its
    * one flavor move. The callback yields rather than the offer, because the decision has
    * to be made BEFORE the ring burns — see `chatCallbackEligible`.
    */
   photoBeat: boolean;
   /**
-   * A commitment is near this turn (chat-plans-promises): a plan due now, imminent, or
+   * A commitment is near this turn: a plan due now, imminent, or
    * just-missed owns the beat — the Plans block's directive is what the reply is about, so
    * a "remember when" aside would compete with it.
    */
@@ -88,15 +88,15 @@ export interface ChatCallbackGateInput {
 }
 
 /**
- * The cadence + lull gate (plan §Design, rulings applied): callbacks are the
+ * The cadence + lull gate: callbacks are the
  * lowest-priority tail block — any competing one-turn directive suppresses them,
  * as does an intimate beat or an unanswered question; and at most one fires per
  * CHAT_CALLBACK_MIN_GAP_MINUTES of chat clock. Deliberately NO regard-band
  * requirement (owner ruling): the band picks the wording, not the eligibility.
  * PURE and cheap — it runs before any embedding/DB cost is paid.
  *
- * This gate IS the tail's soft cap for the deferrable notes (chat-agent-improvements
- * slice 4). Deferral has to happen here rather than at render time for a hard reason: an
+ * This gate IS the tail's soft cap for the deferrable notes. Deferral has to
+ * happen here rather than at render time for a hard reason: an
  * offered callback **burns its ring entry** the moment it is chosen, so a callback dropped
  * later — by a crowded-tail cap in the prompt builder — would be spent without ever
  * reaching the page, and the episode could never be offered again. Everything that could

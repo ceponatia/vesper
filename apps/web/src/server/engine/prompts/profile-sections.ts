@@ -4,7 +4,7 @@ import { hasVoiceAnchors, type MicroExemplar, type VoiceAnchors } from "@/contra
 import { fenceUntrusted } from "./untrusted";
 
 /**
- * Authored-`CharacterProfile` section builders (presentation-charter.plan.md slice 1).
+ * Authored-`CharacterProfile` section builders.
  *
  * These render the parts of the prompt that are driven PURELY by a character's saved
  * profile — bio, voice anchors, micro exemplars, likes/dislikes — with no dependence on
@@ -43,11 +43,11 @@ export function isIntimatePreference(pref: Preference): boolean {
 }
 
 /**
- * The "What lands well and badly" block (character-fidelity slice 4): the authored
+ * The "What lands well and badly" block: the authored
  * `profile.preferences` rendered as narrator-facing law so a like/dislike shapes the
  * REPLY in the same exchange — not just the post-turn affinity pulse (the old gap: a
  * "dislikes compliments" character accepted the compliment and only the number stung).
- * Stable (authored) ⇒ the §9 prefix. Intimate-concept preferences are fenced out for a
+ * Stable (authored) ⇒ the cached prefix. Intimate-concept preferences are fenced out for a
  * minor. Fenced (the hint text is author-written). "" when nothing lands either way.
  */
 export function buildPreferencesSection(preferences: readonly Preference[], player: string, minor: boolean): string {
@@ -67,11 +67,11 @@ export function buildPreferencesSection(preferences: readonly Preference[], play
 }
 
 /**
- * The micro-exemplar block (character-fidelity slice 6): 2–3 forge/redraft-drafted worked
+ * The micro-exemplar block: 2–3 forge/redraft-drafted worked
  * examples — a charged situation paired with how THIS character answers it — rendered as
  * few-shots so voice + disposition + age anchor near generation, not only in the abstract
- * sliders. Stable (authored) ⇒ the §9 prefix. Fenced (author-written). "" when none carry a
- * line. Distinct from slice 8's dynamic in-chat voice ring; these are the authored baseline.
+ * sliders. Stable (authored) ⇒ the cached prefix. Fenced (author-written). "" when none carry a
+ * line. Distinct from the dynamic in-chat voice ring; these are the authored baseline.
  */
 export function buildMicroExemplarsSection(exemplars: readonly MicroExemplar[]): string {
   const rows = exemplars.filter((e) => e.line.trim());
@@ -87,9 +87,9 @@ export function buildMicroExemplarsSection(exemplars: readonly MicroExemplar[]):
 }
 
 /**
- * The structured voice-anchors block (character-fidelity slice 7): pet phrases, a
+ * The structured voice-anchors block: pet phrases, a
  * rhythm/cadence note, and a never-says list rendered as concrete near-generation levers
- * for a consistent voice. Stable (authored) ⇒ the §9 prefix, paired with a one-line tail
+ * for a consistent voice. Stable (authored) ⇒ the cached prefix, paired with a one-line tail
  * re-anchor (`buildVoiceReanchorLine`) beside the mood pin so voice sits near generation.
  * Fenced (author-written). "" when nothing is authored.
  */

@@ -12,8 +12,7 @@ import {
 import type { VisualStateShadowBuild } from "./shadow";
 
 /**
- * SERVER-SIDE IMAGE DIGEST ASSEMBLY (image-lane-consolidation.plan.md Stage 2;
- * image-lane-consolidation.spec.visual-state.md).
+ * SERVER-SIDE IMAGE DIGEST ASSEMBLY.
  *
  * The contracts layer owns the digest itself — what a committed cut selects,
  * how it classifies each fact, and the compact provenance a render stores. This

@@ -44,7 +44,7 @@ describe("resolveBodyTarget", () => {
     expect(list.length).toBe(new Set(list).size);
   });
 
-  it("resolves singular forms of plural locations (sensory-grounding)", () => {
+  it("resolves singular forms of plural locations", () => {
     expect(resolveBodyTarget("foot")?.locationIds).toContain("feet");
     expect(ids("foot")).toContain("feet.smell");
     expect(resolveBodyTarget("hand")?.locationIds).toContain("hands");
@@ -97,7 +97,7 @@ describe("detectBodyTargets", () => {
     expect(detectBodyTargets("the weather turned cold")).toEqual([]);
   });
 
-  it("finds singular forms of plural locations (sensory-grounding)", () => {
+  it("finds singular forms of plural locations", () => {
     const terms = detectBodyTargets("I lift her foot to my lips").map((f) => f.term);
     expect(terms).toContain("feet");
   });

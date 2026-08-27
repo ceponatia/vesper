@@ -102,7 +102,7 @@ describe("E5.3 outbox contracts", () => {
     });
   });
 
-  it("projects a consumption with a terminal gone/consumed destination locus (§26.6)", () => {
+  it("projects a consumption with a terminal gone/consumed destination locus", () => {
     expect(projectMaterialFeedRow(consumeEvent)).toMatchObject({
       eventKind: "item_consumed",
       actorId: "actor_1",

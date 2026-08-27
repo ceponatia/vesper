@@ -102,7 +102,7 @@ function adjustView(current: SimulationCohort | undefined): AdjustCohortResoluti
   };
 }
 
-describe("analytic presence (E6.3, §27.6)", () => {
+describe("analytic presence (E6.3)", () => {
   it("resolves the covering window half-open, wrapping midnight, earliest on overlap", () => {
     const windows = marketCohort().presenceWindows;
     expect(cohortWindowCovering(windows, storySecondAt(1, 480))).toBeDefined();
@@ -154,7 +154,7 @@ describe("analytic presence (E6.3, §27.6)", () => {
     expect(cohortPresenceAt(nobody, storySecondAt(1, 600))).toEqual({ zoneId: SQUARE, presentCount: 0 });
   });
 
-  it("admits materialization only where the presence read admits a person (E6.4, §27.7)", () => {
+  it("admits materialization only where the presence read admits a person (E6.4)", () => {
     const inWindow = storySecondAt(1, 600);
     // 160 at the square, 40 dispersed — both admit.
     expect(cohortCanMaterializeAt(marketCohort(), SQUARE, inWindow)).toBe(true);

@@ -212,7 +212,7 @@ const COMPACT_PROMPTS: Readonly<Record<IntimateBeatId, string>> = {
  * so the row is hand-written exactly as `model.ts` does for the Qwen pair.
  *
  * Two fields are worth stating out loud, because both would otherwise look like omissions and
- * both are what the seed says (and what docs/image-models/sdxl-pulid.md documents):
+ * both are what the seed says (and what docs/image-models/models/sdxl-pulid.md documents):
  *
  * - `outputFormat: null` — this model declares NO output-format input. Replicate rejects
  *   unknown inputs, so sending `output_format: "webp"` would fail the prediction outright.

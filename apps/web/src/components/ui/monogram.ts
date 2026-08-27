@@ -11,9 +11,9 @@ export function initialsOf(name: string): string {
 }
 
 /**
- * First-letter-only monogram (privacy mode, mobile-ux.plan.md ruling 4) — a
- * single initial, deliberately distinct from `initialsOf`'s two-letter badge so
- * the privacy fallback reads as "hidden on purpose", not "no portrait uploaded".
+ * First-letter-only monogram (privacy mode) — a single initial, deliberately
+ * distinct from `initialsOf`'s two-letter badge so the privacy fallback reads
+ * as "hidden on purpose", not "no portrait uploaded".
  */
 export function firstInitialOf(name: string): string {
   return name.trim()[0]?.toUpperCase() ?? "?";

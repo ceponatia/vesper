@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 /**
- * The scene/body-relations vocabularies
- * (romantic-contact-affordances.spec.scene.md §"Vocabularies").
+ * The scene/body-relations vocabularies.
  *
  * Every one of them is a small CLOSED set, and every one of them is DATA: a
  * const array, an enum built from it, and — where a relation needs one — a
@@ -219,8 +218,7 @@ export const sceneIntentOriginSchema = z.enum(sceneIntentOrigins);
 export type SceneIntentOrigin = z.infer<typeof sceneIntentOriginSchema>;
 
 /**
- * **The actor-control law, as data** (owner ruling, 2026-07-30 —
- * romantic-contact-affordances.audit.md §"Owner decisions needed" 2): player
+ * **The actor-control law, as data** (owner ruling, 2026-07-30): player
  * input commits only player-controlled movement, and NPC movement must
  * originate NPC/simulation-side.
  *

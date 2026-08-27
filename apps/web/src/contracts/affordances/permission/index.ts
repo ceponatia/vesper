@@ -1,8 +1,6 @@
 /**
- * The `romantic_touch` PERMISSION OWNER — pure contracts
- * (romantic-contact-affordances.spec.permission.md; owner rulings settled
- * 2026-08-04 in romantic-contact-affordances.plan.md §"`romantic_touch`
- * permission-owner rulings").
+ * The `romantic_touch` PERMISSION OWNER — pure contracts (owner rulings settled
+ * 2026-08-04).
  *
  * The branch-local, directional, exact-scope grant ledger's pure half: the
  * event vocabulary and schema, the chronology comparator, the active-projection

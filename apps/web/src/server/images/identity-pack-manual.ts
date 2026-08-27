@@ -123,10 +123,9 @@ export type SaveManualIdentityCropResult =
   | { status: "blocked"; code: ImageIdentityPackFailureCode; retryable: boolean };
 
 /**
- * Save a human-authored crop as a new `manual` revision
- * (`.spec.derivation.md` §"Manual crop revisions").
+ * Save a human-authored crop as a new `manual` revision.
  *
- * The order is the spec's, and each step exists to stop a specific way this could
+ * The order is deliberate, and each step exists to stop a specific way this could
  * go wrong:
  *
  * 1. **Re-authorize from the character** and re-read the canonical bytes. The
@@ -457,8 +456,7 @@ export interface ResetIdentityPackInput {
 }
 
 /**
- * Discard a manual crop and re-derive automatically
- * (`.spec.derivation.md` §"Reset to automatic").
+ * Discard a manual crop and re-derive automatically.
  *
  * It does not resurrect the detector revision that came before the manual one:
  * that revision was produced by whatever derivation version was current THEN, and

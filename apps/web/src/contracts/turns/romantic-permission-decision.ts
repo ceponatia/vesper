@@ -22,10 +22,9 @@ import {
 } from "./npc-scene-decision";
 
 /**
- * The NPC-side ROMANTIC-PERMISSION DECISION contract
- * (romantic-contact-affordances.spec.permission.md §"Grant, denial, absence,
- * and withdrawal", §"Authorship and developer controls", §"Chronology and
- * non-retroactivity"; plan rulings 4, 5, and 7; implementation-order step 3).
+ * The NPC-side ROMANTIC-PERMISSION DECISION contract — grant, denial, absence,
+ * and withdrawal; authorship and developer controls; chronology and
+ * non-retroactivity.
  *
  * One structured classifier call per qualifying committed assistant reply reads
  * the reply plus a compact digest — the roster as local refs and the CURRENT
@@ -164,8 +163,7 @@ export function buildRomanticPermissionDigest(input: RomanticPermissionDigestInp
     const permittedActorRef = refBySubjectId.get(grant.permittedActorId);
     const grantingTargetRef = refBySubjectId.get(grant.grantingTargetId);
     // A grant whose granting target is not a roster NPC is undescribable here
-    // (the player is never a granting target — spec §"Direction and
-    // participant rules").
+    // (the player is never a granting target).
     if (
       permittedActorRef === undefined ||
       grantingTargetRef === undefined ||
@@ -832,8 +830,7 @@ export function validateRomanticPermissionDecisions(
       return;
     }
     if (candidate.grantingTargetRef === NPC_SCENE_PLAYER_REF) {
-      // The player never authors a standing grant — their reaction is their own
-      // (spec §"Direction and participant rules"; ruling 1).
+      // The player never authors a standing grant — their reaction is their own.
       drop(index, "target_player", summary);
       return;
     }

@@ -62,9 +62,8 @@ export interface IdentityPackSummary {
 /**
  * The owner's view of their character's pack. `null` when the character is not
  * theirs — the caller turns that into the same not-found a nonexistent character
- * gets, so a pack's existence never leaks (spec.lifecycle.md §"Authorization
- * root": every operation starts from an authorized CHARACTER, never from a bare
- * pack or image id).
+ * gets, so a pack's existence never leaks: every operation starts from an
+ * authorized CHARACTER, never from a bare pack or image id.
  */
 export async function getIdentityPackForOwner(
   characterId: string,
@@ -122,7 +121,7 @@ export async function getIdentityPackForOwner(
 }
 
 /**
- * The summary as a route sends it (contracts §`identityPackSummarySchema`).
+ * The summary as a route sends it (`identityPackSummarySchema` in contracts).
  *
  * A projection and nothing more — no query, no policy, no second opinion about
  * status — so the shape the crop editor parses cannot drift from the shape
@@ -192,8 +191,7 @@ export interface IdentityPackHistory {
 }
 
 /**
- * Every revision of the character behind one pack id, for admin inspection
- * (spec.lifecycle.md §"Admin routes").
+ * Every revision of the character behind one pack id, for admin inspection.
  *
  * Addressed by pack id but resolved through the CHARACTER, and it returns the
  * owner rather than deciding anything with it: authorization is the route's job,
@@ -202,8 +200,8 @@ export interface IdentityPackHistory {
  * eventually answers differently and confirms a hidden pack exists.
  *
  * History is metadata only: geometry, versions, stable codes, review actors. No
- * bytes and no URLs cross this boundary even for an admin (spec.lifecycle.md
- * §"Privacy boundary"), and a malformed jsonb column degrades to `null` with a
+ * bytes and no URLs cross this boundary even for an admin — the privacy
+ * boundary — and a malformed jsonb column degrades to `null` with a
  * diagnostic rather than failing the whole read.
  */
 export async function getIdentityPackHistoryForAdmin(
@@ -289,8 +287,8 @@ export type IdentityPackRevisionForTrialResult =
   | { ok: false; code: IdentityPackRevisionForTrialCode };
 
 /**
- * One NAMED historical revision of a character's identity pack, read-only
- * (spec.trial.md §"Fixed variables", the pack-variant axis).
+ * One NAMED historical revision of a character's identity pack, read-only —
+ * the trial's pack-variant axis.
  *
  * It exists for the trial's pinned-revision comparison arms — manual-vs-automatic
  * crops, detector-vs-heuristic derivations — where the whole question is how the

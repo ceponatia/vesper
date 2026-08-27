@@ -4,7 +4,7 @@ import { buildActionBeatCue } from "./chat-action-beat";
 
 const base = { characterName: "Mara", playerName: "Theo" };
 
-describe("buildActionBeatCue (chat-action-beats.plan.md)", () => {
+describe("buildActionBeatCue", () => {
   it("wraps every chip as a one-beat, don't-narrate-the-player stage direction naming the player", () => {
     for (const { id } of CHAT_ACTIONS) {
       const cue = buildActionBeatCue({ ...base, chipId: id, apart: false });

@@ -3,9 +3,9 @@ import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { characterChats, db, simBranches, simProvisioningRequests, simWorlds } from "@/server/db";
 
-// The orphan sweeper (successor-world-lifecycle.plan.md slice 2, owner ruling
-// E20-2): a world no chat can ever reach again is hard-deleted, and a world that
-// is routed, in flight, or merely young is not. Self-skips without a database.
+// The orphan sweeper: a world no chat can ever reach again is hard-deleted, and
+// a world that is routed, in flight, or merely young is not. Self-skips without
+// a database.
 //
 // Blast radius, deliberately: the sweep is GLOBAL — it has no owner to scope to,
 // because an orphan by definition has no chat left to prove ownership through.

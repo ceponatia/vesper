@@ -1,7 +1,7 @@
 # Scene-image eval harness
 
-Fixture-driven, **human-scored** quality harness for scene rendering
-(scene-images.spec.md §9). This is **not** a `pnpm test` gate — image identity and
+Fixture-driven, **human-scored** quality harness for scene rendering.
+This is **not** a `pnpm test` gate — image identity and
 quality can only be judged by eye.
 
 ## What's here
@@ -9,7 +9,7 @@ quality can only be judged by eye.
 - `fixtures.ts` — ~24 fixed scenes. The routing matrix (one character; two
   clothed; two partial; three characters; character+location; location-only;
   high-risk wardrobe/exposure; uploaded-anchor safety case), plus the
-  orientation/staging block (scene-composition.spec.md) — a non-default camera
+  orientation/staging block — a non-default camera
   on the `orientation` rows, a registry staging entry on the `staging` ones, and
   the frontal rows above them as the identity-regression control.
 - `orientation-ab.ts` — the paid, manually run A/B for that block: one beat
@@ -25,8 +25,8 @@ quality can only be judged by eye.
   and an optional `lora` arm. Grades the ACT and the LIKENESS: sdxl-pulid's row records that
   its likeness is unmeasured in Vesper, and it is single-reference, so identity rides one
   portrait. Prompts print and every honesty check runs before anything is sent.
-- `composer-model-ab.ts` + `composer-model-score.ts` — the **composer-model** A/B
-  (composer-model.plan.md), and the odd one out in this folder: it grades TEXT, so
+- `composer-model-ab.ts` + `composer-model-score.ts` — the **composer-model** A/B,
+  and the odd one out in this folder: it grades TEXT, so
   it is scored in code rather than by eye. It takes the seven beats from
   `orientation-ab.ts` — again imported, never restated — and asks each candidate
   shot-planning model the real question (`sceneComposerSystem`,
@@ -89,11 +89,11 @@ skips ladder economics rather than reading stale results from an earlier paid ru
    one from `scripts/fixtures/harbor-house.ts`) — and save the output beside the row.
 3. Fill `scores.csv`: `identity_A`, `identity_B`, `location`, `clothing`,
    `exposure`, `collage_contamination` (0–3 each, your scale), and `notes`.
-4. **Safety row (§3 acceptance test):** the `safety_uploaded_reached_uncensored`
+4. **Safety row (acceptance test):** the `safety_uploaded_reached_uncensored`
    column is pre-marked `MUST_BE_NO` for fixtures whose anchor is an uploaded
    real-person avatar (e.g. `single-uploaded-anchor-intimate-SAFETY`). Today the
    uploaded-avatar guard is deferred, so this can fire — it becomes a hard
-   acceptance test (must score "no") once the §3 guard ships.
+   acceptance test (must score "no") once the uploaded-avatar guard ships.
 
 ## Notes
 
@@ -102,4 +102,4 @@ skips ladder economics rather than reading stale results from an earlier paid ru
   multi mode with ≥2 anchors → `multi_edit → edit`). The rungs name reference
   tiers on ONE model, not a hop between providers.
 - The Qwen reference-sheet spike has its own script under `scripts/spikes/`
-  (the Flux-multiref spike was dropped with the Flux removal — scene-images.plan.md).
+  (the Flux-multiref spike was dropped with the Flux removal).

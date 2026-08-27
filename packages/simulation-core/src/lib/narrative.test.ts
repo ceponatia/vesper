@@ -50,7 +50,7 @@ describe("E3.4 decideDepartures", () => {
     ).toHaveLength(0);
   });
 
-  it("takes the earliest boundary per actor; candidates expose the full legal list (§19.1)", () => {
+  it("takes the earliest boundary per actor; candidates expose the full legal list", () => {
     const input = {
       pressures: [pressure("mara", NOW + 900, "commit-b"), pressure("mara", NOW + 500, "commit-a")],
       turnEndSecond: NOW + 400,
@@ -61,7 +61,7 @@ describe("E3.4 decideDepartures", () => {
     const departures = decideDepartures(input);
     expect(departures).toHaveLength(1);
     expect(departures[0]?.commitmentId).toBe("commit-a");
-    // The §19.3 deliberator may pick among exactly these — never outside them.
+    // The admitted deliberator may pick among exactly these — never outside them.
     expect(departureCandidates(input).map((candidate) => candidate.sourceCommitmentId)).toEqual([
       "commit-a",
       "commit-b",
@@ -292,7 +292,7 @@ describe("E4.3 compileNarrativeCut", () => {
     ]);
   });
 
-  it("voices only the viewpoint's live beliefs, joined to their assertions (§21)", () => {
+  it("voices only the viewpoint's live beliefs, joined to their assertions", () => {
     const { belief, assertion } = fixtureBelief();
     const rejected = beliefSchema.parse({ ...belief, id: "belief-2", status: "rejected" });
     const cut = compile({
@@ -328,7 +328,7 @@ describe("E4.3 compileNarrativeCut", () => {
     expect(cut.currentActivities.map((activity) => activity.activityId)).toEqual(["activity-here"]);
   });
 
-  it("bans absent co-present participants by name (§22.2 impossible_presence)", () => {
+  it("bans absent co-present participants by name (impossible_presence)", () => {
     const cut = compile();
     const contextual = cut.forbiddenClaims.find((claim) => claim.subjectActorIds.length > 0);
     expect(contextual?.code).toBe("impossible_presence");
@@ -387,7 +387,7 @@ describe("E4.3 compileNarrativeCut", () => {
     expect(cut.armedEffects[0]?.disclosureContent?.kind).toBe("claim");
   });
 
-  it("threads a proposed consent-scoped effect's consentScopeKey through to the armed effect (E5.5 §21.3–21.4 — a Stage A/B regression: this field was dropped entirely, so no boundary/permission speech act could ever be armed)", () => {
+  it("threads a proposed consent-scoped effect's consentScopeKey through to the armed effect (E5.5 — a Stage A/B regression: this field was dropped entirely, so no boundary/permission speech act could ever be armed)", () => {
     const cut = compile({
       proposedArmedEffects: [
         {
@@ -432,7 +432,7 @@ describe("E4.3 compileNarrativeCut", () => {
     ]);
   });
 
-  it("E5.5 slice 3 (§9.4): an acknowledged pressure at unchanged severity is excluded, but a severity change since acknowledgment re-surfaces it", () => {
+  it("E5.5 slice 3: an acknowledged pressure at unchanged severity is excluded, but a severity change since acknowledgment re-surfaces it", () => {
     const cut = compile({
       viewpointPressures: [
         temporalPressureSchema.parse({

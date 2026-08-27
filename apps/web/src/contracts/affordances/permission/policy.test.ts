@@ -18,7 +18,7 @@ import { foldRomanticPermissionProjection, type RomanticPermissionProjection } f
 import { probePermissionEvent } from "./test-support";
 
 /**
- * The resolver-adapter mapping (spec.permission.md §"Resolver adapter"), and
+ * The resolver-adapter mapping, and
  * the whole seam end to end: the same derived read handed to the REAL contact
  * resolver, so a grant commits, a withdrawal refuses, absence falls silent, an
  * exact scope never widens, and the player-target exception passes without a

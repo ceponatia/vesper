@@ -11,11 +11,10 @@ export interface EntityImageProps {
   className?: string;
   /** Object-fit cover by default. */
   alt?: string;
-  /** Privacy mode (mobile-ux.plan.md ruling 4): always render the plain
-   *  first-initial monogram instead of the image, even when one exists —
-   *  deliberately different from the missing-image fallback below (which keeps
-   *  the two-letter hue gradient) so this reads as "hidden on purpose", not "no
-   *  portrait uploaded". */
+  /** Privacy mode: always render the plain first-initial monogram instead of
+   *  the image, even when one exists — deliberately different from the
+   *  missing-image fallback below (which keeps the two-letter hue gradient) so
+   *  this reads as "hidden on purpose", not "no portrait uploaded". */
   privacy?: boolean;
 }
 

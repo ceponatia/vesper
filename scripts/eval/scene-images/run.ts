@@ -7,11 +7,11 @@ import { EVAL_FIXTURES } from "./fixtures";
 import { evalEditModel } from "./model";
 
 /**
- * Scene-image eval harness runner (scene-images.spec.md §9). OFFLINE: for each
+ * Scene-image eval harness runner. OFFLINE: for each
  * fixture it computes the provider routing decision and the exact prompt(s) the
  * executor would build, then writes a `manifest.json` (inputs/provider/prompt)
  * and a `scores.csv` template with the manual-scoring columns (identity-A/B,
- * location, clothing, exposure, collage contamination + the §3 safety row).
+ * location, clothing, exposure, collage contamination + the safety row).
  *
  * Producing + scoring the actual images is the manual step (needs live keys and
  * human eyes): render each fixture's prompt through its `primary_provider`,

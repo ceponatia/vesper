@@ -37,10 +37,9 @@ import {
 import { chatRomanticPermissionEnabled } from "./prompts/constants";
 
 /**
- * THE NPC ROMANTIC-PERMISSION DECISION LEG
- * (romantic-contact-affordances.spec.permission.md §"Grant, denial, absence,
- * and withdrawal", §"Chronology and non-retroactivity"; plan rulings 4, 5, 7;
- * implementation-order step 3) — how an NPC's own dialogue or conduct creates
+ * THE NPC ROMANTIC-PERMISSION DECISION LEG — grant, denial, absence and
+ * withdrawal, under chronology and non-retroactivity: how an NPC's own
+ * dialogue or conduct creates
  * or removes `romantic_touch` permission in production.
  *
  * A SINGLE-PHASE leg at the settle tail, strictly AFTER the exchange's last
@@ -368,8 +367,8 @@ async function runLive(input: ChatRomanticPermissionDecisionInput): Promise<void
       grantingTargetId,
       scope: "romantic_touch",
       // This leg can only ever author NPC decisions — `developer_override` is
-      // structurally impossible from here (spec §"Authorship and developer
-      // controls": chat content is never an override command).
+      // structurally impossible from here, because chat content is never an
+      // override command.
       kind: decision.kind,
       sourceKind: "npc_decision",
       sourceMessageId: input.assistantMessageId,

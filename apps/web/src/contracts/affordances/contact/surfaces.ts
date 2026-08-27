@@ -9,21 +9,18 @@ import {
 } from "./identity";
 
 /**
- * What is touching what — the two ends of a contact
- * (romantic-contact-affordances.spec.contact-core.md §"Boundary": the spec's
- * `BodySurfaceHandle` and `SurfaceHandle`).
+ * What is touching what — the two ends of a contact.
  *
  * The vocabulary is REUSED, never re-invented: a body end names a location from
  * `bodyLocationRegistry`, the same tree wardrobe coverage, image prompts, and the
- * hair domain address. The plan is explicit that the contact layer owns none of
- * its source facts, and a parallel body-part vocabulary would be the fastest way
- * to break that.
+ * hair domain address. The contact layer owns none of its source facts, and a
+ * parallel body-part vocabulary would be the fastest way to break that.
  *
- * `detail` is the one deliberate hole: the foot spec wants an arch and a heel pad
- * that the registry does not carry, and the intimate spec wants a subregion and a
- * side. The core takes the detail as an OPAQUE token it stores, keys, and hands
- * back — it never parses one, so a domain can name its own sub-surfaces without
- * the core learning any anatomy.
+ * `detail` is the one deliberate hole: the foot domain wants an arch and a heel
+ * pad that the registry does not carry, and the intimate domain wants a
+ * subregion and a side. The core takes the detail as an OPAQUE token it stores,
+ * keys, and hands back — it never parses one, so a domain can name its own
+ * sub-surfaces without the core learning any anatomy.
  */
 
 export const contactSurfaceSides = ["left", "right", "center"] as const;

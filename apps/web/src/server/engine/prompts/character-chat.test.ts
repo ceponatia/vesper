@@ -242,7 +242,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("Earlier in this conversation");
     expect(prompt).toContain("The user is Theo.");
     // The recap changes as the summary folds, so it rides the volatile tail BELOW the
-    // stable rules (spec §9 prompt-cache layout).
+    // stable rules (the prompt-cache layout).
     expectOrder(prompt, ["How to respond:", "Earlier in this conversation"]);
   });
 
@@ -255,7 +255,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     );
   });
 
-  it("surfaces retrieved RAG memory (facts + episodes) as a recall block (spec §2)", () => {
+  it("surfaces retrieved RAG memory (facts + episodes) as a recall block", () => {
     const prompt = systemPrompt({
       memory: {
         facts: ["The player's sister is getting married in Prague."],
@@ -265,7 +265,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("Your memory");
     expect(prompt).toContain("The player's sister is getting married in Prague.");
     expect(prompt).toContain("They argued about the harbor job, then made up.");
-    // Recall is per-turn volatile, so it rides the tail below the stable rules (spec §9).
+    // Recall is per-turn volatile, so it rides the tail below the stable rules.
     expectOrder(prompt, ["How to respond:", "Your memory"]);
   });
 
@@ -276,7 +276,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     ).not.toContain("Your memory");
   });
 
-  it("resolves a persisted narrative attribute overlay on top of the authored base (spec §3)", () => {
+  it("resolves a persisted narrative attribute overlay on top of the authored base", () => {
     // The authored base is `creation`-sourced (hair.color: auburn); a `narrative` overlay
     // outranks it (SOURCE_PRECEDENCE narrative > creation), exactly as the session lane.
     const overlaid = systemPrompt({
@@ -325,7 +325,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(withoutState).not.toContain("Scenario for this chat");
   });
 
-  it("renders mood + mindNote in the Current state block; the regard steer is the composed Relationship block (§7.1)", () => {
+  it("renders mood + mindNote in the Current state block; the regard steer is the composed Relationship block", () => {
     const prompt = systemPrompt({
       state: {
         meters: { mood: 0.8, energy: 0.8, hygiene: 0.9, stress: 0.1 },
@@ -344,7 +344,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(prompt).toContain("- Regard (warm): ");
     expect(prompt).toContain("- Familiarity (acquainted): ");
     expect(prompt).toContain("the first move is often yours");
-    // State is per-turn volatile, so it rides the tail below the stable rules (spec §9).
+    // State is per-turn volatile, so it rides the tail below the stable rules.
     expectOrder(prompt, ["How to respond:", "Your current state"]);
   });
 
@@ -376,7 +376,7 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(systemPrompt()).not.toContain("Opening beat");
   });
 
-  // --- Opportunistic sensory cues (character-chat-sensory.plan.md) ---
+  // --- Opportunistic sensory cues ---
 
   it("surfaces presentation.scent_baseline as a closeness-gated Sensory cues block, not a flat attribute line", () => {
     const prompt = buildCharacterChatSystemPrompt({
@@ -482,7 +482,7 @@ describe('buildCharacterChatSystemPrompt — prompt-side "none" elision', () => 
   });
 });
 
-describe("buildCharacterChatSystemPrompt — player-input perception (player-input-perception.plan.md slice 1)", () => {
+describe("buildCharacterChatSystemPrompt — player-input perception", () => {
   const prompt = systemPrompt({ player: { name: "Theo" } });
 
   it("teaches the perception partition: quoted = heard, narration = seen, interiority = invisible", () => {
@@ -525,7 +525,7 @@ describe("buildCharacterChatSystemPrompt — player-input perception (player-inp
   });
 });
 
-describe("buildCharacterChatSystemPrompt — message-notation legend (player-input-perception.plan.md slice 4)", () => {
+describe("buildCharacterChatSystemPrompt — message-notation legend", () => {
   const prompt = systemPrompt({ player: { name: "Theo" } });
 
   it("teaches the sigil grammar: quotes, asterisks (thought default), underscores, double parens", () => {
@@ -573,7 +573,7 @@ describe("buildCharacterChatSystemPrompt — message-notation legend (player-inp
   });
 });
 
-describe("chatNotationNote — derived-fact tail note (player-input-perception.plan.md slice 4)", () => {
+describe("chatNotationNote — derived-fact tail note", () => {
   it("renders a comms note (sender/recipient + co-presence reconciliation) for a *Name: …* message", () => {
     const note = chatNotationNote("*Brian: hey, you up?*", { name: "Sabrina", player: "Brian", knownNames: ["Sabrina"] });
     expect(note).toMatch(/Brian is texting you/);
@@ -613,7 +613,7 @@ describe("chatNotationNote — derived-fact tail note (player-input-perception.p
   });
 });
 
-describe("buildCharacterChatSystemPrompt — player-POV narration (chat-narrator-pov.plan.md)", () => {
+describe("buildCharacterChatSystemPrompt — player-POV narration", () => {
   const withPlayer = systemPrompt({ player: { name: "Theo" } });
   const faceless = systemPrompt();
 
@@ -758,7 +758,7 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
   });
 });
 
-describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () => {
+describe("buildCharacterChatPromptParts — prompt-cache layout", () => {
   it("keeps the prefix byte-identical across consecutive turns with unchanged authored inputs", () => {
     const turn1 = promptParts({
       priorSummary: "You met at the night market.",
@@ -787,7 +787,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     expect(turn1.tail).not.toBe(turn2.tail);
   });
 
-  it("re-renders the prefix only on a band crossing — either axis (the composed block is band-keyed — §7.1/§9)", () => {
+  it("re-renders the prefix only on a band crossing — either axis (the composed block is band-keyed)", () => {
     const at = (regard: number, familiarity = 0) =>
       promptParts({
         state: { meters: {}, regard, familiarity, conditions: [] },
@@ -854,7 +854,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     expect(parts.prefix).toMatch(/outranks everything/i);
   });
 
-  it("renders the pending skip note as a volatile one-turn tail line (spec §8.1)", () => {
+  it("renders the pending skip note as a volatile one-turn tail line", () => {
     const withSkip = promptParts({
       state: chatState({ skipNote: "The night has passed — it's the next morning. Acknowledge the gap naturally, once." }),
     });
@@ -933,7 +933,7 @@ describe("buildCharacterChatPromptParts — prompt-cache layout (spec §9)", () 
     expect(withCondition.tail).toContain("unkempt");
   });
 
-  it("renders open loops as an Unfinished-business state line in the tail (spec §6.2)", () => {
+  it("renders open loops as an Unfinished-business state line in the tail", () => {
     const withLoops = promptParts({
       state: chatState({ openLoops: ["tell them about her sister", "the unopened letter"] }),
     });
@@ -1043,7 +1043,7 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     expect(parts.tail).toContain("- Nearby: kitchen through the doorway");
   });
 
-  it("renders the meanwhile note, return license, and rhythm line (chat-offscreen-life)", () => {
+  it("renders the meanwhile note, return license, and rhythm line", () => {
     const parts = promptParts({
       state: {
         ...sceneState,
@@ -1064,7 +1064,7 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     expect(bare.tail).not.toContain("Your daily rhythm");
   });
 
-  it("renders the clock-derived story moment as a binding tail line (chat-clock-calendar)", () => {
+  it("renders the clock-derived story moment as a binding tail line", () => {
     const parts = promptParts({
       state: { ...sceneState, storyMoment: "Friday, January 5 — 2:10pm (afternoon)" },
     });
@@ -1074,7 +1074,7 @@ describe("buildCharacterChatSystemPrompt — scene memory block (deliverable B)"
     expect(bare.tail).not.toContain("Story time:");
   });
 
-  it("renders the place's background sketch as a fixed-reference line (chat-scene-fidelity slice 2b)", () => {
+  it("renders the place's background sketch as a fixed-reference line", () => {
     const sketched = {
       meters: {},
       regard: 0,
@@ -1176,7 +1176,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     expect(parts.prefix).not.toContain("Sensory focus"); // volatile
   });
 
-  it("opens the reply with the sensation itself (sensory-grounding directive)", () => {
+  it("opens the reply with the sensation itself", () => {
     const parts = promptParts({
       profile: scented,
       player: { name: "Theo" },
@@ -1233,7 +1233,7 @@ describe("buildCharacterChatSystemPrompt — sensory focus block (scope guard)",
     expectOrder(parts.tail, ["foot scent", "cedar and warm skin"]);
   });
 
-  it("renders the authored narrator gloss beside the value (attribute-narrator-guidance)", () => {
+  it("renders the authored narrator gloss beside the value", () => {
     const footed = maraProfile({
       attributes: [attr("identity.gender", "female"), attr("feet.smell", "cheesy")],
     });
@@ -1356,7 +1356,7 @@ describe("buildCharacterChatSystemPrompt — reply-discipline gate notes (delive
   });
 });
 
-describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrator-prompt-consolidation slice 4)", () => {
+describe("buildCharacterChatSystemPrompt — per-turn sensory allowance", () => {
   const base = { name: "Mara", profile: maraProfile(), player: { name: "Theo" } };
 
   it("renders the binding line per allowance, in the volatile tail", () => {
@@ -1469,7 +1469,7 @@ describe("buildCharacterChatSystemPrompt — per-turn sensory allowance (narrato
   });
 });
 
-describe("buildCharacterChatSystemPrompt — per-shape length story (narrator-prompt-consolidation slice 2)", () => {
+describe("buildCharacterChatSystemPrompt — per-shape length story", () => {
   it("aggressive_concise carries a beat-scaled length rule with no paragraph floor", () => {
     const prompt = systemPrompt({
       narrationShape: "aggressive_concise",
@@ -1493,13 +1493,13 @@ describe("buildCharacterChatSystemPrompt — incidental people stay scene-consis
     const prompt = systemPrompt({ player: { name: "Theo" } });
     expect(prompt).toContain("An INCIDENTAL person must fit the scene already established");
     expect(prompt).toContain("never invent one just to enliven a reply");
-    // The supporting-cast carve-out (chat-supporting-cast.plan.md): recurring named
+    // The supporting-cast carve-out: recurring named
     // people are the licensed exception to the unnamed-and-passing discipline.
     expect(prompt).toContain('Recurring named people listed under "Supporting cast"');
   });
 });
 
-describe("buildCharacterChatSystemPrompt — supporting cast (chat-supporting-cast.plan.md)", () => {
+describe("buildCharacterChatSystemPrompt — supporting cast", () => {
   const cast = [
     {
       name: "Abby",
@@ -1544,7 +1544,7 @@ describe("buildCharacterChatSystemPrompt — supporting cast (chat-supporting-ca
   });
 });
 
-describe("narrator-mode input (chat-supporting-cast.plan.md §Narrator input)", () => {
+describe("narrator-mode input", () => {
   it("teaches the story-narration marker in the static notation legend", () => {
     const prompt = systemPrompt({ player: { name: "Theo" } });
     expect(prompt).toContain('A message opening with a bracketed "[Story narration from Theo …]" line');
@@ -1593,7 +1593,7 @@ describe("buildChatTurnMessage — experimental turn-context layout (slice 5)", 
   });
 });
 
-describe("memory callback line (memory-callbacks.plan.md)", () => {
+describe("memory callback line", () => {
   const state = { meters: {}, regard: 60, conditions: [] };
 
   it("renders the offered memory in the tail, toned warm at high regard", () => {
@@ -1624,7 +1624,7 @@ describe("memory callback line (memory-callbacks.plan.md)", () => {
   });
 });
 
-describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
+describe("emotional weather in the tail", () => {
   const meters = { mood: 0.2, stress: 0.2, energy: 0.8 }; // "subdued and withdrawn"
   const feeling = { current: { label: "sad" as const, intensity: 0.8, cause: "the broken promise" }, bruise: null };
 
@@ -1659,7 +1659,7 @@ describe("emotional weather in the tail (emotional-weather.plan.md)", () => {
   });
 });
 
-describe("the one-turn note digest (chat-agent-improvements.plan.md slice 4)", () => {
+describe("the one-turn note digest", () => {
   // A deliberately crowded turn: a binding truth (photos), a gate (the allowance ceiling),
   // a license (the selfie), and the flavor note (a callback) all armed at once.
   const crowded = promptParts({
@@ -1699,7 +1699,7 @@ describe("the one-turn note digest (chat-agent-improvements.plan.md slice 4)", (
   });
 });
 
-describe("attached photos (chat-image-input.plan.md)", () => {
+describe("attached photos", () => {
   it("renders the fenced attachments block and the static rule 16", () => {
     const parts = promptParts({
       player: { name: "Theo" },
@@ -1726,7 +1726,7 @@ describe("attached photos (chat-image-input.plan.md)", () => {
   });
 });
 
-describe("selfie license line (chat-selfies.plan.md)", () => {
+describe("selfie license line", () => {
   it("a request line makes declining first-class; an offer stays optional and apart-framed", () => {
     const request = chatSelfieLine("request", "Mara", "Theo");
     expect(request).toContain("Theo asked Mara for a photo this turn");
@@ -1737,7 +1737,7 @@ describe("selfie license line (chat-selfies.plan.md)", () => {
     expect(chatSelfieLine(undefined, "Mara", "Theo")).toBe("");
   });
 
-  it("the opener arm is register-conditional — a photo only if the opening lands as a text (chat-initiative slice 5)", () => {
+  it("the opener arm is register-conditional — a photo only if the opening lands as a text", () => {
     const opener = chatSelfieLine("opener", "Mara", "Theo");
     expect(opener).toContain("IF your opening lands as a text");
     expect(opener).toContain('"thinking of you"');
@@ -1755,7 +1755,7 @@ describe("selfie license line (chat-selfies.plan.md)", () => {
   });
 });
 
-describe("drives block (character-drives.plan.md)", () => {
+describe("drives block", () => {
   /**
    * A SECRET want by default — this block is about the reveal gate, so the
    * withheld case is the one worth defaulting to. Typed as `Partial<ChatDrive>`
@@ -1806,7 +1806,7 @@ describe("drives block (character-drives.plan.md)", () => {
   });
 });
 
-describe("ensemble frame (multi-character-chat.plan.md slice 2)", () => {
+describe("ensemble frame", () => {
 
   it("a roster of one dispatches to the single-character path byte-identically", () => {
     const single = buildCharacterChatPromptParts(input());
@@ -1959,7 +1959,7 @@ describe("ensemble group perks (followups ruling 12)", () => {
   });
 });
 
-describe("ensemble relationship matrix injection (relationship-model.plan.md slice 6)", () => {
+describe("ensemble relationship matrix injection", () => {
   const record = (over: Partial<RelationshipRecord> = {}): RelationshipRecord => ({
     familiarity: 80,
     regard: -25,
@@ -2015,7 +2015,7 @@ describe("ensemble relationship matrix injection (relationship-model.plan.md sli
   });
 });
 
-describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)", () => {
+describe("life stage & the minor fence", () => {
   it("appends the life-stage hint to the identity age line for marked bands", () => {
     const teen = buildCharacterChatSystemPrompt({ name: "Pip", profile: maraProfile({ age: "16" }) });
     expect(teen).toContain("You are 16 years old — a teenager");
@@ -2115,7 +2115,7 @@ describe("life stage & the minor fence (character-fidelity.plan.md slices 1–2)
   });
 });
 
-describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars)", () => {
+describe("preferences, sliders, and micro-exemplars", () => {
   it("renders the preferences block in the stable prefix; empty ⇒ no block (slice 4)", () => {
     const withPrefs = promptParts({
       profile: maraProfile({
@@ -2208,7 +2208,7 @@ describe("character-fidelity slices 4–6 (preferences, sliders, micro-exemplars
   });
 });
 
-describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
+describe("voice and evolution blocks", () => {
   const anchors = { petPhrases: ["no promises", "be serious"], cadence: "clipped and dry; trails off when she deflects", neverSays: ["babe"] };
 
   it("renders voice anchors in the stable prefix AND a one-line re-anchor near generation (slice 7)", () => {
@@ -2285,7 +2285,7 @@ describe("character-fidelity voice + evolution blocks (slices 7-10)", () => {
 
 /**
  * The chat-lane intimate gate (contracts/turns/chat-intimacy.ts) — the port of the
- * session lane's exposure gate that intimacy-notes.plan.md recorded as a leftover.
+ * session lane's exposure gate.
  * Before it, `profile.intimacy` and the species archetype were authored, forge-drafted
  * and editable but never reached this lane at all.
  */
@@ -2390,7 +2390,7 @@ describe("the intimate disposition gate", () => {
     expect(tail).not.toContain("Intimate disposition");
   });
 
-  // The §9 cache layout: the gate flips with state, so its block MUST be volatile. If it
+  // The cache layout: the gate flips with state, so its block MUST be volatile. If it
   // rode the prefix, every arousal tick past the threshold would bust the cached prompt.
   it("keeps the prefix byte-identical across a gate flip (cache-safe)", () => {
     const shut = promptParts({
@@ -2466,12 +2466,12 @@ describe("the intimate disposition gate (ensemble)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Narrator instruction override (narrator-prompt-lab.plan.md slice 1)
+// Narrator instruction override
 // ---------------------------------------------------------------------------
 
 /**
  * The Prompt Lab lets the owner hand-write the narrator's INSTRUCTIONS for one
- * conversation. Product law (plan §4) is that this replaces craft and nothing
+ * conversation. Product law is that this replaces craft and nothing
  * else: the character sheet, the state, the per-turn ceilings, the player-agency
  * law and the `[Name]` tag contract the renderer parses all stay.
  *

@@ -40,8 +40,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const showBottomBar = navMode === "tabs" && !immersive;
 
   // The conversation page renders its own header (back link, portrait, menu) — on
-  // phones the global header just stacks another ~52px of chrome on top of it
-  // (mobile-ux.plan.md W1). Desktop keeps the wordmark/account menu at every width,
+  // phones the global header just stacks another ~52px of chrome on top of it.
+  // Desktop keeps the wordmark/account menu at every width,
   // since there's room and the account menu has no other home. Anchored ($) to the
   // conversation route alone: nested pages like /chat/:id/inspector render a normal
   // PageContainer and must keep the global chrome.

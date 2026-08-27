@@ -34,7 +34,7 @@ export interface SocialCardFieldsProps {
  * The mechanical authoring controls for one card — kind · severity (→ tier) · trigger concepts ·
  * tag overrides · a live reaction preview. Shared by the inline array editor
  * (`SocialCardsEditor`, on a world/character) and the standalone card builder
- * (`/social-cards/[id]`), so both author the same `definition` shape (social-reaction-cards.plan.md).
+ * (`/social-cards/[id]`), so both author the same `definition` shape.
  */
 export function SocialCardFields({ value, onChange }: SocialCardFieldsProps) {
   return (
@@ -89,8 +89,9 @@ export function SocialCardFields({ value, onChange }: SocialCardFieldsProps) {
 }
 
 /**
- * Live read-out of how the card resolves before the §6 curve scales it: the severity → tier →
- * base intensity + default kind/valence, plus each per-tag flip. Pure derivation — no authoring,
+ * Live read-out of how the card resolves before the social-reaction response curve scales it:
+ * the severity → tier → base intensity + default kind/valence, plus each per-tag flip. Pure
+ * derivation — no authoring,
  * just so the author sees the foot-fetish enjoy land.
  */
 function CardReactionPreview({ value }: { value: SocialReactionCardExtras }) {

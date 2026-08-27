@@ -157,8 +157,8 @@ export const hairGroup = defineAttributeGroup("hair", [
     valueType: "enum",
     // The STRUCTURED half of styling: what the hair is physically doing right
     // now (bound, pinned, hanging free), which is what hair affordances read.
-    // The vocabulary is pinned by body-attribute-affordances.spec.hair.md — do
-    // not extend it; descriptive detail belongs in the free-text `hair.style`.
+    // The vocabulary is pinned by the hair affordance domain — do not extend
+    // it; descriptive detail belongs in the free-text `hair.style`.
     description:
       "Structured arrangement of the hair right now — drives what the hair can physically do. Free-text styling detail stays in hair.style.",
     mutability: "mutable",

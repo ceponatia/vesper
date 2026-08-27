@@ -4,7 +4,7 @@ import { NarratorPromptsPage } from "@/components/narrator-prompts/narrator-prom
 export const metadata: Metadata = { title: "Narrator prompts" };
 
 /**
- * The owner-admin Narrator Prompt Lab (narrator-prompt-lab.plan.md, slice 3).
+ * The owner-admin Narrator Prompt Lab.
  * The `/api/admin/self/narrator-prompts` family is role-gated server-side and
  * 404s for everyone else; the client gate is only so a non-admin gets an
  * explanation rather than a page of failed requests.

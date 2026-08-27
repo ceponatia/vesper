@@ -1,14 +1,15 @@
 /**
  * Pure render model for the chat transcript span renderer + the composer's OOC
- * affordance (player-input-perception.plan.md slice 5). No React, no IO — the
+ * affordance. No React, no IO — the
  * span→display decisions live here so they are unit-testable in a plain `.ts` test
  * (the repo's test env is node-only, no jsdom); `message-content.tsx` is the thin
  * view that maps a variant onto Tailwind classes.
  *
  * The sigil grammar itself is owned by `@/lib/message-spans` (`parseMessageSpans`) —
- * this module NEVER re-implements it (jscpd gate + the plan's single-parser rule). It
- * only decides how each parsed span should look and reconstructs the inter-span
- * spacing the parser trims away.
+ * this module NEVER re-implements it: exactly one parser owns that grammar, and the
+ * jscpd gate is what keeps a second copy from appearing. It only decides how each
+ * parsed span should look and reconstructs the inter-span spacing the parser trims
+ * away.
  */
 
 import { parseMessageSpans, type MessageSpanContext } from "@/lib/message-spans";

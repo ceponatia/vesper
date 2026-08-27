@@ -11,7 +11,7 @@ import {
 } from "../contracts/deliberation";
 
 /**
- * E4.3 — the §19.3 deliberator admission seam. Deterministic policy stays the
+ * E4.3 — the deliberator admission seam. Deterministic policy stays the
  * default brain; a model is admitted only when every gate passes, may only
  * pick among the bounded legal candidates by opaque id, and always has a
  * deterministic fallback standing behind it. No live model call exists in
@@ -35,7 +35,7 @@ export function deterministicFallbackCandidate(
   )[0];
 }
 
-/** The §19.3 admission gates, checked in spec order; first failure names why. */
+/** The admission gates, checked in a fixed order; the first failure names why. */
 export function admitDeliberator(input: DeliberatorAdmissionInput): DeliberatorAdmission {
   const fallback = deterministicFallbackCandidate(input.candidates);
   const base = fallback === undefined ? {} : { fallbackCandidateId: fallback.id };
@@ -82,7 +82,7 @@ export function buildDeliberatorRequest(
  * Resolve the model's raw reply across the trust boundary. An unparseable
  * response, an id outside the legal candidates, a timeout, or a thrown error
  * all land on the deterministic fallback with a diagnostic — never an
- * exception, never a new action (§19.3: new action text is ignored).
+ * exception, never a new action (new action text is ignored).
  */
 export function resolveDeliberationOutcome(
   admission: DeliberatorAdmission,

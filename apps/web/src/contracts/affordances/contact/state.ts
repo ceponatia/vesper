@@ -45,7 +45,7 @@ import {
  *
  * **No storage wiring ships in slice 1**, but the home is no longer an open
  * question. *"Where should committed contact live?"* was **ruled by the owner
- * 2026-07-30** (romantic-contact-affordances.audit.md): a durable event/action
+ * 2026-07-30**: a durable event/action
  * is the provenance, plus a versioned active-contact projection captured in the
  * chat's retake snapshot — contact can never remain prompt-local. This file is
  * that projection's shape, settled here so it is not decided twice; slice 3

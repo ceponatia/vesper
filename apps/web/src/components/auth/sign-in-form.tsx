@@ -27,10 +27,10 @@ function isKnownProvider(p: string): p is KnownProvider {
 }
 
 /**
- * Thin sign-in / sign-up surface (auth.plan.md slice 5): email+password with a
- * mode toggle, a magic-link request, and OAuth buttons for whichever providers
- * the server reports as env-enabled. Expandable — more methods are just more
- * buttons. On success the signed session cookie is set, so we route home.
+ * Thin sign-in / sign-up surface: email+password with a mode toggle, a
+ * magic-link request, and OAuth buttons for whichever providers the server
+ * reports as env-enabled. Expandable — more methods are just more buttons. On
+ * success the signed session cookie is set, so we route home.
  */
 export function SignInForm() {
   const router = useRouter();

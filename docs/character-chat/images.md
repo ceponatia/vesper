@@ -24,8 +24,7 @@ outfit while the image model paints another.
 ## Player photos (image input)
 
 The player can attach up to **4 photos per message** (owner ruling 2026-07-11 —
-multi-image from the start) and the character genuinely sees them
-(`chat-image-input.plan.md`):
+multi-image from the start) and the character genuinely sees them:
 
 - **Upload** (`POST /api/chats/:chatId/attachments`, one photo per call): the composer
   downscales client-side (canvas, ≤1600px → JPEG), the server re-decodes with the
@@ -58,8 +57,7 @@ multi-image from the start) and the character genuinely sees them
 
 ## Selfies (character-sent photo messages)
 
-The character can send photos back
-(`chat-selfies.plan.md`, owner
+The character can send photos back (owner
 rulings 2026-07-11):
 
 - **Three triggers, one queue decision.** A player **request** (`detectSelfieRequest`,
@@ -68,7 +66,7 @@ rulings 2026-07-11):
   the comms register — a `*Name: …*` span in the player's message or the last reply —
   is the deterministic "not in the same place" signal), warm-or-better regard, and a
   ~15-exchange cooldown (`selfie_history` ring, migration 0034, rollback-safe) —
-  or the **opener** arm (chat-initiative slice 5): a warm initiative opener may
+  or the **opener** arm: a warm initiative opener may
   attach the "thinking of you" photo (`chatSelfieOpenerEligible` — warm +
   cooldown; no comms-span requirement since a reopen has no fresh exchange to
   read, so the license line is register-CONDITIONAL — "if your opening lands as
@@ -106,9 +104,8 @@ rulings 2026-07-11):
 
 Chat renders used to anchor on the canonical avatar — always in the default outfit —
 so every scene argued the edit model out of repainting the reference's clothes, and
-settings rode a text sketch alone
-(`chat-scene-references.plan.md`,
-owner rulings 2026-07-11):
+settings rode a text sketch alone (owner
+rulings 2026-07-11):
 
 - **Current look** (`kind: "chat_look"`): an outfit-true, identity-locked variant of
   the avatar, minted by a detached `chat_look_image` job when the archivist records

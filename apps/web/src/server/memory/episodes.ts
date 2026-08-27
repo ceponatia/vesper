@@ -28,10 +28,10 @@ export interface EpisodeHit {
   score: number;
 }
 
-/** A fused-retrieval hit: which queries retrieved it (spec §6.3 #2 per-source attribution). */
+/** A fused-retrieval hit: which queries retrieved it (per-source attribution). */
 export type FusedEpisodeHit = EpisodeHit & { sources: string[] };
 
-/** Episode row for the dev inspector's list read (spec §6.1). */
+/** Episode row for the dev inspector's list read. */
 export interface EpisodeListRecord {
   id: string;
   turnNumber: number;
@@ -61,7 +61,7 @@ export async function appendEpisode(
   threadIds: readonly string[],
   sink?: DiagnosticSink,
   witnessedBy: readonly string[] = [],
-  /** Chat-lane provenance: the assistant message this episode summarizes (spec §4.3). */
+  /** Chat-lane provenance: the assistant message this episode summarizes. */
   sourceMessageId: string | null = null,
 ): Promise<string> {
   let embedded: Embedded | null = null;
@@ -202,7 +202,7 @@ export async function retrieveEpisodes(
   return hits;
 }
 
-/** An old-episode candidate for the memory-callback selection (memory-callbacks.plan.md). */
+/** An old-episode candidate for the memory-callback selection. */
 export interface CallbackEpisodeCandidate {
   id: string;
   turnNumber: number;
@@ -213,7 +213,7 @@ export interface CallbackEpisodeCandidate {
 }
 
 /**
- * Old episodes as callback candidates (memory-callbacks.plan.md): everything at/under
+ * Old episodes as callback candidates: everything at/under
  * `maxTurn` (the caller's age cutoff — deliberately far past EPISODE_WINDOW), oldest
  * first, each carrying its similarity to the CURRENT input so the pure selector can
  * prefer topic DISTANCE (a callback is a tangent, not an echo). Same embedder-isolation
@@ -247,7 +247,7 @@ export async function callbackEpisodeCandidates(
 }
 
 /**
- * Multi-query episode RAG (spec §6.3 #2): every query embedded in one batch
+ * Multi-query episode RAG: every query embedded in one batch
  * call, one top-k select per query with the same recency-window exclusion,
  * EPISODE_MIN_SCORE applied per query on raw cosine, then fused by reciprocal
  * rank. An embedding failure degrades to [] with a diagnostic, never a throw.
@@ -326,8 +326,8 @@ export async function retrieveEpisodesFused(
 }
 
 /**
- * Every episode in a scope, oldest first — the dev inspector's list read
- * (spec §6.1). `embedded` reports embedder null-ness (an embed-failure row
+ * Every episode in a scope, oldest first — the dev inspector's list read.
+ * `embedded` reports embedder null-ness (an embed-failure row
  * stays out of RAG but keeps its recency-window/audit value).
  */
 export async function listEpisodesForScope(scope: MemoryScope): Promise<EpisodeListRecord[]> {
@@ -354,7 +354,7 @@ export async function latestEpisodeNumber(scope: MemoryScope): Promise<number> {
 }
 
 /** Rerun support: drop the turn's episode before the input is resubmitted. */
-/** Delete the episode(s) summarizing one chat assistant message (spec §4.3 — another-take / message delete). */
+/** Delete the episode(s) summarizing one chat assistant message (another-take / message delete). */
 export async function deleteEpisodeForMessage(messageId: string): Promise<number> {
   const deleted = await db()
     .delete(episodes)
@@ -373,7 +373,7 @@ export async function deleteEpisodeForTurn(scope: MemoryScope, turnNumber: numbe
 
 /**
  * Hard-delete every episode in a scope — the chat lane's bulk purge (sessions cascade with
- * their session row). Used by the single "Clear Chat" (character-chat-primary.spec.md §4).
+ * their session row). Used by the single "Clear Chat".
  */
 export async function deleteEpisodesForScope(scope: MemoryScope, dbc: DbWriter = db()): Promise<number> {
   const deleted = await dbc.delete(episodes).where(memoryScopeWhere(episodes, scope)).returning({ id: episodes.id });

@@ -1,8 +1,7 @@
 /**
- * Visual-state lane assembly (visual-state.plan.md slice 6; spec
- * §Implementation placement).
+ * Visual-state lane assembly.
  *
- * The focused server barrel the spec names: snapshot and selection ASSEMBLY
+ * The focused server barrel: snapshot and selection ASSEMBLY
  * from live chat state, the slice-6 shadow build, its measurements, the image
  * digest a character-bearing render consumes, and the inspector payload.
  * Everything in this folder is pure over passed-in

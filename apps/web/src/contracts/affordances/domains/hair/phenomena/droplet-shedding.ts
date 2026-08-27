@@ -23,8 +23,7 @@ import {
 } from "./bands";
 
 /**
- * `hair.sheds_droplets` — water actually leaving the hair
- * (hair spec §"Phenomena").
+ * `hair.sheds_droplets` — water actually leaving the hair.
  *
  * Retained water is a standing condition; shedding is an EVENT. A shake, sudden
  * turn, run, impact, or gust must have been committed, or soaked hair would

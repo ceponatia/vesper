@@ -21,8 +21,7 @@ import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../ref
 
 /**
  * THE profile compile step: one profile row plus one prompt in, the exact
- * provider-shaped configuration out (image-model-capabilities.spec.md
- * §"Normalized render intent" steps 5–11, §"Control mapping", §"Timeouts").
+ * provider-shaped configuration out.
  *
  * Every kind of image the application makes — a portrait, a scene, a variant, a
  * lab experiment, a trial cell — passes through here on its way to a provider.
@@ -49,8 +48,7 @@ import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../ref
  *
  * Everything it needs arrives as a value. The safety setting in particular is an
  * input rather than an environment read, which is what lets the whole step be
- * exercised with no deployment in the process
- * (monorepo-image-core.spec.render-kernel.md §"The remaining inversions").
+ * exercised with no deployment in the process.
  */
 
 /**
@@ -166,7 +164,7 @@ function referenceBindingCount(references: PromptReferenceBinding): number {
 
 /**
  * The dimension resolver's input facts, resolved where the merged controls live
- * (spec §"Dimension negotiation") and carried on the plan so `renderWithModel`
+ * and carried on the plan so `renderWithModel`
  * can hand them to `chooseDimensions` without re-deriving any merge or mapping.
  *
  * These are INPUTS, not a choice: the shape itself is negotiated at the
@@ -233,8 +231,8 @@ export interface CompileProfileRenderPlanInput {
    */
   safetyCheckerDisabled: boolean;
   /**
-   * Per-render controls, merged OVER the profile's stored defaults (the spec's
-   * "a later layer wins"). This is the request half of the control vocabulary:
+   * Per-render controls, merged OVER the profile's stored defaults — a later
+   * layer wins. This is the request half of the control vocabulary:
    * a profile says what its job normally needs, a render says what this one
    * needs. Absent — which is every caller today — leaves the profile's defaults
    * exactly as they were.
@@ -375,9 +373,8 @@ export type CompileProfileRenderPlanResult =
 type StrategyPromptCompile = { ok: true; prompt: string } | { ok: false };
 
 /**
- * THE prompt-strategy dispatch — the seed of the code registry the capabilities
- * spec calls for (image-model-capabilities.spec.md §"Prompt strategies": "an
- * enum resolved through a code registry", never prompt logic stored in a row).
+ * THE prompt-strategy dispatch — a strategy is an enum resolved through a code
+ * registry, never prompt logic stored in a row.
  *
  * It is a switch, not a registry framework, and deliberately so: three of the
  * seven strategies have an implementation here, four have none, and a framework
@@ -449,9 +446,8 @@ function compileIdentityPackPrompt(
  * — so prefixing a second set of bindings would rewrite renders that work today
  * and describe the same image twice, in two conventions.
  *
- * `multi_reference_compose` COMPILES here, which it could not before slice 3 of
- * the capabilities plan: its defining semantic is naming the purpose and order
- * of each reference (image-model-capabilities.spec.md §"Prompt strategies"), and
+ * `multi_reference_compose` COMPILES here, which it could not before: its
+ * defining semantic is naming the purpose and order of each reference, and
  * this vocabulary had no wording for that, so the only honest answer was refusal
  * — returning the base prompt would have let a profile claim the composing
  * strategy while sending text identical to `instruction_edit`.
@@ -484,7 +480,7 @@ function compileRenderIntentPrompt(
 /**
  * Compile one profile against one model and prompt.
  *
- * The pipeline mirrors the spec's resolution order for the steps a single-image
+ * The pipeline follows one resolution order, for the steps a single-image
  * render needs: reviewed-quality model, strategy-compiled prompt, model-dialect
  * prompt preparation, negative resolution, control mapping, override
  * validation, aspect choice, version pin.
@@ -538,7 +534,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   const outputCount = requested?.outputCount ?? defaults.outputCount;
 
   // The profile's stored defaults with the request's overrides merged over them
-  // — the spec's "a later layer wins" between those two layers. Written as a
+  // — a later layer wins between those two layers. Written as a
   // plain member-by-member merge because an `undefined` member and an absent one
   // are the same thing to `mapImageRenderControls`: it skips every control whose
   // value is undefined, so nothing here reaches a payload uninvited.
@@ -631,7 +627,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     effectiveModel.advancedCapabilities.knownInputFields,
     [...reservedFields, ...loraOwnedFields],
   );
-  // Overrides merge LAST, per the spec's "a later layer wins". They therefore
+  // Overrides merge LAST, because a later layer wins. They therefore
   // may also replace a mapped control's value — except a resolved LoRA's own
   // fields, reserved above — which is why the reported negative below is read
   // back out of the FINAL payload rather than from the mapping step: a
@@ -642,7 +638,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // not replaced by the raw bag. The strict validator trusts a URI/array-shaped
   // value only under a field a typed transport owns, and this set is how a
   // curated LoRA's weights field earns that trust while a raw advanced value
-  // never does (owner ruling 2026-08-24; image-model-adapters.spec.md).
+  // never does (owner ruling 2026-08-24).
   const typedControlFields = Object.keys(sendableMapped.input)
     .filter((field) => !(field in overrides.input))
     .sort();
@@ -763,8 +759,7 @@ type LoraWireRefusal = Extract<CompileProfileRenderPlanResult, { reason: "lora_b
 
 /**
  * THE final-wire LoRA invariant: a plan may claim an applied LoRA only if its
- * own payload carries both bound provider fields
- * (image-model-adapters.spec.md §"The final-wire LoRA invariant").
+ * own payload carries both bound provider fields.
  *
  * It exists because the opposite was true for the whole life of the LoRA
  * library and nothing noticed: across the entire retained provider history, not

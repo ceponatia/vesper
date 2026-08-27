@@ -17,7 +17,7 @@ export interface TraitRegistry {
   parseValue(id: string, raw: unknown): RegistryParseResult<number>;
   /** The band a value falls in (value clamped to the axis range first). */
   bandFor(id: string, value: number): TraitBand | undefined;
-  /** Free-text term → scored trait positions (forge expansion + authoring, §3 Note 4). */
+  /** Free-text term → scored trait positions (forge expansion + authoring). */
   resolveLexicon(term: string): ReadonlyArray<{ id: string; value: number }>;
 }
 

@@ -67,8 +67,8 @@ import {
 } from "./identity-pack-trial-store";
 
 /**
- * The trial service end to end against DATABASE_URL and a sandboxed DATA_ROOT
- * (image-identity-packs.spec.trial.md; design doc Wave 2). The renderer seam is
+ * The trial service end to end against DATABASE_URL and a sandboxed DATA_ROOT.
+ * The renderer seam is
  * always injected — Replicate is never called — so what is under test is the
  * service's own machinery: plan resolution and per-cell refusal codes, bounded
  * execution with settled-cell terminality, the derived-and-persisted blind

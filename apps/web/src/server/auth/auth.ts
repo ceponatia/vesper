@@ -6,7 +6,7 @@ import { accounts, authSessions, db, users, verifications } from "../db";
 import { magicLinkPluginEnabled, sendMagicLink } from "./magic-link";
 
 /**
- * The Better Auth instance (auth.plan.md). Self-hosted, owns its tables in our
+ * The Better Auth instance. Self-hosted, owns its tables in our
  * Postgres via the Drizzle adapter — `session` maps to `auth_sessions` to avoid
  * the collision with the game `sessions` table. Email+password is always on;
  * social OAuth is **env-gated** and magic-link is **transport-gated** (both
@@ -126,8 +126,8 @@ export const auth = betterAuth({
   emailAndPassword: { enabled: true, disableSignUp: signupDisabled },
   socialProviders: configuredSocialProviders(),
   /**
-   * Session lifetime is stated rather than inherited (security-authz.plan.md
-   * slice 7): the "Before ALLOW_SIGNUP=true" checklist in docs/auth.md requires a
+   * Session lifetime is stated rather than inherited: the "Before
+   * ALLOW_SIGNUP=true" checklist in docs/auth.md requires a
    * deliberate, documented lifetime. The values are Better Auth's own defaults —
    * a 7-day session, refreshed at most once a day — so this pins today's behavior
    * instead of changing it; shortening them is now a one-line decision.
@@ -136,7 +136,7 @@ export const auth = betterAuth({
   /**
    * Magic-link registers only where its link can actually be delivered — a
    * production without a resolved transport gets no plugin at all rather than a
-   * sign-in URL in the logs (security-authz.plan.md slice 1), the same shape as
+   * sign-in URL in the logs, the same shape as
    * the env-gated social providers above.
    *
    * The hook is wrapped rather than passed by reference because Better Auth calls

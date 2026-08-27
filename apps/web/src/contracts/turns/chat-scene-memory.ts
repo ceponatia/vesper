@@ -28,7 +28,7 @@ export const SCENE_DETAIL_MAX_CHARS = 140;
 /** Length cap on a place name. */
 export const SCENE_PLACE_NAME_MAX_CHARS = 60;
 /**
- * Length cap on a place's visual sketch (chat-scene-fidelity.plan.md slice 2): the
+ * Length cap on a place's visual sketch: the
  * background sketch agent's 2–4 sentence description of the place, consumed by the
  * scene image's `room` and the narrator's Scene block.
  */
@@ -58,7 +58,7 @@ export const scenePlaceSchema = z.object({
    */
   sketch: z.string().trim().min(1).max(SCENE_SKETCH_MAX_CHARS).optional().catch(undefined),
   /**
-   * The place's rendered reference image (chat-scene-references.plan.md): a
+   * The place's rendered reference image: a
    * `chat_place` asset minted lazily from the sketch on the first render there,
    * fed to the multi-edit rung as the setting anchor. Absent until minted; a
    * dangling id (deleted asset) just fails the anchor load and re-mints.
@@ -182,7 +182,7 @@ export function switchScenePlace(memory: ChatSceneMemory, placeName: string): Ch
  * current place is updated when proposed, new places minted, and each place's details +
  * connections deduped and capped (oldest-out). The current place is never evicted by the
  * place cap. An empty proposal is a no-op. (Time of day is NOT scene memory — it derives
- * from the story clock, chat-clock-calendar.plan.md.)
+ * from the story clock.)
  */
 export function mergeSceneMemory(memory: ChatSceneMemory, proposal: ChatSceneProposal): ChatSceneMemory {
   let places: ScenePlace[] = memory.places.map((p) => ({
@@ -228,7 +228,7 @@ export function currentScenePlace(memory: ChatSceneMemory): ScenePlace | null {
 }
 
 /**
- * The sketch agent's structured output (chat-scene-fidelity.plan.md slice 2b). Lenient:
+ * The sketch agent's structured output. Lenient:
  * a bad/empty result parses to "" and the handler simply writes nothing (the absent-sketch
  * trigger re-fires on a later exchange).
  */
@@ -264,7 +264,7 @@ export function withPlaceSketch(memory: ChatSceneMemory, placeName: string, sket
 }
 
 /**
- * Attach a rendered place image to a named place (chat-scene-references.plan.md) —
+ * Attach a rendered place image to a named place —
  * the CAS-write shape `withPlaceSketch` uses: returns the SAME memory reference
  * when the place vanished or already carries an image, so callers can bail on
  * identity. PURE.

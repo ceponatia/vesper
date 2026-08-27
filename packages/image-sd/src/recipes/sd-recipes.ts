@@ -2,12 +2,12 @@ import { IMAGE_LORA_MAX_SCALE, IMAGE_LORA_MIN_SCALE, type ImageReferenceRole } f
 import { z } from "zod";
 
 /**
- * What a Stable Diffusion recipe IS (sd-rendering-package.plan.md §3).
+ * What a Stable Diffusion recipe IS.
  *
  * A recipe is **deployed configuration, frozen**: one named, versioned set of
  * fixed values that a render either ran under or did not. It is deliberately
- * NOT a tuning envelope. The plan's §7 table — "steps 30–40", "CFG roughly
- * 4–6", "PuLID identity weight: test 0.65 / 0.80 / 0.95" — describes the
+ * NOT a tuning envelope. The trial bands — "steps 30–40", "CFG roughly
+ * 4–6", "PuLID identity weight: test 0.65 / 0.80 / 0.95" — describe the
  * SEARCH, and the search happens in the Image Lab against fixed fixtures. The
  * value that wins a comparison lands here as a new `revision`, and the old
  * revision stays readable so an image rendered last month can still say what
@@ -18,14 +18,14 @@ import { z } from "zod";
  * two renders of "the same recipe" differ, and Vesper's render provenance would
  * record a name that no longer identifies anything.
  *
- * Two ownership rules follow from the plan and are worth stating where the
+ * Two ownership rules are worth stating where the
  * types are, because both are easy to erode one field at a time:
  *
- * 1. **A recipe describes Stable Diffusion, never Vesper game state** (§3). It
+ * 1. **A recipe describes Stable Diffusion, never Vesper game state.** It
  *    has no idea a character has an outfit, a location, or a mood. The
  *    application resolves visual state and hands over prompt text and
  *    references; the recipe decides only how the sampler behaves.
- * 2. **A recipe is not a ComfyUI schema** (§17). Checkpoint-specific knobs live
+ * 2. **A recipe is not a ComfyUI schema.** Checkpoint-specific knobs live
  *    here or in a profile's `providerOverrides`, and are promoted into
  *    `@vesper/image-core`'s normalized vocabulary only when a second model
  *    family needs the same concept or Vesper must vary it per render.
@@ -38,8 +38,8 @@ import { z } from "zod";
  * The Stable Diffusion families this package plans for.
  *
  * SDXL is first because its LoRA/ControlNet/identity-adapter ecosystem is the
- * mature one (§6); SD3.5 is kept as a separate family rather than a variant
- * because the plan is explicit that the two must not be forced through
+ * mature one; SD3.5 is kept as a separate family rather than a variant
+ * because the two must not be forced through
  * identical internal workflows. A recipe id carries its family as a prefix, so
  * this tuple is also the namespace of every recipe that will ever exist.
  */
@@ -48,7 +48,7 @@ export const sdModelFamilySchema = z.enum(sdModelFamilies);
 export type SdModelFamily = (typeof sdModelFamilies)[number];
 
 /**
- * The samplers a recipe may name — the DPM++ family the plan calls for (§7),
+ * The samplers a recipe may name — the DPM++ family the trials call for,
  * plus the two euler variants that serve as the honest baseline in a sampler
  * comparison.
  *
@@ -63,15 +63,15 @@ export const sdSamplers = ["dpmpp_2m", "dpmpp_2m_sde", "dpmpp_3m_sde", "euler", 
 export const sdSamplerSchema = z.enum(sdSamplers);
 export type SdSampler = (typeof sdSamplers)[number];
 
-/** The noise schedules pairable with those samplers. Karras is the plan's §7 default where supported. */
+/** The noise schedules pairable with those samplers. Karras is the default where supported. */
 export const sdSchedulers = ["karras", "normal", "simple", "exponential"] as const;
 export const sdSchedulerSchema = z.enum(sdSchedulers);
 export type SdScheduler = (typeof sdSchedulers)[number];
 
 /**
  * The ControlNet keys a recipe may configure, tied to the reference-role
- * vocabulary `@vesper/image-core` already publishes (§11: "use those roles
- * rather than creating Stable Diffusion-specific reference types").
+ * vocabulary `@vesper/image-core` already publishes — use those roles rather
+ * than creating Stable Diffusion-specific reference types.
  *
  * `Extract` rather than a fresh union so the tie is checked by the compiler: if
  * image-core ever renames or drops one of these roles, the `satisfies` below
@@ -84,12 +84,12 @@ type SdControlNetRole = Extract<ImageReferenceRole, "depth" | "pose" | "edge">;
  * How hard one ControlNet pushes, and over which slice of the sampling run.
  *
  * `start`/`end` are fractions of the schedule, not step counts, so a recipe
- * keeps meaning the same thing when its `steps` change — the plan tunes steps
- * and control strength independently (§7), and a control expressed in absolute
+ * keeps meaning the same thing when its `steps` change — steps
+ * and control strength are tuned independently, and a control expressed in absolute
  * steps would silently move when only steps were meant to move.
  *
  * `strength` allows up to 2 because SDXL ControlNet implementations accept
- * over-strength values; that is a rail, not an endorsement. The plan's starting
+ * over-strength values; that is a rail, not an endorsement. The starting
  * bands are much narrower (depth roughly 0.45–0.70, pose roughly 0.65–0.85).
  */
 export const sdControlNetSettingSchema = z
@@ -113,7 +113,7 @@ export type SdControlNetSetting = z.infer<typeof sdControlNetSettingSchema>;
  * `<family>/<slug>` — the stable name a render's provenance records, and the
  * only thing the deployed renderer receives to select a recipe by.
  *
- * Family-prefixed because §6 keeps `sdxl/*` and `sd35/*` as separate recipe
+ * Family-prefixed because `sdxl/*` and `sd35/*` are separate recipe
  * namespaces; lowercase and hyphenated because the id travels through provider
  * inputs, URLs and log lines, where case folding is somebody else's decision.
  */
@@ -144,18 +144,18 @@ const sdRecipeShape = {
   width: z.number().int().positive().multipleOf(8),
   height: z.number().int().positive().multipleOf(8),
   /**
-   * Strength of the runtime identity adapter — PuLID initially (§8, layer 3).
+   * Strength of the runtime identity adapter — PuLID initially (layer 3).
    *
    * Absent means the recipe runs no identity conditioning at all, which is a
-   * different render from one conditioned at zero: the plan's Stage 3 matrix
+   * different render from one conditioned at zero: the Stage 3 matrix
    * compares "base SDXL", "PuLID only", "LoRA only" and "LoRA + PuLID", and
    * those four cells have to be distinguishable in the recipe that produced
    * them.
    */
   identityWeight: z.number().min(0).max(1).optional(),
   /**
-   * Strength of the single character LoRA (§10 keeps Vesper's one-LoRA-per-render
-   * limitation for the first slice).
+   * Strength of the single character LoRA — Vesper keeps its one-LoRA-per-render
+   * limitation for the first slice.
    *
    * Bounded by `@vesper/image-core`'s curated LoRA scale band rather than a
    * number spelled again here — the library row, the provider binding and this
@@ -165,7 +165,7 @@ const sdRecipeShape = {
   loraScale: z.number().min(IMAGE_LORA_MIN_SCALE).max(IMAGE_LORA_MAX_SCALE).optional(),
   /**
    * Structural conditioning, keyed by image-core reference role. Absent means
-   * the recipe uses none — §11's initial priority is depth first, pose second,
+   * the recipe uses none — the initial priority is depth first, pose second,
    * edge only if trials prove it useful.
    */
   controlNets: z
@@ -176,7 +176,7 @@ const sdRecipeShape = {
     } satisfies Record<SdControlNetRole, unknown>)
     .optional(),
   /**
-   * Denoise strengths for the two inpainting jobs §12 distinguishes: repairing
+   * Denoise strengths for the two inpainting jobs: repairing
    * a localized failure (a malformed hand, a face artifact) versus replacing
    * something outright. Repair runs lower — the point is to keep the
    * surrounding lighting and composition intact.
@@ -187,7 +187,7 @@ const sdRecipeShape = {
       replaceDenoise: z.number().min(0).max(1).optional(),
     })
     .optional(),
-  /** The low-denoise finishing/upscale pass (§7, Stage 7). Absent means no finishing pass runs. */
+  /** The low-denoise finishing/upscale pass (Stage 7). Absent means no finishing pass runs. */
   finishing: z
     .object({
       denoise: z.number().min(0).max(1),

@@ -19,9 +19,8 @@ import {
 } from "@/server/engine";
 
 /**
- * THE SHADOW-GATE REPORT over `chat_npc_scene_decisions`
- * (romantic-contact-affordances.spec.actor-control.md §"Execution, flags, and
- * cost gate"): the figures the owner rules on before NPC movement authority is
+ * THE SHADOW-GATE REPORT over `chat_npc_scene_decisions`: the figures the
+ * owner rules on before NPC movement authority is
  * enabled — trigger fire rate and misses, candidate acceptance and drop
  * reasons, p50/p95/p99 added settle latency, timeout rate, and cost per 100
  * replies. One envelope row IS one included reply, trigger-miss tombstones

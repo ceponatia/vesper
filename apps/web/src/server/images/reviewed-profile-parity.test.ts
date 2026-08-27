@@ -15,8 +15,7 @@ import { describe, expect, it } from "vitest";
 
 /**
  * FINAL-PAYLOAD parity between the transitional exact-slug overlay and the task
- * profile that replaces it (image-render-quality.spec.md §"Migration off the
- * transitional policy", step 2).
+ * profile that replaces it.
  *
  * The migration's whole safety argument is that a reviewed setting reaches the
  * provider identically whichever layer supplies it, so a comparison of anything

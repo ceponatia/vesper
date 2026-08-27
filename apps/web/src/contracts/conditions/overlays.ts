@@ -3,8 +3,8 @@ import { overlaySourceMayChange, type AttributeValue } from "../attributes/value
 import type { ActiveCondition } from "./condition";
 
 /**
- * Turn active conditions' `attributeEffects` into attribute overlays
- * (character-chat-state-narration.spec.md §2). The `attributeEffects` field and the
+ * Turn active conditions' `attributeEffects` into attribute overlays.
+ * The `attributeEffects` field and the
  * `condition` provenance level (precedence 3, above `narrative`) were designed for this
  * but never wired in either lane — this is the conversion. Each effect becomes an
  * `AttributeValue` with `source: "condition"`, `sourceId` = the condition id, so a

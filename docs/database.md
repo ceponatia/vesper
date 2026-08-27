@@ -36,7 +36,7 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
   (`PersonaProfile`: bio, voice, intimacy, species/heritage/bodyPlan, `intimateRegions`,
   `bodyFeatures`, `attributes`, `outfits`), `tags` JSONB, `avatar_image_id`,
   `search_embedding` vector.
-  - **The player as a library entity** (`persona-library.plan.md`) — who *you* are in a
+  - **The player as a library entity** — who *you* are in a
     chat, with a body and a wardrobe; the graduated successor to the single inline
     `users.player_persona` blob.
   - `title` is the library label whose per-owner uniqueness lets `name` repeat across
@@ -62,7 +62,7 @@ Postgres 17 + pgvector, Drizzle ORM. Database `vesper_dev` runs in Vesper's loca
 - **`social_cards`** — `owner_id`, `name`, `description`, `definition` JSONB
   (`SocialReactionCard` extras: kind, triggers, severity, defaultReaction,
   reactionOverrides), `tags` JSONB, `visibility`, `cloned_from_id?`, `search_embedding`
-  vector (migration 0014). The reusable **card library** (`social-reaction-cards.plan.md`) —
+  vector (migration 0014). The reusable **card library** —
   full CRUD at `/api/social-cards` (+ `/clone`, owner-or-public reads, semantic search via
   the shared `searchLibraryIds` `scope`), the `/social-cards` page + builder, and the
   All/Public/Owned discovery gallery. A character's selected cards live **inline** as
@@ -77,7 +77,7 @@ dual-write the character-chat rows.
 - **`sim_worlds`** — explicit world ID, world type, opaque deterministic seed, ruleset
   version, lifecycle status.
 - **`sim_branches`** — world ID, head sequence, optimistic version, integer story second;
-  the row is the branch sequencer lock. **E2.5 ancestry (spec §29.3):**
+  the row is the branch sequencer lock. **E2.5 ancestry:**
   `origin_story_second` (seed clock for roots, fork clock for children), nullable
   `parent_branch_id` + `fork_sequence` + fork provenance (parent ruleset/event-schema
   versions, forking principal, reason, inherited snapshot checksum) — all-or-nothing per the
@@ -89,12 +89,12 @@ dual-write the character-chat rows.
 - **`sim_events`** — immutable schema-versioned event envelope; event ID globally unique and
   `(branch_id, sequence)` unique.
 - **`sim_characters`** — minimum actor identity facts (the E2.2 `observed_container_ids`
-  stand-in was dropped in 0070 — §20 observations own perception).
+  stand-in was dropped in 0070 — observations own perception).
 - **`sim_items`** (reworked E5.3, migrations 0069/0070) — stable branch-local item identity
   plus authored material facts: `material_kind_key`, `owner_actor_id` (ownership distinct
-  from holding, §26.3), and the container config (`container_capacity_count` +
-  `container_access` — containers are items, §26.2).
-- **`sim_item_holdings`** (reworked E5.3) — exactly one row per branch/item, the §26.1
+  from holding), and the container config (`container_capacity_count` +
+  `container_access` — containers are items).
+- **`sim_item_holdings`** (reworked E5.3) — exactly one row per branch/item, the
   one-locus invariant as the primary key, holding a typed locus (`locus_kind`
   held/worn/container/zone/gone with per-kind shape CHECKs and composite FKs to
   characters/items/zones, all `DEFERRABLE INITIALLY DEFERRED` for world-cascade ordering)
@@ -115,7 +115,7 @@ dual-write the character-chat rows.
   coordination, and the scheduler `derivation_version` that produced the terminal outcome.
   **Since E2.5 a trigger row is only ever created by applying a committed `trigger_scheduled`
   event** (`applyTriggerScheduledEvent`), live or on fork replay — never by direct insert.
-- **`sim_snapshots`** (E2.5) — replay checkpoints (spec §10.4): branch, projection kind,
+- **`sim_snapshots`** (E2.5) — replay checkpoints: branch, projection kind,
   sequence, projection schema + ruleset versions, deterministic checksum, source event
   range, and the full projection payload so replay resumes there instead of walking to the
   root; unique `(branch_id, projection_kind, sequence)`.
@@ -128,81 +128,81 @@ dual-write the character-chat rows.
   status (`planned`/`arrived`/`abandoned`…); arrival re-validated at fire time by an E2.4
   trigger.
 - **`sim_action_definitions` / `sim_activities`** (E3.2) — authored action vocabulary and
-  running activity instances with the §16.3 phase machine; body/attention claims live on the
+  running activity instances with the phase machine; body/attention claims live on the
   activity row (no orphanable claim rows).
 - **`sim_commitments` / `sim_temporal_pressures`** (E3.3) — obligations with the flexibility
-  dial and §15.4 status machine; live pressure rows carry noticeAt/decideBy/actBy (actBy =
+  dial and status machine; live pressure rows carry noticeAt/decideBy/actBy (actBy =
   latest departure, recomputed from the fire-time route).
 - **`sim_engagements`** (E3.4) — conversations as attention reservations: participants,
-  channel, §18.2 state, and the attention claim; one co-present scene per body enforced at
+  channel, state, and the attention claim; one co-present scene per body enforced at
   open.
 - **`sim_access_grants`** (E3.5, migration 0062) — authored entry rights (owner/resident/key…)
   scoped to a location and optionally zones, with validity/revocation seconds; malformed
   rows fail closed — they admit no one. `sim_worlds.permits_trespass` (same migration) gates
   explicit forced entry per world.
-- **`sim_observations`** (E4.1, migration 0063) — the §20 perception log: one row per (event,
+- **`sim_observations`** (E4.1, migration 0063) — the perception log: one row per (event,
   witness) with channel, evidence class, fixed-point confidence, detail tier, and derivation
   version. Derived deterministically from the event stream at command commit (every store's
   transaction ends by recording who perceived its events), so replay/fork mints identical
   rows; no FK to `sim_events` because a fork child holds observations for ancestor-branch
   events it reads by reference.
-- **`sim_assertions`** (E4.2, migration 0064) — the §21.1 claim ledger: a proposition made on
+- **`sim_assertions`** (E4.2, migration 0064) — the claim ledger: a proposition made on
   a branch, possibly false (canon truth stays in `sim_events`), with `proposition_key`,
   `subject_ids`, `claimed_value`, source actor/event, validity interval
   (`valid_from`/`valid_until`), and status (`active`/`contradicted`/`superseded`/`retracted`).
   Derived deterministically from disclosure events (the id embeds the originating event), so
   a rebuilt/forked branch mints identical rows; no FK to `sim_events` for the same reason as
   `sim_observations`.
-- **`sim_beliefs`** (E4.2, migration 0064) — the §21.2 held stance: one actor's position
+- **`sim_beliefs`** (E4.2, migration 0064) — the held stance: one actor's position
   toward an assertion — fixed-point confidence, `basis_observation_ids`, the
   `learned_from_actor_ids` gossip chain, believed interval, status
   (`active`/`doubted`/`rejected`/`superseded`). Composite FK `(branch_id, assertion_id)` →
   `sim_assertions`; superseded rows keep their history, the active row is the current stance.
-- **`sim_narrative_cuts`** (E4.3, migration 0065) — the §22 persisted NarrativeCut,
+- **`sim_narrative_cuts`** (E4.3, migration 0065) — the persisted NarrativeCut,
   **immutable and addressable**, one per (engagement, viewpoint): `compiler_version` +
   `semantic_hash`, branch version, sequence/story-second window, and the full parsed cut as
   `content` (the row IS the render input, bit for bit). No update path and no `updated_at` —
   recompiling the same cut id must reproduce `semantic_hash` or fail with a version
-  diagnostic (§22.3); rerender re-reads the row and creates nothing.
-- **`sim_soft_canon`** (E4.3, migration 0065) — the §23.4 bounded, expiring store of
+  diagnostic; rerender re-reads the row and creates nothing.
+- **`sim_soft_canon`** (E4.3, migration 0065) — the bounded, expiring store of
   narrator-established details: `key` + `scope`
   (`scene`/`relationship`/`character`/`location`/`world`) + `subject_ids` + `value`,
   fixed-point confidence, `source_cut_ids`, and status (`active`/`promoted`/`demoted`) as
   audited moves. Expiry is read-time (`valid_until`), never a status write. Derived — every
   `soft_canon_*` event carries its full post-fold snapshot, so live upsert and fork replay
   mint identical rows.
-- **`sim_memory_documents`** (E4.4, migration 0066) — the §24 redacted, indexable recall
+- **`sim_memory_documents`** (E4.4, migration 0066) — the redacted, indexable recall
   representation, derived from persisted source rows by the memory-index outbox consumer:
   `source_kind` (`observation`/`assertion`/`belief`/`speech_act`/`soft_canon`/`authored_lore`)
   + `source_id`, sequence interval, `visibility` (`public`/`actors`/`belief_holders`) +
   `eligible_actor_ids`/`about_entity_ids`, validity + supersedence seconds,
   `epistemic_label`, optional fixed-point confidence, redacted `text`, and an `embedding`
   vector(1536) with a named `embedding_model` (both-or-neither CHECK). Never widens what a
-  viewpoint may see — eligibility/validity/privacy are resolved relationally at query time
-  (§24.1); a missing or stale row only narrows recall.
-- **`sim_body_meters`** (E5.1, migration 0067) — the §25.2 continuous substrate: one row per
+  viewpoint may see — eligibility/validity/privacy are resolved relationally at query time;
+  a missing or stale row only narrows recall.
+- **`sim_body_meters`** (E5.1, migration 0067) — the continuous substrate: one row per
   actor × meter with a fixed-point `value` (10000 ≡ 1.0) + `baseline` and
   `last_integrated_at` (the last **material** write). Queries integrate analytically from
   there and never persist, which makes partition invariance structural; `registry_version`
   stamps the meter registry. PK `(branch_id, actor_id, meter_key)`.
-- **`sim_body_conditions`** (E5.1, migration 0067; `ended_at` added 0068) — the §25.1
+- **`sim_body_conditions`** (E5.1, migration 0067; `ended_at` added 0068) — the
   categorical, sourced, self-expiring states: `key`
   (`asleep`/`collapsed`/`afterglow`/`groggy`/`wired`/`ill`), `onset_at`/`expires_at`, status
   (`active`/`ended`) + `end_basis` (`expired`/`cleared`) matched by CHECK, and `ended_at`
   (added 0068) recording when it actually ended.
-- **`sim_body_modifiers`** (E5.1, migration 0067) — the §25.3 single modifier contract: actor
+- **`sim_body_modifiers`** (E5.1, migration 0067) — the single modifier contract: actor
   × `meter_key` with an `operation` JSONB (`add`/`multiply`/`clamp`/`override`/rate change),
   `stacking_group` + `priority`, valid interval, `visibility` (`obvious`/`private`), and an
   optional composite condition FK `(branch_id, condition_id)` → `sim_body_conditions`.
   Validity boundaries are integration boundaries — expiry needs no trigger because the
   piecewise solver already sees `valid_until`.
-- **`sim_item_condition_meters`** (E5.3, 0073) — §26.7 wear/cleanliness item meters on the
-  §25 kernel: PK `(branch_id, item_id, meter_key)`, fixed-point value/baseline, analytic
+- **`sim_item_condition_meters`** (E5.3, 0073) — wear/cleanliness item meters on the
+  meter kernel: PK `(branch_id, item_id, meter_key)`, fixed-point value/baseline, analytic
   `last_integrated_at`; lazily initialized for `condition_tracked` items.
-- **`sim_item_condition_modifiers`** (E5.3, 0073) — §25.3 modifier contract scoped to items
+- **`sim_item_condition_modifiers`** (E5.3, 0073) — the modifier contract scoped to items
   (worn-window cleanliness drift); operation jsonb, stacking group/priority, validity
   interval, deferrable FK to `sim_items`.
-- **`sim_body_rhythms`** (E5.2, migration 0068) — the §25.5 authored, branch-scoped daily
+- **`sim_body_rhythms`** (E5.2, migration 0068) — the authored, branch-scoped daily
   windows: `kind` (`sleep`/`wash`) as a minute-of-day range (0–1439), copied to fork children
   like action definitions. Sleep windows anchor the circadian curve; wash windows are
   window-crossing self-care. PK `(branch_id, actor_id, kind, start_minute_of_day)`.
@@ -267,7 +267,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   (`generated`/`uploaded`/`composite`/`entity`; null = unknown), `image_id?` (the reference
   asset actually fed to a provider; null when textual-only), `name`. One row per reference a
   scene image featured — the authoritative, queryable record that replaced
-  `images.meta.references` (scene-images.spec.md §4; the Gallery reads it).
+  `images.meta.references` (the Gallery reads it).
   `SceneVisualReference` is the render-input superset, `SceneReference` the Gallery
   projection (packages/image-core/src/references/scene-reference.ts).
 - **`image_lab_experiments`** — the Advanced Image Lab's durable experiment record
@@ -335,7 +335,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `failure_code?`/`failure_message?`, `reviewed_by_user_id?` (→ `users`, no cascade — audit
   survives the reviewer), `review_reason?`/`reviewed_at?`. One durable identity reference per
   character: revisions are rows, exactly one may be `current` (partial unique index below).
-  See [images/identity-packs.md](images/identity-packs.md) and image-identity-packs.spec.data.md. Added by
+  See [images/identity-packs.md](images/identity-packs.md). Added by
   migration 0101.
 - **`image_identity_lora_bindings`** — `identity_pack_id` (→ `image_identity_packs`,
   **FK-cascade**), `lora_id` (→ `image_loras`, **FK-cascade**), `base_checkpoint`,
@@ -354,8 +354,8 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   snapshot, so a later registry or profile edit can never change what a finished run claims
   it tested. One bounded admin comparison of identity-reference strategies over a character ×
   profile × strategy × fixture grid; the three tables below FK-cascade with their run. See
-  [images/identity-packs.md](images/identity-packs.md) §The fixed-trial harness and
-  image-identity-packs.spec.trial.md. Added by migration 0102.
+  [images/identity-packs.md](images/identity-packs.md) §The fixed-trial harness.
+  Added by migration 0102.
 - **`image_identity_pack_trial_cells`** — `run_id` (→ runs, **FK-cascade**), `cell_key`
   (**unique per run** — the deterministic `character:profile:fixture:strategy:variant` plan
   key; plain ascending order is the execution order), `status`
@@ -413,7 +413,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   the per-run lookups, so no separate ones exist.
 - Successor authority: `sim_events(branch_id, sequence)` unique,
   `sim_commands(branch_id, idempotency_key)` primary, command-ID audit lookup, and the
-  `sim_item_holdings` locus lookups (`branch_id` × `container_item_id` for §26.2
+  `sim_item_holdings` locus lookups (`branch_id` × `container_item_id` for
   capacity/occupant scans, × `actor_id`, × `zone_id`).
 - Scheduler: `sim_triggers(state, available_at, due_story_second, stable_order)` for the
   claim scan and `sim_triggers(branch_id, due_story_second, stable_order)` for per-branch

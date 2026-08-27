@@ -21,9 +21,9 @@ import {
 } from "./solo-cut";
 
 /**
- * Pure solo-cut shaping tests (world-ui.plan.md slice 0). No IO — every
- * projection piece is a fixture (@/test/sim-space-fixtures), so the two-block
- * context and its deterministic fallback prose are asserted directly.
+ * Pure solo-cut shaping tests. No IO — every projection piece is a fixture
+ * (@/test/sim-space-fixtures), so the two-block context and its deterministic
+ * fallback prose are asserted directly.
  */
 
 const PLAYER = SPACE_PLAYER;

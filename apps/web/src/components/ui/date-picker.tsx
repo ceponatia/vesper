@@ -4,7 +4,7 @@ import { MONTHS, WEEKDAYS, type CalendarStart } from "@/lib/clock";
 import { cx } from "./cx";
 
 /**
- * The calendar-grid picker's value shape (mobile-ux.plan.md ruling 2): the date
+ * The calendar-grid picker's value shape: the date
  * half of `CalendarStart` — `month` is 1-based, matching `src/lib/clock.ts`.
  * Hour/minute stay with the caller (the anchor editor's separate hour/am-pm
  * selects) since a date grid has no business modeling time-of-day.
@@ -66,7 +66,7 @@ const navButtonClass =
   "touch-target inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-paper-400 transition-colors hover:bg-ink-800 hover:text-paper-100";
 
 /**
- * Themed month-grid calendar (mobile-ux.plan.md ruling 2): weekday headers make
+ * Themed month-grid calendar: weekday headers make
  * the weekday visible by construction, ‹ › pages a month at a time (rolling the
  * year over naturally), and a compact « » year stepper covers big jumps. Fully
  * controlled and pure — the displayed month IS `value`'s month, so there's no
@@ -100,8 +100,8 @@ export function DatePicker({ value, onChange }: { value: DatePickerValue; onChan
       </div>
       {/* minmax(2.5rem, 1fr): columns fill the Dialog's width but never shrink below the
           40px tap-size floor — fluid instead of a fixed 7×44px total that would overflow
-          the ~318px content width a 390px-viewport Dialog actually leaves (mobile-ux.plan.md
-          ruling 2's "fits the Dialog at 390px" is the target we're sized against). */}
+          the ~318px content width a 390px-viewport Dialog actually leaves. Fitting the
+          Dialog at a 390px viewport is the target we're sized against. */}
       <div className="grid grid-cols-[repeat(7,minmax(2.5rem,1fr))] gap-1">
         {WEEKDAY_LABELS.map((label) => (
           <span key={label} className="flex h-5 items-center justify-center text-[10px] font-medium tracking-wide text-paper-500 uppercase">

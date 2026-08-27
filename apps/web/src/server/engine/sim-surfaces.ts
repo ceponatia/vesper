@@ -38,12 +38,12 @@ import {
 } from "./simulation";
 
 /**
- * R5 — successor chats replace character-chat-owned surfaces with simulation
- * world truth, surface by surface (engine.rollout.plan.md, re-framed
- * 2026-07-22). These are the read seams the chat UI's envelopes call for routed
- * chats instead of character-chat state rows. Slice 3 is presence/space
- * (roster presence from the mirror's physical loci); slice 4 is bodies & meters
- * (the strip's meter chips from the ruling-15 substrate). Character-chat-routed
+ * Successor chats replace character-chat-owned surfaces with simulation
+ * world truth, surface by surface. These are the read seams the chat UI's
+ * envelopes call for routed
+ * chats instead of character-chat state rows: presence/space
+ * (roster presence from the mirror's physical loci), and bodies & meters
+ * (the strip's meter chips from the simulation substrate). Character-chat-routed
  * conversations never reach these reads — their own state remains authoritative.
  */
 
@@ -146,7 +146,7 @@ export async function readSimChatPresence(chatId: string): Promise<SimChatPresen
 }
 
 /**
- * Slice 1 (world-ui.plan.md): the player-facing world envelope for a routed
+ * The player-facing world envelope for a routed
  * chat — where the player is (or is walking to), who else is around and their
  * whereabouts, the open destinations they can walk to, what they're holding,
  * and whether a scene is standing. The `ChatWorldCard` draws THIS. Null for
@@ -285,11 +285,11 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
 }
 
 /**
- * Slice 4: the primary actor's body meters from the ruling-15 substrate, on
+ * The primary actor's body meters from the simulation substrate, on
  * the chat's 0..1 scale — the strip's mood/meter chips derive from THESE for
- * a routed chat. Integrated on read (sim-read-seam-guards.plan.md slice 2): each
+ * a routed chat. Integrated on read: each
  * meter drifts from its last material write to the branch clock through the
- * shared `buildMeterView` seam (modifiers + §25.5 self-care folded in, exactly
+ * shared `buildMeterView` seam (modifiers + self-care folded in, exactly
  * as the command path integrates), so a chip that has drifted for hours reads
  * NOW, not as of its last event. Null for character-chat/shadow lanes or when
  * the mirror actor has no meters; degrades to null (a hidden chip, never a 500)
@@ -339,7 +339,7 @@ export async function readSimChatMeters(chatId: string): Promise<Record<string, 
 }
 
 /**
- * Slice 7 (relationships): map the §21 read's fixed-point axes onto the
+ * Map the relationship read's fixed-point axes onto the
  * chip's −100..100 regard scale. Monotone and deliberately simple — trust
  * leads, attraction warms, resentment cools; the divisor aligns the ±3 000
  * strong-band threshold with regard ≈ ±75. Tuning rides later; the point is
@@ -351,16 +351,16 @@ function regardFromRead(read: { trustFixedPoint: number; attractionFixedPoint: n
 }
 
 export interface SimChatRelationship {
-  /** −100..100, derived from the §21 ledger (trust/attraction/resentment). */
+  /** −100..100, derived from the relationship ledger (trust/attraction/resentment). */
   regard: number;
   /** 0..100 — authored-prior floor + accumulated dyad evidence. */
   familiarity: number;
 }
 
 /**
- * Slice 7: the primary's disposition toward the player from the RELATIONSHIP
+ * The primary's disposition toward the player from the RELATIONSHIP
  * LEDGER — directional evidence of what the player did (promises kept,
- * boundaries respected, scenes shared…) folded through §21's read, with
+ * boundaries respected, scenes shared…) folded through the ledger read, with
  * authored-prior weights honored. Null for character-chat/shadow lanes or an
  * empty ledger with no authored prior (the character-chat seed then keeps the
  * chip).

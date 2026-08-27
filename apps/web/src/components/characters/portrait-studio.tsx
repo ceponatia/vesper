@@ -56,8 +56,8 @@ function portraitKindLabel(image: ImageRecord): string {
  * (the frozen-until-tab-reentry bug; same shape as the chat scene lane's fix,
  * QA batch 2026-07-09).
  *
- * TWO profile pickers, reading different tasks of the profile registry
- * (image-model-capabilities.spec.md Slice D). Making an avatar from nothing is
+ * TWO profile pickers, reading different tasks of the profile registry. Making
+ * an avatar from nothing is
  * the `portrait` task; editing one into a variant is `variant`. The stored
  * `modelId` request field is unchanged and now carries a profile id — legacy
  * stored model ids keep resolving through the server's step-2 fallback.
@@ -279,7 +279,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
       ) : null}
 
       {/* The face crop derived FROM the canonical portrait — sits with it, above the
-          variant machinery it has nothing to do with (image-identity-packs.plan.md). */}
+          variant machinery it has nothing to do with. */}
       <IdentityReferencePanel characterId={characterId} name={name} avatarImageId={avatarImageId} />
 
       <div className="flex flex-col gap-3">

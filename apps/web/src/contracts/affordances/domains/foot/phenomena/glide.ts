@@ -27,8 +27,7 @@ import {
 } from "./bands";
 
 /**
- * `foot.glide_response` — what a sliding contact actually does
- * (romantic-contact-affordances.spec.foot.md §`foot.glide_response`).
+ * `foot.glide_response` — what a sliding contact actually does.
  *
  * ## The whole point is that there is no global rule
  *

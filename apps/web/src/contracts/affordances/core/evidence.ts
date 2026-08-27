@@ -1,6 +1,5 @@
 /**
- * Affordance evidence — the provenance trail behind one read
- * (body-attribute-affordances.spec.architecture.md §"Diagnostic shape").
+ * Affordance evidence — the provenance trail behind one read.
  *
  * Two laws:
  *

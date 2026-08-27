@@ -10,8 +10,6 @@
  * import `server/*`, so a constant that stayed there would be retyped as a
  * literal on the form — two spellings of one external fact, free to drift the
  * day the wrapper is re-registered under another slug.
- *
- * intimate-scene-lora.spec.md is the design these serve.
  */
 
 /**

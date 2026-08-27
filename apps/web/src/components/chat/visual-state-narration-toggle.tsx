@@ -9,8 +9,7 @@ const responseSchema = z.object({ enabled: z.boolean() });
 const pathFor = (chatId: string) => `/api/chats/${chatId}/visual-state-narration`;
 
 /**
- * The per-conversation visual-state narration switch (visual-state.plan.md
- * slice 7; owner ruling 2026-08-17).
+ * The per-conversation visual-state narration switch (owner ruling 2026-08-17).
  *
  * Self-loading and self-saving, like `AgentReasoningSelect`, rather than a field
  * on the scenario form's patch: the column is operational configuration and does

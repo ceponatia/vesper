@@ -11,8 +11,8 @@ import {
 } from "./chat-contact-effects";
 
 /**
- * The pressure-mark owner transaction (effects spec §8, §14, §16 "Pressure-mark
- * first proof"): a proposal is not truth until THIS validates and commits it,
+ * The pressure-mark owner transaction — the first effect proof: a proposal is
+ * not truth until THIS validates and commits it,
  * a retry cannot duplicate it, and every refusal is a coded drop with no
  * observable result. The kind gate is the executable "scratch stays
  * unavailable" law — falsified against a transaction that coerced an unowned

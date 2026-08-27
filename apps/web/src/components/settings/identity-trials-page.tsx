@@ -30,8 +30,7 @@ import { useToast } from "@/components/ui/toast";
 import { IdentityTrialRunDetail } from "./identity-trial-run-detail";
 
 /**
- * The identity-reference trial harness's admin page
- * (image-identity-packs.spec.trial.md; design doc Wave 3): plan a run over the
+ * The identity-reference trial harness's admin page: plan a run over the
  * admin's own characters, execute it a few paid renders at a time, grade
  * blinded pairs, and record per-(profile, strategy) verdicts. The routes under
  * `/api/admin/self` are the real gate — they 404 for non-admins — so the check

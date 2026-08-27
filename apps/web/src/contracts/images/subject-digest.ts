@@ -14,7 +14,7 @@ import type { VisualImageDigest, VisualImageFact } from "./visual-digest";
 
 /**
  * The character slice of a world digest, wrapped from the existing
- * `VisualImageDigest` (model-aware-image-prompts.plan.md §"Character facts").
+ * `VisualImageDigest`.
  *
  * **Scaffold, not a finished character projection.** This is the structural half
  * of the character cutover: it translates one closed vocabulary into another and
@@ -382,8 +382,7 @@ export interface StandaloneCharacterReadInput {
 
 /**
  * The `transactional_projection` token for a character render OUTSIDE any
- * conversation (image-lane-consolidation.spec.visual-state.md
- * §"Standalone-portrait read token"). An avatar or library portrait has no
+ * conversation. An avatar or library portrait has no
  * committed cut to name, so the token — a hash over the sorted source
  * revisions, exactly as the item/location lanes mint theirs — stands in for
  * one: the caller uses it as the assembly `cutId` and the digest's `forCutId`,

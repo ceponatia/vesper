@@ -3,8 +3,7 @@ import { bodyLocationRegistry } from "../body/locations";
 import { diag, type DiagnosticSink } from "../diagnostics";
 
 /**
- * Fine body locus without coverage-tree explosion
- * (body-attribute-affordances.spec.recognizable-features.md §Fine body locus).
+ * Fine body locus without coverage-tree explosion.
  *
  * The body-location tree stays coarse for coverage (`hands` → `fingers`);
  * recognition and acquired topology address finer structure through a
@@ -74,7 +73,7 @@ export function bodyLocusKey(locus: BodyLocusRef): string {
  * One registered fine-detail schema. Flat for v1 (`segments` is the closed set
  * of legal path elements and `maxPathDepth` is 1); a later schema that needs a
  * small tree grows this shape rather than admitting free text — "detail paths
- * are registry-validated, never free text" (spec §Fine body locus).
+ * are registry-validated, never free text".
  *
  * `appliesToBodyLocationIds` is what keeps a hand schema off a nose: the
  * coarse location the path hangs from must be one of these (or a descendant of
@@ -222,8 +221,8 @@ export function validateBodyLocusRef(
 /**
  * Topology validation: fail closed. Anything the registry cannot validate is
  * rejected with a diagnostic rather than silently widened, because a topology
- * claim is not true at a coarser locus (spec §Fine body locus — "unsupported
- * detail fails closed for topology writes").
+ * claim is not true at a coarser locus: unsupported detail fails closed for
+ * topology writes.
  */
 export function validateBodyLocusRefStrict(
   locus: BodyLocusRef,

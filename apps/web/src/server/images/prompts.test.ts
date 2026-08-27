@@ -1040,7 +1040,7 @@ describe("buildSceneRenderPrompt — multi-reference", () => {
     expect(prompt).toMatch(/Wren\b.*no reference image.*Hair color: brown/);
   });
 
-  // Stage 7 promotion (qwen-advanced-image-subsystem.spec.md): the count assertion
+  // Stage 7 promotion: the count assertion
   // says how many people and names them; the cast clause says what must not happen
   // to them. Two faces in one edit can be merged, swapped or duplicated, and no
   // per-slot binding prevents that — each of those is a statement about ONE image
@@ -1385,7 +1385,7 @@ describe("buildSceneRenderPrompt", () => {
     expect(prompt).not.toContain("casual everyday clothing");
   });
 
-  // The reference-edit budget is 1500 chars (followups.phase3.md §6).
+  // The reference-edit budget is 1500 chars.
   const richOutfit =
     "A light-wash denim skirt with artfully placed rips and frayed edges (faded blue denim); stylish edgy platform boots in a bright contrasting color (thick sole, sturdy); quirky tights with a whimsical polka-dot pattern (vibrant pink and yellow); a cozy oversized rainbow-striped sweater (soft, slightly fuzzy)";
   const bigPlan = {

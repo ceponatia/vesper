@@ -103,7 +103,7 @@ const failResult = (
   failure: { reason, message },
 });
 
-describe("executeSceneChain (degradation ladder + reason-keyed retry, spec §8.3)", () => {
+describe("executeSceneChain (degradation ladder + reason-keyed retry)", () => {
   it("a content rejection never retries — it falls straight to the next rung with a diagnostic", async () => {
     const sink = new DiagnosticCollector();
     const calls: SceneAttemptId[] = [];

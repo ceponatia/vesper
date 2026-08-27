@@ -1,9 +1,7 @@
 import type { RomanticPermissionEvent } from "./events";
 
 /**
- * Committed chronology for permission events
- * (romantic-contact-affordances.spec.permission.md §"Chronology and
- * non-retroactivity").
+ * Committed chronology for permission events.
  *
  * Every event has an effective position in committed chronology, and resolution
  * may use only permission effective BEFORE the attempted action. A grant may

@@ -6,8 +6,7 @@ import { smokeTestCandidate } from "@/server/images";
 type Params = { modelId: string };
 
 /**
- * Candidate smoke test (image-model-capabilities.spec.md §"Version candidate
- * and promotion flow"): ONE transient render pinned to the named version
+ * Candidate smoke test: ONE transient render pinned to the named version
  * through the selected profile. Cost-bearing and explicit — a real prediction
  * is spent — and nothing persists: no images row, no file, the buffer is
  * measured and dropped. Never called from any gate or automated test.

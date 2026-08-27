@@ -13,7 +13,7 @@ export type SimTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 /**
  * Projector for a committed trigger_scheduled event. The live command path and
  * fork replay both create trigger rows only through this function, so a
- * pending alarm can never exist that event history does not explain (plan R1).
+ * pending alarm can never exist that event history does not explain (R1).
  *
  * The target is the branch applying the event, which during fork replay is the
  * child rather than the branch the event was recorded on — the trigger ID and
@@ -47,7 +47,7 @@ export async function applyTriggerScheduledEvent(
   // arming its own expiry) invisible to the rest of that drain call, whose
   // eligibility clock is captured once at entry — so one long skip silently
   // deferred chained alarms to the NEXT drain, which then stamped their
-  // events at a too-late story second. That breaks §12.4 partition
+  // events at a too-late story second. That breaks partition
   // invariance; the Gate 6 exit corpus (EXIT 3) falsified it against the
   // default before this line pinned the epoch.
   await tx.insert(simTriggers).values({ ...trigger, availableAt: new Date(0) });

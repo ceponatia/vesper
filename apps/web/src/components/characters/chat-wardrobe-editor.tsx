@@ -11,9 +11,9 @@ import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 
 /**
- * The chat Character sheet's structured wardrobe editor (chat-wardrobe-parity.plan.md
- * rung 3): per-body-location equip/remove over the conversation's worn item ids, plus a
- * preset switcher that dresses her in a named look and the free-text overlay/exposure
+ * The chat Character sheet's structured wardrobe editor: per-body-location
+ * equip/remove over the conversation's worn item ids, plus a preset switcher that
+ * dresses her in a named look and the free-text overlay/exposure
  * fallback. Reuses the outfit-editor's slot + picker primitives (`clothingSlots`,
  * `EntityPickerDialog`, `itemsApi`) rather than the session `participant-card` (which is
  * item-instance-coupled and dev-only). Controlled — the sheet owns the state and save.

@@ -10,8 +10,8 @@ import {
 } from "../contracts/bodies";
 
 /**
- * E5.2 — the §25.1 layer-3 READ surface for energy (ruling 15; the normative
- * semantics are chat-meter-economy.spec OQ1). Reads are pure, total,
+ * E5.2 — the layer-3 READ surface for energy (ruling 15; the normative
+ * semantics come from the chat lane's meter economy). Reads are pure, total,
  * contextual projections: the stored reserve never goes signed and never
  * learns vocabulary; the bidirectional axis, the bands, and the circadian
  * pressure all live here and persist nothing.
@@ -122,10 +122,9 @@ export function deriveCircadianPressure(input: CircadianPressureInput): number {
 }
 
 /**
- * The generalized deficit read (chat-meter-economy.spec §"deficit reads"):
- * signed, zero at the actor's own act-point, negative meaning overdue, both
- * poles saturating. Energy is its first customer; satiation and the other
- * reserves reuse it when they port.
+ * The generalized deficit read: signed, zero at the actor's own act-point,
+ * negative meaning overdue, both poles saturating. Energy is its first
+ * customer; satiation and the other reserves reuse it when they port.
  */
 export function deriveDeficitRead(reserveFixedPoint: number, pressureFixedPoint: number): number {
   return Math.max(

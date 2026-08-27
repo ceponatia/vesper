@@ -36,7 +36,7 @@ function cropLine(revision: IdentityPackAdminRevision): string {
 }
 
 /**
- * Admin inspection for one pack (image-identity-packs.plan.md §Admin path).
+ * Admin inspection for one pack.
  *
  * Deliberately RAW: revisions list their stable codes, versions and confidence
  * verbatim rather than the owner-facing copy, because the question an admin is

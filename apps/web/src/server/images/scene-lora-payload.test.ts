@@ -7,9 +7,8 @@ import {
 } from "@vesper/image-core";
 
 /**
- * What the scene renderer DOES with a caller-resolved LoRA
- * (intimate-scene-lora.spec.md §Algorithm steps 1 and 4): it rides every rung of
- * the attempt chain, and the row records which weights drew the picture.
+ * What the scene renderer DOES with a caller-resolved LoRA: it rides every rung
+ * of the attempt chain, and the row records which weights drew the picture.
  *
  * The transport is mocked at `renderImageIntent`, so each case reads the intent
  * that would have been sent. The row's `meta` is read off the reserve call, which

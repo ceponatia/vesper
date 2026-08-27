@@ -1,5 +1,5 @@
 /**
- * The **camera vocabulary** for scene images (scene-composition.plan.md slice 1).
+ * The **camera vocabulary** for scene images.
  *
  * Every chat scene image today comes back front-facing, whatever the story says, and the
  * reason is not that the model misbehaves: nothing in the prompt has ever stated where the

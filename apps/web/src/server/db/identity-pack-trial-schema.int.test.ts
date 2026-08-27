@@ -20,8 +20,8 @@ import {
 } from "@/server/test-support";
 
 /**
- * The identity-pack trial tables' constraints against a migrated database
- * (image-identity-packs.spec.trial.md). These are the guarantees the trial
+ * The identity-pack trial tables' constraints against a migrated database.
+ * These are the guarantees the trial
  * service is allowed to ASSUME rather than re-check, so nothing short of a real
  * Postgres can prove them:
  *

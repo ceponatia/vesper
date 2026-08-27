@@ -7,20 +7,19 @@ import type { FootSurfaceId } from "../topology";
 import { footSuppressed, FOOT_NO_COMMITTED_POSE } from "./bands";
 
 /**
- * `foot.articulation_observation` — the pose that already exists
- * (romantic-contact-affordances.spec.foot.md §`foot.articulation_observation`).
+ * `foot.articulation_observation` — the pose that already exists.
  *
  * ## Committed pose only
  *
- * `articulation` is a REQUIRED dependency, and neither lane owns pose today
- * (audit §"Capability matrix"), so in production this phenomenon is silent —
+ * `articulation` is a REQUIRED dependency, and neither lane owns pose today, so
+ * in production this phenomenon is silent —
  * always. That is the correct behaviour, not a gap: a toe curl the system
  * invented to decorate a touch is exactly the *"invented emotional toe curl"*
- * the plan names as a failure mode.
+ * this domain exists to refuse.
  *
  * Contact is deliberately NOT required. A pose exists whether or not somebody is
  * touching the foot — a toe movement hidden inside a rigid boot is real with
- * nobody in the room — and the spec's own test-property list excludes
+ * nobody in the room — and the domain's own test-property list excludes
  * articulation from *"no committed contact yields no pressure, texture, glide,
  * nail, or transfer observation"*. Contact rides along as an optional input
  * because it can be the thing RESTRICTING the movement, never the thing causing

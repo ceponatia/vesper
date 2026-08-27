@@ -29,7 +29,7 @@ import type { ImageReferenceDropReason } from "../render-intent/render-intent";
 /**
  * What one experiment is FOR.
  *
- * `control_probe` answers the plan's opening question (send a pose or depth map
+ * `control_probe` answers the opening question (send a pose or depth map
  * as a numbered image and see whether the output obeys it); the two baselines
  * re-run an ordinary lane's own configuration so a later comparison has a
  * same-settings control to sit beside; the two controlled kinds ask whether the
@@ -59,12 +59,11 @@ import type { ImageReferenceDropReason } from "../render-intent/render-intent";
  * `staged_scene` is the eighth, and the first whose subject is neither the
  * control nor the cast but the ACT: it renders one entry from the staging
  * registry — the same compiled wording and the same intimate LoRA binding the
- * chat lane sends — with no chat, no composer, and no narration to steer
- * (intimate-scene-lora.spec.md §"Slice 2"). The chat lane cannot ask this
- * question at all: production only reaches an intimate render when the composer
- * proposes a staging AND quotes narration verbatim for it, so grading one today
- * means playing a chat until the composer cooperates. Here the staging is chosen
- * outright.
+ * chat lane sends — with no chat, no composer, and no narration to steer. The
+ * chat lane cannot ask this question at all: production only reaches an intimate
+ * render when the composer proposes a staging AND quotes narration verbatim for
+ * it, so grading one today means playing a chat until the composer cooperates.
+ * Here the staging is chosen outright.
  *
  * It is its own kind rather than a `controlled_scene` carrying a staging id, for
  * the reason the two-character kind is its own. A controlled scene's evidence is
@@ -200,15 +199,15 @@ export type ImageLabProbeVerdict = (typeof imageLabProbeVerdicts)[number];
  *
  * "Honours the control" cannot be asked of a finishing pass: it declares no
  * control, and the question it exists to settle is a different one entirely —
- * the plan's promotion rule, which says a finishing pass is promoted only when
- * it "improves identity without materially changing structure, clothing, body,
- * camera, lighting, or setting". That rule has two independent halves, and the
+ * the promotion rule, which says a finishing pass is promoted only when
+ * it improves identity without materially changing structure, clothing, body,
+ * camera, lighting, or setting. That rule has two independent halves, and the
  * three rulings are exactly the outcomes they produce:
  *
  * - `improves_identity` — the face matches the identity references better than
  *   the base did, and nothing else moved. The only promotable outcome.
  * - `identity_unchanged` — nothing meaningful changed either way. Recorded as a
- *   real result rather than as a failure: the plan warns that a second pass of
+ *   real result rather than as a failure: a second pass of
  *   the SAME model is a weak prior, so a pass that earns nothing is precisely
  *   the evidence the stage was told to look for.
  * - `changes_beyond_identity` — it moved the pose, clothing, body, camera,
@@ -238,8 +237,8 @@ export type ImageLabFinishingVerdict = (typeof imageLabFinishingVerdicts)[number
  * Stage 6 exists to settle is the CAST: put two people in one render and count
  * what comes back.
  *
- * The five substantive rulings are the failure modes the plan names ("identity
- * swapping, duplicated people, missing characters"), each kept separate because
+ * The five substantive rulings are the failure modes that matter — identity
+ * swapping, duplicated people, missing characters — each kept separate because
  * each sends the trial somewhere different:
  *
  * - `both_identities_held` — both characters present exactly once, each matching
@@ -533,7 +532,7 @@ export const imageLabExperimentStatusSchema = z.enum(imageLabExperimentStatuses)
 export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[number];
 
 /**
- * Every way a lab run stops, as stable codes (spec §Resilience). Each is a
+ * Every way a lab run stops, as stable codes. Each is a
  * recorded outcome on the experiment row, never a thrown error: the runner
  * settles the row and returns, because a lab experiment that throws through
  * `startJob` leaves an admin staring at a `pending` record with no reason on it.
@@ -558,9 +557,9 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   is refused before it instead: a probe whose record claimed a control was
  *   sent that the provider never received is evidence about nothing. Raised by
  *   the probe over its whole ordered list, and by `two_character_scene` over its
- *   REQUIRED ones — the plan's own two-character rule ("if all required
+ *   REQUIRED ones — the two-character rule: if all required
  *   identities and the selected control do not fit, the workflow is ineligible
- *   rather than silently dropping a character"). It is not a probe-only code:
+ *   rather than silently dropping a character. It is not a probe-only code:
  *   the controlled kinds deliberately trim and record instead, because there the
  *   overflow can only reach an optional content role.
  * - `source_invalid` — a `finishing_pass` names a source experiment that is not
@@ -912,8 +911,7 @@ export type ImageLabOutcome = z.infer<typeof imageLabOutcomeSchema>;
 
 /**
  * What a `staged_scene` stages: which registry entry to render, and the scene
- * facts the render plan needs around it (intimate-scene-lora.spec.md
- * §"Slice 2").
+ * facts the render plan needs around it.
  *
  * `id` is a PLAIN STRING rather than the registry's own `SceneStagingId`, and
  * that is a layering fact rather than looseness. The staging registry lives
@@ -1103,8 +1101,8 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
 /**
  * The create-experiment request.
  *
- * `modelSlug` is optional because the runner's default is the model the plan is
- * about (`qwen/qwen-image-edit-2511`); naming one is how the fallback connector
+ * `modelSlug` is optional because the runner's default is the model this lab
+ * targets (`qwen/qwen-image-edit-2511`); naming one is how the fallback connector
  * gets probed if the first verdict is `ignores_control`.
  *
  * The cross-field rules, each grounded in what the runner must be able to do:
@@ -1182,8 +1180,8 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  *   own source image under the name of a comparison arm.
  *
  * Deliberately NOT enforced here: that a probe carries any particular inputs, or
- * that it declares a control at all. Both are the runner's recorded refusals
- * (spec §Algorithms steps 1 and 3), settled on the experiment where the admin
+ * that it declares a control at all. Both are the runner's recorded refusals,
+ * settled on the experiment where the admin
  * can see the reason, instead of a 400 that leaves no trace of the attempt. The
  * rules above only police a request that is internally inconsistent, which is a
  * client bug rather than an attempt worth recording; the RUNNER stays

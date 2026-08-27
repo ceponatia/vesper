@@ -2,8 +2,7 @@ import { isImageControlReferenceRole, type ImageReferenceRole } from "../capabil
 
 /**
  * The general-role instruction compiler — the render-intent vocabulary's answer
- * to what `identity-reference-prompt.ts` does for the identity trial
- * (image-model-capabilities.spec.md §"Prompt strategies").
+ * to what `identity-reference-prompt.ts` does for the identity trial.
  *
  * It exists because `multi_reference_compose` could not be compiled on the
  * production arm at all: the strategy's defining semantic is that it names the

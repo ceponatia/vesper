@@ -9,8 +9,7 @@ import { contactEntityId, contactEntityIdSchema, contactEvidenceSchema, type Con
 import { sceneProvenanceSourceSchema, type SceneProvenanceSource } from "./vocabulary";
 
 /**
- * Identity and the provenance law
- * (romantic-contact-affordances.spec.scene.md §"Provenance law").
+ * Identity and the provenance law.
  *
  * **Every authoritative scene fact carries where it came from, and every read
  * hands back the provenance of every fact it consulted.** Not as decoration: it

@@ -138,8 +138,7 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
     }
   };
 
-  // Autosave (mobile-ux.plan.md ruling 5 — the location editor missed the slice-7
-  // rollout): silent saves on change/blur. No forge/staged-draft state here, so
+  // Autosave: silent saves on change/blur. No forge/staged-draft state here, so
   // there's nothing to pause it for.
   const autosave = useAutosave({
     enabled: true,

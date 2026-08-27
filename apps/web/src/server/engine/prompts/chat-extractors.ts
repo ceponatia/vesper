@@ -21,8 +21,7 @@ import { channelHint } from "./notation";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * The chat extraction **field library** (chat-agent-improvements.plan.md slice 1a) and
- * the specialist legs composed from it (slice 1b).
+ * The chat extraction **field library** and the specialist legs composed from it.
  *
  * The post-turn extractor grew from "summarize the exchange and file the facts" into one
  * agent juggling thirteen assignments, its instruction sheet pages long and its worked
@@ -38,8 +37,8 @@ import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
  * and JSON examples with every armed key present — is ASSEMBLED, never hand-written.
  * Consequences that fall out for free:
  *
- * - Adding a field (the roadmap's `plans` — chat-plans-promises.plan.md) is one module,
- *   not a fourteenth job threaded by hand through a monolith.
+ * - Adding a field is one module, not a fourteenth job threaded by hand through
+ *   a monolith.
  * - The personal pass is literally "the same four modules, composed for one character",
  *   so the copy-paste is gone.
  * - Examples can never disagree with the field list again: they are RENDERED from it
@@ -94,7 +93,7 @@ export interface ChatExtractorContext {
   /** The character's DEVELOPABLE traits at their current band — the traitShifts id list. */
   developableTraits?: readonly { id: string; label: string; band: string }[];
   /**
-   * The exchange's in-scope garment/part HANDLES (clothing-state-graph slice 5).
+   * The exchange's in-scope garment/part HANDLES.
    * Present and non-empty ⇒ the grounded `garmentOperations` field arms and the
    * free-text `outfit` / `playerOutfit` instructions are REPLACED by it; absent
    * (an unmodelled chat, the per-member personal pass) ⇒ the legacy grammar
@@ -110,7 +109,7 @@ export interface ChatExtractorContext {
     registerRule?: string;
   };
   /**
-   * The rolling summary's durable ledger (chat-agent-improvements open question D): the
+   * The rolling summary's durable ledger: the
    * memory scribe reads it so a pronoun-heavy beat ("she actually said yes!") files a fact
    * with a NAME in it instead of a dangling referent. Scribe-only — the other legs read the
    * exchange, which is all they judge. Absent on an early chat ⇒ no block.
@@ -144,7 +143,7 @@ interface ExtractorField {
 }
 
 /* ------------------------------------------------------------------------- *
- * The grounded wardrobe lane (clothing-state-graph.plan.md slice 5).
+ * The grounded wardrobe lane.
  * ------------------------------------------------------------------------- */
 
 /**
@@ -264,7 +263,7 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
     key: "garmentOperations",
     empty: [],
     // Armed only when there are real handles to address; when it arms it REPLACES
-    // the free-text outfit fields below (clothing-state-graph slice 5).
+    // the free-text outfit fields below.
     armed: garmentLaneArmed,
     context: garmentHandleBlock,
     instruction: () =>
@@ -461,8 +460,8 @@ interface ExtractorExample {
 
 /**
  * Worked examples per leg (the generated empty-output example rides on top of
- * these). Raised from 5 to 6 with the environment/surface fields
- * (body-attribute-affordances slice 4): the continuity leg gained two
+ * these). Raised from 5 to 6 with the environment/surface fields: the
+ * continuity leg gained two
  * assignments, and at 5 the new weather example would have evicted the
  * supporting-cast one. The other two legs have exactly 5 relevant examples each,
  * so the bump changes only the sheet that grew.
@@ -729,7 +728,7 @@ const LEGS: Record<ChatExtractorLegId, ExtractorLeg> = {
     role: (ctx) =>
       `You are the continuity tracker for a private in-character chat. After each exchange you read the player's latest message and the reply, then record what the fiction CHANGED about the world — where they are, what ${ctx.characterName} and ${ctx.playerName} are wearing, how they look, who is in the scene. You track changes only: an unchanged world produces empty fields, which is the common case.`,
     // `garmentOperations` and the `outfit`/`playerOutfit` pair are mutually
-    // exclusive by arming (clothing-state-graph slice 5) — the leg lists all three
+    // exclusive by arming — the leg lists all three
     // and exactly one grammar is ever rendered.
     fields: [
       "scene",
@@ -754,9 +753,9 @@ const LEGS: Record<ChatExtractorLegId, ExtractorLeg> = {
     blocks: [voiceReferenceBlock],
   },
 
-  // The ensemble's per-member pass: the SAME field modules, composed for one character
-  // (multi-character-chat.followups.md ruling 10 — the fields that belong to that one
-  // member's state row). Its instructions are no longer a second copy of the shared ones.
+  // The ensemble's per-member pass: the SAME field modules, composed for one
+  // character — the fields that belong to that one
+  // member's state row. Its instructions are no longer a second copy of the shared ones.
   personal: {
     id: "personal",
     role: (ctx) =>

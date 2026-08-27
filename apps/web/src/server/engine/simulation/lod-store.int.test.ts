@@ -30,7 +30,7 @@ import {
 
 /**
  * E6.1 durable actor-LOD ledger: `assign_actor_lod` end
- * to end — defaults, assignment, idempotency, authorization, the §27.3
+ * to end — defaults, assignment, idempotency, authorization, the
  * demotion guards against a live engagement, and fork-mid-ledger parity.
  * Runs on the shared `simulationSuiteHarness` scaffold (probe + legacy-player
  * guard + world teardown + pool close).
@@ -194,7 +194,7 @@ describe.runIf(harness.ready)("E6.1 durable actor-LOD ledger", () => {
     expect(await readEffectiveActorLod(db(), childBranchId, ids.cy)).toMatchObject({ source: "default" });
   });
 
-  it("blocks a demotion behind a live engagement but never an inference-only change (§27.3)", async () => {
+  it("blocks a demotion behind a live engagement but never an inference-only change", async () => {
     const ids = await seedCase();
 
     const opened = await submitDurableOpenEngagement(
@@ -344,7 +344,7 @@ describe.runIf(harness.ready)("E6.1 durable actor-LOD ledger", () => {
     expect(asleep.filter((row) => row.status === "active")).toHaveLength(1);
 
     // A sleeping actor cannot be tucked below event — the active condition
-    // is a §27.3 near-boundary hazard, named in the rejection.
+    // is a near-boundary hazard, named in the rejection.
     const tuckedAway = await submitDurableAssignActorLod(
       assignCmd(ids, "ana-tuck", { actorId: ids.ana, simulationLod: "dormant", inferenceLod: "no_model" }),
       ADMIT_AT_LOCKED_VERSION,

@@ -10,8 +10,7 @@ import {
 } from "./image-generator";
 
 /**
- * The Generator run contracts (image-lab-general-model-trials.spec.md
- * §"Generator run contracts"): the create-time contradictions the schema owns,
+ * The Generator run contracts: the create-time contradictions the schema owns,
  * the failure-code spelling stored rows and diagnostics depend on, and the
  * read-back degradation the wire schema promises. Runtime facts (model, pin,
  * capacity, readable inputs) are runner checks and are covered by the runner's

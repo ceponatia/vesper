@@ -37,8 +37,7 @@ import {
 } from "./vocabulary";
 
 /**
- * The persisted scene shape and its healing rules
- * (romantic-contact-affordances.spec.scene.md §"Snapshot law").
+ * The persisted scene shape and its healing rules.
  *
  * **The state IS the snapshot.** It is plain readonly data in a canonical
  * order, so capturing a scene is storing the value and restoring one is

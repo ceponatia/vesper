@@ -2,8 +2,7 @@ import { z } from "zod";
 import { addClamped, clampFixedPoint, FIXED_POINT_ONE, scaleFixedPoint } from "@/lib/fixed-point";
 
 /**
- * The affordance unit algebra — bounded integer math for every mechanics term
- * (body-attribute-affordances.spec.architecture.md; the hair spec's formulas).
+ * The affordance unit algebra — bounded integer math for every mechanics term.
  *
  * One scale, shared with the successor meter kernel and the garment gradients:
  * `0 … 10_000` on `src/lib/fixed-point.ts`. **No floating point on a mechanics

@@ -25,8 +25,7 @@ import { deleteOwnedImages, imageMeta } from "./assets";
 import { loadImageModel } from "./models";
 
 /**
- * The Image Generator's run service (image-lab-general-model-trials.spec.md
- * §"Generator run contracts", §Persistence): row↔wire, create, list, detail,
+ * The Image Generator's run service: row↔wire, create, list, detail,
  * delete, and the failed-settle helper the runner shares.
  *
  * One run id identifies ONE immutable attempt — variants create new rows via

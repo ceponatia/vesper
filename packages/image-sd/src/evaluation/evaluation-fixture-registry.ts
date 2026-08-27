@@ -1,8 +1,7 @@
 import type { SdEvaluationFixture } from "./evaluation-fixtures";
 
 /**
- * The seeded Stage 3 comparison fixtures (sd-rendering-package.plan.md §20,
- * Stage 3).
+ * The seeded Stage 3 comparison fixtures.
  *
  * Stage 3 runs one controlled matrix — base SDXL against PuLID at 0.65, 0.80 and
  * 0.95 — and grades seven dimensions: face, age, hair, build,
@@ -24,7 +23,7 @@ import type { SdEvaluationFixture } from "./evaluation-fixtures";
  *
  * **Every seed is fixed, and that is the point of the type.** All four arms of a
  * cell render the same fixture at the same seed, so the only thing that differs
- * between them is identity strength — §7's "only one variable should move at a
+ * between them is identity strength — "only one variable should move at a
  * time", made unavoidable. The seeds differ BETWEEN fixtures on purpose: eight
  * images off one noise draw would share that draw's luck, and a grader would be
  * reading the sampler as much as the recipe. The particular integers are
@@ -44,10 +43,9 @@ import type { SdEvaluationFixture } from "./evaluation-fixtures";
  */
 
 /**
- * The negative prompt every fixture carries, and the §19 minefield it walks
- * around.
+ * The negative prompt every fixture carries, and the minefield it walks around.
  *
- * §19 is explicit that a legitimate Vesper render can contain unusual anatomy,
+ * A legitimate Vesper render can contain unusual anatomy,
  * missing limbs, prosthetics, text, logos, blur, non-human features and authored
  * wardrobe or exposure states — and that generic terms contradicting canonical
  * visual state must never be injected. A stock SDXL negative prompt, the kind
@@ -137,8 +135,8 @@ export const sdEvaluationFixtures: readonly SdEvaluationFixture[] = [
     recipeId: "sdxl/identity-portrait",
     prompt:
       "photograph of a person standing at a kitchen counter, three-quarter view, their left arm ending below the elbow in a matte black prosthetic forearm and mechanical hand, short sleeved shirt so the whole prosthetic is visible, plain kitchen, soft morning daylight, waist-up shot",
-    // Deliberately the shared negative and nothing else. §19 names prosthetics
-    // and missing limbs as legitimate content, so ONE "deformed, extra limbs,
+    // Deliberately the shared negative and nothing else. Prosthetics
+    // and missing limbs are legitimate content, so ONE "deformed, extra limbs,
     // missing limbs" paste here would suppress the only thing this cell renders
     // and the run would score a clean 0 that means nothing.
     negativePrompt: SD_EVALUATION_NEGATIVE,

@@ -27,7 +27,7 @@ import { queryMemoryDocuments } from "./memory-query-store";
 import { loadPersistedCut } from "./narrative-cut-store";
 
 /**
- * The Gate 4 exit corpus (engine.plan §"Gate 4 exit", ruled 2026-07-18):
+ * The Gate 4 exit corpus (owner ruling 2026-07-18):
  * deterministic scenarios proving the four gate-closing criteria with ZERO
  * model calls —
  *   1. zero cross-viewpoint leaks (the live-scene suite extended with
@@ -252,8 +252,8 @@ describe.runIf(harness.ready)("Gate 4 exit corpus (deterministic, zero model cal
     await drainMemoryIndexOutbox({ workerId: "w-gate4-drain" });
     const at = throughStorySecond + TURN_SPAN;
 
-    // Cut surface sweep: the serialized cut IS the narrator's prompt input
-    // (§22.1) — the secret may appear only in the knowers' cuts.
+    // Cut surface sweep: the serialized cut IS the narrator's prompt input —
+    // the secret may appear only in the knowers' cuts.
     const playerTurn = await prepareEngagementTurn({
       branchId: ids.branchId,
       engagementId: chatId,
@@ -316,7 +316,7 @@ describe.runIf(harness.ready)("Gate 4 exit corpus (deterministic, zero model cal
     expectAccepted(countered, "bakery claim");
     await drainMemoryIndexOutbox({ workerId: "w-gate4-drain" });
 
-    // Both assertions are contradicted (§3.3): neither is presentable truth.
+    // Both assertions are contradicted: neither is presentable truth.
     const assertionRows = await db()
       .select()
       .from(simAssertions)
@@ -350,7 +350,7 @@ describe.runIf(harness.ready)("Gate 4 exit corpus (deterministic, zero model cal
     expect(afterRecall.results.some((result) => result.sourceKind === "assertion")).toBe(false);
 
     // The next cut voices exactly the surviving doubted stance — never both
-    // as truth (§22.1 speakerBeliefs are stances, labeled and confident).
+    // as truth (speakerBeliefs are stances, labeled and confident).
     const turn = await prepareEngagementTurn({
       branchId: ids.branchId,
       engagementId: chatId,
@@ -477,7 +477,7 @@ describe.runIf(harness.ready)("Gate 4 exit corpus (deterministic, zero model cal
     });
 
     // Reconstructible: Noor's belief names the hop event that minted it, and
-    // that committed event carries the captured chain (§6.4).
+    // that committed event carries the captured chain.
     const noorBelief = byHolder.get(ids.noor);
     if (!noorBelief) throw new Error("Noor's belief missing");
     const hopEvent = (await readBranchEvents(ids.branchId)).find((event) => event.id === noorBelief.sourceEventId);
@@ -494,7 +494,7 @@ describe.runIf(harness.ready)("Gate 4 exit corpus (deterministic, zero model cal
     expect(noorBeliefResult?.text).toContain(`heard through ${ids.mara} then ${ids.player} then ${ids.iris}`);
 
     // Retraction reaches only earshot: Mara retracts to the player alone —
-    // Iris and Noor keep believing the old story. That is the point (§21).
+    // Iris and Noor keep believing the old story. That is the point.
     const retracted = await disclose(ids, "retract", ids.mara, [ids.player], {
       kind: "retraction",
       assertionId: assertionRow.assertionId,

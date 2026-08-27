@@ -14,9 +14,7 @@ import {
 } from "./npc-scene-decision";
 
 /**
- * The compact digest and the closed decision schema
- * (romantic-contact-affordances.spec.actor-control.md §"Compact digest and
- * stable references" / §"Closed decision schema").
+ * The compact digest, its stable references, and the closed decision schema.
  *
  * The load-bearing claims: refs are deterministic and database-id-free, the
  * canonical string is order-independent, the per-digest schemas admit ONLY

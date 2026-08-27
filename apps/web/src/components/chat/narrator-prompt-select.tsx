@@ -12,9 +12,9 @@ import { ModelSelect } from "@/components/ui/model-select";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * Admin-only per-conversation **narrator instructions** picker
- * (narrator-prompt-lab.plan.md §"Conversation control"): which handwritten test
- * prompt replaces Vesper's narrator behavior/craft instructions for THIS chat.
+ * Admin-only per-conversation **narrator instructions** picker: which
+ * handwritten test prompt replaces Vesper's narrator behavior/craft
+ * instructions for THIS chat.
  *
  * Sibling of `AgentReasoningSelect` / `SceneComposerSelect`, and the same kind of
  * thing: operational configuration for an experiment, never story state. It is
@@ -30,7 +30,7 @@ import { useToast } from "@/components/ui/toast";
 /** The stored value for "no override" — Vesper's production narrator instructions. */
 const PRODUCTION_VALUE = "";
 
-/** Where the owner writes and edits these prompts (Prompt Lab, slice 3). */
+/** Where the owner writes and edits these prompts (the Prompt Lab). */
 export const NARRATOR_PROMPT_LAB_PATH = "/settings/narrator-prompts";
 
 /**
@@ -156,7 +156,7 @@ export function useNarratorPromptSelection(chatId: string, enabled: boolean): Na
     });
     setSaving(true);
     // The route accepts exactly this and nothing else — a chat send never carries
-    // prompt text or a one-call override (plan §"API shape").
+    // prompt text or a one-call override.
     const body: SelectNarratorPromptRequest = { promptId };
     const result = await apiPatch(selectionSchema, selectionPath(chatId), body);
     setSaving(false);

@@ -217,13 +217,13 @@ const profileSectionSchema = z.object({
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().default(""),
-  /** Intimate disposition (intimacy-notes.spec.md) — how the character reads as a lover; surfaced to the narrator ONLY at the intimate exposure tier. */
+  /** Intimate disposition — how the character reads as a lover; surfaced to the narrator ONLY at the intimate exposure tier. */
   intimacy: z.string().default(""),
-  /** Worked dialogue exemplars (character-fidelity slice 6) — few-shots of the character's voice/manner. */
+  /** Worked dialogue exemplars — few-shots of the character's voice/manner. */
   microExemplars: z
     .array(z.object({ situation: z.string().default(""), line: z.string().default("") }))
     .default([]),
-  /** Structured voice anchors (character-fidelity slice 7) — pet phrases, cadence, never-says. */
+  /** Structured voice anchors — pet phrases, cadence, never-says. */
   voiceAnchors: z
     .object({
       petPhrases: z.array(z.string()).default([]),
@@ -235,9 +235,9 @@ const profileSectionSchema = z.object({
   age: z.string().default(""),
   aliases: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
-  /** Disposition tags (personality §6) — social-reaction labels, distinct from the library tags above. */
+  /** Disposition tags — social-reaction labels, distinct from the library tags above. */
   dispositionTags: z.array(z.string()).default([]),
-  /** Bespoke likes/dislikes (personality §6) — grounded against the concept vocabulary. */
+  /** Bespoke likes/dislikes — grounded against the concept vocabulary. */
   preferences: z
     .array(
       z.object({
@@ -248,7 +248,7 @@ const profileSectionSchema = z.object({
       }),
     )
     .default([]),
-  /** Atomic trait scalars (personality §3) — grounded against the trait registry + clamped. */
+  /** Atomic trait scalars — grounded against the trait registry + clamped. */
   traits: z
     .array(
       z.object({
@@ -257,7 +257,7 @@ const profileSectionSchema = z.object({
       }),
     )
     .default([]),
-  /** Character drives (character-drives.plan.md) — desires & secrets; grounded against the band vocabulary. */
+  /** Character drives — desires & secrets; grounded against the band vocabulary. */
   drives: z
     .array(
       z.object({
@@ -274,7 +274,7 @@ const profileSectionSchema = z.object({
       }),
     )
     .default([]),
-  /** Daily rhythm (chat-initiative.plan.md slice 4) — day-part rows, grounded to minute windows. */
+  /** Daily rhythm — day-part rows, grounded to minute windows. */
   schedule: z
     .array(
       z.object({
@@ -287,7 +287,7 @@ const profileSectionSchema = z.object({
     )
     .default([]),
   /**
-   * Starting relationship toward the player (forge-gaps.plan.md gap 1) —
+   * Starting relationship toward the player —
    * emitted only when the concept places the player in it; grounded against
    * the band vocabulary. `mask` speaks the human phrasing; grounding maps it
    * onto the stored presented lean (colder_than_felt → masks_warmth).
@@ -303,7 +303,7 @@ const profileSectionSchema = z.object({
     })
     .optional()
     .catch(undefined),
-  /** Personal social cards (forge-gaps.plan.md gap 2) — the character's own hard lines; grounded against the concept vocabulary. */
+  /** Personal social cards — the character's own hard lines; grounded against the concept vocabulary. */
   cards: z
     .array(
       z.object({
@@ -387,8 +387,8 @@ function groundTraitValues(raw: ProfileSection["traits"], sink?: DiagnosticSink)
 }
 
 /**
- * The highest reveal gate the FORGE may author per axis (forge-gaps.plan.md
- * gap 4): familiarity `familiar`, regard `close`. Left to its own devices the
+ * The highest reveal gate the FORGE may author per axis: familiarity
+ * `familiar`, regard `close`. Left to its own devices the
  * model gates secrets at the top band ("deeply_known"), which a normal chat
  * arc never reaches — the payoff the secret exists for never fires. A band
  * past the ceiling demotes to the ruled default (familiarity ≥ familiar) with
@@ -404,7 +404,7 @@ function isExtremeRevealBand(axis: "familiarity" | "regard", band: string): bool
 }
 
 /**
- * Ground forge drives (character-drives.plan.md, owner rulings 2026-07-12):
+ * Ground forge drives (owner rulings 2026-07-12):
  * empty wants drop, duplicates (by normalized want) drop, over-length text
  * truncates, and the concept-led secret budget is enforced — a second `secret`
  * demotes to `guarded` with a diagnostic rather than shipping two lie licenses.
@@ -460,7 +460,7 @@ export function groundDrives(raw: ProfileSection["drives"], sink?: DiagnosticSin
 const SCHEDULE_FORGE_MAX = 4;
 
 /**
- * Ground forge day-part schedule rows (chat-initiative.plan.md slice 4) into
+ * Ground forge day-part schedule rows into
  * stored minute windows: the day-part vocabulary maps to its minutes, rows
  * missing an activity or place drop, duplicates (same day part + day mask)
  * drop, and the set caps at SCHEDULE_FORGE_MAX.
@@ -493,7 +493,7 @@ export function groundSchedule(raw: ProfileSection["schedule"], sink?: Diagnosti
 }
 
 /**
- * Ground the forge's starting-relationship draft (forge-gaps.plan.md gap 1)
+ * Ground the forge's starting-relationship draft
  * into the profile's authored record. Band ids ground against the vocabulary
  * (an unknown band self-heals to the axis default with a diagnostic), text
  * truncates at the storage caps, and the human-phrased `mask` maps onto the
@@ -537,7 +537,7 @@ export function groundPlayerRelationship(
 const CARDS_FORGE_MAX = 2;
 
 /**
- * Ground the forge's personal social cards (forge-gaps.plan.md gap 2):
+ * Ground the forge's personal social cards:
  * triggers ground against the interaction-concept vocabulary (unknowns drop);
  * a trigger the drafted PREFERENCES already opine on drops too — a bespoke
  * preference resolves ahead of any card (contracts/personality/cards.ts), so
@@ -1087,8 +1087,8 @@ export function fillSpeciesRequiredDefaults(
 
 /**
  * Tier-3 fill (docs/authoring.md §Character forge): every registry attribute
- * flagged coreVisual OR renderVisual (forge-gaps.plan.md gap 3 — the
- * render-consistency tier: silhouette + face structure a scene render would
+ * flagged coreVisual OR renderVisual (the render-consistency tier: silhouette
+ * + face structure a scene render would
  * otherwise re-invent per image) that the model left unset gets a default
  * picked from its surviving plausible range when one exists — falling through
  * to the full allowedValues when none does — seeded by (concept, attribute

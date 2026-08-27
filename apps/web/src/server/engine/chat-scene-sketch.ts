@@ -22,7 +22,7 @@ import { enqueueJob, registerJobHandler } from "./jobs";
 import { buildChatSceneSketchPrompt, CHAT_SCENE_SKETCH_SYSTEM } from "./prompts/chat-scene-sketch";
 
 /**
- * The chat location-sketch job (chat-scene-fidelity.plan.md slice 2b): when the
+ * The chat location-sketch job: when the
  * conversation introduces a place, a detached background agent expands it into a compact
  * visual sketch stored on the place's scene-memory record — consumed by the scene image
  * (`room`) and the narrator's Scene block. Fired from `finalizeChatState` AFTER the state
@@ -128,7 +128,7 @@ export async function runChatSceneSketch(input: z.infer<typeof sketchJobPayloadS
       placeName: place.name,
       details: place.details,
       connections: place.connections,
-      // Derived from the story clock (chat-clock-calendar.plan.md).
+      // Derived from the story clock.
       timeOfDay: timeOfDayFor(
         row.clockMinutes,
         parseOr(calendarStartSchema, row.calendarStart, CHAT_DEFAULT_CALENDAR_START, undefined, "character_chats.calendar_start"),

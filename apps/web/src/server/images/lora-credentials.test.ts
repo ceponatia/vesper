@@ -3,9 +3,8 @@ import { type ImageLoraRenderBinding, redactImageLoraLocator } from "@vesper/ima
 import { civitaiApiToken, loraLocatorNeedsCivitaiToken, withLoraDownloadCredential } from "./lora-credentials";
 
 /**
- * The credential seam (intimate-scene-lora.spec.md §Decisions, "Secret
- * handling"): the library stores a public address, the environment holds the
- * key, and the two meet only on the way into a provider payload.
+ * The credential seam: the library stores a public address, the environment
+ * holds the key, and the two meet only on the way into a provider payload.
  *
  * What these cases protect is a property, not a helper: nothing Vesper stores or
  * reports may contain the token. So they assert both halves — the completion

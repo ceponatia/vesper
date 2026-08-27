@@ -12,9 +12,8 @@ import type { ChatAffordanceReadResult } from "./chat-affordances";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 
 /**
- * The READ-ONLY developer preview of the staged affordance calculation
- * (body-attribute-affordances.spec.architecture.md §Resolved, "Developer
- * preview": built after the garment domain proved the architecture twice).
+ * The READ-ONLY developer preview of the staged affordance calculation, built
+ * after the garment domain proved the architecture twice.
  *
  * It shows the same staircase a developer reads in code —
  *

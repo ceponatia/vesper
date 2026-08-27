@@ -60,9 +60,7 @@ import { loadChatPermissionStopTransitions, CHAT_CONTACT_ENDED_CODE } from "./ch
 import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 
 /**
- * The permission ledger's DATABASE half (romantic-contact-affordances
- * .spec.permission.md §"Events and active projection", §"Revocation during
- * active contact") — what only a real Postgres can prove:
+ * The permission ledger's DATABASE half — what only a real Postgres can prove:
  *
  * - a producer append is durable, keyed to its guard, and idempotent against
  *   its own retry (the same call re-derives the same keys and lands nowhere);

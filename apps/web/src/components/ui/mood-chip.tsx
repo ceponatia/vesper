@@ -1,6 +1,6 @@
 import { cx } from "@/components/ui/cx";
 
-/** Glanceable glyph per `EmotionLabel` (mood.spec §2) for the mood chip. */
+/** Glanceable glyph per `EmotionLabel` for the mood chip. */
 export const emotionGlyph: Record<string, string> = {
   neutral: "😐",
   happy: "🙂",
@@ -16,10 +16,10 @@ export const emotionGlyph: Record<string, string> = {
 };
 
 /**
- * The derived discrete emotion as a small glyph + label (mood.spec §4). Shared by the
+ * The derived discrete emotion as a small glyph + label. Shared by the
  * play cast card (`StatusParticipant.emotion`) and the character-chat strip
  * (`ChatStateSnapshot.emotion`) — one read, one presentation. Intensity shows as a
- * small meter bar under the glyph (ux-improvements slice 9 — the old tooltip-only
+ * small meter bar under the glyph (the old tooltip-only
  * read was invisible on touch); the tooltip keeps the precise number.
  */
 export function MoodChip({ emotion, className }: { emotion: { label: string; intensity: number }; className?: string }) {

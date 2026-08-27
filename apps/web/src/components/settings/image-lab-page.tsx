@@ -12,10 +12,9 @@ import { ImageLabExperimentList } from "./image-lab-experiment-list";
 import { ImageLabFixturesPanel } from "./image-lab-fixtures-panel";
 
 /**
- * The Advanced Image Lab's admin page
- * (qwen-advanced-image-subsystem.spec.md §Code organization): control fixtures
- * above, experiments below, and one question it exists to settle — does this
- * model actually honour a pose skeleton?
+ * The Advanced Image Lab's admin page: control fixtures above, experiments
+ * below, and one question it exists to settle — does this model actually honour
+ * a pose skeleton?
  *
  * The `/api/admin/self/image-lab` family is the real gate (it 404s for everyone
  * else), so the check here is only so a non-admin gets an explanation instead of

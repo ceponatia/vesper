@@ -32,8 +32,7 @@ import {
 
 /**
  * The character-chat extraction contract. Historically ONE "archivist-lite" agent call
- * (character-chat-primary.spec.md §2) emitting every field below; since
- * chat-agent-improvements.plan.md (slice 1b) the same shape is produced by THREE focused
+ * emitting every field below; the same shape is now produced by THREE focused
  * legs run in parallel in the same post-flush slot — the memory scribe, the continuity
  * tracker, and the character tracker (`prompts/chat-extractors.ts`) — merged back into
  * this one aggregate by `mergeChatExtractions` so every downstream fold is unchanged.
@@ -50,9 +49,10 @@ import {
  *   recall (mirrors the session director's `memoryQueries`); persisted on the chat state
  *   and consumed at the next prompt build.
  * - "attributeChanges": rare LASTING physical changes (a haircut, a dye job, a new tattoo)
- *   in the shared simulant shape (§3, D3), applied through the inherent-trait guard. Folded
- *   into this leg rather than a separate proposer call — attribute changes are rare and the
- *   archivist already extracts durable change (spec §2 "fewest model calls").
+ *   in the shared simulant shape, applied through the inherent-trait guard. Folded
+ *   into this leg rather than a separate proposer call — attribute changes are rare, the
+ *   archivist already extracts durable change, and the lane spends the fewest model calls
+ *   it can.
  *
  * Fully `.default()`/`.catch()`ed so a parsed-empty object IS the degraded fallback
  * (docs/resilience.md §3) — a failed extraction degrades to the summary+window path with
@@ -63,9 +63,9 @@ import {
 export const CHAT_ARCHIVIST_MAX_FACTS = 6;
 /** Cap on memory queries carried to the next turn. */
 export const CHAT_ARCHIVIST_MAX_QUERIES = 3;
-/** Cap on open loops (character-chat-standalone.spec.md §6.2) — a short list stays a pull, not a backlog. */
+/** Cap on open loops — a short list stays a pull, not a backlog. */
 export const CHAT_ARCHIVIST_MAX_OPEN_LOOPS = 3;
-/** Cap on milestone-gated developable-trait nudges per exchange (character-fidelity slice 10) — rare, one or two at most. */
+/** Cap on milestone-gated developable-trait nudges per exchange — rare, one or two at most. */
 export const CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS = 2;
 /** Cap on garment-level add/remove proposals per exchange (chat-wardrobe-parity rung 2) — a beat swaps a piece or two, not a rack. */
 export const CHAT_ARCHIVIST_MAX_WORN_CHANGES = 4;
@@ -98,10 +98,10 @@ export const chatArchivistSchema = z.object({
     .transform((queries) => queries.slice(0, CHAT_ARCHIVIST_MAX_QUERIES)),
   attributeChanges: z.array(attributeChangeSchema).catch([]).default([]),
   /**
-   * The character's unfinished business (spec §6.2): the FULL list each exchange —
+   * The character's unfinished business: the FULL list each exchange —
    * still-open items carried, resolved ones dropped, new ones added — so stale loops
    * fall off naturally without a separate resolution signal. Rendered as the
-   * "Unfinished business" state line and read by "has something to say" (§8.4).
+   * "Unfinished business" state line and read by "has something to say".
    */
   openLoops: z
     .array(z.string().trim().min(1))
@@ -144,7 +144,7 @@ export const chatArchivistSchema = z.object({
   surfaceWetness: surfaceWetnessProposalListSchema,
   /**
    * **Material arriving on or leaving skin and hair** — mud, blood, dust, food,
-   * paint, cosmetics (romantic-contact-affordances.spec.effects.md §7).
+   * paint, cosmetics.
    *
    * Raw here for `surfaceWetness`'s exact reason: `parseSurfaceDepositProposals`
    * does the per-item parse because it has a sink to report drops to. The two
@@ -156,7 +156,7 @@ export const chatArchivistSchema = z.object({
    */
   surfaceDeposits: surfaceDepositProposalListSchema,
   /**
-   * **Grounded wardrobe operations** (clothing-state-graph.plan.md slice 5) — the
+   * **Grounded wardrobe operations** — the
    * field that demotes `outfit` / `playerOutfit` below to a degraded legacy bridge.
    *
    * The continuity prompt enumerates the exchange's in-scope garment and part
@@ -174,9 +174,8 @@ export const chatArchivistSchema = z.object({
    */
   garmentOperations: garmentOperationProposalListSchema,
   /**
-   * Optional outfit change (chat-scene-fidelity.plan.md slice 1; structured worn state —
-   * chat-wardrobe-parity.plan.md). **Demoted to the legacy bridge by
-   * `garmentOperations` above** (clothing-state-graph slice 5): it still runs, and
+   * Optional outfit change, as structured worn state. **Demoted to the legacy bridge by
+   * `garmentOperations` above**: it still runs, and
    * runs unchanged, for a chat whose wardrobe is not modelled yet, an older cached
    * prompt, or a model that returned the old grammar — recorded with
    * `chat_garments.legacy_outfit_bridge` so its use stays observable.
@@ -236,7 +235,7 @@ export const chatArchivistSchema = z.object({
     .catch({ description: "", changeEvidence: "", exposed: false, removed: [], added: [] })
     .default({ description: "", changeEvidence: "", exposed: false, removed: [], added: [] }),
   /**
-   * The same, for the **PLAYER's** clothing (persona-library.plan.md slice 8).
+   * The same, for the **PLAYER's** clothing.
    *
    * ONE field covers both directions, because the archivist reads the whole exchange —
    * the player's own line ("I pull my shirt off") and the reply ("she tugs your shirt
@@ -274,7 +273,7 @@ export const chatArchivistSchema = z.object({
     .catch({ description: "", changeEvidence: "", removed: [], added: [] })
     .default({ description: "", changeEvidence: "", removed: [], added: [] }),
   /**
-   * Drive updates (character-drives.plan.md): progress/reveal/resolution on the
+   * Drive updates: progress/reveal/resolution on the
    * character's EXISTING drives (matched by `want` text — unmatched entries drop).
    * `revealed` = the character spoke a secret drive aloud to the player THIS
    * exchange (the `secret_shared` milestone source). Lenient; [] = no movement.
@@ -285,9 +284,9 @@ export const chatArchivistSchema = z.object({
     .default([])
     .transform((u) => u.slice(0, DRIVES_MAX)),
   /**
-   * Presence transitions the fiction actually played this exchange
-   * (multi-character-chat.plan.md slice 3 — the archivist's confirming half of
-   * activity tracking): a roster character who ENTERED the player's scene or
+   * Presence transitions the fiction actually played this exchange — the
+   * archivist's confirming half of
+   * activity tracking: a roster character who ENTERED the player's scene or
    * LEFT it, by name. Only emitted for multi-character conversations (the
    * prompt instruction renders only with a roster) and only for real
    * transitions — [] is the common no-change case. Lenient; unmatched names
@@ -299,8 +298,8 @@ export const chatArchivistSchema = z.object({
         name: z.string().trim().min(1),
         presence: z.enum(["present", "away"]).catch("present"),
         /**
-         * Where an AWAY departure went, as a phrase ("to her shift at the café") —
-         * chat-offscreen-life §Whereabouts. Optional; only meaningful on "away".
+         * Where an AWAY departure went, as a phrase ("to her shift at the café").
+         * Optional; only meaningful on "away".
          */
         where: z.string().trim().min(1).max(120).optional().catch(undefined),
       }),
@@ -309,7 +308,7 @@ export const chatArchivistSchema = z.object({
     .default([])
     .transform((entries) => entries.slice(0, 4)),
   /**
-   * Supporting-cast proposals (chat-supporting-cast.plan.md): recurring NAMED side
+   * Supporting-cast proposals: recurring NAMED side
    * characters — not roster members, not the player — the exchange introduced or
    * established durable texture about. Merged via `mergeSupportingCast` (upsert by
    * name, details accrete, relation fills only when empty, roster/player names
@@ -317,7 +316,7 @@ export const chatArchivistSchema = z.object({
    */
   cast: chatCastProposalSchema,
   /**
-   * Plans & promises (chat-plans-promises.plan.md): commitments the fiction STRUCK,
+   * Plans & promises: commitments the fiction STRUCK,
    * CHANGED, or CANCELED this exchange — a concrete who + roughly-when commitment ("come
    * over Friday", "dinner at the pier tonight"). Merged via `mergeChatPlans` (upsert by
    * normalized `what`, `when` resolved against the clock, caps). The archivist may mark a
@@ -381,7 +380,7 @@ export function degradedChatArchivist(): ChatArchivist {
 }
 
 /**
- * The extraction LEGS (chat-agent-improvements.plan.md slice 1b). One overloaded
+ * The extraction LEGS. One overloaded
  * 13-field extractor became three focused ones, run in parallel in the same post-flush
  * slot — so perceived latency is unchanged while each leg holds 3–5 assignments instead
  * of thirteen. Each leg's shape is a `pick` of the aggregate above, so the field
@@ -438,7 +437,7 @@ export const chatCharacterNotesSchema = chatArchivistSchema.pick({
 export type ChatCharacterNotes = z.infer<typeof chatCharacterNotesSchema>;
 
 /**
- * The per-member personal pass (multi-character-chat.followups.md ruling 10): in an
+ * The per-member personal pass: in an
  * ensemble, the shared legs keep the scene-level reads while each present member gets
  * this small focused extraction — the four PERSONAL fields folded into their own state
  * row. A `pick` of the aggregate like the legs above (it was a hand-duplicated copy of
@@ -496,8 +495,8 @@ export function mergeChatExtractions(legs: {
 }
 
 /**
- * Last-turn memory debug trace persisted beside the chat state for the dev inspector
- * (character-chat-primary.spec.md §5): what RAG retrieved this turn (facts + episodes) and
+ * Last-turn memory debug trace persisted beside the chat state for the dev
+ * inspector: what RAG retrieved this turn (facts + episodes) and
  * what the archivist extracted (episode summary, fact count, queries, attribute changes).
  * Parsed defensively from the jsonb column, `.default()`ed so an old/empty row reads clean.
  */
@@ -515,7 +514,7 @@ export const chatMemoryTraceSchema = z.object({
   /** Applied attribute overlays this turn, rendered "id=value". */
   attributeChanges: z.array(z.string()).catch([]).default([]),
   /**
-   * Per-hit retrieval detail (spec §6.3 #2 — per-source attribution): what each
+   * Per-hit retrieval detail — per-source attribution: what each
    * retrieved fact/episode scored and WHICH queries surfaced it (RRF fusion inputs).
    * Old rows without it parse to [] (texts-only trace stays readable).
    */
@@ -557,7 +556,7 @@ export const chatMemoryTraceSchema = z.object({
 
 export type ChatMemoryTrace = z.infer<typeof chatMemoryTraceSchema>;
 
-/** One retrieved-hit detail row (spec §6.3 #2 per-source attribution). */
+/** One retrieved-hit detail row (per-source attribution). */
 export type RetrievedMemoryDetail = ChatMemoryTrace["retrievedDetail"][number];
 
 export function emptyChatMemoryTrace(): ChatMemoryTrace {

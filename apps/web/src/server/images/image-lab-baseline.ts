@@ -35,7 +35,7 @@ import {
 
 /**
  * A baseline re-runs an ordinary lane's own CONFIGURATION so a later comparison
- * has a same-settings control to sit beside (spec §"Baseline runs").
+ * has a same-settings control to sit beside.
  *
  * Settings parity is achieved by construction rather than by copying numbers:
  * the same `resolveImageProfileForTask` call the lane makes, the same reference

@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 /**
- * Visual-state vocabulary — layers, stabilities, locus kinds, adapter order
- * (visual-state.spec.md §Core vocabulary, §Snapshot).
+ * Visual-state vocabulary — layers, stabilities, locus kinds, adapter order.
  *
  * A leaf module on purpose: the locus, source, kind and feature modules all
  * need these names, and none of them may import each other in a circle
@@ -40,7 +39,7 @@ export function visualStateLayerRank(layer: VisualStateLayer): number {
  * four values plus `instantaneous`, which is for posture and action facts true
  * only for one committed cut. `instantaneous` never earns a long-term
  * recognition floor, and `defineVisualStateKind` refuses a kind that claims
- * both (spec §Core vocabulary).
+ * both.
  */
 export const visualStateStabilities = [
   "inherent",
@@ -69,7 +68,7 @@ export type VisualStateLocusKind = (typeof visualStateLocusKinds)[number];
 // ---------------------------------------------------------------------------
 
 /**
- * The first-release adapter order (spec §Snapshot). It exists only to make
+ * The first-release adapter order. It exists only to make
  * FAILURE deterministic: properly designed kinds use distinct keys and typed
  * relationships, so a duplicate key is a bug this order resolves the same way
  * on every machine rather than a routine outcome.
@@ -83,8 +82,7 @@ export type VisualStateLocusKind = (typeof visualStateLocusKinds)[number];
  * `species` sits beside them rather than under `anatomy` on purpose: wings,
  * horns and a tail are static species/heritage feature groups realized by
  * `realizeBody`, not evented anatomy state — `anatomyPartStateValues` has no
- * `extra` member, so a character can never gain or lose one as an event
- * (visual-state.audit.md finding 11).
+ * `extra` member, so a character can never gain or lose one as an event.
  */
 export const visualStateAdapterIds = [
   "appearance",

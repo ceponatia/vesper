@@ -23,9 +23,9 @@ import {
 } from "@/server/images";
 
 /**
- * The Image Generator's run collection (image-lab-general-model-trials.spec.md
- * §"API routes"). Owner-admin and self-scoped: the service resolves every
- * model, image, and run against the requesting admin's own id.
+ * The Image Generator's run collection. Owner-admin and self-scoped: the
+ * service resolves every model, image, and run against the requesting admin's
+ * own id.
  */
 
 /** A garbage limit degrades to the default — an admin list, not a contract. */

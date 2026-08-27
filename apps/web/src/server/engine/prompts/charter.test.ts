@@ -22,8 +22,8 @@ import {
 import { buildBioSection, buildMicroExemplarsSection, buildVoiceAnchorsSection, excerpt } from "./profile-sections";
 
 /**
- * Focused unit coverage for the shared narrator charter (presentation-charter.plan.md
- * slice 1). The full BYTE-IDENTITY gate for the legacy lane lives in
+ * Focused unit coverage for the shared narrator charter. The full
+ * BYTE-IDENTITY gate for the legacy lane lives in
  * `character-chat.test.ts` (these units are exercised end-to-end there); this file is a
  * cheap sanity check that each unit renders the right craft law for the right params and
  * is deterministic — the guarantees the successor-lane slice will rely on.

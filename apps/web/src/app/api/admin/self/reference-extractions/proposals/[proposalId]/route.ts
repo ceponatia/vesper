@@ -6,16 +6,16 @@ import { decideVisualReferenceProposal } from "@/server/reference-extraction";
 type Params = { proposalId: string };
 
 /**
- * One human ruling on one extraction proposal (visual-state.plan.md slice 9):
- * accept — optionally with a manual edit — or reject. Owner-admin only.
+ * One human ruling on one extraction proposal: accept — optionally with a
+ * manual edit — or reject. Owner-admin only.
  *
  * An accept must echo the `currentDigest` of the diff the reviewer was shown;
  * the server recomputes it against canonical truth as it stands, and a
  * mismatch answers 409 with the fresh diff instead of writing anything. That
- * is the plan's success criterion held at the wire: extraction cannot
- * overwrite canonical truth without review, because an accept only lands
- * against the exact canonical state that was reviewed. On acceptance the fact
- * reaches its owner through the owner's own write path (attributes today;
+ * is the rule held at the wire: extraction cannot overwrite canonical truth
+ * without review, because an accept only lands against the exact canonical
+ * state that was reviewed. On acceptance the fact reaches its owner through
+ * the owner's own write path (attributes today;
  * located facts and canonical presentation answer with
  * `visual_state.extraction.owner_unavailable` until a lane persists them).
  */

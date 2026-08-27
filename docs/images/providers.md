@@ -3,8 +3,7 @@
 **One backend — Replicate — and the model list is DATA, not code.** Which models
 the app can run are rows in `image_models`, managed from the admin-only
 `/settings/image-models` page; per-model API reference lives in
-[image-models/](../image-models/README.md), design detail in
-`image-model-registry.spec.md`.
+[image-models/](../image-models/README.md).
 There is no Venice provider — no `VENICE_*` env, no `server/ai/venice.ts`, no
 `venice_*` provider ids (owner ruling 2026-08-05: Replicate is cheaper and more
 accurate).

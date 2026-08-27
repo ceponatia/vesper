@@ -4,8 +4,7 @@ import { getChatNarratorPromptSelection, setChatNarratorPromptSelection } from "
 import { loadOwnedChat } from "@/app/api/chats/owned";
 
 /**
- * Which narrator instruction prompt ONE conversation is experimenting with
- * (narrator-prompt-lab.plan.md §3, slice 4).
+ * Which narrator instruction prompt ONE conversation is experimenting with.
  *
  * Per conversation, not per character: the narrator-MODEL pick is character-level
  * because it is a general preference, but prompt experiments need the opposite —

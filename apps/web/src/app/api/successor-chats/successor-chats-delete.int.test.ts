@@ -10,12 +10,12 @@ import {
   simWorlds,
 } from "@/server/db";
 
-// Successor deletion (successor-world-lifecycle.plan.md slice 1, owner ruling
-// E20-1): the front door is 1:1 chat↔world, so deleting a successor chat must
-// take its whole simulated world with it — the leak this suite pins closed. A
-// legacy chat must still touch no `sim_*` row, ownership is still re-proved
-// in-service, and a chat whose branch has vanished must still delete (degraded
-// default + diagnostic, docs/resilience.md). Self-skips without a database.
+// Successor deletion (owner ruling E20-1): the front door is 1:1 chat↔world, so
+// deleting a successor chat must take its whole simulated world with it — the
+// leak this suite pins closed. A legacy chat must still touch no `sim_*` row,
+// ownership is still re-proved in-service, and a chat whose branch has vanished
+// must still delete (degraded default + diagnostic, docs/resilience.md).
+// Self-skips without a database.
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "World Deleter", role: "user" as "admin" | "user" },
@@ -71,7 +71,7 @@ async function createSuccessorChat(title: string): Promise<CreatedWorld> {
   const body = await expectJson<CreatedWorld>(
     await successorCreate(
       apiRequest("/api/successor-chats", {
-        // slice 3: `requestId` is the required per-intent idempotency key.
+        // `requestId` is the required per-intent idempotency key.
         body: {
           characterId: ids.characterId,
           title,
@@ -178,7 +178,7 @@ describe.runIf(ready)("deleting a successor chat deletes its world (E20-1)", () 
   it("refuses a successor chat the caller does not own: no-op, warn diagnostic, world intact", async () => {
     const created = await createSuccessorChat("Someone Else's World");
 
-    // Ownership is re-proved inside the service (security-authz.plan.md slice 2),
+    // Ownership is re-proved inside the service,
     // so a foreign `ownerId` cannot route a world into deletion either.
     const warnSpy = vi.spyOn(log, "warn").mockImplementation(() => undefined);
     try {
@@ -224,8 +224,8 @@ describe.runIf(ready)("deleting a successor chat deletes its world (E20-1)", () 
       }
 
       // Degraded default over a failed operation: the chat is gone even though
-      // the world could not be resolved. That world is now an orphan — slice 2's
-      // sweeper is what reclaims it, not a thrown delete.
+      // the world could not be resolved. That world is now an orphan — the
+      // orphan-world sweeper is what reclaims it, not a thrown delete.
       expect(await chatCount(created.id)).toBe(0);
       expect(await worldCount(created.worldId)).toBe(1);
     } finally {

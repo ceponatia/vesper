@@ -30,7 +30,7 @@ import { queryMemoryDocuments } from "./memory-query-store";
 import { submitDurableDemoteSoftCanon } from "./soft-canon-store";
 
 /**
- * E4.4 integration: outbox-driven indexing, the §24.1 eligibility-before-
+ * E4.4 integration: outbox-driven indexing, the eligibility-before-
  * similarity pipeline, relational supersedence, fork-ancestry recall with
  * divergence, lag diagnostics, and the stubbed embedding seam — zero model
  * calls anywhere.
@@ -224,13 +224,13 @@ function texts(response: MemoryRecallResponse): string {
 }
 
 describe.runIf(harness.ready)("E4.4 memory indexing and eligibility-before-similarity", () => {
-  it("indexes from the outbox with visible lag, then gates recall by eligibility — similarity never widens it (§24.1, §24.3)", async () => {
+  it("indexes from the outbox with visible lag, then gates recall by eligibility — similarity never widens it", async () => {
     const ids = await seedMemoryCase();
     const engagementId = await openChat(ids);
     const { throughStorySecond } = await confideQuitting(ids, engagementId);
     const at = throughStorySecond;
 
-    // §24.3: before the consumer runs, the lag is visible, not inferred.
+    // Before the consumer runs, the lag is visible, not inferred.
     const before = await memoryIndexLag(ids.branchId);
     expect(before.pendingObligations).toBeGreaterThan(0);
     const early = await query(ids, ids.player, at);
@@ -266,7 +266,7 @@ describe.runIf(harness.ready)("E4.4 memory indexing and eligibility-before-simil
     });
 
     // The listener recalls the confidence as belief, speech, and observation
-    // — every result labeled and linked to its source (§24.1 step 7).
+    // — every result labeled and linked to its source (pipeline step 7).
     const player = await query(ids, ids.player, at);
     const playerKinds = new Set(player.results.map((result) => result.sourceKind));
     expect(playerKinds.has("belief")).toBe(true);
@@ -286,7 +286,7 @@ describe.runIf(harness.ready)("E4.4 memory indexing and eligibility-before-simil
     expect(texts(iris)).not.toContain("harbor markets");
 
     // Someone in another location recalls nothing private — and asking the
-    // right question does not change that (§24.1: similarity never widens).
+    // right question does not change that (similarity never widens).
     const noor = await query(ids, ids.noor, at, { queryText: "mara quitting her job" });
     expect(texts(noor)).not.toContain("quitting");
     expect(noor.results.every((result) => result.sourceKind === "authored_lore")).toBe(true);
@@ -298,7 +298,7 @@ describe.runIf(harness.ready)("E4.4 memory indexing and eligibility-before-simil
     expect(playerAfter.results).toEqual(playerBefore.results);
   });
 
-  it("narrows recall relationally on retraction and demotion — never by similarity (§24.2 active-only)", async () => {
+  it("narrows recall relationally on retraction and demotion — never by similarity (active-only)", async () => {
     const ids = await seedMemoryCase();
     const engagementId = await openChat(ids);
     const { throughStorySecond } = await confideQuitting(ids, engagementId, { softCanon: true });
@@ -419,7 +419,7 @@ describe.runIf(harness.ready)("E4.4 memory indexing and eligibility-before-simil
     expect(texts(parentAfter)).toContain("quitting_job");
   });
 
-  it("embeds through the injected seam, ranks within the eligible set, and degrades to lexical recall on failure (§24.3)", async () => {
+  it("embeds through the injected seam, ranks within the eligible set, and degrades to lexical recall on failure", async () => {
     const ids = await seedMemoryCase();
     const engagementId = await openChat(ids);
     const { throughStorySecond } = await confideQuitting(ids, engagementId);
@@ -448,7 +448,7 @@ describe.runIf(harness.ready)("E4.4 memory indexing and eligibility-before-simil
 
     // A broken embedder still indexes: the obligation completes, the document
     // lands text-only, lexical recall finds it, and the vector path reports
-    // the gap instead of silently shrinking (§24.3 degradation).
+    // the gap instead of silently shrinking (visible degradation).
     const gossip = await submitDurableMakeDisclosure(
       simCommand({
         branchId: ids.branchId,

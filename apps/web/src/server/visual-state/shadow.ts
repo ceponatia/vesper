@@ -23,7 +23,7 @@ import {
 import { legacyNarratorAttributeIds, measureVisualState, type VisualStateMeasurements } from "./measure";
 
 /**
- * THE SHADOW BUILD (visual-state.plan.md slice 6): one committed cut → the
+ * THE SHADOW BUILD: one committed cut → the
  * snapshot, all three consumer reads, and the slice's measurements — beside the
  * live turn, never inside it.
  *
@@ -119,7 +119,7 @@ export function buildVisualStateShadow(input: VisualStateShadowInput): VisualSta
     narrator: selections.narrator,
     image: selections.image,
     // The successor narrator deliberately renders no attribute summary (its
-    // canon block never reads profile.attributes — audit §Nothing found), so
+    // canon block never reads profile.attributes), so
     // there is nothing to disagree with in that lane.
     legacyAttributeIds:
       input.lane === "character_chat"
@@ -165,7 +165,7 @@ export function safeBuildVisualStateShadow(
 /**
  * The one structured log line a shadowed turn emits — compact counts only, so
  * measurement accumulates from the deploy's log stream without a new table
- * (spec §Persistence and capture keeps debug snapshots optional).
+ * (debug snapshots stay optional).
  */
 export function visualStateShadowLogSummary(build: VisualStateShadowBuild): Record<string, unknown> {
   const { measurements } = build;

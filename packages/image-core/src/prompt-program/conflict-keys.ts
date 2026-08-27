@@ -1,6 +1,5 @@
 /**
- * The shared currency between the two prompt channels
- * (model-aware-image-prompts.plan.md §"Conflict linter").
+ * The shared currency between the two prompt channels.
  *
  * A positive claim says an image MUST contain something; a negative constraint
  * says an outcome is unacceptable. The two are authored, versioned and promoted
@@ -96,9 +95,9 @@ export function isImageConflictKey(value: string): value is ImageConflictKey {
 /**
  * The keys a rendering MEDIUM protects when it is the requested one.
  *
- * Asking for an anime render and forbidding `anime` in the same payload is the
- * plan's "never place the same concept in positive and negative channels" rule
- * at its most literal, and it is an easy mistake to make because the negative
+ * Asking for an anime render and forbidding `anime` in the same payload breaks
+ * the "never place the same concept in positive and negative channels" rule at
+ * its most literal, and it is an easy mistake to make because the negative
  * block that forbids illustration styles is genuinely correct for the
  * photographic renders that make up most of Vesper's output.
  *

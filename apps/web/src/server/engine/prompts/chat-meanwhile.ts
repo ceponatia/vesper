@@ -2,7 +2,7 @@ import { MEANWHILE_MAX_DEVELOPMENTS, MEANWHILE_NOTE_MAX_CHARS } from "@/contract
 import { fenceUntrusted } from "./untrusted";
 
 /**
- * The meanwhile pass's prompt (chat-offscreen-life.plan.md §2): ONE archivist-class
+ * The meanwhile pass's prompt: ONE archivist-class
  * call over the whole ensemble at a qualifying time skip. The dossier is everything
  * the story already tracks — each member's rhythm, drives, whereabouts, the
  * relationship matrix, the supporting cast, and the open NPC↔NPC plans — fenced,

@@ -12,7 +12,7 @@ import { baseImageModelSlug } from "../models/quality-presets";
 import { imageExecutionContextTask, type ImageExecutionContext } from "./execution-context";
 
 /**
- * The curated LoRA library (image-model-capabilities.spec.md §`image_loras`).
+ * The curated LoRA library (the `image_loras` rows).
  *
  * A LoRA is a weights file the provider fetches by locator and blends into the
  * render at a scale. That makes it unlike every other control in this contract:
@@ -65,7 +65,7 @@ import { imageExecutionContextTask, type ImageExecutionContext } from "./executi
  * allowed to hold a credential.
  *
  * A fourth source is deliberately NOT here: `managed_asset`, weights Vesper
- * hosts itself, is documented headroom (plan §11/§22). It stays unbuilt until
+ * hosts itself, is headroom. It stays unbuilt until
  * there is somewhere to put the file, because a member nothing can resolve is a
  * locator type that saves and never renders.
  *
@@ -202,8 +202,8 @@ function isPublicHttpsUrl(locator: string): boolean {
 /**
  * The locator as it may appear in a log, a diagnostic, or an operator screen:
  * scheme, host and path, with the query string, fragment and any credentials
- * removed (spec §`image_loras`: "logs and diagnostics must record a redacted
- * locator without its query string").
+ * removed: logs and diagnostics must record a redacted locator without its
+ * query string.
  *
  * A Hugging Face slug has none of those parts and passes through unchanged, as
  * does anything that does not parse as a URL at all — redaction must never be the
@@ -476,8 +476,7 @@ export interface EvaluateImageLoraForRenderInput {
 /**
  * Whether this LoRA may be sent on this render, and with what.
  *
- * The decision is TWO questions, asked in this order and kept apart on purpose
- * (image-model-adapters.spec.md §"Execution context"):
+ * The decision is TWO questions, asked in this order and kept apart on purpose:
  *
  * 1. {@link mechanicalLoraRefusal} — can these weights physically run here? The
  *    row's own switch, the model, the version, the scale against both the

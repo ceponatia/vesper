@@ -4,8 +4,7 @@ import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { prepareIdentityPacksBatch } from "@/server/images";
 
 /**
- * Bounded trial-corpus preparation
- * (image-identity-packs.spec.lifecycle.md §"Lazy backfill", §"Admin routes").
+ * Bounded trial-corpus preparation.
  *
  * Owner-admin and self-scoped: the service resolves every character against the
  * requesting admin's own id, so this prepares the caller's corpus and nobody
@@ -20,7 +19,7 @@ import { prepareIdentityPacksBatch } from "@/server/images";
  *
  * The response is counts plus per-character stable codes. Never bytes, never a
  * URL: a bulk payload is where the privacy boundary is easiest to breach and
- * hardest to notice (spec.lifecycle.md §"Privacy boundary").
+ * hardest to notice.
  */
 export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   const body = await readBody(req, identityPackBatchRequestSchema);

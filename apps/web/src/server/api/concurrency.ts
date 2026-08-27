@@ -4,7 +4,7 @@ import { newId } from "@/lib/ids";
 import type { ApiJobType } from "./job-types";
 
 /**
- * Per-user concurrency caps for background work (rate-limits.plan.md slice 5).
+ * Per-user concurrency caps for background work.
  *
  * Per-minute limits bound how often a user may *start* work; they say nothing
  * about how much can be in flight at once. Twenty image renders submitted inside

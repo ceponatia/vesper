@@ -3,13 +3,13 @@ import { placeAtPhrase } from "./solo-cut";
 import { placeGoPhrase } from "./world-read";
 
 /**
- * Graceful-departure choreography (world-ui.plan.md slice 4, §39 ruling 20,
- * spec §18.2) — PURE. A player-chosen departure (the travel chip, or an admitted
- * natural-language "I walk to the town square") should END the standing scene as
- * a CHOICE and narrate the parting, rather than lean on the move's hard
- * `engagement_interrupted`. This module holds the small decision the exchange and
- * the route both consult — scene-stands × admitted-command-kind → what the
- * choreography does — and the pure departure-context line the solo prompt uses.
+ * Graceful-departure choreography (ruling 20) — PURE. A player-chosen departure
+ * (the travel chip, or an admitted natural-language "I walk to the town square")
+ * should END the standing scene as a CHOICE and narrate the parting, rather than
+ * lean on the move's hard `engagement_interrupted`. This module holds the small
+ * decision the exchange and the route both consult — scene-stands ×
+ * admitted-command-kind → what the choreography does — and the pure
+ * departure-context line the solo prompt uses.
  *
  * No IO, no env, no db (src/lib purity): the caller loads the world and resolves
  * every label; this only decides shape and phrases the arc.
@@ -24,8 +24,8 @@ export interface DepartureChoreography {
   /**
    * End the standing scene as `participant_choice` BEFORE the move (the lawful
    * two-step `advance_time` performs), so the move fires no hard interrupt
-   * (spec §18.2 — an ended scene holds no claim to interrupt). Only when a scene
-   * actually stands.
+   * (an ended scene holds no claim to interrupt). Only when a scene actually
+   * stands.
    */
   endSceneFirst: boolean;
   /** The traveled world-beat carries the "took their leave" parting phrasing. */

@@ -33,9 +33,9 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
   if (!row) return jsonError("not_found", "location not found", 404);
   // Links scope to the entity owner so a public preview shows the author's map.
   const links = await loadLocationLinks(row.ownerId, id);
-  // `mine` — read-only preview + clone CTA for foreign public rows (slice 6 audit).
-  // A foreign viewer gets the allow-listed public representation, not the row
-  // (security-authz.plan.md slice 4); `links` is already a projected `{id,name}`.
+  // `mine` — read-only preview + clone CTA for foreign public rows. A foreign
+  // viewer gets the allow-listed public representation, not the row; `links` is
+  // already a projected `{id,name}`.
   const mine = row.ownerId === user.id;
   const location = mine ? { ...row, links } : { ...toPublicLocation(row), links };
   return jsonOk({ location, mine });
@@ -64,7 +64,7 @@ export const DELETE = withUser<Params>(async (user, _req, ctx) => {
   const { id } = await ctx.params;
   const existing = await findLocation(user.id, id);
   if (!existing) return jsonError("not_found", "location not found", 404);
-  // Worlds/sessions hold their own snapshots (world-instances.plan.md), so a
+  // Worlds/sessions hold their own snapshots, so a
   // library delete never breaks them and never hits a FK — no in-use guard.
   await db().delete(locations).where(and(eq(locations.id, id), eq(locations.ownerId, user.id)));
   void deleteEntityImages("location", id, user.id).catch(() => undefined);

@@ -2,9 +2,7 @@ import { z } from "zod";
 import { FIXED_POINT_ONE } from "@/lib/fixed-point";
 
 /**
- * Recognition calibration vocabulary — detail tiers and authored priors
- * (body-attribute-affordances.spec.recognizable-features.md §Feature-kind
- * registry; §Salience and visual memory).
+ * Recognition calibration vocabulary — detail tiers and authored priors.
  *
  * These declarations were factored out of `projection.ts`, which re-exports
  * every one of them verbatim — the frozen seam's names and import paths are

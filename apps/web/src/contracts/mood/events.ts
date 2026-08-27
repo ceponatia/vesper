@@ -28,7 +28,7 @@ export type MoodEvent =
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
 // ---------------------------------------------------------------------------
-// Welcome / unwelcome touch (impulse) — mood.spec §5.
+// Welcome / unwelcome touch (impulse).
 // ---------------------------------------------------------------------------
 
 export type Welcomeness = "welcome" | "neutral" | "unwelcome";
@@ -46,7 +46,7 @@ export const TOUCH_WELCOME_STAGE = "warm";
 export const TOUCH_UNWELCOME_STAGE = "cool";
 
 /**
- * Resolve how a touch lands (mood.spec §5): an explicit like/dislike **preference on
+ * Resolve how a touch lands: an explicit like/dislike **preference on
  * the touch concept overrides**; otherwise the affinity stage decides — welcome at ≥
  * `warm`, unwelcome at ≤ `cool`, ambiguous between. The same hand on the arm reads as
  * tenderness from a partner and a violation from a stranger.
@@ -128,7 +128,7 @@ export const ATMOSPHERE_MOOD_BASELINE_SHIFTS: Readonly<Record<AtmosphereLabel, n
 export const COMPOSURE_ATMOSPHERE_DAMP = 0.5;
 
 /**
- * Resting-mood shift from scene atmosphere, trait-damped by composure (mood.spec §5):
+ * Resting-mood shift from scene atmosphere, trait-damped by composure:
  * atmosphere *nudges* mood, it is not the character's emotion — a composed companion
  * holds calm in a tense room.
  */

@@ -22,11 +22,10 @@ const uploadBodySchema = z.object({
 
 /**
  * POST /api/chats/:chatId/attachments — upload ONE player photo for this
- * conversation (chat-image-input.plan.md). Synchronous (no model runs); the
- * composer uploads each picked file and sends the returned ids with the
- * message, where `claimChatAttachments` stamps them onto the line. Uploads
- * are input-only chat content: Gallery-hidden and hard-deleted with their
- * message/conversation.
+ * conversation. Synchronous (no model runs); the composer uploads each picked
+ * file and sends the returned ids with the message, where
+ * `claimChatAttachments` stamps them onto the line. Uploads are input-only chat
+ * content: Gallery-hidden and hard-deleted with their message/conversation.
  */
 export const POST = withUser<Params>(
   async (user, req: NextRequest, ctx) => {

@@ -3,7 +3,7 @@ import { qwenImage2512, qwenImageEdit2511, qwenImageEditPlusLora } from "./famil
 import { adapterForImageModel } from "./registry";
 
 /**
- * Adapter resolution (image-model-adapters.plan.md §3).
+ * Adapter resolution.
  *
  * The defect worth a permanent test is the version pin. A registry row's slug
  * may carry an `owner/name:version` suffix, and a lookup keyed on the raw slug

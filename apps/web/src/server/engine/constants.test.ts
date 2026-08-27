@@ -7,7 +7,7 @@ import {
   NARRATIVE_TEMPERATURE,
 } from "./constants";
 
-// Binding values per docs/turn-engine.md — the chat pipeline + job runner build against them.
+// Binding values — the chat pipeline + job runner build against them.
 describe("engine constants", () => {
   it("matches the documented binding values", () => {
     expect(NARRATIVE_TEMPERATURE).toBe(0.85);

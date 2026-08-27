@@ -20,8 +20,8 @@ import {
 } from "./chat-extractors";
 
 /**
- * The extraction field library (chat-agent-improvements.plan.md slice 1a) and the three
- * specialist legs composed from it (slice 1b). The properties worth locking are the ones
+ * The extraction field library and the three
+ * specialist legs composed from it. The properties worth locking are the ones
  * the hand-written monolith kept breaking: every field the sheet numbers is a field the
  * schema accepts, every example shows every armed key, unarmed fields disappear entirely,
  * and the personal pass is the SAME modules rather than a second copy of the wording.

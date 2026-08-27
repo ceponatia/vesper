@@ -32,7 +32,7 @@ import { newId } from "@/lib/ids";
 import { loadChatWardrobeWithStatus, playerWornIds } from "./chat-wardrobe";
 
 /**
- * The chat garment store's WRITE seam (clothing-state-graph.plan.md slice 2).
+ * The chat garment store's WRITE seam.
  *
  * The pure reducer (`contracts/items/garment-store.ts`) does the work; this is
  * the thin IO wrapper that loads whatever library definitions still need
@@ -192,7 +192,7 @@ export function garmentProjectionOr(
 
 /**
  * What one actor is WEARING, as the state-tools sheet and the admin inspector see
- * it (clothing-state-graph slices 3–4): the presentation controls each garment
+ * it: the presentation controls each garment
  * offers, the coverage they currently produce, and the material state they are in.
  * Bands and body-location ids only — raw fixed point never leaves the contract
  * layer.
@@ -247,7 +247,7 @@ export interface ChatGarmentNarration {
   nextCues: GarmentCueState;
   /**
    * Garment instance ids whose WETNESS this block actually surfaced this
-   * exchange (body-attribute-affordances slice 6).
+   * exchange.
    *
    * The one place the two narrator cue blocks overlap: this block owns the
    * garment's condition BAND ("her shirt is damp"), and the affordance block
@@ -259,12 +259,12 @@ export interface ChatGarmentNarration {
 }
 
 /**
- * Build the narrator digest + the bounded cue block for one exchange
- * (clothing-state-graph.plan.md slice 6). PURE given the store — every read
+ * Build the narrator digest + the bounded cue block for one exchange. PURE
+ * given the store — every read
  * integrates lazily and nothing is written back, so building a prompt can never
  * dry a garment.
  *
- * The order matters and is the plan's: readouts (hysteretic, against the cue
+ * The order matters: readouts (hysteretic, against the cue
  * memory's reported bands) → digest (authority, standing state included) →
  * observations (perception-gated) → split (attention, changed bands only).
  *

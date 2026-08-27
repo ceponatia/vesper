@@ -152,7 +152,7 @@ async function main(): Promise<void> {
   console.log(`seeding library content for ${DEV_EMAIL} (${user.id})`);
 
   // Provision the shared dev credential so sign-in / `POST /api/dev/impersonate`
-  // can mint a real signed session for the Player + the UI/QA admin (auth.plan.md).
+  // can mint a real signed session for the Player + the UI/QA admin.
   const uxtestId = await ensureUxtestAdmin();
   const provisioned = (await ensureDevCredential(user.id)) && (await ensureDevCredential(uxtestId));
   console.log(

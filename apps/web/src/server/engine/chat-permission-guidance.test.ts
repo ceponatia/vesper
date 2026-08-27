@@ -13,9 +13,8 @@ import {
 } from "./chat-permission-guidance";
 
 /**
- * The revocation stop transition's PURE half
- * (romantic-contact-affordances.spec.permission.md §"Revocation during active
- * contact" step 4): which `policy_withdrawn` endings the next reply must be
+ * The revocation stop transition's PURE half: which `policy_withdrawn` endings
+ * the next reply must be
  * told about, decided from rows that already exist — no new state.
  *
  * The emission window is the load-bearing subject: an ending no assistant

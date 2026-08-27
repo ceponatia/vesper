@@ -1,7 +1,6 @@
 /**
  * Narrator physical guidance — the lane-neutral constraint, correction, and
- * action-result projection (narrator-physical-guidance.plan.md; as-built
- * contracts in narrator-physical-guidance.spec.md).
+ * action-result projection.
  *
  * Import direction: attribute/body contracts + `contracts/diagnostics` →
  * affordance `core` → **guidance** → lane adapters under `src/server`.

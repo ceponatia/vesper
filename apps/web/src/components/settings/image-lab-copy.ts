@@ -19,8 +19,7 @@ import type { SceneStaging } from "@/contracts/images/scene-staging";
 import type { TagTone } from "@/components/ui/tag";
 
 /**
- * The Advanced Image Lab's vocabulary in English
- * (qwen-advanced-image-subsystem.spec.md §Contracts).
+ * The Advanced Image Lab's vocabulary in English.
  *
  * Every code→copy translation happens HERE, at the UI boundary, following the
  * identity-pack precedent: the server stores stable codes only, so a wording

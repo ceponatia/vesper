@@ -188,8 +188,8 @@ export async function saveImageBuffer(
     const info = await writeWebpAtomic(absoluteImagePath(row), buffer);
     const [updated] = await db()
       .update(images)
-      // `bytes` is also the storage-quota column (rate-limits.plan.md slice 4);
-      // it is written here, at the one place a file actually lands on disk, so
+      // `bytes` is also the storage-quota column; it is written here, at the
+      // one place a file actually lands on disk, so
       // the quota measures reality rather than intent.
       .set({ status: "ready", bytes: info.bytes, meta: mergeMeta(row.meta, { ...(extraMeta ?? {}), ...info }) })
       .where(eq(images.id, imageId))
@@ -256,7 +256,7 @@ export interface ImagePipelineResult {
 
 /**
  * The one reserve → generate → save-or-fail → log sequence every image lane runs
- * (audit C1, image-pipeline-consolidation.plan.md slice 4). Six copies of it had
+ * (audit C1). Six copies of it had
  * already drifted in ways nobody decided — one lane recorded a failure
  * diagnostic and its neighbour didn't — so the ordering, and with it the
  * row-before-file invariant (docs/images/asset-registry.md), lives here and nowhere else:
@@ -307,14 +307,14 @@ export interface ImagePipelineResult {
  * diagnostic COLLECTOR (its provider chain's fallback record), and it drains
  * that itself around this call, as its `finally` always did.
  *
- * **The one ruled normalization** (plan §Review rulings 2026-07-30 — a
+ * **The one ruled normalization** (ruled 2026-07-30 — a
  * deliberate resilience improvement, not behaviour-neutral cleanup): a
  * generation failure now records a warn diagnostic in every lane.
  * `images.avatar.generate_failed` and `images.variant.generate_failed` joined
  * the entity lane's long-standing `images.entity.generate_failed`.
  */
 export async function runImagePipeline(opts: ImagePipelineOptions): Promise<ImagePipelineResult> {
-  // Periodic maintenance rides the work it maintains (see §Scheduling the sweep):
+  // Periodic maintenance rides the work it maintains:
   // fire-and-forget, throttled to one pass per SWEEP_INTERVAL_MS, and deliberately
   // BEFORE the generation — a render that dies mid-flight is precisely the row a
   // later sweep has to reclaim, so the kick must not depend on reaching the end.
@@ -374,8 +374,7 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
  * `image_identity_packs.source_image_id` is a `set null` foreign key, so the
  * moment these rows go the pack that named one of them can no longer be FOUND by
  * source id — an invalidation sequenced after the delete matches nothing and
- * leaves a `current`, `ready` pack with a null source
- * (image-identity-packs.spec.lifecycle.md §"Source deletion"). Ordering is the
+ * leaves a `current`, `ready` pack with a null source. Ordering is the
  * fix; it is deliberately not a transaction, because the hook is a registry call
  * into a module this one must not know about and threading a transaction handle
  * through that seam would re-couple them. The FK, and the read seam's refusal to
@@ -438,18 +437,16 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
 
 /**
  * Kinds that are INTERNAL operational assets, never user-visible ones: the
- * identity face crop (image-identity-packs.spec.data.md §Hidden image asset),
- * the identity-trial render output (image-identity-packs.spec.trial.md), the
- * Advanced Image Lab's control fixtures and experiment renders
- * (qwen-advanced-image-subsystem.spec.md §Persistence), and the Image
- * Generator's run outputs (image-lab-general-model-trials.spec.md §Persistence).
+ * identity face crop, the identity-trial render output, the
+ * Advanced Image Lab's control fixtures and experiment renders, and the Image
+ * Generator's run outputs.
  * Their owner may read one — the crop editor, the trial review UI and the lab's
  * fixtures panel have to display them — but they must be absent from every
  * listing, copy, cross-owner read and quota sum:
  *
  * - the character read's portrait strip (`api/characters/[id]/route.ts` GET);
  * - `cloneEntityImages` — a copied or published character DERIVES its own pack
- *   rather than inheriting the origin's hidden bytes (spec.lifecycle.md §Copy);
+ *   rather than inheriting the origin's hidden bytes;
  * - the public file-serving widening in `api/images/[id]/file/route.ts`, so a
  *   hidden crop of a PUBLIC character still stops at its owner;
  * - the per-owner storage quota (`checkStorageQuota` in `@/server/api`) — these
@@ -472,8 +469,7 @@ export const HIDDEN_IMAGE_KINDS = [
 ] as const satisfies readonly ImageKind[];
 
 /**
- * The identity-pack lifecycle's call-back into this module
- * (image-identity-packs.spec.lifecycle.md §"Image sweep integration").
+ * The identity-pack lifecycle's call-back into this module.
  *
  * A registry rather than an import because the dependency only runs one way:
  * the pack service imports this module for `createImageAsset`,
@@ -540,7 +536,7 @@ async function invalidateDerivedState(imageIds: readonly string[]): Promise<void
  *
  * Clearing a canonical portrait pointer also invalidates whatever was derived
  * FROM it: an identity pack whose source pointer just went away must not keep
- * serving its crop (spec.lifecycle.md §"Source deletion"). Read-time hash
+ * serving its crop. Read-time hash
  * verification is still the backstop — this is the belt to its braces, for the
  * paths that bypass the assignment triggers.
  *
@@ -581,7 +577,7 @@ export async function deleteOwnedImages(
 }
 
 /**
- * Hard-delete a chat's player-attached photos (chat-image-input.plan.md):
+ * Hard-delete a chat's player-attached photos:
  * `kind: "chat_upload"` rows are player content, deleted WITH their message /
  * conversation — never Gallery survivors like scenes. With `anchorMessageIds`
  * only the attachments of those messages go (a snip / rerun successor sweep);
@@ -609,7 +605,7 @@ export async function deleteChatAssets(chatId: string, kinds: readonly ImageKind
 }
 
 /**
- * Validate + claim a message's attachments at send time (chat-image-input.plan.md):
+ * Validate + claim a message's attachments at send time:
  * keep only ids that are THIS chat's ready `chat_upload` rows (order preserved,
  * unknown/foreign ids dropped), and stamp `anchor_message_id` so the message's
  * delete paths can find them. Returns the surviving ids with their file paths
@@ -656,7 +652,7 @@ export async function chatAttachmentPaths(chatId: string, imageIds: readonly str
 
 /**
  * Duplicate a shareable entity's ready images into a new owner's storage for a
- * clone (auth.plan.md / world-instances image policy). Each source image gets a
+ * clone (the world-instances image policy). Each source image gets a
  * fresh row owned by `dstOwnerId`, pointed at `dstEntityId`, with the file
  * **copied** (not shared) so the clone is fully self-contained — deleting the
  * source can never strip the copy's art. `sourceImageId` records provenance.
@@ -665,8 +661,7 @@ export async function chatAttachmentPaths(chatId: string, imageIds: readonly str
  *
  * `HIDDEN_IMAGE_KINDS` never travels: an identity face crop is derived state, and
  * the destination character derives its OWN pack from its own copied portrait
- * once that row is ready (image-identity-packs.spec.lifecycle.md §Copy and
- * publish). Cloning one would hand the destination a crop whose pack row — the
+ * once that row is ready. Cloning one would hand the destination a crop whose pack row — the
  * only authority for whether it may be used at all — did not come with it.
  */
 export async function cloneEntityImages(

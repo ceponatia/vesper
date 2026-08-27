@@ -32,7 +32,7 @@ describe("visualStateNote", () => {
     expect(visualStateNote({})).toBe("");
   });
 
-  // scene-pov-embodiment.plan.md slice 0 (owner report): skin-colour words render as
+  // Owner report: skin-colour words render as
   // stage blusher. Every meter that used to reach for "flushed" must state physiology
   // instead — this asserts the invariant across the whole grid, not just the three
   // phrases that happened to carry the word.
@@ -57,7 +57,7 @@ describe("visualStateNote", () => {
 });
 
 /**
- * The Stage 7 promotion (qwen-advanced-image-subsystem.plan.md): a chat whose
+ * The Stage 7 promotion: a chat whose
  * roster holds two PRESENT characters renders both, where it used to collapse to
  * the primary. The cast arrives pre-filtered — `presence` is chat's only
  * location-like state, so the queue does the co-location test — and this function
@@ -264,7 +264,7 @@ describe("applySceneSubjectVisual", () => {
   });
 
   /**
-   * The spec.prompts §Failure behavior rule: a digest that cannot be built
+   * The failure-behavior rule: a digest that cannot be built
    * REFUSES the render before provider spend — never a silent fall-back to the
    * legacy prose fields. The corrupt garment store stands in for any assembly
    * throw; `safeBuildVisualStateShadow` converts it to null, and the seam must

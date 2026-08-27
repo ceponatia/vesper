@@ -45,7 +45,7 @@ import {
 
 /**
  * One attribute's mapping from its legal vocabulary into orthogonal profile
- * contributions (architecture spec §"Attribute contribution definitions").
+ * contributions.
  *
  * An axis owns paths, not conclusions: `hair.length` may contribute a length
  * scale and a nominal reach, `hair.density` a bulk density — but the combined

@@ -19,9 +19,7 @@ import {
 import { withOwnPackHistory, type IdentityPackParams } from "../../owned";
 
 /**
- * A recorded admin override of a reviewed quality threshold
- * (image-identity-packs.spec.lifecycle.md §"Admin routes",
- * `.spec.derivation.md` §"Manual crop revisions").
+ * A recorded admin override of a reviewed quality threshold.
  *
  * What an override may do is narrow on purpose: waive a REVIEWED THRESHOLD, and
  * nothing else. Ownership, a missing source, invalid geometry and a stale hash

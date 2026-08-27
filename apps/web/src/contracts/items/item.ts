@@ -63,7 +63,7 @@ export const itemDefinitionSchema = z.object({
   opacity: z.enum(["opaque", "sheer"]).default("opaque"),
   sensory: itemSensorySchema.default({}),
   /**
-   * Perception hint (presence-spec §Attention × salience): using this item shapes
+   * Perception hint — attention × salience: using this item shapes
    * a character's attention — a sink/desk faces them away from the room
    * (`faces_away`), a task absorbs them (`absorbing`), a lookout faces outward
    * (`outward`). Sharpens derived attention; neutral where unset.
@@ -82,9 +82,9 @@ export function emptyItemDefinition(): ItemDefinition {
 
 /*
  * `itemInstanceStateSchema` lived here with coarse float condition/cleanliness/
- * wetness fields and ZERO importers in the tree (clothing-state-graph.audit.md
- * finding 1 — dead, not dormant). Slice 4 deleted it rather than bridging onto
- * it: the live chat-side instance state is `GarmentConditionState`
+ * wetness fields and ZERO importers in the tree — dead, not dormant. It was
+ * deleted rather than bridged onto:
+ * the live chat-side instance state is `GarmentConditionState`
  * (garment-instance.ts) with a fixed-point gradient vector, regional overrides,
  * located deposits and damage marks, and the only real bridge target on the
  * successor side is `item-condition-v1`.

@@ -5,8 +5,7 @@ import { log } from "@/server/log";
 import { legacyUnanchoredEngineTestMode } from "./legacy-test-mode";
 
 /**
- * The durable command layer's own ownership gate (security-authz.plan.md
- * §Follow-ups item 1).
+ * The durable command layer's own ownership gate.
  *
  * Until this seam existed the command shells locked a branch by id and RECORDED
  * `principal.principalId` without ever checking it: `requireSimChat` in the

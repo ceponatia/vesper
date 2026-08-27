@@ -3,11 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The SECOND-DOMAIN PROOF, as a guardrail rather than a promise
- * (body-attribute-affordances.plan.md slice 6: "It must reuse the same
- * foundation without adding hair knowledge to the shared core").
+ * The SECOND-DOMAIN PROOF, as a guardrail rather than a promise: a second domain
+ * must reuse the same foundation without adding its knowledge to the shared core.
  *
- * The plan's claim is that `affordances/core` stages a calculation it knows
+ * The claim is that `affordances/core` stages a calculation it knows
  * nothing about. That claim is easy to state, easy to believe, and easy to break
  * with one convenient field — so it is checked mechanically: no file under
  * `core/` may name a concrete domain, its vocabulary, or its anatomy.

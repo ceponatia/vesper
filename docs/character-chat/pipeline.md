@@ -13,18 +13,18 @@ exchange:
 1. **Lock.** A per-conversation keyed lock (`engine/keyed-lock.ts`, key
    `chat_exchange:{chatId}`) — a second concurrent submit gets a 409
    `chat_busy`. Held until the stream settles, released on every path.
-2. **Exchange kind** (spec §4): `send` inserts the user line with a pre-minted id — the
+2. **Exchange kind**: `send` inserts the user line with a pre-minted id — the
    guard row for the reply persist; `open` (the "Prompt character" opening beat) and
    `continue` ("go on") have no player line — the model gets a synthetic, non-persisted
    cue; `action_beat` (a tapped action chip, see below) is the same beat shape carrying a
    chip id; `regenerate` ("another take") targets the LAST assistant reply: state rolls back
-   to the pre-exchange snapshot, the old take's memory is retracted (provenance, §4.3),
+   to the pre-exchange snapshot, the old take's memory is retracted (provenance),
    and the reply row updates in place with the old take kept browsable (`takes`, cap
    `CHAT_REPLY_TAKES_CAP`); `rerun` (re-send a player line, see below) is the atomic snip.
    A player **Stop** aborts the model stream server-side; the accumulated prefix persists
    with `meta.stopped` and the fan-out runs over it.
 
-   **Action beats** (`kind: "action_beat"`, `action` = the chip id — chat-action-beats.plan.md):
+   **Action beats** (`kind: "action_beat"`, `action` = the chip id):
    the four status-strip chips ("Offer a drink / Freshen up / Take a breather / Heat things
    up") are no longer silent state pokes — a tap is a **narrated one-beat exchange**. No
    player line is persisted; the server builds a **register-aware synthetic cue** from the
@@ -69,27 +69,26 @@ exchange:
 3. **Window + summary.** The rolling summary covers everything up to its watermark; the
    verbatim window (`CHARACTER_CHAT_HISTORY_TURNS` = 40 exchanges) is everything after it.
    When the unsummarized tail reaches the fold trigger, a detached `chat_summary` job is
-   enqueued fire-and-forget (§4).
+   enqueued fire-and-forget.
 4. **State drift.** The pipeline loads the shared **scenario** once, ticks its clock
-   once for the whole exchange (`CHAT_TICK_MINUTES` = 1 story minute since
-   chat-clock-calendar — ONE story timeline, never per member), then `driftChatState`
+   once for the whole exchange (`CHAT_TICK_MINUTES` = 1 story minute —
+   ONE story timeline, never per member), then `driftChatState`
    (pure) drifts each member against it — meters decay toward personalized baselines
    by `CHAT_METER_DRIFT_MINUTES` (= 4; meter pacing is exchange-keyed, deliberately
    decoupled from the 1-minute clock tick) for present members only (the away-freeze);
    conditions expire against the shared clock for everyone. **No time passes between visits**
-   (spec §8, D8 — the wall-clock model was removed outright): the only between-scene
+   (the wall-clock model was removed outright): the only between-scene
    lever is a player **time skip** (`POST …/time-skip`), which advances the scenario
    clock, stamps its one-shot `pending_skip_note` (worded by the primary's regard band,
    `chatSkipNote`, with a "a life meanwhile" license **and the calendar landing** —
-   "It is now Friday evening", chat-clock-calendar) and `skip_history` ring, then
+   "It is now Friday evening") and `skip_history` ring, then
    gives each PRESENT member the per-character half (condition expiry, scene-budget
    reset, feeling decay, and **rhythm auto-dress** — a `profile.schedule` row covering
    the skipped-to clock that names an outfit preset re-dresses the member for that
-   window, `rhythmOutfitPatch`; ux-improvements slice 8.4) — **meters untouched**
+   window, `rhythmOutfitPatch`) — **meters untouched**
    (D14, flavor-only v1). Lazily seeds from the authored defaults when no row exists.
    A qualifying skip (cumulative ≥ one story day since the last pass) also fires the
-   detached **meanwhile pass** (`chat_meanwhile` job — chat-offscreen-life,
-   `chat-offscreen-life.spec.md`): one call proposing the
+   detached **meanwhile pass** (`chat_meanwhile` job): one call proposing the
    cast's off-screen developments, folded into facts / drives / cast / plans /
    whereabouts + the one-shot meanwhile note. Fire-and-forget: the next exchange
    proceeds on grounded improvisation if it hasn't landed.
@@ -102,7 +101,7 @@ exchange:
    fresh starts are islands. Each leg degrades with a diagnostic (facts to
    pinned-only, episodes to `[]`).
 
-   **One embed per turn** (chat-agent-improvements.plan.md slice 3): the pipeline embeds the
+   **One embed per turn**: the pipeline embeds the
    whole turn's query set ONCE — the player's input plus every participant's persisted
    `memoryQueries` — through `QueryEmbeddings.embed` (`server/memory/query-embeddings.ts`;
    trimmed + deduped) and hands that cache to every consumer: the fact leg, the episode leg,
@@ -115,9 +114,8 @@ exchange:
 6. **Physical legs** (both experimental, both default off, and neither ever writes the
    other's state — that independence is what keeps either trial interpretable).
 
-   **Affectionate contact** (`CHAT_CONTACT_ACTIONS`, `engine/chat-contact-adapter.ts` —
-   `romantic-contact-affordances.plan.md`
-   §"Continuation order" 1). Regex-only over the player's own line: no model call and no
+   **Affectionate contact** (`CHAT_CONTACT_ACTIONS`,
+   `engine/chat-contact-adapter.ts`). Regex-only over the player's own line: no model call and no
    extraction leg, the `chat-intent.ts` precedent. It **seeds the scenario's scene** (a
    participant per player + PRESENT roster member, an authored controller each, and a
    `scene_default` standing posture on a seeded floor for a new arrival — distance and
@@ -189,9 +187,8 @@ exchange:
    contact still commits and still persists, and the prompt is byte-identical.
 
    **The `romantic_touch` permission owner** (`CHAT_ROMANTIC_PERMISSION`, composed over
-   `CHAT_CONTACT_ACTIONS` but independent of the optional general-constraints experiment —
-   `romantic-contact-affordances.spec.permission.md`,
-   plan item 5, built 2026-08-04). Four pieces, all flag-off byte-identical. (1) The
+   `CHAT_CONTACT_ACTIONS` but independent of the optional general-constraints experiment;
+   built 2026-08-04). Four pieces, all flag-off byte-identical. (1) The
    **policy read**: the chat's `chat_permission_events` ledger (migration 0096 — the
    contact ledger's sibling: idempotent on `(chat, event ref, sequence)`, guard-pruned
    on retake, chat-scoped because the chat IS the story branch) is listed once per
@@ -244,13 +241,13 @@ exchange:
    guidance inspector reports them and runs the leg regardless, so a developer can see what
    turning a flag on would do before turning it on.
 7. **Prompt build.** `buildCharacterChatPromptParts` (pure, snapshot-tested) — split
-   for provider prefix caching (spec §9) into a **stable prefix** (identity → persona →
+   for provider prefix caching into a **stable prefix** (identity → persona →
    scenario → background → regard-colored disposition → the composed **Relationship** block → cards →
    attributes → sensory cues → rules; byte-identical across turns, re-rendering only on
    a band crossing on either relationship axis — asserted by a prefix-byte-stability test) and a **volatile tail**
    (recap, memory, voice ring, state, drives, scene, cast, disinhibition +
    transient-appearance overrides — then the **"Right now" digest**, then the voice
-   re-anchor + response-shape line). The digest (chat-agent-improvements slice 4) is the
+   re-anchor + response-shape line). The digest is the
    tail's one-turn directives gathered under a single heading that states their authority
    and **ordered by tier** — **binding** (storyteller-narration note, notation/comms
    routing, attached photos, time passed, first-scene establish) → **gate** (sensory focus,
@@ -304,8 +301,8 @@ exchange:
    settle is classified and surfaced.
 9. **Settle (post-flush).** When the stream finishes — the route's shared
    `drainingStreamResponse` keeps consuming after a client disconnect
-   ([resilience.md](../resilience.md) §5) — the reply persists (§5) and the post-turn fan-out
-   runs (§3). All of it is off the perceived-latency path.
+   ([resilience.md](../resilience.md) §5) — the reply persists and the post-turn fan-out
+   runs. All of it is off the perceived-latency path.
 10. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
    makes the `[Name]` tag **conditionally optional** (dialogue stays quoted; other people —
    flavor NPCs and named side characters alike — speak in narration prose with plain
@@ -331,13 +328,13 @@ exchange:
 `finalizeChatState` runs **pulse ‖ the three extraction legs** in parallel (`Promise.all`),
 then one guarded state write:
 
-- **Pulse** (`runChatPulse`): classifies the exchange onto the §6 personality curve —
+- **Pulse** (`runChatPulse`): classifies the exchange onto the personality curve —
   regard/mood deltas, arousal bump for intimate concepts, mindNote refresh, and the
   optional **feeling proposal** ([state.md](state.md) §Emotional weather: label + cause only; intensity
   derives from the curve's move). Degrades to drift-only state. Skipped for
   `continue` beats and narrator-mode inputs (no player act to react to — §Narrator
   input).
-- **Extraction** (`runChatExtraction`, chat-agent-improvements.plan.md slice 1b): what was
+- **Extraction** (`runChatExtraction`): what was
   ONE 13-field "archivist-lite" call is now **three focused legs run in parallel** with each
   other and with the pulse — same post-flush slot, so the split costs two extra small calls
   and **no perceived latency**, while each leg holds 3–5 assignments instead of thirteen:
@@ -371,8 +368,8 @@ then one guarded state write:
   summary, `FactDraft[]`, next-turn `memoryQueries` (the scribe also reads the rolling
   summary's `Established:` ledger, so a pronoun-heavy beat files a fact naming the person
   instead of a dangling referent), `attributeChanges` (applied through
-  the `overlaySourceMayChange` inherent-trait guard), plus the three character-fidelity
-  voice/consistency reads (slices 8-10; the character leg is armed with a compact voice
+  the `overlaySourceMayChange` inherent-trait guard), plus the three
+  voice/consistency reads (the character leg is armed with a compact voice
   reference — the profile's `voiceAnchors` + the life-stage register — and the character's
   `developable` traits at their current band): `voiceExemplar` (≤1 distinctly in-voice line
   → the `voice_exemplars` ring), `characterSlip` (a one-line "the reply broke character"
@@ -389,7 +386,7 @@ then one guarded state write:
   resolutions feed the pulse's `commitmentsDue` (computed pre-fan-out so the parallel pulse
   sees a just-missed commitment) and mint `plan_kept`/`plan_missed` milestones — the roster-gated
   `presence` transitions ([multi-character.md](multi-character.md) §Multi-character), `driveUpdates` ([state.md](state.md) §Drives), and the optional
-  `outfit` change (chat-wardrobe-parity — see [state.md](state.md) §Wardrobe):
+  `outfit` change (see [state.md](state.md) §Wardrobe):
   `foldOutfitProposal` (in `finalizeChatState`) reads the archivist's two grammars —
   a whole-outfit `description` (naming an authored preset → seeds the structured
   `worn_item_ids` via `matchOutfitPresetInText`; unmatched → a free-text overlay
@@ -419,7 +416,7 @@ then one guarded state write:
   (composer inference) — ids never reach the narrator.
   Its memory write is additionally fenced
   so an infra throw never costs the pulse's state. Every write is **provenance-stamped**
-  (`source_message_id` on facts + episodes, spec §4.3): deleting or editing an assistant
+  (`source_message_id` on facts + episodes): deleting or editing an assistant
   line retracts/re-extracts its memory (`reconcileMessageMemory` / `reextractEditedReply`),
   and "another take" rolls it back exactly.
 - The finalizer also appends the **relationship arc** (`appendRelationshipSample` /
@@ -443,13 +440,13 @@ then one guarded state write:
   see [supporting-cast.md](supporting-cast.md)). `loadPreExchangeState` is three-valued: a recorded `{}` is the
   **first-exchange sentinel** (no prior state → the regenerate re-seeds from the
   authored defaults, exactly as the live first exchange did), a real state rolls back to
-  it, and a **missing** row degrades to no-rollback with `chat_state.snapshot.missing`
-  (followups F3); `loadPreExchangeScenario` treats `{}` the same way (keep the live
+  it, and a **missing** row degrades to no-rollback with `chat_state.snapshot.missing`;
+  `loadPreExchangeScenario` treats `{}` the same way (keep the live
   scenario). Both are written under the **same prompting-message guard** as the paired
   state save, so a mid-stream delete can't split the halves (F5). "First exchange" (the arc baseline + `first_exchange` milestone) keys on an
   empty relationship history, not a null snapshot, so a state row that pre-exists the first
   send — a premise Save, an opening beat, a pickup skip — still records it (F4).
-- **Ensemble members settle CONCURRENTLY** (chat-agent-improvements slice 2): every present
+- **Ensemble members settle CONCURRENTLY**: every present
   member's referenced-only pulse + personal note-taker + state save + rollback-snapshot
   save runs in one `Promise.all`, not one member after another. Each member restores its
   own anchor **before drift** on regenerate/rerun, then writes its pre-exchange state under
@@ -461,7 +458,7 @@ then one guarded state write:
   a fast-typing player ate a 409 `chat_busy` for the difference. Error handling stays
   per-member (each keeps its own `try`/`catch`), so one member's failure still can't cost
   another's state.
-- **State mutations 409 while a reply streams** (followups F1): the exchange holds the
+- **State mutations 409 while a reply streams**: the exchange holds the
   `chat_exchange:{chatId}` lock across the whole settle and the finalizer rewrites the full
   state row, so time skip / mark moment / state-tools PATCH / action chips first check
   `chatBusyResponse` and return **409 `chat_busy`** rather than be clobbered by the pending
@@ -486,7 +483,7 @@ So `chatCallbackEligible` (`engine/chat-callback.ts`, pure) is the tail's soft c
 that outranks it — a first exchange, a pending skip note, a scene change, an intimate beat, a
 sensory-focus block, an unanswered question, **attached photos**, **storyteller-narration
 input**, or an **armed photo beat** (a selfie request, an unprompted offer, or the opener's
-photo license — the last three added by chat-agent-improvements slice 4). The prompt builder
+photo license). The prompt builder
 then renders exactly what survived the gate; it never silently drops a note.
 
 ## Reply failures
@@ -602,11 +599,10 @@ reply immediately.
   which inner-joins participants, but fully stored). Ordering matters: the participant
   rows are the only map from chat to memory group, so the purge must run while they
   still exist. **Ownership is proved inside `deleteChat(chatId, ownerId)`**, not taken
-  from the caller (security-authz.plan.md slice 2): it re-reads the chat under
+  from the caller: it re-reads the chat under
   `id + owner_id` and no-ops with a `chat.delete_denied` warn when nothing matches, and
   the character traversal is itself owner-scoped — a cross-owner participant row is
-  skipped, and that chat survives. **A successor chat's world dies with it**
-  (successor-world-lifecycle.plan.md): when the chat row carries a `sim_branch_id`,
+  skipped, and that chat survives. **A successor chat's world dies with it**: when the chat row carries a `sim_branch_id`,
   the world resolves through `sim_branches` and its `sim_worlds` row is deleted in
   the same transaction — cascades take the branch and every branch-scoped row. A
   set-but-dangling branch id degrades

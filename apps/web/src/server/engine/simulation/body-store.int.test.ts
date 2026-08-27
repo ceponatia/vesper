@@ -262,7 +262,7 @@ describe.runIf(harness.ready)("E5.1 durable body substrate", () => {
     const triggers = await pendingBodyTriggers(ids.branchId);
     const pending = triggers.filter((trigger) => trigger.state === "pending");
     // Only energy's depleted alarm arms — hygiene never reaches 2 500 while
-    // the 7am wash resets it every story day (§25.5 folded into the solver).
+    // the 7am wash resets it every story day (the rhythm folds into the solver).
     expect(pending).toHaveLength(1);
     expect(pending[0]?.uniquenessKey).toContain("depleted");
   });
@@ -282,7 +282,7 @@ describe.runIf(harness.ready)("E5.1 durable body substrate", () => {
           actorId: ids.actorId,
           conditionKey: "asleep",
           durationSeconds: 5_400,
-          // No modifiers supplied: the §25.4 coupling attaches the suspend.
+          // No modifiers supplied: the sleep coupling attaches the suspend.
           modifiers: [],
           observerActorIds: [],
         },

@@ -16,9 +16,9 @@ import { PROBE_TIMEOUT_MS } from "./config";
 import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
 
 /**
- * The save-time capability probe (image-model-registry.spec.md §"Capability
- * probe"). Reads a Replicate model's published input schema and derives what
- * the registry needs to render with it: what its reference input is called,
+ * The save-time capability probe. Reads a Replicate model's published input
+ * schema and derives what the registry needs to render with it: what its
+ * reference input is called,
  * whether that input is one URI or a list, whether it is required, and how to
  * ask it for a 3:4 image.
  *
@@ -43,8 +43,7 @@ const PREFERRED_REFERENCE_FIELDS = ["image", "image_input", "images", "reference
 
 /**
  * The dedicated-input field names this probe recognizes, each mapped to the
- * structural role Vesper feeds it (image-lab-general-model-trials.spec.md
- * §"Probe: dedicated image inputs"). Alias discovery happens once, here — the
+ * structural role Vesper feeds it. Alias discovery happens once, here — the
  * render path and the Generator never pattern-match a provider field name, and
  * an unknown URI field is NEVER classified heuristically: no alias, no entry.
  */
@@ -192,8 +191,7 @@ export type ProbeResult = { ok: true; probe: ReplicateModelProbe } | { ok: false
 export async function probeReplicateModel(http: ReplicateHttp, slug: string): Promise<ProbeResult> {
   // The SAME configured client rendering uses. Probing used to read the token
   // independently, which meant a process could probe with one credential and
-  // render with another (monorepo-image-core.spec.replicate.md §"Environment
-  // inversion").
+  // render with another.
   if (!http.configured) return { ok: false, error: NOT_CONFIGURED_ERROR };
 
   const [path, pinnedVersion, ...rest] = slug.split(":");
@@ -307,9 +305,8 @@ export async function probeReplicateModel(http: ReplicateHttp, slug: string): Pr
 
 /**
  * The optional-input bindings this version declares, resolved from the KNOWN
- * ALIAS LIST (image-model-capabilities.spec.md §"Control mapping") — alias
- * discovery happens once, here, so the render-time mapper never pattern-matches
- * a field name.
+ * ALIAS LIST — alias discovery happens once, here, so the render-time mapper
+ * never pattern-matches a field name.
  *
  * The style is uniformly conservative: a binding is derived only when the
  * schema declares a field of the expected primitive type under a known name,

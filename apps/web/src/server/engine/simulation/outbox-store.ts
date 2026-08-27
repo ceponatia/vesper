@@ -70,7 +70,7 @@ function safeDiagnostic(error: unknown, claimed: ClaimedOutboxObligation): strin
 /**
  * A raw event envelope shape for `projectMaterialFeedRow` to parse — it
  * discriminates on `type` among `item_transferred`, `item_destroyed`, and
- * (E5.3 slice 2, §26.6) `item_consumed` itself, so this builder does not pick
+ * (E5.3 slice 2) `item_consumed` itself, so this builder does not pick
  * a schema up front.
  */
 function eventFromRow(row: typeof simEvents.$inferSelect): unknown {
@@ -253,7 +253,7 @@ export async function consumeNextItemTransferOutbox(
         .for("update");
       const throughSequence = checkpoint?.throughSequence ?? 0;
       // Contiguity is defined over material-feed obligations (item_transferred
-      // AND item_destroyed — §26.4), not raw branch sequences: other event
+      // AND item_destroyed), not raw branch sequences: other event
       // families (e.g. trigger_scheduled) advance the branch without creating
       // feed work, so the guard asks whether an earlier material event exists
       // that has not been applied yet — never whether sequence numbers are dense.

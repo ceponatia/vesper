@@ -14,7 +14,7 @@ import { useToast } from "@/components/ui/toast";
 
 /**
  * The account settings page. Its occupant is the **default persona** — which of your
- * personas new chats start as (persona-library.plan.md slice 6).
+ * personas new chats start as.
  *
  * This used to be a two-field name + bio form writing the inline `users.playerPersona`
  * blob. That blob is gone (migration 0052 backfilled it into a real persona row, 0053

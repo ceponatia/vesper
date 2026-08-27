@@ -88,11 +88,10 @@ import {
 } from "./simulation";
 
 /**
- * R3 admission wiring (engine.rollout.plan.md) — one player message becomes
+ * Admission wiring — one player message becomes
  * one successor turn: the shared core behind BOTH the explicit
  * `/sim-turn` route and the ordinary chat send path (which routes here when
- * the chat's authority flag says so — the wiring R1 deferred "until a
- * successor leg exists to route to"; it does now). The legacy pipeline is
+ * the chat's authority flag says so). The legacy pipeline is
  * still never imported from here and vice versa — the lanes meet only at
  * the route fork.
  */
@@ -103,7 +102,7 @@ import {
  * opened it. One body, one physical scene means a
  * per-chat derived id cannot be trusted to find it — a second chat mapped
  * to the same pair would mint a NEW open command and be refused
- * `participant_already_engaged` forever (the R3 live-session bug). Returns
+ * `participant_already_engaged` forever (the live-session bug). Returns
  * the branch head too, so a miss can mint a head-scoped open command:
  * stable under a same-head race, fresh after an end_scene.
  */
@@ -121,7 +120,7 @@ export async function findStandingEngagement(
 
 /**
  * Find the pair's standing scene or open a fresh one. A refusal carries the
- * §14.4 public face (code + public reason), never a private cause.
+ * public face (code + public reason), never a private cause.
  */
 export async function findOrOpenStandingEngagement(input: {
   branchId: string;
@@ -186,14 +185,14 @@ export async function readSimChatClock(chatId: string): Promise<SimChatClock | n
   return readBranchClock(authority.simBranchId);
 }
 
-/** The live embedder adapter for the §24 index — pseudo in demo mode, real otherwise. */
+/** The live embedder adapter for the memory index — pseudo in demo mode, real otherwise. */
 const memoryEmbedder: MemoryEmbedder = async (texts) => {
   const embedded = await embedTexts(texts);
   return { model: embedded[0]?.embedder ?? "pseudo", vectors: embedded.map((entry) => entry.vector) };
 };
 
 /**
- * R5 knowledge/memory — §24 viewpoint recall for one utterance: drain the
+ * Knowledge/memory — viewpoint recall for one utterance: drain the
  * branch-agnostic index outbox (bounded — recall is current for the scene
  * being played), embed the utterance, and query the viewpoint's documents.
  * Returns epistemic-labeled lines for the prompt; every failure degrades to
@@ -231,7 +230,7 @@ async function recallViewpointMemory(input: {
 interface AdmissionOutcome {
   /** A one-line world-truth note for the narrator — set iff the command was ACCEPTED. */
   executed?: string;
-  /** The §14.4 public face — set iff the admitted command was REFUSED. */
+  /** The public face (code + public reason) — set iff the admitted command was REFUSED. */
   failure?: PublicFailurePresentation;
 }
 
@@ -304,8 +303,8 @@ export function noteDrainDiagnostics(
 /**
  * Drain the branch clock to `target` through the SAME bounded advance loop the
  * sim-command route uses (`catch_up_required` just means keep draining). Shared
- * by the route's skip-style composites and slice 4's departure choreography so
- * the two settle time identically — never duplicated (world-ui.plan.md slice 4).
+ * by the route's skip-style composites and the departure choreography so
+ * the two settle time identically — never duplicated.
  *
  * Returns an HONEST result (A5): the clock second actually reached and whether it fell short —
  * never a thrown error, so a caller can report "how far time moved" instead of a 500 after the
@@ -330,7 +329,7 @@ export async function drainBranchTo(branchId: string, target: number): Promise<D
     // A6: a backed-off trigger parks the clock at its due second. STOP here (an honest short
     // drain) rather than re-looping — the next pass cannot see the trigger and would jump the
     // clock past it, mis-stamping its event. The clock stays parked, so when the backoff
-    // elapses the trigger resolves at exactly the second it was due (§12.4 invariance).
+    // elapses the trigger resolves at exactly the second it was due.
     if (outcome.reason === "trigger_backoff") {
       return {
         converged: false,
@@ -347,10 +346,10 @@ export async function drainBranchTo(branchId: string, target: number): Promise<D
 
 /**
  * How far to drain after a committed move: the resulting journey's EXPECTED
- * arrival (§17), or the current clock when the move produced no journey. Shared
- * by the travel chip and the NL departure choreography (ruling 20 skip-style).
+ * arrival, or the current clock when the move produced no journey. Shared
+ * by the travel chip and the NL departure choreography (skip-style).
  *
- * A7: the drain target MUST equal the arrival trigger's due second, which §17 schedules at
+ * A7: the drain target MUST equal the arrival trigger's due second, which is scheduled at
  * `expectedArrivalAt`. Draining only to `earliestArrivalAt` (equal today, since uncertainty is
  * hardcoded 0) would, the moment travel uncertainty or a `journey_delayed` becomes nonzero,
  * stop the clock BEFORE the arrival trigger fires — leaving the traveller stranded in transit.
@@ -363,7 +362,7 @@ export async function moveArrivalTarget(branchId: string, actorId: string): Prom
 }
 
 /**
- * A7 safety net (ruling 2), with the review's recovery upgrade: after a travel drain, verify each
+ * A7 safety net, with the review's recovery upgrade: after a travel drain, verify each
  * traveller actually left transit. If one is still `in_transit`, record the `still_in_transit`
  * C15 diagnostic, warn, and — the recovery, not just observability — **escalate a durable time
  * job** targeting the latest stranded arrival, so the runner drains the branch there and fires
@@ -403,7 +402,7 @@ export async function settleStrandedInTransit(input: {
 }
 
 /**
- * R5 slice 2 — deterministic input admission, MATCH ONLY: read the world's legal
+ * Deterministic input admission, MATCH ONLY: read the world's legal
  * surface (held items, zones, actions) and pattern-match the player's prose to at
  * most one typed command. No submit here — the choreography branch in `runSimTurn`
  * decides how to enact it (a move drives the departure choreography; give/rest
@@ -453,9 +452,9 @@ async function admitPlayerCommandForChat(input: {
 
 /**
  * Submit an admitted command in the CO-PRESENT context (the primary is here to
- * react) and return its §14.4 outcome. A committed move — only reached as the
- * departure choreography's interrupt FALLBACK (world-ui.plan.md slice 4) — leaves
- * the same (non-parting) "You walk to …" beat slices 1–2 wrote. Best-effort: a
+ * react) and return its public outcome. A committed move — only reached as the
+ * departure choreography's interrupt FALLBACK — leaves
+ * the same (non-parting) "You walk to …" beat the travel chip writes. Best-effort: a
  * failed submit/beat degrades to no admission (docs/resilience.md).
  */
 async function admitIntoCoPresentTurn(
@@ -577,9 +576,9 @@ export type SimChatExchangeResult =
     };
 
 /**
- * The successor exchange modes (presentation-charter.plan.md §4): a player-driven
- * turn, an utterance-free turn that still advances the span (continue/open,
- * ruling 19), or a same-cut re-render (retake = regenerate/rerun, ruling 18).
+ * The successor exchange modes: a player-driven
+ * turn, an utterance-free turn that still advances the span (continue/open),
+ * or a same-cut re-render (retake = regenerate/rerun).
  */
 export type SimChatExchangeMode = "send" | "continue" | "open" | "retake";
 
@@ -613,8 +612,8 @@ export function isSimRoutedAuthority(
  * The reply-meta fields the retake path reads back: the committed cut id, and the
  * run that produced the content currently on the row — which the retake hands to
  * the historical take it seeds, so the displaced take keeps naming the prompt that
- * actually wrote it (narrator-prompt-lab.plan.md §Alternate takes). A reply from
- * before slice 6 carries neither; absent is legal.
+ * actually wrote it. A reply from before provenance existed carries neither;
+ * absent is legal.
  */
 const simReplyMetaSchema = z
   .object({
@@ -633,7 +632,7 @@ interface ResolvedSimExchange {
   ragEligibility: boolean;
   /**
    * The ONE narrator instruction source this exchange runs on, resolved once under
-   * the exchange lock (narrator-prompt-lab.plan.md slice 5).
+   * the exchange lock.
    *
    * It rides the context because every successor turn shape — co-present, solo,
    * departure, accompany, retake — receives this object, so carrying it here is
@@ -707,10 +706,9 @@ async function resolveSimExchange(
  * lines are labeled NARRATION (previous), never a character — earlier replies may
  * have wrongly voiced the player's character and must read as narration output.
  * `excludeMessageId` drops one row (the reply a retake is re-rendering — it must
- * never read itself back). World-beat rows (slice 2 travel/skip/scene traces) are
+ * never read itself back). World-beat rows (travel/skip/scene traces) are
  * skipped — they are a UI trace, never narration the model produced or should echo.
- * 30 lines (~15 exchanges) — the charter's history depth
- * (presentation-charter.plan.md §2 F11), on top of the R5 memory arc.
+ * 30 lines (~15 exchanges) — the charter's history depth, on top of the memory arc.
  */
 async function loadSimDialogueTail(
   chatId: string,
@@ -739,7 +737,7 @@ async function loadSimDialogueTail(
 }
 
 /**
- * The presentation context both a fresh turn and a retake feed the narrator: §24
+ * The presentation context both a fresh turn and a retake feed the narrator:
  * viewpoint recall (rag-gated, and only against a real utterance) plus the rolling
  * conversation summary. Both degrade to absent — a failed recall narrows context,
  * never fails the turn (docs/resilience.md).
@@ -770,8 +768,8 @@ async function loadSimConversationContext(input: {
 
 /**
  * The rich charter context both a fresh turn and a retake feed the successor
- * narrator (presentation-charter.plan.md §2): the primary character's authored
- * profile, the player's persona, the sim wardrobe + §21 relationship projections,
+ * narrator: the primary character's authored
+ * profile, the player's persona, the sim wardrobe + relationship projections,
  * and zone display names — plus the active narration shape. EVERY field is
  * best-effort — any single load failure degrades to that field being absent with a
  * log.warn, never a failed turn (docs/resilience.md). The player name always
@@ -871,7 +869,7 @@ async function loadSimPresentationInputs(input: {
     loadSimPrimaryProfile(input.chatId, input.actorNames[input.primaryActorId]),
     loadSimPlayerPersonaFields(input.userId, input.chatId),
     // Both reads self-degrade to `null` with their own per-seam diagnostic
-    // (sim-surfaces §7 guards), so no local `.catch` wrapper is needed here.
+    // (the sim-surfaces guards), so no local `.catch` wrapper is needed here.
     readSimChatOutfit(input.chatId),
     readSimChatRelationship(input.chatId),
     loadSimZoneNames(input.branchId, input.chatId),
@@ -888,8 +886,8 @@ async function loadSimPresentationInputs(input: {
 }
 
 /**
- * Run one successor exchange for an OWNERSHIP-CHECKED chat (routing parity,
- * presentation-charter.plan.md §4). The `mode` picks the semantics; the authority
+ * Run one successor exchange for an OWNERSHIP-CHECKED chat (routing parity).
+ * The `mode` picks the semantics; the authority
  * gate, world-truth names, dialogue tail, clock, memory/summary, render, and
  * persist are one shared path with mode-conditional steps:
  *
@@ -957,12 +955,12 @@ export async function runSimChatExchange(input: {
 
 /**
  * The open-engagement rejection codes that mean the primary is genuinely NOT
- * co-present with the player — the trigger for the dual-block SOLO cut (ruling
- * 21). Every OTHER rejection (branch_mismatch, participant_not_found, …) is a
+ * co-present with the player — the trigger for the dual-block SOLO cut.
+ * Every OTHER rejection (branch_mismatch, participant_not_found, …) is a
  * real fault and still surfaces the 409. `participant_unavailable` /
  * `participant_already_engaged` (primary present but busy / engaged elsewhere)
  * stay 409 in v1 — the solo vignette's "not here with you" framing would misread
- * a same-zone primary (world-ui.plan.md slice 0).
+ * a same-zone primary.
  */
 const SOLO_CUT_OPEN_CODES = new Set(["participants_not_co_located", "participant_in_transit"]);
 
@@ -1028,7 +1026,7 @@ async function runSimTurn(input: {
       : { command: null, zones: [] };
   const command = admitted.command;
 
-  // Walk-with-me (world-ui.plan.md slice 5): an admitted ACCOMPANY while the
+  // Walk-with-me: an admitted ACCOMPANY while the
   // primary is co-present runs the acceptance policy + shared choreography, then
   // renders at the destination (co-presence restored ⇒ the co-present renderer).
   if (command?.kind === "accompany" && scene.ok) {
@@ -1048,9 +1046,9 @@ async function runSimTurn(input: {
     });
   }
 
-  // A chosen DEPARTURE (world-ui.plan.md slice 4): an admitted MOVE, or an
+  // A chosen DEPARTURE: an admitted MOVE, or an
   // accompany with the partner ABSENT — inviting an absent partner is future work
-  // (the §14.2 remote-invite family), so it degrades to a plain solo move.
+  // (the remote-invite command family), so it degrades to a plain solo move.
   const departureMove: Extract<AdmittedCommand, { kind: "move" }> | null =
     command?.kind === "move"
       ? command
@@ -1092,7 +1090,7 @@ async function runSimTurn(input: {
     });
   }
 
-  // The primary is co-present. Submit an admitted give/rest (its §14.4 outcome
+  // The primary is co-present. Submit an admitted give/rest (its public outcome
   // reaches the narrator), then render the shared co-present turn.
   const coPresentCommand =
     command?.kind === "give_item" || command?.kind === "start_activity" ? command : null;
@@ -1215,19 +1213,19 @@ async function runCoPresentTurn(input: {
       cutId: rendered.cutId,
       modelId: rendered.modelId,
       attempts: rendered.attempts,
-      // The opening-directive flag a later prompt slice reads (§4).
+      // The opening-directive flag the prompt build reads.
       ...(input.mode === "open" ? { simOpening: true } : {}),
       ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
-      // Which prompt and model wrote what this row displays (slice 6). Mirrors the
+      // Which prompt and model wrote what this row displays. Mirrors the
       // active take, and is what a later retake seeds the historical take's label from.
       ...(rendered.provenance === undefined ? {} : { narratorRun: rendered.provenance }),
-      // C15 surface a: public-safe codes only (ruling 2) — open a degraded beat and see why.
+      // C15 surface a: public-safe codes only — open a degraded beat and see why.
       ...(input.fallbacks && input.fallbacks.codes().length ? { compositionFallbacks: input.fallbacks.codes() } : {}),
     },
   });
-  // R5 knowledge/memory: fold the conversation forward — self-dedupes below its trigger.
+  // Knowledge/memory: fold the conversation forward — self-dedupes below its trigger.
   void enqueueChatSummary({ chatId });
-  // Visual-state shadow (visual-state.plan.md slice 6, `CHAT_VISUAL_STATE_SHADOW`,
+  // Visual-state shadow (`CHAT_VISUAL_STATE_SHADOW`,
   // default OFF): the lane-neutral projection built BESIDE the settled turn for
   // measurement. Fire-and-forget and fenced whole inside — it writes nothing,
   // feeds nothing, and can never cost the exchange.
@@ -1253,16 +1251,14 @@ async function runCoPresentTurn(input: {
 }
 
 /**
- * world-ui.plan.md slice 4 — the graceful-departure choreography behind an
- * admitted natural-language MOVE (the NL twin of the travel chip; closes ruling
- * 20's parity clause and the R5 "scene-exit choreography for language-driven
- * departures" leftover). The player CHOSE to leave, so:
+ * The graceful-departure choreography behind an admitted natural-language MOVE
+ * (the NL twin of the travel chip). The player CHOSE to leave, so:
  *
  * 1. END the standing scene as a CHOICE (`participant_choice`) — the same lawful
- *    two-step `advance_time` performs. An ended scene holds no claim (spec §18.2),
+ *    two-step `advance_time` performs. An ended scene holds no claim,
  *    so the move that follows fires NO hard interrupt: a parting, not a rupture.
- * 2. submit the move; 3. drain the clock to the journey's earliest arrival (ruling
- *    20); 4. leave ONE traveled beat phrased with the parting; 5. render the
+ * 2. submit the move; 3. drain the clock to the journey's earliest arrival;
+ *    4. leave ONE traveled beat phrased with the parting; 5. render the
  *    goodbye + walk + arrival through the SOLO renderer with a departure context.
  *
  * Degrades per docs/resilience.md — never a dead turn:
@@ -1447,13 +1443,13 @@ async function runSimDepartureTurn(input: {
 }
 
 /**
- * command-integrity A4 — the WALK-WITH-ME choreography, now ONE indivisible
+ * The WALK-WITH-ME choreography, now ONE indivisible
  * action. When the player invites the co-present primary to travel together, the
  * whole decision + world mutation is a single branch-locked `move_together`
  * command (`submitDurableMoveTogether`): the deterministic `decideAccompany`
- * policy re-runs INSIDE the locked authority view (§14.2, closing the
+ * policy re-runs INSIDE the locked authority view (closing the
  * read-vs-commit agency race), and on acceptance ONE transaction commits
- * scene-end (grace, §18.2), ONE shared journey carrying BOTH actors, ONE
+ * scene-end (grace), ONE shared journey carrying BOTH actors, ONE
  * departure, and ONE arrival trigger. The pair can no longer be stranded
  * mid-move — "together" is true by construction (one journey, one arrival).
  *
@@ -1461,7 +1457,7 @@ async function runSimDepartureTurn(input: {
  * expected arrival (A7), check nobody is stranded, and leave ONE `together` beat.
  *
  * Degradation (docs/resilience.md), never a dead turn:
- * - a DECLINE returns the command's own §14.4 face (nobody moves; the scene stands);
+ * - a DECLINE returns the command's own public face (nobody moves; the scene stands);
  * - a refused player move / not-co-present returns the matching refusal;
  * - a bare version conflict under the lock leaves the world UNCHANGED (the atomic
  *   command has no partial-commit window), so it degrades to an honest `rejected`
@@ -1485,7 +1481,7 @@ export async function runAccompanyTogether(input: {
   fallbacks?: CompositionFallbackCollector;
   /**
    * A deterministic `move_together` command id derived from the route request key
-   * (command-integrity A1 idempotency parity). The NL choreography omits it and
+   * (idempotency parity with the chip path). The NL choreography omits it and
    * mints a fresh one (it runs under the lock; retry story = "the player sends again").
    */
   commandId?: string;
@@ -1506,7 +1502,7 @@ export async function runAccompanyTogether(input: {
     playerLocus?.kind === "at" ? zoneLabelFromKind(playerLocus.zoneId, zoneKindOf(playerLocus.zoneId)) : "";
 
   // ONE atomic command: decide (locked view) + scene-end (grace) + one shared
-  // journey (both actors) + one arrival trigger. §14.2: the player principal
+  // journey (both actors) + one arrival trigger. The player principal
   // controls only the player; the co-traveler is authorized by `decideAccompany`.
   const commandId = input.commandId ?? newId();
   const outcome = await submitDurableMoveTogether(
@@ -1589,14 +1585,14 @@ export async function runAccompanyTogether(input: {
 }
 
 /**
- * world-ui.plan.md slice 5 — the natural-language twin of the walk-together chip.
+ * The natural-language twin of the walk-together chip.
  * An admitted ACCOMPANY while co-present runs the shared `runAccompanyTogether`
- * choreography (command-integrity A4: ONE atomic `move_together`) and then RENDERS:
+ * choreography (ONE atomic `move_together`) and then RENDERS:
  * - ACCEPTED ⇒ both walked together (true by construction); co-presence is restored
  *   at the destination, so reopen the scene and render the CO-PRESENT turn with a
  *   travel-context line (you two just walked here together from X) — prose, not a jump-cut;
  * - DECLINED / a refused move ⇒ the scene still stands; render the ordinary
- *   co-present turn with the §14.4 face (she answers in character);
+ *   co-present turn with the public face (she answers in character);
  * - an unexpected reopen failure ⇒ the player is where they arrived; render a plain
  *   solo turn (never a dead turn).
  */
@@ -1630,7 +1626,7 @@ async function runSimAccompanyTurn(input: {
   });
 
   // A decline (or a rare player-move refusal): the scene still stands. Render the
-  // co-present turn with the §14.4 face — the primary answers the invite in character.
+  // co-present turn with the public face — the primary answers the invite in character.
   if (outcome.status === "declined" || outcome.status === "rejected") {
     const failure: PublicFailurePresentation = {
       code: outcome.status === "declined" ? "accompany_declined" : outcome.code,
@@ -1730,7 +1726,7 @@ async function loadSimPlayerHeldItems(branchId: string, playerActorId: string): 
 }
 
 /**
- * Assemble the dual-block solo context from the sim projections (ruling 21),
+ * Assemble the dual-block solo context from the sim projections,
  * each source degrading independently (docs/resilience.md):
  * - player-side (space + held items) is REQUIRED — a space-read failure returns
  *   `null` and the caller degrades to a minimal safe narration;
@@ -1842,10 +1838,10 @@ async function buildSoloCutContext(input: {
 }
 
 /**
- * The SOLO cut (world-ui.plan.md slice 0, ruling 21): a turn that runs when the
+ * The SOLO cut: a turn that runs when the
  * primary is NOT co-present. Time still moves — the branch clock advances the
  * ordinary 60s span and drains due triggers (that is how an in-transit player
- * eventually arrives, ruling 19's "time is the medium") — and the render is
+ * eventually arrives; time is the medium) — and the render is
  * dual-block: the player's own moment plus an away vignette of the primary's
  * routine. The user row (for a send) is already persisted by the caller. This
  * path NEVER dead-ends: every context source degrades and the narrator falls
@@ -2115,7 +2111,7 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
   }
 
   // Replace the reply row in place: the prior text becomes a browsable take, the
-  // fresh render is active (spec §4.1 — the same transcript semantics legacy gives).
+  // fresh render is active (the same transcript semantics legacy gives).
   const priorTakes = parseOr(replyTakesSchema, target.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
   const nextTakes = pushReplyTake(priorTakes, target.content, rendered.prose, new Date().toISOString(), {
     // The displaced take keeps the run that wrote it — that is what makes the two

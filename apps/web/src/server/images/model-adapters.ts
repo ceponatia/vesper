@@ -9,8 +9,7 @@ import { adapterForImageModel, type ImageModelRequestFacts } from "@vesper/image
 import { disableSafetyChecker } from "../ai";
 
 /**
- * WHERE the application joins a model family's adapter to the render path
- * (image-model-adapters.spec.md §"Application wiring").
+ * WHERE the application joins a model family's adapter to the render path.
  *
  * `@vesper/image-models` knows how a family behaves and `@vesper/image-core`
  * runs the render; neither may import the other, so somebody has to hold both
@@ -64,8 +63,7 @@ export function prepareModelPrompt(model: ImageModel, prompt: string, referenceC
  * are exactly what will be sent. Production lanes are deliberately not wired
  * yet — their `allow_trim` policy means the pre-plan count is not the sent
  * count, and a validator judging the un-trimmed number would refuse renders
- * the planner would have legally trimmed (recorded as a deferred follow-up in
- * image-model-adapters.spec.md).
+ * the planner would have legally trimmed (a deferred follow-up).
  *
  * An unmigrated family answers nothing, exactly like every other hook here.
  */
@@ -90,7 +88,7 @@ export function imageRenderRuntimeFacts(model: ImageModel): ImageRenderRuntimeFa
 
 /**
  * The bench lanes' starting budgets: eight minutes to start, three to render,
- * one recreation after a startup abort (plan §8).
+ * one recreation after a startup abort.
  *
  * These are the Image Generator's and the Image Lab's numbers, and deliberately
  * NOT production's — production lanes pass no policy at all and keep today's

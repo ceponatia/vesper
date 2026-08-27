@@ -5,9 +5,8 @@
  * just isn't counted. Returns how many items completed.
  *
  * The bounded-concurrency loop behind the image lanes' batch buttons, written
- * twice byte-for-byte before this (image-pipeline-consolidation.plan.md C3).
- * Each caller keeps its own batch size; a size below 1 degrades to one at a
- * time rather than looping forever.
+ * twice byte-for-byte before this. Each caller keeps its own batch size; a size
+ * below 1 degrades to one at a time rather than looping forever.
  */
 export async function runInBatches<T>(
   items: readonly T[],

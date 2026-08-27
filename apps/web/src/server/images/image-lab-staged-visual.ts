@@ -10,15 +10,14 @@ import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
 import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
 
 /**
- * THE STAGED BENCH'S SUBJECT FACTS (image-lane-consolidation.plan.md Stage 4;
- * spec.prompts.md §Lane migration order → "Chat look/selfie and staged character
- * renders: Consume the same digest"; owner ruling 2026-08-25).
+ * THE STAGED BENCH'S SUBJECT FACTS — the staged character render consumes the
+ * same digest the chat look and selfie lanes do (owner ruling 2026-08-25).
  *
  * The Image Lab's `staged_scene` kind exists to send the sentence production
  * sends. It was built name-only — the focal spec carried no appearance, no
- * identity anchors and no intimate anatomy, and
- * `intimate-scene-lora.spec.md §"What the bench does NOT reproduce"` recorded
- * that gap deliberately (2026-08-16). The chat scene lane has since moved its
+ * identity anchors and no intimate anatomy, and that gap was recorded
+ * deliberately as something the bench did not reproduce (2026-08-16). The chat
+ * scene lane has since moved its
  * character fields onto the visual digest, which turned that recorded gap into a
  * parity BREAK: the bench's prompt is now strictly shorter than the one a chat
  * would have sent for the same staging, and a verdict on the shorter prompt is
@@ -66,7 +65,7 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
  * readout and the camera's per-location perception then both answer the premise,
  * and the two halves cannot disagree about what this shot shows.
  *
- * ## Failure behavior (spec.prompts.md §Failure behavior)
+ * ## Failure behavior
  *
  * A required digest fact with no clause refuses the run before provider spend.
  * It does NOT fall back to the name-only ablation: that is an arm the operator

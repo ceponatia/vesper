@@ -6,8 +6,7 @@ import { createImageModelProfile } from "@/server/images";
 type Params = { modelId: string };
 
 /**
- * Add one task profile beneath a registry model (image-model-capabilities.spec.md
- * §"Admin UI", §`image_model_profiles`). Owner-admin only, beneath
+ * Add one task profile beneath a registry model. Owner-admin only, beneath
  * `/api/admin/self` — `withOwnerAdmin` fails closed with a hidden 404 anywhere
  * else, so the settings page's client-side gate is UX rather than security.
  *

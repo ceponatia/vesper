@@ -15,11 +15,11 @@ import {
 } from "@/lib/api-inspector";
 
 /**
- * The READ-ONLY visual-state inspector (visual-state.plan.md slice 6): the
- * complete source-to-selection staircase — projected features, composition,
- * suppression reasons, attention scores under ideal debug conditions, both
- * consumer selections, and the slice's measurements (missing owners, duplicate
- * facts, disagreement with the current summaries).
+ * The READ-ONLY visual-state inspector: the complete source-to-selection
+ * staircase — projected features, composition, suppression reasons, attention
+ * scores under ideal debug conditions, both consumer selections, and the
+ * measurements (missing owners, duplicate facts, disagreement with the current
+ * summaries).
  *
  * It never spends notice or mention state: the route recomputes on demand,
  * loads observer memory read-only, and reports the shadow flag rather than

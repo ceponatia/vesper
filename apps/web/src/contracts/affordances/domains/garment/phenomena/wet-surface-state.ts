@@ -14,7 +14,7 @@ import { garmentIntimateSuppression, garmentTag } from "./tags";
 
 /**
  * `garment.wet_surface_state` — what water is currently DOING on a garment's
- * surface (spec.garment-interaction.md §Phenomena).
+ * surface.
  *
  * ## The acceptance test this phenomenon exists to pass
  *

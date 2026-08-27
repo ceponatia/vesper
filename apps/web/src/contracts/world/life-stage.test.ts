@@ -11,7 +11,7 @@ import {
 /** The age at which a character stops being fenced as a minor. */
 const ADULTHOOD_YEARS = 18;
 
-describe("life-stage registry (character-fidelity.plan.md slices 1–2)", () => {
+describe("life-stage registry", () => {
   it("covers 0..max contiguously with no gaps or overlaps", () => {
     expectContiguousBands(LIFE_STAGES, { min: 0, max: LIFE_STAGE_MAX_HUMAN_YEARS });
   });

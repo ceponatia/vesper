@@ -35,7 +35,7 @@ export interface InvalidateIdentityPackInput {
 
 /**
  * Mark current packs stale when a canonical pointer is cleared or replaced
- * outside the assignment triggers (spec.lifecycle.md §"Source deletion").
+ * outside the assignment triggers.
  *
  * Belt to read-time verification's braces. Every read already re-hashes the source
  * before trusting a crop — that is mandatory and stays mandatory, because rows and
@@ -99,13 +99,12 @@ export async function invalidateIdentityPackForSource(input: InvalidateIdentityP
  * ------------------------------------------------------------------------ */
 
 /**
- * How long a retired revision keeps its hidden crop bytes
- * (spec.lifecycle.md §"Superseded and failed revision cleanup").
+ * How long a retired revision keeps its hidden crop bytes.
  *
  * A week is a diagnostic window, not a retention policy: long enough that "why did
  * my character's face change last Tuesday?" can still be answered from the actual
- * crop, short enough that nobody is storing months of superseded faces. The spec
- * puts the number with the image-lifecycle owner rather than in the schema, which
+ * crop, short enough that nobody is storing months of superseded faces. The
+ * number belongs with the image-lifecycle owner rather than in the schema, which
  * is why it is a constant here and not a column — changing it is a code review, not
  * a migration.
  */
@@ -320,8 +319,7 @@ async function deleteOrphanIdentityCrops(cutoff: Date, limit: number, sink: Diag
  * ------------------------------------------------------------------------ */
 
 /**
- * Hard-delete a character's hidden identity assets — rows and files
- * (spec.lifecycle.md §"Character deletion").
+ * Hard-delete a character's hidden identity assets — rows and files.
  *
  * The pack ROWS cascade with the character; these image rows do not (they hang off
  * `entity_kind`/`entity_id`, which carry no foreign key), so the delete path calls
@@ -365,8 +363,7 @@ export interface IdentityPackSweepFindings {
 const IDENTITY_PACK_FINDINGS_LIMIT = 500;
 
 /**
- * Flag identity-pack inconsistencies; repair none of them
- * (spec.lifecycle.md §"Image sweep integration").
+ * Flag identity-pack inconsistencies; repair none of them.
  *
  * That split is deliberate. Every condition below means two sources of truth
  * already disagree — a crop claiming one portrait while its pack claims another, a

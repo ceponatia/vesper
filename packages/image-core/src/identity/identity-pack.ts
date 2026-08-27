@@ -23,9 +23,9 @@ import type { DiagnosticSink } from "@vesper/contracts";
  *    schemas produces an unusable pack and a diagnostic, never an exception in a
  *    render route.
  *
- * The `IdentityFaceDetector` seam from `.spec.derivation.md` is deliberately NOT
- * here: its `detect()` takes a Node `Buffer`, and nothing in `src/contracts`
- * references binary/platform types. It lives with its only implementation, in
+ * The `IdentityFaceDetector` seam is deliberately NOT here: its `detect()` takes
+ * a Node `Buffer`, and nothing in `src/contracts` references binary/platform
+ * types. It lives with its only implementation, in
  * `packages/image-core/src/identity/identity-pack-detector.ts`. The detector's OUTPUT shape
  * (`DetectedFaceCandidate`) is plain numbers, so it stays in this module where
  * the pure candidate-ruling helpers can read it.
@@ -79,9 +79,9 @@ export type ImageIdentityPackWarningCode = (typeof imageIdentityPackWarningCodes
 
 /**
  * Reasons a revision is terminally `unusable` or `failed`. These decide retry
- * eligibility (`.spec.derivation.md` §"Retry policy"): read/decode/write failures
- * are retryable, `ambiguous_faces` and `crop_too_small` are not until the source,
- * policy, detector version, or user crop changes.
+ * eligibility: read/decode/write failures are retryable, `ambiguous_faces` and
+ * `crop_too_small` are not until the source, policy, detector version, or user
+ * crop changes.
  */
 export const imageIdentityPackFailureCodes = [
   "source_missing",
@@ -109,8 +109,7 @@ export const imageIdentityPackWarningCodeListSchema = z
   .catch((): ImageIdentityPackWarningCode[] => []);
 
 /**
- * Whether a status change is one the state machine allows
- * (`.spec.data.md` §"State transitions").
+ * Whether a status change is one the state machine allows.
  *
  * The exhaustive switch is the point: adding a status to the tuple above makes
  * this a lint error until someone decides what it may become. `stale` and
@@ -398,11 +397,11 @@ export interface IdentityReferenceCandidate {
  * may be perfect and this model still unable to carry it — so it sits alongside the
  * pack failure codes rather than inside them.
  *
- * `provenance` is candidate-parallel: entry N records candidate N (spec
- * §"Render provenance"). It rides the eligible arm because the pack the
- * candidates were judged against is gone by the time a lane needs the record —
- * the evaluation is the last moment both are in one place, and a lane that had
- * to re-read the pack to explain its own send could read a different revision.
+ * `provenance` is candidate-parallel: entry N records candidate N. It rides the
+ * eligible arm because the pack the candidates were judged against is gone by
+ * the time a lane needs the record — the evaluation is the last moment both are
+ * in one place, and a lane that had to re-read the pack to explain its own send
+ * could read a different revision.
  */
 export type EvaluateIdentityPackResult =
   | {
@@ -467,18 +466,17 @@ export const identityPackSummaryStatusSchema = z.enum(identityPackSummaryStatuse
 export type IdentityPackSummaryStatus = (typeof identityPackSummaryStatuses)[number];
 
 /**
- * The owner-safe pack view behind `GET /api/characters/:id/identity-pack`
- * (spec.lifecycle.md §"User routes").
+ * The owner-safe pack view behind `GET /api/characters/:id/identity-pack`.
  *
  * Ids, geometry, and stable codes only — no bytes, no URLs, and no detector
- * internals the crop editor does not need (spec.lifecycle.md §"Privacy
- * boundary"). The hidden crop is named by id so it can be fetched through the
+ * internals the crop editor does not need; that is the privacy boundary this
+ * view holds. The hidden crop is named by id so it can be fetched through the
  * authorized image route; nothing here is a URL that could be pasted elsewhere.
  *
  * `pending` reaches the client explicitly rather than being flattened into "not
  * ready": derivation reserved by another process is a real state, and a view
- * that cannot say so leaves an owner staring at a spinner with no answer
- * (spec.derivation.md §"`ensureIdentityPack`").
+ * that cannot say so leaves an owner staring at a spinner with no answer while
+ * `ensureIdentityPack` waits out the other holder.
  *
  * `crop`, `source`, and `sourceContentHash` always describe the SAME bytes: the
  * editor frames a rectangle against the source it was told about and sends that
@@ -509,8 +507,7 @@ export const identityPackSummarySchema = z.object({
 export type IdentityPackSummaryWire = z.infer<typeof identityPackSummarySchema>;
 
 /**
- * A write that never reached a revision, reported alongside the summary
- * (spec.lifecycle.md §"User routes").
+ * A write that never reached a revision, reported alongside the summary.
  *
  * `ensure` and `reset-automatic` answer 200 whatever happens — an unusable pack
  * is product feedback, not a server error — and they answer with the summary
@@ -563,7 +560,7 @@ export const identityPackNormalizedCropSchema = z.object({
 export type IdentityPackNormalizedCropWire = z.infer<typeof identityPackNormalizedCropSchema>;
 
 /**
- * A character owner's crop save (spec.derivation.md §"Manual crop revisions").
+ * A character owner's crop save, which creates a manual crop revision.
  *
  * `packId`, `revision`, and `sourceContentHash` are the editor's concurrency
  * guard, NEVER its authorization: the route re-authorizes from the character in
@@ -581,8 +578,7 @@ export const identityPackManualCropRequestSchema = z.object({
 export type IdentityPackManualCropRequest = z.infer<typeof identityPackManualCropRequestSchema>;
 
 /**
- * One revision as the admin history surface reports it
- * (spec.lifecycle.md §"Admin routes").
+ * One revision as the admin history surface reports it.
  *
  * Deliberately ids, versions, geometry, codes and review actors — the evidence
  * chain behind "why does this character's face look like that" — and deliberately
@@ -613,7 +609,7 @@ export const identityPackAdminRevisionSchema = z.object({
 export type IdentityPackAdminRevision = z.infer<typeof identityPackAdminRevisionSchema>;
 
 /**
- * A recorded admin override (spec.lifecycle.md §"Admin routes").
+ * A recorded admin override.
  *
  * The reason is required and non-empty because the override's whole value is the
  * audit row it leaves: a waived threshold with no stated reason is
@@ -634,7 +630,7 @@ export const identityPackAdminOverrideRequestSchema = z.object({
 export type IdentityPackAdminOverrideRequest = z.infer<typeof identityPackAdminOverrideRequestSchema>;
 
 /**
- * A bounded admin preparation batch (spec.lifecycle.md §"Lazy backfill").
+ * A bounded admin preparation batch, for lazy backfill.
  *
  * Exactly one selector: explicit ids or a checked-in trial corpus. Accepting
  * both would make "which characters did this actually run against?" a question

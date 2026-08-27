@@ -15,7 +15,7 @@ export interface ExplainOptions {
 }
 
 /**
- * Why is this item where it is (spec §35.3)? Walks back from the projection
+ * Why is this item where it is? Walks back from the projection
  * fact through the event that placed it, the command that produced the event,
  * and — when the scheduler dispatched that command — the trigger, its setting
  * event, and the setting command. Read-only over immutable records; the chain
@@ -69,7 +69,7 @@ export async function explainItemPlacement(
         .at(-1);
       if (!event) {
         // Placement predates every recorded event: it is world-seed data the
-        // event stream cannot explain (plan R3's accepted limitation).
+        // event stream cannot explain (R3's accepted limitation).
         return itemPlacementExplanationSchema.parse({ ...base, origin: "seed" });
       }
 

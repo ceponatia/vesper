@@ -84,7 +84,7 @@ publish it by accident.
 Two things are worth knowing before reading the code:
 
 - **A recipe is deployed configuration, not a tuning range.** Fixed values, one
-  revision at a time. The plan's starting bands ("steps 30–40", "CFG roughly
+  revision at a time. The starting bands ("steps 30–40", "CFG roughly
   4–6") describe the search, which runs in the Advanced Image Lab; the value that
   wins becomes the next revision. Every seeded recipe is a revision 1 trial
   starting point and nothing has graded them yet.

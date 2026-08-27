@@ -10,7 +10,7 @@ import {
 } from "@/server/engine";
 
 /**
- * R2 (engine.rollout.plan.md): one full narrated turn against the internal
+ * R2: one full narrated turn against the internal
  * test world — prepare the turn (deterministic), render the committed cut
  * with the LIVE narrator (Aion 3.0 default; pass --model <id> to override),
  * print prose + metrics. Runs locally or on Fly over SSH. With no API key

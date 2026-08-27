@@ -17,7 +17,7 @@ import type { SimTx } from "./trigger-projector";
  * without importing the full command-handler module, avoiding a cycle. The
  * row mapping (`relationshipLedgerEntryFromRow`/`relationshipLedgerEntryRowInsert`)
  * lives HERE, not in `social-store.ts`, for the same reason: `social-store.ts`
- * imports `command-runner.ts` for the §11.1 shell, so a row mapper imported
+ * imports `command-runner.ts` for the command shell, so a row mapper imported
  * FROM `social-store.ts` into this file would close
  * `command-runner.ts` → `social-recorder.ts` → `social-store.ts` →
  * `command-runner.ts` — confirmed by `pnpm lint:cycles` before this split.
@@ -78,12 +78,12 @@ export function relationshipLedgerEntryRowInsert(
  * Every event type the fold reads — kept as one exported const so this
  * recorder's WHERE clause and `deriveRelationshipLedgerEntries`'s if-chain
  * can never silently drift. E5.5 slice 2 widened this to the full slice-2
- * subset (§5.7): `commitment_kept`/`commitment_missed`/`commitment_created`
+ * subset: `commitment_kept`/`commitment_missed`/`commitment_created`
  * now carry the `promisedToActorId`/`repairsCommitmentId` fields the fold
- * needs, and `activity_started` now carries `consentGrant`. Slice 3 (§5.7)
+ * needs, and `activity_started` now carries `consentGrant`. Slice 3
  * adds `consent_escalation_resolved` — the escalation outcome lands as a
  * ledger entry either way (ruling 16). `pressure_acknowledged` is
- * DELIBERATELY excluded — it produces no ledger entry (§1.7): acknowledgment
+ * DELIBERATELY excluded — it produces no ledger entry: acknowledgment
  * is a pure engagement/commitment cross-domain fact, never ledger evidence.
  */
 export const RELATIONSHIP_LEDGER_SOURCE_EVENT_TYPES = [
@@ -103,7 +103,7 @@ export const RELATIONSHIP_LEDGER_SOURCE_EVENT_TYPES = [
  * Derive and persist relationship-ledger entries for every event an accepted
  * command appended. Runs inside the command transaction, AFTER
  * `recordCommandKnowledge` and BEFORE `recordCommandSoftCanon`/memory
- * indexing (command-runner.ts §11.1) — so a newly-recorded ledger entry is
+ * indexing (command-runner.ts) — so a newly-recorded ledger entry is
  * visible to memory-index eligibility in the SAME transaction.
  */
 export async function recordCommandRelationshipLedger(
@@ -127,8 +127,8 @@ export async function recordCommandRelationshipLedger(
 
   // Only commitment_kept/commitment_missed need a commitment lookup — the
   // fold's `commitment_created` (repair) arm reads `promisedToActorId`
-  // directly off that event's own payload (§4.2), so no lookup is needed for
-  // it — narrower than the blueprint's literal §5.7 draft, which loaded a
+  // directly off that event's own payload, so no lookup is needed for
+  // it — narrower than the original draft, which loaded a
   // commitment_created row too despite the fold never consuming it.
   const commitmentIds = sortedUnique(
     events.flatMap((event) =>
@@ -174,7 +174,7 @@ export async function loadRelationshipLedgerProjection(
   return rows.map(relationshipLedgerEntryFromRow);
 }
 
-/** Bulk-insert replayed ledger rows — the fork rebuild's write path (§6). */
+/** Bulk-insert replayed ledger rows — the fork rebuild's write path. */
 export async function insertReplayedSocialLedger(
   tx: SimTx,
   entries: readonly RelationshipLedgerEntry[],

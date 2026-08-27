@@ -13,17 +13,17 @@ import {
 import { parseOr } from "@vesper/contracts";
 
 /**
- * E4.3 — the §23.1 narrator trust boundary and the §23.2 presentation
- * auditor. Everything a model returns is parsed with `parseOr` and safe
- * defaults: a malformed reply degrades to an empty result the auditor will
- * send back for rerender — never a thrown turn (docs/resilience.md).
+ * E4.3 — the narrator trust boundary and the presentation auditor. Everything a
+ * model returns is parsed with `parseOr` and safe defaults: a malformed reply
+ * degrades to an empty result the auditor will send back for rerender — never a
+ * thrown turn (docs/resilience.md).
  *
- * The prompt BUILDER lives in `server/engine/prompts/sim-render.ts`
- * (presentation-charter.plan.md slice 2) — this module keeps only the parse +
- * audit, the two pure trust-boundary halves. The audit is deterministic and
- * structural: it audits what the narrator DECLARED and how the prose reads
- * against what the cut REQUIRED. It may request a rerender or supply a
- * deterministic bridge built from beat summaries; it cannot mutate truth.
+ * The prompt BUILDER lives in `server/engine/prompts/sim-render.ts` — this
+ * module keeps only the parse + audit, the two pure trust-boundary halves. The
+ * audit is deterministic and structural: it audits what the narrator DECLARED
+ * and how the prose reads against what the cut REQUIRED. It may request a
+ * rerender or supply a deterministic bridge built from beat summaries; it
+ * cannot mutate truth.
  */
 
 /** A parse-failed render: nothing enacted, nothing proposed, empty prose. */
@@ -37,7 +37,7 @@ export const emptyNarratorResult: NarratorResult = {
 export interface ParsedNarratorResult {
   result: NarratorResult;
   /**
-   * §23.4 proposals stamped with the cut they rendered from. Provenance is
+   * Proposals stamped with the cut they rendered from. Provenance is
    * assigned here, at the boundary — a model is never trusted to cite itself.
    */
   proposals: SoftCanonProposal[];
@@ -45,10 +45,10 @@ export interface ParsedNarratorResult {
 
 /**
  * Translate the model's declared HANDLES (B1…, E1…) back to real event/effect
- * ids (presentation-charter.plan.md slice 2). `sim-render` shows the model
- * opaque handles so no id ever needs to appear in prose; here at the boundary
- * they map back before validation against the cut. A declared value not in the
- * map flows through unchanged — the existing unknown-id flagging catches it.
+ * ids. `sim-render` shows the model opaque handles so no id ever needs to
+ * appear in prose; here at the boundary they map back before validation against
+ * the cut. A declared value not in the map flows through unchanged — the
+ * existing unknown-id flagging catches it.
  */
 function mapDeclaredHandles(result: NarratorResult, handleMap: Record<string, string>): NarratorResult {
   const map = (value: string): string => handleMap[value] ?? value;
@@ -60,7 +60,7 @@ function mapDeclaredHandles(result: NarratorResult, handleMap: Record<string, st
 }
 
 /**
- * Parse one raw narrator reply against the §23.1 contract, safely. When a
+ * Parse one raw narrator reply against the narrator contract, safely. When a
  * `handleMap` is given (the successor lane), declared handles are translated to
  * real ids before the proposals are stamped and the audit runs.
  */
@@ -179,7 +179,7 @@ function wordCount(prose: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-/** The §23.2 audit: flags omissions, overreach, and prose hygiene; requests rerender or bridges. */
+/** The audit: flags omissions, overreach, and prose hygiene; requests rerender or bridges. */
 export function auditPresentation(
   cut: NarrativeCut,
   result: NarratorResult,
@@ -238,9 +238,9 @@ export function auditPresentation(
   if (proseEmpty || idLeak || contractEcho || missingBeats.length > maxBridgedBeats) {
     verdict = "rerender";
   } else if (smallOmission) {
-    // Bridge demoted to last resort (presentation-charter §3): a small omission gets a
-    // FEEDBACK retry first; it bridges only from attempt ≥2 (or a direct audit call with no
-    // attempt info, which keeps the legacy accept-with-bridge semantics).
+    // Bridge demoted to last resort: a small omission gets a FEEDBACK retry first;
+    // it bridges only from attempt ≥2 (or a direct audit call with no attempt
+    // info, which keeps the legacy accept-with-bridge semantics).
     if (attempt === undefined || attempt >= 2) {
       verdict = "accept_with_bridge";
       bridgeProse = missingBeats.map((beat) => beat.summary).join(" ");

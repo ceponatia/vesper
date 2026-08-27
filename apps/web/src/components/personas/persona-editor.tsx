@@ -19,7 +19,7 @@ import { heritageChangePatch, speciesChangePatch } from "@/components/characters
 import { OutfitEditor } from "@/components/characters/outfit-editor";
 
 /**
- * The persona form (persona-library.plan.md slice 5) — deliberately THREE tabs against
+ * The persona form — deliberately THREE tabs against
  * the character editor's eight. A persona has a body, a wardrobe and a bio; it has no
  * personality, disposition, drives, relationships or schedule, because the narrator
  * never writes the player's lines (contracts/players/persona-profile.ts).

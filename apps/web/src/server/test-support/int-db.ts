@@ -2,8 +2,8 @@ import { sql } from "drizzle-orm";
 import { db } from "@/server/db";
 
 /**
- * The shared connectivity probe every `.int.test.ts` suite runs at collection
- * (security-authz.plan.md slice 5 follow-up). It replaces the per-suite copies
+ * The shared connectivity probe every `.int.test.ts` suite runs at
+ * collection. It replaces the per-suite copies
  * of the same race-a-timeout block, and adds the mode the copies lacked:
  *
  *   default          a failed probe returns `false` and the suite self-skips

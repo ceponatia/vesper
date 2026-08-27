@@ -21,8 +21,7 @@ import {
 } from "./identity-pack-store";
 
 /**
- * Promotion: the compare-and-set pair that reserves a revision and finalizes it
- * (`.spec.data.md` §"Current-revision promotion").
+ * Promotion: the compare-and-set pair that reserves a revision and finalizes it.
  *
  * Both halves take the same per-character advisory lock and re-verify the same
  * source; see {@link lockAndVerifySource} for why that is one function. What they
@@ -87,8 +86,7 @@ interface ReserveInput {
 }
 
 /**
- * Retire the current revision and reserve the next one, atomically
- * (`.spec.data.md` §"Current-revision promotion").
+ * Retire the current revision and reserve the next one, atomically.
  *
  * The advisory lock is the cross-process half of the single flight, taken on the
  * same key the in-process lock uses. Without it the conditional write does not
@@ -282,8 +280,7 @@ export async function finalizeRevision(input: FinalizeInput): Promise<IdentityPa
  * and `stale` is a contradiction the next reserve would refuse to retire,
  * wedging the character permanently. The crop is hard-deleted rather than left
  * to the retention window because it has no valid consumer at all — no pack row
- * will ever point at it (spec.lifecycle.md §"Superseded and failed revision
- * cleanup").
+ * will ever point at it.
  */
 export async function abandonRevision(packId: string, ownerId: string, cropImageId: string | null): Promise<void> {
   await db()

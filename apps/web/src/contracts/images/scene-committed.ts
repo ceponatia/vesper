@@ -10,7 +10,7 @@ import type { SceneCameraSpec } from "./scene-camera";
 import type { SceneContactPairRead } from "./scene-staging";
 
 /**
- * **Committed scene facts beat guesswork** (scene-composition.plan.md slice 3).
+ * **Committed scene facts beat guesswork.**
  *
  * The shot planner reads the transcript, which is the only source most chats have. But a
  * chat whose typed movements have committed facing, posture, distance, or touch already
@@ -33,9 +33,9 @@ import type { SceneContactPairRead } from "./scene-staging";
  * - **Nothing is written back.** The resolved camera lives and dies inside one render job.
  *   Narration never becomes physical authority, and neither does a render.
  *
- * PURE, and deliberately small: [visual-state.plan.md] owns the lane-neutral projection of
- * what a character looks like right now, and this read migrates onto its image digest when
- * that ships. Keeping the surface to four facts is what makes that migration a swap.
+ * PURE, and deliberately small: `contracts/visual-state` owns the lane-neutral projection
+ * of what a character looks like right now, and this read migrates onto its image digest
+ * when that ships. Keeping the surface to four facts is what makes that migration a swap.
  */
 
 /** The facts this lane can spend, for one focal character and the player. Every member optional — absence is the common case. */

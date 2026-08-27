@@ -11,9 +11,8 @@ import type { ChatCommittedHairState } from "./chat-affordances";
 import type { ChatGuidanceRelevance } from "./chat-physical-guidance";
 
 /**
- * The READ-ONLY developer preview of the narrator physical-guidance staircase
- * (narrator-physical-guidance.plan.md slice 2: "read-only inspector output showing
- * source resolution → candidate → disclosure → selection → rendered instruction").
+ * The READ-ONLY developer preview of the narrator physical-guidance staircase:
+ * source resolution → candidate → disclosure → selection → rendered instruction.
  *
  * It answers the question a fence makes people ask, which is not "what did it say"
  * but "why did it say nothing". Silence here has eight different causes and they look

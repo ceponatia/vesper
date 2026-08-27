@@ -14,8 +14,7 @@ import type {
 import type { ImagePromptSegment } from "./prompt-segments";
 
 /**
- * The normalized render request every image lane speaks
- * (image-model-capabilities.spec.md §"Normalized render intent").
+ * The normalized render request every image lane speaks.
  *
  * Before this existed, each lane called the provider its own way: the portrait
  * lane sent a prompt, the variant lane a prompt and one buffer, the scene lane a
@@ -191,8 +190,7 @@ export interface ImageRenderIntentCore {
   prompt: string;
   /**
    * The same prompt said semantically — ordered segments the render path may
-   * order, fit and (later) compile into a model's own dialect
-   * (image-render-quality.spec.md §"Structured prompt segments").
+   * order, fit and (later) compile into a model's own dialect.
    *
    * AUTHORITATIVE over `prompt` when present and non-empty, because the two are
    * two spellings of one request and a render that merged them would say
@@ -240,8 +238,8 @@ export interface ImageRenderIntentCore {
 }
 
 /**
- * The serializable provenance of ONE provider attempt (the spec's
- * "Observability and reproducibility" record) — what a lane stores on the image
+ * The serializable provenance of ONE provider attempt — the observability and
+ * reproducibility record, and what a lane stores on the image
  * row's `meta.render`, on success and on failure alike, so an operator can
  * trace a stored render back to the provider's own record of it and "retry same
  * composition" has a seed and controls to replay.
@@ -434,10 +432,9 @@ export interface PlannedImageReferences<T extends ImageRenderReferenceSpec> {
 }
 
 /**
- * Choose which references this render sends, in what order, and on which fields
- * (image-model-capabilities.spec.md §"Reference policy").
+ * Choose which references this render sends, in what order, and on which fields.
  *
- * This is slice 3's priority selection and slice 9's control-role binding in one
+ * This is priority selection and control-role binding in one
  * function, because they are one decision: whether a control map competes for a
  * scarce primary slot depends on whether this version gave it a field of its
  * own, and answering that after selection would mean selecting against a

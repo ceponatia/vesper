@@ -21,7 +21,7 @@ export class NarrativeCutVersionError extends Error {
 
 function contentHash(cut: NarrativeCut): string {
   // The hash covers the semantic content — everything except the identity
-  // fields derived from it (§22.3).
+  // fields derived from it.
   const content: Record<string, unknown> = { ...cut };
   delete content.id;
   delete content.semanticHash;
@@ -30,7 +30,7 @@ function contentHash(cut: NarrativeCut): string {
 
 /**
  * Persist one compiled cut. Idempotent for byte-identical recompiles; a same
- * id with different content is a §22.3 violation and throws a version
+ * id with different content is an immutability violation and throws a version
  * diagnostic rather than silently replacing an addressable row.
  */
 export async function persistNarrativeCut(
@@ -63,7 +63,7 @@ export async function persistNarrativeCut(
     throw new NarrativeCutVersionError(
       `NarrativeCut ${cut.id} already persists with hash ${existing.semanticHash} ` +
         `(compiler ${existing.compilerVersion}); recompilation produced ${cut.semanticHash} ` +
-        `(compiler ${cut.compilerVersion}) — §22.3 forbids replacing an addressable cut`,
+        `(compiler ${cut.compilerVersion}) — an addressable cut can never be replaced`,
     );
   }
   return { created: false };
@@ -85,7 +85,7 @@ export async function readPersistedCutRow(
 
 /**
  * The rerender / retry-from-cut read (ruling 8): re-load the immutable row,
- * verify its §22.3 identity, and hand back exactly what the failed render
+ * verify its identity, and hand back exactly what the failed render
  * saw. Zero writes on this path — a retried narration cannot advance time,
  * emit events, or touch any ledger.
  */

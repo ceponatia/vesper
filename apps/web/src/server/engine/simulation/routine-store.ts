@@ -42,9 +42,9 @@ import { applyTriggerScheduledEvent } from "./trigger-projector";
 /**
  * E6.2 — the durable routine controller.
  * `run_routine_policy` is trigger-dispatched at an event-LOD actor's rhythm
- * boundary, re-validates everything at fire time, records the §19.2 decision,
+ * boundary, re-validates everything at fire time, records the decision,
  * and commits the chosen outcome atomically through the ordinary law — the
- * identical asleep train collapse uses when sleep wins, the identical §26.6
+ * identical asleep train collapse uses when sleep wins, the identical
  * consumption train `consume_item` records when a meal wins — then re-arms
  * the next boundary. Zero model calls.
  */
@@ -102,7 +102,7 @@ export async function submitDurableRunRoutinePolicy(
         .map((condition) => condition.endedAtStorySecond ?? 0);
       const lastSleepEndedAtStorySecond = endedSleeps.length > 0 ? Math.max(...endedSleeps) : undefined;
 
-      // The eat_meal candidate's §26 facts, loaded only when a meal window
+      // The eat_meal candidate's material facts, loaded only when a meal window
       // covers the fire second (the resolver recomputes membership through
       // the same pure helper, so the gate can never disagree with the score).
       // Candidates narrow to consumable items up front; the material view

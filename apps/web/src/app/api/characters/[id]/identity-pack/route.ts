@@ -2,8 +2,7 @@ import { withAuthorizedResource } from "@/server/api";
 import { identityPackSummaryResponse, ownedCharacter, type IdentityPackParams, type OwnedCharacter } from "./shared";
 
 /**
- * The character owner's view of their identity pack
- * (image-identity-packs.spec.lifecycle.md §"User routes").
+ * The character owner's view of their identity pack.
  *
  * A pure read: it never derives, so opening the character page cannot start
  * sharp work on every visit. `status: "none"` means nobody has prepared one yet

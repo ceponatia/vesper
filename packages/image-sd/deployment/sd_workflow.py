@@ -20,8 +20,8 @@ Three properties are deliberate and load-bearing:
 3. **It refuses what it does not implement.** A recipe that asks for inpainting
    or a finishing pass raises rather than rendering a plausible image under
    settings nobody chose. Stage 2 implements identity conditioning, one LoRA,
-   depth and pose ControlNet, and SDXL sampling; §12/§7's repair and finishing
-   passes arrive in Stage 7 (sd-rendering-package.plan.md §20).
+   depth and pose ControlNet, and SDXL sampling; the repair and finishing
+   passes arrive in Stage 7.
 
 Every node class name and input name below was read from ComfyUI v0.33.1
 (``nodes.py``) and from cubiq/PuLID_ComfyUI at commit ``93e0c4c2``. The recipe
@@ -119,7 +119,7 @@ COMFY_SCHEDULERS = frozenset({"karras", "normal", "simple", "exponential"})
 UNIMPLEMENTED_RECIPE_BLOCKS = ("inpaint", "finishing")
 
 #: ControlNet roles the recipe vocabulary allows but this deployment has no
-#: nodes for. §11 puts edge/Canny behind "only if trials prove useful".
+#: nodes for. Edge/Canny stays behind "only if trials prove useful".
 UNIMPLEMENTED_CONTROLNETS = ("edge",)
 
 # ---------------------------------------------------------------------------
@@ -140,8 +140,8 @@ UNIMPLEMENTED_CONTROLNETS = ("edge",)
 #
 # The ControlNet strengths below keep their fallbacks, and that asymmetry is
 # deliberate rather than an oversight. Depth and pose are pre-Stage-5 lab
-# controls with no recipe carrying them yet, the plan gives explicit starting
-# bands for both, and every resolved value is logged with the render — so a
+# controls with no recipe carrying them yet, both have explicit starting
+# bands, and every resolved value is logged with the render — so a
 # default there is a documented starting point rather than a silent substitution
 # for a decision the recipe already made.
 # ---------------------------------------------------------------------------
@@ -149,9 +149,9 @@ UNIMPLEMENTED_CONTROLNETS = ("edge",)
 #: LoRA scale when neither the request nor the recipe names one. 1.0 is the
 #: trained strength of the weights as published, so it is the honest "no opinion".
 DEFAULT_LORA_SCALE = 1.0
-#: Depth ControlNet defaults — §7's starting band is roughly 0.45–0.70.
+#: Depth ControlNet defaults — the starting band is roughly 0.45–0.70.
 DEFAULT_DEPTH_STRENGTH = 0.5
-#: Pose ControlNet defaults — §7's starting band is roughly 0.65–0.85.
+#: Pose ControlNet defaults — the starting band is roughly 0.65–0.85.
 DEFAULT_POSE_STRENGTH = 0.75
 #: A control with no recipe window runs over the whole schedule.
 DEFAULT_CONTROL_START = 0.0
@@ -160,7 +160,7 @@ DEFAULT_CONTROL_END = 1.0
 #: PuLID's normalization mode. ``fidelity`` is the identity-preserving one, and
 #: it is what Vesper already sends the third-party SDXL PuLID model, so a
 #: comparison between the two is a comparison of the pipelines rather than of
-#: two different PuLID settings (plan §21).
+#: two different PuLID settings.
 PULID_METHOD = "fidelity"
 #: The ONNX execution provider insightface runs its face detector on.
 PULID_INSIGHTFACE_PROVIDER = "CUDA"
@@ -372,7 +372,7 @@ def build_workflow(recipe: Mapping[str, Any], inputs: WorkflowInputs) -> dict[st
                 "model": model_source,
                 "clip": clip_source,
                 "lora_name": inputs.lora_file,
-                # One scale drives both. §10 keeps a single LoRA slot for the
+                # One scale drives both. There is a single LoRA slot for the
                 # character identity, and splitting model/CLIP strength would
                 # add a knob the recipe contract does not carry and nothing
                 # would record.
@@ -428,7 +428,7 @@ def build_workflow(recipe: Mapping[str, Any], inputs: WorkflowInputs) -> dict[st
         model_source = [NODE_PULID_APPLY, 0]
 
     # --- structural conditioning, applied to both conditionings -------------
-    # Depth before pose: §11 makes depth the first production experiment, and a
+    # Depth before pose: depth is the first production experiment, and a
     # fixed order keeps two renders of the same recipe byte-identical.
     positive_source: list[Any] = [NODE_POSITIVE, 0]
     negative_source: list[Any] = [NODE_NEGATIVE, 0]

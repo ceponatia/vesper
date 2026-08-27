@@ -17,8 +17,7 @@ import { db, imageModelProfiles } from "../db";
 import { loadImageModel, loadImageModels, parseRegistryRows } from "./models";
 
 /**
- * The profile registry's server seam (image-model-capabilities.spec.md
- * §`image_model_profiles`, §"Profile resolution").
+ * The profile registry's server seam.
  *
  * `./models` answers "which model may a surface use". This module answers the
  * narrower question the render path actually has: "which model AND which
@@ -154,7 +153,7 @@ export async function resolveImageProfileForTask(
 }
 
 // ---------------------------------------------------------------------------
-// Admin CRUD (image-model-capabilities.spec.md §"Admin UI") — the LoRA
+// Admin CRUD — the LoRA
 // library's idiom: rows parsed at the boundary, cross-row rules judged against
 // the MERGED row, refusals returned as typed results the route maps to 400s.
 // ---------------------------------------------------------------------------

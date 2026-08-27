@@ -43,10 +43,9 @@ import { seedDurableSpaceTopology } from "./space-store";
 /**
  * E2.6 — the Gate 2 soak. Drives a deterministic synthetic month of commands
  * and triggers through the durable kernel (E2.1–E2.5), then checks the
- * engine-foundation.plan.md §"Required proofs" list against what the database actually
- * recorded.
+ * required proofs against what the database actually recorded.
  *
- * E5.3 rework: the item lane now runs over §26's honest material model — a
+ * E5.3 rework: the item lane now runs over the honest material model — a
  * real zone topology, containers that are themselves items, and locus-typed
  * transfers — rather than Gate 1's pseudo-container rows. "Place" indices
  * unify the fixture's transfer destinations: place 0 is the shared zone
@@ -313,9 +312,9 @@ class SoakRun {
         originStorySecond: 0,
         actors: cast.actorIds.map((id, index) => ({ id, name: `Soak actor ${index}` })),
         items: [
-          // Containers are items too (§26.2): each held by its own actor
+          // Containers are items too: each held by its own actor
           // (round-robin), `open` so any co-located actor may still GIVE into
-          // one — §26.4 person-sovereignty means only the holder may DRAW
+          // one — person-sovereignty means only the holder may DRAW
           // from their own bag, deliberately exercising `held_by_other`
           // alongside the zone (place 0), which no actor owns.
           ...cast.containerIds.map((id, index) => ({
@@ -530,7 +529,7 @@ class SoakRun {
   async openQueueDepths(branchIds: readonly string[]): Promise<{ outbox: number; triggers: number }> {
     // Depth is measured on the lane this soak pumps. The E4.4 memory-index
     // lane shares the table but has its own consumer and its own lag
-    // diagnostics (§24.3) — unpumped here, it would read as false growth.
+    // diagnostics — unpumped here, it would read as false growth.
     const [outboxRow] = await this.database
       .select({ value: count() })
       .from(simOutbox)

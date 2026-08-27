@@ -15,12 +15,12 @@ import { canonicalValueKey } from "./knowledge";
 /**
  * E4.3 — the pure soft-canon kernel. Proposals
  * pass conflict, privacy, scope, duplication, and world-type checks against a
- * lock-consistent entry view; every accepted proposal yields the full
- * post-fold entry snapshot (§6.4 capture), so the durable fold is a trivial
- * upsert and fork replay mints identical rows.
+ * lock-consistent entry view; every accepted proposal yields the full post-fold
+ * entry snapshot, so the durable fold is a trivial upsert and fork replay mints
+ * identical rows.
  *
  * Rejection never fails a turn: a refused proposal is a diagnostic, the prose
- * stands (§23.4 — "may be rejected without regenerating prose").
+ * stands and is never regenerated.
  */
 
 function compareStableText(left: string, right: string): number {
@@ -267,7 +267,7 @@ export type SoftCanonState = Map<string, SoftCanonEntry>;
 
 /**
  * Apply one committed soft-canon event. Trivial by design: every event
- * carries its full post-fold snapshot (§6.4), so live upsert and replay
+ * carries its full post-fold snapshot, so live upsert and replay
  * cannot diverge. Copy-on-write; the input map is never mutated.
  */
 export function applySoftCanonEvent(state: SoftCanonState, event: SimulationBranchEvent): SoftCanonState {

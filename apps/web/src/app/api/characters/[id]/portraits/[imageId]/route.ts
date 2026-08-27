@@ -39,16 +39,15 @@ export const DELETE = withAuthorizedResource<Params, OwnedCharacter>(
     const row = await findPortrait(user.id, id, imageId);
     if (!row) return jsonError("not_found", "portrait not found", 404);
 
-    // Retire first, delete second (image-identity-packs.spec.lifecycle.md §"Source
-    // deletion"): this route deletes the row itself rather than going through
-    // `deleteOwnedImage`, so it owns the ordering `purgeImagesWhere` owns for every
-    // other path. The pack's `source_image_id` is a `set null` FK, so after the
-    // delete no query can still match the pack by this id and it would keep
-    // reporting `ready` over a source that is gone. Contained, because maintenance
-    // must not fail a portrait delete the owner asked for.
+    // Retire first, delete second: this route deletes the row itself rather than
+    // going through `deleteOwnedImage`, so it owns the ordering `purgeImagesWhere`
+    // owns for every other path. The pack's `source_image_id` is a `set null` FK,
+    // so after the delete no query can still match the pack by this id and it would
+    // keep reporting `ready` over a source that is gone. Contained, because
+    // maintenance must not fail a portrait delete the owner asked for.
     await invalidateIdentityPackForSource({ sourceImageIds: [imageId] }).catch(() => undefined);
     // a deleted canonical portrait leaves the character avatar-less, never dangling;
-    // owner predicate direct, not just via findPortrait (security-authz.plan.md slice 6)
+    // owner predicate direct, not just via findPortrait
     await db()
       .update(characters)
       .set({ avatarImageId: null })

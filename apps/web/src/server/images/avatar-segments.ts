@@ -27,8 +27,7 @@ import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
 import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
 
 /**
- * THE AVATAR LANE'S SEGMENT ASSEMBLY (image-lane-consolidation.plan.md Stage 3;
- * spec.prompts.md §Lane migration order → Avatar) — the pure half of the
+ * THE AVATAR LANE'S SEGMENT ASSEMBLY — the pure half of the
  * cutover from `buildAvatarPrompt`'s direct traversal to the visual image
  * digest plus semantic prompt segments. `generateAvatar` calls this once, hands
  * the segments to `renderImageIntent`, and records `digestMeta` on the row at
@@ -66,8 +65,8 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
  * ## Failure behavior
  *
  * Non-empty `missingRequired` means a required digest fact resolved no clause:
- * the caller must refuse before provider spend (spec.prompts.md §Failure
- * behavior) rather than render a character whose anchors quietly vanished.
+ * the caller must refuse before provider spend rather than render a character
+ * whose anchors quietly vanished.
  *
  * Pure: no IO, no env, no clock — which is what lets the lane characterization
  * freeze re-run the production assembly without a database.

@@ -33,10 +33,9 @@ import {
 } from "./chat-contact-transfer";
 
 /**
- * The conserved-transfer transaction — §9's second effect proof
- * (romantic-contact-affordances.spec.effects.md §9, §16's transfer suite).
+ * The conserved-transfer transaction — the second effect proof.
  *
- * This is the file that owns §9's law, and the law is one sentence: **what
+ * This is the file that owns the conservation law, and the law is one sentence: **what
  * leaves the source arrives somewhere, exactly, or nothing moves at all.** Every
  * case below is written as a whole-world statement rather than a spot check,
  * because the defects that matter here are all leaks — a unit lost to rounding,
@@ -243,7 +242,7 @@ describe("applySurfaceTransferProposal — the path", () => {
     const { settlement, before } = run({ proposal: through(0) });
     expect(settlement.status).toBe("committed");
     if (settlement.status !== "committed") return;
-    // §16 wants both halves, and they are the same statement: material blocked
+    // Both halves are the same statement: material blocked
     // by a layer cannot teleport to skin BECAUSE the layer received it.
     expect(settlement.ledger.credits).toEqual([{ target: "sleeve", amount: 4_000 }]);
     expect(settlement.owners.destination.deposits).toBeUndefined();
@@ -308,7 +307,7 @@ describe("applySurfaceTransferProposal — the path", () => {
 describe("applySurfaceTransferProposal — all or nothing", () => {
   it("discards the whole settlement when the destination refuses its leg", () => {
     // A destination already at saturation for this identity cannot take the
-    // credit, and a clamped credit would be the silent discard §7 forbids.
+    // credit, and a clamped credit would be the silent discard conservation forbids.
     const start = owners({
       destination: commitBodySurfaceDeposit(emptyBodySurfaceState(), {
         locationId: "forearms",
@@ -322,7 +321,7 @@ describe("applySurfaceTransferProposal — all or nothing", () => {
     if (settlement.status !== "refused") return;
     expect(settlement.code).toBe(SURFACE_TRANSFER_DESTINATION_REFUSED);
     expectDiagnostics(sink, [SURFACE_TRANSFER_DESTINATION_REFUSED]);
-    // §16: "failed transaction exposes no result". The debit was computed and
+    // A failed transaction exposes no result. The debit was computed and
     // then thrown away, and a refusal must carry no trace of it — an
     // implementation that handed back the half-folded owners "for the caller to
     // decide about" is exactly how a discarded debit reaches a database.
@@ -402,7 +401,7 @@ describe("applySurfaceTransferProposal — retry and retake", () => {
   });
 
   it("takes the receipt back with the debit when the source surface is restored", () => {
-    // The retake law (§9, §13). The receipt rides the debited surface for
+    // The retake law. The receipt rides the debited surface for
     // exactly this reason: restoring that surface from its pre-exchange anchor
     // removes the material AND the record that it moved, together, with no
     // second thing to remember to undo.

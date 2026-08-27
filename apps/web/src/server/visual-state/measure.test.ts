@@ -3,7 +3,7 @@ import { realizeBody, type AttributeValue } from "@/contracts";
 import { compareSets, legacyNarratorAttributeIds } from "./measure";
 
 /**
- * The legacy-comparison instrument (visual-state.plan.md slice 6): a
+ * The legacy-comparison instrument: a
  * measurement replica of the guard chain `character-chat.ts` runs before
  * rendering its Attributes block. It must apply the same five guards —
  * apparent-age skip, unknown-definition skip, prompt exclusion, the intimate

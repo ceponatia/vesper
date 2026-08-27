@@ -7,9 +7,8 @@ import type { SdTrainingDataset, SdTrainingImage } from "./training-manifest";
  * order-independent.**
  *
  * Vesper stores this value on the identity-pack-to-LoRA binding and compares it
- * against a freshly computed one to decide whether a trained LoRA is stale
- * (sd-rendering-package.plan.md §9). Two bad implementations follow, and neither
- * of them throws:
+ * against a freshly computed one to decide whether a trained LoRA is stale. Two
+ * bad implementations follow, and neither of them throws:
  *
  * - **A serialization change.** Reorder the fields, swap a separator, start
  *   including something new, and every stored fingerprint stops matching — so

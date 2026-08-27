@@ -22,8 +22,7 @@ import { saveOwnedImageBuffer } from "./route-safe";
 
 /**
  * The Advanced Image Lab's control fixtures — the pose skeletons, depth maps and
- * edge maps a `control_probe` is run against
- * (qwen-advanced-image-subsystem.spec.md §"Control extraction").
+ * edge maps a `control_probe` is run against.
  *
  * A fixture IS an image: a `lab_control` row with its provenance in
  * `images.meta`, riding the ordinary storage, the ordinary sweep and the

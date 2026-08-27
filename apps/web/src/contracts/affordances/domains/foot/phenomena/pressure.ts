@@ -12,8 +12,7 @@ import {
 } from "./bands";
 
 /**
- * `foot.contact_pressure` — how hard, how broadly, and across what
- * (romantic-contact-affordances.spec.foot.md §`foot.contact_pressure`).
+ * `foot.contact_pressure` — how hard, how broadly, and across what.
  *
  * ## Absent pressure is silence
  *

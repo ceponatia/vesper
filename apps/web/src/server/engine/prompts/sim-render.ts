@@ -48,13 +48,13 @@ import {
 } from "./profile-sections";
 
 /**
- * The successor (simulated-world) narrator's prompt builder
- * (presentation-charter.plan.md slice 2). It replaces `buildCutRenderPrompt` in
+ * The successor (simulated-world) narrator's prompt builder. It replaces
+ * `buildCutRenderPrompt` in
  * `lib/simulation/presentation.ts`: a committed cut plus the successor
  * presentation context (authored profile, persona, projections, conversation)
  * assembled into the SAME craft law the legacy chat narrator obeys — via the
- * shared charter — rather than a bare serialization of the cut (the R2
- * prototype's flaw the plan repairs).
+ * shared charter — rather than a bare serialization of the cut, which was the
+ * earlier prototype's flaw.
  *
  * Pure and snapshot-testable, like `character-chat.ts`; no IO. Two viewpoints
  * are kept explicitly distinct: the EPISTEMIC viewpoint (whose knowledge
@@ -62,13 +62,13 @@ import {
  * charter's law: third person for the primary character, second person "you" for
  * the player). Every raw id is kept out of the prose surface: mustEnact beats and
  * armed effects become opaque handles (B1…, E1…) that `parseNarratorResult` maps
- * back to real ids at the §23.1 trust boundary, so no id ever needs to appear in
+ * back to real ids at the trust boundary, so no id ever needs to appear in
  * the reply and a leak is auditable.
  */
 
 /** The banded relationship read the exchange layer supplies (mirrors `SimChatRelationship`). */
 export interface SimRenderRelationship {
-  /** −100..100, derived from the §21 ledger (never shown as a number). */
+  /** −100..100, derived from the relationship ledger (never shown as a number). */
   regard: number;
   /** 0..100 — authored-prior floor + accumulated dyad evidence (never shown as a number). */
   familiarity: number;
@@ -101,29 +101,29 @@ export interface SimRenderContext {
   viewpointIsPlayer?: boolean;
   /** Display names by actor id — ids never read well in prose. */
   actorNames?: Record<string, string>;
-  /** The world's calendar anchor (R5 time domain, ruling 17); null ⇒ "Day N" display. */
+  /** The world's calendar anchor; null ⇒ "Day N" display. */
   calendarStart?: SimCalendarStart | null;
   /** A command the player's own words already executed in world truth this turn. */
   admittedAction?: string;
   /** The rolling conversation summary (the chat-lane fold) — context, never new facts. */
   conversationSummary?: string;
-  /** §24 viewpoint-scoped recall lines, already perception-partitioned and epistemic-labeled. */
+  /** Viewpoint-scoped recall lines, already perception-partitioned and epistemic-labeled. */
   memory?: readonly string[];
   /** The primary character's authored profile — the source of the AUTHORED CANON block. */
   primary?: { name: string; profile: CharacterProfile };
   /** The resolved persona the player is playing as (no wardrobe/exposure in v1). */
   player?: { name: string; persona?: string; voice?: string; intimacy?: string };
-  /** The R5 sim wardrobe projection (`readSimChatOutfit`), pre-formatted; "" ⇒ no line. */
+  /** The sim wardrobe projection (`readSimChatOutfit`), pre-formatted; "" ⇒ no line. */
   outfitLine?: string;
-  /** The §21 ledger read (`readSimChatRelationship`) — rendered as prose framing, never numbers. */
+  /** The relationship ledger read (`readSimChatRelationship`) — rendered as prose framing, never numbers. */
   relationship?: SimRenderRelationship;
   /** Zone display names by zone id; a missing id is humanized from the id itself. */
   zoneNames?: Record<string, string>;
   /** Active narration shape; defaults to DEFAULT_NARRATION_SHAPE. */
   narrationShape?: NarrationShapeId;
   /**
-   * Whose narrator instructions this render follows (narrator-prompt-lab.plan.md
-   * §Narrator instruction source). Inherited by `SimSoloRenderContext`, so leaving the
+   * Whose narrator instructions this render follows. Inherited by
+   * `SimSoloRenderContext`, so leaving the
    * primary's physical scene cannot silently switch the conversation back to production
    * instructions.
    *
@@ -146,7 +146,7 @@ export interface SimRenderCorrection {
   emptyProse?: boolean;
 }
 
-/** handle → real event/effect id, deterministic per cut (the §23.1 mapping vocabulary). */
+/** handle → real event/effect id, deterministic per cut (the trust boundary's mapping vocabulary). */
 export type SimHandleMap = Record<string, string>;
 
 interface BeatHandle {

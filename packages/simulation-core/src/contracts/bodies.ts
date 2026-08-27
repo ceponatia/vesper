@@ -49,7 +49,7 @@ export type BodyRegistryVersion = z.infer<typeof bodyRegistryVersionSchema>;
 
 // --- Meter registry (ruling 15) ----------------------------------------------
 
-/** The chat taxonomy's meter classes (chat-meter-economy.spec §The meter taxonomy). */
+/** The chat taxonomy's meter classes. */
 export const bodyMeterClasses = ["reserve", "load", "valence", "rate", "phase"] as const;
 export const bodyMeterClassSchema = z.enum(bodyMeterClasses);
 
@@ -117,7 +117,7 @@ export const bodyThresholdDefinitionSchema = z
         })
         .strict(),
     ]),
-    /** Noticeable outcomes capture co-located witnesses at commit (§20). */
+    /** Noticeable outcomes capture co-located witnesses at commit. */
     noticeable: z.boolean(),
   })
   .strict();
@@ -143,8 +143,8 @@ export const bodyMeterDefinitionSchema = z
 export type BodyMeterDefinition = z.infer<typeof bodyMeterDefinitionSchema>;
 
 /**
- * Ruling 15 v1 registry. Semantics port from chat-meter-economy.spec: energy
- * is a reserve with proportional decay (τ ≈ 16h ⇒ half-life = 16h·ln2 ≈
+ * Ruling 15 v1 registry. Semantics port from the chat lane's meter economy:
+ * energy is a reserve with proportional decay (τ ≈ 16h ⇒ half-life = 16h·ln2 ≈
  * 39 925s) restored by sleep sources; hygiene is clock-keyed linear drain;
  * arousal is a load meter decaying toward its per-actor baseline. The
  * bidirectional energy READ, circadian pressure, and rhythm self-care land in
@@ -299,7 +299,7 @@ export const bodyConditionSchema = z
 export type BodyCondition = z.infer<typeof bodyConditionSchema>;
 
 /**
- * The one §25.3 modifier contract. `rate_add` is legal only on linear-law
+ * The one modifier contract. `rate_add` is legal only on linear-law
  * meters (kernel-validated) so every integration piece stays closed-form and
  * monotone; scaling a decay law uses `rate_multiplier`, which divides its
  * half-life. Modifier validity boundaries are integration boundaries — expiry
@@ -363,12 +363,12 @@ export type BodyModifierSpec = z.infer<typeof bodyModifierSpecSchema>;
 /**
  * Authored branch-scoped rhythm windows — the character's own daily life as
  * data (ported from the chat lane's `profile.schedule`). `sleep` anchors the
- * circadian pressure curve; `wash` rows are window-crossing self-care (§25.5:
- * a skip credits only the rows it actually crossed, never a blanket restore).
- * `meal` rows (E6.2) are routine-controller boundaries: an event-LOD actor's
- * alarm fires at the window start and eating happens as REAL §26.6 item
- * consumption — deliberately never a crossing credit, which is why
- * {@link rhythmSelfCareEffects} has no meal entry (§25.5: crossings MUST NOT
+ * circadian pressure curve; `wash` rows are window-crossing self-care (a skip
+ * credits only the rows it actually crossed, never a blanket restore). `meal`
+ * rows (E6.2) are routine-controller boundaries: an event-LOD actor's alarm
+ * fires at the window start and eating happens as REAL item consumption —
+ * deliberately never a crossing credit, which is why
+ * {@link rhythmSelfCareEffects} has no meal entry (crossings MUST NOT
  * blanket-restore meals). A satiation meter joins the registry later
  * (chat-body-needs); until then a meal's body effect is whatever the consumed
  * item authored.
@@ -405,17 +405,16 @@ export const ENERGY_SLEEP_RESTORE_CAP_FIXED_POINT = 9_500 as const;
 export const HYGIENE_WASH_SET_FIXED_POINT = 9_500 as const;
 
 /**
- * The v1 circadian pressure curve (ruling 15; chat-meter-economy.spec OQ1),
- * every knob a versioned value documented for post-build tuning. Anchors are
- * piecewise-linear in minutes relative to the actor's own wake (W) and
- * bedtime (B): a post-waking inertia bump decaying to the day floor, the
- * afternoon dip, an evening low, the ramp into bedtime (the ZERO definition:
- * at B, pressure ≈ the reserve a normal day leaves, so read = 0 IS bedtime),
- * the ~B+5h trough peak, then the second-wind fall back to W. Pressure keeps
- * climbing past a missed night via the escalation rate (per hour awake
- * beyond the normal waking span), which is what makes the −1 floor land at
- * ~40h awake with no hardcoded hour. Values reproduce the spec's verified
- * 7am-wake / 11pm-bed table.
+ * The v1 circadian pressure curve (ruling 15), every knob a versioned value
+ * documented for post-build tuning. Anchors are piecewise-linear in minutes
+ * relative to the actor's own wake (W) and bedtime (B): a post-waking inertia
+ * bump decaying to the day floor, the afternoon dip, an evening low, the ramp
+ * into bedtime (the ZERO definition: at B, pressure ≈ the reserve a normal day
+ * leaves, so read = 0 IS bedtime), the ~B+5h trough peak, then the second-wind
+ * fall back to W. Pressure keeps climbing past a missed night via the
+ * escalation rate (per hour awake beyond the normal waking span), which is
+ * what makes the −1 floor land at ~40h awake with no hardcoded hour. Values
+ * reproduce the chat lane's verified 7am-wake / 11pm-bed table.
  */
 export const circadianCurveV1 = {
   version: "circadian-v1",
@@ -436,7 +435,7 @@ export const circadianCurveV1 = {
   escalationPerHourFixedPoint: 312,
 } as const;
 
-/** Which meter a rhythm kind services, and how (the §25.4 coupling as data). */
+/** Which meter a rhythm kind services, and how (the coupling as data). */
 export const rhythmSelfCareEffects: Partial<
   Record<BodyRhythmKind, { meterKey: string; operation: BodySourceOperation }>
 > = {
@@ -509,7 +508,7 @@ export type VisibleBodySign = z.infer<typeof visibleBodySignSchema>;
 
 /** Chat parity: afterglow follows climax, self-expiring (a tunable knob). */
 export const AFTERGLOW_DURATION_SECONDS = 1_800 as const;
-/** §25.4 exertion coupling: hygiene drains at half the energy cost. */
+/** Exertion coupling: hygiene drains at half the energy cost. */
 export const EXERTION_HYGIENE_FRACTION_FIXED_POINT = 5_000 as const;
 /** Collapse is forced sleep: how long the body takes what it was denied. */
 export const COLLAPSE_SLEEP_SECONDS = 28_800 as const;
@@ -648,7 +647,7 @@ const applyBodyConditionPayloadSchema = z
     durationSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
     /** Owned modifiers; their validity is clamped to the condition's lifetime. */
     modifiers: z.array(bodyModifierSpecSchema).max(8).default([]),
-    /** Trusted capture set — the acting store resolves noticeability (§20). */
+    /** Trusted capture set — the acting store resolves noticeability. */
     observerActorIds: observerActorIdsSchema.default([]),
   })
   .strict();

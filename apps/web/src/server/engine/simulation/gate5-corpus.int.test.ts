@@ -98,11 +98,10 @@ import { loadRelationshipLedgerProjection } from "./social-recorder";
 import { submitDurableAttemptConsentEscalation } from "./social-store";
 
 /**
- * The Gate 5 exit corpus (engine-foundation.plan.md §"Gate 5 exit" / §"Gate 5 build
- * order" item 6, E5.6): deterministic scenarios, ZERO model calls, proving
- * "the engine can explain why a body, item, household, or relationship is in
- * its current state from causal records, while the narrator sees only what
- * the viewpoint can perceive or believe." Runs on the shared
+ * The Gate 5 exit corpus (E5.6): deterministic scenarios, ZERO model calls,
+ * proving "the engine can explain why a body, item, household, or relationship
+ * is in its current state from causal records, while the narrator sees only
+ * what the viewpoint can perceive or believe." Runs on the shared
  * `simulationSuiteHarness` (probe + teardown, `trackBranchMembers` because
  * these scenarios create households) with a per-scenario `CorpusCase` and the
  * shared `simCommand` envelope builder submitted with
@@ -362,11 +361,11 @@ describe.runIf(harness.ready)(
     // -------------------------------------------------------------------------
     // 1 — Explain-why: a body. Why she is wrecked at 2am: an authored rhythm, a
     // real (but too-short) sleep, circadian escalation while awake past it, and
-    // collapse arming — reconstructed purely from events + §6.4 derivation
+    // collapse arming — reconstructed purely from events + derivation
     // blocks, and the narrative-facing read (the collapse beat's signed energy
     // read) matches the reconstructed chain.
     // -------------------------------------------------------------------------
-    it("EXIT 1 — reconstructs why a body collapses from causationId + §6.4 derivation blocks alone, and the read matches the beat", async () => {
+    it("EXIT 1 — reconstructs why a body collapses from causationId + derivation blocks alone, and the read matches the beat", async () => {
       const ids = await seedCorpusCase();
       await seedSleepOnlyRhythm(ids.branchId, ids.mara);
       const init = await submitDurableInitializeActorBody(
@@ -466,7 +465,7 @@ describe.runIf(harness.ready)(
       );
 
       // At least one threshold crossing (energy's "depleted", uncontested by
-      // any wash reset) fires en route, each carrying a real §6.4 block.
+      // any wash reset) fires en route, each carrying a real derivation block.
       const thresholdCrossings = events.filter(
         (event) => event.type === "body_threshold_crossed",
       );
@@ -507,7 +506,7 @@ describe.runIf(harness.ready)(
 
     // -------------------------------------------------------------------------
     // 2 — Explain-why: an item. Where the last meal went: household stock lot
-    // -> §27.2 promotion (allowance debited, instantiation event) -> held ->
+    // -> promotion (allowance debited, instantiation event) -> held ->
     // consumed -> body_source_applied, fully reconstructable and conserved.
     // -------------------------------------------------------------------------
     it("EXIT 2 — reconstructs where the last meal went: stock -> promotion -> held -> consumed -> body effect, conserved", async () => {
@@ -710,7 +709,7 @@ describe.runIf(harness.ready)(
     // through the scheduler drain, quantities balance transactionally at every
     // step: same-kind conservation, a cross-kind purchase pair causally
     // linked, and the means-band top-up as the one sanctioned unconserved
-    // credit (§26.9).
+    // credit.
     // -------------------------------------------------------------------------
     it("EXIT 3 — a household's stock balances at every step: same-kind conservation, a linked cross-kind purchase, and the one unconserved means-band credit", async () => {
       const ids = await seedCorpusCase();
@@ -739,9 +738,9 @@ describe.runIf(harness.ready)(
       );
 
       // Means-band-funded "tea" routine, fired FIRST — while the household is
-      // still genuinely band-tracked (no currency lot exists yet; §26.10's
-      // structural precedence means a lot, once initialized, would otherwise
-      // win over the band unconditionally).
+      // still genuinely band-tracked (no currency lot exists yet; the means
+      // read's structural precedence means a lot, once initialized, would
+      // otherwise win over the band unconditionally).
       await submitDurableSetMeansBand(
         command(ids, "set-band", "set_means_band", gmPrincipal, {
           subject: { kind: "household", householdId },
@@ -933,7 +932,7 @@ describe.runIf(harness.ready)(
         expect(debit.payload.deltaRaw).toBeLessThan(0);
         expect(credit.payload.materialKindKey).toBe("bread");
         expect(credit.payload.deltaRaw).toBeGreaterThan(0);
-        // The §26.9 causally-linked cross-kind pair, in the SAME transaction.
+        // The causally-linked cross-kind pair, in the SAME transaction.
         expect(credit.causationId).toBe(debit.id);
       }
 
@@ -1385,7 +1384,8 @@ describe.runIf(harness.ready)(
     // to equivalent smaller skips ACROSS material thresholds (a wash window
     // suppressing hygiene's alarm, energy's threshold crossing, and a worn
     // item's cleanliness drift/crossing in the skip span) — because only
-    // material transitions ever write (§25's design-by-construction claim).
+    // material transitions ever write (the body kernel's design-by-construction
+    // claim).
     // -------------------------------------------------------------------------
     it("EXIT 6 — one big skip is bit-identical to several smaller skips to the same target second, across body and item-condition thresholds alike", async () => {
       const garmentId = newId();

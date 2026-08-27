@@ -25,13 +25,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The per-character sheet (character-chat-state.spec.md slice 4; scoped per roster
- * member since followups ruling 13): inspect + edit ONE character's state — the
- * two axes + relationship texture toward the player, meters, conditions, mindNote,
- * outfit + exposure, presence. The engine-surface readouts — the pulse trace,
- * cue-split, memory trace, chat clock, and the next-turn memory-queries editor —
- * are **admin-only** (ux-improvements slice 4, ruled: hidden entirely from
- * players; same role check as the /chat/:chatId/inspector page). Chat-WIDE
+ * The per-character sheet, scoped per roster member: inspect + edit ONE character's
+ * state — the two axes + relationship texture toward the player, meters, conditions,
+ * mindNote, outfit + exposure, presence. The engine-surface readouts — the pulse
+ * trace, cue-split, memory trace, chat clock, and the next-turn memory-queries editor
+ * — are **admin-only**: hidden entirely from players, same role check as the
+ * /chat/:chatId/inspector page. Chat-WIDE
  * fields (premise, house rules, scene prefs) live in the Scenario modal
  * instead. Available to the character owner. The form mounts fresh each open
  * (the Dialog unmounts its children when closed), so `useState` initializers
@@ -107,16 +106,16 @@ function StateToolsDialog({
   const [outfitPresetId, setOutfitPresetId] = useState(snapshot.outfitPresetId);
   const [outfit, setOutfit] = useState(snapshot.outfit);
   const [outfitExposed, setOutfitExposed] = useState(snapshot.outfitExposed);
-  // The presentation graph (clothing-state-graph slice 3): the last-saved readout
-  // plus the operations this sheet has queued but not yet sent.
+  // The presentation graph: the last-saved readout plus the operations this sheet
+  // has queued but not yet sent.
   const [garments, setGarments] = useState(snapshot.garments);
   const [garmentOperations, setGarmentOperations] = useState<GarmentOperation[]>([]);
   const [garmentDiagnostics, setGarmentDiagnostics] = useState(snapshot.garmentDiagnostics);
   const [livePresence, setLivePresence] = useState(presence);
   const [presenceBusy, setPresenceBusy] = useState(false);
   const [newCondition, setNewCondition] = useState("");
-  // Inspector-grade fields (character-chat-standalone.spec.md §6.1): open loops +
-  // next-turn memory queries, edited as one-per-line text.
+  // Inspector-grade fields: open loops + next-turn memory queries, edited as
+  // one-per-line text.
   const [openLoops, setOpenLoops] = useState(snapshot.openLoops.join("\n"));
   const [memoryQueries, setMemoryQueries] = useState(snapshot.memoryQueries.join("\n"));
   const [saving, setSaving] = useState(false);
@@ -141,9 +140,9 @@ function StateToolsDialog({
   const memory = snapshot.lastMemoryTrace;
   const attributeOverlays = snapshot.attributeOverlays;
 
-  // What the live (edited) state would surface to the narrator next turn
-  // (character-chat-state-narration.spec.md §5/§9): the foreground "just shifted" beat vs the
-  // standing cues, diffed against the bands surfaced last turn, plus the condition overlays.
+  // What the live (edited) state would surface to the narrator next turn: the
+  // foreground "just shifted" beat vs the standing cues, diffed against the bands
+  // surfaced last turn, plus the condition overlays.
   const cueSplit = splitStateCues(meters, snapshot.surfacedCues);
   const overlays = conditionAttributeOverlays(conditions);
 
@@ -239,7 +238,7 @@ function StateToolsDialog({
 
       {/* flex-wrap: label + range + value totals ~347px, wider than the ~318px
           dialog column at a 390px viewport — the range+value pair drops to its
-          own line instead of overflowing (mobile-ux W3 task 4). */}
+          own line instead of overflowing. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Regard</span>
         <div className="flex items-center gap-2">
@@ -419,8 +418,8 @@ function StateToolsDialog({
         />
       </label>
 
-      {/* Engine surface below — admin-only (ux-improvements slice 4). Players get
-          the editable fields above; the traces mirror /chat/:chatId/inspector. */}
+      {/* Engine surface below — admin-only. Players get the editable fields above;
+          the traces mirror /chat/:chatId/inspector. */}
       {isAdmin ? (
         <>
       <label className="flex flex-col gap-1">
@@ -527,8 +526,8 @@ function StateToolsDialog({
                 Attribute changes: <span className="text-paper-300">{memory.attributeChanges.join(", ")}</span>
               </li>
             ) : null}
-            {/* The grounded wardrobe lane (clothing-state-graph slice 5): every proposal's
-                fate, so a drop rate is measured rather than guessed (audit OQ7). */}
+            {/* The grounded wardrobe lane: every proposal's fate, so a drop rate is
+                measured rather than guessed. */}
             {memory.garmentOperations.length ? (
               <li>
                 Garment ops ({memory.garmentLane}):{" "}

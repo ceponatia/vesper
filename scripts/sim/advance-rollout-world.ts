@@ -2,7 +2,7 @@ import "dotenv/config";
 import { advanceRolloutWorld } from "@/server/engine";
 
 /**
- * R1 (engine.rollout.plan.md): advance the rollout test world's story clock,
+ * R1: advance the rollout test world's story clock,
  * looping the bounded drain until it converges. Usage:
  *
  *   pnpm sim:advance -- --days 3

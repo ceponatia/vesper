@@ -69,10 +69,10 @@ import { loadSpaceRows, spaceProjectionFromRows, submitDurableMoveActor } from "
 /**
  * E4.3 — the live-scene turn seam: drain due
  * world work through the turn span, let deterministic policy (with an
- * optional §19.3-admitted deliberator) commit departures, compile one full
- * §22.1 cut, and persist it immutable. Confirmation validates the narrator's
+ * optional admitted deliberator) commit departures, compile one full
+ * cut, and persist it immutable. Confirmation validates the narrator's
  * declared enactments against the PERSISTED cut row — the model result is
- * never trusted for content, only for selection (§23.3, ruling 9).
+ * never trusted for content, only for selection (ruling 9).
  */
 
 const MAX_BELIEF_ROWS = 64;
@@ -102,15 +102,15 @@ export interface PrepareTurnInput {
   spanSeconds: number;
   /** How far past the turn the departure policy anticipates. Default 600. */
   horizonSeconds?: number;
-  /** Actors the player asked to stay (§15.3): departure defers to the last moment. */
+  /** Actors the player asked to stay: departure defers to the last moment. */
   stayRequestedActorIds?: readonly string[];
   /** Actors policy must never move (player agency). Defaults to the viewpoint. */
   playerActorIds?: readonly string[];
   proposedArmedEffects?: readonly ProposedArmedEffect[];
-  /** §14.4 public faces of this turn's rejected commands, supplied by the caller. */
+  /** Public faces of this turn's rejected commands, supplied by the caller. */
   failurePresentations?: readonly PublicFailurePresentation[];
   /**
-   * The §19.3 deliberator admission seam: consulted only when one policy
+   * The deliberator admission seam: consulted only when one policy
    * actor holds several in-horizon departure candidates. Absent, the
    * deterministic policy stands alone — behavior is bit-identical.
    */
@@ -123,14 +123,14 @@ export interface PreparedTurn {
   advance: AdvanceStoryTimeOutcome;
   /** Policy departures attempted this turn, with each command's outcome. */
   departures: (PolicyDeparture & { result: string })[];
-  /** §19.3 deliberations run this turn, rationale recorded, fallback-safe. */
+  /** Deliberations run this turn, rationale recorded, fallback-safe. */
   deliberations: TurnDeliberationRecord[];
-  /** §15.3/§11 decision 5 (E5.5 slice 3): every open pressure belonging to a
+  /** Decision 5 (E5.5 slice 3): every open pressure belonging to a
    * scene participant who did NOT depart this turn, marked "looked at" —
    * `already_acknowledged` is an expected, harmless outcome on a repeat turn
    * at unchanged severity. */
   acknowledgments: { actorId: string; pressureId: string; result: string }[];
-  /** False when this exact cut id + hash was already persisted (§22.3). */
+  /** False when this exact cut id + hash was already persisted. */
   cutCreated: boolean;
 }
 
@@ -170,7 +170,7 @@ export async function prepareEngagementTurn(
   const fromStorySecond = start.storySecond;
   const turnEnd = fromStorySecond + input.spanSeconds;
 
-  // §18.3 step 2: reconcile due world work through the turn boundary. The
+  // Reconcile due world work through the turn boundary. The
   // world does not freeze for a conversation. A2-1: the advance is tolerant — a
   // concurrent skip/travel drain that already moved past `turnEnd` does NOT crash
   // the turn; the effective target clamps up to the drained clock and the turn
@@ -181,7 +181,7 @@ export async function prepareEngagementTurn(
     targetMode: "at_least",
   });
 
-  // §18.3 steps 4–6: look ahead and let deterministic policy decide.
+  // Look ahead and let deterministic policy decide.
   const pressureRows = await database
     .select()
     .from(simTemporalPressures)
@@ -238,7 +238,7 @@ export async function prepareEngagementTurn(
   };
   const departures = decideDepartures(policyInput);
 
-  // §19.3: when one actor legally could answer several pressures, an admitted
+  // When one actor legally could answer several pressures, an admitted
   // deliberator may pick among them — never outside them. Refusal, timeout,
   // and nonsense all land on the deterministic head-of-queue choice.
   const deliberations: TurnDeliberationRecord[] = [];
@@ -256,7 +256,7 @@ export async function prepareEngagementTurn(
           Math.min(1_000_000, horizonEnd - pressure.actBy),
         ),
       }));
-      // E6.1: the acting NPC's real per-actor inference LOD (§28) — read per
+      // E6.1: the acting NPC's real per-actor inference LOD — read per
       // actor, not per turn; unassigned actors read the registry default
       // (deliberator), reproducing the pre-Gate-6 caller-supplied value.
       const actorLod = await readEffectiveActorLod(database, branchId, actorId);
@@ -289,7 +289,7 @@ export async function prepareEngagementTurn(
     }
   }
 
-  // §18.3 step 7: commit. A departure interrupts this very scene atomically
+  // Commit. A departure interrupts this very scene atomically
   // (slice 1), so the cut compiled below already shows the interruption.
   const attempted: PreparedTurn["departures"] = [];
   for (const departure of departures) {
@@ -322,7 +322,7 @@ export async function prepareEngagementTurn(
     attempted.push({ ...departure, result: result.status === "rejected" ? result.code : result.status });
   }
 
-  // §18.3 step 8: compile one immutable perspective-safe cut.
+  // Compile one immutable perspective-safe cut.
   const [after] = await database
     .select({
       headSequence: simBranches.headSequence,
@@ -364,7 +364,7 @@ export async function prepareEngagementTurn(
     )
     .orderBy(asc(simTemporalPressures.pressureId));
   // E4.1: what the viewpoint perceived this interval comes from the committed
-  // observation log — the compiler re-decides nothing about witnessing (§20).
+  // observation log — the compiler re-decides nothing about witnessing.
   const viewpointObservations = await loadViewpointObservations(
     {
       branchId,
@@ -380,7 +380,7 @@ export async function prepareEngagementTurn(
     .where(eq(simActivities.branchId, branchId))
     .orderBy(asc(simActivities.activityInstanceId));
   // E4.2: the viewpoint's own live beliefs, joined to what each one claims —
-  // the speaker may voice them even when they are wrong (§21, §22.1).
+  // the speaker may voice them even when they are wrong.
   const beliefRows = await database
     .select({ belief: simBeliefs, assertion: simAssertions })
     .from(simBeliefs)
@@ -459,11 +459,11 @@ export async function prepareEngagementTurn(
     bodilyReads,
   });
 
-  // §22.3: the cut becomes an immutable, addressable row. Rerender and
+  // The cut becomes an immutable, addressable row. Rerender and
   // narrator-failure retry (ruling 8) re-read it via `loadPersistedCut`.
   const { created } = await persistNarrativeCut(cut, { database });
 
-  // E5.5 slice 3 (§15.3, §11 decision 5 REVISED): mark every open pressure
+  // E5.5 slice 3 (decision 5 REVISED): mark every open pressure
   // belonging to a scene participant "looked at" this turn, UNLESS that
   // actor's own departure was accepted (their pressure resolves via the
   // departure's own commitment machinery, not acknowledgment). Sourced from
@@ -478,8 +478,8 @@ export async function prepareEngagementTurn(
   // Placement: AFTER the cut is compiled and persisted, not before. A
   // pressure this turn is narratively surfacing should still show up in
   // THIS turn's own cut — acknowledging it now only suppresses it starting
-  // the NEXT turn's cut (§9.4's filter compares live severity against the
-  // captured acknowledgedSeverity at read time). Acknowledging before
+  // the NEXT turn's cut (the pressure filter compares live severity against
+  // the captured acknowledgedSeverity at read time). Acknowledging before
   // compilation would silently swallow a pressure from the very turn that
   // raised it.
   const acknowledgments: PreparedTurn["acknowledgments"] = [];
@@ -535,11 +535,11 @@ function rejectedResult<TCode extends string>(commandId: string, code: TCode, pu
 }
 
 /**
- * Confirm one narrator render against its PERSISTED cut (§23.3, ruling 9):
+ * Confirm one narrator render against its PERSISTED cut (ruling 9):
  * the payload names armed-effect ids and soft-canon proposals; every enacted
  * id is revalidated against the cut row, unknown ids are ignored, unenacted
  * effects expire, and the E4.2 bridge turns an enacted armed disclosure into
- * a real §21 `disclosure_made` event. Only the newest cut of an engagement is
+ * a real `disclosure_made` event. Only the newest cut of an engagement is
  * confirmable — an older cut's effects have expired with it.
  */
 export async function submitDurableConfirmNarratorResult(
@@ -601,7 +601,7 @@ export async function submitDurableConfirmNarratorResult(
         return rejectedResult(command.id, "cut_superseded", "That moment of the scene has passed.");
       }
 
-      // §23.3: selection only. Unknown ids are dropped, order comes from the
+      // Selection only. Unknown ids are dropped, order comes from the
       // cut, and every payload field below is quoted from the persisted row.
       const enactedIdSet = new Set(command.payload.enactedArmedEffectIds);
       const enactedEffects = cut.armedEffects.filter((effect) => enactedIdSet.has(effect.id));
@@ -655,7 +655,7 @@ export async function submitDurableConfirmNarratorResult(
               actorId: effect.actorId,
               targetActorIds: [...effect.targetActorIds].sort(compareStableText),
               detail: effect.detail,
-              // E5.5 (§21.3, §21.4): a consent-scoped enacted effect
+              // E5.5: a consent-scoped enacted effect
               // (boundary_expressed/permission_granted/permission_withdrawn)
               // must carry its scopeKey into the real event, or
               // `speechActDeliveredPayloadSchema`'s
@@ -668,7 +668,7 @@ export async function submitDurableConfirmNarratorResult(
           }),
         );
 
-        // The E4.2 bridge: an enacted armed disclosure becomes a real §21
+        // The E4.2 bridge: an enacted armed disclosure becomes a real
         // knowledge event, folded into beliefs by the shell's recorder. A
         // capture failure (stale relay, foreign retraction) degrades to the
         // speech act alone — the render already happened, truth stays safe.
@@ -735,7 +735,7 @@ export async function submitDurableConfirmNarratorResult(
         }
       }
 
-      // §23.4: accepted proposals become audited records; a threshold-crossing
+      // Accepted proposals become audited records; a threshold-crossing
       // reuse appends the ruled promotion event right behind its record.
       for (const accepted of resolution.accepted) {
         sequence += 1;

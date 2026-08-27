@@ -9,7 +9,7 @@ import { chatBusyResponse, loadOwnedChat, resolveChatMemoryGroupId } from "../..
 
 type Params = { chatId: string };
 
-/** Mirrors POST /api/chats' MAX_CHAT_PARTICIPANTS (multi-character-chat.plan.md: 2–4 typical, cap 4). */
+/** Mirrors POST /api/chats' MAX_CHAT_PARTICIPANTS: 2–4 characters typical, cap 4. */
 const MAX_CHAT_PARTICIPANTS = 4;
 
 const addBodySchema = z.object({
@@ -19,12 +19,12 @@ const addBodySchema = z.object({
 });
 
 /**
- * POST /api/chats/:chatId/participants — add a character to the roster
- * (multi-character-chat.plan.md slice 1). The joiner gets its own
- * `chat_participants` row (next sort) with the D7 memory-group resolution, and
- * its `character_chat_state` row seeds lazily from its authored defaults on
- * first load — same as a fresh 1-on-1. Refused mid-stream (`chat_busy`), over
- * the cap, on an archived chat, and for an already-present member.
+ * POST /api/chats/:chatId/participants — add a character to the roster. The
+ * joiner gets its own `chat_participants` row (next sort) with the D7
+ * memory-group resolution, and its `character_chat_state` row seeds lazily from
+ * its authored defaults on first load — same as a fresh 1-on-1. Refused
+ * mid-stream (`chat_busy`), over the cap, on an archived chat, and for an
+ * already-present member.
  */
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { chatId } = await ctx.params;

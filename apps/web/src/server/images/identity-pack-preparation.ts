@@ -27,8 +27,7 @@ import { currentPackRow, errorMessage, isLiveReservation } from "./identity-pack
  * ------------------------------------------------------------------------ */
 
 /**
- * Fire-and-forget pack preparation after a canonical portrait lands
- * (spec.lifecycle.md §"Creation after a canonical portrait").
+ * Fire-and-forget pack preparation after a canonical portrait lands.
  *
  * Returns void immediately and swallows everything: preparation does NOT
  * participate in the transaction that made the portrait canonical, so no
@@ -66,9 +65,9 @@ export function queueIdentityPackPreparation(characterId: string, ownerId: strin
 }
 
 async function prepareIdentityPackJob(characterId: string, ownerId: string): Promise<void> {
-  // Invalidate BEFORE the dedupe, always (spec.lifecycle.md §"Source assignment":
-  // the assignment path marks any previous current pack stale before or while
-  // requesting the new derivation). Order is the whole point: promoting portrait B
+  // Invalidate BEFORE the dedupe, always: the assignment path marks any previous
+  // current pack stale before or while
+  // requesting the new derivation. Order is the whole point: promoting portrait B
   // while portrait A's job is still live gets this call deduped away, and without
   // the invalidation A's `ready` pack would stay current forever — pointing at a
   // portrait the character no longer has, with nothing in the UI offering to
@@ -269,7 +268,7 @@ type ConvergenceCheck =
  * `in_flight` is a stop, not a retry. A live `pending` revision for the right
  * source cannot be this job's own — its ensure already settled — so another
  * process owns that derivation, and a `background` ensure declines those promptly
- * by ruling (§"Cross-process coalescing"). Passing again would earn the same
+ * by ruling — cross-process coalescing. Passing again would earn the same
  * refusal on a timer, which is polling another machine's work from a job slot: the
  * one thing the background purpose exists not to do. That process's own
  * settle-and-recheck, or the next trigger, converges.
@@ -295,7 +294,7 @@ async function preparationConvergence(characterId: string, ownerId: string): Pro
 
 /**
  * The character's canonical pointer, read through the OWNER like every other pack
- * operation (spec.lifecycle.md §"Authorization root"). A character that vanished
+ * operation — the authorization root. A character that vanished
  * or changed hands mid-job reads as no pointer, which ends the loop rather than
  * letting a detached job keep working on somebody else's row.
  */
@@ -368,14 +367,13 @@ function preparationDiagnostic(convergence: PreparationConvergence): string | nu
  * ------------------------------------------------------------------------ */
 
 /**
- * The named trial corpora an admin batch may address by id
- * (spec.lifecycle.md §"Lazy backfill", spec.trial.md §"Corpus").
+ * The named trial corpora an admin batch may address by id.
  *
  * Empty at v1, and that is the deliverable: the seam exists, resolution is typed,
  * and an unknown id fails loudly instead of running an empty batch that reports
  * success. The corpus itself is a set of CHARACTER ids, and character ids are
  * per-environment cuid2s — so the entries arrive with the trial slice's fixture
- * characters (spec.trial.md lists what they must cover: contrast, framing, a
+ * characters (which must cover contrast, framing, a
  * stylized subject, glasses, occlusion, a multi-person source, a low-resolution
  * source), not as literals invented here.
  */
@@ -427,8 +425,7 @@ export type PrepareIdentityPacksBatchResult =
   | { ok: false; code: "unknown_corpus" | "empty_selection" | "too_many"; message: string };
 
 /**
- * Prepare a bounded set of characters' packs ahead of demand
- * (spec.lifecycle.md §"Lazy backfill" and §"Admin routes").
+ * Prepare a bounded set of characters' packs ahead of demand.
  *
  * Existing characters are NOT migrated by eagerly processing every portrait —
  * the first identity-critical request derives what it needs. This exists for the

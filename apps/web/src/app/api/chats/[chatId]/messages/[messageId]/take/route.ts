@@ -10,9 +10,9 @@ const bodySchema = z.object({ takeId: z.string().min(1) });
 
 /**
  * PATCH /api/chats/:chatId/messages/:messageId/take — make one recorded take the
- * displayed reply (character-chat-standalone.spec.md §4.1). Display-only: the
- * row's `content` mirrors the pick; state/memory keep reflecting the last
- * GENERATED take (regenerate to re-run effects).
+ * displayed reply. Display-only: the row's `content` mirrors the pick;
+ * state/memory keep reflecting the last GENERATED take (regenerate to re-run
+ * effects).
  */
 export const PATCH = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { chatId, messageId } = await ctx.params;

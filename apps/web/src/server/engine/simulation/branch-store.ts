@@ -142,7 +142,7 @@ export interface BranchAncestry {
   rootOriginStorySecond: number;
 }
 
-/** Walk the parent chain (plan R4). Every branch-scoped read starts here. */
+/** Walk the parent chain (R4). Every branch-scoped read starts here. */
 export async function loadBranchAncestry(
   executor: DbExecutor,
   rawBranchId: string,
@@ -307,7 +307,7 @@ export async function assembleBranchState(
       ...(row.containerCapacityCount !== null && row.containerAccess !== null
         ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
         : {}),
-      /** §26.7: whether this item carries item-condition (wear/cleanliness) meters. */
+      /** Whether this item carries item-condition (wear/cleanliness) meters. */
       conditionTracked: row.conditionTracked,
       locus: itemLocusFromHoldingRow({
         locusKind: row.locusKind,
@@ -339,7 +339,7 @@ export async function readDurableBranchState(
 
 /**
  * The world-creation state a replay starts from, reverse-derived because the
- * seed step itself is not an event (plan R3): statics are immutable copies,
+ * seed step itself is not an event (R3): statics are immutable copies,
  * and each item's origin is where its earliest recorded transfer found it.
  * The child identity is stamped so replayed state belongs to the reader.
  *
@@ -398,8 +398,8 @@ export interface ForkBranchOptions {
 }
 
 /**
- * Fork a branch at a past sequence into a causally isolated child (spec §29.3,
- * plan R1/R4). The child's state is produced by replaying ancestor events
+ * Fork a branch at a past sequence into a causally isolated child (R1/R4).
+ * The child's state is produced by replaying ancestor events
  * 1..N through the same projectors that ran live — never by copying current
  * projection or trigger rows — and the child references ancestor events by
  * ancestry rather than owning copies, so its own row set starts empty.
@@ -523,7 +523,7 @@ export async function forkBranch(
       );
     }
 
-    // Re-create triggers by replaying their setting events (plan R1). An alarm
+    // Re-create triggers by replaying their setting events (R1). An alarm
     // whose firing is already part of inherited history is recorded completed,
     // never re-armed — replaying is not a reroll.
     const pendingTriggerIds: string[] = [];
@@ -754,7 +754,7 @@ export async function forkBranch(
       );
     }
 
-    // E5.3 slice 3 item condition (§26.7): fully evented, its own projection
+    // E5.3 slice 3 item condition: fully evented, its own projection
     // — replay from the empty seed, exactly like bodies. Meter values re-land
     // on their last MATERIAL write; pending `item_condition_threshold_due`
     // alarms re-arm or complete through the SAME shared trigger ledger above
@@ -793,7 +793,7 @@ export async function forkBranch(
       );
     }
 
-    // E5.4 households (§26.8–26.11): fully evented, its own projection —
+    // E5.4 households: fully evented, its own projection —
     // replay from the empty seed, exactly like bodies/item condition.
     // Membership/lot/means-band/routine rows land on their last MATERIAL
     // write; a lazily-initialized lot a later command never touched again
@@ -908,7 +908,7 @@ export async function forkBranch(
       );
     }
 
-    // E6.1 actor LODs (§27–28): fully evented, replay from the empty seed —
+    // E6.1 actor LODs: fully evented, replay from the empty seed —
     // an unassigned actor has no row on the parent and gets none on the
     // child (both read the registry defaults purely).
     const childActorLods = replayActorLodHistory({
@@ -929,7 +929,7 @@ export async function forkBranch(
       );
     }
 
-    // E6.3 cohorts (§27.6): fully evented, replay from the empty seed —
+    // E6.3 cohorts: fully evented, replay from the empty seed —
     // conserved counts rebuild bit-identical and presence stays a pure read
     // on the child exactly as on the parent.
     const childCohorts = replayCohortHistory({
@@ -971,7 +971,7 @@ export async function forkBranch(
     await insertReplayedKnowledge(tx, childKnowledge, input.childBranchId);
 
     // E5.5 relationship ledger: a derived-and-persisted projection with no
-    // incremental state machine (§6) — a full rebuild re-derives from the
+    // incremental state machine — a full rebuild re-derives from the
     // inherited stream alone, the SAME fold the incremental recorder calls.
     // `commitmentById` resolves from `childCommitments`, the commitments
     // projection already rebuilt earlier in this fork (line ~618) — a pure
@@ -988,7 +988,7 @@ export async function forkBranch(
     });
     await insertReplayedSocialLedger(tx, childSocialLedger, input.childBranchId);
 
-    // E4.3 soft canon: every event carries its post-fold snapshot (§6.4), so
+    // E4.3 soft canon: every event carries its post-fold snapshot, so
     // the child's bounded store rebuilds from the inherited stream alone.
     // Persisted cuts are NOT copied — they are presentation artifacts; a
     // retaken scene re-prepares and mints its own.
@@ -996,7 +996,7 @@ export async function forkBranch(
     await insertReplayedSoftCanon(tx, childSoftCanon, input.childBranchId);
 
     // Inherited delivery obligations were fulfilled on ancestor branches; the
-    // child's consumer lane starts after the fork point (plan R4 — reference,
+    // child's consumer lane starts after the fork point (R4 — reference,
     // not copy, applies to disposable projections too).
     await tx.insert(simConsumerCheckpoints).values({
       consumerKind: itemTransferFeedConsumerKind,

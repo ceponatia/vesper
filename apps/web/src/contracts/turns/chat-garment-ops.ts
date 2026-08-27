@@ -34,10 +34,9 @@ import {
 import { mintGarmentBlueprint } from "../items/garment-templates";
 
 /**
- * The continuity extractor's GARMENT PROPOSAL contract and its pure mapping layer
- * (clothing-state-graph.plan.md §Slice 5).
+ * The continuity extractor's GARMENT PROPOSAL contract and its pure mapping layer.
  *
- * The design law this file implements, verbatim from the plan: *"The continuity
+ * The design law this file implements: *"The continuity
  * prompt enumerates only in-scope opaque garment and part handles. The extractor
  * returns those handles, not names to fuzzy-match."* A proposal is therefore not
  * a `GarmentOperation` — it is a semantic sentence over HANDLES (`sabrina.shirt`,
@@ -247,9 +246,8 @@ export const garmentOperationTraceSchema = z
 // --- Which mutation lane an exchange runs -------------------------------------
 
 /**
- * Which wardrobe-mutation path this exchange takes. Exactly ONE ever runs (plan
- * §Typed mutation surface — "the existing name matcher remains only a degraded
- * legacy bridge"):
+ * Which wardrobe-mutation path this exchange takes. Exactly ONE ever runs — the
+ * existing name matcher remains only a degraded legacy bridge:
  *
  * - `operations` — the extractor returned typed proposals. The free-text folds
  *   are skipped entirely, so no actor is mutated twice in one exchange.
@@ -555,9 +553,9 @@ export interface GarmentProposalContext {
 }
 
 /**
- * Apply a whole exchange's proposals to the store, IN FICTION ORDER (plan
- * §"Operations apply in fiction order… an impossible later operation is dropped
- * with a stable diagnostic"). PURE — the caller injects `mintId` and persists.
+ * Apply a whole exchange's proposals to the store, IN FICTION ORDER — an
+ * impossible later operation is dropped with a stable diagnostic. PURE: the
+ * caller injects `mintId` and persists.
  *
  * Each proposal goes to the ONE dispatcher (`applyGarmentOperations`) on its own,
  * threading the store forward, so a transfer really does precede a part operation

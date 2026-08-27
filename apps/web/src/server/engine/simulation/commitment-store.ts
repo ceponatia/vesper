@@ -379,7 +379,7 @@ export async function submitDurableRaisePressure(
     execute: async (tx, branch: LockedBranchView, command) => {
       const commitment = await loadCommitment(tx, branch.id, command.payload.commitmentId);
       const { space, originZoneId } = await loadActorOriginSpace(tx, branch, commitment?.actorId);
-      // The §15.1 knowledge gate, resolved per source kind: an E4.1
+      // The knowledge gate, resolved per source kind: an E4.1
       // observation of the named event, or an E4.2 live belief in the named
       // assertion / the named belief row. Fails closed on every miss.
       let knowledgeSourceHeld = false;
@@ -538,8 +538,8 @@ export async function submitDurableResolveCommitmentDeadline(
 }
 
 /**
- * E5.5 slice 2 (§15.1, §7.4): fulfill a destinationless commitment via an
- * explicit self-report. The social ledger recorder (§5.7) picks up the
+ * E5.5 slice 2: fulfill a destinationless commitment via an
+ * explicit self-report. The social ledger recorder picks up the
  * resulting `commitment_kept` event on its own pass — this store needs no
  * direct social awareness.
  */

@@ -2,8 +2,7 @@ import { createHmac } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 /**
- * Client-address resolution for the pre-authentication limiter
- * (rate-limits.plan.md slice 2).
+ * Client-address resolution for the pre-authentication limiter.
  *
  * Forwarded headers are attacker-controlled in general, so the order below is a
  * trust ranking, not a convenience fallback: Fly's edge proxy overwrites

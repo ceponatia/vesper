@@ -65,8 +65,8 @@ describe("chatLookKey (chat-wardrobe-parity — structured key)", () => {
  * `chatLookKey` is the `meta.lookKey` stamped on every `chat_look` row, and the
  * loader (`latestChatLook`) reads a mismatch as "this look is stale". The values
  * below were computed from the hand-rolled FNV-1a this file carried BEFORE it
- * adopted the shared `@/lib/hash` (image-pipeline-consolidation.plan.md C10), so
- * they prove the consolidation moved nothing.
+ * adopted the shared `@/lib/hash`, so they prove the consolidation moved
+ * nothing.
  *
  * If one of them ever changes, every conversation already in the database misses
  * its cache on the next turn and silently re-renders its look anchor against the

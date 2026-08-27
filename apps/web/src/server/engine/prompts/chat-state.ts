@@ -2,11 +2,11 @@ import { EMOTION_LABELS, interactionConceptById, interactionConceptIds } from "@
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * The character-chat reaction-pulse prompt (character-chat-state.spec.md §4). A
+ * The character-chat reaction-pulse prompt. A
  * small, single-concern classifier (like ./intake.ts / ./inner-note.ts): read the
  * latest exchange and report the player's primary act (classified into the
  * interaction-concept vocabulary) plus a refreshed "what's on their mind" note.
- * The deterministic §6 curve owns every number — the model never proposes deltas.
+ * The deterministic social-reaction curve owns every number — the model never proposes deltas.
  * Pure and snapshot-testable; no IO.
  */
 
@@ -52,12 +52,12 @@ export interface ChatPulsePromptInput {
   /** The prior mindNote, so the model refines rather than restarts disposition. */
   mindNote: string;
   /**
-   * The standing persistent feeling (emotional-weather.plan.md), so the model can
+   * The standing persistent feeling, so the model can
    * judge resolution (`"neutral"` clears it) instead of proposing blind. Null ⇒ none.
    */
   feeling?: { label: string; cause: string } | null;
   /**
-   * Commitments that just came due this exchange (chat-plans-promises): a just-missed plan
+   * Commitments that just came due this exchange: a just-missed plan
    * is a hurt that lingers; a just-kept one is warm. The feeling proposal reads these — the
    * curve/regard never move off them (model-mediated only). Absent when nothing came due.
    */
@@ -89,7 +89,7 @@ export function buildChatPulsePrompt(input: ChatPulsePromptInput): string {
     `Player: ${input.playerName.trim() || "the player"}`,
     `Prior mindNote:\n${prior ? fenceUntrusted("prior mind note", prior) : "(none yet)"}`,
     `Standing feeling: ${feeling || "(none)"}`,
-    // Commitments that came due this exchange (chat-plans-promises) — untrusted (player/
+    // Commitments that came due this exchange — untrusted (player/
     // character-authored plan text), so fenced like the rest.
     ...(commitmentLines.length
       ? [`Commitments that just came due (weigh these for "feeling"):\n${fenceUntrusted("commitments", commitmentLines.join("\n"))}`]

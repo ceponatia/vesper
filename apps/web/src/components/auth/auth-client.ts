@@ -4,7 +4,7 @@ import { createAuthClient } from "better-auth/react";
 import { adminClient, magicLinkClient } from "better-auth/client/plugins";
 
 /**
- * Browser-side Better Auth client (auth.plan.md). Talks to /api/auth/* on the
+ * Browser-side Better Auth client. Talks to /api/auth/* on the
  * same origin — no baseURL needed in dev. The magic-link + admin client plugins
  * mirror the server plugins so `signIn.magicLink` and the admin methods exist.
  */

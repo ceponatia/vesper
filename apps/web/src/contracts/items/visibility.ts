@@ -3,8 +3,7 @@ import { bodyLocationRegistry, type BodyLocationRegistry } from "../body/locatio
 
 /**
  * One coverage-bearing row handed to the resolver: a whole garment, or ONE PART
- * of one once presentation makes a garment's parts differ
- * (clothing-state-graph.plan.md slice 3; slice-0 audit finding 3).
+ * of one once presentation makes a garment's parts differ.
  */
 export interface WornItemInput {
   /**

@@ -1,9 +1,9 @@
 import { parseMessageSpans, spanChannel } from "@/lib/message-spans";
 
 /**
- * Shared archivist channel hint (player-input-perception.plan.md slice 6/7): the
+ * Shared archivist channel hint: the
  * parser-derived "the player used notation this message" note both lane archivists
- * surface, so neither re-implements the sigil grammar (jscpd gate + the plan's
+ * surface, so neither re-implements the sigil grammar (jscpd gate + the
  * single-parser rule) nor clones the other's copy. When the player marks interiority
  * (`*…*` ⇒ private) or an out-of-character aside (`((…))` ⇒ skip), the deterministic
  * spans turn the fact-channel classification into a cheap parse; everything else

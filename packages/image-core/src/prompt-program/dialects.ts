@@ -13,18 +13,17 @@ import { isMandatoryImagePositiveClaim, type ImagePositiveClaim } from "./positi
 import type { ImageOperationContract } from "./world-digest";
 
 /**
- * The endpoint dialect registry (model-aware-image-prompts.plan.md §"Model and
- * endpoint dialect registry").
+ * The endpoint dialect registry.
  *
  * A dialect is how ONE endpoint wants a job expressed — long concrete prose for
  * Qwen Image 2512, a delta-first numbered instruction for Qwen Image Edit 2511,
  * Compel tags for a Pony wrapper. It is a different axis from `promptStrategy`,
  * which says what the job IS, and keeping them apart is what stops the template
- * matrix the plan warns about: strategy × model × entity fields would otherwise
+ * matrix: strategy × model × entity fields would otherwise
  * multiply into a file per combination.
  *
  * The registry is CODE and closed. A profile row selects an entry by id; it can
- * never carry a template. That is the plan's ruling and it has a security edge as
+ * never carry a template. That rule has a security edge as
  * well as an engineering one — a malformed or adversarial whole-prompt template
  * must not become production behavior through an admin text field.
  *
@@ -39,8 +38,8 @@ import type { ImageOperationContract } from "./world-digest";
  *
  * The full list, not only the implemented ones. A profile binding referring to an
  * id with no registered compiler REFUSES rather than falling back to a generic
- * prompt (plan §"Failure and degradation behavior"), and that refusal is only
- * expressible if the id is a legal value in the first place. It also means the
+ * prompt, and that refusal is only expressible if the id is a legal value in
+ * the first place. It also means the
  * cutover order is visible: the ids are here, the compilers arrive one endpoint
  * at a time behind their own trials.
  */
@@ -59,8 +58,8 @@ export const imagePromptDialectIds = [
 export type ImagePromptDialectId = (typeof imagePromptDialectIds)[number];
 
 /**
- * A prompt channel the PROVIDER contributes without being asked
- * (plan §"Provider defaults are part of the effective prompt").
+ * A prompt channel the PROVIDER contributes without being asked — provider
+ * defaults are part of the effective prompt.
  *
  * Vesper cannot claim to manage a prompt separately from a model while an
  * invisible wrapper default keeps altering it. Every one of these is declared per

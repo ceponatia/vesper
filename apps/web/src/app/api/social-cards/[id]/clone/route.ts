@@ -2,7 +2,7 @@ import { cloneToLibrary, jsonError, jsonOk, storageQuotaRejection, withUser } fr
 
 type Params = { id: string };
 
-/** Clone a social card into your library (auth.plan.md) — see items clone. */
+/** Clone a social card into your library — see items clone. */
 export const POST = withUser<Params>(
   async (user, req, ctx) => {
     const { id } = await ctx.params;

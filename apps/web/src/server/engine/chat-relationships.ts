@@ -10,8 +10,8 @@ import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { characterChatRelationships, characterRelationships, db } from "../db";
 
 /**
- * The per-conversation relationship matrix (relationship-model.plan.md §The
- * matrix): directed NPC↔NPC records, seeded from the library defaults at
+ * The per-conversation relationship matrix: directed NPC↔NPC records, seeded
+ * from the library defaults at
  * creation/join and authored per conversation on top. Static texture in v2 —
  * no pulse, no ratchet; lived shifts reach the narrator through archivist
  * relationship facts. The character→player edge stays on character_chat_state.

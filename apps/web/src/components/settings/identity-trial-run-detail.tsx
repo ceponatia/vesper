@@ -27,10 +27,9 @@ import { IdentityTrialSummary } from "./identity-trial-summary";
 
 /**
  * One trial run: progress counts, the bounded Execute control, the cell grid
- * with per-cell refusal explanations, and the review/summary tabs
- * (image-identity-packs.spec.trial.md). Execute is the only control here that
- * spends money, and it says so — each click runs at most the chosen batch and
- * reports what remains planned.
+ * with per-cell refusal explanations, and the review/summary tabs. Execute is
+ * the only control here that spends money, and it says so — each click runs at
+ * most the chosen batch and reports what remains planned.
  */
 
 const EXECUTE_BATCH_MIN = 1;

@@ -9,8 +9,7 @@ import { db, images } from "@/server/db";
  * These were module-private inside their route files, which meant the
  * authorization matrix (`src/server/api/authz-matrix.int.test.ts`) could only
  * reproduce them — and a secure test copy can drift away from an insecure route
- * original. They live here so the route and the matrix run the SAME query
- * (security-authz.plan.md slice 5 follow-up).
+ * original. They live here so the route and the matrix run the SAME query.
  */
 
 /**
@@ -18,7 +17,7 @@ import { db, images } from "@/server/db";
  * filed against the character too but belong to the Chat tab, and hidden identity
  * crops (`identity_face_crop`) belong to no user surface at all — a positive
  * allow-list is what keeps both out of every route below, including the mutating
- * ones (image-identity-packs.spec.data.md §Hidden image asset).
+ * ones.
  */
 const PORTRAIT_STUDIO_KINDS = ["avatar", "portrait_variant"] as const;
 

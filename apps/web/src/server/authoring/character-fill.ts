@@ -21,7 +21,7 @@ import type { CharacterDraft } from "./drafts";
 import type { ClothingCandidateLookup, LibraryLookup } from "./library";
 
 /**
- * Sheet fill (character-sheet-forge.plan.md): the in-sheet Forge. Runs the
+ * Sheet fill: the in-sheet Forge. Runs the
  * existing forge section legs with the authored sheet rendered as a fixed
  * concept, then applies the fill-merge policy (lib/character-fill.ts) so
  * nothing the player entered ever changes — the merge is the guarantee, the

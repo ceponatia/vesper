@@ -1,5 +1,5 @@
 /**
- * Narrator Prompt Lab — the server half (narrator-prompt-lab.plan.md slice 2).
+ * Narrator Prompt Lab — the server half.
  *
  * Owner-scoped persistence for handwritten narrator instruction prompts: named
  * templates, their append-only revision chain, the per-conversation selection,

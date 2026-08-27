@@ -5,11 +5,11 @@ player reopens the conversation, and surfacing an old shared moment unprompted.
 
 ## Initiative (the character reaches out first)
 
-The reopen opener (`chat-initiative.plan.md`):
+The reopen opener:
 the pickup strip gains **"Let {who} start ✦"**, which runs a `continue`-kind
 exchange with `initiative: true` — the server builds the cue
 (`buildInitiativeCue`, `engine/chat-initiative.ts`): reach out FIRST, with her
-own material (**near plans lead** since chat-plans-promises — an imminent
+own material (**near plans lead** — an imminent
 commitment "is tonight still on?" or the cold open after being stood up — then
 top open loops + unresolved non-secret wants — withheld secrets
 never leak into the cue; the drives tail law owns them — plus, since the
@@ -17,7 +17,7 @@ remainder pass, the **unseen shift** and the **daily rhythm** below), the **"a
 life meanwhile" license** folded in (build decision: instead of a separate
 life-event agent, the cue invites ONE small concrete thing from her life since,
 skip-aware — zero extra model calls, exactly as grounded as the narrator
-already is; since chat-offscreen-life it also carries the **supporting cast**
+already is; it also carries the **supporting cast**
 as material — the sister is who she'd have seen — and when the meanwhile pass
 left a `pending_meanwhile_note` for this gap, that note **leads the material
 and the license switches to "pick your ONE meanwhile beat from it — never
@@ -34,9 +34,9 @@ opener-selfie license armed, where it runs **opener-scoped** (below).
 
 The remainder slices (shipped 2026-07-12):
 
-- **Marker v2 — the unseen-milestone seen-cursor** (spec §8.4 v2). The hub's
+- **Marker v2 — the unseen-milestone seen-cursor**. The hub's
   "has something to say" derivation (`GET /api/chats`) stays read-time-pure.
-  Since chat-plans-promises an **imminent or just-missed PLAN outranks open
+  An **imminent or just-missed PLAN outranks open
   loops** (`planHubReason` over the chat's `plans` + `clock_minutes` — a
   commitment coming due is the strongest pull); with no near plan the top open
   loop leads, and with no loops the reason is the **newest
@@ -65,7 +65,6 @@ The remainder slices (shipped 2026-07-12):
 
 Fused recall is input-relevance-only, so shared history never resurfaced on its own —
 the character could never say "remember when…" unprompted. The memory-callback cue
-(`memory-callbacks.plan.md`)
 fixes that with one low-frequency, one-turn tail line:
 
 - **Gate first, cost second** (`chat-callback.ts` `chatCallbackEligible`, pure): real

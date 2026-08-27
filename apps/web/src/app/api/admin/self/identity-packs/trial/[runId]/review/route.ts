@@ -6,8 +6,7 @@ import { nextUnreviewedTrialPair, submitTrialPairGrade } from "@/server/images";
 type Params = { runId: string };
 
 /**
- * The blinded review queue (image-identity-packs.spec.trial.md §"Review
- * procedure").
+ * The blinded review queue.
  *
  * GET serves the next unreviewed pair — two image ids, the shared task and
  * prompt fixture, and deliberately NOTHING strategy-shaped: the reviewer must

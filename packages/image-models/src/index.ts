@@ -6,7 +6,7 @@
  * dialect, a reference convention, an endpoint that queues for minutes before
  * it starts, an endpoint whose negative field is decorative. Without this
  * package that knowledge has nowhere to live, and it leaks back into shared
- * code as slug checks — which is what it was doing before (plan §3).
+ * code as slug checks — which is what it was doing before.
  *
  * **It never replaces the probed capability registry.** The registry row stays
  * the authority on provider wire fields: which key carries the prompt, whether

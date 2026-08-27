@@ -10,7 +10,7 @@ import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
 
 /**
  * Cap on the authored `playerRelationship.note` — it pre-fills a chat premise, so
- * keep it a one-line setup, not a second bio (character-chat-state.spec.md §1.1).
+ * keep it a one-line setup, not a second bio.
  */
 export const PLAYER_RELATIONSHIP_NOTE_MAX = 280;
 
@@ -33,8 +33,8 @@ export const scheduleEntrySchema = z.object({
 export type ScheduleEntry = z.infer<typeof scheduleEntrySchema>;
 
 /**
- * The day-part vocabulary the schedule authoring surfaces speak
- * (chat-initiative.plan.md slice 4 — "rows, not a timetable grid"): the editor
+ * The day-part vocabulary the schedule authoring surfaces speak — rows, not a
+ * timetable grid: the editor
  * offers these as row presets and the forge drafts in them; the stored shape
  * stays raw minutes, so hand-authored windows and the session movement engine
  * (`scheduleEntryAt` — wrap-past-midnight supported) are untouched.
@@ -183,7 +183,7 @@ export const characterProfileObjectSchema = z.object({
   personality: z.string().default(""),
   voice: z.string().optional(),
   /**
-   * This character's INTIMATE disposition (intimacy-notes.spec.md): how they read as a
+   * This character's INTIMATE disposition: how they read as a
    * lover — preferences, temperament in intimacy. The per-character layer of the
    * `intimacy` note trio, **appended on top of** the species/heritage archetype and
    * surfaced to the narrator ONLY when the turn's exposure mask reaches the intimate
@@ -193,7 +193,7 @@ export const characterProfileObjectSchema = z.object({
    */
   intimacy: z.string().optional(),
   /**
-   * Worked dialogue exemplars (character-fidelity slice 6): 2–3 forge/redraft-drafted
+   * Worked dialogue exemplars: 2–3 forge/redraft-drafted
    * examples of how the character answers a charged moment (a deflection, a boundary,
    * a tease), rendered as few-shots in the chat prefix so voice + disposition + age
    * anchor near generation. Element-wise `.catch` (docs/resilience.md §1) drops one bad
@@ -260,30 +260,29 @@ export const characterProfileObjectSchema = z.object({
   tags: z.array(z.string()).default([]),
   preferences: z.array(preferenceSchema).default([]),
   /**
-   * The character's own default social-reaction cards (social-reaction-cards.plan.md):
+   * The character's own default social-reaction cards:
    * its *personal* lines/taboos, snapshot copies from the card library. They resolve in
    * the world-less character chat and, in a session, are tried **before** the world's
    * cards (the personal line beats society's). Default `[]` ⇒ no character cards.
    */
   socialCards: z.array(socialReactionCardSchema).default([]),
   /**
-   * Character drives (character-drives.plan.md): ≤3 authored wants with secrecy
+   * Character drives: ≤3 authored wants with secrecy
    * levels — the inner life chat state seeds from and the drive prompt law reads.
    */
   drives: drivesSchema,
   /**
-   * Atomic personality traits (personality-and-state.spec.md §3): numeric scalars
+   * Atomic personality traits: numeric scalars
    * with registry-defined bands, carrying the `AttributeValue` provenance shape
    * (base/creation/manual). Default `[]` ⇒ a character with no traits surfaces no
    * disposition block and scales reactions by 1 — exactly today's behavior.
    */
   traits: z.array(traitValueSchema).default([]),
   /**
-   * The character's authored default stance toward the player
-   * (character-chat-state.spec.md §1.1; relationship-model.plan.md slice 2): the
+   * The character's authored default stance toward the player: the
    * AUTHORED relationship record — two band picks + kind/history/mask texture —
    * that seeds a new chat's live scalars at band midpoints, plus the one-line
-   * `note` that pre-fills the chat's default premise (§1.2). The legacy
+   * `note` that pre-fills the chat's default premise. The legacy
    * `{stage, note}` shape heals in the preprocess (old `stage` maps through
    * `stageToBandIds`). Default strangers/neutral/"" ⇒ zeroed axes and no default
    * premise ⇒ today's behavior. Stored as `playerRelationship` (intrinsic stance
@@ -306,7 +305,7 @@ export const characterProfileObjectSchema = z.object({
   ),
   aliases: z.array(z.string()).default([]),
   /**
-   * Named outfit presets (ux-improvements.plan.md slice 8 — ruled: REPLACES the
+   * Named outfit presets (ruled: they REPLACE the
    * old `defaultOutfit` id list): casual/work/date-night/sleep looks, each a
    * list of item definition ids from the owner's library. The FIRST preset is
    * the default — what the forge targets, the avatar wears, sessions seed, and
@@ -337,8 +336,8 @@ export function emptyCharacterProfile(): CharacterProfile {
 }
 
 /**
- * The profile attributes a PUBLIC preview may carry (security-authz.plan.md
- * OQ2). Only `identity.gender`: the library browse route already extracts it in
+ * The profile attributes a PUBLIC preview may carry.
+ * Only `identity.gender`: the library browse route already extracts it in
  * SQL as a public facet (`GET /api/characters?scope=public`), so withholding it
  * from the detail projection would buy nothing while breaking the wearer hint
  * on a chat with someone else's public character. Everything else in the
@@ -350,7 +349,7 @@ export const PUBLIC_PROFILE_ATTRIBUTE_IDS: readonly AttributeValue["id"][] = ["i
 
 /**
  * What a FOREIGN viewer sees of a character's authored profile
- * (security-authz.plan.md OQ2, ruled **conservative private-by-default**): the
+ * (ruled **conservative private-by-default**): the
  * presentation data the public preview renders, and nothing else. Narrator
  * guidance (`voice`, `voiceAnchors`, `microExemplars`, `intimacy`, `traits`,
  * `preferences`, `socialCards`), authored secrets (`drives` — they carry

@@ -4,8 +4,8 @@ import { METER_FIXED_POINT_ONE } from "@vesper/simulation-core/contracts/bodies"
 import { formatStoryClockShort, storyClockAt } from "./clock";
 
 /**
- * R4 slice 2 (engine.rollout.plan.md) — the scale-aware parity analysis over
- * recorded `sim_shadow_divergences` rows. Pure: rows in, report out. The two
+ * The scale-aware parity analysis over recorded `sim_shadow_divergences` rows.
+ * Pure: rows in, report out. The two
  * lanes measure differently, so every comparison normalizes first:
  *
  * - clock: absolutes are incommensurate (legacy minutes-since-anchor vs the

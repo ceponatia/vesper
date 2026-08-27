@@ -2,8 +2,7 @@ import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { ImagePromptBinding } from "../capabilities/image-model-capabilities";
 
 /**
- * Ordered semantic prompt segments (image-render-quality.spec.md §"Structured
- * prompt segments").
+ * Ordered semantic prompt segments.
  *
  * A dialect compiler should consume SEMANTICS, not a finished paragraph. Before
  * this existed, every lane handed the render path one opaque string, so the only
@@ -34,18 +33,17 @@ import type { ImagePromptBinding } from "../capabilities/image-model-capabilitie
  *
  * Declaration order is the contract: {@link orderImagePromptSegments} reads this
  * tuple's index and nothing else, so moving an entry moves it in every compiled
- * prompt. The order is the spec's union, which runs from the operation contract
+ * prompt. The order runs from the operation contract
  * outward through the subject, the subject's state, its surroundings, and finally
  * how the whole thing should be rendered — mandatory content first, decoration
  * last, which is exactly the order a budget squeeze wants to eat from the tail of.
  *
- * `framing` sits between `age` and `pose` because the spec's union puts it there.
- * The plan's prose groups it with lighting and atmosphere; that grouping is a
- * reading aid, and the union is the shape code was asked to implement. Framing
- * also genuinely constrains what a pose can mean — a waist-up crop decides
+ * `framing` sits between `age` and `pose` rather than with lighting and
+ * atmosphere, where it might read more naturally, because framing genuinely
+ * constrains what a pose can mean — a waist-up crop decides
  * whether a hand is in the picture at all — so it earns the earlier position.
  *
- * A dialect may REORDER these when it compiles (the spec's `sdxl_tag` order leads
+ * A dialect may REORDER these when it compiles (the `sdxl_tag` order leads
  * with the rendering medium, which is `quality` here). That is a dialect's
  * business; this order is what a segment list means before any dialect touches it.
  */
@@ -87,7 +85,7 @@ export interface ImagePromptSegment {
   /**
    * Whether fitting may drop this segment.
    *
-   * Caller-declared, but not caller-final: the kinds the spec names as
+   * Caller-declared, but not caller-final: the kinds named as
    * load-bearing are promoted to mandatory by {@link normalizeImagePromptSegments}
    * with a diagnostic. A lane that marked its age anchor optional would otherwise
    * be one long setting description away from letting a budget squeeze delete it,
@@ -117,10 +115,9 @@ export interface ImagePromptSegment {
 }
 
 /**
- * The kinds that may never be dropped to save space
- * (image-render-quality.spec.md §"Structured prompt segments": "Identity, age
- * safety anchors, person count, intended morphology, current clothing/exposure
- * authority, and the edit delta remain mandatory").
+ * The kinds that may never be dropped to save space: identity, age safety
+ * anchors, person count, intended morphology, current clothing/exposure
+ * authority, and the edit delta all remain mandatory.
  *
  * An exhaustive switch rather than a set literal, so a fifteenth segment kind is
  * a COMPILE ERROR here until somebody decides whether losing it is acceptable.
@@ -159,7 +156,7 @@ function segmentKindRank(kind: ImagePromptSegmentKind): number {
 /**
  * The prompt-length budget a render is fitted to, in CHARACTERS.
  *
- * Characters rather than tokens on purpose. The spec's effective-context protocol
+ * Characters rather than tokens on purpose. The effective-context protocol
  * measures a budget per pinned version by moving a sentinel through a prompt, and
  * no such measurement exists yet; a token count invented here would be a second
  * guess wearing a measurement's name. Characters are a unit this process can
@@ -225,7 +222,7 @@ export function orderImagePromptSegments(segments: readonly ImagePromptSegment[]
 
 /**
  * Bring a caller's segments to the shape the rest of this module assumes:
- * trimmed text, no empties, a usable priority, and the spec's mandatory floor
+ * trimmed text, no empties, a usable priority, and the mandatory floor
  * enforced rather than trusted.
  *
  * Every correction is a DIAGNOSTIC and a degraded default, never a throw
@@ -287,7 +284,7 @@ export interface FittedImagePromptSegments {
   /** The joined length of {@link FittedImagePromptSegments.segments}. */
   characters: number;
   /**
-   * True when the mandatory floor STILL exceeds the hard ceiling — the spec's
+   * True when the mandatory floor STILL exceeds the hard ceiling — the
    * `image_model.prompt_too_long_required` case. Nothing further can be given up
    * without cutting a sentence the render depends on, so the caller sends an
    * over-long prompt and says so rather than mutilating one.
@@ -450,8 +447,8 @@ function replaceAt(
  * Deliberately naive — a period, question mark or exclamation mark ends a
  * sentence — because the alternative is a sentence tokenizer, and the only
  * consequence of being wrong here is that a segment gives up a slightly larger
- * or smaller piece of itself. What the rule guarantees is the property the spec
- * asks for: whatever comes back, a boundary is never inside one of these units,
+ * or smaller piece of itself. What the rule guarantees is this: whatever comes
+ * back, a boundary is never inside one of these units,
  * so a mandatory segment shortened by whole units is never cut mid-sentence.
  *
  * Run ONLY when compression is actually needed, so an unfitted prompt is never

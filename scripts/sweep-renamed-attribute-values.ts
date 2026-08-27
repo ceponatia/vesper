@@ -5,9 +5,8 @@ import { characterChatState, characters, db, personas } from "@/server/db";
 
 /**
  * One-off, idempotent stored-value sweep for registry vocabulary changes —
- * originally the attribute-narrator-guidance vocabulary audit
- * (attribute-narrator-guidance.plan.md, slice 3), extended since for each
- * subsequent rename/removal.
+ * originally the attribute vocabulary audit, extended since
+ * for each subsequent rename/removal.
  *
  * The entangled-vocabulary renames were made as REGISTRY data edits in prior
  * sessions (never a schema migration — registries are the extension point), but
@@ -37,7 +36,7 @@ import { characterChatState, characters, db, personas } from "@/server/db";
  * registry with no successor value. There is nothing to map to, so the stored
  * pair is DROPPED rather than rewritten:
  *
- *   hair.quality (2026-07-28 hair-axis split, body-attribute-affordances.spec.hair.md):
+ *   hair.quality (2026-07-28 hair-axis split):
  *     the entangled feel/condition axis was replaced by hair.density,
  *     hair.strand_thickness, and hair.condition. Owner ruling: no value
  *     backfill — the new axes start blank and are authored by hand.

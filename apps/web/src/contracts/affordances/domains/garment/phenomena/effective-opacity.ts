@@ -14,7 +14,7 @@ import { garmentIntimateSuppression, garmentTag } from "./tags";
 
 /**
  * `garment.effective_opacity` — a garment that has stopped concealing as much as
- * it did (spec.garment-interaction.md §Phenomena).
+ * it did.
  *
  * ## The observation is the CHANGE, not the state
  *

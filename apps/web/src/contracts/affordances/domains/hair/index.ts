@@ -1,6 +1,5 @@
 /**
- * The hair affordance domain — the plan's first production proving domain
- * (body-attribute-affordances.spec.hair.md).
+ * The hair affordance domain — the first production proving domain.
  *
  * ```text
  * hair.length/density/strand_thickness/texture/condition  →  structural profile

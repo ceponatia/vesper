@@ -16,8 +16,7 @@ import { encodeVisualStateKeySegment, type VisualStateLocusRef } from "./locus";
 import { visualStateKindRegistry } from "./registry";
 
 /**
- * Active conditions as current-layer features (plan §First-release source map:
- * "active located conditions"; visual-state.audit.md finding 11).
+ * Active located conditions as current-layer features.
  *
  * The "located" half is a recorded impossibility, not an oversight: the
  * condition owner carries no body locus — a condition cannot be placed — so

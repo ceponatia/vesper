@@ -10,7 +10,7 @@ import type { EmotionLabel } from "./emotion-label";
  * a label). The narrator keeps using the prose `deriveMoodDescriptor`; this is the
  * discrete-label sibling the avatar cue and a UI mood chip consume.
  *
- * Two timescales, one read (§1): a **transient beat** (the latest social reaction)
+ * Two timescales, one read: a **transient beat** (the latest social reaction)
  * wins briefly, else the **baseline** from the meter vector + affinity. All numbers
  * are *starting values* tuned in playtest — they live as named constants here,
  * mirroring `reactions.ts` / `modulation.ts` (logic is code; only the knobs are data).
@@ -47,7 +47,7 @@ export interface EmotionResult {
 
 // --- Tuning constants (starting values — tune in playtest) ---------------------
 
-/** Activation axis: a weighted blend of drive / tension / charge (§4a). Sum ≈ 1. */
+/** Activation axis: a weighted blend of drive / tension / charge. Sum ≈ 1. */
 export const ACTIVATION_ENERGY_WEIGHT = 0.4;
 export const ACTIVATION_STRESS_WEIGHT = 0.35;
 export const ACTIVATION_AROUSAL_WEIGHT = 0.25;
@@ -92,7 +92,7 @@ const TIPSY_CONDITION_LABELS: ReadonlySet<string> = new Set(["tipsy", "drunk", "
 
 const clamp01 = (n: number): number => (Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5);
 
-/** Derived activation scalar (§4a): how *charged* the state is, 0..1. */
+/** Derived activation scalar: how *charged* the state is, 0..1. */
 export function activationOf(i: Pick<EmotionInputs, "energy" | "stress" | "arousal">): number {
   return clamp01(
     ACTIVATION_ENERGY_WEIGHT * clamp01(i.energy) +
@@ -110,7 +110,7 @@ function hasCondition(conditions: readonly ActiveCondition[], labels: ReadonlySe
   return conditions.some((c) => labels.has(conditionKey(c)));
 }
 
-/** The transient beat (mood.spec §4): wins briefly when a strong reaction is present. */
+/** The transient beat: wins briefly when a strong reaction is present. */
 function resolveBeat(i: EmotionInputs): EmotionResult | undefined {
   const r = i.reaction;
   if (!r || r.magnitude < REACTION_BEAT_MIN_MAGNITUDE) return undefined;
@@ -133,7 +133,7 @@ function resolveBeat(i: EmotionInputs): EmotionResult | undefined {
   return { emotion: (i.dominance ?? 0) >= DOMINANCE_ANGER_MIN ? "angry" : "sad", intensity };
 }
 
-/** The sustained baseline (mood.spec §4): valence × activation grid + gated overrides. */
+/** The sustained baseline: valence × activation grid + gated overrides. */
 function resolveBaseline(i: EmotionInputs): EmotionResult {
   const mood = clamp01(i.mood);
   const stress = clamp01(i.stress);

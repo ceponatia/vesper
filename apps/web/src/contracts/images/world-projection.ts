@@ -1,9 +1,8 @@
 import type { ImageConceptId, ImageProjectionDisposition } from "@vesper/image-core";
 
 /**
- * What every image-eligible source field means to an image, decided once
- * (model-aware-image-prompts.plan.md §"'All information' means all image-eligible
- * truth").
+ * What every image-eligible source field means to an image, decided once — "all
+ * information" means all image-eligible truth.
  *
  * The failure this exists to prevent is quiet and slow: somebody adds a column to
  * `items`, three prompt builders keep working, and nobody notices for months that

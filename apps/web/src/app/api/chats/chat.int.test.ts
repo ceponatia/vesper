@@ -16,9 +16,9 @@ import {
   images,
 } from "@/server/db";
 
-// Conversation-route integration suite (character-chat-standalone.spec.md §1–§2):
-// the /api/chats create handler plus the /api/chats/[chatId] GET/POST/DELETE and
-// per-message PATCH/DELETE handlers invoked directly with mocked auth against
+// Conversation-route integration suite: the /api/chats create handler plus the
+// /api/chats/[chatId] GET/POST/DELETE and per-message PATCH/DELETE handlers
+// invoked directly with mocked auth against
 // DATABASE_URL. AI_FAKE forces demo mode, so the streamed reply is the
 // deterministic placeholder — no provider key or network. Self-skips when the
 // database is unreachable.
@@ -280,7 +280,7 @@ describe.runIf(ready)("POST /api/chats/:chatId — send", () => {
   });
 });
 
-describe.runIf(ready)("GET /api/chats/:chatId — transcript pagination (ux-improvements slice 2)", () => {
+describe.runIf(ready)("GET /api/chats/:chatId — transcript pagination", () => {
   interface Page {
     messages: { id: string; content: string }[];
     hasMore: boolean;
@@ -558,7 +558,7 @@ describe.runIf(ready)("one exchange in flight per chat (codebase-review A6)", ()
   });
 });
 
-describe.runIf(ready)("memory-choice semantics (character-chat-standalone.spec.md §1.3, D7)", () => {
+describe.runIf(ready)("memory-choice semantics (D7)", () => {
   it("shared chats share a group, fresh mints an island, and delete purges only unreferenced groups", async () => {
     // A dedicated character so this test owns its whole memory-group history.
     const [nyx] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Nyx", profile: {} }).returning();
@@ -623,7 +623,7 @@ describe.runIf(ready)("DELETE /api/characters/:id — conversations go through d
   it("leaves another owner's conversation intact when the character anomalously participates in it", async () => {
     // The cross-owner participant row violates today's "chat owner == character owner"
     // invariant, so it is seeded directly — no route can produce it. That is the shape
-    // security-authz.plan.md slice 2 hardens against.
+    // the owner-scoped participant join in character DELETE hardens against.
     const [mole] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Mole", profile: {} }).returning();
     if (!mole) throw new Error("failed to seed character");
     const [foreignChat] = await db().insert(characterChats).values({ ownerId: ids.otherUser }).returning({ id: characterChats.id });
@@ -675,7 +675,7 @@ describe.runIf(ready)("DELETE /api/characters/:id — conversations go through d
   });
 });
 
-describe.runIf(ready)("POST /api/chats/:chatId — kind=regenerate (another take, spec §4.1)", () => {
+describe.runIf(ready)("POST /api/chats/:chatId — kind=regenerate (another take)", () => {
   it("replaces the reply in place, keeps the old take browsable, rolls back state, and retracts the old take's memory", async () => {
     const chat = await createChat(ids.character);
     // A stored state BEFORE the first exchange gives the pre-exchange snapshot a
@@ -706,7 +706,7 @@ describe.runIf(ready)("POST /api/chats/:chatId — kind=regenerate (another take
     expect(after.takes.activeId).toBe(after.takes.takes[1]?.id); // the fresh take is active
     expect(after.takes.takes[1]?.content).toBe(after.content); // content mirrors the active take
 
-    // Memory rollback (spec §4.3): the old take's fact retracted, its episode gone.
+    // Memory rollback: the old take's fact retracted, its episode gone.
     const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, reply.id));
     expect(fact?.status).toBe("retracted");
     expect(await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, reply.id))).toHaveLength(0);
@@ -857,7 +857,7 @@ describe.runIf(ready)("POST /api/chats/:chatId — kind=regenerate (another take
   });
 });
 
-describe.runIf(ready)("PATCH /api/chats/:chatId/messages/:messageId/take (spec §4.1)", () => {
+describe.runIf(ready)("PATCH /api/chats/:chatId/messages/:messageId/take", () => {
   it("flips content to the picked take without minting one, and 404s a bogus takeId", async () => {
     const chat = await createChat(ids.character);
     await drainStream(await chatSend(postReq(chat.id, { content: "switch me" }), ctx(chat.id)));
@@ -884,7 +884,7 @@ describe.runIf(ready)("PATCH /api/chats/:chatId/messages/:messageId/take (spec �
   });
 });
 
-describe.runIf(ready)("POST /api/chats/:chatId — kind=continue (go on, spec §4.2)", () => {
+describe.runIf(ready)("POST /api/chats/:chatId — kind=continue (go on)", () => {
   it("adds an assistant beat with no new user row and never persists the synthetic cue", async () => {
     const chat = await createChat(ids.character);
     await drainStream(await chatSend(postReq(chat.id, { content: "say more" }), ctx(chat.id)));
@@ -903,7 +903,7 @@ describe.runIf(ready)("POST /api/chats/:chatId — kind=continue (go on, spec §
   });
 });
 
-describe.runIf(ready)("message delete reconciles provenanced memory (spec §4.3)", () => {
+describe.runIf(ready)("message delete reconciles provenanced memory", () => {
   it("retracts the fact and deletes the episode sourced from the snipped assistant line", async () => {
     const chat = await createChat(ids.character);
     const messageId = await insertMessage(chat.id, "assistant", "she admits she's afraid of storms");
@@ -1115,7 +1115,7 @@ describe.runIf(ready)("POST /api/chats/:chatId — kind=rerun (atomic re-send, d
   });
 });
 
-describe.runIf(ready)("stopped replies (spec §4.2)", () => {
+describe.runIf(ready)("stopped replies", () => {
   it("persists meta.stopped and the transcript GET carries it", async () => {
     const chat = await createChat(ids.character);
     const promptId = await insertMessage(chat.id, "user", "keep going");
@@ -1141,7 +1141,7 @@ describe.runIf(ready)("stopped replies (spec §4.2)", () => {
   });
 });
 
-describe.runIf(ready)("roster — participants add/remove/presence (multi-character-chat.plan.md slice 1)", () => {
+describe.runIf(ready)("roster — participants add/remove/presence", () => {
   const pCtx = (chatId: string, characterId: string) => routeCtx({ chatId, characterId });
   const addReq = (chatId: string, body: unknown): NextRequest =>
     apiRequest(`/api/chats/${chatId}/participants`, { body });
@@ -1265,8 +1265,8 @@ describe.runIf(ready)("roster — participants add/remove/presence (multi-charac
     );
     const { id: chatId } = await expectJson<{ id: string }>(res, 201);
 
-    // The premise lives once on the chat row (followups ruling 8) — every
-    // roster member reads the same scenario.
+    // The premise lives once on the chat row — every roster member reads the
+    // same scenario.
     const [scenario] = await db()
       .select({ premise: characterChats.premise })
       .from(characterChats)
@@ -1287,7 +1287,7 @@ describe.runIf(ready)("roster — participants add/remove/presence (multi-charac
   });
 });
 
-describe.runIf(ready)("relationship matrix — seeding + routes (relationship-model.plan.md slice 6)", () => {
+describe.runIf(ready)("relationship matrix — seeding + routes", () => {
   const mkCharacter = async (name: string): Promise<string> => {
     const [row] = await db().insert(characters).values({ ownerId: authState.user.id, name, profile: {} }).returning();
     if (!row) throw new Error("failed to seed character");

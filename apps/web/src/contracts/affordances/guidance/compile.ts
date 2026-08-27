@@ -4,7 +4,7 @@ import { selectNarratorGuidance } from "./selection";
 import type { GuidanceCandidateInput, NarratorPhysicalGuidance } from "./types";
 
 /**
- * The one-call entry point (narrator-physical-guidance.spec.md §"File map").
+ * The one-call entry point.
  *
  * Two stages, in this order and no other: gate for the narrator consumer, then
  * order and budget what survived. Reversing them would let a high-priority

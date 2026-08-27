@@ -3,11 +3,10 @@
  *
  * Extracted from the simulation body kernel so BOTH lanes run one
  * implementation: the successor's meter/item-condition substrate and the chat
- * lane's garment gradients (clothing-state-graph.plan.md §"Condition vector,
- * regional overrides, and marks" — *"Reuse the successor §25 fixed-point
- * integration kernel rather than creating floating-point turn math; generalize
- * its pure numerics if needed; do not make chat depend on successor persistence
- * contracts"*).
+ * lane's garment gradients, per the owner's ruling: *"Reuse the successor §25
+ * fixed-point integration kernel rather than creating floating-point turn math;
+ * generalize its pure numerics if needed; do not make chat depend on successor
+ * persistence contracts"*.
  *
  * It lives in the foundation package for exactly that reason. Its consumers are
  * the application's chat-lane garment math AND `@vesper/simulation-core`; a

@@ -39,8 +39,7 @@ export const DEFAULT_CHAT_ROOM =
 /**
  * One character the render draws, with everything about them that varies per
  * person. The cast is the roster filtered to `presence: "present"` — chat's only
- * location-like state, so "in the same room" and "present" are the same claim
- * (qwen-advanced-image-subsystem.spec.md §"Stage 7 promotion delivery").
+ * location-like state, so "in the same room" and "present" are the same claim.
  */
 export interface SceneCastMember {
   characterId: string;
@@ -79,7 +78,7 @@ export interface RenderCharacterSceneInput {
   timeOfDay?: string;
   recentChat?: string[];
   /**
-   * The player's own recent messages, oldest first (scene-composition.plan.md slice 1) — a
+   * The player's own recent messages, oldest first — a
    * separate list from `recentChat`, which keeps its meaning of assistant rows only.
    */
   recentPlayerChat?: string[];
@@ -370,9 +369,8 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // Resolved PER ATTEMPT rather than once for the render, because the trigger is
   // a fact about the attempt: the content-rejection retry strips the staging from
   // its plan and clears `allowIntimate`, and re-asking here is what makes that
-  // retry render LoRA-free without a second rule saying so
-  // (intimate-scene-lora.spec.md §Algorithm step 3). Off the trigger it reads
-  // nothing and reports nothing, so an ordinary scene pays one comparison.
+  // retry render LoRA-free without a second rule saying so. Off the trigger it
+  // reads nothing and reports nothing, so an ordinary scene pays one comparison.
   const renderOnce = async (attemptPlan: SceneRenderPlan, allowIntimate: boolean): Promise<string> => {
     // The scene queue is a detached job and passes no sink, so the route's own
     // diagnostics would have nowhere to land — and "the LoRA was skipped" is
@@ -487,7 +485,7 @@ function sanitizeScenePlan(plan: SceneRenderPlan): SceneRenderPlan {
     exposure: undefined,
     intimateAppearance: undefined,
   });
-  // The staging goes with them (scene-composition.spec.md §Ownership rules): a content
+  // The staging goes with them: a content
   // rejection is the provider refusing what the prompt described, and the staged act is the
   // most explicit sentence in it. The camera stays — where the shot is taken from is never
   // what a moderator objected to, and dropping it would silently un-compose the scene.

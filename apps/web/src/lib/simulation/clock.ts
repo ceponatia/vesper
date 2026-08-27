@@ -3,12 +3,11 @@ import { formatStoryMoment } from "@/contracts/turns/chat-clock";
 import { daylightBandAtMinute, to12Hour, type CalendarStart, type DaylightBand } from "@/lib/clock";
 
 /**
- * R3 slice 4 (engine.rollout.plan.md, ruling 17) — the sim story clock made
- * legible. `storySecond` truthfully encodes a day index and a time of day and
- * nothing more; this seam renders exactly that ("Day 3 · 10:04am (morning)")
- * for the narrator prompt, the chat clock chip, and skip-landing previews.
- * Weekday/month naming waits for the R5 calendar anchor — presentation never
- * invents a calendar the world does not have.
+ * The sim story clock made legible. `storySecond` truthfully encodes a day
+ * index and a time of day and nothing more; this seam renders exactly that
+ * ("Day 3 · 10:04am (morning)") for the narrator prompt, the chat clock chip,
+ * and skip-landing previews. Weekday/month naming waits for the R5 calendar
+ * anchor — presentation never invents a calendar the world does not have.
  */
 
 const SECONDS_PER_DAY = 86_400;
@@ -69,7 +68,7 @@ export function formatStoryClock(clock: StoryClock): string {
 }
 
 /**
- * R5 time domain (ruling 17) — the per-world calendar anchor: the DATE of
+ * R5 time domain — the per-world calendar anchor: the DATE of
  * story day zero. Time-of-day lives in `storySecond` itself, so the anchor is
  * date-only; null/absent means "no calendar declared" and presentation stays
  * "Day N".

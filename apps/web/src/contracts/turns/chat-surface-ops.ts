@@ -134,7 +134,7 @@ export const CHAT_SURFACE_PROPOSAL_INVALID = "chat_surface.proposal_invalid";
 
 /**
  * The wetness record is full of real entries; the write was refused rather than
- * evicting one (effects spec §9's material-capacity law, the deposit lane's
+ * evicting one (the material-capacity law, the deposit lane's
  * `CHAT_SURFACE_DEPOSIT_CAPACITY` exactly). Before this code the wetness write
  * path refused in total silence, which is what let a wedged record look like a
  * run of quiet exchanges.

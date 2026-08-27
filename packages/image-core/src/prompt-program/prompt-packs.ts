@@ -8,11 +8,11 @@ import { imageNegativeBlockIds, type ImageNegativeBlockId } from "./negative-con
 
 /**
  * Prompt packs: the versioned, promotable, rollback-able DATA half of the prompt
- * system (model-aware-image-prompts.plan.md §"Prompt-pack management").
+ * system.
  *
  * Positive and negative are separate products with separate identities,
- * versions, evidence and promotion history — that is the plan's central claim
- * and this module is where it becomes structural. What holds them together is a
+ * versions, evidence and promotion history — the central claim of the prompt
+ * system, and this module is where it becomes structural. What holds them together is a
  * BINDING: one profile pins one positive version and one negative version, and a
  * render resolves the pair atomically, so promoting only the negative side
  * creates a new binding that reuses the old positive version rather than letting
@@ -27,7 +27,7 @@ import { imageNegativeBlockIds, type ImageNegativeBlockId } from "./negative-con
  *
  * Storage is deliberately not decided here. These are the contracts a database
  * row must satisfy, and the seeded registry below is the code-owned,
- * version-pinned source the first endpoint runs from. The plan's own degradation
+ * version-pinned source the first endpoint runs from. The degradation
  * rule allows exactly that: a code fallback is legitimate when it is byte-
  * identical to a known active version, and a code-owned pack IS its own known
  * active version until a table exists to promote a different one.
@@ -171,8 +171,8 @@ export type ImageNegativePackVersion = ImagePromptPackVersion<ImageNegativePackM
  * one negative version.
  *
  * `versionId` pins a provider version. An endpoint version may bind a different
- * pack from the floating model row, which is the plan's rule that a provider
- * schema update never silently inherits an untested pack.
+ * pack from the floating model row, so that a provider schema update never
+ * silently inherits an untested pack.
  */
 export const imagePromptProfileBindingSchema = z.object({
   id: z.string().min(1),
@@ -206,8 +206,8 @@ export type ImagePromptProfileBinding = z.infer<typeof imagePromptProfileBinding
  * answers "is this the same prompt behavior?", and a candidate promoted to active
  * is byte-identical behavior under a new status. Two independently-authored
  * versions that hash alike are genuinely the same pack, which is what makes the
- * plan's code-fallback rule ("only when byte-identical to a known active
- * version") checkable rather than a promise.
+ * code-fallback rule ("only when byte-identical to a known active version")
+ * checkable rather than a promise.
  */
 export function imagePromptPackContentHash(manifest: unknown): string {
   return fnv1aHex(stableJson(manifest));
@@ -261,8 +261,8 @@ export function imageNegativePack(id: string): ImageNegativePackVersion | null {
  * been cut over.
  *
  * Null is the ORDINARY answer during a staged rollout, not an error: a lane with
- * no binding keeps its existing prompt path, which is what lets the plan's
- * "cut over one endpoint/task lane at a time" happen without a flag. A version-
+ * no binding keeps its existing prompt path, which is what lets a cutover of one
+ * endpoint/task lane at a time happen without a flag. A version-
  * pinned binding wins over a floating one for the same pair, because a pin exists
  * precisely to say "this version behaves differently".
  */

@@ -13,9 +13,8 @@ import {
 import type { TagTone } from "@/components/ui/tag";
 
 /**
- * The Image Generator's vocabulary in English
- * (image-lab-general-model-trials.spec.md §Contracts), following the lab's
- * precedent: every code→copy translation happens HERE, at the UI boundary. The
+ * The Image Generator's vocabulary in English, following the lab's precedent:
+ * every code→copy translation happens HERE, at the UI boundary. The
  * server stores stable codes only, so a wording change can never alter a
  * recorded run, and a new failure code reaching the screen without copy is a
  * compile error rather than a raw identifier in front of the admin reading why

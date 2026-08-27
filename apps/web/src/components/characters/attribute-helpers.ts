@@ -170,7 +170,7 @@ export function seedRequiredAttributes(attributes: readonly AttributeValue[], co
 /**
  * The body-bearing slice of a profile — everything species/heritage changes touch.
  * Structural, not a named contract, so BOTH `CharacterProfile` and `PersonaProfile`
- * satisfy it (persona-library.plan.md: reuse, never fork).
+ * satisfy it — reuse, never fork.
  */
 export interface BodyProfileParts {
   speciesId: string;

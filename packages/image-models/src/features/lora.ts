@@ -13,11 +13,11 @@ import type { ImageFeature, ImageModelRequestFacts } from "./image-feature";
  *
  * The refusal here is the CHEAP one: this pairing of model and request cannot
  * work, said before planning and long before spend. It does not replace the
- * compile step's final-wire invariant (spec §"Compile-step wire invariant"),
- * which catches the harder failure — a plan that RECORDS a LoRA whose fields
+ * compile step's final-wire invariant, which catches the harder failure — a
+ * plan that RECORDS a LoRA whose fields
  * never reached the payload — at the one layer where the payload exists.
  * Across the whole retained provider history no prediction had ever carried
- * LoRA weights while every unit test passed (plan §1), so the two checks answer
+ * LoRA weights while every unit test passed, so the two checks answer
  * genuinely different questions and both are wanted.
  */
 export function loraFeature(): ImageFeature {

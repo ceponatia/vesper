@@ -8,7 +8,7 @@ import {
 } from "./garment-blueprint";
 
 /**
- * OQ6 — the coverage law (clothing-state-graph.audit.md §Part 2 OQ6).
+ * The coverage law.
  *
  * **A behavior may only SUBTRACT body-location ids from its OWN node's baseline
  * coverage.** It never adds coverage, never touches another garment, and never

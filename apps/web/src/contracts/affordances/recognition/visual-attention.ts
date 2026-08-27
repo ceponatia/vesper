@@ -46,10 +46,10 @@ import type { VisualMemoryScopeRef, VisualMemoryState } from "./visual-memory";
 
 /**
  * Visual attention — the visual-state projection scored under the shipped
- * recognition laws (visual-state.spec.md §Attention and memory; plan §Slice 5).
+ * recognition laws.
  *
  * This module is the place the two families MEET, and the meeting direction is
- * the one slices 1 and 4 reserved: recognition consumes the projection, never
+ * the reserved one: recognition consumes the projection, never
  * the reverse. `visual-state` stays free of any `affordances/recognition`
  * import, so the restated scope union and hinted-exposure factor over there are
  * held to this module's compile-time identity checks below.
@@ -145,8 +145,8 @@ export const visualAttentionConsumers = ["narrator", "image", "inspector"] as co
 export type VisualAttentionConsumer = (typeof visualAttentionConsumers)[number];
 
 /**
- * The full attention context (visual-state.spec.md §Visibility). It EXTENDS
- * `VisualVisibilityContext` — every visibility field keeps its slice-4 meaning
+ * The full attention context. It EXTENDS
+ * `VisualVisibilityContext` — every visibility field keeps its original meaning
  * — and adds only what attention needs:
  *
  * - `focusLoci` — loci under deliberate inspection. Lowers the notice
@@ -355,8 +355,8 @@ export function visualAttentionRepeatKey(repeatFamily: string, locus: VisualStat
 // ---------------------------------------------------------------------------
 
 /**
- * One visible feature, scored (visual-state.spec.md §Attention and memory).
- * `repeatKey` extends the spec's listed fields on the
+ * One visible feature, scored.
+ * `repeatKey` extends the scored fields on the
  * `RecognizableFeatureCandidate` precedent: it is derived from the feature's
  * priors and locus, and every consumer of a candidate needs it.
  */
@@ -614,7 +614,7 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
 
     // The one factor that can silence an otherwise perfect cue — and only the
     // narrator has it. An image or inspector read never spends mention state,
-    // so its cooldown is structurally one (spec §Attention and memory). Which
+    // so its cooldown is structurally one. Which
     // record supplies the last mention follows the same disjoint split as
     // novelty: a rolled sleeve now cools down on its OWN history rather than on
     // the full-cooldown default a feature memory never held always produced.

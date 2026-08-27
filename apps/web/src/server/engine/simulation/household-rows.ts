@@ -50,8 +50,8 @@ import type { SimTx } from "./trigger-projector";
  * helpers both household command modules share.
  *
  * Its two consumers are siblings, not layers: household-store.ts owns the four
- * §26.8/§26.10/§26.11 identity-and-policy commands, household-lots.ts owns the
- * four lot-moving ones.
+ * identity-and-policy commands, household-lots.ts owns the four lot-moving
+ * ones.
  */
 
 // ---------------------------------------------------------------------------
@@ -361,7 +361,7 @@ export function buildHouseholdsResolutionView(context: HouseholdsAuthorityContex
   };
 }
 
-/** §26.9's `locus_not_found`: whether the locus's referenced household/actor/zone exists. */
+/** The `locus_not_found` check: whether the locus's referenced household/actor/zone exists. */
 export function lotLocusReferenceExists(context: HouseholdsAuthorityContext, locus: LotLocus): boolean {
   switch (locus.kind) {
     case "household":
@@ -402,8 +402,8 @@ export async function loadMeansBandRow(
 }
 
 // ---------------------------------------------------------------------------
-// Lazy lot initialization (§26.9 — "a lot's row persists indefinitely once
-// initialized (lazily, on first touch)"). Mirrors
+// Lazy lot initialization — a lot's row persists indefinitely once
+// initialized (lazily, on first touch). Mirrors
 // `loadOrInitializeItemConditionView`: build the init event purely in memory
 // at the given head sequence; the caller commits it ONLY after its own
 // causing resolver accepts, exactly like `commitItemConditionInit`'s call
@@ -482,7 +482,7 @@ export async function updateLotQuantity(
 }
 
 // ---------------------------------------------------------------------------
-// Household restock alarm plumbing (§26.11) — mirrors
+// Household restock alarm plumbing — mirrors
 // `retirePendingThresholdTriggers` (body-rows.ts).
 // ---------------------------------------------------------------------------
 
@@ -504,7 +504,7 @@ export async function updateLotQuantity(
  * then unconditionally re-arm a second live trigger alongside the one this
  * reconfigure just armed. Retiring `processing` rows here closes that gap:
  * the stale dispatch's `isRestockArmingLive` check now correctly reads
- * `completed` and fails closed to `threshold_stale` (§5.8) instead of
+ * `completed` and fails closed to `threshold_stale` instead of
  * double-arming. The scheduler's own post-dispatch completion write is
  * fenced on `state = 'processing'` (scheduler-store.ts), so it simply no-ops
  * to `lease_lost` when it finds this row already retired — no crash, no
@@ -537,7 +537,7 @@ export async function retirePendingRestockTriggers(
 
 /**
  * Whether THIS command's own `armedAtSequence` names an alarm row that has
- * not been retired by a later reconfigure (§5.8's staleness defense) — the
+ * not been retired by a later reconfigure (the staleness defense) — the
  * durable stand-in for "the routine's current arming", since routines carry
  * no arming column of their own. Deliberately NOT a `state = 'pending'`
  * filter: at dispatch time the scheduler has already claimed this exact row

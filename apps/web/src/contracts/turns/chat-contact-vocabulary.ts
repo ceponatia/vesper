@@ -3,10 +3,8 @@ import { hasChatEvidenceNegation } from "@/lib/chat-input-evidence";
 import type { ContactAreaBand, ContactMotionBand, ContactPressureBand } from "../affordances/contact/types";
 
 /**
- * THE ONE SHARED CHAT-CONTACT VOCABULARY
- * (romantic-contact-affordances.spec.actor-control.md §"Closed decision schema":
- * "extract the current private `CONTACT_TARGET_LOCATION`, `chatContactGestures`,
- * and `GESTURE_CONTACT` data into one pure shared chat-contact vocabulary").
+ * THE ONE SHARED CHAT-CONTACT VOCABULARY: the `CONTACT_TARGET_LOCATION`,
+ * `chatContactGestures`, and `GESTURE_CONTACT` data, in one pure shared place.
  *
  * Everything here used to live as private data inside
  * `src/server/engine/chat-contact-adapter.ts`, which was fine while the
@@ -212,10 +210,9 @@ export const chatContactTargetNounAlternation: string = Object.keys(chatContactT
   .join("|");
 
 // ---------------------------------------------------------------------------
-// Romantic-permission trigger vocabulary
-// (romantic-contact-affordances.spec.permission.md §"Grant, denial, absence,
-// and withdrawal"; implementation-order step 3 — ADDITIONS only, the regexes
-// above are other consumers' contracts and stay untouched)
+// Romantic-permission trigger vocabulary — grant, denial, absence, and
+// withdrawal. ADDITIONS only: the regexes above are other consumers' contracts
+// and stay untouched.
 // ---------------------------------------------------------------------------
 
 /**
@@ -246,10 +243,8 @@ export const CHAT_ROMANTIC_PERMISSION_TOUCH_RE =
   /\b(?:touch(?:es|ed|ing)?|hold(?:s|ing)?|held|hands?|fingers?|palms?|skin|closer?|contact)\b/iu;
 
 // ---------------------------------------------------------------------------
-// Romantic contact vocabulary
-// (romantic-contact-affordances.plan.md §"Design corrections from this review"
-// 4 — "insert a new narrow player-authored romantic action producer"; the
-// permission spec's §"First romantic action boundary" owns the boundary)
+// Romantic contact vocabulary — the narrow player-authored romantic action
+// producer. The permission owner owns the first-romantic-action boundary.
 // ---------------------------------------------------------------------------
 
 /**

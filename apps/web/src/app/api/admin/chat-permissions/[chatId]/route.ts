@@ -30,12 +30,9 @@ import {
 import { resolveOverrideDirection, type OverrideDirectionResult } from "../validate";
 
 /**
- * The `romantic_touch` permission DEVELOPER OVERRIDE endpoint
- * (romantic-contact-affordances.spec.permission.md §"Authorship and developer
- * controls"; plan §"`romantic_touch` permission-owner rulings" 1 and 5;
- * implementation-order step 2) — the ONE structured override path, and the only
- * one there will be: chat text is never an admin command, so no chat-content
- * parsing exists anywhere near this owner.
+ * The `romantic_touch` permission DEVELOPER OVERRIDE endpoint — the ONE
+ * structured override path, and the only one there will be: chat text is never
+ * an admin command, so no chat-content parsing exists anywhere near this owner.
  *
  * - **Authorization**: `withOwnerAdminOwnedChat` — admin role, the
  *   `/api/admin/self` namespace (the canonical path here 404s by construction;
@@ -51,8 +48,8 @@ import { resolveOverrideDirection, type OverrideDirectionResult } from "../valid
  *   `appendChatPermissionEventsWithInvalidation` — the SAME atomic append,
  *   projection fold, and contact-invalidation sweep production events use — and
  *   an app-`events` audit row in the same transaction. Each direction is set
- *   independently (ruling 1); a redundant override still records (the ledger is
- *   evidence), and the response says whether standing changed.
+ *   independently; a redundant override still records (the ledger is evidence),
+ *   and the response says whether standing changed.
  * - **Serialization** — POST is a WRITER on the same state an exchange owns, so
  *   it takes the lane's `chat_exchange:<chatId>` lock and holds it across its
  *   reads and the append, rather than only probing it for the fast 409. The
@@ -127,10 +124,10 @@ export const POST = withOwnerAdminOwnedChat<Params, OwnedChat>(ownedChat, async 
   // commit, and a submit that wins the exchange lock inside that window runs a
   // whole exchange whose finalizer rewrites `character_chats.scene` from its own
   // earlier read — which would resurrect exactly the contacts a withdrawal's
-  // sweep just ended (spec §"Revocation during active contact" step 3 forbids
-  // that mixed state). So the override HOLDS the same `chat_exchange:<chatId>`
-  // key the pipeline takes, across every read the append is computed from and
-  // the append itself. The wait is short and bounded: this is only here to lose
+  // sweep just ended, and a withdrawal may never leave an active contact
+  // standing. So the override HOLDS the same `chat_exchange:<chatId>` key the
+  // pipeline takes, across every read the append is computed from and the
+  // append itself. The wait is short and bounded: this is only here to lose
   // races cleanly, never to queue behind a streaming reply, and a miss is the
   // same `chat_busy` 409 the fast path answers, having written nothing.
   const acquired = await acquireKeyedLockWithin(
@@ -179,8 +176,8 @@ async function applyPermissionOverride(input: {
     .limit(1);
   const guardMessageId = newestMessage?.id ?? null;
 
-  // Standing before, for the no-op report (ruling: a redundant override still
-  // records — the ledger is evidence — but the response says what changed).
+  // Standing before, for the no-op report: a redundant override still records
+  // — the ledger is evidence — but the response says what changed.
   const sink = new DiagnosticCollector();
   const priorRows = await listChatPermissionEvents(chatId, sink);
   const before = foldChatPermissionProjection(priorRows, sink);

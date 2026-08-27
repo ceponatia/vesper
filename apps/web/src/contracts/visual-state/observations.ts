@@ -14,9 +14,9 @@ import {
 import { visualStateKindRegistry } from "./registry";
 
 /**
- * Supported physical-affordance observations as current-layer features
- * (visual-state.audit.md finding 11 — the one derived owner with the
- * `supported` / `unavailable` / `invalid` distinction already built in).
+ * Supported physical-affordance observations as current-layer features — the
+ * one derived owner with the `supported` / `unavailable` / `invalid`
+ * distinction already built in.
  *
  * The adapter takes RESOLVED observations, not domain state: the staged
  * affordance pipeline (adapters → profile → mechanics → phenomena) already

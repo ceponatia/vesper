@@ -110,9 +110,9 @@ const HANDLE_POSITION: Record<IdentityCropHandle, string> = {
 };
 
 /**
- * The character owner's face-crop editor (image-identity-packs.plan.md §Correction
- * path): the canonical portrait with the current crop as a draggable, resizable
- * square, a live preview of what gets stored, and the pack's warnings in plain copy.
+ * The character owner's face-crop editor: the canonical portrait with the current
+ * crop as a draggable, resizable square, a live preview of what gets stored, and
+ * the pack's warnings in plain copy.
  *
  * The preview is NOT authoritative. Every coordinate is re-resolved and re-validated
  * against the real source bytes server-side, which is why the editor submits

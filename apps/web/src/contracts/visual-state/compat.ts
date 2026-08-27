@@ -15,7 +15,7 @@ import type { VisualStateStability } from "./vocabulary";
 
 /**
  * The compatibility adapter: truth-level appearance records read as visual-state
- * features (visual-state.spec.md §Implementation placement).
+ * features.
  *
  * `ProjectedFeatureTruth` is a FROZEN SEAM — the interface the recognition layer
  * consumes, with two exhaustive `switch`es over its source union and observer

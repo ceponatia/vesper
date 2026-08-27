@@ -19,7 +19,7 @@ import { renderCommittedCut } from "./sim-narrator";
 import { advanceBranchStoryTime, prepareEngagementTurn, readDurableBodies } from "./simulation";
 
 /**
- * R4 — shadow mode under chat (engine.rollout.plan.md). A `successor_shadow`
+ * Shadow mode under chat. A `successor_shadow`
  * chat runs the LEGACY pipeline untouched; after each plain-send exchange
  * settles, this leg computes the successor's view of the same turn against
  * the linked mirror branch and records one divergence row per compared

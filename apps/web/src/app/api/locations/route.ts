@@ -19,13 +19,13 @@ export const GET = withUser(async (user, req: NextRequest) => {
   const q = params.get("q") ?? undefined;
   const tags = parseTagsParam(params.get("tag"));
   const sort = parseOrNull(z.enum(["updated", "name"]), params.get("sort"));
-  // Discovery scope (auth.plan.md fast-follow): all|public|owned; default owner-only.
+  // Discovery scope: all|public|owned; default owner-only.
   const scopeParam = params.get("scope");
   const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
   const ids = await searchLibraryIds("location", user.id, { q, tags, sort: sort ?? undefined, scope });
   if (ids.length === 0) return jsonOk({ locations: [] });
   // Summary columns only — the bare row carries the 1536-dim search embedding.
-  // `scale` is the library facet column (library-ux.plan.md §Follow-up pass).
+  // `scale` is the library facet column.
   const rows = await db()
     .select({
       id: locations.id,

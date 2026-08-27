@@ -377,7 +377,7 @@ describe.runIf(harness.ready)("E2.5 forks, snapshots, and audit", () => {
     const grandchildState = await readDurableBranchState(grandchildId);
     expect(grandchildState.events.filter(isMaterialEvent).map((event) => event.sequence)).toEqual([1, 3, 4]);
     // Only the three tracked items — `projection.items` also carries the two
-    // container items (source and destination) themselves under §26.2.
+    // container items (source and destination) themselves.
     expect(
       ids.itemIds.map((itemId) => grandchildState.projection.items.find((item) => item.id === itemId)?.locus),
     ).toEqual([containerLocus(ids.destinationId), containerLocus(ids.destinationId), containerLocus(ids.destinationId)]);
@@ -442,7 +442,7 @@ describe.runIf(harness.ready)("E2.5 forks, snapshots, and audit", () => {
       schedulingEvent: { sequence: 1, branchId: ids.branchId },
     });
 
-    // An item no event ever moved is seed truth (plan R3).
+    // An item no event ever moved is seed truth (R3).
     expect(await explainItemPlacement(ids.branchId, ids.itemIds[1]!)).toMatchObject({
       origin: "seed",
       locus: containerLocus(ids.sourceId),
@@ -568,7 +568,7 @@ describe.runIf(harness.ready)("E2.5 forks, snapshots, and audit", () => {
   });
 });
 
-describe.runIf(harness.ready)("E5.3 slice 3 — item condition fork/replay parity (§26.7)", () => {
+describe.runIf(harness.ready)("E5.3 slice 3 — item condition fork/replay parity", () => {
   it("forks mid-worn-window: the child carries the meter + live modifier rows and a re-armed pending alarm, and its own drain fires the crossing independently", async () => {
     const worldId = newId();
     const branchId = newId();

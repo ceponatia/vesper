@@ -1,8 +1,7 @@
 /**
  * The verified idempotent-append judgment shared by the chat lane's durable
  * ledgers — contact events (`chat-contact-events.ts`) and permission events
- * (`chat-permission-events.ts`, romantic-contact-affordances.spec.permission.md
- * §"Events and active projection").
+ * (`chat-permission-events.ts`).
  *
  * Both ledgers write under a (chat, event ref, sequence) idempotency key with
  * `onConflictDoNothing`, and both must then VERIFY every collided key: "the key

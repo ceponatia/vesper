@@ -31,7 +31,7 @@ import { advanceBranchStoryTime } from "./scheduler-store";
  * event LOD arms the routine alarm, the scheduler drain puts the actor to
  * sleep at bedtime through the ordinary body law, the expiry wakes them with
  * a sleep credit, the cycle re-arms itself indefinitely, engagements hold,
- * a meal boundary eats through the §26.6 consumption train (slice 2), and a
+ * a meal boundary eats through the consumption train (slice 2), and a
  * fork mid-cycle carries the alarms. Zero model calls anywhere. Probe,
  * legacy-player opt-in, seeded-world teardown and pool close come from the
  * shared `simulationSuiteHarness`; the 23:00–07:00 sleep and 12:00–13:00 meal
@@ -269,7 +269,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
     expect(rearmed.some((row) => row.kind === "routine_policy_due" && row.dueStorySecond === BEDTIME_DAY3)).toBe(true);
   });
 
-  it("eats at the meal boundary through the §26.6 train, then sleeps at bedtime", async () => {
+  it("eats at the meal boundary through the consumption train, then sleeps at bedtime", async () => {
     const loafId = newId();
     const ids = await seedCase((seededIds) => [
       {
@@ -299,8 +299,8 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
     expect(armed.some((row) => row.kind === "routine_policy_due" && row.dueStorySecond === LUNCH_DAY2)).toBe(true);
 
     // Lunch: the drain fires the alarm, policy chooses the meal, and the
-    // §26.6 train commits — item gone, feed obligation, body effect — with
-    // the whole chain causation-linked back to the decision.
+    // consumption train commits — item gone, feed obligation, body effect —
+    // with the whole chain causation-linked back to the decision.
     await advanceBranchStoryTime(ids.branchId, LUNCH_DAY2 + 1, { workerId: "routine-test-3" });
     const [decision] = await routineDecisions(ids.branchId, ids.ana);
     expect(decision).toMatchObject({ chosenCandidateId: "eat_meal", meal: { itemId: loafId } });
@@ -374,7 +374,7 @@ describe.runIf(ready)("E6.2 durable routine controller", () => {
   it("holds at a bare-pantry mealtime, capturing no_eligible_item", async () => {
     const someoneElsesLoafId = newId();
     // Ben CARRIES the loaf but Ana OWNS it — reachable, yet the routine's
-    // §26.5 selection never eats against ownership.
+    // meal selection never eats against ownership.
     const ids = await seedCase((seededIds) => [
       {
         id: someoneElsesLoafId,

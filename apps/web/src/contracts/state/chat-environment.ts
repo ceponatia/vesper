@@ -1,13 +1,12 @@
 import { z } from "zod";
 
 /**
- * The chat-wide SCENE ENVIRONMENT — wind, precipitation, and whether the scene is
- * under cover (body-attribute-affordances.audit.md §"Capability → owner":
- * *"New scene-level environment read on `ChatScenario` (Slice 4):
- * extraction-proposed typed state"*).
+ * The chat-wide SCENE ENVIRONMENT — wind, precipitation, and whether the scene
+ * is under cover: a scene-level environment read on `ChatScenario`, as
+ * extraction-proposed typed state.
  *
- * Before this the lane's only weather was prose, and the audit is explicit that
- * "may appear in narration" is not an input. So the continuity extraction leg
+ * Before this the lane's only weather was prose, and "may appear in narration"
+ * is not an input. So the continuity extraction leg
  * proposes a typed patch (`turns/chat-surface-ops.ts`), the fold commits it
  * through `parseOr`, and the affordance adapter reads THIS — never the narrator's
  * sentence about the sky.

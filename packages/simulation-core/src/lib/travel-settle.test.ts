@@ -13,13 +13,13 @@ import {
 import { computeMoveArrivalTarget, planStrandedSettlement } from "./travel-settle";
 
 /**
- * Pure travel-settling tests (sim-read-seam-guards.plan.md slice 3/4). No IO —
- * every projection piece is a fixture (@/test/sim-space-fixtures), so the
- * drain-target and stranded-in-transit DECISIONS are asserted directly, happy
- * path AND the degraded fallbacks the composed loop relies on (a move that
- * produced no journey; a poison arrival the clock already passed; a transit
- * locus with no backing journey). The log/note/escalate IO those numbers drive
- * is covered in space-store.int.test.ts.
+ * Pure travel-settling tests. No IO — every projection piece is a fixture
+ * (@/test/sim-space-fixtures), so the drain-target and stranded-in-transit
+ * DECISIONS are asserted directly, happy path AND the degraded fallbacks the
+ * composed loop relies on (a move that produced no journey; a poison arrival
+ * the clock already passed; a transit locus with no backing journey). The
+ * log/note/escalate IO those numbers drive is covered in
+ * space-store.int.test.ts.
  */
 
 const PLAYER = SPACE_PLAYER;

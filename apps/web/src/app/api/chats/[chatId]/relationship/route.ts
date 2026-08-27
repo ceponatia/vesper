@@ -14,11 +14,10 @@ import { loadOwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * The Relationship panel payload (character-chat-standalone.spec.md §7): the two
- * axis bands + scalars and their region label (relationship-model.plan.md), the
- * sampled arc (§7.2 — now regard over the slow familiarity ramp), milestones,
- * the rolling summary as "the story so far" (§7.3, read-only here — rebuild is
- * its own lever), and the open loops (§6.2). One GET settles the whole panel.
+ * The Relationship panel payload: the two axis bands + scalars and their region
+ * label, the sampled arc (regard over the slow familiarity ramp), milestones,
+ * the rolling summary as "the story so far" (read-only here — rebuild is its
+ * own lever), and the open loops. One GET settles the whole panel.
  */
 export const GET = withUser<Params>(async (user, _req, ctx) => {
   const { chatId } = await ctx.params;
@@ -42,7 +41,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
     milestones: state.milestones,
     storySoFar: summary?.summary ?? "",
     openLoops: state.openLoops,
-    // Drives (character-drives.plan.md, ruled): OPEN wants + revealed secrets only —
+    // Drives: OPEN wants + revealed secrets only —
     // guarded/unrevealed drives stay invisible until play surfaces them.
     wants: state.drives
       .filter((d) => !d.resolved && (d.secrecy === "open" || d.revealed))

@@ -14,11 +14,11 @@ import {
 import type { TraitValue } from "./traits/value";
 
 /**
- * The ONE §6 reaction sequence, shared by both lanes (character-chat-standalone.spec.md
- * §3 — the chat lane had forked it and drifted): resolve a classified social act against
+ * The ONE reaction sequence, shared by both lanes (the chat lane had forked it
+ * and drifted): resolve a classified social act against
  * the reactor's disposition; a match runs the affinity-/mood-/trait-aware curve into a
  * signed, clamped affinity delta + a mood nudge; an unmatched **touch** concept falls
- * back to affinity-stage welcome-ness (mood.spec §5 — the same hand on the arm reads as
+ * back to affinity-stage welcome-ness (the same hand on the arm reads as
  * tenderness from a partner and a violation from a stranger); anything else is no
  * reaction. Pure. The caller supplies its own per-turn clamp (an engine constant) and
  * applies the deltas to its own state shape (feeling edge vs chat affinity scalar).

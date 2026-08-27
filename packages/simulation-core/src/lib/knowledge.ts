@@ -22,12 +22,12 @@ import { composeSimulationId } from "../contracts/identity";
 import type { Observation } from "../contracts/perception";
 
 /**
- * E4.2 — the pure knowledge kernel. Assertions and beliefs
- * are DERIVED, exactly like §20 observations: `applyDisclosureEvent` is a
- * deterministic fold over (disclosure event, that event's observations), so
- * live incremental updates and a fork's full replay mint identical rows.
+ * E4.2 — the pure knowledge kernel. Assertions and beliefs are DERIVED,
+ * exactly like observations: `applyDisclosureEvent` is a deterministic fold
+ * over (disclosure event, that event's observations), so live incremental
+ * updates and a fork's full replay mint identical rows.
  *
- * The §6.4 rule does the heavy lifting: everything the fold would otherwise
+ * The capture rule does the heavy lifting: everything the fold would otherwise
  * have to look up in mutable state (the assertion id, the teller's confidence
  * at the moment of telling, the provenance chain) was captured in the event
  * payload at command time. The fold consumes captures; it never re-derives
@@ -36,7 +36,7 @@ import type { Observation } from "../contracts/perception";
  * Deliberate v1 rulings, coarse on purpose (tunable under a bumped
  * derivation version):
  * - A speaker holds no belief in their own claim — a liar asserts what they
- *   do not believe; canon false is not a belief model (§21.1).
+ *   do not believe; canon false is not a belief model.
  * - Only `reported`-class observations form beliefs. A muffled bystander
  *   heard talking, not content.
  * - A relay hop costs a flat confidence penalty; belief confidence is
@@ -46,8 +46,8 @@ import type { Observation } from "../contracts/perception";
  * - A contradicting claim wins the holder's stance only with STRICTLY higher
  *   confidence; otherwise it enters doubted and the held belief stands.
  * - Two sources claiming different values for one proposition contradict
- *   BOTH assertions — neither may present as current truth (§3.3); a same
- *   source changing their story supersedes their earlier claim.
+ *   BOTH assertions — neither may present as current truth; a same source
+ *   changing their story supersedes their earlier claim.
  */
 
 export const RELAY_CONFIDENCE_PENALTY = 1_000;
@@ -150,7 +150,7 @@ function disclosureRejection(
   return { ok: false, code, publicReason };
 }
 
-/** The slice of the authority view the §6.4 capture computation reads. */
+/** The slice of the authority view the capture computation reads. */
 export interface DisclosureCaptureView {
   referencedAssertion?: Assertion;
   speakerBelief?: Belief;
@@ -168,7 +168,7 @@ export type DisclosureCaptureResult =
   | DisclosureRejection;
 
 /**
- * The §6.4 capture: freeze everything the belief fold will need — assertion
+ * The capture: freeze everything the belief fold will need — assertion
  * identity, the teller's confidence at this moment, and the provenance chain
  * listeners record (always ending with this speaker). Shared between the
  * `make_disclosure` command and E4.3's armed-disclosure bridge, so a
@@ -245,7 +245,7 @@ export function deriveDisclosureCapture(
 
 /**
  * Pure MakeDisclosure resolver over a lock-consistent authority view. The
- * derived payload block freezes everything the belief fold will need (§6.4):
+ * derived payload block freezes everything the belief fold will need:
  * assertion identity, the teller's confidence at this moment, and the
  * provenance chain listeners record — always ending with this speaker.
  */
@@ -280,7 +280,7 @@ export function resolveMakeDisclosure(
 
   // Channel ruling: co-present only when the speaker stands somewhere and
   // every named listener is in that location — anything else delivers by
-  // device, which cannot be overheard (§20, mirrors the speech-act rule).
+  // device, which cannot be overheard (mirrors the speech-act rule).
   const coPresentLocationId =
     view.speakerLocationId !== undefined && view.targetsCoPresent ? view.speakerLocationId : undefined;
 
@@ -358,7 +358,7 @@ function compareBeliefStrength(left: Belief, right: Belief): number {
 /**
  * Apply one committed disclosure event and its derived observations. Pure and
  * copy-on-write: the input state is never mutated. `eventObservations` must
- * be exactly the §20 rows derived for THIS event.
+ * be exactly the observation rows derived for THIS event.
  */
 export function applyDisclosureEvent(
   state: KnowledgeState,
@@ -401,7 +401,7 @@ export function applyDisclosureEvent(
     setAssertion(claim);
 
     // Contradiction / supersedence sweep over presentable same-proposition
-    // claims (§21.1). Retracted and superseded rows are already settled.
+    // claims. Retracted and superseded rows are already settled.
     const claimKey = subjectsKey(claim.subjectIds);
     const claimValueKey = canonicalValueKey(claim.claimedValue);
     let claimContradicted = false;
@@ -424,7 +424,7 @@ export function applyDisclosureEvent(
         });
       } else if (!sameValue) {
         // Two voices, two values: neither claim may present as current
-        // truth (§3.3). A corroborating same-value claim changes nothing.
+        // truth. A corroborating same-value claim changes nothing.
         if (existing.status === "active") {
           assertAssertionTransition(existing.status, "contradicted", existing.id);
           setAssertion({
@@ -461,9 +461,9 @@ export function applyDisclosureEvent(
     }
   }
 
-  // Belief updates: only listeners who received the CONTENT — the §20
-  // `reported` evidence class. The speaker (direct) and muffled overhearers
-  // (sensory) form no belief.
+  // Belief updates: only listeners who received the CONTENT — the `reported`
+  // evidence class. The speaker (direct) and muffled overhearers (sensory)
+  // form no belief.
   const assertion = assertions.get(derived.assertionId);
   if (assertion) {
     const listenerObservations = eventObservations
@@ -586,7 +586,7 @@ export function applyDisclosureEvent(
 export interface KnowledgeReplayInput {
   /** The contiguous event stream, any families; non-knowledge events are skipped. */
   events: readonly SimulationBranchEvent[];
-  /** The full replayed §20 observation log for the same stream. */
+  /** The full replayed observation log for the same stream. */
   observations: readonly Observation[];
 }
 

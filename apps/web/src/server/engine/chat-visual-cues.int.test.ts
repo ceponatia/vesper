@@ -12,7 +12,7 @@ import { endTestPool, probeIntegrationDb } from "@/server/test-support";
 import { loadChatVisualCues, saveChatVisualCues, CHAT_VISUAL_CUES_UNREADABLE } from "./visual-cue-store";
 
 /**
- * The narrator cue store, through a real database (visual-state.plan.md slice 7).
+ * The narrator cue store, through a real database.
  *
  * The same two-generation law `chat-visual-memory.int.test.ts` proves, on the
  * record that answers repetition and first visibility for the families

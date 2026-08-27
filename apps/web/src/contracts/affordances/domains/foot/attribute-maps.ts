@@ -8,10 +8,9 @@ import {
 } from "../../core";
 
 /**
- * The authored `feet.*` attributes this domain compiles structure from
- * (romantic-contact-affordances.spec.foot.md §"Profile compilation").
+ * The authored `feet.*` attributes this domain compiles structure from.
  *
- * The spec's rule is the constraint that shaped this file: *"No new field is
+ * One rule is the constraint that shaped this file: *"No new field is
  * added merely to encode a derived heel/arch difference."* A heel is firmer than
  * an arch on every foot ever authored, so that difference lives in `profile.ts`
  * as calibration, not in the character sheet. What an author genuinely varies —

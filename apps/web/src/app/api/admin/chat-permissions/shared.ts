@@ -4,11 +4,9 @@ import { jsonError } from "@/server/api";
 import type { ChatPermissionEventRow } from "@/server/engine";
 
 /**
- * Shared pieces of the `romantic_touch` developer-override endpoint
- * (romantic-contact-affordances.spec.permission.md §"Authorship and developer
- * controls") — a Next route module may export only its HTTP verbs, so the
- * constants, the wire mapping, and the serialization vocabulary live here
- * beside `validate.ts`.
+ * Shared pieces of the `romantic_touch` developer-override endpoint — a Next
+ * route module may export only its HTTP verbs, so the constants, the wire
+ * mapping, and the serialization vocabulary live here beside `validate.ts`.
  */
 
 /**

@@ -14,9 +14,8 @@ import { loadImageModels } from "./models";
 
 /**
  * Pairing a lane's own profile with the anatomy LoRA and the one endpoint that
- * can load it — the shared half of the intimate-scene route
- * (intimate-scene-lora.spec.md §Algorithm), used by the chat scene lane and by
- * the portrait studio's `nsfw_test` variant.
+ * can load it — the shared half of the intimate-scene route, used by the chat
+ * scene lane and by the portrait studio's `nsfw_test` variant.
  *
  * The four legs and their order are the design: the model registry is one read,
  * the library row is a second, and the credential is an environment lookup that

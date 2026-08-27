@@ -16,11 +16,11 @@ const fromPortraitBodySchema = z.object({
 });
 
 /**
- * Portrait → attributes (character-sheet-forge.plan.md slice 3): a vision
- * model reads the character's canonical avatar and fills in unset appearance
- * attributes on the submitted draft; disagreements with existing values come
- * back as conflict diagnostics. The avatar id comes from the owned character
- * row, never from the client — no reading arbitrary images. Never saves.
+ * Portrait → attributes: a vision model reads the character's canonical avatar
+ * and fills in unset appearance attributes on the submitted draft;
+ * disagreements with existing values come back as conflict diagnostics. The
+ * avatar id comes from the owned character row, never from the client — no
+ * reading arbitrary images. Never saves.
  */
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
@@ -50,8 +50,8 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     image: { data, mediaType: "image/webp" },
     sink,
   });
-  // `portrait` is the review dialog's data (followups ruling 2): every
-  // disagreement as current → proposed, plus what the reading auto-filled.
+  // `portrait` is the review dialog's data: every disagreement as
+  // current → proposed, plus what the reading auto-filled.
   return jsonOk({
     draft: result.draft,
     diagnostics: sink.items,

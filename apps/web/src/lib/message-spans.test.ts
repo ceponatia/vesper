@@ -17,7 +17,7 @@ const shape = (s: { kind: MessageSpanKind; text: string; sender?: string; recipi
   ...(s.recipient !== undefined ? { recipient: s.recipient } : {}),
 });
 
-describe("parseMessageSpans — the sigil grammar (player-input-perception.plan.md §Markup lane)", () => {
+describe("parseMessageSpans — the sigil grammar", () => {
   it("reads quoted text as speech and unmarked text as narration", () => {
     const spans = parseMessageSpans(`"Hey, Sabrina." I lean against the doorframe, grinning.`);
     expect(spans.map(shape)).toEqual([

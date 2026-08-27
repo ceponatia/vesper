@@ -85,8 +85,8 @@ describe("defaultOutfitPhrase degradation", () => {
 });
 
 /**
- * The Stage 3 digest wiring in `generateAvatar` (image-lane-consolidation
- * spec.prompts.md §Failure behavior). The assembly's own refusal semantics are
+ * The Stage 3 digest wiring in `generateAvatar`. The assembly's own refusal
+ * semantics are
  * owned by `contracts/images/visual-segments.test.ts`; what these prove is the
  * ROUTE's half of the contract, through the pipeline seam:
  *

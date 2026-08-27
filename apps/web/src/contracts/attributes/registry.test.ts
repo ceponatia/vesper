@@ -69,7 +69,7 @@ describe("attribute registry invariants", () => {
     }
   });
 
-  // The orthogonality rule's cheap tripwire (attribute-narrator-guidance.plan.md): a gloss
+  // The orthogonality rule's cheap tripwire: a gloss
   // describes only its own attribute's dimension — height vocabulary outside the height
   // attributes reveals an entangled gloss. Extend the blocklist as authoring reveals leaks.
   it("orthogonality tripwire: no gloss outside height/apparent_age talks height", () => {

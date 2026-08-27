@@ -25,8 +25,8 @@ import { resolveChatWardrobe } from "./chat-wardrobe";
 import { registerJobHandler } from "./jobs";
 
 /**
- * The two detached chat reference-image job HANDLERS (chat-scene-references.plan.md;
- * enqueues live in chat-reference-enqueue.ts to avoid a chat-state import cycle) —
+ * The two detached chat reference-image job HANDLERS (enqueues live in
+ * chat-reference-enqueue.ts to avoid a chat-state import cycle) —
  * the `chat_scene_sketch` shape (deduped one-live-per-chat, never the exchange
  * lock, fire-and-forget, self-healing on any lost race):
  *
@@ -73,7 +73,7 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
   const collected = new DiagnosticCollector();
   const jobSink: DiagnosticSink = sink ? teeSink(sink, collected) : collected;
   try {
-    // Structured wardrobe (chat-wardrobe-parity): resolve the worn state to its rendered look +
+    // Structured wardrobe: resolve the worn state to its rendered look +
     // coverage-computed exposure, and key on the sorted worn ids + overlay + exposure fingerprint.
     // The garment store is the worn truth once the actor is modelled (slice 2) — this job read
     // only the projection column until slice 6, so an arrangement change could not reach it at all.

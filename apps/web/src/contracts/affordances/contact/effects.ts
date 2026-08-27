@@ -5,34 +5,33 @@ import type { SurfaceTransferProposal } from "./transfer";
 import type { CommittedContactRead, ContactMotionBand, ContactPressureBand } from "./types";
 
 /**
- * Effect proposals — contact's requests for owner-committed aftermath
- * (romantic-contact-affordances.spec.effects.md §6, §8; §15 stage 5).
+ * Effect proposals — contact's requests for owner-committed aftermath.
  *
  * A proposal is NOT truth. Contact calculates that a committed contact could
  * leave something behind; the destination state owner validates current state
  * and commits its own transaction, or refuses. Nothing here mutates anything,
  * nothing here is observable, and nothing here carries narrator text — the
- * three-layer boundary in the spec's own words.
+ * three-layer boundary in one sentence.
  *
- * The union has TWO implemented members: the pressure mark (§8, first proof)
- * and the conserved surface transfer (§9, second proof, in `transfer.ts`).
+ * The union has TWO implemented members: the pressure mark (first proof) and
+ * the conserved surface transfer (second proof, in `transfer.ts`).
  * Transfer joined on 2026-08-26 with its complete proposal → owner-transaction
  * path, and it is FIXTURE-ONLY by owner ruling (2026-08-25). The third of the
- * three gaps §15 stage 8 named is closed — a transfer-bearing settle now writes
+ * three known gaps is closed — a transfer-bearing settle now writes
  * every row it touched inside one database transaction — but the first two are
  * open: the player and ensemble members still have no body-surface owner, and
  * the chat lane's contact layers still carry a coverage-region identity rather
  * than an owner-addressable one. So no chat-lane pairing resolves a source
  * material read or a path, and nothing in production proposes one.
  *
- * The spec's remaining proposal families stay deliberately absent rather than
+ * The remaining proposal families stay deliberately absent rather than
  * stubbed. A standalone `GarmentOperationProposal` waits on the contact→
  * wardrobe operation seam — note that a transfer's intermediate leg is NOT one
  * of those: it is one leg of a single indivisible conserved event, and splitting
- * it into a second proposal would make §9's atomicity impossible to state.
- * `ScratchProposal` waits on an owner that does not exist at all — a type with
- * no owner behind it is exactly the "pressure mark and scratch are not
- * synonyms" smuggling path §8 forbids. A new member joins this union when its
+ * it into a second proposal would make the transfer's atomicity impossible to
+ * state. `ScratchProposal` waits on an owner that does not exist at all — a type
+ * with no owner behind it is exactly the "pressure mark and scratch are not
+ * synonyms" smuggling path this union forbids. A new member joins it when its
  * complete proposal → owner-transaction path ships.
  */
 
@@ -51,9 +50,8 @@ export const contactMarkKinds = ["pressure"] as const;
 export type ContactMarkKind = (typeof contactMarkKinds)[number];
 
 /**
- * A requested temporary body mark (effects spec §6's required fields, §8's
- * first-proof shape). Everything a spec-complete proposal carries and nothing
- * more: identity, the two owners, the exact locus, a semantic band, the
+ * A requested temporary body mark. Everything a complete proposal carries and
+ * nothing more: identity, the two owners, the exact locus, a semantic band, the
  * mechanics evidence behind it, and story time. No narrator text, ever.
  */
 export interface BodyMarkProposal {
@@ -61,7 +59,7 @@ export interface BodyMarkProposal {
   /**
    * Stable idempotency key, derived from the causal contact event — the same
    * committed contact proposes the same key on every replay, and the owner
-   * commits a given key at most once (effects spec §13).
+   * commits a given key at most once.
    */
   readonly idempotencyKey: string;
   /** Who made the contact — the acting side's owner identity. */
@@ -88,7 +86,7 @@ export interface BodyMarkProposal {
 export type ContactEffectProposal = BodyMarkProposal | SurfaceTransferProposal;
 
 // ---------------------------------------------------------------------------
-// The pressure-mark producer (effects spec §8)
+// The pressure-mark producer
 // ---------------------------------------------------------------------------
 
 /**
@@ -112,15 +110,14 @@ const MARKING_PRESSURE: Readonly<Partial<Record<ContactPressureBand, AffordanceI
  *
  * Pure and total over `CommittedContactRead` — same committed read, same
  * proposals, same idempotency key, which is what makes a retake's replay land
- * on the identical owner write (effects spec §13). The rule fails closed on
- * every axis (§14):
+ * on the identical owner write. The rule fails closed on every axis:
  *
  * - an OBJECT target proposes nothing — furniture has no body to mark;
  * - pressure must be committed at a qualifying band (see `MARKING_PRESSURE`);
  * - the committed transmission must reach skin (`directSkinContact`). Pressure
  *   through fabric is filtered by a material model nobody owns yet, and a
- *   coarse guess here would be exactly the pretend physics the contact-core
- *   spec forbids tuning in.
+ *   coarse guess here would be exactly the pretend physics the contact core
+ *   refuses to tune in.
  *
  * The idempotency key joins the contact's identity to the event that last
  * committed its mechanics: a retried exchange re-derives the same key (no

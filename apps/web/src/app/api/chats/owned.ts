@@ -4,11 +4,11 @@ import { CHAT_LOCK_LABEL_WORLD, chatExchangeLockKey, keyedLockBusy, keyedLockHol
 import { jsonError } from "@/server/api";
 
 /**
- * Resolve a conversation the user owns, with its full sort-ordered ROSTER
- * (multi-character-chat.plan.md) and, for the routes that still run 1-on-1, the
- * primary participant's (sort 0) slices under the pre-roster field names — the
- * one indexed lookup every /api/chats/[chatId] route runs before doing anything
- * (ownership lives on the chat row; character-chat-standalone.spec.md §1.2).
+ * Resolve a conversation the user owns, with its full sort-ordered ROSTER and,
+ * for the routes that still run 1-on-1, the primary participant's (sort 0)
+ * slices under the pre-roster field names — the one indexed lookup every
+ * /api/chats/[chatId] route runs before doing anything (ownership lives on the
+ * chat row).
  */
 export interface OwnedChatMember {
   characterId: string;
@@ -111,7 +111,7 @@ export interface OwnedRosterMember {
  * Extracted from the create handler (it was inline, so the authorization matrix
  * could only reproduce it) — the route and
  * `src/server/api/authz-matrix.int.test.ts` now run the same query and the same
- * count check (security-authz.plan.md slice 5 follow-up).
+ * count check.
  */
 export async function loadOwnedRoster(userId: string, characterIds: string[]): Promise<OwnedRosterMember[] | null> {
   const owned = await db()
@@ -165,7 +165,7 @@ export function chatBusyResponse(chatId: string): ReturnType<typeof jsonError> |
   // whenever a world command held the lock — and its "before changing the
   // scene" wording read as image generation on the scene strip's model picker,
   // which is how the owner's 2026-08-05 report came in as a phantom
-  // "generation in progress" (image-model-registry.spec.md).
+  // "generation in progress".
   return keyedLockHolderLabel(key) === CHAT_LOCK_LABEL_WORLD
     ? jsonError("chat_busy", "the world is catching up on this chat; try again in a moment", 409)
     : jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);

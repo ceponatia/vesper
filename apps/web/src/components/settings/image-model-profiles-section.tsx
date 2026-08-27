@@ -35,10 +35,9 @@ import { useToast } from "@/components/ui/toast";
 import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-shared";
 
 /**
- * The task profiles nested under one model card (image-model-capabilities.spec.md
- * §"Admin UI"): list, create, edit, switch off, remove. A profile says how
- * Vesper should USE this model for one job, so the section lives inside the
- * model's own card rather than in a page-level list.
+ * The task profiles nested under one model card: list, create, edit, switch off,
+ * remove. A profile says how Vesper should USE this model for one job, so the
+ * section lives inside the model's own card rather than in a page-level list.
  *
  * Form design decisions, deliberate:
  *
@@ -48,10 +47,10 @@ import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-
  *   structure operators edit rarely and by example. The textarea is validated
  *   through `imageReferencePolicySchema` BEFORE save, so it refuses what the
  *   server would refuse, and an empty box is the inert policy.
- * - **The curated common controls are structured inputs** (the spec's list:
- *   guidance, steps, negative prompt, edit strength, resolution tier,
- *   width/height, thinking mode, seed policy) — blank means "not stored", which
- *   is what keeps a default from being sent uninvited.
+ * - **The curated common controls are structured inputs** (guidance, steps,
+ *   negative prompt, edit strength, resolution tier, width/height, thinking
+ *   mode, seed policy) — blank means "not stored", which is what keeps a
+ *   default from being sent uninvited.
  * - **`providerOverrides` is the advanced JSON escape hatch.** JSON shape is
  *   checked here; the KEYS are the service's judgment against the model's
  *   probed field list (empty probe fails closed), and its refusal message
@@ -60,7 +59,7 @@ import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-
 
 const TIMEOUT_HINT = "Blank uses the environment budget. 30–900 seconds, the table's own bounds.";
 
-/** One profile row's summary line: the facts the spec's card lists. */
+/** One profile row's summary line: task, operation, prompt strategy, timeout. */
 function profileSummary(profile: ImageModelProfile): string {
   const timeout = profile.timeoutMs === null ? "default budget" : `${String(profile.timeoutMs / 1000)}s`;
   return `${TASK_LABELS[profile.task]} · ${profile.operation} · ${profile.promptStrategy} · timeout ${timeout}`;

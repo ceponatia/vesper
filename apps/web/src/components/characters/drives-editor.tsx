@@ -32,9 +32,9 @@ function parseGate(value: string): Drive["revealBand"] {
 const DEFAULT_GATE_LABEL = `Default — familiarity reaches ${familiarityBandById("familiar")?.label ?? "Familiar"}`;
 
 /**
- * Live cap counter (forge-gaps.plan.md gap 5): the inputs hard-stop at
- * maxLength, which used to clip silently mid-word. Quiet until the text nears
- * the cap (80%), accent-toned once it hits it.
+ * Live cap counter: the inputs hard-stop at maxLength, which used to clip
+ * silently mid-word. Quiet until the text nears the cap (80%), accent-toned once
+ * it hits it.
  */
 function CapCounter({ value, max }: { value: string; max: number }) {
   if (value.length < max * 0.8) return null;
@@ -49,8 +49,8 @@ function CapCounter({ value, max }: { value: string; max: number }) {
 }
 
 /**
- * The "Desires & secrets" card (character-drives.plan.md slice 2): ≤3 authored
- * drives — the wants the character pursues across a chat. `open` steers scenes,
+ * The "Desires & secrets" card: ≤3 authored drives — the wants the character
+ * pursues across a chat. `open` steers scenes,
  * `guarded` withholds until asked, `secret` is protected below its reveal gate
  * (the character may lie for it — scoped to that one secret, owner ruling
  * 2026-07-11). Rows saved with an empty want drop at the trust boundary

@@ -18,9 +18,7 @@ import { characterChatMessages, chatContactEvents, db } from "../db";
 
 /**
  * THE REVOCATION STOP TRANSITION — the narrator handoff of a withdrawal
- * (romantic-contact-affordances.spec.permission.md §"Revocation during active
- * contact" step 4, §"Required fixtures and tests" → "Revocation and narration";
- * implementation-order step 5's second half).
+ * during active contact.
  *
  * When a withdrawal ends permission-dependent active contact, the sweep inside
  * `appendChatPermissionEventsWithInvalidation` writes `contact_ended` rows with

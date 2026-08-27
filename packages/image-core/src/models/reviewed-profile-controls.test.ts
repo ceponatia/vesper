@@ -8,10 +8,10 @@ import {
 } from "./reviewed-profile-controls";
 
 /**
- * The spec's §"Effective values by model" table, written out as literal provider
+ * The reviewed effective values, per model, written out as literal provider
  * fields.
  *
- * Copied from the spec rather than derived from the code under test, which is the
+ * Hand-written rather than derived from the code under test, which is the
  * whole point: this fixture is what stops the two representations from agreeing
  * with each other while both drifting away from the reviewed judgment.
  */

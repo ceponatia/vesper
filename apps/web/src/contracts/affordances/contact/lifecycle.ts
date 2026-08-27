@@ -30,8 +30,7 @@ import type {
 } from "./types";
 
 /**
- * The contact lifecycle fold — attempt → start / update / continue → end
- * (romantic-contact-affordances.spec.contact-core.md §"Contact lifecycle").
+ * The contact lifecycle fold — attempt → start / update / continue → end.
  *
  * The active projection is a bounded list keyed by the order-independent surface
  * pair. Everything here is pure: state in, state out, no clock, no id counter,
@@ -780,12 +779,12 @@ export type ContactGestureModulationOutcome =
   | { readonly status: "absent"; readonly state: ContactLifecycleState };
 
 /**
- * Change a live contact's GESTURE and nothing else
- * (romantic-contact-affordances.spec.actor-control.md §"Resolution laws →
- * Contact update": "add a gesture-only lifecycle operation … it must preserve
- * contact ID, actor, action kind, source, target, area, material-between,
- * transmission, implicit adjustments, and start authorization byte-for-byte.
- * Re-resolving a full contact attempt is forbidden for updates").
+ * Change a live contact's GESTURE and nothing else.
+ *
+ * A gesture-only lifecycle operation preserves contact ID, actor, action kind,
+ * source, target, area, material-between, transmission, implicit adjustments,
+ * and start authorization byte-for-byte. Re-resolving a full contact attempt is
+ * forbidden for updates.
  *
  * ## Why an update may not go back through the resolver
  *

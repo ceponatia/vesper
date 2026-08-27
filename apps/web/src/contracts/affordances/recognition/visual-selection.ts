@@ -60,9 +60,7 @@ import {
 } from "./visual-attention";
 
 /**
- * Consumer selection over the scored visual-attention candidates
- * (visual-state.spec.md §Attention and memory, §Consumer digests; plan
- * §Consumer behavior).
+ * Consumer selection over the scored visual-attention candidates.
  *
  * Two selections, deliberately asymmetric:
  *

@@ -298,10 +298,9 @@ export interface IdentityPackPolicyProjection {
 }
 
 /**
- * Re-judge a stored revision under the CURRENT policy
- * (`.spec.derivation.md` §"Intrinsic quality measurement": `quality.accepted` is
- * not persisted as eternal truth; `.spec.data.md` §"Schema-version behavior": a
- * policy change re-evaluates existing packs).
+ * Re-judge a stored revision under the CURRENT policy: `quality.accepted` is
+ * not persisted as eternal truth, and a policy change re-evaluates existing
+ * packs.
  *
  * A projection, never a repair. The row keeps the status and warnings it was
  * finalized with, because a revision is a historical claim about what one policy
@@ -321,8 +320,8 @@ export interface IdentityPackPolicyProjection {
  *
  * **A revision with no source is refused here, ahead of any threshold.** The
  * source foreign key sets null, so a deleted portrait can leave a row still
- * reading `current`/`ready` that describes bytes nobody can produce
- * (spec.lifecycle.md §"Source deletion"). The delete paths retire such a row
+ * reading `current`/`ready` that describes bytes nobody can produce. The delete
+ * paths retire such a row
  * before the delete lands, and this is what makes that ordering a convenience
  * rather than the only line of defence: because every read seam passes through
  * here, no reader can surface a sourceless pack as ready however the row got
@@ -392,8 +391,7 @@ export function projectIdentityPackPolicy(
  * ------------------------------------------------------------------------ */
 
 /**
- * Which failures a later attempt could plausibly fix
- * (`.spec.derivation.md` §"Retry policy").
+ * Which failures a later attempt could plausibly fix.
  *
  * The split is between "the machinery stumbled" and "this source cannot yield a
  * usable face". A file read, a decode, a detector runtime error and a local

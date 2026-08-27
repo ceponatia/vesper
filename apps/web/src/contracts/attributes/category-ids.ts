@@ -58,8 +58,8 @@ export type AttributeCategory = z.infer<typeof attributeCategorySchema>;
  * The attribute categories the character sheet's "Personality" tab owns (the
  * "Attributes" tab renders every other non-intimate category) — behavioral
  * texture rather than physical body. One flat `attributes` array backs both
- * tabs; this split is shared by the editor tabs and the sheet-forge scopes
- * (character-sheet-forge.plan.md), so it lives with the category vocabulary.
+ * tabs; this split is shared by the editor tabs and the sheet-forge scopes, so
+ * it lives with the category vocabulary.
  */
 export const PERSONALITY_ATTRIBUTE_CATEGORIES = ["voice", "presentation", "movement"] as const satisfies readonly AttributeCategory[];
 

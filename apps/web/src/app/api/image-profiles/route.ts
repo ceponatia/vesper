@@ -4,17 +4,17 @@ import { jsonError, jsonOk, withUser } from "@/server/api";
 import { loadImageModelProfilesForTask } from "@/server/images";
 
 /**
- * The profile list the player-facing pickers read (image-model-capabilities.spec.md
- * §"Caller migration" Slice D). Ordinary users, not admins: choosing which
- * profile paints your portrait or scene is a normal affordance — only MANAGING
- * profiles is admin-only, under `/api/admin/self/image-models/…/profiles`.
+ * The profile list the player-facing pickers read. Ordinary users, not admins:
+ * choosing which profile paints your portrait or scene is a normal affordance —
+ * only MANAGING profiles is admin-only, under
+ * `/api/admin/self/image-models/…/profiles`.
  *
  * `?task=` is required, because "offered" is a fact about one task: the list is
  * `loadImageModelProfilesForTask`'s answer — the profile enabled, the model
  * present and allowed by the task's legacy surface toggle, the pair eligible —
  * which is EXACTLY the candidate set `resolveImageProfileForTask` accepts, so
  * the picker can never show a choice resolution would then decline (the
- * `image_profile.pick_unavailable` window this slice closes).
+ * `image_profile.pick_unavailable` window this endpoint closes).
  *
  * The wire shape is a picker OPTION, not the profile row: id, grouping label,
  * and the model's operator warning, which a player sees BEFORE choosing rather

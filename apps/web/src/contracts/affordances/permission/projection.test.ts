@@ -10,8 +10,7 @@ import type { RomanticPermissionEvent } from "./events";
 import { PROBE_GRANTOR, PROBE_PERMITTED, probePermissionEvent } from "./test-support";
 
 /**
- * The active-projection fold — the ruled semantics of the five event kinds
- * (spec.permission.md §"Events and active projection"; plan rulings 4 and 6):
+ * The active-projection fold — the ruled semantics of the five event kinds:
  * a grant establishes, a denial never touches standing, a withdrawal/revocation
  * tombstones, a later grant re-establishes, replay is idempotent, and nothing
  * malformed is ever repaired into a grant.

@@ -6,8 +6,7 @@ import { characterChats, chatContactEvents, db, type Db } from "../db";
 import { insertVerifiedLedgerRows, ledgerMismatches, type LedgerKey } from "./ledger-verify";
 
 /**
- * THE CHAT LANE'S DURABLE CONTACT LEDGER (romantic-contact-affordances — the
- * affectionate integration proof).
+ * THE CHAT LANE'S DURABLE CONTACT LEDGER (the affectionate integration proof).
  *
  * The one IO module of the contact seam. Everything above it — resolution,
  * lifecycle, the scene fold — is pure contract code; this file owns the rows,

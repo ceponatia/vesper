@@ -14,7 +14,7 @@ export const movementGroup = defineAttributeGroup("movement", [
       "swaggering", "prowling", "bouncing", "heavy", "shuffling",
     ],
     aliases: ["gait", "walk", "stride"],
-    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // Narrator-gloss authoring batch — DRAFTS AWAITING
     // OWNER REVIEW. Gait = how the walk reads only. Sparse: brisk/purposeful stay bare.
     narratorGuidance: {
       gliding: "smooth and floating — feet barely seem to land",
@@ -41,7 +41,7 @@ export const movementGroup = defineAttributeGroup("movement", [
     ],
     aliases: ["posture", "bearing"],
     promptHints: ["Treat default posture as the baseline the character returns to between beats."],
-    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // Narrator-gloss authoring batch — DRAFTS AWAITING
     // OWNER REVIEW. Posture = the resting carriage of the body. Sparse: upright/relaxed stay bare.
     narratorGuidance: {
       ramrod_straight: "rigidly erect — a military spine, no give",

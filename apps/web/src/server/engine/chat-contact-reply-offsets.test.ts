@@ -4,8 +4,7 @@ import { detectChatNpcContactEnding, type ChatNpcEndingCharacter } from "./chat-
 import { locateChatNpcEndingActionSpan } from "./chat-contact-reply-offsets";
 
 /**
- * Floor-ending source offsets (romantic-contact-affordances.spec.actor-control.md
- * §"Authority model" / §"Chronology and folding"): the frozen detector says WHAT
+ * Floor-ending source offsets: the frozen detector says WHAT
  * ended; this wrapper re-derives WHERE, by replaying that same detector one
  * narration sentence at a time and then pinning the matched ACTION PHRASE
  * inside it. The tests pin that the located phrase is the one the full-reply

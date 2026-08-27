@@ -10,7 +10,7 @@ import { chatContinuitySchema, type ChatArchivist } from "@/contracts/turns/chat
 import { characterChats, db } from "@/server/db";
 
 /**
- * The narrator trial, end to end (body-attribute-affordances.plan.md slice 5).
+ * The narrator trial, end to end.
  *
  * What only a database can prove:
  *

@@ -16,9 +16,9 @@ import { chatBusyResponse, loadOwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * "Mark this moment" (character-chat-standalone.spec.md §7.2): pin a player-chosen
- * milestone on any message. The label defaults to a trimmed excerpt of the marked
- * line, so the milestone reads as the moment itself.
+ * "Mark this moment": pin a player-chosen milestone on any message. The label
+ * defaults to a trimmed excerpt of the marked line, so the milestone reads as
+ * the moment itself.
  */
 
 const markBodySchema = z.object({

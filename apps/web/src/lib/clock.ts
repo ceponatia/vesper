@@ -67,10 +67,9 @@ export const DAYLIGHT_BAND_START_MINUTES: Record<DaylightBand, number> = {
 };
 
 /**
- * Daylight band (multi-character-v1-defaults.phase3.md): dawn 05–07, day 07–18,
- * dusk 18–20, night otherwise. Style-overridable later; consumers (perception
- * darkness, drive curfews, declared-rest wake times) read this instead of
- * re-deriving hours.
+ * Daylight band: dawn 05–07, day 07–18, dusk 18–20, night otherwise.
+ * Style-overridable later; consumers (perception darkness, drive curfews,
+ * declared-rest wake times) read this instead of re-deriving hours.
  */
 export function daylightBand(time: GameTime): DaylightBand {
   return daylightBandAtMinute(minuteOfDay(time));

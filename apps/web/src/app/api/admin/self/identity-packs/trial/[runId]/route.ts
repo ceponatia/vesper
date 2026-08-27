@@ -4,8 +4,7 @@ import { deleteIdentityPackTrialRun, getIdentityPackTrialRunDetail } from "@/ser
 type Params = { runId: string };
 
 /**
- * One trial run with every cell — specs, statuses, results
- * (image-identity-packs.spec.trial.md §"Trial manifest"). Ids and measurements
+ * One trial run with every cell — specs, statuses, results. Ids and measurements
  * only, never bytes or URLs: rendered outputs are named by image id and fetched,
  * if at all, through the authorized image route, the same privacy boundary every
  * identity-pack admin surface keeps.

@@ -150,7 +150,7 @@ export type AdvanceStoryTimeOutcome =
        * trigger transiently failed and backed off on the WALL clock: the story clock is parked
        * exactly at its due second, so a looping caller must STOP (re-looping cannot see the
        * backed-off trigger and would jump the clock past it, mis-stamping its event and breaking
-       * §12.4 partition invariance). `availableAt` is when the backoff elapses.
+       * partition invariance). `availableAt` is when the backoff elapses.
        */
       reason: "trigger_budget" | "time_budget" | "trigger_backoff";
       availableAt?: Date;
@@ -192,8 +192,8 @@ function scheduleBranchUnavailableResult(
 }
 
 /**
- * Execute one schedule command against PostgreSQL authority (spec §11.1 step
- * 10): the trigger_scheduled event, the trigger row it projects to, the branch
+ * Execute one schedule command against PostgreSQL authority: the
+ * trigger_scheduled event, the trigger row it projects to, the branch
  * advance, and the command result commit atomically under the branch lock.
  */
 export async function submitDurableTriggerSchedule(
@@ -378,7 +378,7 @@ export async function submitDurableTriggerSchedule(
 }
 
 /**
- * Schedule one branch-unique trigger as a committed event effect (plan R1).
+ * Schedule one branch-unique trigger as a committed event effect (R1).
  *
  * The signature is unchanged from E2.4, but the row is now created by a
  * schedule command whose trigger_scheduled event replays on fork. Repeat calls
@@ -710,17 +710,17 @@ async function setStorySecond(branchId: string, storySecond: number, database: D
 
 /**
  * Advance one branch's story time to `toStorySecond`, draining every trigger that
- * becomes due along the way (spec §12.2). Triggers are never skipped: exceeding a
+ * becomes due along the way. Triggers are never skipped: exceeding a
  * declared bound persists the boundary reached so far and returns
  * `catch_up_required` for the caller to resume.
  *
  * The clock steps to each trigger's own due second before that trigger resolves,
  * rather than jumping straight to the target. An event takes its story second from
  * the branch clock, so jumping first would stamp every drained event with the
- * target and break the §12.4 partition-invariance property: advance(T0,T3) would
+ * target and break the partition-invariance property: advance(T0,T3) would
  * disagree with advance(T0,T1); advance(T1,T2); advance(T2,T3).
  *
- * Analytical rate integration (§12.2 steps 2 and 6) is deliberately absent — no
+ * Analytical rate integration is deliberately absent — no
  * continuous rate exists until Gate 5 bodies. This drain loop is the seam it will
  * slot into.
  */
@@ -783,8 +783,8 @@ export async function advanceBranchStoryTime(
     if (outcome.status === "idle") break;
     // A retrying trigger stays due at this second. Report the stop DISTINCTLY (A6) — the clock
     // is parked at the due second, and a looping caller must NOT keep draining past it (that is
-    // the §12.4-breaking jump the distinct reason exists to stop). `availableAt` tells the
-    // caller when resuming is worthwhile.
+    // the partition-invariance-breaking jump the distinct reason exists to stop). `availableAt`
+    // tells the caller when resuming is worthwhile.
     if (outcome.status === "retry") return partial("trigger_backoff", outcome.availableAt);
     // A poison trigger — terminally `failed` (retries exhausted) OR `rejected` (a deterministic
     // refusal): both leave the row in state `failed`, never to resolve. COUNT it and keep

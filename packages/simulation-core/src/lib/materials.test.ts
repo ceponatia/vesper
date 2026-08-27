@@ -85,7 +85,7 @@ function makeView(input: {
   items: SimulationMaterialItemInput[];
   headSequence?: number;
   storySecond?: number;
-  /** itemId -> reserving activity id (§26.5); absent items are unreserved. */
+  /** itemId -> reserving activity id; absent items are unreserved. */
   reservedBy?: Record<string, string>;
 }): MaterialResolutionView {
   const actors = input.actors ?? baseActors;
@@ -472,7 +472,7 @@ describe("E5.3 transfer law — ownership flag", () => {
   });
 });
 
-describe("E5.3 slice 3 — worn-window transition on transfer (§26.7)", () => {
+describe("E5.3 slice 3 — worn-window transition on transfer", () => {
   function trackedConditionView(overrides: Partial<ItemConditionView> = {}): ItemConditionView {
     return {
       itemId: "item-x",
@@ -806,7 +806,7 @@ describe("E5.3 projector, replay, seed, and invariants", () => {
 });
 
 // ---------------------------------------------------------------------------
-// E5.3 slice 2 — resource reservations and consumption (§26.5–26.6)
+// E5.3 slice 2 — resource reservations and consumption
 // ---------------------------------------------------------------------------
 
 /**
@@ -840,7 +840,7 @@ function foodItem(overrides: Partial<SimulationMaterialItemInput> = {}): Simulat
   };
 }
 
-describe("E5.3 slice 2 — consume_item (§26.6)", () => {
+describe("E5.3 slice 2 — consume_item", () => {
   it("rejects an item with no authored consumption effects", () => {
     const noEffects = resolveConsumeItemFromView(
       makeView({ items: [{ id: "rock", name: "a rock", locus: heldBy("mara") }] }),
@@ -1006,7 +1006,7 @@ describe("E5.3 slice 2 — consume_item (§26.6)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// E5.3 slice 2 — reservation blocks command-driven material paths (§26.5)
+// E5.3 slice 2 — reservation blocks command-driven material paths
 // ---------------------------------------------------------------------------
 
 describe("E5.3 slice 2 — reservation blocks transfer, destroy, and consume", () => {
@@ -1036,7 +1036,7 @@ describe("E5.3 slice 2 — reservation blocks transfer, destroy, and consume", (
 });
 
 // ---------------------------------------------------------------------------
-// E5.4 slice 2 — item_instantiated_from_promotion (materials-side fold, §7.2)
+// E5.4 slice 2 — item_instantiated_from_promotion (materials-side fold)
 // ---------------------------------------------------------------------------
 
 describe("E5.4 slice 2 applyMaterialEvent on item_instantiated_from_promotion", () => {

@@ -14,10 +14,10 @@ import { imageModelReprobeFields, loadImageModel } from "@/server/images";
 type Params = { modelId: string };
 
 /**
- * Edit or remove one registry row (image-model-registry.spec.md). Seeded rows
- * are ordinary rows here — `builtin` marks them for display but does not protect
- * them (owner ruling 4: the database is the single source of truth, so there is
- * no privileged second list hiding in the code).
+ * Edit or remove one registry row. Seeded rows are ordinary rows here —
+ * `builtin` marks them for display but does not protect them (the database is
+ * the single source of truth, so there is no privileged second list hiding in
+ * the code).
  *
  * Deleting a model in use is deliberately allowed: stored picks are plain ids,
  * and `resolveImageProfile` degrades an unknown one to the task's default at

@@ -18,8 +18,7 @@ import { submitDurableCreateCohort } from "./cohort-store";
 import { submitDurableMoveActor } from "./space-store";
 
 /**
- * security-authz.plan.md §Follow-ups item 1 — the durable command layer proves
- * ownership itself.
+ * The durable command layer proves ownership itself.
  *
  * The seam is exercised DIRECTLY (no route, no `requireSimChat`): a player
  * principal must resolve exactly one chat anchor and match its owner. Unanchored
@@ -227,7 +226,7 @@ afterAll(async () => {
   await db().delete(users).where(inArray(users.id, seededUserIds));
 });
 
-describe.runIf(ready)("durable command ownership (security-authz §Follow-ups 1)", () => {
+describe.runIf(ready)("durable command ownership", () => {
   it("admits the owning account's player principal", async () => {
     const ids = await seedAnchoredCase(ownerA);
     const result = await submitDurableMoveActor(moveCommand(ids, ownerA, "owner"));

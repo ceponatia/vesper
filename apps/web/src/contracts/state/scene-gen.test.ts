@@ -4,9 +4,8 @@ import { describe, expect, it } from "vitest";
 import { sceneGenStateSchema } from "@/contracts/state/scene-gen";
 
 /**
- * The browser-safety regression check for `@vesper/image-core`
- * (monorepo-image-core.spec.guardrails.md §"Runtime targets are part of the
- * package contract").
+ * The browser-safety regression check for `@vesper/image-core` — runtime targets
+ * are part of the package contract.
  *
  * `src/contracts` is client-importable, so this module is the designated fixture
  * that keeps the package on a path Next compiles into a CLIENT bundle. That is

@@ -35,8 +35,8 @@ export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
   /**
-   * The line was authored in NARRATOR mode (chat-supporting-cast.plan.md §Narrator
-   * input, user lines only): story narration from the player as storyteller. The
+   * The line was authored in NARRATOR mode (user lines only): story narration
+   * from the player as storyteller. The
    * pipeline wraps such lines with `wrapNarratorInput` at the model boundary — the
    * stored transcript stays byte-verbatim.
    */
@@ -64,7 +64,7 @@ export interface StreamCharacterChatInput {
    * configured key falls back too rather than streaming a 401.
    */
   model?: string | null;
-  /** Player Stop (spec §4.2): aborting cuts the stream; the caller keeps the accumulated prefix. */
+  /** Player Stop: aborting cuts the stream; the caller keeps the accumulated prefix. */
   signal?: AbortSignal;
   /**
    * Called exactly once, when the stream finishes on its own, with how the upstream

@@ -5,7 +5,7 @@ import { NARRATION_LANE_DEFAULTS, NARRATION_SHAPE_IDS, readDevNarrationShape, se
 const bodySchema = z.object({ shape: z.enum(NARRATION_SHAPE_IDS).nullable() });
 
 /**
- * Dev-only narration-shape toggle (narrator-prompt-focus.plan.md §1.1). Flips the
+ * Dev-only narration-shape toggle. Flips the
  * live narration *shape profile* (`concise_immersive` ↔ `aggressive_concise`) for
  * **both** the session and character-chat lanes without a restart, by setting the
  * in-memory override read by `narrationShapeId(lane)`. Gated exactly like

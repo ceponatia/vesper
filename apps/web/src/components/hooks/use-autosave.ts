@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
 /**
- * Editor autosave (ux-improvements.plan.md slice 7 — ruled 2026-07-13):
+ * Editor autosave (ruled 2026-07-13):
  * drafts should never be losable, so the editors move from explicit-save to
  * always-saved.
  *

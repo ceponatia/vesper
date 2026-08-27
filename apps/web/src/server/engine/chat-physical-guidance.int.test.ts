@@ -6,8 +6,7 @@ import { bodySurfaceWetnessAt } from "@/contracts/state/body-surface";
 import { characterChatMessages, db } from "@/server/db";
 
 /**
- * The constraint-first narrator guidance, end to end
- * (narrator-physical-guidance.plan.md slice 2).
+ * The constraint-first narrator guidance, end to end.
  *
  * What only a database can prove:
  *
@@ -275,7 +274,7 @@ describe.runIf(ready)("a retake reproduces the block, with nothing persisted to 
     expect(first.length).toBeGreaterThan(1);
 
     // The fingerprints are the retake identity, and they come out of a recompute —
-    // there is no `physical_guidance` row, by design (plan §"State and retakes").
+    // there is no `physical_guidance` row, by design.
     const firstPreview = await previewChatPhysicalGuidance({
       chatId: chat.chatId,
       character: { id: fixture.characterId, name: fixture.characterName, profile: fixture.profile },

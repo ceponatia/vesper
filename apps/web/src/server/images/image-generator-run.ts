@@ -85,8 +85,8 @@ const IMAGE_GENERATOR_RENDER_POLICY = {
 } as const;
 
 /**
- * The Image Generator's runner (image-lab-general-model-trials.spec.md
- * §"Generator runner"): the body of the `generator_image` job the route starts.
+ * The Image Generator's runner: the body of the `generator_image` job the route
+ * starts.
  *
  * NOTHING here throws through the job runner — every stop is a settled row
  * carrying its reason, because a raw-testing bench that threw would leave the
@@ -182,7 +182,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // knowable from the request alone.
   //
   // A count above one is a FAN-OUT — N sequential predictions from one compiled
-  // plan (§12) — because every registered model renders exactly one image per
+  // plan — because every registered model renders exactly one image per
   // prediction. The synthetic profile's `seedPolicy: "caller"` sends an explicit
   // seed verbatim, so it would reach all N of them and the provider would answer
   // with the same picture N times over. Refused rather than dropping the seed or
@@ -302,7 +302,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   }
 
   // 6b. The advanced bag may not reach a field another path owns, and a value
-  // the probe can type-check must be right BEFORE spend (plan §13). The shared
+  // the probe can type-check must be right BEFORE spend. The shared
   // `validateProviderOverrides` inside the compile only knows reserved-set and
   // known-field membership; the checks here close what it cannot see — the
   // transport writes the bag LAST, so a collision it let through would silently
@@ -397,7 +397,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
     // model's adapter has observed. A bench can afford to wait out a cold-boot
     // queue and a player-facing lane cannot, which is why the policy is put on
     // the intent HERE rather than defaulted anywhere shared: production lanes
-    // pass none and keep today's single budget (plan §8).
+    // pass none and keep today's single budget.
     executionPolicy: benchExecutionPolicy(model),
   };
   if (selection) {
@@ -406,7 +406,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
     // curation does not apply — before contexts existed this call had to borrow
     // the synthetic profile's nominal `item` task, and a mechanically perfect
     // LoRA was refused `image_lora.incompatible` for failing a curation rule
-    // about a lane the bench is not in (plan §1). The mechanical checks — model,
+    // about a lane the bench is not in. The mechanical checks — model,
     // version, scale, bindings, locator — still all run.
     const resolved = await resolveImageLoraForRender(
       selection,
@@ -1334,7 +1334,7 @@ function refusedDroppedControl(
 }
 
 /**
- * The pre-spend gate over the raw provider bag (plan §13). Three layers, all
+ * The pre-spend gate over the raw provider bag. Three layers, all
  * derivable without spend:
  *
  * 1. Fields another path owns on EVERY capability record — the curated LoRA
@@ -1384,7 +1384,7 @@ function rejectedProviderInput(
     model.advancedCapabilities.providerInputs.map((descriptor) => [descriptor.field, descriptor]),
   );
   // A record with no descriptors cannot say what SHAPE any field takes, and the
-  // plan's rule for an unprobed field is to reject it (§13). `knownInputFields`
+  // rule for an unprobed field is to reject it. `knownInputFields`
   // is not a substitute: it lists every declared property, URI inputs included,
   // so accepting the bag here would let a direct API caller hand the provider an
   // arbitrary address on any model registered before descriptors existed. The

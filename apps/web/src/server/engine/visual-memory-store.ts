@@ -10,8 +10,7 @@ import { parseOr } from "@/lib/parse";
 import { chatVisualMemory, db } from "../db";
 
 /**
- * OBSERVER VISUAL MEMORY, PERSISTED (body-attribute-affordances slice 7;
- * body-attribute-affordances.recognizable-features.memory.md §Update rules).
+ * OBSERVER VISUAL MEMORY, PERSISTED.
  *
  * The one IO module of the recognition seam. Everything above it — projection,
  * candidates, salience, mention policy, cue prose — is pure; this file owns the

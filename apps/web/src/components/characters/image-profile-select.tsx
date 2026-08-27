@@ -4,8 +4,7 @@ import type { ImageProfileOption } from "@/lib/client/api";
 import { Select } from "@/components/ui/select";
 
 /**
- * The shared profile picker (image-model-capabilities.spec.md §"Caller
- * migration" Slice D) — the successor to the registry model picker. Every
+ * The shared profile picker — the successor to the registry model picker. Every
  * surface that chooses how an image is made — the portrait studio's two
  * sections, the chat scene strip, the scenario modal — renders this, so they
  * agree on what an empty list and a still-loading list look like.
@@ -19,9 +18,9 @@ import { Select } from "@/components/ui/select";
  * — the resolver's step 2 keeps those working — so the picker maps a legacy
  * value onto that model's profile for display (see {@link displayedProfileId}).
  *
- * When several profiles use the same model they group under its label
- * (§"Admin UI": "group them under the model label"), and a selected profile's
- * operator warning renders beneath the control — visible BEFORE use, never
+ * When several profiles use the same model they group under its label, and a
+ * selected profile's operator warning renders beneath the control — visible
+ * BEFORE use, never
  * blocking (the Wan moderation caveat is the first occupant).
  */
 export function ImageProfileSelect({

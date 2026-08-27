@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
 
 /**
- * Reference-sheet test, single-character variant (scene-images.spec.md §6): merge
+ * Reference-sheet test, single-character variant: merge
  * a character portrait + a LOCATION image into one labeled board and ask
  * qwen-image-2-edit to place the character INTO that location — testing whether
  * the edit model can read the *setting* from a panel (image-driven) rather than

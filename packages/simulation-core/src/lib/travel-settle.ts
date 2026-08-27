@@ -7,8 +7,7 @@ import type { SpaceProjection } from "../contracts/space";
  * transit and where the branch clock would have to reach to finish them
  * offline. Both are read-only functions of the SETTLED space projection, so the
  * composed departure/accompany loop and the travel-chip route load the
- * projection ONCE and thread it here rather than re-materializing it per query
- * (sim-read-seam-guards.plan.md slice 3).
+ * projection ONCE and thread it here rather than re-materializing it per query.
  *
  * No IO, no env, no db (src/lib purity): the caller loads the projection, logs
  * the diagnostic, and escalates the durable job; this only decides the numbers.
@@ -19,10 +18,10 @@ type SettledSpace = Pick<SpaceProjection, "loci" | "journeys" | "storySecond">;
 
 /**
  * How far to drain after a committed move: the actor's resulting journey's
- * EXPECTED arrival (§17), or the current clock when the move produced no journey
+ * EXPECTED arrival, or the current clock when the move produced no journey
  * (already at the destination, or a refused/undone move). A7: the drain target
- * MUST equal the arrival trigger's due second, which §17 schedules at
- * `expectedArrivalAt` — never `earliestArrivalAt`, which diverges the moment
+ * MUST equal the arrival trigger's due second, which the move resolver schedules
+ * at `expectedArrivalAt` — never `earliestArrivalAt`, which diverges the moment
  * travel uncertainty or a `journey_delayed` becomes nonzero and would stop the
  * clock before the arrival fires, stranding the traveller.
  */

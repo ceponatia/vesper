@@ -13,8 +13,7 @@ import {
 import type { ImagePositiveClaim } from "./positive-claims";
 
 /**
- * `qwen/qwen-image-2512` — the first implemented dialect
- * (model-aware-image-prompts.research.md §"Qwen Image 2512").
+ * `qwen/qwen-image-2512` — the first implemented dialect.
  *
  * Two endpoint facts shape everything here, and both are evidence rather than
  * family folklore:
@@ -46,7 +45,7 @@ const DIALECT_ID = "qwen_2512_description" as const;
  *
  * One entry, and its value is the empty string — which is a probed fact, not a
  * placeholder. Qwen 2512's `negative_prompt` default is blank
- * (docs/image-models/qwen-image-2512.md), so there is nothing to neutralize, and
+ * (docs/image-models/models/qwen-image-2512.md), so there is nothing to neutralize, and
  * recording that explicitly is what lets provenance distinguish "the provider
  * added nothing" from "nobody checked".
  */
@@ -347,8 +346,8 @@ const IGNORES_NEGATIVE_FIELD = "endpoint_ignores_negative_field";
  * on negative conditioning, the parameter exists for pipeline compatibility, and
  * the official examples pass a single space.
  *
- * So this is the plan's "endpoint/version behavior outranks model-family
- * assumptions" ruling doing its job. A field the wrapper offers does not exist
+ * So this is the "endpoint/version behavior outranks model-family assumptions"
+ * rule doing its job. A field the wrapper offers does not exist
  * for Vesper until the endpoint proves it works, and this one proved the
  * opposite. Sending exclusions anyway would spend prompt budget on text that
  * changes nothing while letting provenance claim the render excluded something.
@@ -360,7 +359,7 @@ const IGNORES_NEGATIVE_FIELD = "endpoint_ignores_negative_field";
  *
  * What is deliberately NOT done here: inventing an inline or positive-replacement
  * transport. Whether affirmative wording inside the positive prompt achieves what
- * the field could not is an evidence question the plan requires a fixed trial to
+ * the field could not is an evidence question only a fixed trial can
  * answer, and until that trial says so this dialect states the honest `unsupported`
  * rather than a capability it has not earned.
  */

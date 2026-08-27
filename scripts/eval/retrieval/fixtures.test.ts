@@ -3,7 +3,7 @@ import { EPISODE_WINDOW, PINNED_FACT_CAP } from "@/server/memory";
 import { RETRIEVAL_FIXTURES } from "./fixtures";
 
 /**
- * Fixture-integrity guard for the retrieval eval harness (spec §6.3 #6). Pure —
+ * Fixture-integrity guard for the retrieval eval harness. Pure —
  * no DB, no embeddings; it only asserts the fixture set is internally
  * consistent so a broken expectation key fails here instead of silently
  * scoring 0 in a live run.

@@ -6,10 +6,10 @@ import { simulationHash } from "@vesper/simulation-core/hash";
 import { characterChatMessages, db, simBranches, simCommandRequests } from "@/server/db";
 import { log } from "@/server/log";
 
-// command-integrity.plan.md A1 (slices 1, 3, 4) — the per-chat lock, the
-// holder-labelled busy face, and the `(chatId, requestId)` idempotency replay
-// record. Every command is serialized under `chat_exchange:<chatId>`; a retry of
-// the same request replays the recorded response verbatim (one drain, one beat);
+// Command integrity — the per-chat lock, the holder-labelled busy face, and the
+// `(chatId, requestId)` idempotency replay record. Every command is serialized
+// under `chat_exchange:<chatId>`; a retry of the same request replays the
+// recorded response verbatim (one drain, one beat);
 // a crash mid-composition resumes through the request-derived step + beat ids.
 // Self-skips without a database (AI_FAKE keeps it zero live model calls).
 

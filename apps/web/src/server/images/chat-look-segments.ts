@@ -29,8 +29,7 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 import { visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
- * THE CHAT-LOOK MINT'S VISUAL-DIGEST CUTOVER (image-lane-consolidation.plan.md
- * Stage 4; spec.prompts.md §Lane migration order → Chat look) — the pure seam
+ * THE CHAT-LOOK MINT'S VISUAL-DIGEST CUTOVER — the pure seam
  * that replaces `buildChatLookPrompt`'s three hard-coded sentences with the
  * committed visual digest plus semantic prompt segments.
  *
@@ -71,7 +70,7 @@ import { visualFactClauseResolver } from "./visual-fact-clauses";
  * Left silent deliberately: this lane edits FROM an identity reference, and
  * identity detail the reference photo already carries is exactly what the
  * owner ruled stays unstated on the sibling edit lane (2026-08-25). Closing
- * the asymmetry belongs to `visual-state.plan.md`, which owns the projection —
+ * the asymmetry belongs to the visual-state projection —
  * when it lands, this lane gains the mark with no change here. The claim is
  * pinned by `lane-characterization.test.ts`'s distinctive-mark test.
  *
@@ -111,7 +110,7 @@ import { visualFactClauseResolver } from "./visual-fact-clauses";
  * is the right answer for this lane too: its framing sentence states one fixed
  * pose, and a second pose beside it would put the same body in two positions.
  *
- * ## Failure behavior (spec.prompts.md §Failure behavior)
+ * ## Failure behavior
  *
  * A failed shadow assembly, or a REQUIRED digest fact with no resolvable
  * clause, returns a non-null `refusal`. This lane's refusal shape is NOT

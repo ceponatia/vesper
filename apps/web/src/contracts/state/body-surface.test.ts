@@ -87,8 +87,8 @@ describe("the schema quarantines rather than healing", () => {
    * unusable key failed the whole RECORD before any entry was parsed, the
    * field's `.catch(undefined)` swallowed the failure, and every valid sibling
    * vanished with it. For `transfers` that answers "never transferred" for a
-   * transfer that already committed, which is the second debit §9 forbids; for
-   * `deposits` it is §7's unowned sink.
+   * transfer that already committed, which is the second debit conservation
+   * forbids; for `deposits` it is an unowned sink.
    */
   const keyedModules: readonly {
     module: "marks" | "deposits" | "transfers";
@@ -273,8 +273,8 @@ describe("writes", () => {
   });
 
   /**
-   * The tombstone reclaim — the 2026-08-26 ruling's refinement of effects spec
-   * §9's material-capacity law.
+   * The tombstone reclaim — the 2026-08-26 ruling's refinement of the
+   * material-capacity law.
    *
    * Falsified against the guard that refused ANY new location once the record
    * was full: an unassignable key occupies a slot and poisons absence (law 4),
@@ -308,13 +308,13 @@ describe("writes", () => {
     const second = setBodySurfaceWetness(healed, { locationId: "chest", level: 3_000, atMinutes: 0 });
     expect(level(second, "chest", 0)).toBe(3_000);
     expect(level(second, "face", 0)).toBe(0);
-    // Now genuinely full of facts — and refusing is §9 working, not the bug.
+    // Now genuinely full of facts — and refusing is the capacity law working, not the bug.
     expect(setBodySurfaceWetness(second, { locationId: "face", level: 3_000, atMinutes: 0 })).toBe(second);
   });
 });
 
 /**
- * The marks module (romantic-contact-affordances.spec.effects.md §8) — the same
+ * The marks module — the same
  * owner, laws 6 and 7: a record keyed by idempotency identity so retry commits
  * nothing new, a fade anchored at creation and never restamped, quarantine over
  * repair (which is where a stored `"scratch"` is fenced out), and a `marks` key
@@ -411,7 +411,7 @@ describe("marks", () => {
 
 
 /**
- * The deposits module (romantic-contact-affordances.spec.effects.md §7; owner
+ * The deposits module (owner
  * ruling 2026-08-25). Its whole reason to exist separately from the two modules
  * above is one asymmetry, and that asymmetry is what these pin: wetness dries
  * and marks fade because a surface is returning to its resting state, while a
@@ -495,8 +495,7 @@ describe("deposits", () => {
 });
 
 /**
- * The conserving pair and the receipt module
- * (romantic-contact-affordances.spec.effects.md §9; ruling 2026-08-26).
+ * The conserving pair and the receipt module (ruling 2026-08-26).
  *
  * `contracts/turns/chat-contact-transfer.test.ts` owns the conservation law
  * itself and proves it end to end. What is left here is what only the owner can

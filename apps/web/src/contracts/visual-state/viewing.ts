@@ -15,12 +15,11 @@ import {
 } from "./visibility";
 
 /**
- * WHERE THE NARRATOR'S VIEWING CONDITIONS COME FROM (visual-state.plan.md
- * §Open questions → "how the narrator lane obtains usable viewing conditions";
- * spec §Visibility).
+ * WHERE THE NARRATOR'S VIEWING CONDITIONS COME FROM — how the narrator lane
+ * obtains usable viewing conditions.
  *
- * Slice 4 built a visibility read that fails the WHOLE feature list closed on
- * any unknown component, and slices 4–6 then supplied all four components as
+ * The visibility read fails the WHOLE feature list closed on
+ * any unknown component, and the adapters then supplied all four components as
  * unknown — so the production narrator selection had zero candidates under
  * every ordinary condition, and the inspector only looked alive because its
  * staircase substitutes ideal conditions. This module is the answer, and it
@@ -33,11 +32,11 @@ import {
  *   committed scene camera (`visualCameraReadsOfSceneCamera`). When the scene
  *   states the fact, the read is a plain `known` with the owner behind it.
  * - **Declared when nothing owns them.** No system anywhere records how bright
- *   a chat's scene is or whether a body is moving relative to the viewer
- *   (visual-state.audit.md finding 14). The owner's ruling (2026-08-17) is a
+ *   a chat's scene is or whether a body is moving relative to the viewer.
+ *   The owner's ruling (2026-08-17) is a
  *   BASE VALUE placeholder rather than a new simulation owner: the release
- *   states the value, marks it `declared`, and measures it. That is the plan's
- *   permitted "explicit degraded first-release policy … stated as such"; the
+ *   states the value, marks it `declared`, and measures it. That is an
+ *   explicit degraded first-release policy, stated as such; the
  *   thing it forbids — silently reading unknown as bright and still — is
  *   exactly what `visualComponentDeclared` makes impossible to do quietly,
  *   since the marker rides the fingerprint, the evidence, one info diagnostic,

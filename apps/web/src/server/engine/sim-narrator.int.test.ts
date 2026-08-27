@@ -21,10 +21,10 @@ import {
 import { submitDurableOpenEngagement } from "./simulation/engagement-store";
 
 /**
- * R2 (engine.rollout.plan.md) — the live-narrator leg with the model seam
+ * The live-narrator leg with the model seam
  * STUBBED (zero live calls, the corpus discipline): a compliant render is
- * accepted and confirmed, a bad render retries hidden from the same cut
- * (ruling 8), a persistently bad render WITHHOLDS without touching state,
+ * accepted and confirmed, a bad render retries hidden from the same cut,
+ * a persistently bad render WITHHOLDS without touching state,
  * and an enacted armed effect lands a real speech_act_delivered through
  * confirm_narrator_result.
  *
@@ -178,7 +178,7 @@ describe.runIf(ready)("R2 sim narrator over the committed cut", () => {
         { render: seamOf([partial]).seam },
       );
       // ≤2 missing beats bridges; more re-renders then withholds — both legal
-      // §23.2 outcomes depending on how many beats this turn carried.
+      // audit outcomes depending on how many beats this turn carried.
       expect(["rendered", "withheld"]).toContain(bridged.status);
     }
   });

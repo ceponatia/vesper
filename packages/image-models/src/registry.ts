@@ -14,8 +14,8 @@ import { qwenImage2512, qwenImageEdit2511, qwenImageEditPlusLora } from "./famil
  * generic behavior coming back.
  *
  * Only the Qwen family is here. Other families (Flux, Wan, SDXL, Seedream) stay
- * on the legacy path and migrate when their behavior is next touched (plan §7),
- * which is exactly why the answer below is nullable rather than exhaustive.
+ * on the legacy path and migrate when their behavior is next touched, which is
+ * exactly why the answer below is nullable rather than exhaustive.
  */
 const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   "qwen/qwen-image-edit-2511": qwenImageEdit2511,
@@ -27,7 +27,7 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
  * The adapter for a registered model, or null when Vesper has nothing special
  * to say about it.
  *
- * **Null is the ordinary answer, never an error** (plan §13). Most registered
+ * **Null is the ordinary answer, never an error.** Most registered
  * models have no adapter and render exactly as they do today; a caller treats
  * null as "no prompt dialect, no extra validation, no execution hints" and
  * carries on. If this ever started throwing or logging on a miss, every

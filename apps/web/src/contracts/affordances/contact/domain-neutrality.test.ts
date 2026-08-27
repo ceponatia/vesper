@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 
 /**
  * The shared-core proof for the contact layer, as a guardrail rather than a
- * promise (romantic-contact-affordances.spec.md: *"The shared core is
- * deliberately minimal. A helper moves into it only after both the foot and
- * intimate domains require the same semantics."*).
+ * promise. The rule it enforces: *"The shared core is deliberately minimal. A
+ * helper moves into it only after both the foot and intimate domains require
+ * the same semantics."*
  *
  * `core/domain-neutrality.test.ts` polices only `core/`, and `guidance/` carries
  * its own for the same reason: a folder that claims to know nothing about a

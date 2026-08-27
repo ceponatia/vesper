@@ -2,8 +2,7 @@ import type { ImagePromptSegmentKind } from "../render-intent/prompt-segments";
 import type { ImageConflictKey } from "./conflict-keys";
 
 /**
- * The closed semantic vocabulary both prompt channels compile from
- * (model-aware-image-prompts.plan.md §"Positive claims").
+ * The closed semantic vocabulary both prompt channels compile from.
  *
  * A concept is what a fact MEANS, stated once, in a form no model owns. "This
  * character's hair is auburn" is `subject.appearance` — not the sentence "auburn
@@ -31,7 +30,7 @@ import type { ImageConflictKey } from "./conflict-keys";
 /**
  * Which side of the world a concept describes.
  *
- * Read by the positive selector, which walks the channels in the plan's fact
+ * Read by the positive selector, which walks the channels in the canonical fact
  * selection order (operation, then subjects, then camera, then relations, then
  * items, then location, then style) rather than trusting whatever order an
  * adapter happened to build its facts in.
@@ -69,7 +68,7 @@ export interface ImageConceptDefinition {
 /**
  * Every concept Vesper can state about an image, grouped by channel.
  *
- * The groups below are the plan's fact-selection order read top to bottom, which
+ * The groups below are that fact-selection order read top to bottom, which
  * is also the order `orderImagePositiveClaims` emits them in when two claims
  * share a segment kind.
  *
@@ -221,7 +220,7 @@ const CONCEPT_TABLE = [
 
   // --- Raw --------------------------------------------------------------------
   // The lab/admin escape hatch: operator prose that bypasses fact completeness
-  // and collision guarantees by design (plan §"Raw prompt callers"). It protects
+  // and collision guarantees by design. It protects
   // NOTHING, because nothing can be known about what it says — which is exactly
   // why a raw caller is labelled unguaranteed rather than quietly trusted.
   { id: "raw.text", channel: "raw", segmentKind: "operation", protects: [] },
@@ -252,8 +251,8 @@ export function isImageConceptId(id: string): id is ImageConceptId {
 }
 
 /**
- * The channel order the positive selector walks
- * (plan §"Fact selection", steps 1–11 collapsed to their channels).
+ * The channel order the positive selector walks — the fact-selection steps,
+ * collapsed to their channels.
  *
  * Selection order is not emission order — emission is the segment vocabulary's
  * canonical order, which the fitter already owns. This decides which claim is

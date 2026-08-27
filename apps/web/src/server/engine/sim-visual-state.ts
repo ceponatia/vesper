@@ -21,7 +21,7 @@ import { chatVisualStateShadowEnabled } from "./prompts/constants";
 import { readBranchClock } from "./sim-beats";
 
 /**
- * The SUCCESSOR lane's visual-state shadow glue (visual-state.plan.md slice 6).
+ * The SUCCESSOR lane's visual-state shadow glue.
  *
  * The successor can hand the projection far less than the chat lane: the
  * authored profile (attributes, species realization) is the one visual owner

@@ -6,8 +6,7 @@ import { activateCandidateVersion } from "@/server/images";
 type Params = { modelId: string };
 
 /**
- * Candidate activation (image-model-capabilities.spec.md §"Version candidate
- * and promotion flow"): re-probe the EXACT named version, refuse while any
+ * Candidate activation: re-probe the EXACT named version, refuse while any
  * enabled profile would stop being runnable on it, then atomically pin the row
  * (`slug` → `path:version`, `probedVersionId`, the probe-owned capability
  * columns, `updatedAt`). Reviewed judgments are never touched.

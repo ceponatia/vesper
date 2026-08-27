@@ -52,7 +52,7 @@ import {
 import { buildChatGarmentAffordance } from "./chat-garment-affordances";
 
 /**
- * The CHAT LANE's affordance adapter (body-attribute-affordances slices 4 and 6).
+ * The CHAT LANE's affordance adapter.
  *
  * The one place chat-lane state becomes the lane-neutral affordance payload. It
  * exists so the shared calculation forks nowhere: a successor adapter will
@@ -107,11 +107,11 @@ import { buildChatGarmentAffordance } from "./chat-garment-affordances";
  *
  * It takes committed state and a clock and returns a read — no IO, no `Date`, no
  * registry lookup that could change under it. That is what makes the retake
- * guarantee work (architecture spec §"Recompute and capture"): `affordanceCues`
- * and the garment store both ride `pre_exchange_scenario` and `bodySurface`
- * rides `pre_exchange_state`, so a rolled-back exchange rebuilds a byte-identical
- * read, byte-identical next cues, and a byte-identical captured coverage read.
- * There is no hysteresis and no hidden latch anywhere in the path.
+ * guarantee work: `affordanceCues` and the garment store both ride
+ * `pre_exchange_scenario` and `bodySurface` rides `pre_exchange_state`, so a
+ * rolled-back exchange rebuilds a byte-identical read, byte-identical next cues,
+ * and a byte-identical captured coverage read. There is no hysteresis and no
+ * hidden latch anywhere in the path.
  *
  * ## Who reads this, and under which flag
  *
@@ -231,7 +231,7 @@ export interface ChatAffordanceReadInput {
 
 /**
  * The committed physical facts this read was taken over, in the hair domain's own
- * vocabulary (narrator-physical-guidance slice 2).
+ * vocabulary.
  *
  * Handed back rather than re-derived by the guidance adapter, for the same reason
  * `attributes` is: a fence built from a second reading of the same state could
@@ -264,7 +264,7 @@ export interface ChatCommittedHairState {
    * precipitation landing on it.
    *
    * Not a fact about the hair, and not evidence for any verdict: it is the narrator
-   * guidance adapter's relevance signal (narrator-physical-guidance slice 2, plan §6).
+   * guidance adapter's relevance signal.
    * A live gust makes "her hair streams behind her" a plausible thing for the narrator
    * to write unprompted, which is exactly when the motion fence earns its prompt bytes;
    * on a still evening the same true fence is inventory, and inventory stays silent.

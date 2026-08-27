@@ -98,14 +98,14 @@ export interface CharacterChatPromptInput {
    */
   priorSummary?: string;
   /**
-   * Retrieved long-term memory for THIS turn (character-chat-primary.spec.md §2): cosine-RAG
+   * Retrieved long-term memory for THIS turn: cosine-RAG
    * hits over the chat's OWN facts + episodes, injected as a recall block that sits beneath the
-   * rolling summary — the summary is the short-term reinforcement layer (D5), this reaches past
+   * rolling summary — the summary is the short-term reinforcement layer, this reaches past
    * its horizon. Absent/empty ⇒ no block, so a fresh chat's prompt is unchanged.
    */
   memory?: { facts: string[]; episodes: string[] };
   /**
-   * The **persona** the user is playing as (persona-library.plan.md), resolved via
+   * The **persona** the user is playing as, resolved via
    * `resolveChatPersona`. Present ⇒ the character addresses the player by `name` and
    * reads their sheet; absent ⇒ the original faceless "the user" phrasing, so existing
    * snapshots are unchanged.
@@ -116,7 +116,7 @@ export interface CharacterChatPromptInput {
     name: string;
     /** The bio (`profile.bio`) — who they are. */
     persona?: string;
-    /** The resolved garment phrase for what the player has on right now (slice 8). */
+    /** The resolved garment phrase for what the player has on right now. */
     wearing?: string;
     /**
      * The player's intimate regions read bare — COVERAGE-COMPUTED from their worn items,
@@ -133,7 +133,7 @@ export interface CharacterChatPromptInput {
     intimacy?: string;
   };
   /**
-   * Light chat state (character-chat-state.spec.md §6), surfaced as a compact
+   * Light chat state, surfaced as a compact
    * "Current state" section + a per-chat scenario block. Absent ⇒ the prompt is
    * byte-identical to the stateless chat (existing snapshots hold). The builder
    * owns the surfacing (it already imports the contracts), so it's snapshot-tested
@@ -143,27 +143,27 @@ export interface CharacterChatPromptInput {
     meters: Record<string, number>;
     /** The feeling axis (was `affinity`); the law block reads this scalar. */
     regard: number;
-    /** The knowledge axis — consumed by the composed law block (plan slice 3). */
+    /** The knowledge axis — consumed by the composed law block. */
     familiarity?: number;
-    /** Authored relationship texture (kind/history/mask/looming) — consumed in slice 3. */
+    /** Authored relationship texture (kind/history/mask/looming) — consumed by the law block. */
     relationship?: RelationshipTexture;
     conditions: ActiveCondition[];
     mindNote?: string;
-    /** The per-chat scenario framing (§1.2) — the strongest framing in the prompt. */
+    /** The per-chat scenario framing — the strongest framing in the prompt. */
     premise?: string;
     /**
-     * Meter bands surfaced as a "just shifted" beat last turn (character-chat-state-narration.spec.md
-     * §5): `{ meterId: band }`. The anti-repetition gate foregrounds a band only when it differs
+     * Meter bands surfaced as a "just shifted" beat last turn:
+     * `{ meterId: band }`. The anti-repetition gate foregrounds a band only when it differs
      * from this; absent ⇒ today's behavior (every crossed band is "new").
      */
     surfacedCues?: Record<string, string>;
-    /** Free-text current outfit (scenario modal) — a light scene anchor for the narrator (§6). */
+    /** Free-text current outfit (scenario modal) — a light scene anchor for the narrator. */
     outfit?: string;
     /** Whether the outfit reads more exposed than usual (tone hint only). */
     outfitExposed?: boolean;
     /**
-     * The AUTHORITATIVE wardrobe digest (clothing-state-graph slice 6, behind
-     * `CHAT_GARMENT_CUES`): who is wearing what, how each piece currently sits, and
+     * The AUTHORITATIVE wardrobe digest (behind `CHAT_GARMENT_CUES`): who is
+     * wearing what, how each piece currently sits, and
      * what is lying around the room — pre-rendered by the pipeline via
      * `renderGarmentDigest`, the same way `rhythm` and `storyMoment` are. It
      * COMPLEMENTS the `outfit` phrase rather than replacing it: the phrase is what
@@ -172,15 +172,15 @@ export interface CharacterChatPromptInput {
      */
     garmentDigest?: string;
     /**
-     * The bounded garment CUE block (slice 6): ≤2 ranked, perception-safe, already
+     * The bounded garment CUE block: ≤2 ranked, perception-safe, already
      * repeat-gated observations for this exchange. Distinct from the digest as
      * attention is from authority — a fresh cue means something actually changed.
      * Absent/empty ⇒ no block.
      */
     garmentCues?: string[];
     /**
-     * The bounded AFFORDANCE cue block (body-attribute-affordances slice 5, behind
-     * `CHAT_AFFORDANCE_CUES`): ≤2 ranked, perception-safe, already repeat-gated
+     * The bounded AFFORDANCE cue block (behind `CHAT_AFFORDANCE_CUES`): ≤2
+     * ranked, perception-safe, already repeat-gated
      * physical observations — damp hair gathering into strands, loose ends moving
      * in the wind — pre-rendered into short clauses by the pipeline.
      *
@@ -193,8 +193,8 @@ export interface CharacterChatPromptInput {
      */
     affordanceCues?: readonly string[];
     /**
-     * The visual-state projection's MUST-NOT-CONTRADICT clauses
-     * (visual-state.plan.md slice 7, the per-chat narration switch): the visible
+     * The visual-state projection's MUST-NOT-CONTRADICT clauses (the per-chat
+     * narration switch): the visible
      * mandatory facts — what is worn, what morphology this body has — as
      * contradiction prevention, not as material for a beat. Unlike every other
      * block here they are NOT change-gated: a coat worn for six exchanges is as
@@ -210,65 +210,65 @@ export interface CharacterChatPromptInput {
      */
     visualCues?: readonly string[];
     /**
-     * The character's unfinished business (character-chat-standalone.spec.md §6.2) —
+     * The character's unfinished business —
      * rendered as a standing "Unfinished business" state line (never-recite discipline),
      * so long conversations get narrative pull, not just recall. Absent/empty ⇒ no line.
      */
     openLoops?: string[];
     /**
-     * The one-shot time-skip note (spec §8.1, `pendingSkipNote`): a volatile one-turn
+     * The one-shot time-skip note (`pendingSkipNote`): a volatile one-turn
      * tail line ("The next morning — acknowledge the gap naturally, once"), pre-worded
      * by stage band via `chatSkipNote`. Absent/empty ⇒ no line; cleared by the finalizer.
      */
     skipNote?: string;
     /**
-     * The current story moment (chat-clock-calendar.plan.md), pre-formatted by the
+     * The current story moment, pre-formatted by the
      * pipeline from the clock + calendar anchor ("Friday, January 5 — 2:10pm
      * (afternoon)"). The ONE authoritative time — replaces the retired archivist
      * free-text `sceneMemory.timeOfDay`. Absent/"" ⇒ no line.
      */
     storyMoment?: string;
     /**
-     * The meanwhile pass's one-shot note (chat-offscreen-life): what actually happened
+     * The meanwhile pass's one-shot note: what actually happened
      * off-screen while time passed — composes with the skip note, rendered once, cleared
      * by the finalizer with it. Absent/"" ⇒ no line (an ordinary skip).
      */
     meanwhileNote?: string;
     /**
-     * The character's daily rhythm (formatScheduleRhythm — chat-offscreen-life §4): one
+     * The character's daily rhythm (formatScheduleRhythm): one
      * compact standing line grounding time-of-day texture and meanwhile beats in their
      * actual routine. Absent/"" ⇒ no line.
      */
     rhythm?: string;
     /**
-     * Where this character was while away (chat-offscreen-life §Whereabouts). On a
+     * Where this character was while away. On a
      * PRESENT character this is a one-turn "just came from" license — the finalizer
      * clears it after it renders.
      */
     whereabouts?: string;
-    /** Active social cards — surfaced as soft "what you care about" framing, never severity (§6, D3). */
+    /** Active social cards — surfaced as soft "what you care about" framing, never severity. */
     activeSocialCards?: SocialReactionCard[];
     /**
-     * Persisted narrative attribute overlays that EVOLVE over the chat (character-chat-primary.spec.md
-     * §3): resolved on top of the authored base, BENEATH the transient condition overlays. Absent ⇒
+     * Persisted narrative attribute overlays that EVOLVE over the chat:
+     * resolved on top of the authored base, BENEATH the transient condition overlays. Absent ⇒
      * today's behavior (authored attributes only). A haircut/dye recorded by the archivist lands here.
      */
     attributeOverlays?: AttributeValue[];
     /**
-     * Persisted narrative TRAIT overlays that evolve over the chat (character-fidelity
-     * slice 10): resolved on top of the authored traits so the character's bounded
+     * Persisted narrative TRAIT overlays that evolve over the chat: resolved on
+     * top of the authored traits so the character's bounded
      * personality arc (a warmth/guardedness/confidence shift) reaches the Disposition
      * bands and the slider-wired mechanics. Absent ⇒ authored traits only.
      */
     traitOverlays?: TraitValue[];
     /**
-     * Voice-exemplar ring (character-fidelity slice 8): ≤5 distinctly in-voice lines the
+     * Voice-exemplar ring: ≤5 distinctly in-voice lines the
      * character actually said, rendered as a "How you sound" few-shot block past the
      * events-only summary horizon. Absent/empty ⇒ no block.
      */
     voiceExemplars?: VoiceExemplar[];
     /**
-     * One-turn character-consistency corrective (character-fidelity slice 9): last
+     * One-turn character-consistency corrective: last
      * exchange's archivist slip note (voice/disposition/age register), rendered as a
      * one-turn corrective tail line near generation. Absent/"" ⇒ no line.
      */
@@ -280,28 +280,28 @@ export interface CharacterChatPromptInput {
      */
     sceneMemory?: ChatSceneMemory;
     /**
-     * Supporting cast (chat-supporting-cast.plan.md): recurring named side characters
+     * Supporting cast: recurring named side characters
      * the story established — rendered as a compact volatile-tail block licensing the
      * narrator to voice and move them (prose attribution, never a tag). Absent/empty ⇒
      * no block, and rule 3's incidental-person discipline stands alone.
      */
     supportingCast?: SupportingCast;
     /**
-     * Emotional weather (emotional-weather.plan.md): the persistent feeling COMPOSES with
+     * Emotional weather: the persistent feeling COMPOSES with
      * the meter-derived mood descriptor (owner ruling — the descriptor is the baseline
      * weather, the feeling the front passing through), coloring the Current-state mood
      * line and the response-shape mood pin. Absent/empty ⇒ both render as before.
      */
     feeling?: ChatFeelingState;
     /**
-     * Runtime drives (character-drives.plan.md): rendered as the "What you want"
+     * Runtime drives: rendered as the "What you want"
      * tail block — open drives steer, guarded ones withhold-until-asked, secret
      * ones are protected below their reveal band (full-but-scoped lie license,
      * owner ruling 2026-07-11). Absent/empty ⇒ no block.
      */
     drives?: ChatDrive[];
     /**
-     * Plans & promises (chat-plans-promises.plan.md): the commitments NEAR this turn —
+     * Plans & promises: the commitments NEAR this turn —
      * due now / imminent / just-missed, plus at most a couple upcoming — already derived
      * against the story clock (`derivePlanSalience`). Rendered as the compact "Plans"
      * block with per-state directives (anticipation / the event / the fallout). Absent or
@@ -310,26 +310,26 @@ export interface CharacterChatPromptInput {
     plans?: readonly SalientPlan[];
   };
   /**
-   * Opening beat (character-chat-state.spec.md slice 4 "Prompt Character"): the
+   * Opening beat ("Prompt Character"): the
    * player hasn't spoken yet — the character speaks first, opening the scene from
    * the scenario + state. Absent ⇒ byte-identical to a normal turn.
    */
   opening?: boolean;
   /**
-   * Active narration shape profile (narrator-prompt-focus.plan.md §1.1) — the dev
+   * Active narration shape profile — the dev
    * toggle still forces chat length when set. Defaults to DEFAULT_NARRATION_SHAPE; the
    * chat route passes `narrationShapeId("chat")` (resting default `aggressive_concise`).
    */
   narrationShape?: NarrationShapeId;
   /**
-   * A one-turn cue invitation. Since narrator-prompt-consolidation slice 4 this carries only the
+   * A one-turn cue invitation. It carries only the
    * "has something to say" continue-cue (an open loop the character opens about); the sensory
    * arms (proximity/touch/intimacy/attention via `chatCueInviteLine`) were superseded by the
    * deterministic `sensoryAllowance` below. Pre-rendered so this builder stays pure over a string.
    */
   cueInvite?: string;
   /**
-   * The deterministic per-turn sensory allowance (narrator-prompt-consolidation.plan.md slice 4):
+   * The deterministic per-turn sensory allowance:
    * the ONE binding statement of what person-level sensory/appearance detail may land this turn,
    * derived by the route from the existing detectors (`deriveChatSensoryAllowance` over
    * `detectChatCue` / `detectSensoryFocus`). Replaces the four scattered "one cue, earned"
@@ -339,7 +339,7 @@ export interface CharacterChatPromptInput {
    */
   sensoryAllowance?: ChatSensoryAllowance;
   /**
-   * Derived-fact notation note (player-input-perception.plan.md slice 4): a volatile
+   * Derived-fact notation note: a volatile
    * one-turn tail line rendered by `chatNotationNote` from the parsed markup of the CURRENT
    * player message — a comms span ("this is a text from X to you; not face-to-face for this
    * beat") or an OOC span ("the ((…)) text is the player speaking to you, out of character").
@@ -375,7 +375,7 @@ export interface CharacterChatPromptInput {
    */
   gateNotes?: string;
   /**
-   * A one-turn memory callback (memory-callbacks.plan.md): an old shared episode the
+   * A one-turn memory callback: an old shared episode the
    * cadence gate + selector offered this turn — rendered as an optional "you might find
    * yourself remembering…" tail line, WORDED BY REGARD BAND (warm nostalgia / plain /
    * pointed — owner ruling 2026-07-11). The lowest-priority tail block: the pipeline
@@ -384,23 +384,23 @@ export interface CharacterChatPromptInput {
    */
   callback?: { summary: string };
   /**
-   * Attached-photo vision reads (chat-image-input.plan.md): what the character SEES
+   * Attached-photo vision reads: what the character SEES
    * in each photo the player's current message attached, in order — seen-channel
    * content under the perception partition, handled by rule 16. Fenced (the reads
    * derive from player-supplied images). Absent/empty ⇒ no block.
    */
   attachments?: { descriptions: string[] };
   /**
-   * One-turn selfie license (chat-selfies.plan.md): "request" = the player asked
+   * One-turn selfie license: "request" = the player asked
    * for a photo this turn; "offer" = the unprompted-offer gates hold (apart-only
    * comms register + warm regard + cooldown — owner ruling); "opener" = a warm
-   * reopen opener may attach the "thinking of you" photo (chat-initiative.plan.md
-   * slice 5 — register-conditional: only if the opener lands as a text). Renders
+   * reopen opener may attach the "thinking of you" photo (register-conditional:
+   * only if the opener lands as a text). Renders
    * as an optional tail line; the post-turn pulse decides whether one actually sent.
    */
   selfie?: "request" | "offer" | "opener";
   /**
-   * The CURRENT turn's input was authored in NARRATOR mode (chat-supporting-cast.plan.md):
+   * The CURRENT turn's input was authored in NARRATOR mode:
    * story narration from the player as storyteller — supporting-cast dialogue, offscreen
    * developments, scene flavor — never the player's own POV. Renders a one-turn tail note
    * suspending the player-input perception rules for this message; PAST narrator lines are
@@ -408,8 +408,8 @@ export interface CharacterChatPromptInput {
    */
   narratorInput?: boolean;
   /**
-   * The narrator PHYSICAL-GUIDANCE lines for this exchange
-   * (narrator-physical-guidance.plan.md slice 2, behind `CHAT_PHYSICAL_CONSTRAINTS`):
+   * The narrator PHYSICAL-GUIDANCE lines for this exchange (behind
+   * `CHAT_PHYSICAL_CONSTRAINTS`):
    * the ≤2 premise corrections and ≤3 scoped consistency constraints the compiler
    * selected, already worded by `chat-physical-guidance-render.ts`.
    *
@@ -424,9 +424,8 @@ export interface CharacterChatPromptInput {
    */
   physicalGuidance?: readonly string[];
   /**
-   * Whose narrator INSTRUCTIONS this exchange follows (narrator-prompt-lab.plan.md
-   * §Narrator instruction source), resolved once under the exchange lock and frozen
-   * for every attempt.
+   * Whose narrator INSTRUCTIONS this exchange follows, resolved once under the
+   * exchange lock and frozen for every attempt.
    *
    * Absent — and `{ kind: "production" }` — render the production prompt, byte for
    * byte. A `test` source replaces the classified behavior/craft layer with the
@@ -438,8 +437,8 @@ export interface CharacterChatPromptInput {
 }
 
 /**
- * The history header for a narrator-mode player line (chat-supporting-cast.plan.md §Narrator
- * input). Applied at the MODEL boundary only — the stored transcript stays byte-verbatim.
+ * The history header for a narrator-mode player line. Applied at the MODEL
+ * boundary only — the stored transcript stays byte-verbatim.
  * The static notation legend teaches what the marker means; the wrap makes every past
  * narrator line self-identifying inside the replayed window.
  */
@@ -462,12 +461,11 @@ export function narratorInputNote(who: string, player: string): string {
 }
 
 /**
- * The composed "Relationship" block (character-chat-standalone.spec.md §7.1,
- * rewritten by relationship-model v2): `composeRelationshipLaw` renders the two
+ * The composed "Relationship" block: `composeRelationshipLaw` renders the two
  * axes + authored texture (history → familiarity → regard → mask → corner →
- * the D11 escalation gate, now keyed to REGARD), and the disposition-contrast
+ * the escalation gate, keyed to REGARD), and the disposition-contrast
  * line states the divergence when regard's sign disagrees with the authored
- * warmth lean. Lives in the §9 stable prefix — it re-renders only on a band
+ * warmth lean. Lives in the cached stable prefix — it re-renders only on a band
  * change on either axis (or an authored-texture edit), which is cache-friendly.
  */
 function buildRelationshipSection(
@@ -486,14 +484,14 @@ function buildRelationshipSection(
     kind: state?.relationship?.kind,
     history: state?.relationship?.history,
     presented: state?.relationship?.presented,
-    // Minor fence (character-fidelity slice 2): no escalation-floor line — the
+    // Minor fence: no escalation-floor line — the
     // content framing already rules the territory wholly out of scope.
     omitEscalation: minor,
   });
   const warmth = effectiveTraitValue(traits, "temperament.warmth");
   const regard = state?.regard ?? 0;
   // The contrast line fires on sign disagreement; the idiom line fires at warm+ regard
-  // so growing closeness keeps the authored manner (character-fidelity slice 3).
+  // so growing closeness keeps the authored manner.
   const extras = [
     dispositionContrastLine({ name: target, warmth, regard }),
     dispositionIdiomLine({ name: target, warmth, regard }),
@@ -503,7 +501,7 @@ function buildRelationshipSection(
   return extras.length ? `${law}\n${extras.join("\n")}` : law;
 }
 
-/** Lead line per skip amount (spec §8.1) — the fictional gap the next reply opens on. */
+/** Lead line per skip amount — the fictional gap the next reply opens on. */
 const SKIP_LEADS: Record<ChatSkipAmount, string> = {
   moments: "A little while has passed since your last exchange.",
   hours: "Hours have passed — it's later the same day.",
@@ -532,12 +530,12 @@ function skipToneForBand(bandId: string): string {
 }
 
 /**
- * The one-shot skip note (spec §8.1–8.2): stamped onto the state when the player
+ * The one-shot skip note: stamped onto the state when the player
  * skips time, rendered as a volatile one-turn prompt line, cleared after the
- * exchange that rendered it. Carries the "a life meanwhile" license (§8.2) —
+ * exchange that rendered it. Carries the "a life meanwhile" license —
  * one line of what the character was doing, prompt-only, no extra model call.
- * `landing` names where the skip arrived on the story calendar ("Friday evening",
- * chat-clock-calendar.plan.md) so the narrator's sense of time matches the clock
+ * `landing` names where the skip arrived on the story calendar ("Friday
+ * evening") so the narrator's sense of time matches the clock
  * card instead of guessing from the lead phrase.
  */
 export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string, landing?: string): string {
@@ -546,17 +544,17 @@ export function chatSkipNote(amount: ChatSkipAmount, regardBandId: string, landi
 }
 
 /**
- * The attached-photos tail block (chat-image-input.plan.md): the vision reads as
+ * The attached-photos tail block: the vision reads as
  * seen-channel content — rule 16 owns the handling; this is the data. Fenced:
  * the descriptions derive from player-supplied images. "" ⇒ no block.
  */
 /**
- * The player-persona blocks for the **stable prefix** (persona-library.plan.md slice 8),
- * shared by the 1-on-1 and ensemble builders so the two can never drift.
+ * The player-persona blocks for the **stable prefix**, shared by the 1-on-1 and
+ * ensemble builders so the two can never drift.
  *
  * Prefix-safe by construction: only the authored, turn-invariant parts live here. What
  * the player is WEARING and their intimate note both move with state, so they ride the
- * volatile tail instead (`buildPlayerStateLine` / `buildChatIntimateSection`) — a §9
+ * volatile tail instead (`buildPlayerStateLine` / `buildChatIntimateSection`) — a
  * cache-layout rule, and the same split the character's own bio-vs-outfit follows.
  *
  * Every part is author-written and therefore UNTRUSTED — each is fenced, exactly like the
@@ -588,7 +586,7 @@ function buildPlayerStateLine(player: CharacterChatPromptInput["player"], player
  * A character's merged intimate note: the species/heritage archetype
  * (`speciesIntimacyNote` — heritage REPLACES species) **appended** with their own
  * `profile.intimacy` (both may be empty). The merge semantics are the session lane's,
- * ruled by the owner 2026-07-13 (intimacy-notes.spec.md §Rulings). "" when neither exists.
+ * ruled by the owner 2026-07-13. "" when neither exists.
  */
 function characterIntimateNote(profile: CharacterProfile): string {
   const archetype = speciesIntimacyNote(profile.speciesId, profile.heritageId);
@@ -598,8 +596,7 @@ function characterIntimateNote(profile: CharacterProfile): string {
 
 /**
  * The **exposure-earned intimate disposition block** — the chat lane's port of the session
- * lane's `buildIntimateDispositionBlock` (`engine/scene.ts`), and the leftover that
- * intimacy-notes.plan.md §"Leftover — chat lane" recorded but never built. Until now
+ * lane's `buildIntimateDispositionBlock` (`engine/scene.ts`). Before it existed
  * `profile.intimacy` and the species archetype were authored, forge-generated, editable —
  * and silently unread in this lane.
  *
@@ -614,7 +611,7 @@ function characterIntimateNote(profile: CharacterProfile): string {
  *
  * Volatile by nature (the gate flips with coverage/arousal), so it lives in the tail —
  * putting it in the cached prefix would bust the cache on every flip. Callers apply the
- * minor fence (character-fidelity slice 2) by omitting that character's entry.
+ * minor fence by omitting that character's entry.
  */
 function buildChatIntimateSection(args: {
   /** One entry per character whose gate opened AND who has a note. `label` is subject+verb ("you are" / "Mira is"). */
@@ -644,7 +641,7 @@ function buildAttachmentsSection(attachments: CharacterChatPromptInput["attachme
 }
 
 /**
- * The one-turn selfie license (chat-selfies.plan.md): a request must be answerable
+ * The one-turn selfie license: a request must be answerable
  * either way (declining in character is a real answer); an offer is entirely
  * optional and never forced. Neither describes the photo's contents at length —
  * SENDING it is the beat; the render paints the picture.
@@ -663,7 +660,7 @@ export function chatSelfieLine(selfie: "request" | "offer" | "opener" | undefine
 }
 
 /**
- * The drives block (character-drives.plan.md): the character's motive force as
+ * The drives block: the character's motive force as
  * prompt LAW. Wording per secrecy tier + gate (owner rulings): a withheld secret
  * carries the full-but-SCOPED lie license; a gate-cleared secret invites the
  * reveal as a big beat; guarded never volunteers. Resolved drives drop out.
@@ -690,7 +687,7 @@ function buildDrivesSection(
     }
     return `- You want ${d.want}${why}.${progress}${d.secrecy === "secret" ? " (now in the open between you.)" : ""}`;
   });
-  // Slice 5: confidence colors HOW wants surface — a bold character states them plainly,
+  // Confidence colors HOW wants surface — a bold character states them plainly,
   // a timid one circles and hedges even a secret they've decided to share.
   const posture =
     traitPole(confidence) === "high"
@@ -707,7 +704,7 @@ const CALLBACK_WARM_BANDS = new Set(["warm", "close", "cherished", "devoted", "s
 const CALLBACK_COLD_BANDS = new Set(["hostile", "wary", "cool"]);
 
 /**
- * The one-turn memory-callback line (memory-callbacks.plan.md): offers ONE old shared
+ * The one-turn memory-callback line: offers ONE old shared
  * episode as an optional aside, toned by the regard band (owner ruling 2026-07-11) —
  * warm bands get nostalgia, the middle a plain remembering, cold bands a pointed edge
  * (history as evidence or a wound, never warmth the character doesn't feel). Always
@@ -743,7 +740,7 @@ export function ensembleCallbackLine(summary: string, regard: number, name: stri
 }
 
 /**
- * The derived-fact notation note (player-input-perception.plan.md slice 4): parses the
+ * The derived-fact notation note: parses the
  * CURRENT player message through the shared `@/lib/message-spans` parser and renders the
  * volatile one-turn tail line for any comms/OOC spans — the facts the sigils alone don't
  * state (the sigils' *meanings* are taught once in the stable-prefix legend). Comms →
@@ -785,7 +782,7 @@ export function chatNotationNote(
 const CARD_FRAMING_CAP = 4;
 
 /**
- * The persistent feeling as a prose clause (emotional-weather.plan.md): strength
+ * The persistent feeling as a prose clause: strength
  * adverb from intensity, label as the adjective it already is, cause attached.
  * "" when there is no standing feeling — both consumers then render as before.
  */
@@ -802,7 +799,7 @@ function feelingPhrase(feeling: ChatFeelingState | undefined): string {
  * the block itself, and the sensory-allowance line's carve-out (owner ruling
  * 2026-07-28) — a heading that drifted between them would leave the allowance
  * line exempting a block the prompt no longer calls that. Exported (with the
- * carve-out below) for the slice 5 trial harness, whose splice checks must
+ * carve-out below) for the trial harness, whose splice checks must
  * subtract exactly what the cue arm adds.
  */
 export const AFFORDANCE_CUE_BLOCK_HEADING = "Physical detail worth noticing this turn";
@@ -828,10 +825,10 @@ export function chatAffordanceCueCarveOut(name: string): string {
 }
 
 /**
- * The same carve-out for the visual-state cue block (visual-state.plan.md
- * slice 7). Separate sentence and separate constant rather than a shared one:
+ * The same carve-out for the visual-state cue block. Separate sentence and
+ * separate constant rather than a shared one:
  * the two blocks are independently flagged, and a run with only one of them on
- * must not name a block its prompt does not carry. Exported for the slice-7
+ * must not name a block its prompt does not carry. Exported for the
  * trial harness, whose splice checks subtract exactly what the cue arm adds.
  */
 export function chatVisualStateCueCarveOut(name: string): string {
@@ -839,7 +836,7 @@ export function chatVisualStateCueCarveOut(name: string): string {
 }
 
 /**
- * The "Current state" block (character-chat-state-narration.spec.md §5): **standing
+ * The "Current state" block: **standing
  * coloring** (mood phrase, unchanged meter bands, stage warmth, condition hints, mindNote,
  * outfit) the narrator should let bias its tone, plus at most ONE **foregrounded** "just
  * shifted" beat for a meter band that changed this turn (so e.g. tipping into drunk is marked
@@ -850,14 +847,14 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
   const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {});
   const lines: string[] = [];
   const mood = deriveMoodDescriptor(state.meters);
-  // The persistent feeling composes with the meter descriptor (emotional-weather.plan.md,
-  // ruled): baseline weather + the front passing through — never a replacement.
+  // The persistent feeling composes with the meter descriptor (ruled):
+  // baseline weather + the front passing through — never a replacement.
   const feeling = feelingPhrase(state.feeling);
   if (mood && feeling) lines.push(`- You are feeling ${mood} right now — and ${feeling}.`);
   else if (mood) lines.push(`- You are feeling ${mood} right now.`);
   else if (feeling) lines.push(`- Underneath everything, ${feeling}.`);
   for (const cue of standing) lines.push(`- ${cue.hint}`);
-  // (The old per-stage warmth steer moved into the prefix's Relationship-law block, §7.1.)
+  // (The old per-stage warmth steer moved into the prefix's Relationship-law block.)
   for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   const mindNote = state.mindNote?.trim();
   if (mindNote) lines.push(`- On your mind: ${mindNote}`);
@@ -883,7 +880,7 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
       `Right now this is shifting: ${foreground.hint} Mark it once, in action, as it changes — then let it ride; don't restate it on later turns.`,
     );
   }
-  // The wardrobe digest + cue block (clothing-state-graph slice 6, `CHAT_GARMENT_CUES`).
+  // The wardrobe digest + cue block (`CHAT_GARMENT_CUES`).
   // AUTHORITY then ATTENTION, in that order and deliberately separate: the digest is a
   // state guard the narrator may never contradict, the cues are the one or two details
   // that earned a mention this turn. Both absent when the flag is off, which is what
@@ -898,7 +895,7 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
         .join("\n")}`,
     );
   }
-  // The affordance cue block (body-attribute-affordances slice 5, `CHAT_AFFORDANCE_CUES`),
+  // The affordance cue block (`CHAT_AFFORDANCE_CUES`),
   // AFTER the garment blocks: clothes are the nearer, more actionable read, and a body
   // cue that follows them lands as an added detail rather than competing for the same
   // slot. Attention only — there is deliberately no affordance digest, because the
@@ -945,8 +942,8 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
 }
 
 /**
- * Soft "what you care about / won't stand for" framing for the chat's active social cards
- * (§6, D3): the card's theme only — **never** its mechanical `severity`, which the post-turn
+ * Soft "what you care about / won't stand for" framing for the chat's active
+ * social cards: the card's theme only — **never** its mechanical `severity`, which the post-turn
  * pulse owns. Lets the narrator avoid contradicting a taboo/rule it can't otherwise see,
  * without pre-playing the reaction. Fenced (cards can be library-cloned ⇒ untrusted). "" when
  * there are no cards.
@@ -962,7 +959,7 @@ function buildSocialFramingSection(cards: readonly SocialReactionCard[]): string
 }
 
 /**
- * The one-line voice re-anchor (character-fidelity slice 7): a compact restatement of the
+ * The one-line voice re-anchor: a compact restatement of the
  * voice anchors that rides the volatile tail beside the mood pin, where models heed it
  * most — so voice stays consistent even as a long history dominates attention. "" when
  * nothing is authored.
@@ -978,7 +975,7 @@ function buildVoiceReanchorLine(anchors: VoiceAnchors): string {
 }
 
 /**
- * The "How you sound" voice-exemplar ring block (character-fidelity slice 8): a few recent
+ * The "How you sound" voice-exemplar ring block: a few recent
  * distinctly in-voice lines the character actually said, kept past the events-only summary
  * horizon so voice survives a long chat. Volatile (the ring accretes each exchange).
  * Distinct from the authored micro-exemplars — these are grown in-chat. Fenced (prior
@@ -991,7 +988,7 @@ function buildVoiceRingSection(exemplars: readonly VoiceExemplar[]): string {
 }
 
 /**
- * The one-turn character-consistency corrective (character-fidelity slice 9): last
+ * The one-turn character-consistency corrective: last
  * exchange's archivist slip note, rendered near generation so the next reply pulls the
  * voice/disposition/age register back. Degrades to no line on an absent/empty note (the
  * common case); the slip is fenced (model-written text). "" when the reply held character.
@@ -1003,7 +1000,7 @@ function buildSlipCorrectionLine(slip: string | undefined): string {
 }
 
 /**
- * The RAG recall block (character-chat-primary.spec.md §2): the character's retrieved
+ * The RAG recall block: the character's retrieved
  * facts + older episodes for this turn. Placed beneath the rolling-summary recap — the
  * summary carries the recent horizon, this reaches past it. Fenced like the recap (both
  * derive from prior player/character text, so an injection smuggled into a remembered line
@@ -1033,7 +1030,7 @@ const humanize = (value: string): string => value.replaceAll("_", " ").trim();
  * definition authors a `narratorGuidance` gloss for the resolved enum member, it renders
  * as an inline parenthetical — `foot scent: cheesy (dense fermented funk…)` — so the
  * narrator knows what the value means *in this game* instead of guessing from a bare
- * token (attribute-narrator-guidance.plan.md). No gloss ⇒ byte-identical to before.
+ * token. No gloss ⇒ byte-identical to before.
  */
 function attributePhrase(
   def: Pick<AttributeDefinition, "label" | "unit" | "narratorGuidance" | "renderNoneInPrompts">,
@@ -1068,7 +1065,7 @@ interface SensoryCue {
 
 /**
  * Proximity-gated, non-intimate sensory attributes — surfaced as *opportunistic*
- * "use only when the beat earns it" cues (character-chat-sensory.plan.md) instead of
+ * "use only when the beat earns it" cues instead of
  * flat attribute lines, because scent reads as embodiment when close and as a checklist
  * when listed unconditionally. The filter (kind sensory, not `voice`, not intimate)
  * resolves to `presentation.scent_baseline` today; a future non-voice/non-intimate
@@ -1101,7 +1098,7 @@ function sensoryCues(resolved: readonly AttributeValue[], realizedBody: Realized
 
 /**
  * The "Sensory cues" section: the character's proximity-gated senses as an
- * opportunistic hook, never a checklist (character-chat-sensory.plan.md §3). The
+ * opportunistic hook, never a checklist. The
  * per-cue lines are `label: value` for the model's reference; the framing forbids
  * reciting them and ties any use to closeness/relevance. "" when there are no cues, so
  * the prompt stays byte-identical for an unscented character.
@@ -1111,8 +1108,8 @@ function buildSensorySection(cues: SensoryCue[], name: string): string {
   return [
     "Sensory cues (use only when the beat earns them — never list them):",
     ...cues.map((c) => `- ${name}'s ${c.phrase}`),
-    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 4 — the when-it's-earned
-    // teaching moved to the per-turn Sensory-allowance line; rollback: restore this bullet):
+    // Pre-2026-07-10 wording (the when-it's-earned teaching moved to the
+    // per-turn Sensory-allowance line; rollback: restore this bullet):
     // "- Work a sensory detail into action only when proximity, touch, intimacy, a first impression, or " +
     //   "the player's input makes it noticeable, and write it as it arrives in the player's senses — the " +
     //   "scent that reaches them as you lean in, not a fact recited about yourself. One grounded hook woven " +
@@ -1141,7 +1138,7 @@ function buildSceneSection(memory: ChatSceneMemory, changed: boolean): string {
     const details = place && place.details.length ? ` — ${place.details.join("; ")}` : "";
     lines.push(`- Here: ${here}${details}`);
   }
-  // The background sketch (chat-scene-fidelity.plan.md slice 2b): fixed-feature reference
+  // The background sketch: fixed-feature reference
   // for this place — authority for what's physically here, never prose to recite.
   if (place?.sketch) lines.push(`- Setting (fixed reference): ${place.sketch}`);
   if (place && place.connections.length) lines.push(`- Nearby: ${place.connections.join("; ")}`);
@@ -1156,7 +1153,7 @@ function buildSceneSection(memory: ChatSceneMemory, changed: boolean): string {
 }
 
 /**
- * The compact "Supporting cast" block (chat-supporting-cast.plan.md): recurring named
+ * The compact "Supporting cast" block: recurring named
  * side characters the story established, plus the license that makes them playable —
  * the carve-out from rule 3's incidental-person discipline. One line per member; ""
  * when the cast is empty (byte-identical to the pre-cast tail). Volatile tail (it
@@ -1187,7 +1184,7 @@ function buildSupportingCastSection(cast: SupportingCast, selfName: string | nul
 }
 
 /**
- * The compact "Plans" block (chat-plans-promises.plan.md): the commitments NEAR this turn,
+ * The compact "Plans" block: the commitments NEAR this turn,
  * each with a directive by state — anticipation before, the event when due, the fallout when
  * just missed. Only the salient plans render (the pipeline derived them against the story
  * clock); at most a couple far-upcoming plans ride along as "on the horizon". "" when nothing
@@ -1240,7 +1237,7 @@ function buildPlansSection(salient: readonly SalientPlan[], player: string): str
 }
 
 /**
- * The ensemble arrival/exit license (chat-plans-promises.plan.md Slice 3): a due/imminent
+ * The ensemble arrival/exit license: a due/imminent
  * plan is the fiction's OWN reason to move a character into or out of the scene — the one
  * principled exception to the presence law's don't-teleport guard. A plan involving an AWAY
  * roster member licenses their narrated ARRIVAL (the plan is why they show up); a plan
@@ -1277,7 +1274,7 @@ function buildPlanPresenceLicense(
 }
 
 /**
- * The one-turn note digest (chat-agent-improvements.plan.md slice 4).
+ * The one-turn note digest.
  *
  * The volatile tail had grown ~a dozen possible one-turn directives — a skip note, a scene
  * establish, a sensory focus + allowance, reply-discipline gates, a voice correction, a cue
@@ -1285,8 +1282,7 @@ function buildPlanPresenceLicense(
  * input note — each added by a different feature at a different time, in the order its
  * builder happened to be appended, with no stated relationship between them. A model reading
  * eleven unranked "note that…" paragraphs has to guess which one governs when they pull in
- * different directions; and the roadmap's next two features (chat-plans-promises,
- * chat-offscreen-life) both add more.
+ * different directions, and every feature added since has added more.
  *
  * So the notes are now GATHERED into one block under a heading that states their authority,
  * and ordered by declared tier:
@@ -1298,7 +1294,7 @@ function buildPlanPresenceLicense(
  * - **license** — what the beat PERMITS but never demands (an open-loop cue, a selfie).
  * - **flavor** — the optional grace note (a "remember when" callback).
  *
- * Deferral (the plan's soft cap) is deliberately NOT done here: the deferrable notes — the
+ * Deferral (a soft cap on how many notes render) is deliberately NOT done here: the deferrable notes — the
  * callback and the unprompted selfie offer — are armed upstream in the pipeline, and an
  * offered callback BURNS its anti-repeat ring the moment it is picked. Dropping one at
  * render time would spend an episode that never reached the page. The pipeline's
@@ -1333,7 +1329,7 @@ function buildResponseShapeLine(input: CharacterChatPromptInput): string {
   const target = input.player?.name.trim() || "the user";
   const mood = deriveMoodDescriptor(input.state?.meters ?? {});
   // The mood pin composes the persistent feeling with the meter descriptor
-  // (emotional-weather.plan.md, ruled) — the feeling colors the pin, never replaces it.
+  // (ruled) — the feeling colors the pin, never replaces it.
   const feeling = feelingPhrase(input.state?.feeling);
   // "beneath it" needs the meter descriptor as its antecedent — a bare feeling stands alone.
   const pin = mood ? [mood, feeling ? `beneath it, ${feeling}` : ""].filter(Boolean).join("; ") : feeling;
@@ -1342,7 +1338,7 @@ function buildResponseShapeLine(input: CharacterChatPromptInput): string {
 }
 
 /**
- * The binding per-turn sensory-allowance line (narrator-prompt-consolidation.plan.md slice 4) —
+ * The binding per-turn sensory-allowance line —
  * the single authority rules 10–11 defer to. Worded as a ceiling, not an instruction: a grant is
  * permission for at most one cue, never a demand that one appears. `focused_description` returns
  * "" because the Sensory-focus block below carries that turn's (richer) grant.
@@ -1444,7 +1440,7 @@ function focusExperienceClause(sense: SensoryFocusHint["sense"], player: string)
 }
 
 /**
- * The one-turn "Sensory focus" block (scope guard, reshaped by sensory-grounding.plan.md):
+ * The one-turn "Sensory focus" block (scope guard):
  * when the player's beat brings a sense to bear on a specific body region / garment
  * (`detectSensoryFocus`), assemble the character's AUTHORED sensory values for it — the
  * TARGET REGION's own attributes first (`expandBodyTarget` over the hint's `region`,
@@ -1556,21 +1552,21 @@ function buildSensoryFocusSection(
 /**
  * The chat rulebook. Beyond the character-embodiment rules it carries two perception
  * models, one per direction:
- * - **"Reading the player's message"** (player-input-perception.plan.md slice 1 — input
+ * - **"Reading the player's message"** (the input
  *   side): quoted text is heard, unquoted narration is seen only where visible,
  *   interiority reaches no one (no mind-reading), a no-quotes message degrades
  *   gracefully to speech, with a worked example (these narrator models respond better
  *   to one concrete example than to three abstract rules).
- * - **The narrator-camera rules** (chat-narrator-pov.plan.md — output side): untagged
+ * - **The narrator-camera rules** (the output side): untagged
  *   prose is also the story's camera behind the player's eyes. Rule 4 licenses the
  *   player's involuntary perception + light reflex (never their voluntary actions,
- *   speech, decisions, or named emotions — the D2 owner ruling), and (owner ruling
+ *   speech, decisions, or named emotions — an owner ruling), and (owner ruling
  *   2026-07-10) forbids advancing the player's story on the narrator's turn — even
  *   mundane connective beats. Rule 16 is the separation arm: when the character and
  *   player are apart, the reply follows the CHARACTER's side only, reaching the player
  *   solely through comms. Rule 12 is the attention/motion-gated visual channel (sight
  *   carries at any distance; one detail, never an inventory).
- * - **The "Message notation" legend** (player-input-perception.plan.md slice 4 — the
+ * - **The "Message notation" legend** (the
  *   optional sigil grammar): teaches quotes = speech, `*…*` = thought (or a text when
  *   `Name:`-shaped), `_…_` = italics only, `((…))` = OOC to the storyteller, and the
  *   house reversal of the RP "asterisks = actions" habit (unquoted prose is the action
@@ -1579,7 +1575,7 @@ function buildSensoryFocusSection(
  *   across turns; the per-turn *derived* facts (who is texting whom, co-presence) ride a
  *   volatile tail note (`chatNotationNote`), never the stable prefix.
  *
- * Emitted as CLASSIFIED NODES since narrator-prompt-lab slice 1, not as a joined
+ * Emitted as CLASSIFIED NODES rather than a joined
  * string: the numbers are generated from position, and a rule's craft sentences are
  * separable from the agency/perception law riding in the same rule. The numbers in
  * the notes above describe today's PRODUCTION order and are not addressable — under
@@ -1631,8 +1627,8 @@ const chatRulesNodes = (
             "behavior",
             `${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
           ),
-          // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 3 — the per-reply trait
-          // quota; the queued enactment measurement run validates the softened form. Rollback: restore these):
+          // Pre-2026-07-10 wording (the per-reply trait quota; the queued
+          // enactment measurement run validates the softened form. Rollback: restore these):
           // "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the two or three strongest pulls visibly shape THIS reply — your word choice, rhythm, what you choose to do, and how much you give — and never name, list, or recite a trait.",
           // "7. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
           promptUnit(
@@ -1646,15 +1642,15 @@ const chatRulesNodes = (
             'Speak and act your age: sound like someone of your years — let your age and life-stage color your diction and references where the beat touches them, without making a show of your age every turn. When a "Life stage" block is present above, its rules are binding and override any conflicting style elsewhere.',
           ),
           // Rule 8 ("Respond directly to what ${name} just heard and saw before adding anything
-          // new") retired 2026-07-14 (chat-agent-improvements slice 5): it was a strictly weaker
+          // new") retired 2026-07-14: it was a strictly weaker
           // restatement of the "Resolve, then one move" bullet that opens the Shaping block below —
           // the same instruction stated twice, once vaguely. The Shaping bullet keeps the teaching
           // (and adds what "then" may be); rules 9+ shift up one. (Rollback: restore this line as
           // rule 8 and renumber.)
           proportionalityNode(),
           topicDisciplineNode(),
-          // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 4 — the "one cue, earned"
-          // teaching now lives in the deterministic per-turn Sensory-allowance line; rollback: restore these
+          // Pre-2026-07-10 wording (the "one cue, earned" teaching now lives in
+          // the deterministic per-turn Sensory-allowance line; rollback: restore these
           // two rules and the pipeline's chatCueInviteLine arm):
           // `11. When you move close, ${player} notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action and written as it lands in ${player}'s senses (the scent that reaches them, the warmth they feel). One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.`,
           // `12. Show, don't inventory: when ${player}'s attention lands on you — a look, a compliment, a mention of what you're wearing — or when you enter, move, or adjust your clothes, give one concrete visual detail from ${player}'s eye, drawn from your Attributes and outfit (e.g. the slit of a dress parting over a crossed leg, sleeves pushed up off flour-dusted forearms). Sight carries at any distance. One detail woven into the beat — never a head-to-toe description, never repeated for an unchanged look, and none at all when nothing draws the eye.`,
@@ -1695,7 +1691,7 @@ const chatRulesNodes = (
 };
 
 /**
- * The prompt split for provider prefix-caching (character-chat-standalone.spec.md §9):
+ * The prompt split for provider prefix-caching:
  * the **prefix** carries everything keyed to authored inputs (identity, persona,
  * scenario, background, base disposition, attributes, sensory cues, rules) and is
  * byte-identical across consecutive turns while those inputs are unchanged; the
@@ -1710,7 +1706,7 @@ export interface CharacterChatPromptParts {
 
 /**
  * The same split, one step before rendering: the CLASSIFIED node trees the prompt
- * is assembled from (narrator-prompt-lab.plan.md slice 1).
+ * is assembled from.
  *
  * Exposed so the take-provenance work can weigh a prompt by authority layer
  * (`narratorPromptAuthorityWeights`) without re-deriving the classification, and
@@ -1725,7 +1721,7 @@ export interface CharacterChatPromptNodes {
 
 /**
  * Build the system prompt embodying `name` from their saved profile, split into the
- * §9 stable prefix + volatile tail. Attribute applicability is checked against the
+ * stable prefix + volatile tail. Attribute applicability is checked against the
  * realized body (`realizeBody`) so a stale attribute (e.g. wings left on a character
  * after a species change) never leaks, mirroring images/prompts-*.ts and engine/scene.ts.
  *
@@ -1757,7 +1753,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     bodyFeatures: profile.bodyFeatures,
   });
 
-  // Attribute overlays resolve in provenance order (character-chat-primary.spec.md §3):
+  // Attribute overlays resolve in provenance order:
   // the authored base, then the PERSISTED narrative overlays that evolve over the chat
   // (a recorded haircut/dye) — both stable across turns, so they render in the prefix.
   // The TRANSIENT condition overlays (a "disheveled"/"unwashed" condition shifting
@@ -1767,10 +1763,10 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
   // colour, species) at their write sites.
   const stableResolved = resolveAttributes(profile.attributes, [...(input.state?.attributeOverlays ?? [])]);
   const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
-  // The life-stage band a bare numeric age maps to (character-fidelity slices 1–2):
-  // hint on the identity line, register rules as a binding block, and the minor
+  // The life-stage band a bare numeric age maps to: a hint on the identity line,
+  // register rules as a binding block, and the minor
   // flag fencing every intimate surface below. Fantasy/blank ages ⇒ undefined ⇒
-  // byte-identical to the pre-slice prompt.
+  // no life-stage material in the prompt at all.
   const lifeStage = lifeStageForAge(profile.age);
   const minor = lifeStage?.minor ?? false;
   const species = speciesLorePhrase(profile.speciesId, profile.heritageId);
@@ -1792,13 +1788,13 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
   // identically to a neutral one. Everyday traits surface always; the intimate
   // ones are kept behind an "if the moment turns intimate" framing so they don't
   // colour an ordinary conversation. The prefix renders the STAGE-COLORED bands
-  // (spec §7.1 soft coloring — a warm relationship reads warmer than the authored
+  // (soft coloring — a warm relationship reads warmer than the authored
   // resting sliders; re-renders only on a stage change, which is cache-friendly);
-  // the transient disinhibition shift (§4 — intoxication/arousal loosening
+  // the transient disinhibition shift (intoxication/arousal loosening
   // inhibition, guardedness, composure at render time) surfaces as a volatile
   // tail block listing just the bands it changed.
   const bandId = regardBandForValue(input.state?.regard ?? 0).id;
-  // Bounded personality evolution (character-fidelity slice 10): the persisted narrative
+  // Bounded personality evolution: the persisted narrative
   // trait overlays fold onto the authored traits FIRST (the evolved resting disposition),
   // then the regard coloring shifts relative to that evolved value — so a character who
   // grew warmer over the arc reads warmer, and the coloring composes on top instead of
@@ -1806,7 +1802,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
   const evolvedTraits = resolveTraits(profile.traits, input.state?.traitOverlays ?? []);
   const baseTraits = resolveTraits(evolvedTraits, regardDispositionOverlays(bandId, evolvedTraits));
   const everydayDisposition = dispositionBands(traitRegistry, baseTraits, { intimateOnly: false });
-  // Minor fence (character-fidelity slice 2): a minor's intimate trait bands never
+  // Minor fence: a minor's intimate trait bands never
   // reach the prompt, whatever an imported/forged sheet carries.
   const intimateDisposition = minor ? [] : dispositionBands(traitRegistry, baseTraits, { intimateOnly: true });
   const dispositionSection = everydayDisposition.length
@@ -1820,7 +1816,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     : "";
 
   // Proximity-gated sensory attributes (scent) become an opportunistic "Sensory cues"
-  // block instead of flat attribute lines (character-chat-sensory.plan.md). Compute them
+  // block instead of flat attribute lines. Compute them
   // first so the attribute loop can skip what we've claimed (and drop their exposure-mask
   // phrasing hint, which references a mask the chat lane doesn't have).
   const cues = sensoryCues(stableResolved, realizedBody);
@@ -1863,16 +1859,16 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
 
   const priorSummary = input.priorSummary?.trim();
 
-  // The per-chat scenario framing (§1.2): the strongest framing in the prompt — the
+  // The per-chat scenario framing: the strongest framing in the prompt — the
   // situation the whole conversation plays inside — fenced (player-authored), placed
   // right after identity. Empty ⇒ no block ⇒ byte-identical to the stateless chat.
   const premise = input.state?.premise?.trim();
   const scenario = premise
     ? `Scenario for this chat (the situation you are in — play inside it):\n${fenceUntrusted("scenario", premise)}`
     : "";
-  // The dynamic "Current state" block (§6); "" when nothing is notable.
+  // The dynamic "Current state" block; "" when nothing is notable.
   const stateSection = input.state ? buildStateSection(input.state) : "";
-  // Soft social-card framing (§6, D3): what the character values, never the card severity.
+  // Soft social-card framing: what the character values, never the card severity.
   const socialFraming = buildSocialFramingSection(input.state?.activeSocialCards ?? []);
 
   // Everything outside the classified craft layer is emitted as ONE unit per
@@ -1916,13 +1912,13 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
   const sceneSection = input.state?.sceneMemory
     ? buildSceneSection(input.state.sceneMemory, input.sceneChanged ?? false)
     : "";
-  // The accumulating supporting-cast block (chat-supporting-cast.plan.md) — volatile, like Scene.
+  // The accumulating supporting-cast block — volatile, like Scene.
   const castSection = buildSupportingCastSection(
     input.state?.supportingCast ?? [],
     displayName,
     playerName ?? "the player",
   );
-  // The compact plans block (chat-plans-promises.plan.md) — the commitments near this turn.
+  // The compact plans block — the commitments near this turn.
   const plansSection = buildPlansSection(input.state?.plans ?? [], playerName ?? "the player");
   // The one-turn sense-targeted focus block (scope guard) — earned by the player's beat.
   const sensoryFocus = input.sensoryFocus
@@ -1935,7 +1931,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
         displayName,
       )
     : "";
-  // The one-turn directives (chat-agent-improvements slice 4): gathered into ONE ordered
+  // The one-turn directives: gathered into ONE ordered
   // "Right now" block by tier — binding truths, then the ceilings that bound the reply, then
   // what the beat merely permits, then the optional grace note — instead of a dozen unranked
   // paragraphs appended in the order their features happened to ship.
@@ -1943,7 +1939,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     // — binding: what is true this turn, and how to read the message at all.
     { tier: "binding", text: input.narratorInput ? narratorInputNote(displayName, playerName ?? "the player") : "" },
     {
-      // Physical consistency (narrator-physical-guidance slice 2): what this body's
+      // Physical consistency: what this body's
       // committed state forbids, and which of the player's physical premises must not
       // be adopted. Directly after the narrator-mode note because both are about HOW
       // to read the message; before the notation note because a fence outranks a
@@ -1954,7 +1950,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     { tier: "binding", text: input.notationNote?.trim() ?? "" },
     { tier: "binding", text: buildAttachmentsSection(input.attachments, playerName ?? "the player") },
     {
-      // The authoritative story moment (chat-clock-calendar.plan.md): the narrator reads the
+      // The authoritative story moment: the narrator reads the
       // same clock the player's clock card shows — light, meals, and routine follow it.
       tier: "binding",
       text: input.state?.storyMoment?.trim()
@@ -1963,7 +1959,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     },
     { tier: "binding", text: skipNote ? `Time has passed in the story since your last exchange: ${skipNote}` : "" },
     {
-      // The meanwhile pass's one-shot note (chat-offscreen-life): what actually happened
+      // The meanwhile pass's one-shot note: what actually happened
       // off-screen — the meanwhile license draws from THIS, never free invention.
       tier: "binding",
       text: input.state?.meanwhileNote?.trim()
@@ -1971,7 +1967,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
         : "",
     },
     {
-      // The one-turn return license (chat-offscreen-life §3): a pending whereabouts on a
+      // The one-turn return license: a pending whereabouts on a
       // present character means they JUST got back — carry one trace of it, then let it go.
       tier: "binding",
       text: input.state?.whereabouts?.trim()
@@ -2054,7 +2050,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     context("scene_memory", sceneSection),
     context("supporting_cast", castSection),
     context("plans", plansSection),
-    // Daily rhythm (chat-offscreen-life §4): one compact standing line so time-of-day
+    // Daily rhythm: one compact standing line so time-of-day
     // texture and meanwhile beats ground in the character's actual routine.
     context(
       "daily_rhythm",
@@ -2119,11 +2115,11 @@ function sectionGroup(id: string, children: readonly NarratorPromptNode[]): Narr
 }
 
 /**
- * The volatile disinhibition block (§4 / spec §9 cache layout): high
+ * The volatile disinhibition block (a cache-layout tail): high
  * intoxication/arousal lowers inhibition, guardedness, and composure at render time
  * only (source "condition" overlays; authored sliders are never written, and the
  * shift recedes as the meters drift back). Computed against the STAGE-COLORED base
- * (spec §7.1 — the prefix's Disposition block), rendering ONLY the band lines the
+ * (the prefix's Disposition block), rendering ONLY the band lines the
  * shift actually changed as overrides — sober ⇒ "" ⇒ the tail is unchanged.
  */
 function buildDisinhibitionSection(
@@ -2148,7 +2144,7 @@ function buildDisinhibitionSection(
 }
 
 /**
- * The volatile transient-appearance block (spec §9 cache layout): active conditions'
+ * The volatile transient-appearance block (a cache-layout tail): active conditions'
  * `attributeEffects` (a "disheveled"/"unwashed" condition shifting grooming/scent/hair)
  * rendered as overrides of the prefix's Attributes/Sensory lines instead of being baked
  * into them, so a condition starting or expiring never busts the cached prefix. Same
@@ -2189,7 +2185,7 @@ function buildTransientAppearanceSection(
 }
 
 /**
- * The full system prompt — the §9 parts joined. Callers that don't care about the
+ * The full system prompt — the prefix and tail joined. Callers that don't care about the
  * cache split keep using this; the split is observable via
  * `buildCharacterChatPromptParts` (and snapshot-tested for prefix stability).
  */
@@ -2199,7 +2195,7 @@ export function buildCharacterChatSystemPrompt(input: CharacterChatPromptInput):
 }
 
 // ---------------------------------------------------------------------------
-// Ensemble frame (multi-character-chat.plan.md slice 2) — roster > 1
+// Ensemble frame — roster > 1
 // ---------------------------------------------------------------------------
 
 /** One roster member's prompt inputs (the pipeline loads state/memory per member). */
@@ -2207,7 +2203,7 @@ export interface EnsembleMemberInput {
   name: string;
   profile: CharacterProfile;
   state?: CharacterChatPromptInput["state"];
-  /** This member's OWN retrieval (tier-1 legs — multi-character-chat.plan.md ruling 5). */
+  /** This member's OWN retrieval (tier-1 legs — each character's memory is their own). */
   memory?: CharacterChatPromptInput["memory"];
   presence: "present" | "away";
   quietExchanges: number;
@@ -2217,7 +2213,7 @@ export interface EnsembleMemberInput {
 export const ENSEMBLE_QUIET_EXCHANGES = 3;
 
 /**
- * Per-member quiet tolerance from extraversion (character-fidelity slice 5): an
+ * Per-member quiet tolerance from extraversion: an
  * introvert recedes comfortably, so their sheet compresses a beat sooner; an
  * extravert stays vocal, so their full sheet holds longer before compressing.
  * Mid extraversion (or none) ⇒ exactly `ENSEMBLE_QUIET_EXCHANGES`.
@@ -2229,7 +2225,7 @@ export function ensembleQuietThreshold(extraversion: number): number {
 
 /**
  * One directed member↔member edge for the ensemble prompt (the relationship
- * matrix, relationship-model.plan.md §What the narrator sees when): tier 1 =
+ * matrix): tier 1 =
  * both endpoints present (a prefix law line); tier 3 = a present `fromName`'s
  * edge toward a salient away member (a volatile conditional line under the
  * don't-teleport guard).
@@ -2282,16 +2278,16 @@ export function buildChatPromptPartsForRoster(
 }
 
 /**
- * The one-block ensemble frame (multi-character-chat.plan.md, rulings 1–3): the model
+ * The one-block ensemble frame: the model
  * is the narrator of a single continuous narrative and writes EVERY roster character —
  * per-member sheets scale with presence + activity recency (full / quiet-compressed /
  * away-dropped), the player-owns-himself authority rule replaces the 1-on-1 camera
  * rules, and every spoken line is [Name]-tagged so the renderer can attribute.
- * The §9 cache split survives: sheets + rules sit in the prefix (re-rendering on
+ * The prefix/tail cache split survives: sheets + rules sit in the prefix (re-rendering on
  * roster/presence/tier/band change — the licensed cases); per-member state, memory
  * and the shared scene ride the volatile tail. Member sheets render THIRD person —
  * the prompt's only "you" is the player — so the full second-person pair-law block
- * stays with the relationship matrix slice, which owns pair rendering.
+ * stays with the relationship matrix, which owns pair rendering.
  */
 export function buildEnsembleChatPromptParts(
   input: CharacterChatPromptInput,
@@ -2376,7 +2372,7 @@ export function buildEnsembleChatPromptNodes(
     ? `How they stand with each other (cold-start law — the story may move it; never recite it):\n${pairLines.join("\n")}`
     : "";
 
-  // Minor cast fence (character-fidelity slice 2): the adult framing stays (adult
+  // Minor cast fence: the adult framing stays (adult
   // members may still have adult scenes) and the cast line rules every authored
   // minor out of that territory.
   const anyMinor = members.some((m) => isMinorAge(m.profile.age));
@@ -2420,7 +2416,7 @@ export function buildEnsembleChatPromptNodes(
     player,
   );
   const skipNote = input.state?.skipNote?.trim();
-  // Away members carry their whereabouts phrase (chat-offscreen-life §Whereabouts), so
+  // Away members carry their whereabouts phrase, so
   // "where is everyone" stops being narrator guesswork.
   const awayLabel = (m: EnsembleMemberInput): string =>
     `${m.name}${m.state?.whereabouts?.trim() ? ` (${m.state.whereabouts.trim()})` : ""}`;
@@ -2474,14 +2470,14 @@ export function buildEnsembleChatPromptNodes(
         )
       : "";
 
-  // The same one-turn digest as the 1-on-1 lane (chat-agent-improvements slice 4) — the
+  // The same one-turn digest as the 1-on-1 lane — the
   // ensemble tail carries the group arms of the same notes, so it gets the same tiering.
   const turnNotes = buildTurnNotes([
     { tier: "binding", text: input.narratorInput ? narratorInputNote("each present character", player) : "" },
     { tier: "binding", text: input.notationNote?.trim() ?? "" },
     { tier: "binding", text: buildAttachmentsSection(input.attachments, player) },
     {
-      // The authoritative story moment (chat-clock-calendar.plan.md) — same line as the 1-on-1 frame.
+      // The authoritative story moment — same line as the 1-on-1 frame.
       tier: "binding",
       text: input.state?.storyMoment?.trim()
         ? `Story time: it is ${input.state.storyMoment.trim()}. Time-of-day texture (light, meals, routine) follows this clock.`
@@ -2489,7 +2485,7 @@ export function buildEnsembleChatPromptNodes(
     },
     { tier: "binding", text: skipNote ? `Time has passed in the story since the last exchange: ${skipNote}` : "" },
     {
-      // The meanwhile pass's one-shot note (chat-offscreen-life) — same line as the 1-on-1 frame.
+      // The meanwhile pass's one-shot note — same line as the 1-on-1 frame.
       tier: "binding",
       text: input.state?.meanwhileNote?.trim()
         ? `While time passed, off-screen (true — meanwhile beats come from this, not invention; weave in at most one piece, naturally): ${input.state.meanwhileNote.trim()}`
@@ -2722,7 +2718,7 @@ function ensembleMemberEnactment(member: EnsembleMemberInput): string {
   const baseTraits = resolveTraits(profile.traits, regardDispositionOverlays(bandId, profile.traits));
   const blocks: string[] = [];
 
-  // Minor fence (character-fidelity slice 2): no state-driven loosening for a minor member.
+  // Minor fence: no state-driven loosening for a minor member.
   const overlays = isMinorAge(profile.age) ? [] : stateDispositionOverlays(baseTraits, member.state.meters ?? {});
   if (overlays.length) {
     const shifted = resolveTraits(baseTraits, overlays);
@@ -2795,8 +2791,8 @@ function ensembleMemberStateLines(member: EnsembleMemberInput, player: string): 
   const outfit = member.state.outfit?.trim();
   const loops = (member.state.openLoops ?? []).map((l) => l.trim()).filter(Boolean);
   const conditionHints = member.state.conditions.flatMap((c) => (c.promptHint ? [c.promptHint] : []));
-  // Chat-offscreen-life: a pending whereabouts on a PRESENT member = they just got
-  // back (one-turn came-from license); the rhythm grounds their day (§4).
+  // A pending whereabouts on a PRESENT member = they just got back (one-turn
+  // came-from license); the rhythm grounds their day.
   const returned = member.state.whereabouts?.trim();
   const rhythm = member.state.rhythm?.trim();
   const bits = [
@@ -2955,8 +2951,8 @@ const ensembleChatRulesNodes = (
 };
 
 /**
- * The EXPERIMENTAL turn-context message (narrator-prompt-consolidation.plan.md slice 5,
- * default-off — enabled by `CHAT_PROMPT_LAYOUT=turn_context`): the session lane's shape,
+ * The EXPERIMENTAL turn-context message (default-off — enabled by
+ * `CHAT_PROMPT_LAYOUT=turn_context`): the session lane's shape,
  * ported to chat. Instead of system = prefix + volatile tail — where the tail sits BEFORE
  * the history in token order, so every per-turn change invalidates the provider prefix
  * cache for the whole history window — the tail rides a final user message together with

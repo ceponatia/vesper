@@ -119,7 +119,7 @@ export async function readDurableBodyReads(
 }
 
 /**
- * E5.2 — the cut's body surface (§22.1 `bodilyReads`): the viewpoint's own
+ * E5.2 — the cut's body surface (`bodilyReads`): the viewpoint's own
  * energy read and intimacy pulse, plus each co-present actor's perceivable
  * signs at engaged-attention tier. Pure over loaded rows; empty when bodies
  * are uninitialized, so pre-Gate-5 worlds compile identical cuts.

@@ -10,8 +10,8 @@ import {
 } from "./viewing";
 
 /**
- * Slice-7 viewing-condition tests (visual-state.plan.md §Open questions →
- * "how the narrator lane obtains usable viewing conditions", ruled 2026-08-17).
+ * Viewing-condition tests: how the narrator lane obtains usable viewing
+ * conditions (ruled 2026-08-17).
  *
  * The policy under test is two-sided: what the scene owner states is READ, and
  * what nothing owns is DECLARED and marked as such. Both halves need proving —

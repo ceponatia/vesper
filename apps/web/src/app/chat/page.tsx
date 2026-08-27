@@ -4,7 +4,7 @@ import { ChatsPage } from "@/components/chat/chats-page";
 export const metadata: Metadata = { title: "Chats" };
 
 /**
- * The Chats hub (character-chat-standalone.spec.md §2.2). `?new=<characterId>`
+ * The Chats hub. `?new=<characterId>`
  * (library-card "Chat" action) opens the new-conversation dialog pre-picked —
  * read here server-side and passed down so the client component needs no
  * useSearchParams/Suspense plumbing.

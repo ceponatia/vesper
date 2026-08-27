@@ -7,10 +7,8 @@ import {
 } from "./chat-contact-reply";
 
 /**
- * Source offsets for the FROZEN floor's detected ending
- * (romantic-contact-affordances.spec.actor-control.md §"Authority model": "Its
- * result gains source offsets for ordering, but its accepted language does not
- * grow").
+ * Source offsets for the FROZEN floor's detected ending: its result gains
+ * source offsets for ordering, but its accepted language does not grow.
  *
  * `chat-contact-reply.ts` is frozen: it reports WHAT ended, not where the
  * match sat, and its lexicon must not be duplicated into a second file that

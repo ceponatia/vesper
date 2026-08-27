@@ -22,7 +22,7 @@ import {
 import { evalEdit, hasImageProvider } from "./model";
 
 /**
- * Orientation & staging A/B (scene-composition.plan.md slices 1–2, NOT a test gate):
+ * Orientation & staging A/B (NOT a test gate):
  * the complaint is that every chat scene image comes back front-facing whatever the story
  * says, and during intimate play the render is a nude portrait — right person, right room,
  * wrong moment (owner report 2026-08-10). Each beat below renders the SAME resolved plan

@@ -119,8 +119,7 @@ export interface FootContactFixtureInput {
  *
  * The action kind is `affectionate` by default: it needs no permission owner,
  * which legacy chat cannot produce. That is the ruled starting point, not a
- * stand-in — the owner ruled 2026-07-30
- * (romantic-contact-affordances.audit.md §"Owner decisions needed" 1) that
+ * stand-in — the owner ruled 2026-07-30 that
  * romantic contact is NEVER relabeled to make a trial commit, and that a
  * genuinely affectionate case is the right first integration. A fixture asking
  * for `romantic` is refused by the gate — correctly, and that refusal is itself

@@ -8,15 +8,15 @@ import type { CommittedContactRead, ContactActionIntent, ContactPressureBand } f
 import { probeAttempt, probeLayer, PROBE_EVENT, PROBE_TARGET } from "./test-support";
 
 /**
- * The pressure-mark producer (romantic-contact-affordances.spec.effects.md §8):
- * a pure derivation from a genuinely COMMITTED contact, and nothing else — the
+ * The pressure-mark producer: a pure derivation from a genuinely COMMITTED
+ * contact, and nothing else — the
  * fixtures run the real resolve → commit path so an attempt can never feed it.
  *
  * The two claims worth pinning: the qualifying rule fails closed on every axis
  * (unstated pressure is NOT a trace press, through-material is NOT skin, an
  * object has no body to mark), and the derivation is deterministic — the same
  * committed read must yield the identical proposal, idempotency key included,
- * or a retake's replay would mint a second mark (§13). Falsified against a
+ * or a retake's replay would mint a second mark. Falsified against a
  * producer that defaulted absent pressure to the lightest marking band.
  */
 

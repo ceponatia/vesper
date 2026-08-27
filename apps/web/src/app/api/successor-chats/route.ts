@@ -32,21 +32,20 @@ import {
 import { successorWardrobeSeed } from "./wardrobe-seed";
 
 /**
- * The successor front door (engine.rollout.plan.md, owner ask 2026-07-22) —
- * the Worlds page's API. POST spins up a complete successor chat in one call:
- * an ordinary character chat, a starter world (isolated branch, cast named
- * after the player and the character), and the authority flip to
- * `successor_narrative_view` with both actors mapped — everything the backend
- * setup used to require. GET lists the caller's successor chats with each
- * world's clock. Open to every signed-in user (owner ruling: all users on this
- * deployment are devs; sign-up is closed).
+ * The successor front door (owner ask 2026-07-22) — the Worlds page's API. POST
+ * spins up a complete successor chat in one call: an ordinary character chat, a
+ * starter world (isolated branch, cast named after the player and the
+ * character), and the authority flip to `successor_narrative_view` with both
+ * actors mapped — everything the backend setup used to require. GET lists the
+ * caller's successor chats with each world's clock. Open to every signed-in user
+ * (owner ruling: all users on this deployment are devs; sign-up is closed).
  *
- * successor-world-lifecycle.plan.md slices 3–4 (rulings E20-3 / the honest
- * quota) turned that five-step sequence into a RESUMABLE one. The whole handler
- * runs under `successor_provision:<ownerId>`, so this route is the single writer
- * per owner; inside the lock a durable `sim_provisioning_requests` record
- * advances after each committed step, and the world's identity is DERIVED from
- * the client's `requestId` — so a retry after any failure finishes the world it
+ * Rulings E20-3 / the honest quota turned that five-step sequence into a
+ * RESUMABLE one. The whole handler runs under `successor_provision:<ownerId>`,
+ * so this route is the single writer per owner; inside the lock a durable
+ * `sim_provisioning_requests` record advances after each committed step, and the
+ * world's identity is DERIVED from the client's `requestId` — so a retry after
+ * any failure finishes the world it
  * already started instead of minting a second one. The old `seed_failed` /
  * `flip_failed` half-states are gone: a step failure now runs compensating
  * cleanup (world graph + chat row) and answers ONE honest `provision_failed`.
@@ -152,7 +151,7 @@ async function updateRecord(
 }
 
 /**
- * The honest quota (slice 4, ruling E20-3's sibling). Counts what is REAL:
+ * The honest quota (ruling E20-3's sibling). Counts what is REAL:
  * chats the successor engine actually owns (`successor_narrative_view` — the
  * old internal `ne("legacy_chat")` expression also counted `successor_shadow`
  * chats, which `requireSimChat` rejects as unplayable), plus this owner's other
@@ -313,7 +312,7 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
   }
 
   const reached = STATE_RANK[resumeFrom];
-  // R5 slice 5: the character's authored default outfit becomes WORN world
+  // R5: the character's authored default outfit becomes WORN world
   // items at birth — resolved through the same wardrobe seam the character-chat
   // seed uses, so the outfit chip shows the same clothes, now from world truth.
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
@@ -379,8 +378,8 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
     built.chatId = chatId;
 
     // --- Step 3: relationships. R5: an AUTHORED starting relationship becomes
-    // an authored_prior ledger entry pair, weighted so the §21 read round-trips
-    // the authored regard exactly (trust 36r + attraction 8r ⇒ blended 40r ⇒
+    // an authored_prior ledger entry pair, weighted so the relationship read
+    // round-trips the authored regard exactly (trust 36r + attraction 8r ⇒ blended 40r ⇒
     // regard r). No authored record ⇒ no prior ⇒ the ledger starts honest-empty
     // and the chip keeps the character-chat seed until evidence accumulates. The
     // idempotency keys are branch-derived and the branch id is now stable, so a
@@ -409,7 +408,7 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
               correlationId: `stw-seed-${world.branchId}`,
               type: "record_relationship_entry",
               schemaVersion: 1,
-              // No storySecond override: the prior lands "now" so the §21 read's
+              // No storySecond override: the prior lands "now" so the relationship read's
               // time decay starts from the story's first moment, not before it.
               payload: { fromActorId: from, toActorId: to, kind: "authored_prior", detail: detail.slice(0, 500), weightOverride },
             },
@@ -429,7 +428,7 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
       chatId,
       byUserId: ownerId,
       authority: "successor_narrative_view",
-      // R5 knowledge/memory: §24 recall routes for successor chats from birth.
+      // R5 knowledge/memory: the recall routes for successor chats from birth.
       ragEligibility: true,
       simBranchId: world.branchId,
       simPlayerActorId: world.playerActorId,
@@ -479,10 +478,10 @@ export const POST = withUser(async (user, req) => {
   const body = await readBody(req, createBodySchema);
   if (!body.ok) return body.response;
 
-  // Slice 3: serialize per OWNER. This handler is then the single writer for
-  // this account's worlds — which is also what makes the quota count race-free
-  // (slice 4). Contention turns away with the message lane's quiet busy face
-  // (the `chat_busy` idiom, ruling A1-1) rather than queueing a second world.
+  // Serialize per OWNER. This handler is then the single writer for this
+  // account's worlds — which is also what makes the quota count race-free.
+  // Contention turns away with the message lane's quiet busy face (the
+  // `chat_busy` idiom, ruling A1-1) rather than queueing a second world.
   const held = tryKeyedLock(`successor_provision:${user.id}`, () =>
     runProvisioning({
       ownerId: user.id,

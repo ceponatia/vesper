@@ -44,7 +44,7 @@ import { toWornInputs, wardrobeOutfitText, type AvatarWardrobeItem } from "../im
 import { garmentWardrobeItem, playerWornIds, resolveChatWardrobe, resolvePlayerWardrobe } from "./chat-wardrobe";
 
 /**
- * The seeded/unseeded rule (persona-library.plan.md slice 8). The pure half of the
+ * The seeded/unseeded rule. The pure half of the
  * player's wardrobe: `resolvePlayerWardrobe` needs a database, but the decision that
  * actually matters — *what is the player wearing right now* — is this function, and it
  * is shared by the read path and the archivist's fold so the two can't disagree.
@@ -101,7 +101,7 @@ describe("playerWornIds", () => {
 });
 
 /**
- * `outfit_exposed` demotion (clothing-state-graph slice 2; slice-0 audit finding 6).
+ * `outfit_exposed` demotion.
  *
  * The flag was an author/model-settable coverage BYPASS: with an empty worn list
  * it alone decided whether the character read as bare. Once the garment store
@@ -660,8 +660,7 @@ describe("a wardrobe that failed to load keeps the covered default", () => {
 });
 
 /**
- * ONE shared read (clothing-state-graph.plan.md slice 3 · §"Derived wardrobe and
- * observation read"; slice-0 audit finding 3).
+ * ONE shared derived wardrobe and observation read.
  *
  * The garment store owns presentation-aware per-part coverage; the library
  * definition owns phrasing and the layer/opacity occlusion semantics. Everything

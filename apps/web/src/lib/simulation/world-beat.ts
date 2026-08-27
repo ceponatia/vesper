@@ -2,9 +2,9 @@ import { formatSimLanding, type SimCalendarStart } from "./clock";
 import { placeGoPhrase } from "@vesper/simulation-core/world-read";
 
 /**
- * World-beat phrasing (world-ui.plan.md slice 2) — PURE. A world beat is the
+ * World-beat phrasing — PURE. A world beat is the
  * durable transcript trace of a world event the player caused or witnessed
- * (travel, a time skip, a scene ending), replacing slice 1's toast-only feedback.
+ * (travel, a time skip, a scene ending), replacing the earlier toast-only feedback.
  * This module turns the event kind + the post-command story clock into the exact
  * line the transcript renders; the server phrases it once at write time and stores
  * the text on an ordinary message row (`meta.worldBeat`).
@@ -15,9 +15,8 @@ import { placeGoPhrase } from "@vesper/simulation-core/world-read";
  */
 
 /**
- * The world events that leave a durable transcript beat. Slice 3 adds
- * `gave_item` (a held handoff to the primary) and `rested` (a performed
- * skip-style activity).
+ * The world events that leave a durable transcript beat. `gave_item` is a held
+ * handoff to the primary; `rested` is a performed skip-style activity.
  */
 export const WORLD_BEAT_KINDS = ["traveled", "time_skipped", "scene_ended", "gave_item", "rested"] as const;
 export type WorldBeatKind = (typeof WORLD_BEAT_KINDS)[number];
@@ -31,13 +30,13 @@ export interface WorldBeatInput {
   /** Destination display noun for a `traveled` beat ("town square", "home"); ignored otherwise. */
   destinationLabel?: string;
   /**
-   * The traveled departure ended a standing scene as a CHOICE (slice 4) — the
+   * The traveled departure ended a standing scene as a CHOICE — the
    * beat acknowledges the parting ("You take your leave and walk to…"). Ignored
    * for a plain travel or any non-`traveled` beat.
    */
   parted?: boolean;
   /**
-   * The traveled departure was a WALK-WITH-ME (slice 5) — the primary accepted
+   * The traveled departure was a WALK-WITH-ME — the primary accepted
    * the invite and came along ("You walk to … together."). Supersedes `parted`
    * (you don't take your leave of someone you're walking with). Ignored for a
    * solo travel or any non-`traveled` beat.
@@ -68,8 +67,8 @@ export function worldBeatText(input: WorldBeatInput): string {
       const label = input.destinationLabel ?? "";
       // "home" reads bare ("You walk home"); every other place takes the article
       // via `placeGoPhrase` ("the town square") — the goChipLabel idiom, in prose.
-      // A WALK-WITH-ME (slice 5) supersedes the parting: you walk there together.
-      // Else a `parted` departure (slice 4) ended a standing scene as a choice, so
+      // A WALK-WITH-ME supersedes the parting: you walk there together.
+      // Else a `parted` departure ended a standing scene as a choice, so
       // the beat acknowledges the leave-taking first.
       if (input.together) {
         const phrase = label === "home" ? "You walk home together." : `You walk to ${placeGoPhrase(label)} together.`;

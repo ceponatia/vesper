@@ -6,15 +6,15 @@ import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./sh
  * The startup budget for this endpoint: eight minutes from creation to first
  * execution.
  *
- * Observed, not chosen: the bench run this plan exists to fix sat in a cold
- * start past its whole five-minute budget and was aborted by the provider
- * before it began, which Vesper then reported as a render failure (plan §1,
- * Stage 0). This endpoint is run rarely enough that a cold start is the normal
- * case rather than the exception, so the startup phase needs a budget of its
- * own rather than a share of the render's.
+ * Observed, not chosen: the Stage 0 bench run this budget exists to fix sat in a
+ * cold start past its whole five-minute budget and was aborted by the provider
+ * before it began, which Vesper then reported as a render failure. This endpoint
+ * is run rarely enough that a cold start is the normal case rather than the
+ * exception, so the startup phase needs a budget of its own rather than a share
+ * of the render's.
  *
- * Plan §8 sets this as a bench-lane STARTING POINT to be tuned from observed
- * queue behavior, not a settled constant.
+ * It is a bench-lane STARTING POINT to be tuned from observed queue behavior,
+ * not a settled constant.
  */
 const QWEN_EDIT_PLUS_LORA_STARTUP_BUDGET_MS = 8 * 60_000;
 

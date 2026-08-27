@@ -49,7 +49,7 @@ describe("seedChatState", () => {
     expect(state.presence).toBe("present");
   });
 
-  it("seeds the structured worn list + active preset from the default preset (chat-wardrobe-parity)", () => {
+  it("seeds the structured worn list + active preset from the default preset", () => {
     // The default preset (outfits[0]) holds library item IDS — the pure seed now writes them
     // straight into the structured `wornItemIds` (no marker hack) + the active preset id; the
     // free-text overlay starts empty.
@@ -119,7 +119,7 @@ describe("seedChatState", () => {
         { startMinute: 360, endMinute: 720, locationName: "the café", activity: "waiting tables" },
       ],
     });
-    // Minute-of-day is anchor-relative (chat-clock-calendar): a midnight anchor keeps
+    // Minute-of-day is anchor-relative: a midnight anchor keeps
     // this test's raw clock numbers readable as times of day.
     const midnight = { year: 2024, month: 1, day: 1, hour: 0, minute: 0 };
     // 23:30 → the sleep window → the sleep preset's structured worn list.
@@ -281,7 +281,7 @@ describe("driftChatState (D8 — in-game time only, clock on the shared scenario
     expect(driftChatState(tired, makeProfile(), { clockMinutes: 0 })).toBe(tired);
   });
 
-  it("never decays affinity (no between-visit decay — spec §10)", () => {
+  it("never decays affinity (no between-visit decay)", () => {
     const warm = base({ regard: 57 });
     expect(driftChatState(warm, makeProfile(), { advance: false, clockMinutes: 0 }).regard).toBe(57);
     expect(driftChatState(warm, makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES }).regard).toBe(57);
@@ -300,7 +300,7 @@ describe("driftChatState (D8 — in-game time only, clock on the shared scenario
   });
 });
 
-describe("time skips (spec §8.1 — flavor-only v1, D14; split across scenario + member halves)", () => {
+describe("time skips (flavor-only v1, D14; split across scenario + member halves)", () => {
   const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
   const scen = (overrides: Partial<ChatScenario> = {}): ChatScenario => ({ ...seedChatScenario(makeProfile()), ...overrides });
   const now = new Date("2026-07-02T12:00:00Z");
@@ -345,12 +345,12 @@ describe("time skips (spec §8.1 — flavor-only v1, D14; split across scenario 
     expect(strangerNote).toContain("naturally");
     expect(closeNote).toContain("missed them");
     expect(hostileNote).toContain("curtly");
-    // All bands carry the §8.2 "a life meanwhile" license.
+    // All bands carry the "a life meanwhile" license.
     for (const note of [strangerNote, closeNote, hostileNote]) expect(note).toMatch(/meanwhile/);
   });
 });
 
-describe("applyChatPulse (the deterministic §6 curve)", () => {
+describe("applyChatPulse (the deterministic reaction curve)", () => {
   const likeProfile = makeProfile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
   const dislikeProfile = makeProfile({ preferences: [{ target: "insult", valence: "dislike", intensity: 5 }] });
   const state = (): ChatState => seedChatState(makeProfile());
@@ -407,7 +407,7 @@ describe("applyChatPulse (the deterministic §6 curve)", () => {
     expect(applyChatPulse(prior, pulse(null, ""), makeProfile(), "Mara", []).state.mindNote).toBe("kept");
   });
 
-  it("applyOpenerPulse folds only the reads: sentPhoto + mindNote, never the curve (chat-initiative slice 5)", () => {
+  it("applyOpenerPulse folds only the reads: sentPhoto + mindNote, never the curve", () => {
     const standing: ChatState = {
       ...state(),
       regard: 60,
@@ -887,7 +887,7 @@ describe("regard band chip mapping (the strip's band label)", () => {
   });
 });
 
-describe("chatStateSnapshot — mood chip (mood.spec §4)", () => {
+describe("chatStateSnapshot — mood chip", () => {
   const scenario = (): ChatScenario => seedChatScenario(makeProfile());
   const withMeters = (over: Record<string, number>): ChatState => ({
     ...seedChatState(makeProfile()),
@@ -929,7 +929,7 @@ describe("chatStateSnapshot — mood chip (mood.spec §4)", () => {
   });
 });
 
-describe("applyChatAttributeOverlays (mutable-attribute evolution — spec §3)", () => {
+describe("applyChatAttributeOverlays (mutable-attribute evolution)", () => {
   it("adds a mutable narrative overlay (a dye job)", () => {
     const sink = new DiagnosticCollector();
     const out = applyChatAttributeOverlays([], [{ participantName: "Mara", attributeId: "hair.color", value: "auburn" }], sink);
@@ -959,7 +959,7 @@ describe("applyChatAttributeOverlays (mutable-attribute evolution — spec §3)"
   });
 });
 
-describe("applyChatTraitOverlays (bounded personality evolution — character-fidelity slice 10)", () => {
+describe("applyChatTraitOverlays (bounded personality evolution)", () => {
   // temperament.warmth / social.guardedness / temperament.confidence are developable;
   // temperament.composure is core; the authored value is the clamp anchor.
   const authored = [{ id: "temperament.warmth", value: 0, source: "creation" as const }];
@@ -1015,7 +1015,7 @@ describe("applyChatTraitOverlays (bounded personality evolution — character-fi
   });
 });
 
-describe("emotional weather wiring (emotional-weather.plan.md)", () => {
+describe("emotional weather wiring", () => {
   const likeProfile = makeProfile({ preferences: [{ target: "compliment", valence: "like", intensity: 5 }] });
   const pulseWith = (overrides: Partial<ChatPulse>): ChatPulse => ({
     playerAct: null,

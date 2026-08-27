@@ -3,9 +3,9 @@ import { emotionLabelSchema, type ChatSkipAmount, type EmotionLabel, type Relati
 import { regardBandById } from "@/contracts/relationships/bands";
 
 /**
- * Emotional weather (emotional-weather.plan.md): the pure half of persistent
+ * Emotional weather: the pure half of persistent
  * feelings + regard momentum. The pulse proposes a feeling LABEL + CAUSE (never a
- * number); intensity derives deterministically from the §6 curve outcome here,
+ * number); intensity derives deterministically from the social-reaction curve's outcome here,
  * decays per exchange (not clock minutes), and colors the prompt's mood line
  * while it lasts. A **bruise** — a strong regard drop landing while regard is
  * high — damps positive gains for ~10 exchanges (owner ruling), lifted early by

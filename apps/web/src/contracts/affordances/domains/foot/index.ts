@@ -1,6 +1,5 @@
 /**
- * The foot affordance domain — the romantic-contact plan's first proving domain
- * (romantic-contact-affordances.spec.foot.md, plan slice 2).
+ * The foot affordance domain — romantic contact's first proving domain.
  *
  * ```text
  * feet.arch / feet.nails / feet.toes             →  regional structural profile

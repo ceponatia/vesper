@@ -38,17 +38,16 @@ import {
 export type { SimRenderContext, SimRenderCorrection } from "./prompts/sim-render";
 
 /**
- * R2 (engine.rollout.plan.md) — the live narrator over one committed cut:
- * the first real model call in the successor lane. The flow is exactly the
- * §22–23 law made live:
+ * The live narrator over one committed cut — the first real model call in the
+ * successor lane. The flow:
  *
  *   load the persisted cut → render (one model call, Aion 3.0 default via the
- *   shared picker) → §23.1 trust boundary → §23.2 structural audit →
- *   ruling-8 hidden retry from the SAME cut → on ≥1 enacted effect or
+ *   shared picker) → the trust boundary → the structural audit →
+ *   a hidden retry from the SAME cut → on ≥1 enacted effect or
  *   proposal, `confirm_narrator_result` (system principal) arms real effects.
  *
  * A render that still fails after the retry WITHHOLDS: the committed advance
- * stays committed, nothing is presented, nothing reverts (ruling 8). The
+ * stays committed, nothing is presented, nothing reverts. The
  * model seam is injectable so every test runs zero live calls; demo mode
  * (AI_FAKE) degrades to a deterministic compliant render built from the cut's
  * own beat summaries.
@@ -101,7 +100,7 @@ export interface RenderedCut {
   latencyMs?: number;
   diagnostics: string[];
   /**
-   * What produced this render (narrator-prompt-lab.plan.md §Provenance) — built
+   * What produced this render — built
    * from the ACCEPTED attempt, so a run that needed the hidden retry is recorded as
    * the assembly the player actually read. Present only on a `rendered` result: a
    * withheld render persists no take for it to label.
@@ -124,7 +123,7 @@ function deterministicFallbackResult(cut: NarrativeCut): NarratorResult {
 
 function liveRenderSeam(cut: NarrativeCut): RenderSeam {
   return async ({ system, prompt, modelId }) => {
-    // Provider parity with the legacy narrator lane (presentation-charter §3):
+    // Provider parity with the legacy narrator lane:
     // NARRATIVE_TEMPERATURE + the eval-ruled per-model reasoning/routing knobs.
     const providerOptions = narrativeProviderOptions(modelId);
     const generated = await generateChecked({
@@ -148,7 +147,7 @@ function liveRenderSeam(cut: NarrativeCut): RenderSeam {
 }
 
 /**
- * Normalize raw model prose BEFORE the audit (presentation-charter §3, run in
+ * Normalize raw model prose BEFORE the audit (run in
  * `sim-narrator` because lib cannot import server modules): strip the narrator
  * artifact tags, collapse tandem repeats, then peel a stray wrapping code fence
  * or quote pair. The auditor then reads the same clean text the user would see.
@@ -168,7 +167,7 @@ function normalizeSimProse(raw: string): string {
 }
 
 /**
- * One confirm per cut (presentation-charter hazard fix): the idempotencyKey is
+ * One confirm per cut: the idempotencyKey is
  * keyed on the cutId ALONE, so the FIRST accepted confirm for a cut wins and any
  * retake — whose fresh render may enact a DIFFERENT armed-effect subset — dedupes
  * to it. Armed truth from the first accepted telling stands; a retake replaces
@@ -255,14 +254,14 @@ export async function renderCommittedCut(
   let degraded = false;
   let provider: string | null | undefined;
   let latencyMs: number | undefined;
-  // The targeted retry (presentation-charter §3): each attempt rebuilds the prompt,
+  // The targeted retry: each attempt rebuilds the prompt,
   // and attempt ≥2 carries a CORRECTION naming exactly what the last audit rejected.
   let correction: SimRenderCorrection | undefined;
   for (; attempts < maxAttempts; ) {
     attempts += 1;
     // Every attempt rebuilds the prompt from the SAME `context` — which is what
-    // freezes the resolved instruction revision across the hidden retry
-    // (narrator-prompt-lab.spec.md §Algorithms). Nothing here re-reads the
+    // freezes the resolved instruction revision across the hidden retry.
+    // Nothing here re-reads the
     // template, so an owner saving a new revision between attempt 1 and attempt 2
     // cannot change the prompt mid-exchange.
     const attemptOpts = { attempt: attempts, ...(correction === undefined ? {} : { correction }) };
@@ -310,7 +309,7 @@ export async function renderCommittedCut(
       }
     }
 
-    // A bridge lands as its own paragraph, never glued mid-sentence (§3).
+    // A bridge lands as its own paragraph, never glued mid-sentence.
     const prose = audit.bridgeProse ? `${result.prose.trimEnd()}\n\n${audit.bridgeProse}` : result.prose;
     return {
       status: "rendered",
@@ -357,7 +356,7 @@ export async function renderCommittedCut(
 }
 
 // ---------------------------------------------------------------------------
-// Solo-cut render (world-ui.plan.md slice 0, ruling 21)
+// Solo-cut render
 // ---------------------------------------------------------------------------
 
 /** The injected model seam for a solo render — a stub in tests, the live model otherwise. */
@@ -376,7 +375,7 @@ export interface RenderSoloInput {
   maxAttempts?: number;
   /**
    * The deterministic minimal narration this render degrades to on total model
-   * failure (docs/resilience.md, §18.5). MUST be non-empty so a solo turn never
+   * failure (docs/resilience.md). MUST be non-empty so a solo turn never
    * dead-ends — the whole point of the solo cut is "never a failed turn".
    */
   fallbackProse: string;
@@ -488,7 +487,7 @@ export async function renderSoloNarration(
 }
 
 /**
- * R3 (the R2 leftover) — the live §19.3 deliberator behind its budget and
+ * The live deliberator behind its budget and
  * deterministic fallback. The arbiter admits deliberation only for a rare,
  * consequential, ambiguous departure (score gap under the threshold); this
  * factory supplies the one bounded model call. A timeout, budget exhaustion,

@@ -32,7 +32,7 @@ import {
 } from "./chat-physical-guidance-render";
 
 /**
- * The prompt projection (narrator-physical-guidance.plan.md §Architecture 7).
+ * The prompt projection for narrator physical guidance.
  *
  * Wording is the whole subject here, so the tests read the produced sentences rather
  * than structure — and the two that matter most are negative: a constraint-only turn
@@ -650,9 +650,9 @@ describe("the revocation stop line", () => {
     });
 
   /**
-   * The spec's narrator-instruction constraints as a word list: relationship
+   * The narrator-instruction constraints as a word list: relationship
    * thresholds, permission records, developer overrides, and diagnostic detail
-   * may NEVER surface (spec §"Revocation during active contact").
+   * may NEVER surface.
    */
   const BANNED_VOCABULARY = [
     "permission",

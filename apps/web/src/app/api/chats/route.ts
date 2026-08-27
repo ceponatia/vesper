@@ -28,12 +28,11 @@ import { editChatState, saveChatScenario, seedChatRelationships, seedChatScenari
 import { loadOwnedRoster, resolveChatMemoryGroupId } from "./owned";
 
 /**
- * The conversations collection (docs/character-chat/; character-chat-standalone.spec.md
- * §2.1). GET lists the user's conversations (the Chats page / the editor tab's picker);
- * POST creates one — with the D7 memory choice: "shared" reuses each character's existing
- * memory group (the relationship remembers), "fresh" mints a clean island (an alternate
- * universe). One character can host many conversations. A conversation can hold a roster
- * of up to 4 characters (multi-character-chat.plan.md groundwork) — the first is the
+ * The conversations collection (docs/character-chat/). GET lists the user's conversations
+ * (the Chats page / the editor tab's picker); POST creates one — with the D7 memory choice:
+ * "shared" reuses each character's existing memory group (the relationship remembers),
+ * "fresh" mints a clean island (an alternate universe). One character can host many
+ * conversations. A conversation can hold a roster of up to 4 characters — the first is the
  * primary participant the exchange pipeline runs against; the rest are inert until the
  * multi-character substrate ships.
  */
@@ -42,8 +41,7 @@ import { loadOwnedRoster, resolveChatMemoryGroupId } from "./owned";
 const LIST_LIMIT = 100;
 
 /**
- * Roster cap (multi-character-chat.plan.md — "2–4
- * typical"): creation groundwork accepts up to 4 characters; the conversation
+ * Roster cap: creation groundwork accepts up to 4 characters; the conversation
  * experience itself stays 1-on-1 with the primary (sort 0) until the
  * multi-character substrate ships.
  */
@@ -55,7 +53,7 @@ const createBodySchema = z.object({
   title: z.string().trim().max(120).optional(),
   /** D7: continue the shared history, or a vanilla fresh start. */
   memory: z.enum(["shared", "fresh"]),
-  /** Seed the new conversation's scenario from a saved preset (spec §1.5). */
+  /** Seed the new conversation's scenario from a saved preset. */
   presetId: z.string().min(1).optional(),
 });
 
@@ -94,8 +92,8 @@ export const GET = withUser(async (user, req: NextRequest) => {
       plans: characterChats.plans,
       clockMinutes: characterChats.clockMinutes,
       calendarStart: characterChats.calendarStart,
-      // Successor lane marker (successor-world-lifecycle.plan.md slice 1): the
-      // hub's delete confirm must say the WORLD goes too for these rows.
+      // Successor lane marker: the hub's delete confirm must say the WORLD goes
+      // too for these rows.
       engineAuthority: characterChats.engineAuthority,
       lastLine: sql<string | null>`(
         select left(m.content, 160) from character_chat_messages m
@@ -134,11 +132,10 @@ export const GET = withUser(async (user, req: NextRequest) => {
     // A successor chat owns a whole simulated world that dies with it (E20-1) —
     // one boolean so the hub's confirm dialog can say so.
     const isSuccessor = engineAuthority !== "legacy_chat";
-    // "Has something to say" (spec §8.4, D4; v2 chat-initiative.plan.md slice 2): a pure
-    // read-time derivation — never a job, never the wall clock. An imminent / just-missed
-    // PLAN leads (chat-plans-promises — a commitment coming due is the strongest pull), then
-    // the top open loop, then a milestone unseen since the player last OPENED the chat (the
-    // seen-cursor, stamped by the conversation mount).
+    // "Has something to say": a pure read-time derivation — never a job, never the
+    // wall clock. An imminent / just-missed PLAN leads (a commitment coming due is the
+    // strongest pull), then the top open loop, then a milestone unseen since the player
+    // last OPENED the chat (the seen-cursor, stamped by the conversation mount).
     const loops = parseOr(listLoopsSchema, openLoops ?? [], [], undefined, "character_chat_state.open_loops");
     const parsedMilestones = parseOr(listMilestonesSchema, milestones ?? [], [], undefined, "character_chat_state.milestones");
     const parsedPlans = parseOr(chatPlansSchema, plans ?? [], [], undefined, "character_chats.plans");
@@ -155,8 +152,8 @@ export const GET = withUser(async (user, req: NextRequest) => {
     const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");
     const prof = parseOr(characterProfileSchema, profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
     const band = regardBandForValue(regard);
-    // Mirrors chatStateSnapshot's mood-chip inputs (mood.spec §4): chat is an
-    // intimate-capable 1-on-1, dominance tilts a low-valence read angry vs sad.
+    // Mirrors chatStateSnapshot's mood-chip inputs: chat is an intimate-capable
+    // 1-on-1, dominance tilts a low-valence read angry vs sad.
     const emotion = deriveEmotionLabel({
       mood: parsedMeters.mood ?? NEUTRAL_MOOD_METER,
       arousal: parsedMeters.arousal ?? 0,
@@ -211,22 +208,22 @@ export const POST = withUser(async (user, req: NextRequest) => {
     await tx.insert(characterChats).values({ id: chatId, ownerId: user.id, title });
     await tx.insert(chatParticipants).values(participantRows.map((row) => ({ chatId, ...row })));
   });
-  // Scenario seed (followups rulings 8-9): the chat row was just created with
+  // Scenario seed: the chat row was just created with
   // blank scenario defaults, so seed it from the PRIMARY's authored profile —
   // the premise pre-fill from their `playerRelationship.note` and the
   // setting-wide house rules from their own cards. A preset below overlays.
   const primaryProfile = parseOr(characterProfileSchema, primary.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
   await saveChatScenario(chatId, seedChatScenario(primaryProfile));
-  // Matrix seeding (relationship-model.plan.md §The matrix): the roster's pairs
-  // inherit the library-default edges; the in-chat matrix menu overrides on top.
+  // Matrix seeding: the roster's pairs inherit the library-default edges; the
+  // in-chat matrix menu overrides on top.
   await seedChatRelationships(chatId, characterIds);
 
-  // Preset seeding (spec §1.5): write the scenario fields exactly the way the
-  // scenario modal does — through the author-edit state path, on top of the
-  // authored seed (so the character's own cards apply when the preset has none).
-  // Roster semantics (multi-character-chat.plan.md slice 1): the shared scene —
-  // premise + cards — seeds EVERY member; the character-specific fields (outfit,
-  // exposure, the player-edge starting bands) seed the primary only.
+  // Preset seeding: write the scenario fields exactly the way the scenario modal
+  // does — through the author-edit state path, on top of the authored seed (so the
+  // character's own cards apply when the preset has none).
+  // Roster semantics: the shared scene — premise + cards — seeds EVERY member; the
+  // character-specific fields (outfit, exposure, the player-edge starting bands)
+  // seed the primary only.
   if (body.value.presetId) {
     const [preset] = await db()
       .select({
@@ -242,7 +239,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
     if (preset) {
       const cards = parseOr(z.array(socialReactionCardSchema), preset.socialCards, [], undefined, "chat_scenario_presets.social_cards");
       // The preset's full authored record seeds the primary's player edge —
-      // both band scalars AND the kind/history/mask texture (followups ruling 4).
+      // both band scalars AND the kind/history/mask texture.
       const live = authoredRecordToLive(
         parseOr(
           authoredRelationshipRecordSchema,

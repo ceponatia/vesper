@@ -11,8 +11,7 @@ const ownedChat = (user: { id: string }, params: Params) => loadOwnedChat(params
 const patchSchema = z.object({ enabled: z.boolean() }).strict();
 
 /**
- * The per-conversation visual-state narration switch (visual-state.plan.md
- * slice 7; owner ruling 2026-08-17).
+ * The per-conversation visual-state narration switch (owner ruling 2026-08-17).
  *
  * Its own tiny route rather than a field on the chat-state PATCH, for the same
  * reason `agentReasoningProfile` has one: this is OPERATIONAL configuration, not

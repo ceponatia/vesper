@@ -21,7 +21,7 @@ import {
 } from "@/lib/api-shadow";
 
 /**
- * The admin Engine Comparison screen (R4, engine.rollout.plan.md): the browser
+ * The admin Engine Comparison screen (R4): the browser
  * face of the legacy-vs-successor comparison substrate, so reviewing and ruling
  * never needs a raw API call. The route and storage names retain `shadow` for
  * compatibility; that is now an internal implementation term, not the feature name.

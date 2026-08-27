@@ -5,7 +5,7 @@ import { type ImageKind, type ImageRow, readImageBytes } from "./assets";
 
 /**
  * Generic owner-scoped image reads — moved out of the Image Lab's render kernel
- * (image-lab-general-model-trials.spec.md §Ownership rules) because their
+ * because their
  * meaning is coherent outside any one bench: "this owner's ready image, or
  * nothing". The Lab and the Image Generator both read inputs through here, and
  * the owner predicate is the authorization root — a foreign, unready, or
@@ -62,8 +62,7 @@ export async function readOrderedInputBytes(inputs: ImageLabInputList, ownerId: 
 // ---------------------------------------------------------------------------
 
 /**
- * The source-policy allowlist for the owner-scoped image picker
- * (image-lab-general-model-trials.spec.md §"Owned-image sources endpoint"):
+ * The source-policy allowlist for the owner-scoped image picker:
  * every stored kind EXCEPT the two pure system-bookkeeping ones. Derived from
  * the column's own enum rather than enumerated, so a new kind joins the picker
  * by default and exclusion stays the deliberate act.

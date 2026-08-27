@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { drive } from "@/server/test-support";
 import { buildInitiativeCue } from "./chat-initiative";
 
-describe("buildInitiativeCue (chat-initiative.plan.md)", () => {
+describe("buildInitiativeCue", () => {
   const base = { characterName: "Mara", playerName: "Theo", openLoops: [], drives: [], skipPending: false };
 
   it("hands her the opening move with her own material (loops + non-secret wants)", () => {
@@ -34,7 +34,7 @@ describe("buildInitiativeCue (chat-initiative.plan.md)", () => {
     expect(buildInitiativeCue(base)).toContain("open with what YOU are doing");
   });
 
-  it("an unseen shift (§8.4 v2) joins her material; absent ⇒ the pre-slice-2 cue byte-identical", () => {
+  it("an unseen shift joins her material; absent ⇒ the cue is byte-identical to the no-shift baseline", () => {
     const shifted = buildInitiativeCue({ ...base, recentShift: "Warm → close" });
     expect(shifted).toContain('what just shifted between you: "Warm → close"');
     expect(buildInitiativeCue({ ...base, recentShift: null })).toBe(buildInitiativeCue(base));

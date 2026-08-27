@@ -1,9 +1,9 @@
 import type { ItemLocus, SimulationMaterialItem } from "../contracts/materials";
 
 /**
- * Root-locus resolution and the authority-view contract (§26.1–26.2),
- * factored out of `materials.ts` so `material-condition.ts` (§26.7) can reuse
- * them without materials.ts importing material-condition.ts back — a
+ * Root-locus resolution and the authority-view contract, factored out
+ * of `materials.ts` so `material-condition.ts` can reuse them without
+ * materials.ts importing material-condition.ts back — a
  * materials.ts → material-condition.ts → materials.ts cycle is exactly what
  * `pnpm lint:cycles` (madge) exists to catch. Both `materials.ts`'s transfer/
  * destroy/consume resolvers and `material-condition.ts`'s
@@ -11,7 +11,7 @@ import type { ItemLocus, SimulationMaterialItem } from "../contracts/materials";
  * the other.
  */
 
-/** Bounded holding-chain walk (§26.1): at most this many container hops resolve. */
+/** Bounded holding-chain walk: at most this many container hops resolve. */
 export const MATERIAL_CHAIN_DEPTH_CAP = 8;
 
 /**
@@ -71,19 +71,19 @@ export interface MaterialResolutionView {
   storySecond: number;
   /** Identity of an actor, or undefined if the branch has no such actor. */
   actorById(actorId: string): { id: string; name: string } | undefined;
-  /** The actor's current zone (§13.2 physical locus), or null if not embodied. */
+  /** The actor's current zone (its physical locus), or null if not embodied. */
   actorZoneId(actorId: string): string | null;
   /** The location containing the actor's current zone; for the event envelope. */
   actorLocationId(actorId: string): string | null;
   /** The item with its current locus, container config, and owner, or undefined. */
   itemById(itemId: string): SimulationMaterialItem | undefined;
-  /** Count of items whose IMMEDIATE locus is this container (§26.2 capacity). */
+  /** Count of items whose IMMEDIATE locus is this container, for the capacity check. */
   containerOccupantCount(containerItemId: string): number;
   /**
-   * The live claim-holding-phase activity currently reserving this item
-   * (§26.5), or null. A reserved item is untouchable by every command-driven
-   * material path (transfer, destroy, consume) — only the reserving
-   * activity's own completion/interruption machinery may move it.
+   * The live claim-holding-phase activity currently reserving this item, or
+   * null. A reserved item is untouchable by every command-driven material
+   * path (transfer, destroy, consume) — only the reserving activity's own
+   * completion/interruption machinery may move it.
    */
   reservingActivityId(itemId: string): string | null;
 }
@@ -95,7 +95,7 @@ export function rootZoneId(root: RootLocus, view: MaterialResolutionView): strin
   return null;
 }
 
-/** Fail-closed §26.2 access check on the immediate container at a transfer end. */
+/** Fail-closed access check on the immediate container at a transfer end. */
 export function containerAccessAllowed(
   view: MaterialResolutionView,
   containerItemId: string,

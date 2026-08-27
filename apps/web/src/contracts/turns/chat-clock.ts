@@ -9,7 +9,7 @@ import {
 import { SCHEDULE_DAY_PARTS, type ScheduleDayPartId } from "../world/profile";
 
 /**
- * The chat lane's story calendar (chat-clock-calendar.plan.md). The chat clock
+ * The chat lane's story calendar. The chat clock
  * (`character_chats.clock_minutes`, minute 0 = the conversation's first beat) is
  * anchored to a real simulated calendar via the scenario's `calendarStart`:
  * `resolveGameTime` is `Date.UTC`-backed, so month lengths, leap years, and

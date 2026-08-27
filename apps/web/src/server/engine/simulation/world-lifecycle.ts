@@ -11,8 +11,7 @@ import {
 import { log } from "@/server/log";
 
 /**
- * A successor world's one destructive verb (successor-world-lifecycle.plan.md,
- * owner ruling E20-1).
+ * A successor world's one destructive verb (owner ruling E20-1).
  *
  * The schema makes it a single statement: `sim_branches` cascades from
  * `sim_worlds` and every branch-scoped table cascades from `sim_branches`, so
@@ -80,8 +79,7 @@ export interface OrphanSweepResult {
 }
 
 /**
- * Reclaim successor worlds nothing can ever reach again
- * (successor-world-lifecycle.plan.md slice 2, owner ruling E20-2).
+ * Reclaim successor worlds nothing can ever reach again (owner ruling E20-2).
  *
  * A world is an ORPHAN when all three hold:
  *

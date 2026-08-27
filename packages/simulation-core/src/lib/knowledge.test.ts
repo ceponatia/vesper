@@ -100,7 +100,7 @@ function acceptedEvent(input: DiscloseInput): DisclosureMadeEvent {
   return resolution.event;
 }
 
-/** Fold one disclosure with observations derived by the §20 rule table. */
+/** Fold one disclosure with observations derived by the observation rule table. */
 function fold(state: KnowledgeState, event: DisclosureMadeEvent, space = fixtureSpace()) {
   return applyDisclosureEvent(state, event, deriveEventObservations(event as SimulationBranchEvent, space));
 }
@@ -395,7 +395,7 @@ describe("E4.2 applyDisclosureEvent", () => {
     });
     state = fold(state, counter).state;
 
-    // Neither claim may present as current truth (§3.3).
+    // Neither claim may present as current truth.
     expect(state.assertions.get(claim.payload.derived.assertionId)?.status).toBe("contradicted");
     expect(state.assertions.get(counter.payload.derived.assertionId)?.status).toBe("contradicted");
     // Ben flips: the stronger telling wins his stance.

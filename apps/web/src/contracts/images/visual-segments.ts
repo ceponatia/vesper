@@ -19,8 +19,7 @@ import { IMAGE_SUBJECT_PROJECTION_OWNER } from "./subject-digest";
 import { visualImageMorphologyOf, type VisualImageDigest, type VisualImageFact } from "./visual-digest";
 
 /**
- * ONE digest → segments builder for every character-bearing lane
- * (image-lane-consolidation.plan.md Stage 3; spec.prompts.md §Segment mapping).
+ * ONE digest → segments builder for every character-bearing lane.
  *
  * This is the piece the avatar and scene cutovers both call: one subject's
  * slice of a `VisualImageDigest`, plus the canonical garment-coverage readout
@@ -44,8 +43,7 @@ import { visualImageMorphologyOf, type VisualImageDigest, type VisualImageFact }
  * The caller supplies {@link VisualFactClauseResolver}; a fact it cannot phrase
  * is suppressed with a reason, and a REQUIRED fact it cannot phrase lands in
  * `missingRequired` so the route refuses before provider spend rather than
- * rendering a character whose anchors quietly turned into hashes
- * (spec.prompts.md §Failure behavior).
+ * rendering a character whose anchors quietly turned into hashes.
  *
  * ## The three policy hooks
  *

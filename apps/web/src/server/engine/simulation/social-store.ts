@@ -58,7 +58,7 @@ import { InjectedSimulationCrash } from "./material-store";
 import { relationshipLedgerEntryFromRow } from "./social-recorder";
 import type { SimTx } from "./trigger-projector";
 
-/** Read helpers below run BOTH unlocked (pre-transaction, for the §19.3
+/** Read helpers below run BOTH unlocked (pre-transaction, for the
  * deliberator seam — see `submitDurableAttemptConsentEscalation`) and locked
  * (inside a command's `execute`) — same pattern as `body-store.ts`/
  * `space-store.ts`'s `DbExecutor`. */
@@ -84,7 +84,7 @@ type DbExecutor = Db | SimTx;
  * original Slice 1 comment here overstated the risk): this file DOES import
  * `relationshipLedgerEntryFromRow` (the READ-side row mapper) from
  * `social-recorder.ts` below, for `attempt_consent_escalation`'s dyad-ledger
- * load (§5.6). This is NOT a cycle: `social-recorder.ts` never imports this
+ * load. This is NOT a cycle: `social-recorder.ts` never imports this
  * file or `command-runner.ts`, so `social-store.ts → social-recorder.ts` and
  * `command-runner.ts → social-recorder.ts` are two independent one-directional
  * edges, not a cycle — verified by `pnpm lint:cycles`. `knowledge-store.ts`
@@ -131,7 +131,7 @@ async function loadRelationshipActorIds(tx: DbExecutor, branchId: string): Promi
 }
 
 // ---------------------------------------------------------------------------
-// record_relationship_entry (§5.2)
+// record_relationship_entry
 // ---------------------------------------------------------------------------
 
 export async function submitDurableRecordRelationshipEntry(
@@ -194,7 +194,7 @@ export async function submitDurableRecordRelationshipEntry(
 }
 
 // ---------------------------------------------------------------------------
-// record_relationship_change (§5.3)
+// record_relationship_change
 // ---------------------------------------------------------------------------
 
 export async function submitDurableRecordRelationshipChange(
@@ -257,17 +257,17 @@ export async function submitDurableRecordRelationshipChange(
 }
 
 // ---------------------------------------------------------------------------
-// attempt_consent_escalation (§5.6, ruling 16) — the fail-closed deliberator
+// attempt_consent_escalation (ruling 16) — the fail-closed deliberator
 // seam. Unlike the two authoring commands above, this resolution is
 // inherently ASYNC (it may await a live model call), so it has no separate
 // pure `resolveXFromView` in `lib/simulation/social.ts` — the pure pieces it
 // calls (`deriveRelationshipRead`, `deriveConsentEscalationCandidates`, and
-// the §19.3 deliberation-seam functions) stay pure; only the orchestration
+// the deliberation-seam functions) stay pure; only the orchestration
 // around them lives here.
 // ---------------------------------------------------------------------------
 
 /** Narrow dyad load: every ledger entry directed `fromActorId → toActorId`,
- * any kind — the utility score (§4.7) needs the full trust/attraction/
+ * any kind — the utility score needs the full trust/attraction/
  * resentment read, not just consent-scoped entries. */
 export async function loadDyadLedgerEntries(
   tx: DbExecutor,
@@ -290,7 +290,7 @@ export async function loadDyadLedgerEntries(
 }
 
 /**
- * §4.3/§5.6's wiring: an `authored_prior` entry's `weightOverride` is
+ * The authored-prior wiring: an `authored_prior` entry's `weightOverride` is
  * captured on its sourcing `relationship_entry_authored` event, never
  * persisted on the ledger row itself — load it back for every
  * `authored_prior` entry the dyad load surfaced. A source event with no
@@ -328,8 +328,8 @@ export async function loadAuthoredPriorWeights(
 /**
  * The ruling-16 fallback-pinning wrapper. `admitDeliberator`'s own
  * `fallbackCandidateId` is the GENERIC highest-deterministic-score
- * candidate — correct for departures (§18), wrong here: a well-liked NPC can
- * legitimately score `grant` above `decline` (§4.7), so the generic fallback
+ * candidate — correct for departures, wrong here: a well-liked NPC can
+ * legitimately score `grant` above `decline`, so the generic fallback
  * would resolve a model timeout/refusal/garbled response as a GRANT against
  * exactly the NPC ruling 16 says must never be silently granted. Overriding
  * `fallbackCandidateId` to `"decline"` UNCONDITIONALLY, before calling
@@ -380,7 +380,7 @@ export interface AttemptConsentEscalationSubmitOptions {
   crashAt?: DurableRelationshipCrashPoint;
   /**
    * Caution unique to THIS command (not a general `admitAtLockedVersion`
-   * concern): the §19.3 relationship read and model decision below are
+   * concern): the relationship read and model decision below are
    * computed pre-lock, from an unlocked snapshot, and are only safe to
    * persist because the locked phase's ordinary optimistic-version check
    * (`command.expectedVersion !== branch.version`) forces a `conflict` —
@@ -397,9 +397,9 @@ export interface AttemptConsentEscalationSubmitOptions {
    */
   admitAtLockedVersion?: boolean;
   /**
-   * Required, no default (§11 decision 3, revised): the caller's own
+   * Required, no default (decision 3, revised): the caller's own
    * player-controlled-actor set, mirroring `prepareEngagementTurn`'s
-   * `playerActorIds`. A player's consent is never policy-decided (§21.4) —
+   * `playerActorIds`. A player's consent is never policy-decided —
    * making this field non-optional in TypeScript enforces "no silent
    * default" at the strongest available level: a caller literally cannot
    * omit it, closing the gap the blueprint's runtime-rejection fallback was
@@ -407,34 +407,34 @@ export interface AttemptConsentEscalationSubmitOptions {
    */
   playerControlledActorIds: readonly string[];
   /**
-   * Required, no default (§5.6): the caller's own live per-turn/session
+   * Required, no default: the caller's own live per-turn/session
    * model-call budget tracker (the engine owns no such tracker itself, same
    * as `prepareEngagementTurn`'s `PrepareTurnDeliberation.modelBudgetRemaining`).
    * A caller with no budget tracking yet should pass `0`, which fails
    * admission closed (`no_model_budget`) — never omit this.
    */
   modelBudgetRemaining: number;
-  /** The injected §19.3 model seam — a stub in every test, zero live calls shipped. */
+  /** The injected model seam — a stub in every test, zero live calls shipped. */
   deliberate: (request: DeliberatorRequest) => Promise<unknown>;
   /** Settles when the caller's deadline passes; absent means no deadline. */
   timeout?: Promise<unknown>;
   /** Bounded, caller-redacted evidence lines shown to the model. */
   evidence?: readonly string[];
-  /** §5.6 admission-gap policy override — defaults to the versioned
+  /** Admission-gap policy override — defaults to the versioned
    * `CONSENT_ESCALATION_SCORE_GAP_THRESHOLD_FIXED_POINT`. */
   scoreGapThresholdFixedPoint?: number;
 }
 
 /**
- * §21.4/ruling 16: an uncovered `consent_covered` attempt routes through the
- * §19.3 deliberator seam with a deterministic fallback of decline, and the
+ * Ruling 16: an uncovered `consent_covered` attempt routes through the
+ * deliberator seam with a deterministic fallback of decline, and the
  * outcome lands back in the ledger either way — this command is that
  * escalation. Admission failing is NOT a rejection (only structural
  * problems — actor/target not found, unauthorized, player-controlled
  * target, not co-located — reject); a refused/timed-out/garbled admission
  * still ACCEPTS and records the decline outcome.
  *
- * Critical fix (Slice 3 review): the §19.3 model call is resolved HERE,
+ * Critical fix (Slice 3 review): the model call is resolved HERE,
  * before `runSimulationCommand` ever opens the locked branch transaction —
  * `command-runner.ts`'s own invariant for its `execute` callback is "Never
  * call a model or network under this lock," and every other model-call site
@@ -478,9 +478,9 @@ export async function submitDurableAttemptConsentEscalation(
         .limit(1);
       const atStorySecond = branchRow?.storySecond ?? 0;
 
-      // §5.6/§1.1: the score must reflect how much the TARGET trusts/is-
+      // The score must reflect how much the TARGET trusts/is-
       // attracted-to/resents the ACTOR — the target is the one deciding.
-      // `deriveRelationshipRead`'s own directional filter (§1.1) keeps only
+      // `deriveRelationshipRead`'s own directional filter keeps only
       // entries where `fromActorId === aboutActorId(actorId) && toActorId
       // === subjectActorId(targetActorId)` — i.e. entries directed ACTOR →
       // TARGET (evidence of the actor's conduct toward the target). The load
@@ -500,7 +500,7 @@ export async function submitDurableAttemptConsentEscalation(
       });
       const candidates = deriveConsentEscalationCandidates(read);
 
-      // E6.1: the deciding TARGET's real per-actor inference LOD (§28) —
+      // E6.1: the deciding TARGET's real per-actor inference LOD —
       // unassigned actors read the registry default (deliberator), which is
       // exactly what this call site hardcoded before the ledger existed. An
       // unlocked read, like everything else in this pre-lock pass.
@@ -522,7 +522,7 @@ export async function submitDurableAttemptConsentEscalation(
         deliberate: options.deliberate,
         ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
       });
-      // §4.3/§6.4: `read.diagnostics` (e.g. `authored_prior_missing_weight:<id>`)
+      // `read.diagnostics` (e.g. `authored_prior_missing_weight:<id>`)
       // is a data-integrity gap worth surfacing, not a silent no-op — merge it
       // into the persisted outcome so a missing authored_prior weight is
       // visible on the very event whose decision it degraded, not dropped on

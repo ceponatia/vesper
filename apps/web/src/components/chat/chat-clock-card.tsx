@@ -32,7 +32,7 @@ const SKIP_CHIPS: { label: string; amount: ChatSkipAmount }[] = [
 ];
 
 /**
- * The clock card (chat-clock-calendar.plan.md): story time made visible — day
+ * The clock card: story time made visible — day
  * counter, weekday + date, clock time + day-part — with the skip chips right
  * beside the display that makes them legible (each chip previews its landing),
  * and the "story starts on…" anchor editor behind the date. First tenant of the
@@ -132,7 +132,7 @@ export function ChatClockCard({
           ))}
         </div>
         {/* Landing previews visible without hover — the title tooltip above is invisible
-            on touch, so a phone tap was committing to a skip blind (mobile-ux.plan.md). */}
+            on touch, so a phone tap was committing to a skip blind. */}
         <div className="mt-1.5 flex flex-col gap-0.5 text-[10px] text-paper-600">
           {SKIP_CHIPS.map((chip) => (
             <span key={chip.amount}>

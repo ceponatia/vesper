@@ -3,8 +3,7 @@ import { defineAttributeAxis, toUnitInterval, type UnitInterval } from "../../..
 import { unitFieldIssue } from "./contribution";
 
 /**
- * `hair.length` → length scale + nominal anatomical reach
- * (body-attribute-affordances.spec.hair.md §"Inputs and ownership").
+ * `hair.length` → length scale + nominal anatomical reach.
  *
  * This axis owns geometry and nothing else. It does NOT write a combined
  * "mass": that is `dryBulkLoad`, derived once in hair mechanics from length,

@@ -15,10 +15,9 @@ import {
 
 /**
  * The Advanced Image Lab's recipes — code-defined `ImageModelProfile` values for
- * the `controlled_portrait` / `controlled_scene` experiment kinds
- * (qwen-advanced-image-subsystem.spec.md, Stages 1–2), for the Stage 3
- * `finishing_pass`, for the Stage 6 `two_character_scene`, and for the
- * `staged_scene` bench (intimate-scene-lora.spec.md §"Slice 2").
+ * the `controlled_portrait` / `controlled_scene` experiment kinds (Stages 1–2),
+ * for the Stage 3 `finishing_pass`, for the Stage 6 `two_character_scene`, and
+ * for the `staged_scene` bench.
  *
  * A recipe is CODE, deliberately not a row in `image_model_profiles`, for two
  * reasons that outweigh the convenience of editing it on the admin page:
@@ -225,9 +224,9 @@ export function imageLabTwoCharacterRecipeKey(controlKind: ImageLabControlKind |
  * declared control required when there is one, and deliberately nothing else
  * allowed.
  *
- * Required, because the plan's own two-character rule is a refusal rather than a
- * trim — "if all required identities and the selected control do not fit, the
- * workflow is ineligible rather than silently dropping a character". A dropped
+ * Required, because the two-character rule is a refusal rather than a
+ * trim: if all required identities and the selected control do not fit, the
+ * workflow is ineligible rather than silently dropping a character. A dropped
  * identity here is not a thinner render, it is a DIFFERENT experiment: the row
  * says two people and the image has one, and the verdict `character_missing`
  * would be filed against the planner rather than against the model.
@@ -482,7 +481,7 @@ export function imageLabFinishingRecipeProfile(
  * The experiment kinds a finishing pass may refine.
  *
  * A finishing pass edits a render and files its verdict against the comparison
- * the plan names — direct edit, controlled result, controlled result plus
+ * it belongs to — direct edit, controlled result, controlled result plus
  * finishing — so its source has to be a production-shaped render of the
  * subject. The four that qualify are the two controlled kinds and the two
  * BASELINES: the direct-edit baseline is one of the three images that
@@ -497,7 +496,7 @@ export function imageLabFinishingRecipeProfile(
  *   a ruling about the probe's ad-hoc prompt wearing Stage 3's name.
  * - `finishing_pass`, because a chain has no bottom. Each pass re-edits the last
  *   one's output, so drift accumulates with nothing to attribute it to, and the
- *   plan's promotion rule — improves identity, changes nothing else — is a
+ *   promotion rule — improves identity, changes nothing else — is a
  *   judgment about ONE pass over a known base.
  * - `staged_scene`, because the pass would undo the render it was handed. A
  *   finishing pass runs the identity recipe on the pinned identity model with no

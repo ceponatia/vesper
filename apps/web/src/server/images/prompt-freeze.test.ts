@@ -10,8 +10,8 @@ import { buildSceneRenderPrompt } from "./prompts-scene-render";
 import { buildVariantInstruction } from "./prompts-variant";
 
 /**
- * The Stage 0 payload freeze (model-aware-image-prompts.plan.md §"Stage 0 —
- * research and current-behavior freeze").
+ * The Stage 0 payload freeze — the current-behavior record every later
+ * prompt-program cutover is compared against.
  *
  * Every lane below still runs its ORIGINAL prose builder, and each will
  * eventually be re-expressed as a prompt program compiled from a world digest.

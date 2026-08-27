@@ -3,7 +3,7 @@ import { characterChats, db } from "../db";
 
 /**
  * Is visual-state narration on for THIS conversation?
- * (visual-state.plan.md slice 7; owner ruling 2026-08-17.)
+ * (Owner ruling 2026-08-17.)
  *
  * A per-chat switch rather than a deploy-wide flag, because the paid round could
  * not measure the benefit: the trial's own induction gate refused a verdict, so

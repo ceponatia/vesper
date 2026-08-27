@@ -2,7 +2,7 @@ import { z } from "zod";
 import { unitIntervalSchema } from "../affordances/core";
 
 /**
- * Typed composition between features (visual-state.spec.md §Composition).
+ * Typed composition between features.
  *
  * Composition keeps retained features TRACEABLE instead of flattening the
  * layers into one winner: wetness modifies a hairstyle, a wig replaces natural

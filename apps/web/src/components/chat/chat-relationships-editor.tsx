@@ -11,9 +11,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * The per-conversation relationship matrix editor (relationship-model.plan.md
- * §The matrix): one card per roster pair — kind + history are shared-cell
- * (written to both directed rows identically), the stances show two columns
+ * The per-conversation relationship matrix editor: one card per roster pair —
+ * kind + history are shared-cell (written to both directed rows identically),
+ * the stances show two columns
  * behind a mirrored-by-default asymmetric toggle. Storage stays fully directed.
  * The character→player edge is edited in the existing Relationship panel /
  * state tools, not here.
@@ -39,7 +39,7 @@ interface PairDraft {
   ba: DirectionDraft;
 }
 
-/** One "them → you" card (followups ruling 5): a member's player edge. */
+/** One "them → you" card: a member's player edge. */
 interface PlayerDraft {
   characterId: string;
   name: string;

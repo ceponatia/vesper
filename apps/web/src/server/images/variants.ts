@@ -57,8 +57,8 @@ async function resolveNsfwTestRoute(profile: ResolvedImageProfile, sink?: Diagno
 /**
  * A refused variant render's diagnostic: the standalone visual digest could not
  * make the character render-eligible — a required fact resolved no clause, or
- * the assembly itself threw. The row is failed BEFORE any provider spend
- * (spec.prompts.md §Failure behavior), through `failedPrecondition` rather than
+ * the assembly itself threw. The row is failed BEFORE any provider spend,
+ * through `failedPrecondition` rather than
  * `produce`, so no `images.variant.generate_failed` fires: a render that never
  * ran did not fail to generate.
  */
@@ -314,7 +314,7 @@ const hiddenKinds: readonly ImageKind[] = HIDDEN_IMAGE_KINDS;
 /**
  * Promotes a ready variant (or avatar) to the character's canonical avatar.
  *
- * Owner-strict in its OWN queries (security-authz.plan.md §Follow-ups item 2):
+ * Owner-strict in its OWN queries:
  * the promote route gates on `findOwnedCharacter` first, but a mutating service
  * must verify ownership itself rather than inherit it from a caller — and must
  * not infer it from `entityKind`/`entityId`, which are unverified metadata with
@@ -341,7 +341,7 @@ export async function promoteVariant(characterId: string, imageId: string, owner
   // identity face crop passes every other check here — it is owned, ready, and
   // pointed at this character — so without this guard the owner's own crop could
   // be promoted to their canonical avatar, which would then derive the next pack
-  // from a crop of a crop (image-identity-packs.spec.data.md §"Hidden image asset").
+  // from a crop of a crop.
   if (hiddenKinds.includes(image.kind)) {
     return denyPromotion("images.promote.hidden_kind", "image is not a promotable portrait", characterId, imageId, ownerId);
   }

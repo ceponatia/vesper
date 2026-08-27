@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 /**
- * Who the player is in ONE conversation, and what they're wearing
- * (persona-library.plan.md slices 7–8) — the player's half of `character_chat_state`,
+ * Who the player is in ONE conversation, and what they're wearing — the player's
+ * half of `character_chat_state`,
  * which is keyed by character and so has nowhere to put them.
  *
  * Chat-wide by nature: one player, many roster characters. It rides ONE jsonb column
@@ -14,7 +14,7 @@ import { z } from "zod";
  * path — a persona is a library entity with real outfit presets, so exposure is ALWAYS
  * computed from worn coverage via `exposedRegions`. A togglable flag here would be a
  * hole straight through the scene-image coverage gate that decides whether the viewer's
- * anatomy renders (scene-pov-embodiment.plan.md).
+ * anatomy renders.
  */
 /**
  * The worn list, read PER ELEMENT: a malformed element drops alone so the

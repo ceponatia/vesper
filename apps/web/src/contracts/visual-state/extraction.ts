@@ -28,8 +28,7 @@ import {
 import { visualStateKindRegistry } from "./registry";
 
 /**
- * Reference-image extraction (visual-state.plan.md slice 9; visual-state.spec.md
- * §Reference-image extraction).
+ * Reference-image extraction.
  *
  * A canonical image may PROPOSE structured identity and presentation facts; it
  * may never write them. This module owns the pure half of that workflow:
@@ -56,7 +55,7 @@ import { visualStateKindRegistry } from "./registry";
 // Vocabulary
 // ---------------------------------------------------------------------------
 
-/** The canonical owners a proposal may target (spec §Reference-image extraction). */
+/** The canonical owners a proposal may target. */
 export const visualExtractionTargetOwners = ["attribute", "located_fact", "presentation"] as const;
 export const visualExtractionTargetOwnerSchema = z.enum(visualExtractionTargetOwners);
 export type VisualExtractionTargetOwner = (typeof visualExtractionTargetOwners)[number];
@@ -110,8 +109,7 @@ export type VisualExtractionImageRegion = z.infer<typeof visualExtractionImageRe
 // ---------------------------------------------------------------------------
 
 /**
- * The wire shape of one proposal (spec §Reference-image extraction, with one
- * recorded addition: `locus`). The spec's shape carries no locus, but a located
+ * The wire shape of one proposal, with `locus` deliberately added: a located
  * fact cannot be located and a presentation entry cannot be placed without one,
  * so located-fact and presentation proposals REQUIRE a body locus and attribute
  * proposals must NOT carry one — an attribute is body-wide by its own contract,

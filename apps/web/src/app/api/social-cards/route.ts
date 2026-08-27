@@ -18,7 +18,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
   const q = req.nextUrl.searchParams.get("q") ?? undefined;
   const tags = parseTagsParam(req.nextUrl.searchParams.get("tag"));
   const sort = parseOrNull(z.enum(["updated", "name"]), req.nextUrl.searchParams.get("sort"));
-  // Discovery scope (auth.plan.md): all|public|owned; default owner-only.
+  // Discovery scope: all|public|owned; default owner-only.
   const scopeParam = req.nextUrl.searchParams.get("scope");
   const scope = scopeParam === "all" || scopeParam === "public" ? scopeParam : "owned";
   const ids = await searchLibraryIds("social_card", user.id, { q, tags, sort: sort ?? undefined, scope });

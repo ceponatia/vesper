@@ -3,11 +3,10 @@ import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { characterChatMessages, characterChats, db, simBranches, simItemHoldings } from "@/server/db";
 
-// R3 slices 1–2 (engine.rollout.plan.md) — the sim routes under /chat/: the
-// gate (409 for unrouted chats), one full turn through prepare → render
-// (AI_FAKE demo fallback; zero live calls) landing in the transcript, and
-// typed player commands with §14.4 public-face refusals. Self-skips without
-// a database.
+// R3 — the sim routes under /chat/: the gate (409 for unrouted chats), one
+// full turn through prepare → render (AI_FAKE demo fallback; zero live calls)
+// landing in the transcript, and typed player commands whose refusals answer
+// 200 with a public reason. Self-skips without a database.
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Sim Routes Int", role: "user" as const },
@@ -130,7 +129,7 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     expect(chat2Messages.filter((row) => row.role === "user")).toHaveLength(1);
     expect(chat2Messages.filter((row) => row.role === "assistant")).toHaveLength(1);
 
-    // give_item: not-held is the §14.4 public face at 200 (the card reads the
+    // give_item: not-held is the public face at 200 (the card reads the
     // refusal body, matching travel); the held keepsake transfers.
     const notHeld = await simCommand(
       jsonReq(`/api/chats/${chat}/sim-command`, { kind: "give_item", itemId: "rollout-item-loaf" }),
@@ -151,7 +150,7 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     expect(holding?.actorId).toBe(ROLLOUT_ACTORS.ana);
 
     // End the scene, rest at home, and hit the claim law moving mid-rest —
-    // a §14.4 public refusal with a reason, never a private cause.
+    // a public refusal with a reason, never a private cause.
     const ended = await simCommand(jsonReq(`/api/chats/${chat}/sim-command`, { kind: "end_scene" }), ctx(chat));
     expect(ended.status).toBe(200);
 
@@ -205,7 +204,7 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
       .where(eq(characterChats.id, chat));
     expect(JSON.stringify(chatRow?.lastReplyFailure ?? null)).toContain("the scene could not open");
 
-    // R3 slice 4 (ruling 17): the player's time skip — advance_time drains the
+    // R3, ruling 17: the player's time skip — advance_time drains the
     // bounded story-time advance (completing the rest above), the state
     // envelope carries the WORLD clock, and the next send opens fresh.
     const [beforeAdvance] = await db()
@@ -238,8 +237,8 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     expect(legacySkip.status).toBe(409);
   });
 
-  // sim-read-seam-guards.plan.md slice 4 (folded C16) — the composed choreography
-  // the turn-loop read consolidation (slice 3) must preserve byte-for-byte:
+  // The composed choreography the turn-loop read consolidation must preserve
+  // byte-for-byte:
   // walk-with-me → co-present render at the destination, a natural-language
   // departure → solo render at the arrival, and a primary-absent solo turn that
   // still advances time. Positions + render kind (a committed cutId vs. the empty
@@ -316,7 +315,7 @@ describe.runIf(ready)("R3 sim routes under /chat/", () => {
     expect(afterSolo?.storySecond ?? 0).toBeGreaterThan(beforeSolo?.storySecond ?? 0);
   });
 
-  // command-integrity.plan.md slice 2 (A2). Ruling A2-1 — the world's clock wins, on the
+  // A2, ruling A2-1 — the world's clock wins, on the
   // SOLO path. The two tests above leave Mara@home and Ana@square (not co-present), so a
   // fresh send here runs the solo turn. Its span advance is now tolerant (`at_least`): a
   // concurrent skip that overtook the span is a LEGAL race, not a degrade. Before A2 the

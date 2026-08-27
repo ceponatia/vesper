@@ -43,8 +43,7 @@ import type { VisualStateSuppression } from "./suppression";
 
 /**
  * Body language from the scene / body-relations owner and the contact
- * lifecycle beside it (visual-state.plan.md §Slice 4;
- * visual-state.audit.md findings 12 and 13).
+ * lifecycle beside it.
  *
  * ASSERTED FACTS ONLY. Everything projected here is a committed scene fact
  * with provenance — a stated posture, a stated support set, a stated facing, a
@@ -58,7 +57,7 @@ import type { VisualStateSuppression } from "./suppression";
  * Three body-language facts have NO owner anywhere in the app — gaze, fine
  * joint pose, and emotion-derived microexpression — and those are the ones
  * this module reports as suppressions with a diagnostic, once per projected
- * subject (plan §First-release source map; audit finding 14). The projection
+ * subject. The projection
  * returns them beside the features rather than folding them into a snapshot,
  * the same split `buildRecognitionCandidates` uses: the caller owns what the
  * inspector sees.
@@ -103,9 +102,9 @@ export interface VisualStateBodyLanguageProjection {
 }
 
 /**
- * The facts the plan names as explicitly unavailable: no owner anywhere in the
+ * The facts that are explicitly unavailable: no owner anywhere in the
  * app can assert them, and the ruling is silence plus a diagnostic rather than
- * a plausible guess (plan §Missing owners mean silence).
+ * a plausible guess — missing owners mean silence.
  */
 export const bodyLanguageUnavailableFacts = ["gaze", "fine_joint_pose", "microexpression"] as const;
 export type BodyLanguageUnavailableFact = (typeof bodyLanguageUnavailableFacts)[number];
@@ -474,8 +473,8 @@ function contactEndLocus(
  * ids pass through the participant→subject map exactly as facing's toward end
  * does, so a consumer can resolve them against the snapshot's subjects.
  *
- * Nothing else, on purpose (romantic-contact-affordances.spec.effects.md §5's
- * must-not list): no permission state, no pressure, no motion (its own kind
+ * Nothing else, on purpose — the must-not list: no permission state, no
+ * pressure, no motion (its own kind
  * carries that), no emotion, and no rejected alternative — the strict value
  * schema refuses an extra field at validation.
  */

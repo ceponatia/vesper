@@ -48,9 +48,9 @@ describe("dataRoot / paths", () => {
   });
 
   /**
-   * The apps/web move's release blocker, asserted rather than assumed
-   * (monorepo-image-core.spec.apps-web.md §"Persistent image storage and process
-   * working directory"). The repository root is derived from this file's own
+   * The apps/web move's release blocker, asserted rather than assumed: the
+   * persistent image storage must not follow the process working
+   * directory. The repository root is derived from this file's own
    * location — five levels up from src/server/images — so the check is
    * independent of where the runner happens to be started, and an unset
    * DATA_ROOT that began resolving under apps/web (which is what a Next process
@@ -181,8 +181,7 @@ function rowError(values: Record<string, unknown> | undefined): unknown {
  * The one reserve → generate → save-or-fail → log sequence (audit C1). These pin
  * the shell's own contract — which hooks fire on which path, and the warn
  * diagnostic a thrown generation records, since recording it in EVERY lane is
- * the deliberate resilience change slice 4 shipped
- * (image-pipeline-consolidation.plan.md §Review rulings 2026-07-30).
+ * the deliberate resilience change slice 4 shipped (ruled 2026-07-30).
  */
 describe("runImagePipeline", () => {
   const asset = { ownerId: RESERVED.ownerId, kind: "avatar" as const };

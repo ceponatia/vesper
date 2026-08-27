@@ -29,8 +29,7 @@ import { QWEN_IMAGE_FAMILY } from "./shared";
  * apple in 16 of 16 paired renders across both sampling paths; upstream
  * reporting gives the mechanism, which is that the model was never trained on
  * negative conditioning and the parameter exists for pipeline compatibility
- * (`docs/image-models/models/qwen-image-2512.md` §"Negative-prompt ruling"; the
- * measurement itself is `model-aware-image-prompts.trial.qwen-2512-negative.md`).
+ * (`docs/image-models/models/qwen-image-2512.md` §"Negative-prompt ruling").
  * Composing the feature
  * would make this endpoint claim a capability whose only effect is that
  * exclusions vanish where nobody can see them. The positive channel is the only

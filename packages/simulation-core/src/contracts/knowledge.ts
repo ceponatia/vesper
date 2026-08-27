@@ -29,9 +29,9 @@ import { observationConfidenceSchema } from "./perception";
  * each hop preserves provenance through an explicit event, so "who told whom"
  * is always reconstructible.
  *
- * Both ledgers are DERIVED projections of the event stream (like §20
- * observations): every id is deterministic, every update is a pure fold, and
- * a rebuilt branch mints identical rows bit-for-bit.
+ * Both ledgers are DERIVED projections of the event stream (like observations):
+ * every id is deterministic, every update is a pure fold, and a rebuilt branch
+ * mints identical rows bit-for-bit.
  */
 
 export const KNOWLEDGE_DERIVATION_VERSION = "knowledge-v1" as const;
@@ -65,7 +65,7 @@ export const assertionStatuses = ["active", "contradicted", "superseded", "retra
 export const assertionStatusSchema = z.enum(assertionStatuses);
 export type AssertionStatus = z.infer<typeof assertionStatusSchema>;
 
-/** Legal §21.1 status moves, exported so kernel and tests share one truth. */
+/** Legal status moves, exported so kernel and tests share one truth. */
 export const assertionStatusTransitions: Record<AssertionStatus, readonly AssertionStatus[]> = {
   active: ["contradicted", "superseded", "retracted"],
   contradicted: ["superseded", "retracted"],
@@ -126,7 +126,7 @@ export const beliefSchema = z
     holderActorId: worldCharacterIdSchema,
     assertionId: assertionIdSchema,
     confidenceFixedPoint: observationConfidenceSchema,
-    /** The §20 observations this belief rests on (the disclosure as heard). */
+    /** The observations this belief rests on (the disclosure as heard). */
     basisObservationIds: z.array(observationIdSchema).max(8),
     /** Provenance path, oldest → newest teller. A path, not a set: order is the route. */
     learnedFromActorIds: z.array(worldCharacterIdSchema).max(MAX_LEARNED_FROM_CHAIN),
@@ -230,7 +230,7 @@ const disclosureMadePayloadSchema = z
     ),
     content: disclosureContentSchema,
     /**
-     * Captured §6.4 derivation — the values the belief fold consumes, frozen
+     * Captured derivation — the values the belief fold consumes, frozen
      * at command time so replay never re-reads mutable belief rows:
      * the assertion this disclosure is about, the teller's confidence at the
      * moment of telling (10 000 for an original claim or retraction, the

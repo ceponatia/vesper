@@ -26,18 +26,18 @@ import {
  * replaces the Gate 1 `transfer_item` v1 stand-in (pseudo-container rows,
  * captured witness sets) wholesale — no legacy wrappers.
  *
- * Slice 2 (§26.5–26.6) adds resource reservations (activities.ts) and
- * consumption: `consume_item` and the completion path of a `consume`-
- * disposition resource cost both emit `item_consumed`, with trailing
- * `body_source_applied` events for the item's authored `consumptionEffects`
- * integrated through the §25 body kernel in the same transaction.
+ * Slice 2 adds resource reservations (activities.ts) and consumption:
+ * `consume_item` and the completion path of a `consume`-disposition resource
+ * cost both emit `item_consumed`, with trailing `body_source_applied` events
+ * for the item's authored `consumptionEffects` integrated through the body
+ * kernel in the same transaction.
  */
 
 /** Stamped on every material event, matching the sibling domains' convention (bodies, scheduler). */
 export const materialDerivationVersion = "material-v1" as const;
 
 // ---------------------------------------------------------------------------
-// Holding locus (§26.1)
+// Holding locus
 // ---------------------------------------------------------------------------
 
 /**
@@ -70,7 +70,7 @@ export type ItemLocus = z.infer<typeof itemLocusSchema>;
 export type ItemLocusInput = z.input<typeof itemLocusSchema>;
 
 // ---------------------------------------------------------------------------
-// Containers (§26.2)
+// Containers
 // ---------------------------------------------------------------------------
 
 const containerAllowListSchema = createStableStringSetSchema(
@@ -100,7 +100,7 @@ export const itemContainerConfigSchema = z
 export type ItemContainerConfig = z.infer<typeof itemContainerConfigSchema>;
 
 // ---------------------------------------------------------------------------
-// Consumption effects (§26.6) — authored per item, applied through the §25 body kernel
+// Consumption effects — authored per item, applied through the body kernel
 // ---------------------------------------------------------------------------
 
 /** The body-source vocabulary a meal/drink/adjustment may report through (a restricted
@@ -119,7 +119,7 @@ export const itemConsumptionEffectSchema = z
 export type ItemConsumptionEffect = z.infer<typeof itemConsumptionEffectSchema>;
 
 // ---------------------------------------------------------------------------
-// Material item + projection (§26)
+// Material item + projection
 // ---------------------------------------------------------------------------
 
 export const simulationMaterialItemSchema = z
@@ -132,9 +132,9 @@ export const simulationMaterialItemSchema = z
     ownerActorId: worldCharacterIdSchema.nullable().default(null),
     /** Present iff this item is itself a container (capacity + access both set). */
     container: itemContainerConfigSchema.optional(),
-    /** Authored §26.6 body effects a consumption applies, in authored order. */
+    /** Authored body effects a consumption applies, in authored order. */
     consumptionEffects: z.array(itemConsumptionEffectSchema).max(4).optional(),
-    /** §26.7: whether this item carries item-condition (wear/cleanliness) meters. */
+    /** Whether this item carries item-condition (wear/cleanliness) meters. */
     conditionTracked: z.boolean().default(false),
     locus: itemLocusSchema,
   })
@@ -142,7 +142,7 @@ export const simulationMaterialItemSchema = z
 export type SimulationMaterialItem = z.infer<typeof simulationMaterialItemSchema>;
 export type SimulationMaterialItemInput = z.input<typeof simulationMaterialItemSchema>;
 
-/** Actors keep only identity here; perception (`observedContainerIds`) is §20's job now. */
+/** Actors keep only identity here; perception (`observedContainerIds`) is observations' job now. */
 export const simulationMaterialActorSchema = z
   .object({
     id: worldCharacterIdSchema,
@@ -179,7 +179,7 @@ const materialWorldSeedSchema = z
 
 /**
  * World lifecycle vocabulary. "archived" was dropped with the `sim_worlds.status`
- * column's enum (successor-world-lifecycle.plan.md slice 1, owner ruling E20-1):
+ * column's enum (owner ruling E20-1):
  * nothing ever set it and a successor world is hard-deleted with its chat, so an
  * archived world had no way back and no UI. "paused" stays unused-but-reserved.
  */
@@ -210,7 +210,7 @@ export type MaterialBranchSeed = z.infer<typeof materialBranchSeedSchema>;
 export type MaterialBranchSeedInput = z.input<typeof materialBranchSeedSchema>;
 
 // ---------------------------------------------------------------------------
-// transfer_item (v2) — §26.4 transfer law
+// transfer_item (v2) — transfer law
 // ---------------------------------------------------------------------------
 
 /**
@@ -264,7 +264,7 @@ export const transferItemCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// destroy_item (v1) — §26.1 gone/terminal (consumed arrives with slice 2)
+// destroy_item (v1) — gone/terminal (consumed arrives with slice 2)
 // ---------------------------------------------------------------------------
 
 /** `consumed` arrives with slice 2's consume path — excluded here on purpose. */
@@ -307,7 +307,7 @@ export const destroyItemCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// consume_item (v1) — §26.6 consumption
+// consume_item (v1) — consumption
 // ---------------------------------------------------------------------------
 
 const consumeItemPayloadSchema = z
@@ -345,7 +345,7 @@ export const consumeItemCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// set_item_ownership (v1) — §26.3 ownership is social, not physical
+// set_item_ownership (v1) — ownership is social, not physical
 // ---------------------------------------------------------------------------
 
 const setItemOwnershipPayloadSchema = z
@@ -376,13 +376,13 @@ export const setItemOwnershipCommandResultSchema = createCommandResultSchema(
 );
 
 // ---------------------------------------------------------------------------
-// Material event family (§9.2)
+// Material event family
 // ---------------------------------------------------------------------------
 
 /**
- * `againstOwnership` records that the acting actor was not the item's set owner
- * (§26.3). v1 never physically blocks a transfer on ownership — consequences
- * land through the E5.5 social ledger, not through movement rejection.
+ * `againstOwnership` records that the acting actor was not the item's set owner.
+ * v1 never physically blocks a transfer on ownership — consequences land
+ * through the E5.5 social ledger, not through movement rejection.
  */
 const itemTransferredPayloadSchema = z
   .object({
@@ -419,10 +419,10 @@ export const itemDestroyedEventSchema = createEventEnvelopeSchema(
 
 /**
  * `fromLocus` is the item's locus just before it went gone/consumed — the
- * same reverse-derivation shape `item_destroyed` uses (§29's replay reads it
+ * same reverse-derivation shape `item_destroyed` uses (replay reads it
  * identically). Trailing `body_source_applied` events for the item's authored
  * `consumptionEffects` are separate events in the same transaction, causation-
- * chained to this one (§26.6) — not part of this payload.
+ * chained to this one — not part of this payload.
  */
 const itemConsumedPayloadSchema = z
   .object({

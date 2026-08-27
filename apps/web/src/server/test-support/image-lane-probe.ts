@@ -21,9 +21,7 @@ import type { VisualStateShadowInput } from "@/server/visual-state";
 import { attr, makeProfile } from "./profile-fixtures";
 
 /**
- * The pre-migration probe for the character-bearing image lanes
- * (image-lane-consolidation.plan.md Stage 1, spec.prompts §"Characterization and
- * comparison").
+ * The pre-migration probe for the character-bearing image lanes.
  *
  * The consolidation moves every lane off its own appearance builder and onto one
  * visual digest. The failure it must not cause is a **lost, duplicated, or newly
@@ -47,7 +45,7 @@ import { attr, makeProfile } from "./profile-fixtures";
  * in `server/images/lane-characterization.test.ts`.
  */
 
-/** Which digest bucket a probed fact belongs to (spec.prompts §"Segment mapping"). */
+/** Which digest bucket a probed fact belongs to. */
 export type VisualFactBucket =
   | "identity"
   | "morphology"
@@ -64,8 +62,8 @@ export interface VisualFactProbe {
   key: string;
   bucket: VisualFactBucket;
   /**
-   * Mandatory for every character-bearing lane once the consolidation lands
-   * (plan §"Mandatory facts do not compete with salience"). NOT an assertion
+   * Mandatory for every character-bearing lane once the consolidation lands —
+   * mandatory facts do not compete with salience. NOT an assertion
    * about today — several lanes are missing mandatory facts right now, and
    * recording that gap is the point of the freeze.
    */

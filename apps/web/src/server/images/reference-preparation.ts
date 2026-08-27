@@ -5,8 +5,8 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { SHARP_DECODE_LIMITS, WEBP_QUALITY } from "./assets";
 
 /**
- * Reference preparation ahead of transport (image-model-capabilities.spec.md
- * §"Preparation"): the sharp pass every reference and control image crosses in
+ * Reference preparation ahead of transport: the sharp pass every reference and
+ * control image crosses in
  * `renderWithModel` before its bytes reach `@vesper/image-replicate`.
  *
  * It lives here rather than in a package because sharp execution is Node-only

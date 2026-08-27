@@ -60,7 +60,7 @@ import { applyTriggerScheduledEvent } from "./trigger-projector";
  * The E5.4 IDENTITY-and-POLICY household commands: who a household is, who
  * belongs to it, what means band a subject holds, and how a restock routine is
  * configured. Modeled on material-store.ts — every command runs through the shared
- * `runSimulationCommand` shell (§11.1) rather than a hand-rolled transaction,
+ * `runSimulationCommand` shell rather than a hand-rolled transaction,
  * so observation/knowledge/soft-canon/memory folds come free.
  *
  * The four commands that move material QUANTITY (adjust, transfer, promotion,
@@ -70,7 +70,7 @@ import { applyTriggerScheduledEvent } from "./trigger-projector";
  */
 
 // ---------------------------------------------------------------------------
-// create_household (§26.8)
+// create_household
 // ---------------------------------------------------------------------------
 
 export async function submitDurableCreateHousehold(
@@ -139,7 +139,7 @@ export async function submitDurableCreateHousehold(
 }
 
 // ---------------------------------------------------------------------------
-// set_household_membership (§26.8)
+// set_household_membership
 // ---------------------------------------------------------------------------
 
 export async function submitDurableSetHouseholdMembership(
@@ -229,7 +229,7 @@ export async function submitDurableSetHouseholdMembership(
 }
 
 // ---------------------------------------------------------------------------
-// set_means_band (§26.10)
+// set_means_band
 // ---------------------------------------------------------------------------
 
 export async function submitDurableSetMeansBand(
@@ -323,7 +323,7 @@ export async function submitDurableSetMeansBand(
 }
 
 // ---------------------------------------------------------------------------
-// configure_restock_routine (§26.11)
+// configure_restock_routine
 // ---------------------------------------------------------------------------
 
 export async function submitDurableConfigureRestockRoutine(
@@ -368,7 +368,7 @@ export async function submitDurableConfigureRestockRoutine(
       if (!resolution.ok) return rejectedResult(command.id, resolution.code, resolution.publicReason);
 
       // Unconditionally retire any pending alarm for this (householdId,
-      // materialKindKey) BEFORE arming a fresh one (§5.6) — a reconfigure
+      // materialKindKey) BEFORE arming a fresh one — a reconfigure
       // always invalidates whether or not a fresh arm follows.
       await retirePendingRestockTriggers(
         tx,

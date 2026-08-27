@@ -173,7 +173,7 @@ describe("resolveMoveTogether — accept", () => {
   });
 });
 
-describe("resolveMoveTogether — decline (§14.4 face)", () => {
+describe("resolveMoveTogether — face-saving decline", () => {
   it("declines when a claim-holding activity occupies the co-traveller's body", () => {
     const resolution = resolveMoveTogether(view({ activities: [bodyActivity(PRIMARY)] }), command());
     expect(resolution.ok).toBe(false);
@@ -226,7 +226,7 @@ describe("resolveMoveTogether — the refusal taxonomy", () => {
     expect(resolution.code).toBe("actor_in_transit");
   });
 
-  it("refuses a principal that does not control the player (§14.2)", () => {
+  it("refuses a principal that does not control the player", () => {
     const uncontrolled = command({}, { principal: testPrincipal("player", ["actor-other"]) });
     const resolution = resolveMoveTogether(view(), uncontrolled);
     expect(resolution.ok).toBe(false);

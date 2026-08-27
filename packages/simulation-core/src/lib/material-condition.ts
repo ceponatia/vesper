@@ -60,7 +60,7 @@ import { compareStableText, simulationHash } from "./hash";
 
 /**
  * E5.3 slice 3 — the pure item-condition kernel. Wear and
- * cleanliness ride the SAME §25 fixed-point machinery bodies use — this file
+ * cleanliness ride the SAME fixed-point machinery bodies use — this file
  * reuses `integrateMeterValue`, `solveNextThresholdCrossing`,
  * `modifiersLiveAt`, and `thresholdCrossed` from `./bodies` AS-IS rather than
  * reimplementing analytic drift or threshold search. Those functions are
@@ -351,7 +351,7 @@ function buildItemConditionSourceEvent(args: {
  * because `solveNextThresholdCrossing` only ever solves a FUTURE crossing
  * via analytic drift — for a `driftLaw: "none"` meter (wear) there is no
  * drift to solve, so its `worn_out` threshold can NEVER be armed through the
- * scheduled-alarm path the §25 kernel gives `cleanliness`; a discrete delta
+ * scheduled-alarm path the meter kernel gives `cleanliness`; a discrete delta
  * is the only thing that ever moves it, so the crossing must be detected
  * synchronously, right here, or it can never fire at all.
  */
@@ -508,7 +508,7 @@ export interface ItemConditionResolutionView extends BodyBranchMeta {
   condition?: ItemConditionView;
   /**
    * Co-located witnesses, captured by the store, for an instantly-crossed
-   * noticeable threshold (§20's capture idiom). Defaults to none — a store
+   * noticeable threshold (the capture idiom). Defaults to none — a store
    * that doesn't supply it simply witnesses nothing, never wrongly.
    */
   coLocatedActorIds?: readonly string[];
@@ -522,7 +522,7 @@ export interface ApplyItemConditionSourceResolution {
 
 /**
  * Pure resolver for `apply_item_condition_source`. Validation reuses the
- * source-side subset of §26.4 transfer law exactly as `consume_item` does
+ * source-side subset of transfer law exactly as `consume_item` does
  * (`resolveConsumeItemFromView` in `./materials.ts`): reach without an
  * asserted source locus, so no staleness check, plus the item-condition-
  * specific `condition_not_tracked`/`unknown_meter_key` pair.
@@ -611,15 +611,15 @@ export function resolveApplyItemConditionSource(
 }
 
 // ---------------------------------------------------------------------------
-// Worn-window transition (§26.7 — a transfer that dons/doffs a tracked item)
+// Worn-window transition (a transfer that dons/doffs a tracked item)
 // ---------------------------------------------------------------------------
 
 export const WORN_WINDOW_STACKING_GROUP = "worn-window" as const;
 
 /**
- * The worn-window cleanliness modifier's rate (§26.7 — "wearing applies a
- * standard negative rate_add modifier for the worn window, so a garment
- * fouls only while worn"). It is signed POSITIVE here, not negative:
+ * The worn-window cleanliness modifier's rate — wearing applies a standard
+ * negative rate_add modifier for the worn window, so a garment fouls only
+ * while worn. It is signed POSITIVE here, not negative:
  * cleanliness's registry law targets 0 (fully soiled) at a zero base rate, so
  * composing a POSITIVE rate_add turns the drift into genuine approach-mode
  * decay toward that target. A target equal to the meter's own fresh value
@@ -629,8 +629,8 @@ export const WORN_WINDOW_STACKING_GROUP = "worn-window" as const;
  * a standing start already there), and "flee" ties toward the ceiling when
  * value === target, so neither reading can ever move a fresh item at all. See
  * the registry doc comment in `@/contracts/simulation/material-condition`.
- * Net effect matches the spec's own math: (10 000 − 3 000) ÷ 250 = 28 —
- * grimy from fresh in ~28 worn-hours.
+ * Net effect: (10 000 − 3 000) ÷ 250 = 28 — grimy from fresh in ~28
+ * worn-hours.
  */
 export const WORN_WINDOW_CLEANLINESS_RATE_ADD_FIXED_POINT = 250 as const;
 
@@ -764,7 +764,7 @@ export function buildWornWindowTransition(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Use-disposition condition deltas (§26.5 completion path)
+// Use-disposition condition deltas (completion path)
 // ---------------------------------------------------------------------------
 
 export interface UseConditionDeltaInput {
@@ -1022,7 +1022,7 @@ export function applyItemConditionEvent(
       // No meter-value boundary write here (the payload carries none, unlike
       // bodies' flattened body_modifier_applied): integrateMeterValue folds
       // this modifier's validFrom purely at the next query regardless, so
-      // omitting the write is exact, not an approximation (§25.2).
+      // omitting the write is exact, not an approximation.
       return sortItemConditionsProjection({
         ...bumped,
         modifiers: [...projection.modifiers, event.payload.modifier],
@@ -1116,7 +1116,7 @@ export function applyItemConditionEvent(
 }
 
 export interface ItemConditionReplayInput {
-  /** Item conditions are fully evented: a branch-origin seed holds none (plan R3). */
+  /** Item conditions are fully evented: a branch-origin seed holds none (R3). */
   seed: ItemConditionsProjection;
   events: readonly SimulationBranchEvent[];
 }

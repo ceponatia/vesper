@@ -29,8 +29,7 @@ import {
 } from "./visual-digest";
 
 /**
- * The character slice of the world digest (model-aware-image-prompts.plan.md
- * §"Character facts"; spec §"The character scaffold").
+ * The character slice of the world digest.
  *
  * This adapter is not bound to any production lane, and these cases are what has
  * to be true before one binds to it. They protect the seam's three jobs and

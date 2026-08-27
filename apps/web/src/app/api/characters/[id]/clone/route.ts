@@ -3,7 +3,7 @@ import { cloneToLibrary, jsonError, jsonOk, storageQuotaRejection, withUser } fr
 type Params = { id: string };
 
 /**
- * Clone a character into your library (auth.plan.md). Source may be public or
+ * Clone a character into your library. Source may be public or
  * your own; result is an owned, private copy with duplicated images. A
  * private entity you don't own reads as not-found (404) — never confirmed.
  */

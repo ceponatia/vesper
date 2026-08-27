@@ -12,8 +12,7 @@ import type { HairEffectiveMechanics, HairPresentationState } from "./mechanics"
 import type { HairStructuralProfile } from "./profile";
 
 /**
- * Stage 3 — one subject's hair view of one committed cut (hair spec
- * §"Domain frame").
+ * Stage 3 — one subject's hair view of one committed cut.
  *
  * The live-input types are declared HERE, in the domain that consumes them, and
  * are deliberately tiny: a force is a magnitude, a contact is a pair of body

@@ -20,8 +20,7 @@ const forgeBodySchema = z.object({
   /**
    * "create" (default): prose prompt → full draft, or one `section` of it.
    * "fill": complete a partially-authored sheet without overwriting anything
-   * entered. "redraft": rewrite one tab (`scope`) from the whole sheet
-   * (character-sheet-forge.plan.md).
+   * entered. "redraft": rewrite one tab (`scope`) from the whole sheet.
    */
   mode: z.enum(["create", "fill", "redraft"]).default("create"),
   /** Regenerate a single section against the supplied draft (docs/authoring.md). */

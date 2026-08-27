@@ -8,9 +8,7 @@ import { z } from "zod";
  * isolated; successor snapshots are branch-scoped, so a fork or a retake cannot
  * leak later visual knowledge backward. A standalone-character scope names a
  * render of one character OUTSIDE any conversation — an avatar or portrait from
- * the library — where the only continuity is the character record itself
- * (image-lane-consolidation.spec.visual-state.md §"Standalone-portrait read
- * token").
+ * the library — where the only continuity is the character record itself.
  *
  * ## Why this is declared here and not imported
  *

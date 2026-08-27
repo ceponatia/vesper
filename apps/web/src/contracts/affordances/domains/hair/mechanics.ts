@@ -10,7 +10,7 @@ import type { HairStructuralProfile } from "./profile";
 
 /**
  * Stage 2 — present hair capacity: the structural profile combined with current
- * presentation and wetness (hair spec §"Effective mechanics").
+ * presentation and wetness.
  *
  * Every value here is a CAPACITY or a material condition, never an observation.
  * A high `mobilityCapacity` means the hair would respond strongly if a force

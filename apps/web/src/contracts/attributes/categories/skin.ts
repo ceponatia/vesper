@@ -50,7 +50,7 @@ export const skinGroup = defineAttributeGroup("skin", [
     allowedValues: ["smooth", "soft", "dewy", "dry", "rough", "weathered", "leathery", ...SYNTHETIC_SKIN_TEXTURES],
     autoDefaultExcludes: [...SYNTHETIC_SKIN_TEXTURES],
     aliases: ["skin texture"],
-    // Slice-4 authoring batch (attribute-narrator-guidance.plan.md) — DRAFTS AWAITING
+    // Narrator-gloss authoring batch — DRAFTS AWAITING
     // OWNER REVIEW. Texture = surface feel only, never tone/color. Sparse: smooth/soft/dry stay bare.
     narratorGuidance: {
       dewy: "fresh and faintly moist, catches the light",

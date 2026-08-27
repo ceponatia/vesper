@@ -30,7 +30,7 @@ export const itemTransferOutboxPayloadSchema = z
   .object({ sourceEventId: eventIdSchema })
   .strict();
 
-/** The material events the feed publishes one row per (§26.4, §26.6). */
+/** The material events the feed publishes one row per. */
 export const itemMaterialFeedEventKinds = [
   "item_transferred",
   "item_destroyed",
