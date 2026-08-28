@@ -2,267 +2,275 @@
 
 # Character-chat prompt architecture
 
-`apps/web/src/server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`, `prompts/chat-extractors.ts`) — all chat prompt assembly is code-reviewed text in one place. Builders are pure functions of typed inputs (snapshot-testable); no inline prompt strings elsewhere in the engine. Anything tunable (history depth, fact cap, narration shape) is a named constant in `prompts/constants.ts`.
+`apps/web/src/server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`,
+`prompts/chat-state.ts`, `prompts/chat-summary.ts`, `prompts/chat-extractors.ts`) — all chat
+prompt assembly is code-reviewed text in one place. Builders are pure functions of typed
+inputs (snapshot-testable); no inline prompt strings elsewhere in the engine. Anything
+tunable (history depth, fact cap, narration shape) is a named constant in
+`prompts/constants.ts`.
 
-This doc is the chat lane's prompt reference. The lifecycle that assembles and streams these prompts is [pipeline.md](pipeline.md); the tracked state they render is [state.md](state.md).
+This page owns how the prompt is **assembled**. The craft rules it carries are
+[narrator-craft.md](narrator-craft.md); the gates and fences that bound a reply are
+[perception-gates.md](perception-gates.md); the lifecycle that streams the result is
+[pipeline.md](pipeline.md); the tracked state it renders is [state.md](state.md).
 
-**The presentation charter (2026-07-22):** the lane-agnostic craft law inside `CHAT_RULES` — content framing + the minor fence, the camera/agency rules (2 & 4 + "Reading the player's message"), the attribution contract (rule 3) + message-notation legend, proportionality/topic/no-refusal/natural-dialogue rules, the Shaping block, and the intimate-craft block — now lives in `prompts/charter.ts` as parameterized number-free units, with the authored-profile section builders (bio excerpt, voice anchors, micro exemplars, preferences) in `prompts/profile-sections.ts`. `character-chat.ts` composes them byte-identically (snapshot-pinned); the successor narrator (`prompts/sim-render.ts`) consumes the SAME units, so craft fixes land in one place for both lanes.
-
-**The successor solo cut (2026-07-23):** when a successor turn runs WITHOUT a co-present primary (the player walked off; either party is in transit), the render is **dual-block** — a second-person player-side block (the player's own zone, co-present NPCs, held items) then a third-person **away vignette** of the primary living their engine-supplied routine MUSTs (location, active activity, due commitments), for the reader only (never player-character knowledge). It reuses the SAME charter blocks as `sim-render.ts` (canon, presentation state, conversation) and only swaps the COMMITTED-TRUTH block for a SOLO SCENE block and the JSON contract for `{prose}` — builder `prompts/sim-solo-render.ts`, render loop `renderSoloNarration` in `sim-narrator.ts`, pure shaping `@vesper/simulation-core/solo-cut`. A solo turn advances the branch clock 60s (draining triggers) and never dead-ends: it always degrades to a deterministic dual-block fallback. The composer's **Narrator input mode** now flows into successor turns (both co-present and solo) — a `narrator` send is storyteller steering, so it skips input admission and reframes the player-turn block.
-
-**Departure context on the solo prompt (2026-07-23):** when THIS solo turn is a player-CHOSEN departure — an admitted natural-language "I walk to the town square" — the prompt's block (a) gains a one-line **departure arc**: whom the player just left (only on a farewell, when a co-present scene was ended as a choice) and the from/to zones. Block (a) then narrates the goodbye, the walk, and the arrival as ONE continuous beat (never a jump-cut); block (b) stays the primary's away vignette (which may naturally show them in the moments after the player left). The choreography (end scene as `participant_choice` → move → drain to arrival) runs BEFORE the render, so the solo turn skips its own 60s span advance (the clock already jumped the travel). The line is pure (`buildSoloDepartureLine`, `@vesper/simulation-core/departure`) and rides in via `SimSoloRenderContext.departure`.
+**The presentation charter:** the lane-agnostic craft law inside `CHAT_RULES` — content
+framing + the minor fence, the camera/agency rules (2 & 4 + "Reading the player's message"),
+the attribution contract (rule 3) + message-notation legend,
+proportionality/topic/no-refusal/natural-dialogue rules, the Shaping block, and the
+intimate-craft block — lives in `prompts/charter.ts` as parameterized number-free units,
+with the authored-profile section builders (bio excerpt, voice anchors, micro exemplars,
+preferences) in `prompts/profile-sections.ts`. `character-chat.ts` composes them
+byte-identically (snapshot-pinned); the successor narrator (`prompts/sim-render.ts`)
+consumes the SAME units, so craft fixes land in one place for both lanes. How those units
+are classified, and which layer a prompt experiment may replace, is
+[../engine/narration.md](../engine/narration.md) §Narrator instruction authority.
 
 ## Character-chat prompt-cache split
 
-Provider prefix caching only pays when the prefix is byte-stable, so the chat system prompt is split. `buildCharacterChatPromptParts` returns a **stable prefix** — content framing (age-scoped — §Life stage & the minor fence), identity (+ the life-stage hint), the player persona's **stable** half (their bio + how their voice sounds — what they're wearing and their intimate note move with state and ride the tail instead), scenario, background/personality/voice, the **How you actually answer** micro-exemplar few-shots (`profile.microExemplars`), the **Your voice, concretely** anchors block (`profile.voiceAnchors`: pet phrases, cadence, never-says), the **Life stage** register block (when the band carries rules), the **regard-colored** Disposition (which folds in the persisted narrative `trait_overlays` first, then regard-colors on top), the composed **Relationship** block, social-card values, the **What lands well and badly** preferences block (`profile.preferences`, so a like/dislike shapes the reply *in the exchange*, not only the post-turn pulse; intimate-concept preferences fence out for a minor), Attributes, Phrasing guidance, Sensory cues, and `CHAT_RULES` — and a **volatile tail**.
+Provider prefix caching only pays when the prefix is byte-stable, so the chat system prompt
+is split. `buildCharacterChatPromptParts` returns a **stable prefix** — content framing
+(age-scoped — [perception-gates.md](perception-gates.md) §Life stage & the minor fence),
+identity (+ the life-stage hint), the player persona's **stable** half (their bio + how
+their voice sounds — what they're wearing and their intimate note move with state and ride
+the tail instead), scenario, background/personality/voice, the **How you actually answer**
+micro-exemplar few-shots (`profile.microExemplars`), the **Your voice, concretely** anchors
+block (`profile.voiceAnchors`: pet phrases, cadence, never-says), the **Life stage**
+register block (when the band carries rules), the **regard-colored** Disposition (which
+folds in the persisted narrative `trait_overlays` first, then regard-colors on top), the
+composed **Relationship** block, social-card values, the **What lands well and badly**
+preferences block (`profile.preferences`, so a like/dislike shapes the reply *in the
+exchange*, not only the post-turn pulse; intimate-concept preferences fence out for a
+minor), Attributes, Phrasing guidance, Sensory cues, and `CHAT_RULES` — and a **volatile
+tail**.
 
-The prefix is **byte-identical across consecutive turns** while authored inputs and both relationship bands hold — asserted by a prefix-byte-stability snapshot test — and re-renders only on a band crossing on either axis (the Relationship block and regard coloring are band-keyed). Everything per-turn rides the tail, so a condition starting, a meter drifting, a scene detail accreting, or a skip note never busts the cached prefix. The full prompt is `[prefix, tail].join` (`buildCharacterChatSystemPrompt` keeps that seam invisible to callers).
+The prefix is **byte-identical across consecutive turns** while authored inputs and both
+relationship bands hold — asserted by a prefix-byte-stability snapshot test — and re-renders
+only on a band crossing on either axis (the Relationship block and regard coloring are
+band-keyed). Everything per-turn rides the tail, so a condition starting, a meter drifting,
+a scene detail accreting, or a skip note never busts the cached prefix. The full prompt is
+`[prefix, tail].join` (`buildCharacterChatSystemPrompt` keeps that seam invisible to
+callers).
 
-**The volatile tail** carries, in order: standing state, then the one-turn digest, then the generation anchors.
+**The volatile tail** carries, in order: standing state, then the one-turn digest, then the
+generation anchors.
 
-**Standing state (data):** recap, "Your memory" (§Character-chat long-term memory), the **How you sound** voice-exemplar ring (`voice_exemplars`: recent distinctly-in-voice lines kept past the events-only summary horizon), "Current state", the **What you want** drives block, the **Scene** block, the **Supporting cast** block (§Character-chat supporting cast & narrator input), the **Plans** block (near commitments + per-state directives), **what the player is wearing** + the **exposure-earned Intimate disposition** block (§The chat intimate gate — both move with state, so neither may ride the prefix), and the disinhibition + transient-appearance override blocks (state-derived overrides of the prefix's own Disposition/Attributes lines).
+**Standing state (data):** recap, "Your memory" (§Character-chat long-term memory), the
+**How you sound** voice-exemplar ring (`voice_exemplars`: recent distinctly-in-voice lines
+kept past the events-only summary horizon), "Current state", the **What you want** drives
+block, the **Scene** block, the **Supporting cast** block
+([supporting-cast.md](supporting-cast.md)), the **Plans** block (near commitments +
+per-state directives), **what the player is wearing** + the **exposure-earned Intimate
+disposition** block ([perception-gates.md](perception-gates.md) §The chat intimate gate —
+both move with state, so neither may ride the prefix), and the disinhibition +
+transient-appearance override blocks (state-derived overrides of the prefix's own
+Disposition/Attributes lines).
 
-**The "Right now" digest** — the turn's one-turn directives, gathered under a single heading that states their authority ("where they conflict with the standing rules above, these win; none of them carry to the next turn") and ordered by **tier**, because a model reading a dozen unranked "note that…" paragraphs has to guess which governs when they pull apart:
+**The "Right now" digest** — the turn's one-turn directives, gathered under a single heading
+that states their authority ("where they conflict with the standing rules above, these win;
+none of them carry to the next turn") and ordered by **tier**, because a model reading a
+dozen unranked "note that…" paragraphs has to guess which governs when they pull apart:
 
-- **binding** — what is true this turn, and how to read the message at all: the **narrator-input note** (`narratorInputNote` — the message is story narration, not the player's POV), the **Physical consistency** block (§below, `CHAT_PHYSICAL_CONSTRAINTS`), the **notation note** (`chatNotationNote` — who is texting whom, an OOC aside), the fenced **Attached photos** block (vision reads, seen-channel content under rule 16 — [images.md](images.md) §Player photos), the one-shot **skip note**, and the **first-exchange** establish directive.
-- **gate** — the ceilings and corrections that bound the reply: the **Sensory focus** block, the **Sensory allowance** line, the reply-discipline **gate notes** (hook cadence / intimate check-in), and the one-turn **Voice correction** line (`lastMemoryTrace.characterSlip`).
-- **license** — what the beat permits, never demands: the **cue invite** (a tapped open-loop continue, or the initiative opener's full cue — `buildInitiativeCue`; [initiative.md](initiative.md) §Initiative) and the **selfie license** line (`chatSelfieLine`; [images.md](images.md) §Selfies).
-- **flavor** — the optional grace note: the **memory-callback** line (`chatCallbackLine` — an old episode offered as a "remember when" aside, worded by regard band; [initiative.md](initiative.md) §Memory callbacks).
+- **binding** — what is true this turn, and how to read the message at all: the
+  **narrator-input note** (`narratorInputNote` — the message is story narration, not the
+  player's POV), the **Physical consistency** block
+  ([perception-gates.md](perception-gates.md), `CHAT_PHYSICAL_CONSTRAINTS`), the **notation
+  note** (`chatNotationNote` — who is texting whom, an OOC aside), the fenced **Attached
+  photos** block (vision reads, seen-channel content under rule 16 — [images.md](images.md)
+  §Player photos), the one-shot **skip note**, and the **first-exchange** establish
+  directive.
+- **gate** — the ceilings and corrections that bound the reply: the **Sensory focus** block,
+  the **Sensory allowance** line, the reply-discipline **gate notes** (hook cadence /
+  intimate check-in), and the one-turn **Voice correction** line
+  (`lastMemoryTrace.characterSlip`).
+- **license** — what the beat permits, never demands: the **cue invite** (a tapped open-loop
+  continue, or the initiative opener's full cue — `buildInitiativeCue`;
+  [initiative.md](initiative.md) §Initiative) and the **selfie license** line
+  (`chatSelfieLine`; [images.md](images.md) §Selfies).
+- **flavor** — the optional grace note: the **memory-callback** line (`chatCallbackLine` —
+  an old episode offered as a "remember when" aside, worded by regard band;
+  [initiative.md](initiative.md) §Memory callbacks).
 
-Crowded-turn **deferral is not done here**: the deferrable notes (the callback, an unprompted selfie offer) are armed upstream, and an offered callback **burns its anti-repeat ring** the moment it is picked — so dropping one at render time would spend an episode that never reached the page. `chatCallbackEligible` owns that decision pre-burn ([pipeline.md](pipeline.md) §The one-turn notes); the builder renders exactly what survived it. The ensemble builder composes the same digest from the group arms of the same notes.
+Crowded-turn **deferral is not done here**: the deferrable notes (the callback, an
+unprompted selfie offer) are armed upstream, and an offered callback **burns its anti-repeat
+ring** the moment it is picked — so dropping one at render time would spend an episode that
+never reached the page. `chatCallbackEligible` owns that decision pre-burn
+([pipeline.md](pipeline.md) §The one-turn notes); the builder renders exactly what survived
+it. The ensemble builder composes the same digest from the group arms of the same notes.
 
-**Generation anchors:** the one-line **Voice check** re-anchor beside the mood pin (`profile.voiceAnchors`, near generation where voice matters most), and either the opening-beat instruction or the per-turn **Response-shape** line.
+**Generation anchors:** the one-line **Voice check** re-anchor beside the mood pin
+(`profile.voiceAnchors`, near generation where voice matters most), and either the
+opening-beat instruction or the per-turn **Response-shape** line.
 
-- **Relationship block** (relationship-model v2: `composeRelationshipLaw` over the two band-profile registries, `contracts/relationships/law.ts`): authored history/kind → the familiarity line (address rights, what can be referenced, how well they read the other) → the regard line (feeling, initiative-desire, willingness — bounded by the familiarity ceiling) → the `presented` mask ("Outwardly:") → a sparse combo-corner note → the escalation floor keyed to REGARD, with three rulings stated in the block: the scenario premise overrides the floor, disinhibition never raises it, and social-card values outrank everything. A `dispositionContrastLine` states the divergence when regard's sign disagrees with the authored warmth lean; a `dispositionIdiomLine` fires at warm+ regard for a cold-side warmth so growing closeness keeps the character's own manner instead of flattening toward generic warmth.
-- **Regard soft coloring** (`regardDispositionOverlays`, `contracts/personality/modulation.ts`): the regard band shifts warmth/guardedness/inhibition at render time — authored-traits-only, sliders never written — so the prefix's Disposition bands read the relationship, not just the authored resting values (familiarity deliberately does not color disposition — knowing someone is not warmth). **Capped at one band step from the authored value** (`REGARD_OVERLAY_MAX_BAND_STEPS`) so long warm chats can't converge every character on the same warm/open reading.
-- **Inert-slider wiring**: `social.dominance` colors the `CHAT_RULES` **forward-move** rule (lead vs. defer), `temperament.confidence` colors the **drive-reveal posture** in the tail's "What you want" block, and `social.extraversion` colors the **initiative opener cadence** (`buildInitiativeCue`) and the **ensemble quiet tolerance** (`ensembleQuietThreshold`). Each is a no-op at mid/absent value (via `traitPole`), so a trait-less character's prompt is byte-identical.
-- **`CHAT_RULES`** closes the prefix, carrying a dialogue-craft rule (speech-like dialogue: fragments, dodges, silence as an answer) and a **"When a scene turns intimate:"** block (player-paced escalation, body/clothing continuity, concrete sensation over florid metaphor). See §Character-chat reply discipline & scene memory for the turn-grammar block and the intimate-frame exception it adds.
-- **Experimental layout switch** (`CHAT_PROMPT_LAYOUT=turn_context`, default `system_tail`): the default puts the volatile tail in the **system** message, ahead of the history in token order. The `turn_context` layout instead puts the tail + the fenced current player input on a **final user message** (`buildChatTurnMessage`), so system + history form an append-only cached prefix and turn data sits adjacent to the input it governs. Applies to real player turns only. **Default stays off until the eval A/B rules on behavior.**
-
-## Narrator instruction authority (the replaceable craft layer)
-
-Every narrator builder — legacy 1:1, legacy ensemble, successor co-present
-(`prompts/sim-render.ts`) and successor solo (`prompts/sim-solo-render.ts`) —
-emits a tree of **classified nodes** and renders it once, rather than joining
-strings ad hoc. The classification is `contracts/narrator-prompts/authority.ts`,
-and it exists so exactly one layer can be swapped for hand-written text without
-disturbing anything else:
-
-- **`behavior`** — narrator craft: role, prose camera, pacing, richness, dialogue
-  style, topic discipline. The only layer that is ever replaced.
-- **`runtime_context`** — authored and committed facts.
-- **`runtime_invariant`** — fences that bound the reply whatever its style:
-  player-agency law, perception ceilings, untrusted-data fencing, the minor
-  fence, per-turn physical and sensory ceilings.
-- **`transport_contract`** — anything software downstream parses: the `[Name]`
-  speaker-tag grammar the renderer segments on, the successor's strict JSON
-  schema, the retry correction block.
-
-**Units split at sentence boundaries, and a mixed sentence takes the strictest
-authority.** Several charter units are one string that crosses the line — the
-viewpoint rule ends with *"never put words, thoughts, or actions in their
-mouth"*, and the narrator-camera rule mixes where the camera sits (craft) with
-what may never be written for the player (law). Left whole and marked craft, a
-prompt experiment could delete the very clause that protects player agency. The
-split pieces rejoin with the separator they were already written with, and
-`cameraViewpointRule`, `narratorCameraRule` and `PHYSICAL_STATE_LAW_RULE` are now
-**derived from** their nodes, so there is no second copy of the text to drift.
-
-**Rule numbers are positional, not authored.** `CHAT_RULES` and
-`ENSEMBLE_CHAT_RULES` are `numbered_list` nodes whose numbers come from index, so
-production renders the same 1…16 and 1…12 it always did, and a prompt that drops
-behavior rules renumbers its survivors contiguously instead of leaving gaps.
-Nothing may cite a rule by its displayed number — bind to heading names, as
-§Style rules already requires.
-
-Where a builder interleaved `""` entries into a `join("\n")`, the tree uses
-`separator: "\n\n"` with `dropEmpty` instead. The two are byte-identical in
-production (`["a","","b"].join("\n")` equals `["a","b"].join("\n\n")`), but the
-literal-empties form would strand blank lines wherever a dropped unit used to be.
-
-An optional `instructionSource` on each builder's input decides the render.
-Absent, or `{kind:"production"}`, and the prompt is byte-identical to what it was
-before any of this existed. `{kind:"test"}` drops every `behavior` unit and puts
-the owner's text in an explicit `behavior_slot` — an explicit slot rather than a
-filter-and-splice, so where the custom prompt lands is visible in the builder
-instead of being an emergent property of a filter. The source is resolved once
-per exchange, after the exchange lock, and frozen across hidden retries; helper
-agents never see it. The owner-facing tool that writes these prompts is the
-Narrator Prompt Lab.
-
-## The chat intimate gate
-
-The chat lane has no per-sense exposure mask (no proximity model), so `profile.intimacy` and the species archetype are gated by the lane's own signal. `chatSceneIsIntimate` (`contracts/turns/chat-intimacy.ts`) is built from the three signals it actually has:
-
-1. the **character's** coverage-computed bare state (`intimateRegionsBare` — torso or pelvis);
-2. the **player's** — possible since the player got a real wardrobe;
-3. **arousal** ≥ `CHAT_INTIMATE_AROUSAL_AT` (0.55) — a scene can be intimate with the clothes on.
-
-**Any one signal opens it** (the "any axis" ruling, owner 2026-07-13), and it defaults **shut** on missing input: a chat that has shown nothing earns nothing. Both coverage signals are computed from worn items, never a manual flag — [state.md](state.md) §The player's wardrobe explains why the player's side has no `exposed` toggle at all, and this gate is the reason.
-
-`buildChatIntimateSection` renders, only above the gate: each qualifying character's merged note (the species/heritage archetype **appended** with their own `profile.intimacy`, heritage-replaces-species), plus the **player persona's** `intimacy`, which carries **inverted semantics** — what they *respond to*, not how they behave — so it gets its own wording and is rendered **once**. In an ensemble the gate is **per member** (one couple in the room doesn't hand everyone an intimate disposition) and away members never contribute; the minor fence applies per member. It lives in the **volatile tail** by necessity: the gate flips with state, so a prefix block would bust the prompt cache on every flip.
-
-**Still soft-framed, deliberately:** the intimate *trait bands* keep their "when the moment turns intimate" wording, and `buildDisinhibitionSection` consumes them as its dedupe baseline.
-
-## Character-chat sensory cues
-
-The chat lane carries no exposure mask; it gates the senses through a deterministic per-turn **sensory allowance** instead of scattered prose teachings.
-
-- **The data** stays in the stable prefix: the builder extracts proximity-gated, non-intimate sensory attributes via `sensoryCues` (filter `kind === "sensory" && category !== "voice" && !isIntimateAttributeCategory(category)`) and renders them as the **"Sensory cues"** block whose closing bullet defers to the allowance. Exclusions: **voice** (audible at any distance — stays a normal Attributes line) and **intimate scent/taste** (no exposure signal in chat earns it). Renders nothing for an unscented character.
-- **The permission** is the volatile-tail **"Sensory allowance this turn"** line: the route derives `none | visual_accent | close_range_hook | focused_description` per real player turn via `deriveChatSensoryAllowance` (`engine/chat-intent.ts`, a pure mapping over the detectors already running: `detectSensoryFocus` ⇒ `focused_description`; intimate/touch/proximity cues ⇒ `close_range_hook`; `attention` ⇒ `visual_accent`; else `none`; arousal alone raises nothing). The physical detectors consume only current, non-negated, non-hypothetical evidence from the shared `lib/chat-input-evidence.ts` span/sentence parse; visual attention remains its own lower-risk policy, so a denied touch beside an observed feature earns at most `visual_accent`. `chatSensoryAllowanceLine` renders the result as a binding ceiling — `none` forbids person-level sensory/appearance detail beyond what the character's own movement makes newly visible; `focused_description` renders no line because the **Sensory focus** block is that turn's richer grant. CHAT_RULES 10–11 defer to it.
-
-## Physical consistency (constraints and premise checks)
-
-Behind `CHAT_PHYSICAL_CONSTRAINTS` (default OFF) the digest's **binding** tier carries one
-more block — the constraint-first replacement for the closed affordance-cue experiment
-(`chat-physical-guidance-render.ts`; [body-state.md](body-state.md) §"Narrator physical guidance"):
-
-```text
-Physical consistency for this exchange:
-These rules override any general appearance or sensory-detail allowances for this exchange.
-- Premise check: the player's wetness-cause claim conflicts with committed state. Do not adopt rain as the cause of the wetness in Wren's hair. Do not correct the player aloud unless Wren would naturally do so.
-- Binding constraint: do not describe Wren's hair as loose, cascading, streaming, or whipping; it remains secured in a braid.
-```
-
-- **Placement.** Binding tier, directly after the narrator-input note and before the notation
-  note: both of those are about *how to read the message*, and a fence outranks a markup
-  gloss. Threaded as a **top-level** `physicalGuidance` prompt input, not through
-  `promptStateSlice` — a correction is about the message in front of the narrator and a
-  constraint is only selected because this turn made it relevant, so neither is standing
-  state.
-- **Precedence, stated in the block.** The second line exists because the same prompt already
-  carries a **Sensory allowance** line worded as a ceiling on *description*, while these are
-  fences on *claims* — and a model reading both without a ranking splits the difference. This
-  is the same conflict the affordance-cue carve-out solved for `none`, in the other
-  direction.
-- **Order is the compiler's**, not the renderer's: premise corrections (≤2) then consistency
-  constraints (≤3).
-- **Two wording laws.** A constraint-only turn contains **no instruction to mention a body
-  detail** (the closed experiment's failure mode was raising the number of checkable claims);
-  and a correction **never voices the committed truth** — it names the claim not to adopt and
-  stops, because the truth may be hidden and "actually it was a bath" both leaks it and
-  invites the narrator to argue with the player. A constraint's truth clause ("it remains
-  secured in a braid") ships only when perception licensed it, which the shared candidate
-  builder decides, not the renderer.
-- **Absent/empty ⇒ zero bytes**, conditional-spread + length-guarded like the cue block, so a
-  flag-off prompt is byte-identical (int-tested by splicing the ON block back out).
-
-## Character-chat player-input perception
-
-The player's message is three channels mixed in one text box: **heard** — the quoted dialogue; **seen** — externally visible manner narrated around it (a stammer, a flush); **private** — interiority the character cannot know. `CHAT_RULES` carries a **"Reading the player's message"** block (stable prefix, cache-safe) teaching the partition: quoted text is speech heard exactly (with a quotes-for-prose exception for reported speech); unquoted text is the story's narration, of which the character perceives only what would be visible or audible; inner thoughts reach no one — the character must not answer, echo, or *uncannily intuit* them, though she may react to the visible correlates and guess (even wrong) like a real person; and a no-quotes message that reads as plain conversation is simply spoken (graceful degradation). A worked example (the "You're not a dork!" mind-read) spells out the correct read. **State agents are exempt**: pulse/archivist deliberately read the full message, interiority included — it is a strong intent signal (§Agent prompts).
-
-**The optional markup lane** upgrades ambiguity into determinism *when the player opts in*. A single deterministic parser, `@/lib/message-spans.ts` (`parseMessageSpans`, pure and regex-first — the ONE implementation the tail note, the transcript renderer, and the archivist channel hint all share), segments a message into ordered spans `{ kind: speech | narration | thought | comms | ooc | written | styled }`: `"quoted"` → speech; `*…*` → **thought** by default, **comms** when `Name:`/`to Name:`-shaped, or **styled** emphasis for a short mid-sentence span (the emphasis guard — `you *really* think?` is styling, not a thought); `_…_` → styled; `((…))` → **ooc** (double parens only); unmarked → narration. Delivery is split: the sigils' **meanings** live in a static **"Message notation" legend** in the `CHAT_RULES` stable prefix (byte-identical across turns) — it also states the **house reversal** of the RP "asterisks = actions" habit (unquoted prose is the action channel here) and defines the narrator's texted-reply **output grammar** `*Name: her words*` (which `formatCommsReply` emits and the parser round-trips from history). The per-turn **derived** facts ride a volatile tail note (`chatNotationNote`, never touching the stored message): a comms span renders sender/recipient + the co-presence reconciliation ("a text from X to you; answer as a text back"), an OOC span renders "honor it as direction, but never have the character hear it".
-
-## Character-chat player-POV narration
-
-The chat model is the character **and the scene's narrator**, with the story's camera behind the player's eyes. Rule 4 licenses narrating the player's **involuntary perception** — the way the character looks and moves, a scent that reaches them when close — addressed to them as "you", including the small reflexes it stirs (a breath that catches); it forbids writing the player's deliberate actions, speech, or decisions, and naming their emotions or arousal. The player's story advances ONLY through their own messages; the narrator never scripts even mundane connective beats (arriving home, checking a phone). **Rule 15, the separation arm**: when the character and player are not in the same place, the reply follows the CHARACTER's side only (a scene cut to her world), reaching the player solely through a channel that carries (the `*Name: …*` texted line, a call), ending on her move. The **visual channel** is attention/motion-gated, *not* proximity-gated (sight carries at any distance): the player's attention on the character flows through the sensory allowance as `visual_accent`, while rule 11 keeps the self-motion arm — when the character enters/moves/adjusts clothing, one concrete visual detail from the player's eye, never a head-to-toe inventory. `detectChatCue` (`engine/chat-intent.ts`) carries the **`attention`** signal (gaze verbs aimed at a person, appearance compliments, possessive + body/clothing nouns).
-
-## Life stage & the minor fence
-
-Numeric age *does something*. `contracts/world/life-stage.ts` is a registry of bands (child / teen / young adult / adult / middle-aged / elder) keyed by year ranges; `lifeStageForAge` maps a **bare human-scaled numeral** ("15") and nothing looser (blank, "ancient", "15 years old", or a number > 120 map to nothing, so fantasy ages never get a human register forced on them). Three surfaces per band:
-
-- **`promptHint`** — one phrase appended to the age line (the chat identity: "You are 16 years old — a teenager — teen diction…"; the ensemble member id line). The `adult` band's hint is deliberately `""`.
-- **`registerRules`** — a binding **"Life stage"** block (chat stable prefix, second person) for the bands whose register genuinely constrains prose: child/teen (concrete diction, school-sized knowledge, *never wise beyond your years*) and elder (unhurried, era-anchored). Chat rule 7 binds to the block by heading name; ensemble member sheets carry the register compressed to one third-person line (`lifeStageThirdPersonLine`).
-- **`minor`** — child/teen. The fence (the numeric `isMinorAge` read) removes every intimate surface for an authored minor, wherever authored data would otherwise leak one: the intimate trait bands, the intimate-disposition notes (`buildChatIntimateSection` — the species/character `intimacy` note, skipped whatever the gate says; in an ensemble the fence is per member, so an adult's note still stands beside a fenced minor, and a fenced character earns no player note either), the disinhibition loosening block, the chat intimate-craft rules block, the selfie license, and the relationship law's escalation bullet (`composeRelationshipLaw` `omitEscalation`).
-
-`CONTENT_FRAMING` is scoped to match: the old "every character is a fictional adult" became "everyone taking part in romantic or intimate content is an adult"; a **minor primary** flips the 1-on-1 frame to romance-strictly-out-of-scope (handled in character — confusion, a subject change — never a meta refusal); an **ensemble containing a minor** keeps the adult frame for its adult members and appends the cast fence line. All of it is authored-age-keyed, so the prefix stays byte-stable across turns.
-
-## Character-chat supporting cast & narrator input
-
-Two prompt systems, fixing "the narrator reacts to a mentioned side character but never writes *for* them":
-
-- **Supporting cast block** (`buildSupportingCastSection`, volatile tail — it accretes like Scene): one line per recurring named side character from the scenario's `supportingCast` (name — relation · details · voice · whereabouts) plus the play license — the narrator may write their dialogue and small actions (prose attribution, NEVER a bracketed tag) and give them initiative true to what's established; they stay supporting (never steal a beat, never contradict what the player wrote for them, never speak/act FOR the player). Rule 3's incidental-person clause names this block as its exception, and rule 15 (the apart camera) lets cast members populate the character's side of a scene cut. The cast itself is archivist-maintained (field `cast`, accrete-only with roster/player names excluded) and author-editable in the Supporting Cast panel — see [supporting-cast.md](supporting-cast.md).
-- **Narrator input** (the composer's You ↔ Narrator toggle): a `send` with `inputMode: "narrator"` is story narration the player authored **as storyteller** — supporting-cast dialogue, offscreen developments, scene flavor — never their own POV. The stored line stays byte-verbatim (`meta.inputMode` marks it); at the model boundary the pipeline wraps it with `wrapNarratorInput` ("[Story narration from X — written as the storyteller, not as X speaking or acting]"), a static notation-legend line teaches the marker, and the current turn adds the one-turn `narratorInputNote` tail line suspending the player-input perception partition. Post-turn: the reaction pulse is **skipped** (no player act), selfie arms never fire, and the archivist + summary fold read the player half under a STORYTELLER-NARRATION label so authored events are never filed as the player's own speech or acts.
+- **Relationship block** (relationship-model v2: `composeRelationshipLaw` over the two
+  band-profile registries, `contracts/relationships/law.ts`): authored history/kind → the
+  familiarity line (address rights, what can be referenced, how well they read the other) →
+  the regard line (feeling, initiative-desire, willingness — bounded by the familiarity
+  ceiling) → the `presented` mask ("Outwardly:") → a sparse combo-corner note → the
+  escalation floor keyed to REGARD, with three rulings stated in the block: the scenario
+  premise overrides the floor, disinhibition never raises it, and social-card values outrank
+  everything. A `dispositionContrastLine` states the divergence when regard's sign disagrees
+  with the authored warmth lean; a `dispositionIdiomLine` fires at warm+ regard for a
+  cold-side warmth so growing closeness keeps the character's own manner instead of
+  flattening toward generic warmth.
+- **Regard soft coloring** (`regardDispositionOverlays`,
+  `contracts/personality/modulation.ts`): the regard band shifts
+  warmth/guardedness/inhibition at render time — authored-traits-only, sliders never written
+  — so the prefix's Disposition bands read the relationship, not just the authored resting
+  values (familiarity deliberately does not color disposition — knowing someone is not
+  warmth). **Capped at one band step from the authored value**
+  (`REGARD_OVERLAY_MAX_BAND_STEPS`) so long warm chats cannot converge every character on
+  the same warm/open reading.
+- **Inert-slider wiring**: `social.dominance` colors the `CHAT_RULES` **forward-move** rule
+  (lead vs. defer), `temperament.confidence` colors the **drive-reveal posture** in the
+  tail's "What you want" block, and `social.extraversion` colors the **initiative opener
+  cadence** (`buildInitiativeCue`) and the **ensemble quiet tolerance**
+  (`ensembleQuietThreshold`). Each is a no-op at mid/absent value (via `traitPole`), so a
+  trait-less character's prompt is byte-identical.
+- **`CHAT_RULES`** closes the prefix, carrying a dialogue-craft rule (speech-like dialogue:
+  fragments, dodges, silence as an answer) and a **"When a scene turns intimate:"** block
+  (player-paced escalation, body/clothing continuity, concrete sensation over florid
+  metaphor). See [narrator-craft.md](narrator-craft.md) for the turn-grammar block and the
+  intimate-frame exception it adds.
+- **Experimental layout switch** (`CHAT_PROMPT_LAYOUT`, default `system_tail`): the default
+  puts the volatile tail in the **system** message, ahead of the history in token order. The
+  `turn_context` layout instead puts the tail + the fenced current player input on a **final
+  user message** (`buildChatTurnMessage`), so system + history form an append-only cached
+  prefix and turn data sits adjacent to the input it governs. Applies to real player turns
+  only, and to 1-on-1 conversations only.
 
 ## Character-chat state as a narration system
 
-The chat lane *enacts* the tracked `character_chat_state`, not just lists it. All of this is in the chat prompt builder and degrades to the prior stateless output when no state is passed:
+The chat lane *enacts* the tracked `character_chat_state`, not just lists it. All of this is
+in the chat prompt builder and degrades to the prior stateless output when no state is
+passed:
 
-- **Condition → attribute overlays.** A condition's `attributeEffects` (`source: "condition"`, precedence 3) overlay grooming/scent/hair while active. Since the cache split they render as a **volatile tail block** ("While your current condition lasts … these override the matching Attribute/Sensory lines above") instead of being baked into the prefix's Attributes — a condition starting or expiring never busts the cached prefix. `conditionAttributeOverlays` guards each effect with `overlaySourceMayChange(def.mutability, "condition")`, so a condition can **never** rewrite an inherent attribute (eye colour, species) in the prompt. Chat conditions are seeded with real effects from a small label catalog (`contracts/conditions/catalog.ts`).
-- **Graded meter cues + anti-repetition.** `splitStateCues(meters, surfacedCues)` turns the meters into one **foreground** "just shifted" beat (the most-intense newly-crossed band) plus **standing** cues, diffed against the bands surfaced last turn (`character_chat_state.surfaced_cues`). `buildStateSection` renders standing cues as coloring ("never recite") and the one foreground band as a marked-once beat; a `CHAT_RULES` rule says *act your physical state out continuously, but only mark it when it visibly SHIFTS*. At most one change-beat per turn.
-- **Unfinished business + skip note.** The "Current state" block carries the standing **"Unfinished business between you"** line (the archivist's `open_loops`, ≤3 phrases, never-recite) so long conversations get narrative pull. A player time skip stamps a one-shot `pending_skip_note` rendered as a volatile tail line ("Time has passed in the story since your last exchange: …"), cleared by the finalizer after the exchange that rendered it.
-- **Emotional weather.** The persistent `feeling` **composes** with the meter mood descriptor (baseline weather + the front passing through) on both the Current-state mood line and the response-shape **mood pin** (`feelingPhrase`: deeply / still / faintly-fading by intensity). See [state.md](state.md) §Emotional weather.
-- **Disinhibition.** `stateDispositionOverlays(traits, meters)` lowers `intimate.inhibition` + `social.guardedness` + `temperament.composure` at high intoxication/arousal as `source:"condition"` **trait** overlays — render-time only, authored sliders never written. Since the cache split it diffs against the **regard-colored** base disposition and renders only the band lines the shift actually changed, as a volatile tail override block — sober ⇒ no block.
-- **Soft social-card framing.** `buildSocialFramingSection` surfaces active cards as a fenced "what you care about / won't stand for" block — theme only, **never** the mechanical `severity` (the post-turn pulse owns the reaction).
-- **One-turn sensory allowance.** A regex-first `detectChatCue` reads the player input for proximity/touch/intimacy — plus appearance-directed **attention** — and the route derives the binding per-turn **sensory allowance** from it (§Character-chat sensory cues).
+- **Condition → attribute overlays.** A condition's `attributeEffects` (`source:
+  "condition"`, precedence 3) overlay grooming/scent/hair while active. They render as a
+  **volatile tail block** ("While your current condition lasts … these override the matching
+  Attribute/Sensory lines above") instead of being baked into the prefix's Attributes — a
+  condition starting or expiring never busts the cached prefix. `conditionAttributeOverlays`
+  guards each effect with `overlaySourceMayChange(def.mutability, "condition")`, so a
+  condition can **never** rewrite an inherent attribute (eye colour, species) in the prompt.
+  Chat conditions are seeded with real effects from a small label catalog
+  (`contracts/conditions/catalog.ts`).
+- **Graded meter cues + anti-repetition.** `splitStateCues(meters, surfacedCues)` turns the
+  meters into one **foreground** "just shifted" beat (the most-intense newly-crossed band)
+  plus **standing** cues, diffed against the bands surfaced last turn
+  (`character_chat_state.surfaced_cues`). `buildStateSection` renders standing cues as
+  coloring ("never recite") and the one foreground band as a marked-once beat; a
+  `CHAT_RULES` rule says *act your physical state out continuously, but only mark it when it
+  visibly SHIFTS*. At most one change-beat per turn.
+- **Unfinished business + skip note.** The "Current state" block carries the standing
+  **"Unfinished business between you"** line (the archivist's `open_loops`, ≤3 phrases,
+  never-recite) so long conversations get narrative pull. A player time skip stamps a
+  one-shot `pending_skip_note` rendered as a volatile tail line ("Time has passed in the
+  story since your last exchange: …"), cleared by the finalizer after the exchange that
+  rendered it.
+- **Emotional weather.** The persistent `feeling` **composes** with the meter mood
+  descriptor (baseline weather + the front passing through) on both the Current-state mood
+  line and the response-shape **mood pin** (`feelingPhrase`: deeply / still / faintly-fading
+  by intensity). See [state.md](state.md) §Emotional weather.
+- **Disinhibition.** `stateDispositionOverlays(traits, meters)` lowers `intimate.inhibition`
+  + `social.guardedness` + `temperament.composure` at high intoxication/arousal as
+  `source:"condition"` **trait** overlays — render-time only, authored sliders never
+  written. It diffs against the **regard-colored** base disposition and renders only the
+  band lines the shift actually changed, as a volatile tail override block — sober ⇒ no
+  block.
+- **Soft social-card framing.** `buildSocialFramingSection` surfaces active cards as a
+  fenced "what you care about / won't stand for" block — theme only, **never** the
+  mechanical `severity` (the post-turn pulse owns the reaction).
+- **One-turn sensory allowance.** A regex-first `detectChatCue` reads the player input for
+  proximity/touch/intimacy — plus appearance-directed **attention** — and the route derives
+  the binding per-turn **sensory allowance** from it
+  ([perception-gates.md](perception-gates.md) §Character-chat sensory cues).
 
-The matching scene-image enrichment is in [images/pipelines.md](../images/pipelines.md) (§state-aware chat scene).
-
-## Character-chat reply discipline & scene memory
-
-The chat narrator tended to over-produce: long replies that re-describe the unchanged scene, drift from the mood, end every reply with a question ("interview mode"), and — during intimate beats — solicit a check-in every turn. The fix is rules + per-turn deterministic context (no token limits, no new LLM legs). All prompt wording lives in `prompts/character-chat.ts`; the per-turn reads live in `engine/chat-intent.ts`; the state lives in `character_chat_state.scene_memory` (see [state.md](state.md) §Scene memory).
-
-- **Turn grammar (`CHAT_RULES`, stable prefix).** A `Shaping each reply` block: **Resolve, then one move** (answer what the character heard/saw, then AT MOST one forward move — action/offer/disclosure/ scene-shift, or a question *only* when the character genuinely wants the answer; never stack moves; vary the endings), carried by a **worked example pair**; a **per-shape length story** (`chatLengthStory` — see §Narration shape); and a **freshness** rule (every narrative paragraph carries something new). The **"When a scene turns intimate:"** block adds the intimate-frame exception: physical narration can widen but **dialogue goes sparse**, and the **check-in refrain is banned** (at most once per scene, only when consent/hesitation is genuinely in play).
-- **Off-screen-life lines (volatile tail).** The one-shot **meanwhile note** (the pass's `pending_meanwhile_note`, rendered beside the skip note and cleared with it); the one-turn **return license** ("You just got back — you were {whereabouts}; ONE trace of it"); and the standing **daily-rhythm line** per present member (`formatScheduleRhythm`).
-- **Story-time line (volatile tail, binding).** ONE authoritative time: `promptStateSlice` derives `storyMoment` from the scenario's `clock_minutes` + `calendar_start` (`formatStoryMoment` — "Friday, January 5 — 2:10pm (afternoon)") and both frames render it as a binding line. The archivist's free-text scene `timeOfDay` was **removed** — time never comes from extraction.
-- **Scene block (volatile tail).** A compact `Scene` block rendered from the accumulating `scene_memory`: the current place + its established details and connections, followed by a directive that flips on whether the scene just changed — unchanged ⇒ "do not re-establish; at most one fresh accent"; just changed ⇒ "establish the new scene in 1–2 paragraphs — sight plus one other sense — then leave it alone". `buildSceneSection`; "" when the memory is empty and nothing changed.
-- **Plans block (volatile tail).** A compact `Plans` block rendered from the conversation's tracked commitments (`character_chats.plans`), showing only what is NEAR this turn — each with a **directive per state**: anticipation before, the event when due, the fallout when just missed (`buildPlansSection` over `derivePlanSalience` vs the story clock). In the **ensemble** frame a due plan also drives `buildPlanPresenceLicense` — arrival/exit licenses ([multi-character.md](multi-character.md)). See [state.md](state.md) §Plans & promises.
-- **Response-shape + mood-pin line (volatile tail).** A deterministic per-turn steer: respond to the player's input, no unrequested topics, keep the scale proportionate, pin the reply's tone to the derived mood descriptor (`deriveMoodDescriptor`). `buildResponseShapeLine`; **suppressed on an opening beat**.
-- **Reply-discipline gates (volatile tail).** Pure reads over the window's last 1–2 assistant replies (`buildChatReplyGates`, `chat-intent.ts`): a **hook-cadence** note when the last two replies both ended their final dialogue line with "?" (`replyEndsInQuestion`), and an **intimate check-in** suppression note when the beat is intimate and the previous reply matched the check-in pattern (`isCheckInReply`).
-- **Action-beat cue (synthetic player turn).** A tapped action chip runs as an `action_beat` exchange with no player line, so — like the opening/"go on" beats — the model gets a synthetic, non-persisted player turn: `buildActionBeatCue` wraps the chip's gesture as a parenthesized stage direction, licenses **one small beat**, and bakes the resolved **register** (apart ⇒ answer as a text; co-present ⇒ play it in the scene). The paired deterministic state effect is applied to the drifted state *before* the prompt builds.
-- **Sensory focus block (volatile tail, scope guard).** `detectSensoryFocus` now requires a locally bound action pair: a current **player-narrated** smell/taste/touch/study candidate plus a character-owned target in the same sentence/action phrase. Speech, thoughts, OOC, storyteller mode, questions, denials, irrealis, perfect-tense history, third-party actors, player-owned targets, cross-clause pairs, and ambiguous ensemble pronouns fail closed. The first valid pair wins in textual order and carries the resolved roster member id plus registry `region`; the ensemble frame therefore reads the named member's attributes instead of guessing from whichever member was addressed elsewhere. The builder joins the region to that member's authored attributes via `expandBodyTarget` — sense-ranked, intimate categories gated by the hint's `intimate` flag, capped at 6 lines. Generic grounding follows but **layered, never competing**: a crossed hygiene band *deepens* an authored scent ("stronger and staler, never a different character"). The directive treats the detector result as a candidate that the written beat must still prove, then **opens the reply with the sensation itself**; it never adds contact or motion beyond the player's text. `buildSensoryFocusSection`; when nothing authored grounds it, the builder **degrades the allowance line to `close_range_hook`**.
+The matching scene-image enrichment is in [images/pipelines.md](../images/pipelines.md).
 
 ## Character-chat long-term memory (RAG)
 
-The chat lane has the RAG memory keyed per-chat (see [../memory.md](../memory.md) §Memory keying). Two prompt-side effects, both byte-identical to before when their inputs are empty:
+The chat lane has the RAG memory keyed per-chat (see [../memory.md](../memory.md) §Memory
+keying). Two prompt-side effects, both byte-identical to an empty-input build:
 
-- **Retrieval block.** The route calls `retrieveChatMemory` (`engine/chat-memory.ts`) before building the prompt — **fused** RAG over the chat's own facts + episodes (per-query embedding + RRF, [../memory.md](../memory.md) §Fused retrieval), keyed on last turn's persisted `memoryQueries` + the player input — and passes the hits as a `memory: { facts, episodes }` input. Pinned "remember this" facts ride ahead of the top-k. The builder renders a fenced **"Your memory"** block *beneath* the rolling-summary recap: the summary is the short-term reinforcement layer, RAG reaches past its horizon. Layering top→deep: verbatim window → rolling summary → RAG recall.
-- **Evolving attribute overlays.** The prefix's stable resolve is `resolveAttributes(profile.attributes, state.attributeOverlays)` — the **persisted** narrative overlays (a recorded haircut/dye) on top of the authored base; the **transient** condition overlays render separately as the volatile tail block (§Character-chat state as a narration system). A `narrative` overlay outranks a `creation`-sourced authored value but not a `manual` one (SOURCE_PRECEDENCE).
+- **Retrieval block.** The route calls `retrieveChatMemory` (`engine/chat-memory.ts`) before
+  building the prompt — **fused** RAG over the chat's own facts + episodes (per-query
+  embedding + RRF, [../memory.md](../memory.md) §Fused retrieval), keyed on last turn's
+  persisted `memoryQueries` + the player input — and passes the hits as a `memory: { facts,
+  episodes }` input. Pinned "remember this" facts ride ahead of the top-k. The builder
+  renders a fenced **"Your memory"** block *beneath* the rolling-summary recap: the summary
+  is the short-term reinforcement layer, RAG reaches past its horizon. Layering top→deep:
+  verbatim window → rolling summary → RAG recall.
+- **Evolving attribute overlays.** The prefix's stable resolve is
+  `resolveAttributes(profile.attributes, state.attributeOverlays)` — the **persisted**
+  narrative overlays (a recorded haircut/dye) on top of the authored base; the **transient**
+  condition overlays render separately as the volatile tail block (§Character-chat state as
+  a narration system). A `narrative` overlay outranks a `creation`-sourced authored value
+  but not a `manual` one (SOURCE_PRECEDENCE).
 
-Post-turn, `finalizeChatState` runs the reaction pulse ‖ **three extraction legs** in parallel (`runChatExtraction` — the memory scribe, the continuity tracker, the character tracker; see §The chat extraction field library and [pipeline.md](pipeline.md) §Post-turn fan-out). In an **ensemble** the shared legs keep the scene-level reads while every PRESENT member additionally gets a small **personal pass** (`runChatPersonalNotes` — a 4-field extractor scoped to ONE named character) folded into their own row.
+Post-turn, `finalizeChatState` runs the reaction pulse ‖ **three extraction legs** in
+parallel (`runChatExtraction` — the memory scribe, the continuity tracker, the character
+tracker; see §The chat extraction field library and [post-turn.md](post-turn.md)). In an
+**ensemble** the shared legs keep the scene-level reads while every PRESENT member
+additionally gets a small **personal pass** (`runChatPersonalNotes` — a 4-field extractor
+scoped to ONE named character) folded into their own row.
 
 ## The chat extraction field library
 
-The post-turn extractor once was one agent juggling thirteen assignments — pages of instructions, a hand-maintained count, and worked examples that showed only 8–10 of them. So extraction fields became **data**, the way attributes / meters / conditions already are. `prompts/chat-extractors.ts` holds one `ExtractorField` module per field, owning its instruction line, the context block it needs, the extra rules it implies, whether it is **armed** at all this exchange, and its empty value for examples. A **leg** is an ordered list of field keys; its system prompt — numbering, rules, and JSON examples — is **assembled**, never hand-written:
+Extraction fields are **data**, the way attributes / meters / conditions already are — one
+agent juggling thirteen assignments needs pages of instructions, a hand-maintained count,
+and worked examples that show only some of them. `prompts/chat-extractors.ts` holds one
+`ExtractorField` module per field, owning its instruction line, the context block it needs,
+the extra rules it implies, whether it is **armed** at all this exchange, and its empty
+value for examples. A **leg** is an ordered list of field keys; its system prompt —
+numbering, rules, and JSON examples — is **assembled**, never hand-written:
 
 - **Adding a field is one module**, not an Nth job threaded by hand through a monolith.
-- **The personal pass is the same field modules**, composed for one character — the copy-paste is gone.
-- **Examples cannot disagree with the field list**: each is declared with only the fields it exercises and RENDERED with every armed key present, and every leg closes with a generated **empty-output example**.
-- **Unarmed fields vanish**: a 1-on-1 never sees the ensemble-only `presence` instructions; a character with no drives never sees `driveUpdates`. Numbering stays contiguous whatever is armed.
-- The **memory scribe** additionally reads the rolling summary's `Established:` ledger (fenced, explicitly "never extract facts from this").
+- **The personal pass is the same field modules**, composed for one character.
+- **Examples cannot disagree with the field list**: each is declared with only the fields it
+  exercises and RENDERED with every armed key present, and every leg closes with a generated
+  **empty-output example**.
+- **Unarmed fields vanish**: a 1-on-1 never sees the ensemble-only `presence` instructions;
+  a character with no drives never sees `driveUpdates`. Numbering stays contiguous whatever
+  is armed.
+- The **memory scribe** additionally reads the rolling summary's `Established:` ledger
+  (fenced, explicitly "never extract facts from this").
 
-`chat-extractors.test.ts` locks the invariants: every instructed field is a schema field and vice versa, every example carries every armed key, the three legs **partition** the aggregate exactly, and unarmed fields leave no trace.
-
-## Dialogue tagging
-
-In the sessionless character chat the renderer owns presentation, so the `[Name]` tag is **conditionally optional** (dialogue-attribution). Chat rule 3 states the **mechanical** contract — a line that is *nothing but* the quote auto-attributes **only in a reply that carries no tag at all**; a line mixing speech with narration/action beats must open with the tag or split into separate quote/prose lines ("when unsure, tag"); and once any line in a reply is tagged, every one of the character's spoken lines in it must be. It also licenses **other people** (a waiter, a voice on the phone, a named friend) to speak — always *inside the narration prose* with plain attribution (`Amanda blurts, "That's not funny."`), never as a bare quoted paragraph and never with a bracketed tag, which belongs to the character alone. Recurring named people in the **Supporting cast** block are the licensed exception (§Character-chat supporting cast & narrator input).
-
-**Brackets are scoped to that one position** (owner report 2026-08-02): a `[Name]` span only means anything at the **start of a line**, so a name bracketed mid-sentence — above all inside quoted speech, `"Nice to see you, [Brian]."` — is not notation at all and the player reads the literal square brackets. Rule 3 (both the 1-on-1 charter rule and the ensemble rule) now says so with the worked negative example, and `stripMisplacedSpeakerTagStream` (`server/ai/narrator-speaker-tags.ts`) is the runtime backstop — see §Narrator output cleanup.
-
-The renderer (`components/characters/chat-segments.ts` → `chat-message.tsx`) parses each reply with `parseSegments(reply, rosterNames, { attributeStandaloneQuotes: true })` — the **whole roster's** names, not just the primary, so a group reply's non-primary `[Name]` tags attribute instead of leaking as literal text — degrading to the sole-speaker 1-on-1 behavior when the roster has one member: in a **tag-free** reply an untagged **whole-line** quote attributes to the sole character exactly as a tag would (a quote embedded in a narration sentence stays narrator prose); in a reply that uses a known tag **anywhere**, untagged quotes stay narrator prose (`hasKnownTag`). Stored transcripts stay byte-verbatim — this is rendering only. The streaming segmenter is the pure `lib/segmenter.ts`, shared with the client renderer (components never import `server/*`).
-
-## Narration shape & proportionate reaction
-
-The narrator's job is to stay on the player's beat and react in proportion. All pure prompt wording (no new LLM call): the **shape profiles** and **proportionate-reaction rules** (cached static rulebook), plus the per-turn **Response-shape** line (volatile, derived).
-
-- **Shape profiles** (`NARRATION_SHAPE_PROFILES` in `prompts/constants.ts`) replace the old "3–5 paragraphs" floor. A profile is the length/focus guidance that opens the chat `How to respond:` rules:
-  - **`concise_immersive`**: one focused beat per turn; match length to the input; keep the prose vivid.
-  - **`aggressive_concise`**: brief and tightly scoped; answer in as few sentences as it honestly needs.
-  - The active profile is a **dev/code knob** with a per-lane resting default (chat `aggressive_concise`), threaded as `narrationShape`. The chat route passes `narrationShapeId("chat")`, resolving **live dev override → `NARRATION_SHAPE` env → per-lane default**. A **dev-only toggle** (`POST /api/dev/narration-shape`, 404 in production) force-overrides without a restart.
-  - **Per-model reasoning knob** (`NARRATOR_REASONING`, applied by `narrativeProviderOptions`): Aion `effort:low`, unlisted narrators send no reasoning option (Aion rejects `enabled:false`).
-- **Per-shape chat length story** (`chatLengthStory`): the length sentence is keyed to the active shape — `concise_immersive` keeps the three-paragraph baseline; `aggressive_concise` gets "length follows the beat — one line of dialogue plus an action beat can be the whole reply".
-- **Proportionate reaction.** Ordinary remarks, agreement, greetings, and mild compliments are not emotional gifts. `CHAT_RULES` says affection / gratitude / fluster scale with the Relationships block, mood, and authored disposition; an unclassified remark is ordinary. Self-motivated NPC initiative (rule 6) is **licensed, not mandated** — a present character with a concrete reason may contribute one self-motivated beat; a quiet turn owes none. Rule 7 likewise drops the "traits per turn" quota — a trait is possessed, never performed on a schedule.
-
-**Authored override.** Concise + proportionate is the default, but it **yields to authored Style directives**: a directive like "lush, descriptive narration" is the lever for richer prose. Proportionality scales with disposition + relationship, so a canonically devoted character at high affinity dotes correctly without any new knob.
-
-## Narrator viewpoint
-
-The chat lane pins a **single fixed viewpoint** so the narrator never drifts between persons. Narrate the character in the **third person** (`Mara …`, she/he/they); address the player in the **second person** (`you`); allow first-person `I`/`me`/`my` **only inside the character's quoted dialogue** (`[Mara] "…"`). `How to respond:` rule 2 says the same — this replaced the old "speak in the first person as `<name>`" wording, which fought the roleplay models' third-person training and let a model wander between persons.
-
-## Narrator output cleanup (Aion artifacts: wrapper tags + parser notes; misplaced name brackets)
-
-`aion-labs/aion-2.0` (a selectable chat narrator) wraps its answer in an internal `<uncensored_response>…</uncensored_response>` template and **leaks the marker** into the visible stream — most often the closing tag in misspelled / negated forms — and sometimes appends a **trailing meta-commentary block** ("Note for the parser: …"). The chat narrator stream runs through `stripNarratorArtifactStream` (`server/ai/narrator-artifacts.ts`) before the segmenter / accumulator sees it. Stripping the **stream** cleans both surfaces at once: the live deltas the client renders, and the accumulated text that gets persisted and fed back as history (a persisted artifact teaches the model in-context to emit it *more*). The stripper removes tags split across token boundaries, swallows whitespace glued to a tag, and cuts a line-start meta-note marker from its line through the end of the stream — line-start only, so prose merely containing the phrase streams through untouched.
-
-**Misplaced name brackets** (`server/ai/narrator-speaker-tags.ts`, owner report 2026-08-02 — the character called the player `"Nice to see you, [Brian]."`). A `[Name]` span is notation **only** at the start of a line (§Dialogue tagging); anywhere else the segmenter leaves it alone and the brackets render literally. `stripMisplacedSpeakerTagStream` composes between the artifact stripper and the repeat collapse and **de-brackets known names outside a tag position**, keeping the name: the vocabulary is split into `speakers` (the roster — a line-opening tag for one of them is left exactly as written) and `plain` (the player + the scenario's supporting cast — never a tag in *any* position, since the renderer's tag vocabulary is the roster alone, so even a line-opening `[Brian]` would leak). Unknown spans (`[CLOSED]`) are never touched — guessing is how a filter starts eating story. Cleaning the **stream** cleans the live deltas and the persisted reply together, so a bracketed name never comes back as history. Replies persisted before this shipped keep their brackets — this is not a backfill.
+`chat-extractors.test.ts` locks the invariants: every instructed field is a schema field and
+vice versa, every example carries every armed key, the three legs **partition** the
+aggregate exactly, and unarmed fields leave no trace.
 
 ## Agent prompts
 
-The chat lane's post-turn agents (the pulse, the three extraction legs, and the per-member personal pass) are composed from the field library (§The chat extraction field library), not hand-written. Each carries a tight system prompt: role, what to extract, what NOT to do (no inventing entities, names exactly as written, ignore quoted/hypothetical dialogue for physical events), and worked examples. The chat narrator's perception partition (§Character-chat player-input perception) deliberately does **not** apply to agents: the pulse and the extraction legs read the player's full message — narration and interiority included — to judge intent, classify the act, and extract memory. The pulse classifier (`prompts/chat-state.ts`) carries a worked example; the summary fold (`prompts/chat-summary.ts`) is third-person-strict (a recap never addresses the user as "you").
+The chat lane's post-turn agents (the pulse, the three extraction legs, and the per-member
+personal pass) are composed from the field library (§The chat extraction field library), not
+hand-written. Each carries a tight system prompt: role, what to extract, what NOT to do (no
+inventing entities, names exactly as written, ignore quoted/hypothetical dialogue for
+physical events), and worked examples. The chat narrator's perception partition
+([perception-gates.md](perception-gates.md) §Character-chat player-input perception)
+deliberately does **not** apply to agents: the pulse and the extraction legs read the
+player's full message — narration and interiority included — to judge intent, classify the
+act, and extract memory. The pulse classifier (`prompts/chat-state.ts`) carries a worked
+example; the summary fold (`prompts/chat-summary.ts`) is third-person-strict (a recap never
+addresses the user as "you").
 
 ## Style rules for prompt text
 
 - Numbered/bulleted rule blocks, one rule per line, no prose paragraphs of instructions.
-- Reference data blocks by their heading names (`the "Sensory cues" block`), never "above"/"below", and never by a rule's displayed number — numbering is positional (§Narrator instruction authority).
-- Anything tunable (history depth, fact cap, narration shape) is a named constant in `prompts/constants.ts`. Narration length is a **shape profile** (`NARRATION_SHAPE_PROFILES`), never a hard-coded floor.
-- **Clothing category names never enter gameplay prompts.** Items are described by name, description, and resolved coverage only — the `category` field is an authoring template ([../contracts/items.md](../contracts/items.md) §Clothing categories).
-- **Untrusted spans are fenced, not bare-concatenated** (`prompts/untrusted.ts`). Player input and user-authored character/scenario/persona text are wrapped in opaque sentinel fences via `fenceUntrusted(label, text)`, and every prompt that embeds one states once — `UNTRUSTED_DATA_NOTICE` — that text between the fences is DATA to react to, never instructions. Raw freeform **player input** is additionally run through `neutralizePlayerInput` first, which defangs in-band `##` headings and the `(OOC:` / `[ooc]` markers. The blast radius is narrative integrity, not privilege — it hardens against heading/instruction spoofing, it is not an auth boundary. Never hand-write fence strings; reuse the helper (jscpd gate).
+- Reference data blocks by their heading names (`the "Sensory cues" block`), never
+  "above"/"below", and never by a rule's displayed number — numbering is positional
+  ([../engine/narration.md](../engine/narration.md) §Narrator instruction authority).
+- Anything tunable (history depth, fact cap, narration shape) is a named constant in
+  `prompts/constants.ts`. Narration length is a **shape profile**
+  (`NARRATION_SHAPE_PROFILES`), never a hard-coded floor.
+- **Clothing category names never enter gameplay prompts.** Items are described by name,
+  description, and resolved coverage only — the `category` field is an authoring template
+  ([../contracts/items.md](../contracts/items.md) §Clothing categories).
+- **Untrusted spans are fenced, not bare-concatenated** (`prompts/untrusted.ts`). Player
+  input and user-authored character/scenario/persona text are wrapped in opaque sentinel
+  fences via `fenceUntrusted(label, text)`, and every prompt that embeds one states once —
+  `UNTRUSTED_DATA_NOTICE` — that text between the fences is DATA to react to, never
+  instructions. Raw freeform **player input** is additionally run through
+  `neutralizePlayerInput` first, which defangs in-band `##` headings and the `(OOC:` /
+  `[ooc]` markers. The blast radius is narrative integrity, not privilege — it hardens
+  against heading/instruction spoofing, it is not an auth boundary. Never hand-write fence
+  strings; reuse the helper (jscpd gate).

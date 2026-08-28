@@ -38,8 +38,8 @@ This distinction matters because a profile can be selected while a particular le
 
 ## Main implementation points
 
-| Concern                                                            | File                                                                                             |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Concern                                                            | File                                                                                                      |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | Profile IDs, allow-list, provider options, token and timeout rules | `apps/web/src/lib/agent-reasoning.ts`                                                                     |
 | Persisted column                                                   | `apps/web/src/server/db/schema.ts` / `drizzle/0097_agent_reasoning_profiles.sql`                          |
 | Server-side profile lookup                                         | `apps/web/src/server/ai/agent-reasoning.ts`                                                               |

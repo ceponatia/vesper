@@ -56,8 +56,7 @@ Implemented once in `items/visibility.ts` (`resolveWardrobeVisibility` for the o
 the chat state extraction, image prompts, and the UI. The **character-chat lane** feeds it via
 `resolveChatWardrobe` (`server/engine/chat-wardrobe.ts`, 2026-07-14): the
 chat's worn item ids run through `exposedRegions` for coverage-computed exposure and
-`wardrobeOutfitText` for the rendered garment phrase ([../character-chat/state.md](../character-chat/state.md)
-§Wardrobe). The pure garment-phrase matcher + worn-list reducer the chat archivist's add/remove
+`wardrobeOutfitText` for the rendered garment phrase ([../character-chat/wardrobe.md](../character-chat/wardrobe.md)). The pure garment-phrase matcher + worn-list reducer the chat archivist's add/remove
 proposals fold through live in `items/chat-wardrobe.ts` (`matchGarment` / `applyWornGarmentChanges`).
 `matchGarment` is **identity-aware**: a phrase naming a garment in the noun registry
 (`items/garment-nouns.ts`) only matches candidates of the same canonical identity — both sides fold
@@ -300,7 +299,7 @@ Two rules worth knowing:
 
 > top · outerwear · dress · pants · shorts · skirt · bra · underwear · socks · footwear · gloves · headwear · eyewear · jewelry
 
-Picking one pre-fills coverage + layer in the item editor, and the forges may emit one per garment to anchor coverage; everything stays editable afterward. The chosen id is stored as `ItemDefinition.category` for **editor display only** — **category names never enter gameplay prompts** ([../character-chat/prompts.md](../character-chat/prompts.md) §Style rules). The engine reads the resolved coverage set, so a "top" with arm coverage removed simply plays as a tank top.
+Picking one pre-fills coverage + layer in the item editor, and the forges may emit one per garment to anchor coverage; everything stays editable afterward. The chosen id is stored as `ItemDefinition.category` for **editor display only** — **category names never enter gameplay prompts** ([../character-chat/prompts.md](../character-chat/prompts.md) §Style rules for prompt text). The engine reads the resolved coverage set, so a "top" with arm coverage removed simply plays as a tank top.
 
 Templates deliberately avoid parent ids that over-imply:
 

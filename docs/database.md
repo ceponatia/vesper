@@ -439,5 +439,5 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   replayed by every later retry — poisoning the trigger forever rather than delaying it. This
   is safe precisely because the scheduler has no stale read to protect: it holds a lease over a
   payload committed when the trigger was scheduled.
-- The chat lane's post-turn finalize writes the state row, then facts (+supersedence) and the episode through the memory module, each internally transactional; their embeddings degrade per [memory.md](memory.md) instead of failing the exchange ([character-chat/pipeline.md](character-chat/pipeline.md)).
+- The chat lane's post-turn finalize writes the state row, then facts (+supersedence) and the episode through the memory module, each internally transactional; their embeddings degrade per [memory.md](memory.md) instead of failing the exchange ([character-chat/post-turn.md](character-chat/post-turn.md)).
 - Fact supersedence updates `status`/`superseded_by_id`/`superseded_at` on the old row in the same transaction as the inserted replacement — the embedding lives on the row, so there is no orphaned-embedding state (a bug class in the old app).

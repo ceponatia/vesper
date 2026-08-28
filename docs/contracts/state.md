@@ -6,7 +6,7 @@ The **binding** schemas behind the JSONB columns in [database.md](../database.md
 They live in `contracts/world/` and `contracts/state/`, and each
 exports an `empty*()` default used as the `parseOr` fallback. The character-chat lane's own tracked
 shapes (`character_chat_state`, the scenario, scene memory, plans) are covered by
-[../character-chat/state.md](../character-chat/state.md); the successor engine's shapes by
+[../character-chat/README.md](../character-chat/README.md); the successor engine's shapes by
 [../engine/README.md](../engine/README.md).
 
 ## Where each shape is stored
@@ -83,7 +83,7 @@ type SceneGenState = {                        // no subject field: the composer 
 
 `apps/web/src/lib/clock.ts` (pure) derives `GameTime` from a story clock's `clock_minutes` + calendar-start anchor
 (the chat scenario carries `clock_minutes` + `calendar_start`; see
-[../character-chat/state.md](../character-chat/state.md) §Story clock). It provides:
+[../character-chat/state.md](../character-chat/state.md) §The story clock). It provides:
 
 - `weekdayIndex` / `dayIndex` — for schedule day masks and per-day deterministic seeds, and
 - a `daylightBand` helper — **dawn** 05–07 · **day** 07–18 · **dusk** 18–20 · **night** otherwise —

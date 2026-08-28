@@ -1,19 +1,20 @@
 # Images in chat
 
 Everything visual the lane exchanges: photos the player attaches, selfies the
-character sends back, and the cached reference anchors renders are built from.
-The render pipeline itself lives in [images/pipelines.md](../images/pipelines.md).
+character sends back, and the cached reference anchors renders are built from. This page
+owns the lane's **triggers, gates, cooldowns and lifecycle**; the render mechanics behind
+each kind — framing rules, reference routing, prompt segments, retry classification — are
+owned by [images/pipelines.md](../images/pipelines.md).
 
 ## Pipeline scope
 
-This document describes the **character-chat visual pipeline**. Character chat and the
-successor/simulation pipeline are separate live pipelines; character chat is not a
-"legacy" system. The historical persisted authority value for a character-chat-routed
-conversation is still `legacy_chat`, but documentation uses the pipeline's actual name.
+Character chat and the successor/simulation pipeline are separate live pipelines; character
+chat is not a "legacy" system. The persisted authority value for a character-chat-routed
+conversation is `legacy_chat`, but documentation uses the pipeline's actual name.
 
-A successor-routed conversation currently gets its primary character's wardrobe from
+A successor-routed conversation gets its primary character's wardrobe from
 simulation-world material truth, while this image pipeline resolves wardrobe from
-character-chat state plus the chat garment store. Until the successor side exposes a
+character-chat state plus the chat garment store. While the successor side exposes no
 structured visual wardrobe projection with coverage/presentation data, those sources must
 not be mixed: `POST /api/chats/:chatId/scene` refuses successor-routed chats with
 `scene_visual_authority_unavailable`. Existing scene rows remain readable. This is a
@@ -23,14 +24,14 @@ outfit while the image model paints another.
 
 ## Player photos (image input)
 
-The player can attach up to **4 photos per message** (owner ruling 2026-07-11 —
-multi-image from the start) and the character genuinely sees them:
+The player can attach up to **4 photos per message** (owner ruling 2026-07-11)
+and the character genuinely sees them:
 
 - **Upload** (`POST /api/chats/:chatId/attachments`, one photo per call): the composer
   downscales client-side (canvas, ≤1600px → JPEG), the server re-decodes with the
   avatar-upload bomb guards and fits inside 1280px as a `kind: "chat_upload"` asset —
-  chat-keyed, Gallery-hidden, **input-only** (never an identity anchor or edit
-  reference; the parked uploaded-avatar guard stays the launch blocker for that).
+  chat-keyed, Gallery-hidden, **input-only**: never an identity anchor or edit
+  reference.
 - **Send**: the exchange body carries `attachmentIds`; `claimChatAttachments` keeps
   only this chat's ready uploads (foreign ids drop), stamps `anchor_message_id`, and
   the ids ride the user line's `meta.attachments`. A **photo-only send** (no text) is
@@ -54,11 +55,9 @@ multi-image from the start) and the character genuinely sees them:
   orphans go with the conversation too). Scenes keep their SET-NULL Gallery survival;
   uploads never appear there (kind-filtered).
 
-
 ## Selfies (character-sent photo messages)
 
-The character can send photos back (owner
-rulings 2026-07-11):
+The character can send photos back (owner rulings 2026-07-11):
 
 - **Three triggers, one queue decision.** A player **request** (`detectSelfieRequest`,
   regex — any register: handing a photo over face-to-face is the player's call), an
@@ -73,7 +72,8 @@ rulings 2026-07-11):
   a text" — and the fiction enforces apartness: an in-scene opener never
   "sends", so nothing queues). Each arms a one-turn tail **license**
   (`chatSelfieLine` — a request makes declining first-class; an offer is
-  "entirely optional, never forced"). The render queues only when the **pulse**
+  "entirely optional, never forced").
+- **The pulse decides.** The render queues only when the pulse
   read the reply as actually sending one (`sentPhoto`) AND a gate armed it — a
   hallucinated "sending you a pic" on an unarmed turn stays fiction, and a
   decline stays a decline. On an armed opener the normally-skipped pulse runs
@@ -81,41 +81,34 @@ rulings 2026-07-11):
   refresh; no regard/meter/feeling moves, since there is no player act to react
   to — a "neutral" proposal must not clear a standing bruise). An opener send
   records an `offer` ring entry (same cooldown).
-- **Render** (`flavor: "selfie"` through `queueChatScene` →
-  `renderCharacterSceneImage`): ALWAYS the identity-locked reference route (ruled;
-  since 2026-07-29 every chat scene is — the strip's t2i style-swap picks left the
-  `chatSceneModels` vocabulary), with `SELFIE_FRAMING` replacing the
-  player-POV rule (the exact inverse: her own phone camera, arm's-length or mirror,
-  subject aware of the lens). Same one-live-render-per-chat dedupe as scenes;
-  `meta.flavor: "selfie"` rides the asset so lifecycle is unchanged.
-- **Retry-once failure policy (ruled).** A failed first attempt classifies WHY
-  (`classifyImageFailure`) and retries once — a content rejection retries with a
-  **sanitized plan** (exposure + intimate phrasing stripped, intimate route off), a
-  transient failure retries as-is; the failed first row is dropped so one tile
-  shows. A second failure stays a `failed` row rendered in the transcript as a
-  **"Failed" placeholder** ("the photo never arrived"); enlarging it shows the sent
-  prompt (the admin lightbox panel) for debugging. `images.selfie.retry` (info)
-  records the retry in the drained scene diagnostics.
+- **Render**: `flavor: "selfie"` through `queueChatScene` →
+  `renderCharacterSceneImage`. The framing, reference routing and the retry-once
+  failure policy are [images/pipelines.md](../images/pipelines.md); the lane's own rules
+  are that the render shares the one-live-render-per-chat dedupe with scenes,
+  `meta.flavor: "selfie"` rides the asset so lifecycle is unchanged, and a
+  twice-failed render stays a `failed` row rendered in the transcript as a **"Failed"
+  placeholder** ("the photo never arrived") whose sent prompt opens in the admin
+  lightbox panel.
 - **Display**: an anchored image message with the SMS-adjacent treatment (rounded,
   accent-bordered) in the inline moments row; also in the scene strip and Gallery.
 
-
 ## Scene reference anchors (current look + place images)
 
-Chat renders used to anchor on the canonical avatar — always in the default outfit —
-so every scene argued the edit model out of repainting the reference's clothes, and
-settings rode a text sketch alone (owner
-rulings 2026-07-11):
+A conversation caches two render anchors so scenes stop arguing the edit model out of the
+canonical avatar's default outfit, and so a setting is more than a text sketch (owner
+rulings 2026-07-11). What each anchor's prompt contains is
+[images/pipelines.md](../images/pipelines.md); the lane owns when they mint and when they
+die.
 
 - **Current look** (`kind: "chat_look"`): an outfit-true, identity-locked variant of
   the avatar, minted by a detached `chat_look_image` job when the archivist records
   an outfit **or appearance** change (ruled: `attributeOverlays` invalidate like a
   change of clothes) — **image-active chats only** (ruled: a chat that never rendered
-  pays nothing), keep-latest-only (the prior look deletes on replacement). The cache
-  pointer is the images table itself (`meta.lookKey` on the newest ready row =
-  `chatLookKey(outfit, exposed, overlays)`), so a regenerate rollback can't desync
-  pointer from asset — a stale key just falls back to the avatar. Scenes AND selfies
-  anchor on it when fresh. The job skips a wardrobe resolve marked `unreliable`
+  pays nothing), keep-latest-only per character (the prior look deletes on replacement).
+  The cache pointer is the images table itself (`meta.lookKey` on the newest ready row),
+  so a regenerate rollback cannot desync pointer from asset — a stale key just falls back
+  to the avatar. Scenes AND selfies anchor on it when fresh. The job skips a wardrobe
+  resolve marked `unreliable`
   (a failed or coverage-unreadable load — warn `images.chat_look.wardrobe_unreliable`):
   minting from the degraded stand-in would cache a wrongly-dressed look under its key
   and the keep-latest purge would delete the correct anchor, so nothing renders and the
@@ -125,9 +118,8 @@ rulings 2026-07-11):
   establishing shot, minted lazily by `chat_place_image` from its agent-written
   sketch on the **first render there** (`queueChatScene` enqueues; that render still
   ships without it), CAS-written onto `ScenePlace.imageId` exactly like the sketch.
-  Once present, chat scenes render **multi-reference** (look/avatar + place);
+  Once present, chat scenes render multi-reference (look/avatar + place);
   selfies stay single-reference (the subject is the shot).
 - Both kinds are chat-keyed, Gallery-hidden, hard-deleted with the conversation
   (`deleteChatAssets`), and self-healing: any lost race, failed render (row keeps
   `meta.error`), or missing file simply re-fires on the next trigger.
-

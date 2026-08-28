@@ -1,22 +1,19 @@
 # Scene environment & body surface
 
-What the chat lane knows about the physical scene and the bodies standing in it: the
-chat-wide `environment` (wind, precipitation, indoors) and the per-character
-`body_surface` — wetness, contact marks, and the material a body is carrying — the two
-authoritative owners that let the visual layer read *state* rather than parse prose — plus everything projected from them: the affordance read
-and its narrator cue block, recognizable features and visual memory, and the narrator's
-physical-consistency constraints and premise checks. Everything else a conversation carries
-between exchanges — the state row and the chat-wide scenario, wardrobe, scene memory,
-emotional weather, plans, off-screen life, and drives — is in [state.md](state.md).
+The two authoritative owners that let the visual layer read *state* rather than parse
+prose: the chat-wide `environment` (wind, precipitation, indoors) and the per-character
+`body_surface` — wetness, contact marks, and the material a body is carrying. What is
+projected *from* them lives on its own pages: the affordance read and its narrator cues in
+[affordance-cues.md](affordance-cues.md), recognition and the narrator's cue record in
+[visual-memory.md](visual-memory.md), and the constraint/premise fences in
+[physical-guidance.md](physical-guidance.md). Everything else a conversation carries
+between exchanges is [state.md](state.md).
 
+The law both owners exist to serve is that **narrator prose is never parsed at read time** —
+the continuity extraction leg proposes typed ops and the fold commits them through
+`parseOr`, exactly as the garment lane does.
 
-## Scene environment & body surface
-
-Two authoritative owners the lane simply did not have (migration
-0091). Both exist so the visual-affordance layer reads *state*, never prose: the law is
-that **narrator prose is never parsed at read time** — the continuity extraction leg
-proposes typed ops and the fold commits them through `parseOr`, exactly as the garment
-lane does.
+## The two owners
 
 - **`character_chats.environment`** (`contracts/state/chat-environment.ts`
   `ChatEnvironment`): the scene's `wind` (`none`/`breeze`/`windy`/`gusting`),
@@ -33,376 +30,154 @@ lane does.
   on the story clock** at a flat rate (saturated → dry in ~3⅓ story hours), the
   garment-condition precedent: reading integrates forward and never mutates, writes touch
   only the locations a proposal named, and `updatedAtMinutes` therefore stays a truthful
-  freshness stamp for the cause. **Primary character only** this release — `hair` is the
-  one owned location. Three laws about not letting a gap become a physical claim, then the
-  modules that ride beside wetness in the same state:
-  - **Absent, dry, and invalid are three answers, and the wrong one is a physical claim.**
-    A stored entry whose `level`/`updatedAtMinutes` fails parsing is **quarantined** as
-    `{ status: "invalid" }` — persisted verbatim, never pruned, healed only by the next
-    authoritative write — and `bodySurfaceWetnessAt` returns an explicit `invalid` read the
-    caller must handle. Repairing it to `0`, or dropping it so absence answers instead, would
-    be worse than useless: losing wetness does not merely forget that hair was soaked, it
-    asserts that hair is dry, and dry hair carries mobility that wet hair does not — a corrupt
-    row would have bought a wind-motion cue. The adapter maps `invalid` onto the affordance
-    result law's `invalid`, files `affordance.input.invalid`, and the hair domain (for which
-    wetness is structural) falls silent.
-  - **Keys are validated per entry, and an unusable wetness key poisons absence.**
-    `z.record` rejects the whole *record* when one key fails, which would empty a character's
-    wetness and take every valid sibling with it, so wetness and the three identity-keyed
-    modules below each check their keys entry by entry. A key that is empty, longer than its
-    module's bound (64 characters for a body location), or that would need trimming is
-    **refused, not normalised**: a stored `"  hair  "` is never turned into the real `hair`
-    (that gives two events one slot) and never dropped either, since absence is a claim here.
-    It quarantines under its own raw identity carrying a second marker,
-    `{ status: "invalid", scope: "key" }`, because persisted authority is read under exactly
-    the identity it was written under. **So an absent location is honestly dry only while
-    every stored key is assignable** — where one is not, every absent location in that record
-    reads `invalid`, since an unassignable key could have named any location. The asymmetry is
-    the load-bearing part: a corrupt *value* has known scope and poisons nothing but its own
-    location; only an unassignable *key* poisons absence. The two markers are a superset
-    relationship — the predicate for "is this unreadable" answers true for both, so no caller
-    can spend either as a level. Two consequences while debugging: `pruneDryBodySurface`
-    prunes nothing at all in a record holding an unusable key, so pruning still cannot change
-    what any read returns; and a write heals the location it NAMES — at capacity it makes
-    room by spending an unassignable key rather than refusing, since a tombstone is not a
-    material fact, so the poison can never wedge a full record shut. What a write does not
-    do is heal the record: absence keeps reading `invalid` while any unassignable key
-    stands, and only capacity pressure ever spends one.
-  - **Standing outdoor precipitation HOLDS wetness** (`surfaceDryingSuspended` —
-    `precipitationActive`, i.e. raining *and* not indoors). Without it a soaked character
-    standing in a continuing downpour read bone dry after a few story hours, because
-    "unchanged weather" proposes no ops. Holding never *raises* the level; raising still
-    requires a committed proposal. The finalize fold applies the environment patch first
-    and integrates against the result, so an exchange is attributed to the sky it ends
-    under (a documented one-window approximation).
-  - **Temporary contact marks** live beside wetness in the same `BodySurfaceState`
-    (`marks`, keyed by idempotency identity, `bodySurfaceMarkKinds = ["pressure"]` —
-    closed; a stored unknown kind quarantines exactly like corrupt wetness). A mark is
-    committed only by the body-surface transaction (`applyBodyMarkProposals` in
-    `contracts/turns/chat-contact-effects.ts`) from a `BodyMarkProposal` that contact
-    derives from an acknowledged committed touch — firm/moderate pressure with direct
-    skin contact, primary character's body only. Marks **fade lazily on the story
-    clock** (flat rate; the strongest band is gone in ~30 story minutes), reading never
-    mutates, retrying the same causal event cannot double-commit, and the `marks` key is
-    absent until the first commit and dropped when the last mark prunes. The commit leg
-    is gated by `CHAT_CONTACT_EFFECTS` (off by default, and inert without
-    `CHAT_CONTACT_ACTIONS`); the read side projects committed marks into visual state as
-    `body_surface.contact_mark` current-state features.
-  - **Deposits** are the owner's third module (`deposits`, keyed by a deterministic
-    `dep:<kind>:<location>:<minute>` identity): material standing on skin or hair — mud,
-    blood, dust, food, paint, cosmetic, or `unknown` when the fiction did not name it. The
-    substance kinds, amount bands, freshness bands and 45-minute freshness half-life live
-    in `contracts/materials/surface-deposits.ts` and are **shared outright with the garment
-    store**, so mud on a sleeve and mud on the forearm beneath it are one vocabulary. Each
-    entry carries a location, a fixed-point amount, the minute it landed, and a free-text
-    cause; per-entry quarantine, the 12-entry bound and the absent-until-first-commit key
-    rule all match `marks`. **At that bound a new identity is refused, never evicted** — one
-    material-capacity law across both surface owners, so the garment store's ordinary deposit
-    path drops with `garment_op.deposit_capacity` rather than destroying a material fact to
-    make room. Deepening an identity that already stands still works at capacity: the check
-    guards growth, not update, and explicit cleaning is what frees capacity. The parse-time
-    bound on a stored deposit array is a different thing — it trims a corrupt or oversized
-    blob, and never makes room for a write. Ungated, unlike marks — material on skin is
-    ordinary body state, not a contact effect. The read projects as `body_surface.deposit`
-    current-state features (heaviest deposit per location, banded), which is what retired the
-    `dirt_on_skin` and `blood_on_skin` unsupported-fact rows.
-    - **Material never leaves on its own.** Wetness dries and marks fade because a surface
-      is returning to its resting state; a deposit is a substance, and a surface that
-      quietly cleaned itself would delete material nobody removed. Only a *write* shrinks a
-      deposit — an explicit removal or a conserved take (below), never the clock. In a
-      removal (`reduceBodySurfaceDeposits`) everything at or under the removal floor drops,
-      and a removal that names a substance leaves the others where they are. What *does* move
-      with the clock is `freshness`, which drives phrasing (wet blood, drying blood, set
-      blood) and nothing else — which is also why a projected deposit is the one feature
-      family carrying no expiry window.
-  - **Conserved transfer** adds a second pair of deposit writers and a fourth key, and the
-    pairs are deliberately unmistakable because picking the wrong one breaks conservation
-    silently. `commitBodySurfaceDeposit` **raises to the max** — the fiction saying there is
-    mud on her hands establishes *at least* that much — and `reduceBodySurfaceDeposits` is
-    an explicit sink that sweeps the removal floor off every substance at a location;
-    neither conserves. `takeBodySurfaceDeposit` reports **exactly what left** and does
-    **not** inherit the removal floor: taking 1,000 off a 1,400 deposit leaves 400 standing,
-    because the floor is washing's cleanup policy and a transfer that swept it would destroy
-    the difference between what left and what arrived. `acceptBodySurfaceDeposit` **adds**,
-    and refuses (`invalid_amount`/`saturated`/`quarantined`/`capacity`) rather than clamping,
-    evicting, or writing over a quarantined slot — a destination that absorbs less than the
-    source lost is the unowned sink the deposit law exists to prevent. Both are keyed by the
-    exact deposit identity, never by location, since the removal path takes from every
-    substance standing at a place and would destroy the blood while moving the mud.
-  - **`transfers` is a receipt record, not body state**, and it rides this owner
-    deliberately: a receipt has to roll back with the DEBIT, or a half-applied transfer
-    leaves a receipt claiming it happened. It is written in the same value, restored from
-    the same `pre_exchange_state` anchor, and dropped by the same retake, so a key here
-    inherits that boundary where a table of its own would have to be taught it. An *adding*
-    credit cannot tell a retry from a second helping by looking at its own amount, so the
-    transaction asks `bodySurfaceTransferCommitted` on the source surface and short-circuits
-    **before any debit** (a quarantined receipt answers "committed" — skipping a beat that
-    may already have happened beats debiting it twice). Receipts prune on the write path
-    only, past `BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES`, and capacity
-    (`BODY_SURFACE_MAX_TRANSFER_RECEIPTS`) refuses rather than evicting, because evicting a
-    receipt makes the transfer it recorded runnable again. Absent until the first transfer
-    commits, on the `marks`/`deposits` key rule; no migration.
-  - **The transaction is fixture-only** (`contracts/turns/chat-contact-transfer.ts`, over
-    proposals from `contracts/affordances/contact/transfer.ts`): no chat-lane producer
-    resolves a source material read or an owner-addressable layer path, so nothing in
-    production reaches it. It is all-or-nothing by construction — every owner is folded on a
-    local copy and a refusal simply never returns them — and it verifies each credit by
-    reading the owner back, so a garment or surface that clamps, evicts, or max-merges a
-    conserved credit fails the settlement with a `surface_transfer.*` code instead of
-    silently breaking conservation.
-- **The extraction** (`chatArchivistSchema.environment` / `.surfaceWetness` /
-  `.surfaceDeposits`, all on the
-  shared continuity leg): a partial weather patch (absent key = unchanged) and a list of
-  `{ location, direction, degree 1-3, cause? }`. Semantic, never numeric — the reducer
-  owns the delta table and clamps regardless; an unowned location drops with
-  `chat_surface.location_unknown`. `surfaceWetness` is carried **raw** on the aggregate
-  and parsed per item by `parseSurfaceWetnessProposals`, which drops malformed items and
-  reports the count as `chat_surface.proposal_invalid`. A record already holding
-  its 32 locations refuses the write with `chat_surface.wetness_capacity` rather than
-  passing for a quiet exchange, the deposit lane's rule exactly. `direction` and `degree` are
-  strict — the standing law is that **`.catch` is for narration-affecting leaves, never
-  for state-mutating magnitudes**, so a hallucinated `degree: 999` fails its item instead
-  of being repaired into a real 50% wetness change. `cause` stays lenient (provenance
-  only). `surfaceDeposits` follows the same shape — `{ location, substance, direction
-  add/remove, degree 1-3, cause? }`, parsed per item by `parseSurfaceDepositProposals` —
-  with two deliberate differences. An unrecognised **substance** degrades to `unknown`
-  rather than failing its item, because `unknown` is a real member of the vocabulary and
-  something is genuinely on her hands either way. And `substance` is **optional**, where
-  an absent one is not the same answer as `unknown`: absent is the wildcard that removes
-  whatever is on the location (a general wash), while `unknown` is the substance an
-  unrecognised name became — so wiping the glitter off muddy hands leaves the mud. Its locations are the everyday body
-  surfaces; the intimate sub-tree is excluded by construction, since it is gated per
-  character and would need that gate honoured on every read first. A full record refuses
-  with `chat_surface.deposit_capacity` rather than reporting a silent no-op.
-- **`character_chats.affordance_cues`** (`AffordanceCueState`): what the affordance read
-  has already offered the narrator, and in which band — the garment `cues` precedent. It
-  sits on the SCENARIO because the read is a pure function of committed state plus this
-  memory (`engine/chat-affordances.ts` `buildChatAffordanceRead`), so restoring both from
-  one anchor is what makes a retake reproduce the identical read rather than resolving
-  against later weather. Written when the read reaches the prompt; with the narration flag
-  off it rides through untouched (never cleared).
-- **Narration** (slice 5, behind `CHAT_AFFORDANCE_CUES`, default OFF until the trial run):
-  the pipeline takes the read from the committed **pre-fan-out** cut — the drifted state
-  row, the ticked scenario, and the wardrobe rows that turn already resolved — and projects
-  `read.cues` into at most two short factual clauses ("Wren's auburn hair has separated into
-  damp, clinging strands, still wet from the rain") via `engine/chat-affordance-cues.ts`.
-  They render as one **attention-only** prompt block after the garment cue block; there is
-  deliberately no affordance digest, because the appearance they decorate is already
-  authoritative in the Attributes section. Cue projection is the one place `hair.color` is
-  read — it is excluded from the domain's required attributes so it can never move a band.
-  The block is primary-character-only (it leans on the one Attributes section this prompt
-  carries), and `previewChatPrompt` re-derives it read-only, so opening the inspector never
-  spends the repeat gate. With the flag off nothing is computed at all and the prompt is
-  byte-identical to the pre-feature build (int-tested by splicing the ON block back out).
+  freshness stamp for the cause. Only the **primary character** carries a body surface,
+  and `hair` is the one owned location.
 
-The adapter itself reports what this lane can honestly answer and refuses the rest:
-arrangement/wetness/coverage/wind are owned, while **contact, body motion and
-contamination are `unavailable`** — so hair-to-skin adhesion is suppressed by the shared
-core before its resolver can read an empty contact list as "nothing is touching", and no
-impulse event is ever synthesized. Unknown coverage (no wardrobe read at all) fails
-closed: the whole hair read goes silent rather than assuming an uncovered head.
+## Three laws about not letting a gap become a physical claim
 
-**Coverage constrains what moves; perception only says what an eye reaches.** Worn
-headwear maps the `hair` location to exposure `hinted` — opaque *or* sheer — because the
-wardrobe's per-location coverage is already partial (`coveredFraction` 0.9 for an opaque
-cover, precisely because ends and fringe hang out) and an ordinary hat, cap or hood
-genuinely leaves some of the location readable. Mapping opaque to `hidden` had the two
-layers contradicting each other and suppressed *every* hair observation under a hat,
-including ones coverage does not damp. Genuinely total concealment (a wrapped headscarf, a
-veil) should read `hidden`, but that needs a finer coverage signal than the per-location
-boolean, so no chat garment produces `hidden` today — the gate itself is unchanged and
-still fails closed for an unlisted location (`unknown`).
+- **Absent, dry, and invalid are three answers, and the wrong one is a physical claim.**
+  A stored entry whose `level`/`updatedAtMinutes` fails parsing is **quarantined** as
+  `{ status: "invalid" }` — persisted verbatim, never pruned, healed only by the next
+  authoritative write — and `bodySurfaceWetnessAt` returns an explicit `invalid` read the
+  caller must handle. Repairing it to `0`, or dropping it so absence answers instead, would
+  be worse than useless: losing wetness does not merely forget that hair was soaked, it
+  asserts that hair is dry, and dry hair carries mobility that wet hair does not — a corrupt
+  row would have bought a wind-motion cue. The adapter maps `invalid` onto the affordance
+  result law's `invalid`, files `affordance.input.invalid`, and the hair domain (for which
+  wetness is structural) falls silent.
+- **Keys are validated per entry, and an unusable wetness key poisons absence.**
+  `z.record` rejects the whole *record* when one key fails, which would empty a character's
+  wetness and take every valid sibling with it, so wetness and the three identity-keyed
+  modules below each check their keys entry by entry. A key that is empty, longer than its
+  module's bound (64 characters for a body location), or that would need trimming is
+  **refused, not normalised**: a stored `"  hair  "` is never turned into the real `hair`
+  (that gives two events one slot) and never dropped either, since absence is a claim here.
+  It quarantines under its own raw identity carrying a second marker,
+  `{ status: "invalid", scope: "key" }`, because persisted authority is read under exactly
+  the identity it was written under. **So an absent location is honestly dry only while
+  every stored key is assignable** — where one is not, every absent location in that record
+  reads `invalid`, since an unassignable key could have named any location. The asymmetry is
+  the load-bearing part: a corrupt *value* has known scope and poisons nothing but its own
+  location; only an unassignable *key* poisons absence. The two markers are a superset
+  relationship — the predicate for "is this unreadable" answers true for both, so no caller
+  can spend either as a level. Two consequences while debugging: `pruneDryBodySurface`
+  prunes nothing at all in a record holding an unusable key, so pruning still cannot change
+  what any read returns; and a write heals the location it NAMES — at capacity it makes
+  room by spending an unassignable key rather than refusing, since a tombstone is not a
+  material fact, so the poison can never wedge a full record shut. What a write does not
+  do is heal the record: absence keeps reading `invalid` while any unassignable key
+  stands, and only capacity pressure ever spends one.
+- **Standing outdoor precipitation HOLDS wetness** (`surfaceDryingSuspended` —
+  `precipitationActive`, i.e. raining *and* not indoors). Without it a soaked character
+  standing in a continuing downpour would read bone dry after a few story hours, because
+  "unchanged weather" proposes no ops. Holding never *raises* the level; raising still
+  requires a committed proposal. The finalize fold applies the environment patch first
+  and integrates against the result, so an exchange is attributed to the sky it ends
+  under (a documented one-window approximation).
 
-**The garment domain** (slice 6) rides the same adapter and the same flag. Its wardrobe
-normalization lives in `engine/chat-garment-affordances.ts`: worn garment instances, their
-blueprint snapshots' materials, presentation-aware per-part coverage, and the condition
-gradient's wetness — integrated forward to the story clock *lazily and without writing
-back*, so building a prompt can never dry a garment. It answers three reads —
-material-dependent wet surface behavior, effective opacity, and wet cling — and refuses the
-rest honestly:
+## What rides beside wetness
 
-- **`contacts` is omitted entirely**, because no lane records garment *fit* and the ruled
-  establishment law only lets a `fitted`/`tight` garment claim body contact from wardrobe
-  truth. Wet cling is therefore suppressed by the core with `affordance.input.unavailable`,
-  exactly as hair adhesion is.
-- **`focus` is omitted**, so the domain's closed default blocks every intimate cue
-  (`intimate_gated`); the chat lane has no narrative-focus or consent owner yet.
-- An **unmodelled** wardrobe means the domain is not run at all — unknown coverage, never a
-  bare body.
+- **Temporary contact marks** live beside wetness in the same `BodySurfaceState`
+  (`marks`, keyed by idempotency identity, `bodySurfaceMarkKinds = ["pressure"]` —
+  closed; a stored unknown kind quarantines exactly like corrupt wetness). A mark is
+  committed only by the body-surface transaction (`applyBodyMarkProposals` in
+  `contracts/turns/chat-contact-effects.ts`) from a `BodyMarkProposal` that contact
+  derives from an acknowledged committed touch — firm/moderate pressure with direct
+  skin contact, primary character's body only. Marks **fade lazily on the story
+  clock** (flat rate; the strongest band is gone in ~30 story minutes), reading never
+  mutates, retrying the same causal event cannot double-commit, and the `marks` key is
+  absent until the first commit and dropped when the last mark prunes. The commit leg
+  is gated by `CHAT_CONTACT_EFFECTS` (default off, and inert without
+  `CHAT_CONTACT_ACTIONS`); the read side projects committed marks into visual state as
+  `body_surface.contact_mark` current-state features.
+- **Deposits** are the owner's third module (`deposits`, keyed by a deterministic
+  `dep:<kind>:<location>:<minute>` identity): material standing on skin or hair — mud,
+  blood, dust, food, paint, cosmetic, or `unknown` when the fiction did not name it. The
+  substance kinds, amount bands, freshness bands and 45-minute freshness half-life live
+  in `contracts/materials/surface-deposits.ts` and are **shared outright with the garment
+  store**, so mud on a sleeve and mud on the forearm beneath it are one vocabulary. Each
+  entry carries a location, a fixed-point amount, the minute it landed, and a free-text
+  cause; per-entry quarantine, the 12-entry bound and the absent-until-first-commit key
+  rule all match `marks`. **At that bound a new identity is refused, never evicted** — one
+  material-capacity law across both surface owners, so the garment store's ordinary deposit
+  path drops with `garment_op.deposit_capacity` rather than destroying a material fact to
+  make room. Deepening an identity that already stands still works at capacity: the check
+  guards growth, not update, and explicit cleaning is what frees capacity. The parse-time
+  bound on a stored deposit array is a different thing — it trims a corrupt or oversized
+  blob, and never makes room for a write. Deposits are ungated, unlike marks — material on
+  skin is ordinary body state, not a contact effect. The read projects as
+  `body_surface.deposit` current-state features (heaviest deposit per location, banded).
+  - **Material never leaves on its own.** Wetness dries and marks fade because a surface
+    is returning to its resting state; a deposit is a substance, and a surface that
+    quietly cleaned itself would delete material nobody removed. Only a *write* shrinks a
+    deposit — an explicit removal or a conserved take (below), never the clock. In a
+    removal (`reduceBodySurfaceDeposits`) everything at or under the removal floor drops,
+    and a removal that names a substance leaves the others where they are. What *does* move
+    with the clock is `freshness`, which drives phrasing (wet blood, drying blood, set
+    blood) and nothing else — which is also why a projected deposit is the one feature
+    family carrying no expiry window.
+- **Conserved transfer** adds a second pair of deposit writers and a fourth key, and the
+  pairs are deliberately unmistakable because picking the wrong one breaks conservation
+  silently. `commitBodySurfaceDeposit` **raises to the max** — the fiction saying there is
+  mud on her hands establishes *at least* that much — and `reduceBodySurfaceDeposits` is
+  an explicit sink that sweeps the removal floor off every substance at a location;
+  neither conserves. `takeBodySurfaceDeposit` reports **exactly what left** and does
+  **not** inherit the removal floor: taking 1,000 off a 1,400 deposit leaves 400 standing,
+  because the floor is washing's cleanup policy and a transfer that swept it would destroy
+  the difference between what left and what arrived. `acceptBodySurfaceDeposit` **adds**,
+  and refuses (`invalid_amount`/`saturated`/`quarantined`/`capacity`) rather than clamping,
+  evicting, or writing over a quarantined slot — a destination that absorbs less than the
+  source lost is the unowned sink the deposit law exists to prevent. Both are keyed by the
+  exact deposit identity, never by location, since the removal path takes from every
+  substance standing at a place and would destroy the blood while moving the mud.
+- **`transfers` is a receipt record, not body state**, and it rides this owner
+  deliberately: a receipt has to roll back with the DEBIT, or a half-applied transfer
+  leaves a receipt claiming it happened. It is written in the same value, restored from
+  the same `pre_exchange_state` anchor, and dropped by the same retake, so a key here
+  inherits that boundary where a table of its own would have to be taught it. An *adding*
+  credit cannot tell a retry from a second helping by looking at its own amount, so the
+  transaction asks `bodySurfaceTransferCommitted` on the source surface and short-circuits
+  **before any debit** (a quarantined receipt answers "committed" — skipping a beat that
+  may already have happened beats debiting it twice). Receipts prune on the write path
+  only, past `BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES`, and capacity
+  (`BODY_SURFACE_MAX_TRANSFER_RECEIPTS`) refuses rather than evicting, because evicting a
+  receipt makes the transfer it recorded runnable again. Absent until the first transfer
+  commits, on the `marks`/`deposits` key rule; no migration.
+- **The transfer transaction is fixture-only** (`contracts/turns/chat-contact-transfer.ts`,
+  over proposals from `contracts/affordances/contact/transfer.ts`): no chat-lane producer
+  resolves a source material read or an owner-addressable layer path, so nothing in
+  production reaches it. It is all-or-nothing by construction — every owner is folded on a
+  local copy and a refusal simply never returns them — and it verifies each credit by
+  reading the owner back, so a garment or surface that clamps, evicts, or max-merges a
+  conserved credit fails the settlement with a `surface_transfer.*` code instead of
+  silently breaking conservation.
 
-The read also produces the final **effective-coverage read** (opaque/hinted/exposed per body
-location, with contributing garment evidence), and that answer is **captured** onto
-`ChatGarmentStore.coverage` rather than recomputed by each consumer — so it rides
-`pre_exchange_scenario` with the garments it describes and a retake restores both or
-neither. See [../contracts/items.md](../contracts/items.md) §Effective coverage.
+## The extraction
 
-**Two narrator cue blocks, one boundary.** `CHAT_GARMENT_CUES` owns garment *state and its
-changes* (a placket that came open, a rolled sleeve, the condition band, mud, a tear);
-`CHAT_AFFORDANCE_CUES` owns the current derived *visual effect* of that state (water beading
-or darkening, opacity, cling). They overlap only at garment wetness, so with both flags on
-the pipeline passes the garment ids the wardrobe block already spoke about and the affordance
-projection drops its surface line for them.
+`chatArchivistSchema.environment` / `.surfaceWetness` / `.surfaceDeposits`, all on the
+shared continuity leg: a partial weather patch (absent key = unchanged) and a list of
+`{ location, direction, degree 1-3, cause? }`. Semantic, never numeric — the reducer
+owns the delta table and clamps regardless; an unowned location drops with
+`chat_surface.location_unknown`. `surfaceWetness` is carried **raw** on the aggregate
+and parsed per item by `parseSurfaceWetnessProposals`, which drops malformed items and
+reports the count as `chat_surface.proposal_invalid`. A record already holding
+its 32 locations refuses the write with `chat_surface.wetness_capacity` rather than
+passing for a quiet exchange, the deposit lane's rule exactly.
 
-**The developer preview** (`/chat/:id/inspector`, admin-only) shows the whole staircase
-read-only — source inputs → structural profile → mechanics → observations or suppression
-reason → perception filtering → selected cue, per domain — computed on demand from the
-stored cut and storing nothing (`engine/chat-affordance-preview.ts`; it never persists
-`nextCues`, so looking cannot spend the repeat gate). It deliberately ignores the feature
-flag and reports its state instead: the question it exists to answer is "why did this cut
-say nothing?", which matters most while the flag is off. It does not yet show the
-recognition line below — a named follow-up.
+`direction` and `degree` are strict — the standing law is that **`.catch` is for
+narration-affecting leaves, never for state-mutating magnitudes**, so a hallucinated
+`degree: 999` fails its item instead of being repaired into a real 50% wetness change.
+`cause` stays lenient (provenance only).
 
-### Recognizable features and visual memory
-
-**`chat_visual_memory`** (slice 7, behind `CHAT_RECOGNITION_CUES`, default OFF): what the
-player viewpoint has *noticed* about a character's body, and what the narrator has recently
-*said* about it. The pipeline projects canonical body truth into per-feature candidates,
-scores each against the same perception view the affordance read uses, and appends **at most
-one** extra line to that same cue block ("a crooked nose", "the scar across her right
-forearm") — standing truth after the physical cues, never competing with them. Contracts in
-`contracts/appearance-features/` (what a feature IS) and `contracts/affordances/recognition/`
-(what THIS observer can make of it); the lane bridges them in
-`engine/chat-recognition-adapter.ts` (pure) over `engine/visual-memory-store.ts`.
-
-- **Scoped to the memory group, not the chat** — PK `(memory_group_id, viewpoint_id,
-  subject_id)`, viewpoint = the chat owner. "Continue our history" retains recognition; a
-  fresh conversation meets a stranger. `deleteChat` clears the group's rows with its last chat.
-- **Two generations per row** (`features` / `features_before` / `applied_message_id`, the same
-  rollback guard the state and scenario anchors take): a retake re-runs from the identical
-  pre-exchange memory instead of counting the same look twice. There is no event ledger here,
-  so one generation of history is what makes the retake law true.
-- **Notices persist even when no cue fires.** Looking strengthens recognition; only a cue that
-  reached the transcript moves `lastMentionedAt` and starts a cooldown. The commit is a
-  serializable value returned by the contract and written only once the exchange settles.
-- With `CHAT_AFFORDANCE_CUES` off but this flag on, the affordance read is still built as a
-  **perception source only** — its `nextCues` and `coverage` are deliberately dropped, so one
-  experiment's flag can never write the other's state.
-- **Production-silent today**: the perception view asserts exposure only for garment-covered
-  locations and hair, so bare skin (nose, face, forearms) reads `unknown` and recognition fails
-  closed — the same shape of missing-owner gap as garment fit above.
-
-### The narrator's own cue record
-
-**`chat_visual_cues`** (behind each conversation's own visual-continuity switch, default OFF) is the sibling
-record for everything `chat_visual_memory` deliberately refuses. Recognition memory holds
-what a person could *recognize* — a crooked nose, a scar — and a rolled sleeve, a posture, or
-an occupied hand has no business filling it up. That exclusion also left those details with
-no cooldown after being mentioned and no record of having been seen, so a recently stamped
-sleeve stayed eligible turn after turn and nothing could tell the narrator that an ordinary
-detail became *visible* now rather than merely being true now.
-
-Contract in `contracts/visual-state/cue-state.ts`, storage in
-`engine/visual-cue-store.ts`. The two records are disjoint: one predicate
-(`isMemoryEligible`) decides which answers for a feature, so novelty, the cooldown, and the
-mention ledger all follow it and a single cue can never spend both.
-
-- **Keyed by repeat family, not by feature** — both questions it answers are questions about
-  the family ("this sleeve's arrangement"), and its stored fingerprint covers every visible
-  member of that family, so a change to any of them registers.
-- **It counts cuts, not minutes.** "Newly visible" means *not in view at the immediately
-  previous cut*. Chat turns move the story clock by wildly varying amounts, so a time
-  threshold would call a continuously visible sleeve newly revealed after a long gap and miss
-  a coat that came off and back on inside an hour.
-- **Seeing and saying are separate events**, exactly as they are for recognition. Every cut
-  records what was in view, said or not; only a cue that reached the transcript starts a
-  cooldown. A detail in continuous, unchanged view stays quiet; one that reappears or changes
-  can earn a beat.
-- **Same key and same two-generation retake law** as `chat_visual_memory`, in its own table.
-  The counter is why that matters more here: a retake that advanced it twice would make every
-  tracked detail read as newly revealed on the following cut.
-- **Read either way, written only when the chat's switch is on.** The visual-state shadow reads
-  the stored state and ranks against it, so its repetition and newly-revealed counts are real;
-  only a conversation with visual continuity turned on commits.
-- **A just-said detail leaves the fence for one cut.** The fence otherwise never goes quiet — a
-  fact stays contradictable — but a detail the narrator has only just used would otherwise be
-  re-presented immediately, and the narrator reads a fence entry as something it may say. The
-  ledger of what was spoken, and when, is what closes that loop in the projection rather than in
-  prompt wording.
-
-### What the narrator can see
-
-Visibility claims nothing unless it knows the light, the distance, the angle, and whether
-anyone is moving; one unknown component suppresses every detail in the snapshot. Distance and
-angle come from the scene owner's proximity and facing for the observer/subject pair. Nothing
-in the app owns scene lighting or whole-subject motion, so the release **states** a base
-value for each (an ordinary lit room, a still scene) and marks it as stated — the marker
-rides the evidence on every visible read, one info diagnostic, and the inspector's own panel,
-so a stated placeholder can never be mistaken for an observation.
-
-### Narrator physical guidance — constraints and premise checks
-
-The affordance-cue trial closed against volunteering physical detail, so the same committed
-truth is now projected the other way round: mostly as what the narrator **must not claim**.
-Behind `CHAT_PHYSICAL_CONSTRAINTS` (default OFF) the pipeline compiles two things from the
-cut it already has —
-
-- **consistency constraints**, from the hair domain's `hair.bulk_restraint` resolution: a
-  braid, a bun, a hood, or a soaking holds the hair's bulk still, and the narrator may not
-  write it streaming loose. This is the one phenomenon that emits a `constraint` rather than
-  an observation, and it needs no wind: the wind/motion read already computed the same
-  restraint but only ever used it as a reason for its own silence, so on a still evening the
-  domain knew the hair was braided and nobody was told.
-- **premise corrections**, from the current player message: a high-confidence physical claim
-  that committed state contradicts (rain when the state records a bath, loose when the style
-  is a braid) or cannot support (a claim about an owner this lane could not read). A claim
-  counts only in the clause that names the hair — a hair reference in one clause licenses
-  nothing in the next, so "your braided hair looks lovely while the curtains go streaming"
-  corrects nothing — and a cause word ("a storm", "a pool") is scenery until the same clause
-  also says somebody got wet. A clause that names **two** people's hair ("your braid looks
-  lovely beside Mira's hair streaming in the wind") corrects nothing either: there is no
-  way to tell which head the verb belongs to, and ambiguity is silence.
-
-Both render as ONE binding-tier prompt block with explicit precedence over the general
-sensory allowances — see [prompts.md](prompts.md) §"Physical consistency".
-
-**A standing fence is stated only when the turn is about it.** A braid is true all day, and
-repeating its prohibition on every exchange spends prompt bytes on inventory and risks
-priming the very description it forbids. So constraints are compiled only when at least one
-relevance signal holds: the message names **this character's** hair (a subject-bound
-reference in any span — the claim wording may be absent, "you tuck your hair behind one ear"
-is enough), a premise was corrected this turn, something is actually acting on the hair
-right now (wind above still air, or falling precipitation), or the turn's sensory beat is
-aimed at the hair. No signal means no candidates, no block, and a byte-identical prompt —
-with one `guidance.constraint.irrelevant` info diagnostic per withheld fence so the
-inspector can explain the silence. Corrections are never gated this way: a correction is
-about the current turn by construction.
-
-A bare claim word bound to nobody is **not** a signal. The claim vocabulary is ordinary
-English — "river", "pool", "loose", "soaking" — so "it is absolutely soaking wet out there"
-is about the weather, and arming a braid fence on it would spend prompt bytes to prime the
-very description the fence forbids.
-
-**The two flags share the read and nothing else.** `CHAT_PHYSICAL_CONSTRAINTS` makes the
-pipeline build the affordance read when `CHAT_AFFORDANCE_CUES` is off, but cue rendering
-**and** the `character_chats.affordance_cues` write stay gated on the cue flag alone — so
-running the constraint experiment can never spend or advance the closed experiment's repeat
-gate, and the two remain independently measurable. The adapter hands back the committed
-facts it derived (`ChatCommittedHairState`: wetness band, single wetting cause, arrangement,
-covered fraction, whether a force is currently acting on the hair, and per-owner
-availability) rather than letting the guidance layer re-read state, so a fence can never
-disagree with the read it accompanies.
-
-**Provenance truth and cue freshness are two different windows.** The 60-minute event
-freshness window governs whether the domain may *volunteer* a cause ("still damp from the
-rain") — beyond it the hair is simply wet and says nothing about why. The committed cause the
-premise fence compares against comes straight off the body-surface entry and lives as long as
-the wetness does: three story hours after a bath the hair is still wet *because of* the bath,
-and a player blaming the storm is still wrong. It goes `null` when the hair is dry, when the
-recorded cause is `other` or absent, or when two causes are live at once (a bath, then rain
-on the walk home) — silence, never a guess.
-
-**Nothing is persisted, and that is what makes retakes correct.** Every input is either the
-committed cut or the current message text, and both already roll back through
-`pre_exchange_state` / `pre_exchange_scenario` and the transcript — so the same take
-recomputes identical candidates, identical selection fingerprints, and identical prose for
-free. There is no `physical_guidance` row to restore, and adding one would only create a way
-for the stored answer and the recomputed one to disagree. (Slice 4's optional
-changed-state detail is the case that will need storage, for its cooldown; it has its own
-flag and is not built.)
-
-**The developer preview** (`/chat/:id/inspector`, admin-only) shows the staircase read-only —
-input authority (which spans of the newest player line were even eligible) → committed state
-and per-owner availability → the relevance decision (which signals admitted a fence, or "not
-relevant" per constraint) → candidates with their disclosure → what survived the gate and the
-budget → the rendered lines. It reports `CHAT_PHYSICAL_CONSTRAINTS` rather than obeying it,
-because silence here has six different causes that look identical from the prompt.
+`surfaceDeposits` follows the same shape — `{ location, substance, direction
+add/remove, degree 1-3, cause? }`, parsed per item by `parseSurfaceDepositProposals` —
+with two deliberate differences. An unrecognised **substance** degrades to `unknown`
+rather than failing its item, because `unknown` is a real member of the vocabulary and
+something is genuinely on her hands either way. And `substance` is **optional**, where
+an absent one is not the same answer as `unknown`: absent is the wildcard that removes
+whatever is on the location (a general wash), while `unknown` is the substance an
+unrecognised name became — so wiping the glitter off muddy hands leaves the mud. Its
+locations are the everyday body
+surfaces; the intimate sub-tree is excluded by construction, since it is gated per
+character and would need that gate honoured on every read first. A full record refuses
+with `chat_surface.deposit_capacity` rather than reporting a silent no-op.

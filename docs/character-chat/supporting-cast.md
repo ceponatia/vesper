@@ -6,10 +6,9 @@ register that lets the player author story narration in their own right.
 ## Supporting cast
 
 Recurring named side characters — the player's coworker, the character's sister — who are
-NOT character entities and NOT roster members
-(2026-07-13). Before this, rule 3's incidental-person discipline kept every non-roster person
-"unnamed and passing," so a recurring friend like Abby was reacted to but never *written for*.
-The scene-memory pattern applied to people:
+NOT character entities and NOT roster members. Rule 3's incidental-person discipline keeps
+every unlisted non-roster person "unnamed and passing", so a recurring friend needs a record
+of her own to be written *for*. This is the scene-memory pattern applied to people:
 
 - **Storage**: `supporting_cast` jsonb on the CHAT row (the shared scenario; one cast for the
   roster) — `SupportingCastMember { name, relation, details[], voice?, whereabouts? }`
@@ -38,12 +37,11 @@ The scene-memory pattern applied to people:
   Remove) for manual seeding and for deleting erroneous entries. Saves are whole-list
   replacements through the state PATCH (`ChatStateEdit.supportingCast`, chat-wide half);
   409 `chat_busy` while a reply streams.
-- **Deferred**: per-member images, a promote-to-character flow (the cast entry as forge seed).
 
 
 ## Narrator input (the player as storyteller)
 
-The composer's **You ↔ Narrator** toggle (same plan): a `send` with `inputMode: "narrator"`
+The composer's **You ↔ Narrator** toggle: a `send` with `inputMode: "narrator"`
 is story narration the player authored as the STORYTELLER — supporting-cast dialogue and
 actions, offscreen developments, scene flavor — never the player's own POV, so the reply
 must not treat it as something the player said or did.

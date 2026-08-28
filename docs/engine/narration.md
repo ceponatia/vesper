@@ -242,6 +242,90 @@ unknown-ID handling rather than being trusted. Player text, summaries, memory
 lines, and transcript tails are fenced as untrusted data (`prompts/untrusted.ts`)
 before they reach the prompt.
 
+### The solo cut
+
+When a turn runs WITHOUT a co-present primary — the player walked off, or either
+party is in transit — the render is **dual-block**: a second-person player-side
+block (the player's own zone, co-present NPCs, held items), then a third-person
+**away vignette** of the primary living their engine-supplied routine MUSTs
+(location, active activity, due commitments), for the reader only and never
+player-character knowledge. It reuses the SAME charter blocks as `sim-render.ts`
+(canon, presentation state, conversation) and only swaps the COMMITTED-TRUTH
+block for a SOLO SCENE block and the JSON contract for `{prose}` — builder
+`prompts/sim-solo-render.ts`, render loop `renderSoloNarration` in
+`sim-narrator.ts`, pure shaping `@vesper/simulation-core/solo-cut`. A solo turn
+advances the branch clock 60s (draining triggers) and never dead-ends: it always
+degrades to a deterministic dual-block fallback.
+
+The composer's **Narrator input mode** flows into successor turns, co-present and
+solo alike — a `narrator` send is storyteller steering, so it skips input
+admission and reframes the player-turn block.
+
+### Departure context on the solo prompt
+
+When the solo turn is a player-CHOSEN departure — an admitted natural-language "I
+walk to the town square" — block (a) gains a one-line **departure arc**: whom the
+player just left (only on a farewell, when a co-present scene was ended as a
+choice) and the from/to zones. Block (a) then narrates the goodbye, the walk, and
+the arrival as ONE continuous beat, never a jump-cut; block (b) stays the
+primary's away vignette, which may naturally show them in the moments after the
+player left. The choreography — end scene as `participant_choice` → move → drain
+to arrival — runs BEFORE the render, so the solo turn skips its own 60s span
+advance: the clock already jumped the travel. The line is pure
+(`buildSoloDepartureLine`, `@vesper/simulation-core/departure`) and rides in via
+`SimSoloRenderContext.departure`.
+
+## Narrator instruction authority
+
+Every narrator builder — successor co-present (`prompts/sim-render.ts`),
+successor solo (`prompts/sim-solo-render.ts`), and the legacy character-chat 1:1
+and ensemble builders — emits a tree of **classified nodes** and renders it once,
+rather than joining strings ad hoc. The classification is
+`contracts/narrator-prompts/authority.ts`, and it exists so exactly one layer can
+be swapped for hand-written text without disturbing anything else:
+
+- **`behavior`** — narrator craft: role, prose camera, pacing, richness, dialogue
+  style, topic discipline. The only layer that is ever replaced.
+- **`runtime_context`** — authored and committed facts.
+- **`runtime_invariant`** — fences that bound the reply whatever its style:
+  player-agency law, perception ceilings, untrusted-data fencing, the minor
+  fence, per-turn physical and sensory ceilings.
+- **`transport_contract`** — anything software downstream parses: the `[Name]`
+  speaker-tag grammar the chat renderer segments on, the successor's strict JSON
+  schema, the retry correction block.
+
+**Units split at sentence boundaries, and a mixed sentence takes the strictest
+authority.** Several charter units are one string that crosses the line — the
+viewpoint rule ends with *"never put words, thoughts, or actions in their
+mouth"*, and the narrator-camera rule mixes where the camera sits (craft) with
+what may never be written for the player (law). Left whole and marked craft, a
+prompt experiment could delete the very clause that protects player agency. The
+split pieces rejoin with the separator they were already written with, and
+`cameraViewpointRule`, `narratorCameraRule` and `PHYSICAL_STATE_LAW_RULE` are
+**derived from** their nodes, so there is no second copy of the text to drift.
+
+**Rule numbers are positional, not authored.** `CHAT_RULES` and
+`ENSEMBLE_CHAT_RULES` are `numbered_list` nodes whose numbers come from index, so
+production renders the same 1…16 and 1…12 it always did, and a prompt that drops
+behavior rules renumbers its survivors contiguously instead of leaving gaps.
+Nothing may cite a rule by its displayed number — bind to heading names, as
+[../character-chat/prompts.md](../character-chat/prompts.md) §Style rules for
+prompt text requires.
+
+Blank separation is structural, not literal: the tree uses `separator: "\n\n"`
+with `dropEmpty` rather than `""` entries in a `join("\n")`. The two render
+identically, but literal empties would strand blank lines wherever a dropped unit
+used to be.
+
+An optional `instructionSource` on each builder's input decides the render.
+Absent, or `{kind:"production"}`, and the prompt is byte-identical to the
+unclassified build. `{kind:"test"}` drops every `behavior` unit and puts
+the owner's text in an explicit `behavior_slot` — visible in the builder rather
+than an emergent property of a filter. The source resolves once
+per exchange, after the exchange lock, and is frozen across hidden retries; helper
+agents never see it. The owner-facing tool that writes these prompts is the
+Narrator Prompt Lab.
+
 ## Presentation audit and retry
 
 Before the structural audit runs, model prose is normalized — artifacts
