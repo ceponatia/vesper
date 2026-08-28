@@ -21,7 +21,7 @@ import {
  * happened to be measured.
  *
  * The fixtures here are small and local on purpose — the probe itself imports the real beats
- * from `orientation-ab.ts`, and re-importing them here would test the fixtures rather than
+ * from `beats.ts`, and re-importing them here would test the fixtures rather than
  * the grading.
  */
 
