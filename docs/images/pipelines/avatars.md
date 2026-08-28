@@ -69,8 +69,8 @@ skin, hands and legs read smooth and youthful", the youthful-skin tail gated on 
 with authored `skin.texture: smooth`).
 
 Placement matters on the edit route: adjacent to the lock's "preserve apparent age" clause it
-reads as qualifying it (A/B'd at ~15–20 apparent years,
-`scripts/eval/scene-images/phantom-limb-ab.ts`); parked later in the prompt it measurably
+reads as qualifying it (A/B'd at ~15–20 apparent years in the phantom-limb
+age A/B — probe script retired to git history); parked later in the prompt it measurably
 diluted.
 
 The anchor is deliberately **text-authoritative**. Qwen edits re-synthesize skin with a

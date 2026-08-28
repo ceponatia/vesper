@@ -59,8 +59,8 @@ import { heuristicLighting } from "./scene";
  *
  * - **The words** come from `buildSceneRenderPrompt` applied to a
  *   {@link SceneRenderPlan} this lane assembles, exactly as
- *   `scripts/eval/scene-images/orientation-ab.ts` assembles one outside the chat
- *   lane. The registry owns every explicit phrase; nothing here paraphrases a
+ *   the retired orientation A/B probe (git history) assembled one outside the
+ *   chat lane. The registry owns every explicit phrase; nothing here paraphrases a
  *   template, and {@link stagedSceneWords} is the single seam a test can pin
  *   byte-for-byte against the chat resolver's own plan.
  * - **The LoRA** rides `settings.controls.lora`, which {@link runRecipeIntent}
@@ -123,7 +123,8 @@ const STAGED_CONTROL_DECLARED =
  * part it names must be in frame or the sentence is suppressed — a dressed
  * viewer would quietly turn this bench into an ordinary nude portrait render.
  * So the row says the viewer is undressed, in the same shape the probe that
- * produced this evidence states it (`orientation-ab.ts`'s `PLAYER_BARE`). There
+ * produced this evidence stated it (`PLAYER_BARE` in the retired orientation
+ * A/B probe). There
  * is no chat state here to derive it from and nothing else it could honestly be.
  */
 const STAGED_VIEWER_EXPOSURE: RegionExposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" };
@@ -338,8 +339,8 @@ export interface StagedSceneWords {
 
 /**
  * The render plan and final prompt for one staging, assembled the way
- * `orientation-ab.ts` assembles one outside the chat lane — the ONE way, since a
- * second would be the drift this bench exists to rule out.
+ * the retired orientation A/B probe assembled one outside the chat lane — the
+ * ONE way, since a second would be the drift this bench exists to rule out.
  *
  * `resolveScenePlan` does the assembling rather than a hand-built literal so the
  * focal spec is derived by the chat lane's own code: the exposure phrase
