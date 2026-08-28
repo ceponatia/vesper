@@ -196,6 +196,37 @@ Before finishing any change this skill governed:
   print('broken:',n)"
   ```
 
+- **Every `<file>.md §<Heading>` citation names a heading that file actually
+  has.** The link check above proves only that the file exists, which is exactly
+  how a citation survives the section it names moving to a sibling page:
+
+  ```bash
+  python3 -c '
+  import re,os,glob
+  cache={}
+  def heads(p):
+      if p not in cache:
+          hs=[re.sub(r"\s+"," ",l).strip("# ").strip() for l in open(p,encoding="utf-8") if l.startswith("#")]
+          cache[p]=[(h,re.sub(r"\s*\(.*","",h)) for h in hs]
+      return cache[p]
+  n=0
+  for f in glob.glob("docs/**/*.md",recursive=True):
+      text=re.sub(r"\s+"," ",open(f,encoding="utf-8").read())
+      for t,sec in re.findall(r"([\w./-]+\.md)[`)]* §([^).,;:`]+)",text):
+          sec=sec.strip()
+          p=next((c for c in (os.path.normpath(os.path.join(os.path.dirname(f),t)),t) if os.path.exists(c)),None)
+          if not sec or p is None: continue
+          if not any(h.startswith(sec) or sec.startswith(b) for h,b in heads(p)):
+              n+=1; print("NO SECTION",f,"->",t,"§"+sec)
+  print("bad section citations:",n)'
+  ```
+
+  A cited heading has no closing delimiter in prose, so the check takes the text
+  after `§` up to the first `)`, `.`, `,`, `;`, `:` or backtick and accepts a
+  heading that is a prefix of it, or it of a heading. A hit is real: repoint the
+  citation at the page that owns the section, or drop the `§` and name the file
+  alone.
+
 - **No reference to a retired working document survives, in any form** — the
   rule, its rationale, and the `§N` clause it carries are stated once, in
   `docs/README.md`'s documentation rules. Enforce it here:
