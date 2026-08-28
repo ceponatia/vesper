@@ -10,10 +10,6 @@ data/
 # app-generated imagery; keep them on the server, never commit/push.
 .playwright-mcp/
 
-# Playwright/manual UI-testing screenshots live in screenshots/ (never the repo
-# root or docs/) and stay LOCAL — they are ephemeral working artifacts.
-screenshots/
-
 # Evaluation and dev-task imagery — agent screenshots included — lives at the
 # repository root and stays LOCAL (owner ruling 2026-08-28, #346). Never docs/.
 /eval-images/
@@ -38,12 +34,15 @@ screenshots/
 # everything).
 /evidence/
 
+# Tombstone: screenshots/ was the destination for Playwright and manual
+# UI-testing captures until 2026-08-28, when eval-images/ became the single
+# home for every kind of evaluation and dev-task output. Nothing routes here
+# any more; the pattern stays so a stale local folder cannot be staged.
+screenshots/
+
 # Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.
 __pycache__/
 *.pyc
 
 # Local cog build artifacts inside the SD deployment directory.
 packages/image-sd/deployment/.cog/
-
-# Engine Comparison Logs
-docs/engine-comparison

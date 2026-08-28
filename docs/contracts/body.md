@@ -138,7 +138,7 @@ What ships:
 | faerie                         | wings                                           |
 | elf, dwarf, gnome, orc, goblin | baseline humanoid records                       |
 
-A further humanoid variant is a data add once its feature groups exist; true non-humanoid body plans stay future work.
+The vocabulary is humanoid. A further humanoid variant is a data add once its feature groups exist; a true non-humanoid body plan is outside what these body locations and feature groups can describe.
 
 ### Model-facing notes: appearance, lore, intimacy
 

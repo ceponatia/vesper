@@ -5,9 +5,9 @@
 
 ## Documentation & work state
 
-- **GitHub owns work state; the repository owns technical truth.** Plans, status, sequencing, dependencies, and open questions live on the [Vesper Development board](https://github.com/users/ceponatia/projects/7) and its issues — never in repo documents. Plan documents are retired: a plan-sized effort is a parent issue with sub-issues, dependencies are native blocked-by relations, and a blocking open question is a `decision-needed` issue.
-- Documented system-by-system in `docs/`. **Read `docs/README.md` first**, then the relevant system doc, and update it in the same change when behavior or patterns shift. Durable docs state present-tense law and carry no status, no remaining work, and no blockers.
-- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before filing or restructuring issues, and whenever deciding where information belongs** (`.claude/skills/vesper-docs/`). It owns the routing table (issue vs reference page vs ADR), the no-dynamic-state rule, issue and sub-issue conventions with verified commands, templates, and validation.
+- **GitHub owns work state; the repository owns technical truth.** Plans, status, sequencing, dependencies, and open questions live on the [Vesper Development board](https://github.com/users/ceponatia/projects/7) and its issues — never in repo documents. Plan documents are retired: never create one. The skill below owns the mechanics that follow from this.
+- Documented system-by-system in `docs/`. **Read `docs/README.md` first** — it indexes the tree and owns the documentation rules — then the relevant system doc, and update it in the same change when behavior or patterns shift. Durable docs state present-tense law and carry no status, no remaining work, and no blockers.
+- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before filing or restructuring issues, and whenever deciding where information belongs** (`.claude/skills/vesper-docs/`). It is the owner of the routing table, the issue and sub-issue conventions with verified commands, the durable-doc authoring law, the templates, and the validation checklist. This section states the principle only; the skill and `docs/README.md` state the rules, and neither is restated here.
 
 ## Architecture
 
@@ -39,7 +39,7 @@
 - Tests: `pnpm test` (pure), `pnpm test:int` / `pnpm test:engine` (need Postgres). CI runs the pure suite on every ready PR, and `test:engine` plus the Gate 1 benchmark in its engine job. Run `test:int` manually when its covered surface changes. Degradation tests assert fallback **and** diagnostic code.
 - **Invoke the `vesper-testing` skill before creating, expanding, or substantially rewriting tests** (`.claude/skills/vesper-testing/`). Protect meaningful invariants, regressions, and failure modes at their one owning layer; extend existing coverage instead of duplicating it, and do not add tests merely because code changed. Test count is not a quality metric here, and "no new test" is a valid outcome.
 - **UI testing runs against the Fly deploy** (`https://vesper.fly.dev`), never a local Postgres + `pnpm dev`. Local dev stays valid for non-UI work and DB scripts.
-  - **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin` — use it for manual/Playwright UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth.md`); sign in at `/sign-in` with the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is local-only, disabled in production.
+  - **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin` — use it for manual/Playwright UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth/sign-in.md`); sign in at `/sign-in` with the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is local-only, disabled in production.
   - Prefer an **existing** conversation. Create a new chat only when the test needs state you cannot edit into an existing one, and delete it when done.
   - Screenshots and all other evaluation/dev-task output — graded render evidence included — go in the gitignored root `eval-images/`, never under `docs/`. That is the single destination; nothing evaluative enters git.
 

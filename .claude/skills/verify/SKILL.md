@@ -25,18 +25,19 @@ gate runs tell you nothing about whether the deployed app behaves.
    `browser_click`, `browser_resize` for mobile widths). **Reuse an existing
    conversation** rather than starting one — scenario, relationship, wardrobe
    and story clock are all editable in place, so a new chat is rarely the
-   answer; if you must create one, delete it before you finish (CLAUDE.md
-   §"Dedicated UI/QA dev account"). The account's fixtures
-   are the _Sabrina Vale_ character plus a small set of image-lab controls —
-   CLAUDE.md's "Dedicated UI/QA dev account" bullet owns that list, so read it
-   there rather than assuming a character or chat exists. If the account's rows
-   are missing entirely, seed over SSH:
+   answer; if you must create one, delete it before you finish (the "UI/QA
+   account" bullet under Testing in the root `CLAUDE.md`). Never assume a
+   particular character or chat exists — list the account's rows in the app
+   first. If they are missing entirely, seed over SSH:
    `fly ssh console -a vesper -C "pnpm db:seed"` (a bare `users` insert is not
    enough — the seed also provisions the credential).
-4. **Screenshots** go in the untracked `screenshots/` folder at the repo root —
-   never the repo root or `docs/`. A render a doc's verdict depends on is
-   evidence, not a screenshot: `git mv` it into the tracked `evidence/` folder
-   and commit it with that doc (`evidence/README.md`).
+4. **Renders stay local.** Every screenshot and generated image a run produces
+   goes in the untracked root `eval-images/` — never the repo root, never
+   `docs/`, and never into git (root `CLAUDE.md` owns this rule). That includes
+   a render a verdict rests on: there is no tracked evidence folder to commit
+   into, so keep the file local and write the verdict up on the issue the run
+   was for, describing what the render showed well enough that the reader does
+   not need the file.
 
 ## Gotchas
 

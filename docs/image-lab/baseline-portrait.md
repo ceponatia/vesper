@@ -20,7 +20,7 @@ The admin's instruction becomes the base prompt. The experiment records the prof
 
 ## The model is not selectable
 
-The New Experiment form shows no Model picker for this kind; the run resolves the production `variant` profile and records that profile's model ([README.md](README.md) §Model/version behavior owns the rule). A baseline portrait is therefore only appropriate when the production-profile result is the comparison target.
+The New Experiment form shows no Model picker for this kind; the run resolves the production `variant` profile and records that profile's model (the rule is owned by [README.md](README.md) §Model/version behavior at a glance). A baseline portrait is therefore only appropriate when the production-profile result is the comparison target.
 
 ## Version behavior
 

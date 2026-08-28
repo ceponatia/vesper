@@ -248,7 +248,7 @@ dictate the output shape.
 - one custom LoRA per prediction through the currently verified 2511 schema;
 - no negative prompt or numeric edit-strength control exists;
 - a second full-frame repair pass may change pose, body, clothing, or setting;
-- multi-character face repair is deferred until target localization and
-  role-aware reference capacity are proven;
+- multi-character face repair is not offered on this model: neither target
+  localization nor role-aware reference capacity is proven on it;
 - provider capability drift is real: diagnose the active Vesper pin and stored
   probe before assuming a future Replicate schema is unchanged.

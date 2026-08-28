@@ -18,7 +18,7 @@ The result therefore measures the current production profile/configuration, not 
 
 ## The model is not selectable
 
-As with [Baseline portrait](baseline-portrait.md), the form shows no Model picker and the runner records the model the production scene profile selects ([README.md](README.md) §Model/version behavior owns the rule). The model cannot be the experimental variable in this kind.
+As with [Baseline portrait](baseline-portrait.md), the form shows no Model picker and the runner records the model the production scene profile selects (the rule is owned by [README.md](README.md) §Model/version behavior at a glance). The model cannot be the experimental variable in this kind.
 
 ## Known parity limitation
 

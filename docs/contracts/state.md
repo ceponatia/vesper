@@ -30,7 +30,7 @@ type CharacterProfile = {
   speciesId: string;                          // registry id ("human" / "succubus" / "faerie" / …)
   heritageId?: string;                        // optional heritage within the species (overlay); absent ⇒ bare species
   bodyPlanId: string;                         // registry id ("humanoid" seeded)
-  intimateRegions: string[];                  // body-config: present intimate region groups (default []); see body.md §realized body
+  intimateRegions: string[];                  // body-config: present intimate region groups (default []); see body.md §The realized body
   bodyFeatures?: string[];                    // additive feature groups; absent ⇒ species defaults, [] ⇒ explicit none
   attributes: AttributeValue[];               // base/creation-sourced
   tags: string[];                             // reusable disposition tags social-reaction cards key overrides on

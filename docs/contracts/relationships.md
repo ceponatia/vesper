@@ -109,7 +109,7 @@ A parallel registry on the shared spine ([attributes.md](attributes.md)), kept d
 | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | scalar       | A number — bipolar (−100..100) or unipolar (0..100).                                                                     |
 | `bands`      | `{ max, label, promptHint }`, ascending, covering the axis max — **store the number, surface the band**.                 |
-| `mutability` | `core` / `developable` (drift deferred).                                                                                 |
+| `mutability` | `core` never changes; only a `developable` trait accepts a milestone-gated nudge. Nothing drifts on its own.             |
 | `intimate?`  | Flag.                                                                                                                    |
 | `modulates`  | Optional metadata.                                                                                                       |
 | `lexicon`    | Scored `{ term, value }` pairs mapping free-text words onto the axis (`resolveLexicon` — the forge-expansion mechanism). |

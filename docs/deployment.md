@@ -110,7 +110,7 @@ primary_region = 'iad'
    ```
    `REPLICATE_API_TOKEN` is **required for image generation** and set separately —
    every image render routes through Replicate
-   ([images/providers.md](images/providers/README.md)), and without it every render
+   ([images/providers/README.md](images/providers/README.md)), and without it every render
    outside demo mode fails the image row:
    ```
    fly secrets set REPLICATE_API_TOKEN="..." -a vesper
@@ -199,11 +199,10 @@ checkpoints; neither is a local wrapper.
   (Settings → Branches), merge, and turn it back on; it's a deliberate act, not
   an accident.
 
-**Deploying prod is still manual / not wired up.** Merging to `prod` only moves
-code; nothing auto-deploys from it yet. Standing up a prod environment (a
-separate Fly app + a Neon prod DB + a `FLY_API_TOKEN` secret + a
-deploy-on-merge-to-`prod` workflow) is a deliberate next step — see the dev
-setup above as the template.
+**`prod` is a code branch, not an environment.** Merging to `prod` moves code and
+nothing else: no workflow deploys from it, and there is no separate prod Fly app
+or prod database. Deploying is the manual `fly deploy -a vesper` above, run from
+a checkout of the branch being shipped, and `vesper` is the one app it targets.
 
 ## Security
 

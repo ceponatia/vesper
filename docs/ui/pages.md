@@ -29,7 +29,7 @@ overwrites — saves first, the result lands unsaved for review). Each content t
 Re-draft tab** (rewrite that tab narrator-formatted from the whole sheet; manual attribute and
 trait values kept, conflicts reported), and the Attributes tab adds **◉ From portrait** once a
 ready avatar exists — a vision fill-blanks pass
-([../authoring/README.md](../authoring/README.md) §In-sheet forge).
+([../authoring/in-sheet-forge.md](../authoring/in-sheet-forge.md)).
 
 The **Chat** tab is a summary surface, not a play surface: playing happens on `/chat/:chatId`.
 It holds a **Chat defaults** card — the narrator-model dropdown (curated `lib/narrative-models.ts`

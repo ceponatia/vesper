@@ -24,8 +24,8 @@ The owner-scoped definition rows: who the account is, and the reusable entities 
   - **The player as a library entity** — who *you* are in a chat, with a body and a wardrobe.
   - `title` is the library label whose per-owner uniqueness lets `name` repeat across personas
     ("Brian, 22" and "Brian, 40" are both named Brian). It is a database and UX concern only and
-    never reaches a prompt; [../auth/README.md](../auth/README.md) §Who the player is owns why
-    `PlayerPersona` has no `title`. `id` stays the PK so a rename cannot orphan FKs.
+    never reaches a prompt; [../auth/player.md](../auth/player.md) §`PlayerPersona` carries no
+    `title` owns why. `id` stays the PK so a rename cannot orphan FKs.
   - **No `visibility` / `cloned_from_id`** — a persona is *you*, so there is no public tier.
     Every read is owner-strict; `searchLibraryIds` is called with `scope: "owned"`, the one scope
     that does not reference `visibility`. It is deliberately not a row in `characters`: a "self"

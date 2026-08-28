@@ -14,8 +14,9 @@ POST               /api/characters/:id/avatar          { style: "realistic"|"sty
 GET/POST           /api/characters/:id/portraits       GET lists all images for the character (avatar +
                                                        variants, newest first) as { portraits, rendering };
                                                        POST queues a portrait variant — a reference edit via
-                                                       the image-model registry (images/pipelines/ §Portrait
-                                                       variants) — { kind: pose|outfit|expression|setting,
+                                                       the image-model registry
+                                                       (images/pipelines/portrait-variants.md) —
+                                                       { kind: pose|outfit|expression|setting,
                                                        instruction, modelId? } ⇒ 202 { jobId, characterId }
 GET/DELETE         /api/characters/:id/portraits/:imageId   (+ POST /promote → set as avatar; 409 not_ready
                                                             until the variant leaves pending)
