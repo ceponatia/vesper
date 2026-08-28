@@ -2,8 +2,8 @@
   // ── Explorer: file nesting — the single source of truth ────────────────
   // Kept here (folder settings) rather than in vesper.code-workspace: folder
   // settings take precedence over the workspace file for this object setting,
-  // so a partial copy here used to mask the workspace's patterns (only
-  // roadmap.md nested — deferred/ plan families showed flat). Folder settings
+  // so a partial copy here silently wins and every pattern it omits simply
+  // stops nesting — which is why this list must stay complete. Folder settings
   // also apply when the repo is opened as a plain folder without the
   // workspace file. Note: setting `patterns` replaces VS Code's defaults, so
   // the useful defaults are restated here.
@@ -18,17 +18,6 @@
     "docker-compose.yml": "docker-compose.*.yml",
     ".env.example": ".env, .env.*",
     "README.md": "AGENTS.md, CLAUDE.md",
-    "roadmap.md": "roadmap.*.md",
-    // developer-notes convention (topic-named): <topic>.plan.md is the anchor;
-    // <topic>.spec.md (design), <topic>.followups.md, and any <topic>.<sub>.md
-    // nest under it — the shared topic name determines the parent. Patterns
-    // are path-independent, so this covers developer-notes/ and its deferred/
-    // stub folder alike.
-    "*.plan.md": "${capture}.spec.md, ${capture}.followups.md, ${capture}.*.md",
-    // deferred ideas: deferred.plan.md is the anchor; *.deferred.md nest under it.
-    "deferred.plan.md": "*.deferred.md",
-    // legacy phase docs (historical, not renamed): phase-N-plan.md is the anchor;
-    // *.phaseN.md nests under it, as do phase-N.md findings + multi-character plans.
-    "phase-*-plan.md": "phase-${capture}.md, multi-character-phase-${capture}-plan.md, *.phase${capture}.md"
+    "roadmap.md": "roadmap.*.md"
   }
 }

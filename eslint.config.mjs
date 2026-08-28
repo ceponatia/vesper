@@ -69,8 +69,7 @@ export default defineConfig([
   // ---------------------------------------------------------------------------
   // Type-aware guardrails (whole repo). These encode the failure modes agents
   // hit in a large codebase: `any` escape hatches, dropped awaits, suppressed
-  // errors, unhandled union variants. See
-  // docs/developer-notes/monorepo-evaluation.md (lint hardening).
+  // errors, unhandled union variants.
   // (Circular-dependency detection lives in `pnpm lint:cycles` / madge, not
   // here: `import/no-cycle` was ~90% of lint wall-time and ~0.3 GB of its RAM
   // because it re-resolves the whole module graph per file.)
@@ -123,7 +122,6 @@ export default defineConfig([
   //    application for ANYTHING, which is the rule that makes it a package
   //    rather than a folder with a different name. It keeps the package
   //    extractable to its own repository later without untangling imports first.
-  //    (monorepo-image-core.plan.md §"The rule".)
   //
   //    TWO patterns, because there are two ways to name the app. `@/*` is its
   //    alias, and banning the alias bans the database, routes, characters, chats
@@ -140,7 +138,7 @@ export default defineConfig([
         {
           group: ["@/*", "@/**"],
           message:
-            "Workspace packages are standalone: no @/ imports. If a package needs something from the app, invert it — take the value as an argument, or leave the code in the app (monorepo-image-core.plan.md).",
+            "Workspace packages are standalone: no @/ imports. If a package needs something from the app, invert it — take the value as an argument, or leave the code in the app.",
         },
         {
           // `../apps/…`, `../../apps/web/src/…`, `../../../scripts/…`,
@@ -274,7 +272,7 @@ export default defineConfig([
     },
   },
 
-  // Encapsulation gate for the merge reducer (merge-decomposition.spec.md §5.5).
+  // Encapsulation gate for the merge reducer.
   // The per-turn working state (participants/items) is mutated ONLY through
   // WorkingState methods, which own the dirty-tracking. A direct field assignment
   // anywhere else in merge/ would silently bypass a dirty-mark and drop a DB
@@ -290,13 +288,13 @@ export default defineConfig([
         {
           selector: "AssignmentExpression[left.object.property.name='state']",
           message:
-            "Mutate participant/item state only through a WorkingState method (it owns the dirty-mark) — see merge-decomposition.spec.md §5.5.",
+            "Mutate participant/item state only through a WorkingState method (it owns the dirty-mark): a direct field assignment bypasses the dirty-mark and silently drops the DB write. The mutators live in merge/working-state.ts.",
         },
         {
           selector:
             "AssignmentExpression[left.property.name=/^(locationId|worn|holderParticipantId|containerInstanceId|positionNote)$/]",
           message:
-            "Mutate participant/item placement only through a WorkingState method (it owns the dirty-mark) — see merge-decomposition.spec.md §5.5.",
+            "Mutate participant/item placement only through a WorkingState method (it owns the dirty-mark): a direct field assignment bypasses the dirty-mark and silently drops the DB write. The mutators live in merge/working-state.ts.",
         },
       ],
     },

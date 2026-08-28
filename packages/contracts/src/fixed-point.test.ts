@@ -11,8 +11,9 @@ import {
 } from "./fixed-point";
 
 /**
- * The shared kernel, extracted under the owner's ruling — *"Reuse the successor
- * §25 fixed-point integration kernel … generalize its pure numerics if needed"*.
+ * The shared kernel, extracted under the owner's ruling that the chat lane reuse
+ * the successor's existing fixed-point integration kernel — generalizing its
+ * pure numerics where needed — rather than grow its own floating-point turn math.
  *
  * The load-bearing claim is that the generalization changed NOTHING. Two proofs:
  * `lib/simulation/bodies.test.ts` and `material-condition.test.ts` still pass
