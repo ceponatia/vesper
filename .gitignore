@@ -13,6 +13,10 @@ data/
 screenshots/
 tmp/
 
+# Evaluation and dev-task imagery — agent screenshots included — lives at the
+# repository root and stays LOCAL (owner ruling 2026-08-28, #346). Never docs/.
+eval-images/
+
 # Render evidence IMAGES are local-only (owner ruling 2026-08-21): generated
 # imagery must not enter git history. The verdict data beside them — README.md
 # and scores CSVs — stays tracked; see evidence/README.md.
@@ -25,21 +29,6 @@ evidence/**/*.avif
 evidence/**/*.bmp
 evidence/**/*.tif
 evidence/**/*.tiff
-docs/developer-notes/ux-audit-assets/
-docs/prompts/
-
-# Generated/eval imagery under docs — regenerable, keep out of git.
-# Text docs (.md) stay tracked; app icons under src/app are unaffected.
-docs/**/*.png
-docs/**/*.jpg
-docs/**/*.jpeg
-docs/**/*.gif
-docs/**/*.webp
-docs/**/*.avif
-docs/**/*.bmp
-docs/**/*.tif
-docs/**/*.tiff
-
 
 # Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.
 __pycache__/
