@@ -13,8 +13,8 @@ import { FOCUSABLE_SELECTOR, resolveTabTarget } from "./focus-trap";
 const trapStack: symbol[] = [];
 
 /**
- * Modal focus-trap behaviour shared by Dialog and Sheet (docs/ui.md — small
- * owned primitives). While `open`, Escape closes, focus moves onto the panel,
+ * Modal focus-trap behaviour shared by Dialog and Sheet (docs/ui/mobile.md
+ * §Sheet). While `open`, Escape closes, focus moves onto the panel,
  * and Tab / Shift+Tab cycle through the panel's focusables without escaping to
  * the page behind. The pure landing-spot decision lives in `resolveTabTarget`.
  */

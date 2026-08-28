@@ -1,5 +1,6 @@
 /**
- * Prompt-text tunables (docs/prompts.md §Style rules). Binding numeric engine
+ * Prompt-text tunables (docs/character-chat/prompts.md §Style rules for prompt
+ * text). Binding numeric engine
  * constants (history depth, fact cap, …) live in ../constants.ts; re-exported
  * here so prompt code has one import site for everything it renders.
  */

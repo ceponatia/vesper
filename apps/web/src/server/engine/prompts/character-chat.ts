@@ -80,8 +80,9 @@ import {
  * values via the registry, plus each attribute's `promptHints` as phrasing
  * guidance (the narrator keeps hints; only the image prompt strips them,
  * images/prompts-*.ts) — and carries the chat lane's own layers: the tracked state
- * (meters/conditions/regard, enacted per docs/prompts.md §Character-chat state
- * as a narration system), the rolling-summary recap, and the RAG "Your memory"
+ * (meters/conditions/regard, enacted per docs/character-chat/prompts.md
+ * §Character-chat state as a narration system), the rolling-summary recap, and
+ * the RAG "Your memory"
  * block. What it still deliberately drops is the session's world machinery:
  * presence, locations, wardrobe state, the exposure mask. Pure and
  * snapshot-testable; no IO.

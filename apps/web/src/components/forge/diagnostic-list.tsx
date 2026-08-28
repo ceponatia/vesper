@@ -17,8 +17,8 @@ const TONE: Record<Diagnostic["severity"], string> = {
 const ORDER: Diagnostic["severity"][] = ["error", "warn", "info"];
 
 /**
- * Severity-aware forge diagnostics (docs/authoring.md §Guardrails): errors are
- * failures with a call to action, warns are degradations already applied
+ * Severity-aware forge diagnostics (docs/authoring/README.md §Guardrails):
+ * errors are failures with a call to action, warns are degradations already applied
  * (dropped/cleared values), infos are muted notices. Visual weight must match
  * severity — a recovered repair must not read like a failed section.
  */

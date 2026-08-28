@@ -49,7 +49,8 @@ export const FUZZY_MIN_SCORE = 0.75;
  * Save-time outfit dedupe backstop: collapse a freshly-drafted garment into an
  * existing library item only when the names are near-identical. Higher than
  * FUZZY_MIN_SCORE on purpose — the outfit agent already makes the nuanced reuse
- * calls (docs/authoring.md); the server only catches obvious duplicates it
+ * calls (docs/authoring/character-forge.md §The outfit agent); the server only
+ * catches obvious duplicates it
  * missed and must not merge two deliberately-distinct pieces (a crimson vs an
  * emerald gown).
  */

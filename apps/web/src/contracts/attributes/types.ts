@@ -118,7 +118,8 @@ export const attributeDefinitionSchema = z.object({
   materializeDefault: z.boolean().optional(),
   /**
    * How this attribute surfaces in a **full-body** image prompt relative to
-   * clothing (docs/images/pipelines.md §Scene images). A waist-up avatar portrait conveys
+   * clothing (docs/images/pipelines/scene-subjects.md §Subject body reveal). A
+   * waist-up avatar portrait conveys
    * the face and upper body but nothing of the figure below it, so a scene
    * render supplements the reference with body detail:
    * - `"shape"`: silhouette/proportion that reads *through* clothing (breast
@@ -133,8 +134,9 @@ export const attributeDefinitionSchema = z.object({
   imageReveal: z.enum(["shape", "skin"]).optional(),
   /**
    * Identity anchors are the attributes the forge infers first; they condition
-   * the plausible-subset ranges for unset core visuals (docs/authoring.md
-   * §Character forge). A flag rather than a hardcoded id list in the prompt
+   * the plausible-subset ranges for unset core visuals
+   * (docs/authoring/character-forge.md §The three-tier fill). A flag rather
+   * than a hardcoded id list in the prompt
    * builder, so adding an anchor (era? regional origin?) stays a registry data
    * edit. Anchors constrain physical attributes only — never personality,
    * voice, behavior, or role.

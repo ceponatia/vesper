@@ -12,7 +12,7 @@ export interface SaveBarProps {
   secondary?: ReactNode;
 }
 
-/** Sticky save bar with dirty-state indication for long editors (docs/ui.md). */
+/** Sticky save bar with dirty-state indication for long editors (docs/ui/conventions.md §Forms and drafts). */
 export function SaveBar({ dirty, saving, onSave, saveLabel = "Save", secondary }: SaveBarProps) {
   return (
     // Offset above the mobile bottom tab bar (bottom-tab-bar.tsx: fixed, h-14, `md:hidden`)

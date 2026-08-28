@@ -435,7 +435,10 @@ function readStoredLibraryState(entity: LibraryEntity, config: EntityConfig): St
   return state;
 }
 
-/** Library grid with debounced search, type buckets, facet chips and tag filters (docs/ui.md). */
+/**
+ * Library grid with debounced search, type buckets, facet chips and tag
+ * filters (docs/ui/library.md §The shared library grid).
+ */
 export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const config = configs[entity];
   const router = useRouter();

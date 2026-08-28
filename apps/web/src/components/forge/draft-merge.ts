@@ -1,7 +1,8 @@
 import type { CharacterDraft, CharacterForgeSection } from "@/lib/client/api";
 
 /**
- * Per-section draft merging for forge regeneration (docs/authoring.md): a
+ * Per-section draft merging for forge regeneration
+ * (docs/authoring/character-forge.md): a
  * section re-run replaces only its own slice of the draft, whether the server
  * returned a full draft or just the section's contribution. Field→section
  * mapping mirrors server/authoring's section patches.

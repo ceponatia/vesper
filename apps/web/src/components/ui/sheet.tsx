@@ -32,7 +32,7 @@ const CLOSED_BY_SIDE: Record<SheetSide, string> = {
 };
 
 /**
- * Edge-anchored modal panel (docs/ui.md — small owned primitives). Shares the
+ * Edge-anchored modal panel (docs/ui/mobile.md §Sheet). Shares the
  * overlay-click + Escape + focus-trap behaviour with Dialog (via useFocusTrap)
  * but slides in from a screen edge — the building block for the play side panel,
  * the mobile nav drawer, and bottom action sheets. The enter slide is gated by

@@ -39,8 +39,8 @@ const ALLOWED_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/a
 const SHARP_DECODE_LIMITS = { limitInputPixels: 40_000_000, failOn: "error", animated: false } as const;
 
 /**
- * User-supplied avatar (docs/images/pipelines.md §Avatar upload): decode the
- * cropped data URL, re-fit it
+ * User-supplied avatar (docs/images/pipelines/avatar-upload.md §The upload
+ * route): decode the cropped data URL, re-fit it
  * to the canonical 3:4 portrait (defense in depth — the client already cropped,
  * but `cover` guarantees the stored dimensions and `rotate()` honors EXIF),
  * save through the normal row-before-file path, then promote to the character's

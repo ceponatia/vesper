@@ -279,7 +279,8 @@ export function queueEmbedRefresh(kind: LibraryKind, id: string): void {
 }
 
 /**
- * Materialize forge item suggestions as library items (docs/authoring.md):
+ * Materialize forge item suggestions as library items
+ * (docs/authoring/character-forge.md §Saving a draft):
  * a suggestion whose name matches an existing item (case-insensitive, same
  * owner; same kind preferred) reuses that item — never a duplicate. New rows
  * get a "suggested" tag. A bad suggestion degrades (invalid coverage ids are
@@ -305,7 +306,8 @@ export async function materializeSuggestedItems(
       continue;
     }
 
-    // Backstop for the agent's reuse pass (docs/authoring.md): a fresh garment
+    // Backstop for the agent's reuse pass (docs/authoring/character-forge.md
+    // §Saving a draft): a fresh garment
     // whose name is near-identical to an existing same-kind item collapses into
     // it rather than spawning a near-duplicate. Conservative threshold so only
     // obvious dupes merge; an embedding failure degrades to a new insert.
@@ -346,7 +348,8 @@ export async function materializeSuggestedItems(
         tags: def.tags.includes("suggested") ? def.tags : [...def.tags, "suggested"],
         definition: {
           coverage: def.coverage.filter((id) => !invalid.includes(id)),
-          // category template anchors coverage semantics (docs/contracts/items.md) —
+          // category template anchors coverage semantics
+          // (docs/contracts/items/README.md §Clothing categories) —
           // must be persisted so clothing reads as Top/Bra/Footwear/etc.
           category: def.category,
           subtype: def.subtype,

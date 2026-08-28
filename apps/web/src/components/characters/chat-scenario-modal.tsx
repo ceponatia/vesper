@@ -51,7 +51,7 @@ export function ChatScenarioModal({
 }) {
   // Kept OUTSIDE the Dialog (a sibling, not a descendant): the overlay's own
   // backdrop-blur establishes a containing block for `position: fixed`
-  // descendants (docs/ui.md's Sheet-portal note), and while this Dialog's own
+  // descendants (docs/ui/mobile.md §Sheet), and while this Dialog's own
   // full-viewport overlay happens to make that harmless, a sibling sidesteps
   // the question entirely instead of relying on that coincidence.
   const [editingCalendar, setEditingCalendar] = useState(false);

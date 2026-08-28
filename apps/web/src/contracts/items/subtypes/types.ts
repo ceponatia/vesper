@@ -1,6 +1,6 @@
 /**
- * Clothing subtypes (docs/contracts/items.md §Clothing subtypes): per-category
- * vocabularies for accessory clothing — jewelry, headwear, eyewear — reusing
+ * Clothing subtypes (docs/contracts/items/README.md §Clothing subtypes):
+ * per-category vocabularies for accessory clothing — jewelry, headwear, eyewear — reusing
  * the `definition.subtype` field objects already carry. One data file per
  * category in this folder so extending a vocabulary is a one-file edit.
  *

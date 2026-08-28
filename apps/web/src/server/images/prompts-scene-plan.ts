@@ -213,7 +213,8 @@ export function heuristicFocalName(
 
 /**
  * Clamp the composer's spec to the present roster and force every outfit from
- * wardrobe state (docs/images/pipelines.md §Scene images): a focal name not in the room
+ * wardrobe state (docs/images/pipelines/scene-images.md §Step 1 — the scene
+ * composer): a focal name not in the room
  * is replaced by the heuristic pick (warn diagnostic), absent "others" are
  * dropped (warn diagnostic), and no character the composer invents can ever
  * reach a render prompt. With a non-empty roster the plan always has a focal.

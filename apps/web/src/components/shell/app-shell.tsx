@@ -15,8 +15,8 @@ import { isNavActive, NAV_LINKS } from "./nav-links";
  * Global chrome: slim header + unconstrained main. Pages wrap themselves in
  * <PageContainer>; the play screen uses the full viewport.
  *
- * Responsive nav (docs/ui.md §Mobile): the desktop top-nav shows at ≥md; below
- * md one of two mobile chromes takes over per the persisted nav-mode — the
+ * Responsive nav (docs/ui/mobile.md §Primary nav): the desktop top-nav shows
+ * at ≥md; below md one of two mobile chromes takes over per the persisted nav-mode — the
  * bottom tab bar (default) or a hamburger drawer. The mode is a two-value union,
  * so exactly one chrome is ever chosen. The bottom bar is suppressed on the
  * immersive play screen (its fixed footer would collide with the composer); the

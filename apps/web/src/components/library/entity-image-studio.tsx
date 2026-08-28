@@ -23,8 +23,9 @@ export interface EntityImageStudioProps {
 }
 
 /**
- * Minimal image studio for library items/locations (docs/images/pipelines.md §Entity
- * images): one canonical image generated from the entity's fields, a
+ * Minimal image studio for library items/locations
+ * (docs/images/pipelines/entity-images.md): one canonical image generated
+ * from the entity's fields, a
  * Generate/Regenerate button, and click-to-enlarge. No variants, no upload —
  * if you dislike the result, regenerate. Generation runs as a background job,
  * so leaving the page never interrupts it; this view polls until it lands.

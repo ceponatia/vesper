@@ -71,7 +71,7 @@ import {
 import { emptyCharacterDraft, type CharacterDraft } from "./drafts";
 
 /**
- * Character forge (docs/authoring.md §Character forge): three INDEPENDENT
+ * Character forge (docs/authoring/character-forge.md): three INDEPENDENT
  * generateChecked sections — profile, attributes, outfit — so each can
  * regenerate alone. The forge returns a draft; it never saves.
  */
@@ -785,7 +785,8 @@ export function characterAttributeDefinitions(context?: CharacterForgeContext): 
 /**
  * Built dynamically from the registry so the model only ever sees validated
  * vocabulary: ids are an enum of registered attribute ids. Values are still
- * grounded post-hoc with registry.parseValue (docs/authoring.md §Guardrails).
+ * grounded post-hoc with registry.parseValue (docs/authoring/README.md
+ * §Guardrails).
  */
 export function buildAttributeSectionSchema(context?: CharacterForgeContext): z.ZodType<AttributeSection> {
   const ids = characterAttributeDefinitions(context).map((d) => d.id as string);
@@ -1086,8 +1087,8 @@ export function fillSpeciesRequiredDefaults(
 }
 
 /**
- * Tier-3 fill (docs/authoring.md §Character forge): every registry attribute
- * flagged coreVisual OR renderVisual (the render-consistency tier: silhouette
+ * Tier-3 fill (docs/authoring/character-forge.md §The three-tier fill): every
+ * registry attribute flagged coreVisual OR renderVisual (the render-consistency tier: silhouette
  * + face structure a scene render would
  * otherwise re-invent per image) that the model left unset gets a default
  * picked from its surviving plausible range when one exists — falling through
@@ -1390,7 +1391,8 @@ async function forgeOutfitSection(context: CharacterForgeContext): Promise<Chara
 }
 
 /**
- * Library matching (docs/authoring.md): name-matched garments reference the
+ * Library matching (docs/authoring/character-forge.md §The outfit agent):
+ * name-matched garments reference the
  * existing library item id in defaultOutfit; unmatched ones become new item
  * drafts flagged "suggested". A failed lookup degrades to all-suggested.
  */

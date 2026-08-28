@@ -1,6 +1,6 @@
 /**
- * Mobile primary-navigation mode (docs/ui.md §Mobile). On phones the shell shows
- * one of two nav chromes — a bottom tab bar or a hamburger + slide-in drawer —
+ * Mobile primary-navigation mode (docs/ui/mobile.md §Primary nav). On phones
+ * the shell shows one of two nav chromes — a bottom tab bar or a hamburger + slide-in drawer —
  * switchable so both can be exercised. The mode is a single flag persisted in
  * localStorage; `AppShell` reads it on mount and reflects it.
  *

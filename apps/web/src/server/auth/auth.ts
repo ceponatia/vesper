@@ -126,10 +126,10 @@ export const auth = betterAuth({
   emailAndPassword: { enabled: true, disableSignUp: signupDisabled },
   socialProviders: configuredSocialProviders(),
   /**
-   * Session lifetime is stated rather than inherited: the "Before
-   * ALLOW_SIGNUP=true" checklist in docs/auth.md requires a
-   * deliberate, documented lifetime. The values are Better Auth's own defaults —
-   * a 7-day session, refreshed at most once a day — so this pins today's behavior
+   * Session lifetime is stated rather than inherited: an explicit, documented
+   * lifetime is a standing sign-up hardening decision
+   * (docs/auth/README.md §Session lifetime). The values are Better Auth's own
+   * defaults — a 7-day session, refreshed at most once a day — so this pins today's behavior
    * instead of changing it; shortening them is now a one-line decision.
    */
   session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },

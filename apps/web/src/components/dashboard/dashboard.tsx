@@ -11,7 +11,8 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
- * Dashboard (docs/ui.md): conversations lead (the companion experience is the
+ * Dashboard (docs/ui/pages.md §The route map): conversations lead (the
+ * companion experience is the
  * front door — D12), then the successor-engine worlds entry and the cast strip.
  * (The legacy world/session hero was deleted with the session lane, 2026-07-22.)
  */

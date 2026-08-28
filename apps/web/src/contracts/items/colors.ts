@@ -1,6 +1,6 @@
 /**
- * Color families (docs/contracts/items.md §Color): the controlled vocabulary
- * behind an item's `color.family` / `color.accent`. Families drive filtering,
+ * Color families (docs/contracts/items/README.md §Color): the controlled
+ * vocabulary behind an item's `color.family` / `color.accent`. Families drive filtering,
  * sorting and swatch chips in the library UI; the free-text `color.shade`
  * ("aqua", "olive") keeps the precise hue for display and image prompts.
  *

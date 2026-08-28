@@ -36,9 +36,9 @@ function keysetCondition(cursor: { at: Date; id: string } | null): SQL | undefin
 
 /**
  * GET /api/gallery — the owner's generated art as a tabbed hub
- * (docs/images/pipelines.md §Scene images, the Gallery hub): `?tab=scenes`
- * (default — character-chat scenes, joined to their
- * character), `?tab=portraits` (character portrait variants), `?tab=entity`
+ * (docs/images/pipelines/scene-images.md §The Gallery hub): `?tab=scenes`
+ * (default — character-chat scenes, joined to their character),
+ * `?tab=portraits` (character portrait variants), `?tab=entity`
  * (location / item art). All tabs page by the keyset `?cursor` + `?limit`,
  * newest first, and carry the `favorite` flag. Scene rows also carry the
  * `image_references` the client's filters/view modes are derived from.

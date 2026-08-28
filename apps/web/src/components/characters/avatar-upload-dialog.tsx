@@ -41,8 +41,9 @@ type Stage = "pick" | "crop" | "uploading";
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /**
- * Upload a profile image (docs/images/pipelines.md §Avatar upload): pick a file,
- * then pan/zoom it inside a crop window before it is scaled to the canonical
+ * Upload a profile image (docs/images/pipelines/avatar-upload.md §The crop
+ * dialog): pick a file, then pan/zoom it inside a crop window before it is
+ * scaled to the canonical
  * 768×1024 portrait and promoted to the character's avatar. The crop stage runs
  * for EVERY image — an already-3:4 file used to skip straight to upload (the
  * dialog silently vanishing read as a bug), and reframing is wanted even at the

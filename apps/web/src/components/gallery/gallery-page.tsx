@@ -113,7 +113,8 @@ const ENTITY_GROUPS: Record<string, { label: string; order: number }> = {
 };
 
 /**
- * Gallery hub (docs/ui.md): the owner's generated art in three tabs — Scenes
+ * Gallery hub (docs/images/pipelines/scene-images.md §The Gallery hub): the
+ * owner's generated art in three tabs — Scenes
  * (grouped by character / timeline), Portraits (by character) and Entity art
  * (by kind) — with avatar chip filters, favorites, multi-select delete, and
  * keyset "Load more" past each page.

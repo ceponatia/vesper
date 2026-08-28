@@ -1232,7 +1232,7 @@ export const locations = pgTable(
  * Undirected connections between library locations (one row per pair). The
  * library counterpart of world_links: a location set designed with linked
  * nodes keeps those connections, and importing the set into a world recreates
- * them as world_links (docs/world.md). FK-cascade so deleting either endpoint
+ * them as world_links. FK-cascade so deleting either endpoint
  * drops the link.
  */
 export const locationLinks = pgTable(

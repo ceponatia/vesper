@@ -5,8 +5,8 @@ import { Select } from "./select";
 /**
  * Dropdown over a curated model list (`lib/narrative-models.ts` /
  * `lib/agent-models.ts` — codebase-review E-U3). A value OUTSIDE the list still
- * renders as its own option (the id as-is, docs/ui.md §World tab) so a
- * legacy/env-override id shows selected rather than being silently swapped for
+ * renders as its own option (the id as-is, docs/ui/conventions.md §Model
+ * dropdowns) so a legacy/env-override id shows selected rather than being silently swapped for
  * the first curated entry.
  */
 export function ModelSelect({

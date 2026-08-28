@@ -1,8 +1,8 @@
 import type { ClothingLayer } from "./item";
 
 /**
- * Clothing categories (docs/contracts/items.md §Clothing categories): authoring-time
- * coverage templates, ported in spirit from companion-app's
+ * Clothing categories (docs/contracts/items/README.md §Clothing categories):
+ * authoring-time coverage templates, ported in spirit from companion-app's
  * CLOTHING_CATEGORY_DEFAULTS and trimmed to a basic set. Picking a category
  * pre-fills coverage + layer in editors and forges; everything stays freely
  * editable afterward — the category carries no semantics of its own.

@@ -2,8 +2,9 @@ import type { ChatTurn } from "../character-chat";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * Chat-summary fold prompt (docs/prompts.md conventions): role, what to produce,
- * what NOT to do, the shape that resists recursive-summarization fact loss — a
+ * Chat-summary fold prompt (docs/character-chat/prompts.md §Agent prompts):
+ * role, what to produce, what NOT to do, the shape that resists
+ * recursive-summarization fact loss — a
  * short narrative recap plus a durable "Established:" ledger carried forward
  * near-verbatim. Single-concern and small like the other agent prompts
  * (./agents.ts, ./inner-note.ts).

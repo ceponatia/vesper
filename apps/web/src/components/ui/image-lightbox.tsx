@@ -74,7 +74,7 @@ export function ImageLightbox({ imageId, alt, onClose, caption, prompt }: ImageL
       </div>
       {showPrompt ? (
         // Desktop only: hidden below md so the prompt panel never crowds the
-        // image on a phone (docs/ui.md §Mobile uses the same md breakpoint).
+        // image on a phone (docs/ui/mobile.md uses the same md breakpoint).
         <aside className="hidden max-h-[85vh] w-80 shrink-0 flex-col gap-2 self-stretch overflow-y-auto rounded-card border border-ink-600 bg-ink-900/90 p-4 md:flex">
           <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">
             Generation prompt

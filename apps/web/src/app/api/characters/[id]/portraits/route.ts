@@ -52,9 +52,9 @@ export const GET = withAuthorizedResource<Params, OwnedCharacter>(
 
 /**
  * Identity-locked reference edit of the canonical avatar, as a
- * `portrait_variant` job (docs/images/pipelines.md §Portrait variants). Poll
- * the character's portraits for
- * the new row's status (the GET's `rendering` flag covers the stretch before
+ * `portrait_variant` job (docs/images/pipelines/portrait-variants.md). Poll
+ * the character's portraits for the new row's status (the GET's `rendering`
+ * flag covers the stretch before
  * the row is reserved). The model comes from the New Variant picker, which
  * lists only edit-capable registry models.
  */

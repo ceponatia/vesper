@@ -13,8 +13,9 @@ import {
 } from "@/server/api";
 
 // Demo-mode integration suite for the outfit-item dedupe ladder
-// (docs/authoring.md §Saving drafts): exact-name reuse → conservative embedding
-// backstop → fresh insert. pseudoEmbed is near-orthogonal across distinct
+// (docs/authoring/character-forge.md §Saving a draft): exact-name reuse →
+// conservative embedding backstop → fresh insert. pseudoEmbed is
+// near-orthogonal across distinct
 // strings, so the embedding path is forced by seeding an existing item's stored
 // vector to the suggestion's exact text under a non-matching name. Self-skips
 // when the database is unreachable, except under strict integration mode
@@ -74,7 +75,8 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
 
   it("persists the clothing category into the stored definition", async () => {
     // Regression: the category template anchors coverage semantics and must
-    // survive materialization, not get dropped on insert (docs/contracts/items.md).
+    // survive materialization, not get dropped on insert
+    // (docs/contracts/items/README.md §Clothing categories).
     const suggestion = itemDefinitionSchema.parse({
       kind: "clothing",
       name: "Forge Category Probe Garment",

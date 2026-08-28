@@ -1,6 +1,6 @@
 /**
- * Wearer targets (docs/contracts/items.md §Wearer): who a garment is cut for.
- * Registry vocabulary behind clothing's `wearer` field — extensible the usual
+ * Wearer targets (docs/contracts/items/README.md §Wearer): who a garment is
+ * cut for. Registry vocabulary behind clothing's `wearer` field — extensible the usual
  * way (add a row here, e.g. a future per-species fit), never a migration.
  *
  * Filter semantics live with the registry so every surface agrees:

@@ -11,7 +11,7 @@ const ownedCharacter = async (user: { id: string }, params: Params) =>
 
 /**
  * Promote a ready variant to the character's canonical avatar
- * (docs/images/pipelines.md §Portrait variants).
+ * (docs/images/pipelines/portrait-variants.md).
  *
  * Defense in depth: the wrapper authorizes the parent character (and is what
  * `pnpm lint:authz` requires of a resource-ID route), and `promoteVariant`

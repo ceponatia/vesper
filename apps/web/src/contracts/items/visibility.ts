@@ -44,7 +44,8 @@ export interface WornItemView {
 }
 
 /**
- * The single wardrobe-visibility rule (docs/contracts/items.md): per body location,
+ * The single wardrobe-visibility rule (docs/contracts/items/visibility.md §The
+ * visibility rule): per body location,
  * the highest-layer covering item is visible; items beneath are hidden, or
  * hinted when every item above them is sheer. Coverage of a parent location
  * implies its descendants (registry.expand). An item visible at any location
@@ -138,7 +139,8 @@ export function intimateRegionsBare(exposure: RegionExposure): boolean {
  * Coverage state of the body regions whose *bareness* is worth stating in an
  * image prompt. Image models default every subject to fully clothed, so a
  * removed top/bottoms/shoes never shows unless the prompt positively asserts
- * the skin is exposed (docs/images/pipelines.md §Scene images).
+ * the skin is exposed (docs/images/pipelines/scene-subjects.md §Bare-region
+ * phrasing).
  */
 export interface RegionExposure {
   /** chest — bare ⇒ topless. */

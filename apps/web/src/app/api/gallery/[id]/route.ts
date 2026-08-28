@@ -8,7 +8,8 @@ type Params = { id: string };
 
 /**
  * DELETE /api/gallery/:id — permanently remove one of the owner's gallery
- * images (docs/images.md §Gallery). A clean 100% delete: the row + file are
+ * images (docs/images/pipelines/scene-images.md §The Gallery hub). A clean
+ * 100% delete: the row + file are
  * dropped, every gallery view derives live from the images table, and any soft
  * pointer at the id (character avatar, location/item/world art) is nulled so
  * nothing dangles. The kind guard keeps this route inside the gallery's asset

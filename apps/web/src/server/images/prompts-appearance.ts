@@ -286,7 +286,7 @@ const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
  * scent/taste attributes never render visually. The exposure rule the untagged
  * intimate attributes take in `sceneRevealAppearance` — the one place image
  * paths gate intimate anatomy, after the avatar path was made intimate-free by
- * rule (see docs/images/pipelines.md §Avatar generation).
+ * rule (see docs/images/pipelines/avatars.md §Intimate-anatomy gating).
  */
 function intimateAttrRendersExposed(def: AttributeDefinition, exposure: RegionExposure): boolean {
   if (def.kind === "sensory") return false; // scent/taste don't render in an image
@@ -333,8 +333,9 @@ function revealSurfaces(def: AttributeDefinition, exposure: RegionExposure, inti
 
 /**
  * The identity-locked scene subject's body description, split by sensitivity so
- * the caller can route each half (docs/images/pipelines.md §Scene images): the reference
- * image is a waist-up portrait, so it conveys the face and upper body but
+ * the caller can route each half (docs/images/pipelines/scene-subjects.md
+ * §Subject body reveal): the reference image is a waist-up portrait, so it
+ * conveys the face and upper body but
  * underspecifies the figure. This supplements it from `imageReveal`-tagged
  * attributes — `shape` (silhouette: breast size, waist, hips, leg build) always,
  * `skin` (nipples, leg hair, toenails) only when the region is bare/sheer.

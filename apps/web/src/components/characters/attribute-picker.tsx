@@ -75,7 +75,8 @@ const PELVIS_CATEGORIES = [...PELVIS_UNIVERSAL_CATEGORIES, ...PELVIS_GENITAL_CAT
 const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATEGORIES]);
 
 /**
- * Registry-driven attribute editor (docs/authoring.md): one section per
+ * Registry-driven attribute editor (docs/authoring/manual-editing.md §The
+ * character editor): one section per
  * attribute group from @/contracts, controls keyed off valueType. Sections are
  * a **single-open accordion** — everything starts collapsed, expanding one
  * collapses the rest — and an open section shows EVERY applicable attribute as
