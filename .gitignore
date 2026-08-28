@@ -5,41 +5,35 @@ next-env.d.ts
 .env
 data/
 .vitest-cache/
+
 # Local-only UI/QA artifacts — Playwright scratch + audit screenshots embed
 # app-generated imagery; keep them on the server, never commit/push.
 .playwright-mcp/
+
 # Playwright/manual UI-testing screenshots live in screenshots/ (never the repo
 # root or docs/) and stay LOCAL — they are ephemeral working artifacts.
 screenshots/
-tmp/
 
-# Render evidence IMAGES are local-only (owner ruling 2026-08-21): generated
-# imagery must not enter git history. The verdict data beside them — README.md
-# and scores CSVs — stays tracked; see evidence/README.md.
-evidence/**/*.png
-evidence/**/*.jpg
-evidence/**/*.jpeg
-evidence/**/*.gif
-evidence/**/*.webp
-evidence/**/*.avif
-evidence/**/*.bmp
-evidence/**/*.tif
-evidence/**/*.tiff
-docs/developer-notes/ux-audit-assets/
-docs/prompts/
+# Evaluation and dev-task imagery — agent screenshots included — lives at the
+# repository root and stays LOCAL (owner ruling 2026-08-28, #346). Never docs/.
+/eval-images/
 
-# Generated/eval imagery under docs — regenerable, keep out of git.
-# Text docs (.md) stay tracked; app icons under src/app are unaffected.
-docs/**/*.png
-docs/**/*.jpg
-docs/**/*.jpeg
-docs/**/*.gif
-docs/**/*.webp
-docs/**/*.avif
-docs/**/*.bmp
-docs/**/*.tif
-docs/**/*.tiff
+# No raster imagery enters git anywhere (owner ruling 2026-08-28): eval renders,
+# evidence, and screenshots are all local-only, regenerable artifacts. Already-
+# tracked files (the app icons under apps/web/src/app) stay tracked; when the UI
+# grows real image assets, carve them back in with a `!` negation here.
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.avif
+*.bmp
+*.tif
+*.tiff
 
+# evidence is for local dev evaluation, not necessary on remote or other checkouts.
+/evidence/
 
 # Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.
 __pycache__/
