@@ -1,84 +1,27 @@
-import "dotenv/config";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import {
-  DEFAULT_SCENE_CAMERA,
-  type SceneCameraSpec,
-  sceneSubjectOrientationById,
-} from "@/contracts/images/scene-camera";
+import { DEFAULT_SCENE_CAMERA, type SceneCameraSpec } from "@/contracts/images/scene-camera";
 import { sceneStagingById, type SceneStaging, type SceneStagingId } from "@/contracts/images/scene-staging";
-import { resolveViewerParts, type ViewerBodyPartId } from "@/contracts/images/viewer-body";
 import type { RegionExposure } from "@/contracts/items/visibility";
 import {
-  buildSceneRenderPrompt,
-  resolveScenePlan,
   type SceneComposerContext,
   type ScenePresentCharacter,
-  type SceneRenderPlan,
   type SceneSpec,
   sceneSpecSchema,
 } from "@/server/images";
-import { evalEdit, hasImageProvider } from "./model";
 
 /**
- * Orientation & staging A/B (NOT a test gate):
- * the complaint is that every chat scene image comes back front-facing whatever the story
- * says, and during intimate play the render is a nude portrait — right person, right room,
- * wrong moment (owner report 2026-08-10). Each beat below renders the SAME resolved plan
- * twice, as Qwen edits of an identity portrait, changing exactly one thing.
+ * The seven orientation/staging beats: three preference-ranked camera-only shots
+ * (`behind`, `glance`, `kneel`) plus the four intimate acceptance scenes
+ * (`doggy`, `oral`, `oral_guided`, `missionary`, owner-specified 2026-08-10).
  *
- * Variants:
- * - `old` — today's prompt: `DEFAULT_SCENE_CAMERA` and no staging, so no shot line and no
- *   staged act. Whatever this build's resolver made of the beat's camera is overwritten back
- *   to the default, so `old` stays the pre-slice baseline even after the clamps land.
- * - `new` — the beat's camera, plus its staging entry where it has one (the registry's own
- *   camera and viewer parts, per spec §Resolution step 5).
- *
- * Both variants run the same route with the same `allowIntimate`, so the only difference is
- * the shot. The pose/activity text is written in the CAUTIOUS register the composer really
- * produces during intimate play ("close to the viewer") — that is the reported failure rather
- * than a strawman, and it is what the staging sentence has to carry the shot past.
- *
- * Beats (`AB_BEAT`), the first three preference-ranked, the last four graded pass/fail:
- * - `behind` (default) — she is at the stove, the player has walked up behind her. Camera
- *   `{away, medium, eye_level}`, no staging. Pass = her back to the camera, face not turned
- *   to the lens, and still recognisably her from the anchor.
- * - `glance` — the same room with the narration actually describing the glance back. Camera
- *   `{away_glance_back, medium, eye_level}`. Pass = back to the camera AND her face turned
- *   back over her shoulder — the composition the `away` ruling makes earn its own evidence.
- * - `kneel` — camera HEIGHT alone: she kneels at the hearth, the viewer stands. Camera
- *   `{toward_viewer, close, high}`, no staging, clothed, moderated route. Pass = the camera
- *   looks down at her and she looks up into it.
- *
- * The three acceptance scenes (owner-specified 2026-08-10, uncensored route only). Each is
- * graded pass/fail on visible elements, and fails on ANY missing element, any extra person,
- * or an unbound limb readable as a third party:
- * - `doggy` — staging `on_all_fours`. Elements: she is on all fours facing away from the
- *   camera; the viewer's own hands rest on her waist or hips.
- * - `oral` — staging `kneeling_before_viewer` (composition A). Element: her face is visible
- *   looking up as she goes down on the viewer.
- * - `oral_guided` — staging `kneeling_before_viewer_guided` (composition B). Element: the
- *   shot looks down on the top of her head with the viewer's hand resting on it. **Either
- *   composition passes the owner's "Oral" scene** — the two beats exist so both can be seen.
- * - `missionary` — staging `lying_beneath_viewer`. Elements: she lies on her back beneath the
- *   camera looking up at the viewer; the viewer's genitals enter frame at the bottom edge with
- *   penetration shown; the viewer's hands hold her legs OR her waist (either position passes).
- *
- * The coverage gate is REAL here, not bypassed: the beats that need the viewer's anatomy set
- * a persona exposure that leaves the pelvis bare, and `buildSceneRenderPrompt` still runs
- * every staged part through `resolveViewerParts`. A beat whose parts do not survive that gate
- * throws rather than paying for a render that cannot show what it is graded on.
- *
- * Outputs land in the untracked screenshots/ folder for eyeball review.
- * Run: `pnpm tsx scripts/eval/scene-images/orientation-ab.ts [anchor.webp] [variants]`
- * (AB_RUNS=n runs per variant, AB_BEAT=behind|glance|kneel|doggy|oral|oral_guided|missionary).
+ * Extracted from the retired `orientation-ab.ts` render A/B (#356 — its inputs
+ * pointed at `docs/scene-image-eval/` portraits that no longer exist on any
+ * machine) because `composer-model-ab.ts` grades the SAME beats and must keep
+ * doing so: two probes disagreeing about what "doggy" is would make their
+ * gradings incomparable. This module carries only the beat DATA (the resolved
+ * spec, context, camera and staging each beat asserts) — the render-side prompt
+ * assembly and paid A/B runner that used to live alongside it were deleted with
+ * `orientation-ab.ts`.
  */
-const OUT = "screenshots/orientation-ab";
-/** Reference portrait: argv override for ad-hoc anchors; the eval portrait (untracked, regenerable) by default. */
-const ANCHOR = process.argv[2] ?? "docs/scene-image-eval/portraits/Mira.webp";
-const RUNS_PER_VARIANT = Number(process.env.AB_RUNS ?? 2);
-const BEAT = process.env.AB_BEAT ?? "behind";
 
 /** The player undressed below the waist — the gate's input, never a way around it. */
 const PLAYER_BARE: RegionExposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" };
@@ -109,10 +52,9 @@ function stagingEntry(id: SceneStagingId): SceneStaging {
 }
 
 /**
- * EXPORTED for `intimate-model-ab.ts`, which grades the same four intimate beats across
- * several models. The beats are the acceptance scenes themselves, so a second probe must
- * reuse these definitions rather than paraphrase them — two probes disagreeing about what
- * "doggy" is would make their gradings incomparable.
+ * A resolved beat: `composer-model-ab.ts` grades a model's proposal against it,
+ * and derives its {@link ComposerExpectation} answer key from the beat's own
+ * `camera`/`staging` (never restated).
  */
 export interface Beat {
   /** One clause naming the shot — printed above the prompts at run time. */
@@ -131,9 +73,8 @@ export interface Beat {
 /**
  * Beats are FACTORIES, built only for the one selected: each parses a spec and reads the
  * registries, and a broken beat should fail the run it belongs to rather than every run. A Map
- * rather than an object so the ids stay the env-var spellings the header documents.
- *
- * EXPORTED alongside {@link Beat} for `intimate-model-ab.ts` — see that note.
+ * rather than an object so the ids stay the env-var spellings the (retired) orientation A/B's
+ * header documented.
  */
 export const BEATS = new Map<string, () => Beat>([
   ["behind", behindBeat],
@@ -156,7 +97,7 @@ export const BEATS = new Map<string, () => Beat>([
  * back to the room and the player behind her; today's render turns her around, because nothing
  * in the prompt has ever said where the player's eyes are.
  *
- * The evidence quote is stated on the spec even though the plan below forces the camera
+ * The evidence quote is stated on the spec even though a render plan would force the camera
  * outright — once the resolver's clamps land, the beat then passes the real evidence gate on
  * a real quote instead of being waved through.
  */
@@ -316,9 +257,8 @@ function doggyBeat(): Beat {
       "nobody but her and the viewer's own hands and forearms is in frame",
     ],
     context,
-    // The composer's real output for a beat like this: cautious, vague, and exactly why the
-    // registry owns the act. `viewerBody` carries hands with a verbatim quote, so `old` is
-    // today's BEST case rather than a handicapped one.
+    // Cautious, vague, and exactly why the registry owns the act. `viewerBody` carries hands
+    // with a verbatim quote, so this is today's BEST case rather than a handicapped one.
     spec: sceneSpecSchema.parse({
       focalCharacter: "Mira",
       pose: "on the bed, close to the viewer",
@@ -340,8 +280,7 @@ function doggyBeat(): Beat {
  * Acceptance scene "Oral", both compositions (either passes). She stays partly dressed on
  * purpose — the entry carries `requiresBare: []` because the bare anatomy this shot needs is
  * the VIEWER's, and that is gated against the player's own coverage.
- */
-/**
+ *
  * The two oral compositions, and the ONE sentence that separates them.
  *
  * Both beats used to share this narration verbatim, hand-on-head included, and expected two
@@ -449,148 +388,4 @@ function missionaryBeat(): Beat {
     staging: stagingEntry("lying_beneath_viewer"),
     allowIntimate: true,
   };
-}
-
-/** Order-preserving union — the staging's parts joining whatever the composer's own gate grounded. */
-function unionParts(base: readonly ViewerBodyPartId[], extra: readonly ViewerBodyPartId[]): ViewerBodyPartId[] {
-  const out = [...base];
-  for (const id of extra) if (!out.includes(id)) out.push(id);
-  return out;
-}
-
-/** `{name}` templates bound to the subject, the way the render layer binds them. */
-function bindName(template: string, name: string): string {
-  return template.replaceAll("{name}", name);
-}
-
-function promptsFor(beat: Beat): Record<string, string> {
-  const resolved = resolveScenePlan(beat.spec, beat.context);
-  const name = resolved.focal?.name;
-  if (!name) throw new Error("beat resolved with no focal character — its roster and spec disagree");
-
-  // TODAY'S SHOT, forced: the front-facing default and no staging, whatever this build's
-  // resolver did with `spec.camera`.
-  const oldPlan: SceneRenderPlan = { ...resolved, camera: { ...DEFAULT_SCENE_CAMERA }, staging: undefined };
-  const newPlan: SceneRenderPlan = {
-    ...resolved,
-    camera: { ...(beat.staging?.camera ?? beat.camera) },
-    ...(beat.staging ? { staging: beat.staging } : {}),
-    // Spec §Resolution step 5: a surviving staging unions its parts into the plan. They are
-    // NOT gated here — `buildSceneRenderPrompt` runs them through `resolveViewerParts` against
-    // the persona's coverage and this route's `allowIntimate`, which is where the gate belongs.
-    viewerBody: unionParts(resolved.viewerBody, beat.staging?.viewerParts ?? []),
-  };
-
-  const opts = { referenceName: name, allowIntimate: beat.allowIntimate };
-  const prompts = { old: buildSceneRenderPrompt(oldPlan, opts), new: buildSceneRenderPrompt(newPlan, opts) };
-  assertProbeIsHonest(beat, newPlan, prompts, name);
-  return prompts;
-}
-
-/**
- * Refuse to pay for an inert A/B. Four ways this run would prove nothing, each a loud throw
- * rather than a render bill:
- *
- * 1. the two prompts are identical — the emission this probe measures is not in the build;
- * 2. a non-default orientation never reached the prompt — the shot line was dropped;
- * 3. the staged sentence never reached the prompt — the staging was dropped or reworded;
- * 4. a graded viewer part did not survive the real coverage/route gate — the shot cannot show
- *    the anatomy it is graded on, and grading it would be grading the persona's wardrobe.
- *
- * Checks 2 and 3 look for the REGISTRY's own text verbatim, which is exactly the contract:
- * the registries own every phrase, and nothing between them and the prompt may rewrite one.
- */
-function assertProbeIsHonest(beat: Beat, plan: SceneRenderPlan, prompts: Record<string, string>, name: string): void {
-  const next = prompts.new ?? "";
-  if (prompts.old === next) {
-    throw new Error(
-      "old and new prompts are identical — the shot line / staging emission is not in this build (scene-composition slices 1–2), so the A/B would render the same prompt twice",
-    );
-  }
-
-  // Only the ORIENTATION is asserted, and only when it is non-default: distance and height
-  // may or may not be spelled out for a shot that moved only one of the three, and this probe
-  // has no business pinning that choice.
-  const orientationId = plan.camera.orientation;
-  if (orientationId !== DEFAULT_SCENE_CAMERA.orientation) {
-    const phrase = bindName(sceneSubjectOrientationById(orientationId)?.phrase ?? "", name);
-    if (!phrase || !next.includes(phrase)) {
-      throw new Error(
-        `the "${orientationId}" orientation phrase is missing from the new prompt — expected the registry phrase verbatim: "${phrase}"`,
-      );
-    }
-  }
-
-  if (!beat.staging) return;
-  const staged = bindName(beat.staging.template, name);
-  if (!next.includes(staged)) {
-    throw new Error(
-      `the staging sentence is missing from the new prompt — expected the registry template verbatim: "${staged}". Either the staging was dropped, or the emitter rewords the template (in which case fix this check, not the registry).`,
-    );
-  }
-  const gated = resolveViewerParts({
-    proposed: plan.viewerBody,
-    ...(plan.playerExposure ? { exposure: plan.playerExposure } : {}),
-    allowIntimate: beat.allowIntimate,
-  }).map((part) => part.id);
-  const blocked = beat.staging.viewerParts.filter((id) => !gated.includes(id));
-  if (blocked.length > 0) {
-    throw new Error(
-      `staged viewer parts blocked by the real gate: ${blocked.join(", ")} — the persona's coverage or this route's allowIntimate is keeping the graded anatomy out of frame`,
-    );
-  }
-}
-
-async function main(): Promise<void> {
-  const build = BEATS.get(BEAT);
-  if (!build) {
-    throw new Error(`unknown beat "${BEAT}" — have: ${[...BEATS.keys()].join(", ")}`);
-  }
-  const beat = build();
-  const prompts = promptsFor(beat);
-  const variants = process.argv[3] ? process.argv[3].split(",") : Object.keys(prompts);
-
-  console.log(`\n=== ${BEAT} — ${beat.summary} ===`);
-  console.log(`Grading:\n${beat.grading.map((line) => `  - ${line}`).join("\n")}`);
-  for (const variant of variants) {
-    const prompt = prompts[variant];
-    if (!prompt) {
-      console.error(`unknown variant "${variant}" for beat "${BEAT}" — have: ${Object.keys(prompts).join(", ")}`);
-      continue;
-    }
-    console.log(`\n--- ${BEAT} / ${variant} prompt ---\n${prompt}\n`);
-  }
-
-  // The prompts are free and are half of what this probe is for; only the renders cost money.
-  if (!hasImageProvider()) {
-    console.log("REPLICATE_API_TOKEN not set — prompts printed above, renders skipped.");
-    return;
-  }
-
-  const reference = await fs.readFile(ANCHOR);
-  await fs.mkdir(OUT, { recursive: true });
-  for (const variant of variants) {
-    const prompt = prompts[variant];
-    if (!prompt) continue;
-    for (let run = 1; run <= RUNS_PER_VARIANT; run++) {
-      const result = await evalEdit(prompt, [reference]);
-      if (!result.ok || !result.image) {
-        console.error(`${variant} run ${run} FAILED: ${result.error ?? "no image"}`);
-        continue;
-      }
-      const file = path.join(OUT, `${BEAT}-${variant}-${run}.webp`);
-      await fs.writeFile(file, result.image);
-      console.log(`${variant} run ${run} → ${file}`);
-    }
-  }
-}
-
-// Run ONLY as the process entry point. `intimate-model-ab.ts` imports the beat factories
-// above, and a module-level `main()` would make that import fire a full PAID orientation
-// run as an import side effect. Invoked directly the behavior is unchanged.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((err: unknown) => {
-    console.error(err);
-    process.exitCode = 1;
-  });
 }

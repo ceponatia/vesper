@@ -292,13 +292,12 @@ function expectUnavailable(sink: DiagnosticCollector, leg: string) {
 }
 
 // ---------------------------------------------------------------------------
-// The seeded row, and its parity with the probe that graded it
+// The seeded row
 // ---------------------------------------------------------------------------
 
 const repoFile = (relative: string): string => readFileSync(path.join(process.cwd(), relative), "utf8");
 
 const MIGRATION = "drizzle/0108_intimate-scene-lora.sql";
-const PROBE = "scripts/eval/scene-images/intimate-model-ab.ts";
 
 /** The seeded row as `drizzle/0108_intimate-scene-lora.sql` writes it. */
 const SEEDED_ROW: ImageLora = imageLoraSchema.parse({
@@ -354,38 +353,5 @@ describe("the row 0108 seeds", () => {
     // The locator that reaches a render is the STORED one: no credential is in
     // the row, and nothing before the transport puts one there.
     expect(evaluated.ok && evaluated.binding.locator).toBe(CIVITAI_LOCATOR);
-  });
-});
-
-/**
- * TRIPWIRE — the probe's `lora` arm and this route must send the same wrapper
- * and the same weights, or the owner's acceptance grades describe a render
- * production does not make.
- *
- * Read as TEXT rather than imported: `intimate-model-ab.ts` runs `main()` on
- * import and would fire a paid probe from a test process.
- */
-describe("probe parity", () => {
-  it("sends the wrapper slug the probe's lora arm renders on", () => {
-    expect(repoFile(PROBE)).toContain(`slug: "${INTIMATE_SCENE_LORA_WRAPPER_SLUG}:`);
-  });
-
-  it("sends the weights the probe's Civitai fallback builds", () => {
-    const probe = repoFile(PROBE);
-    const url = new URL(CIVITAI_LOCATOR);
-    const version = url.pathname.split("/").at(-1) ?? "";
-    // The probe composes the same URL from a version-id default plus the two
-    // query parameters, then appends the token — the same completion this route
-    // makes at the render-intent seam.
-    expect(probe).toContain("https://civitai.com/api/download/models/");
-    expect(probe).toContain(`"${version}"`);
-    expect(probe).toContain(`url.searchParams.set("type", "${url.searchParams.get("type") ?? ""}")`);
-    expect(probe).toContain(`url.searchParams.set("format", "${url.searchParams.get("format") ?? ""}")`);
-    expect(probe).toContain('url.searchParams.set("token", CIVITAI_TOKEN)');
-  });
-
-  it("reads the same environment variable the probe does", () => {
-    expect(repoFile(PROBE)).toContain("CIVITAI_API_TOKEN");
-    expect(repoFile("apps/web/src/server/images/lora-credentials.ts")).toContain("process.env.CIVITAI_API_TOKEN");
   });
 });

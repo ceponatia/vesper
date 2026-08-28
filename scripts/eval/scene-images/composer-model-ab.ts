@@ -12,7 +12,7 @@ import {
   type SceneSpec,
   sceneSpecSchema,
 } from "@/server/images";
-import { type Beat, BEATS } from "./orientation-ab";
+import { type Beat, BEATS } from "./beats";
 import { type ComposerExpectation, gradeComposer, UNSCORED_CHECKS } from "./composer-model-score";
 
 /**
@@ -46,9 +46,9 @@ import { type ComposerExpectation, gradeComposer, UNSCORED_CHECKS } from "./comp
  *
  * ## Beats
  *
- * Imported from `orientation-ab.ts`, never restated: two probes disagreeing about what
- * "doggy" is would make their gradings incomparable (the same rule `intimate-model-ab.ts`
- * follows). Three orientation beats — `behind`, `glance`, `kneel` — plus the four intimate
+ * Imported from `beats.ts`, never restated: two probes disagreeing about what
+ * "doggy" is would make their gradings incomparable. Three orientation beats —
+ * `behind`, `glance`, `kneel` — plus the four intimate
  * acceptance scenes: `doggy`, `oral`, `oral_guided`, `missionary`.
  *
  * The beat's own `spec` is NOT used as the answer key: for the intimate beats it is
@@ -171,7 +171,7 @@ function expectationFor(beatId: string, beat: Beat): ComposerExpectation {
   const viewerBody = EXPECTED_VIEWER_BODY[beatId];
   if (!viewerBody) {
     throw new Error(
-      `beat "${beatId}" has no EXPECTED_VIEWER_BODY entry — orientation-ab.ts added a beat this probe has no answer key for`,
+      `beat "${beatId}" has no EXPECTED_VIEWER_BODY entry — beats.ts added a beat this probe has no answer key for`,
     );
   }
   return {

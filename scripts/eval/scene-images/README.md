@@ -12,23 +12,22 @@ quality can only be judged by eye.
   orientation/staging block — a non-default camera
   on the `orientation` rows, a registry staging entry on the `staging` ones, and
   the frontal rows above them as the identity-regression control.
-- `orientation-ab.ts` — the paid, manually run A/B for that block: one beat
-  rendered twice, today's front-facing prompt against the same plan with its
-  camera and staging set. Prompts print with no provider key configured, so the
-  wording can be reviewed for free; only the renders cost anything.
-- `intimate-model-ab.ts` — the paid, manually run MODEL A/B that follows it. The staging
-  geometry renders on Qwen Edit 2511; explicit anatomy does not (owner report 2026-08-14),
-  so this one takes the same four intimate beats — imported from `orientation-ab.ts`, never
-  restated — and renders each across `qwen` (that baseline), `pulid` and `pulid_compact`
-  (`nsfw-api/sdxl-pulid`, the registry's identity-preserving adult model, on the pipeline
-  prompt and on a hand-written ~60-word SDXL-dialect prompt that fits inside CLIP's window),
-  and an optional `lora` arm. Grades the ACT and the LIKENESS: sdxl-pulid's row records that
-  its likeness is unmeasured in Vesper, and it is single-reference, so identity rides one
-  portrait. Prompts print and every honesty check runs before anything is sent.
+- `beats.ts` — the seven orientation/staging beats (`behind`, `glance`, `kneel`,
+  plus the four intimate acceptance scenes `doggy`, `oral`, `oral_guided`,
+  `missionary`, owner-specified 2026-08-10) as resolved specs + context, shared
+  so `composer-model-ab.ts` grades the exact same beats a render A/B would —
+  two probes disagreeing about what "doggy" is would make their gradings
+  incomparable. The render-side A/B that used to own these definitions
+  (`orientation-ab.ts`) and the model A/B that graded them on Qwen/PuLID/LoRA
+  arms (`intimate-model-ab.ts`) were deleted (#356): both were paid, manually
+  run harnesses whose only inputs were portraits under a `docs/` eval-asset
+  directory retired by #352, gone on every machine. Git history preserves
+  them; a future evaluation resurrects one deliberately, with inputs that
+  exist and `eval-images/` outputs.
 - `composer-model-ab.ts` + `composer-model-score.ts` — the **composer-model** A/B,
   and the odd one out in this folder: it grades TEXT, so
   it is scored in code rather than by eye. It takes the seven beats from
-  `orientation-ab.ts` — again imported, never restated — and asks each candidate
+  `beats.ts` — imported, never restated — and asks each candidate
   shot-planning model the real question (`sceneComposerSystem`,
   `buildSceneComposerPrompt`, `sceneSpecSchema`, `generateChecked`), then grades
   the answer by resolving it through the production `resolveScenePlan`: camera
@@ -51,17 +50,6 @@ quality can only be judged by eye.
 pnpm tsx scripts/eval/scene-images/run.ts        # writes manifest + scores template
 EVAL_OUT=/tmp/eval pnpm tsx scripts/eval/scene-images/run.ts
 
-# the orientation/staging A/B — PAID once a provider key is configured
-AB_BEAT=behind pnpm tsx scripts/eval/scene-images/orientation-ab.ts [anchor.webp] [variants]
-# beats: behind | glance | kneel | doggy | oral | oral_guided | missionary   (AB_RUNS=n per variant)
-
-# the intimate MODEL A/B — PAID; all four beats × 3 arms × AB_RUNS by default
-pnpm tsx scripts/eval/scene-images/intimate-model-ab.ts [anchor.webp]
-AB_BEAT=all|doggy|oral|oral_guided|missionary   AB_RUNS=n
-EVAL_LORA_WEIGHTS=owner/model EVAL_LORA_SCALE=1 pnpm tsx scripts/eval/scene-images/intimate-model-ab.ts
-# ↳ the 4th `lora` arm runs only when EVAL_LORA_WEIGHTS is set; unset, it says so and is skipped.
-# Renders land in screenshots/intimate-model-ab/<beat>/<arm>-<n>.webp
-
 # the composer-model A/B — PAID, but TEXT: the full 8×7×2 matrix is well under $2
 # Use the owner entrypoint so the unchanged A/B is followed by production-ladder economics.
 pnpm tsx scripts/eval/scene-images/composer-model-eval.ts
@@ -73,13 +61,10 @@ AB_ARMS=aion3,dsflash-off pnpm tsx scripts/eval/scene-images/composer-model-eval
 # Ladder report: data/eval/composer-model-ab/ladder-summary.json   (EVAL_OUT overrides both).
 ```
 
-The image A/Bs print their prompts with no provider key configured, so the wording is free to
-review; only the renders cost anything. `intimate-model-ab.ts` additionally refuses to send
-ANYTHING when its own honesty checks fail — two arms sharing a prompt they should not, a
-`lora` arm that has drifted off the `qwen` arm's prompt, a staging sentence missing from a
-pipeline prompt, or a compact prompt over its word budget. The composer-model owner entrypoint
-also preserves no-provider behavior: the underlying A/B prints its prompts, then the wrapper
-skips ladder economics rather than reading stale results from an earlier paid run.
+The composer-model A/B prints its prompts with no provider key configured, so the wording is
+free to review; only the calls cost anything. The owner entrypoint preserves that
+no-provider behavior: the underlying A/B prints its prompts, then the wrapper skips ladder
+economics rather than reading stale results from an earlier paid run.
 
 ## Scoring (manual)
 
