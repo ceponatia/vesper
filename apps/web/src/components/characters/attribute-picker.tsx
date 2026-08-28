@@ -114,7 +114,7 @@ export function AttributePicker({
   // `identity.natal_sex` is a scaffold surfaced only for an androgynous / nonbinary
   // presentation, where the gender label doesn't already imply sex at birth; for a
   // plain female / male gender it's redundant, so it's hidden (docs/contracts/attributes.md
-  // §Natal sex). A definition is shown when the realized body says it's applicable AND it
+  // §Starter vocabulary). A definition is shown when the realized body says it's applicable AND it
   // clears this conditional gate.
   const genderValue = byId.get("identity.gender")?.value;
   const natalSexRelevant = typeof genderValue === "string" && /^(androgynous|nonbinary)_born_/.test(genderValue);
