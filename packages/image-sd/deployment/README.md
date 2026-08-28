@@ -64,7 +64,7 @@ edit it by hand.
 
 The Stage 3 PuLID trial selected `sdxl/identity-portrait` at 0.80 as the
 **provisional** identity recipe; the graded evidence is in
-[`evidence/sd-identity-matrix-r1/`](../../../evidence/sd-identity-matrix-r1/README.md).
+`evidence/sd-identity-matrix-r1/` (local only, not tracked in git).
 
 **`sdxl/lora-portrait` was added after the deployed build was pushed.** The
 predictor refuses a recipe id that is not in the image's `recipes.json`, so the
@@ -307,4 +307,4 @@ atomically. The registry/version process is documented in
 
 - [`@vesper/image-sd` README](../README.md) — package ownership and boundaries.
 - [`docs/images/providers.md`](../../../docs/images/providers.md) — model registry, probing, profiles, and version promotion.
-- [`evidence/sd-identity-matrix-r1/README.md`](../../../evidence/sd-identity-matrix-r1/README.md) — Stage 3 identity-matrix evidence structure.
+- `evidence/sd-identity-matrix-r1/README.md` — Stage 3 identity-matrix evidence structure (local only, not tracked in git).
