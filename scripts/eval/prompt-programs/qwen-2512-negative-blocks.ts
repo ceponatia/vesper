@@ -56,7 +56,7 @@ import { negativeBlockDelta, parseNegativeBlockCsv, summarizeNegativeBlockRows }
  */
 
 const SLUG = "qwen/qwen-image-2512";
-const OUT_ROOT = process.env["AB_OUT"] ?? "screenshots/qwen-negative-blocks";
+const OUT_ROOT = process.env["AB_OUT"] ?? "eval-images/qwen-negative-blocks";
 const SEED_BASE = Number(process.env["AB_SEED_BASE"] ?? 101);
 
 // ---------------------------------------------------------------------------

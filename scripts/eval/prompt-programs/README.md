@@ -20,7 +20,7 @@ AB_TRIAL=all ... --render                                                       
 pnpm tsx scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts --report    # rates + deltas from the graded CSVs
 ```
 
-Renders land in `screenshots/qwen-negative-blocks/<trial>/`, one file per
+Renders land in `eval-images/qwen-negative-blocks/<trial>/`, one file per
 fixture × arm × seed, plus a labeled contact sheet per fixture × arm for
 grading, a `manifest.json` recording the executed version id per render, and a
 `scores-<trial>.csv` template (never overwritten once it exists). Grade the
@@ -60,7 +60,7 @@ and writes a blank `scores.csv`. Nothing is sent.
 pnpm tsx scripts/eval/prompt-programs/entity-negative-ab.ts --render
 ```
 
-Paid. Renders both arms per case into `screenshots/entity-negative-ab/`.
+Paid. Renders both arms per case into `eval-images/entity-negative-ab/`.
 `AB_CASE=<id>` runs one row, `AB_SEED=<n>` moves the held seed, `AB_OUT=<dir>`
 moves the output.
 
