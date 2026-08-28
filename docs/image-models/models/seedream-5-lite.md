@@ -1,7 +1,7 @@
 # Seedream 5 Lite
 
 **Slug:** `bytedance/seedream-5-lite`
-**Probed:** 2026-08-05, version `eeb2857d94c49a5bcbc9d6c6057416e1d3b1a2735a16e08e4def9bf7ee22ec71`
+**Provenance:** probed 2026-08-05 against pinned version `eeb2857d94c49a5bcbc9d6c6057416e1d3b1a2735a16e08e4def9bf7ee22ec71`.
 
 > Seedream 5.0 lite: image generation with built-in reasoning, example-based
 > editing, and deep domain knowledge.
@@ -38,8 +38,7 @@ Reviewed by hand, never probed, and never overwritten by a re-probe:
 - **Edit kind:** `multi_reference_compose` — a genuine reference list, not
   strength-based repainting.
 - **Identity preservation:** `strong`, and it is the one rating in the set with
-  direct evidence: the 2026-08-05 trial above held face and hair across a scene
-  change.
+  direct evidence — the trial above held face and hair across a scene change.
 - **Operator warning:** none. Note this is not a moderation clearance — the model
   has no `disable_safety_checker` input and the trial ran a clothed, non-explicit
   prompt, so the reach of its moderation is still untested.

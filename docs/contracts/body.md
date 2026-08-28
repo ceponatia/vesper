@@ -36,7 +36,7 @@ The **everyday humanoid tree** has five roots, at coverage-useful granularity (~
 
 `body/plans.ts`: a body plan (only `humanoid` is seeded) is a set of location ids plus the applicable attribute rules. Characters reference a `bodyPlanId`. Non-humanoid plans are future *data* additions, not refactors.
 
-Everything that targets the body — wardrobe coverage, exposure, attribute targeting — references body-location **ids**, never hardcoded strings. Garment coverage templates and the coverage editor live in [items.md](items.md) §Coverage editing.
+Everything that targets the body — wardrobe coverage, exposure, attribute targeting — references body-location **ids**, never hardcoded strings. Garment coverage templates and the coverage editor live in [items/README.md](items/README.md) §Coverage editing.
 
 ## Intimate anatomy
 
@@ -78,11 +78,11 @@ A character's body-config is the set of intimate regions and additive features t
 
 Three paths seed it, and each seeds **once, at creation** — nothing re-derives the body-config afterwards, so an author who changes gender in the editor changes the anatomy toggles themselves:
 
-| Path                          | Seeds when                                          |
-| ----------------------------- | --------------------------------------------------- |
-| Character forge               | Always, from the grounded draft's attribute values   |
-| `POST /api/characters`        | The incoming profile carries no attributes at all    |
-| `POST /api/personas`          | The incoming profile carries no body-config          |
+| Path                   | Seeds when                                         |
+| ---------------------- | -------------------------------------------------- |
+| Character forge        | Always, from the grounded draft's attribute values |
+| `POST /api/characters` | The incoming profile carries no attributes at all  |
+| `POST /api/personas`   | The incoming profile carries no body-config        |
 
 The persona gate is the body-config rather than the whole profile because a persona has no forge and no clone: its only non-blank creator is an API client, and one sending `identity.gender` with no anatomy wants the anatomy that gender activates (`seedNewPersonaProfile`, `contracts/players/persona-profile.ts`). A supplied config always wins on every path.
 
@@ -188,4 +188,4 @@ with a small synonym map for colloquialisms that match neither (`mouth` → lips
 | `expandBodyTarget(term, isApplicable)` | The expansion filtered through a character's realized body — pass `realizeBody(...).isAttributeApplicable`, so "chest" on a flat-chested character omits breast attributes. |
 | `detectBodyTargets(text)`              | Scans free prose (whole-word, longest-phrase-first).                                                                                                                        |
 
-Consumers: the **chat lane's Sensory-focus block** (`buildSensoryFocusSection`, prompts/character-chat.ts — `expandBodyTarget` over the detected focus `region` surfaces the target's own attributes, 2026-07-12; the resolver also handles **singular forms** of plural locations — "foot" → `feet` — for exactly this).
+Consumers: the **chat lane's Sensory-focus block** (`buildSensoryFocusSection`, prompts/character-chat.ts — `expandBodyTarget` over the detected focus `region` surfaces the target's own attributes; the resolver also handles **singular forms** of plural locations — "foot" → `feet` — for exactly this).

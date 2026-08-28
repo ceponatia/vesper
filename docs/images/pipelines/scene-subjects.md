@@ -70,7 +70,8 @@ the focal: a scene missing one person's anchors is the same wrong picture.
 
 Listing only worn garments isn't enough — image models default every subject to fully clothed,
 so a removed top never shows. From each NPC's coverage (`exposedRegions` + `formatExposure`,
-the visibility rule owned by [../../contracts/items.md](../../contracts/items.md) §Visibility)
+the visibility rule owned by
+[../../contracts/items/visibility.md](../../contracts/items/visibility.md))
 the lane classifies torso (`chest`), lower body (`pelvis`/groin·hips), legs (`thighs`), and
 feet as `covered` / `sheer` / `bare`, then injects explicit phrasing: "topless, bare chest",
 "bare below the waist", "bare legs", "barefoot", or a single "fully nude" when torso, pelvis

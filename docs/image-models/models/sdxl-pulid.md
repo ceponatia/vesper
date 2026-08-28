@@ -2,7 +2,8 @@
 
 **Slug:** `nsfw-api/sdxl-pulid`
 **Registered as:** `nsfw-api/sdxl-pulid:83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5`
-**Probed:** 2026-08-11, version `83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5`
+**Provenance:** probed 2026-08-11 against pinned version `83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5`.
+
 **Quality ruling:** experimental identity-specialist candidate
 
 The model page carries no description text. Its schema exposes a PuLID

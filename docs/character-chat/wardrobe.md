@@ -3,7 +3,7 @@
 What the roster and the player are wearing: the resolve seam every consumer reads, the
 garment store the worn lists project from, and the player's own wardrobe. The coverage
 vocabulary itself — visibility, `exposedRegions`, garment-noun coverage, effective
-coverage — is owned by [../contracts/items.md](../contracts/items.md); this page states how
+coverage — is owned by [../contracts/items/README.md](../contracts/items/README.md); this page states how
 the chat lane holds and changes it.
 
 ## The chat wardrobe
@@ -17,7 +17,7 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
 - **The seam.** `resolveChatWardrobe` (`engine/chat-wardrobe.ts`) is the ONE place worn state
   becomes what downstream reads — a rendered garment phrase (via `wardrobeOutfitText`,
   occlusion-filtered + subtype-led) plus **coverage-computed exposure** (via the shared
-  wardrobe classifier `exposedRegions`, [../contracts/items.md](../contracts/items.md)) — reusing the
+  wardrobe classifier `exposedRegions`, [../contracts/items/visibility.md](../contracts/items/visibility.md)) — reusing the
   shared renderers, never re-forking them. The narrator prompt (`promptStateSlice`), the scene
   image (`queueChatScene` → `renderCharacterSceneImage`'s `exposure` override), and the
   `chat_look` key all read it. When `worn_item_ids` is empty the seam falls back to the
@@ -25,8 +25,8 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
   switch / equip populates the worn list — so a conversation that never carried worn ids
   stays on the free-text path until it is re-dressed, and nothing sweeps it.
 - **The overlay carries coverage.** Garment nouns in the free-text `outfit` resolve to real
-  coverage rows (`contracts/items/garment-noun-coverage.ts`, [../contracts/items.md](../contracts/items.md)
-  §Coverage from garment nouns) and reach `exposedRegions` — and ONLY `exposedRegions`, never
+  coverage rows (`contracts/items/garment-noun-coverage.ts`,
+  [../contracts/items/garment-nouns.md](../contracts/items/garment-nouns.md)) and reach `exposedRegions` — and ONLY `exposedRegions`, never
   occlusion, cues, or the affordance read, which stay real items. Structured, they can only
   ADD cover: a modelled thong plus an overlay reading "pale lavender gown" must never
   compute `torso: "bare"` and put chest anatomy in the scene prompt. On the **free-text**

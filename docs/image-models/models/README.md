@@ -13,10 +13,31 @@ table and is managed from the admin page at `/settings/image-models`.
 Adding a model to the app does not require adding a file here, but doing so is
 the difference between a model we understand and one we merely call.
 
-> **Version note:** [providers.md](../../images/providers/README.md) owns how Vesper probes,
+> **Version note:** [providers/](../../images/providers/README.md) owns how Vesper probes,
 > pins, and activates provider versions. Each per-model page owns that model's
 > external API snapshot and any known provider drift. Do not infer an active
 > row's controls from Replicate's current playground alone.
+
+## The provenance line
+
+Every page in this folder carries **exactly one dated line**, in the header block under the slug:
+
+```text
+**Provenance:** probed <YYYY-MM-DD> against pinned version `<version id>`.
+```
+
+That pairing is the whole claim: everything the page records below it — the schema, the field
+names, the caps, the measured behavior — was read from that exact provider version on that date.
+A date without a version says nothing reproducible, and a version without a date cannot be aged,
+so the two only ever appear together.
+
+**No other date appears on a catalog page**, with one exception: a dated `Owner ruling
+<YYYY-MM-DD>: …` line, which records a decision rather than a measurement. A re-probe **replaces**
+the provenance line rather than adding a second one, and a recheck that changed nothing leaves no
+trace — if a recheck established a fact, that fact is stated in prose.
+
+The header block is otherwise `**Slug:**`, an optional `**Registered as:**` for a
+version-pinned row, and an optional `**Quality ruling:**` naming the reviewed posture in words.
 
 ## Why these files exist
 
@@ -28,9 +49,9 @@ over with one shared mapping:
 - On some models that field is a single URI; on others it is an array.
 - **A URI-typed input is not necessarily a reference.** One model declares a
   ControlNet `depth_image` *before* its `reference_image`, so "the first image
-  input" is the wrong answer — the probe searches identity names first and
-  control names (`depth_image`, `pose_image`, `mask`, …) last
-  ([providers.md](../../images/providers/README.md)).
+  input" is the wrong answer. The probe's reference-field priority order and the
+  reasoning behind it are owned by
+  [providers/registry.md](../../images/providers/registry.md).
 - Some models expose `aspect_ratio` and offer `3:4`. One offers `aspect_ratio`
   without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Six
   have no aspect input whatsoever and are sized by `width`/`height` integers;
@@ -179,10 +200,10 @@ enabled flag and the remaining legacy surface toggle. The database profile rows,
 not the prose here, are the runtime source of truth
 ([providers.md](../../images/providers/README.md)).
 
-`probed_version_id` — the version the stored bindings came from, and the
-`Probed:` header in each file — is written on rows added through the admin page
-and on the four seeded rows whose slugs name it. The six original seeded rows
-carry none: they predate the column. `advanced_capabilities` is probe-owned and
+`probed_version_id` — the version the stored bindings came from, and the version named in each
+file's provenance line — is written on rows added through the admin page and on the four seeded
+rows whose slugs name it. The six original seeded rows carry none: they predate the column.
+`advanced_capabilities` is probe-owned and
 holds optional control bindings plus provider-input descriptors; a row created
 before a capability derivation existed gains those fields on re-probe or version
 activation. Do not infer the active row's capability from the current Replicate
@@ -208,8 +229,8 @@ pickers therefore does **not** mean the Image Generator cannot run it.
 ## Keeping these current
 
 Replicate does not version this metadata: a model's `latest_version` can change
-its input schema underneath a fixed slug. Each file records the version id it was
-read from and the date. When a render starts failing on a payload that used to
+its input schema underneath a fixed slug. Each file's provenance line records the version id it
+was read from and the date it was read. When a render starts failing on a payload that used to
 work — or Replicate documents a new capability — re-probe before debugging or
 redesigning Vesper:
 
@@ -218,6 +239,6 @@ curl -s -H "Authorization: Bearer $REPLICATE_API_TOKEN" https://api.replicate.co
 ```
 
 The admin page's probe-latest flow does the same discovery without mutating the
-active row. Smoke-test the candidate, then activate it explicitly. A per-model
-page should record both the active/probed snapshot and any known newer provider
-schema when those differ.
+active row. Smoke-test the candidate, then activate it explicitly. A per-model page records both
+the active probed snapshot — through its provenance line — and any known newer provider schema
+when those differ.

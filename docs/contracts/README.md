@@ -10,7 +10,7 @@
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | [attributes.md](attributes.md)       | The attribute registry: definitions, the shared registry spine, and value provenance                         |
 | [body.md](body.md)                   | The body-location tree, body plans, species/heritage, the realized body, and colloquial targets              |
-| [items.md](items.md)                 | Item definitions and visibility, clothing categories, object subtypes, and coverage editing                  |
+| [items/](items/README.md)            | Item definitions and visibility, clothing categories, object subtypes, and coverage editing                  |
 | [meters.md](meters.md)               | Continuous 0–1 meters and the mood module                                                                    |
 | [conditions.md](conditions.md)       | Discrete, temporary states (e.g. "soaked", "exhausted")                                                      |
 | [relationships.md](relationships.md) | Affinity stages, the bond classifier, and disposition (traits, preferences, tags, modulation, the guardrail) |

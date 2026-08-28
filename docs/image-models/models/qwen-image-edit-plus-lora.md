@@ -1,9 +1,7 @@
 # Qwen Image Edit Plus LoRA (2509 LoRA explorer)
 
 **Slug:** `qwen/qwen-image-edit-plus-lora`
-**Probed:** 2026-08-11, version
-`b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`
-**Provider latest rechecked:** 2026-08-24
+**Provenance:** probed 2026-08-11 against pinned version `b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`.
 
 > Qwen Image Edit 2509 LoRA explorer, uses Hugging Face URLs to load a custom
 > safetensor.

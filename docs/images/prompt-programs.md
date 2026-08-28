@@ -170,10 +170,9 @@ when it does not, every exclusion is recorded with a `dropped` transport and no
 key is invented.
 
 **And a field that exists is not a field that works.** `qwen/qwen-image-2512`
-exposes `negative_prompt` and ignores it: a render asked for a red apple with
-`red apple, apple` in the negative kept the apple in 16 of 16 paired renders,
-on both the accelerated and non-accelerated sampling paths. Its dialect declares
-`unsupported`, so every exclusion drops with the reason
+exposes `negative_prompt` and ignores it — the measurement is owned by
+[its model page](../image-models/models/qwen-image-2512.md). Its dialect
+therefore declares `unsupported`, so every exclusion drops with the reason
 `endpoint_ignores_negative_field` — recorded, never sent — and probing the row
 cannot change that. On an endpoint like this the positive channel is the only one
 that steers, and exclusions that matter have to become affirmative claims.

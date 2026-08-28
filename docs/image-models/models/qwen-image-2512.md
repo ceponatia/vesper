@@ -1,7 +1,8 @@
 # Qwen Image 2512
 
 **Slug:** `qwen/qwen-image-2512`
-**Probed:** 2026-08-05, version `47c060e80055269a615f9636df2d51fd50239dc439f5ecde465a7d513a0abda6`
+**Provenance:** probed 2026-08-05 against pinned version `47c060e80055269a615f9636df2d51fd50239dc439f5ecde465a7d513a0abda6`.
+
 **Quality ruling:** no transitional runtime override
 
 > Qwen Image 2512 is an improved version of Qwen Image with more realistic human

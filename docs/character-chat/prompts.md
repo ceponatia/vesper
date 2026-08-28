@@ -265,7 +265,7 @@ addresses the user as "you").
   (`NARRATION_SHAPE_PROFILES`), never a hard-coded floor.
 - **Clothing category names never enter gameplay prompts.** Items are described by name,
   description, and resolved coverage only — the `category` field is an authoring template
-  ([../contracts/items.md](../contracts/items.md) §Clothing categories).
+  ([../contracts/items/README.md](../contracts/items/README.md) §Clothing categories).
 - **Untrusted spans are fenced, not bare-concatenated** (`prompts/untrusted.ts`). Player
   input and user-authored character/scenario/persona text are wrapped in opaque sentinel
   fences via `fenceUntrusted(label, text)`, and every prompt that embeds one states once —

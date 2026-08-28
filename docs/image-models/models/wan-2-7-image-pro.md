@@ -1,7 +1,7 @@
 # Wan 2.7 Image Pro
 
 **Slug:** `wan-video/wan-2.7-image-pro`
-**Probed:** 2026-08-05, version `d880bad3fb109170221d7c233c4665bab6ba83d01936f3c9b1389de6ed2a82ed`
+**Provenance:** probed 2026-08-05 against pinned version `d880bad3fb109170221d7c233c4665bab6ba83d01936f3c9b1389de6ed2a82ed`.
 
 > Generate and edit high-quality images with Alibaba's Wan 2.7 Pro with 4K
 > output, thinking mode, text-to-image, multi-image editing, and image set
@@ -24,8 +24,8 @@ ValueError: Invalid image format ''. Supported formats: .bmp, .jpeg, .jpg, .png,
 ```
 
 This is not a missing input — the payload matches the schema exactly. Reproduced
-against the live model on 2026-08-05 with one reference, holding everything else
-constant:
+against the live model at the pinned version with one reference, holding
+everything else constant:
 
 - `https://api.replicate.com/v1/files/<id>.webp` — fails with
   `Invalid image format ''`.

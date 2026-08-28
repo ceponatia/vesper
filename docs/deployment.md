@@ -19,7 +19,7 @@ Machine with a persistent volume — so `auto_stop_machines` must be **off**.
 | File            | Role                                                                                      |
 | --------------- | ----------------------------------------------------------------------------------------- |
 | `Dockerfile`    | App image (build + runtime). Keeps full deps so `pnpm db:migrate` works; no `pnpm prune`. |
-| `.dockerignore` | Keeps `node_modules`/`.next`/`.env`/`data` out of the build context, at every depth.       |
+| `.dockerignore` | Keeps `node_modules`/`.next`/`.env`/`data` out of the build context, at every depth.      |
 | `fly.toml`      | Machine + service config (managed in the Fly UI / repo — see recommended version below).  |
 
 ## The Dockerfile (key choices)
@@ -44,9 +44,9 @@ Machine with a persistent volume — so `auto_stop_machines` must be **off**.
 - `sharp` works from its prebuilt `@img/sharp-*` binary; the "Ignored build
   scripts: sharp" pnpm warning is benign.
 - **`NODE_OPTIONS=--max-old-space-size=4096` on the build step**, inline so the
-  runner never inherits a heap cap it does not need. The app outgrew Node's
-  default old-space ceiling on 2026-08-02; raise this number if the build worker
-  starts aborting again (see Troubleshooting).
+  runner never inherits a heap cap it does not need. The app is past Node's
+  default old-space ceiling; raise this number if the build worker starts
+  aborting again (see Troubleshooting).
 
 ## Recommended `fly.toml`
 
@@ -134,14 +134,12 @@ Fly↔GitHub integration firing; every release so far has been a hand-run
 `fly deploy`). So a `git push` ships nothing on its own — run the deploy after.
 
 - **First, verify `main` — with the full CI dispatch.** Run
-  **`gh workflow run CI --ref main`** and wait for green
-  (`gh run watch`). A dispatch runs every gate unconditionally: lint, static
-  checks, typecheck, the pure suite, jscpd, the DB-backed engine suite with the
-  Gate 1 benchmark, and the production build. That matters because PR CI runs
-  the build only when the build surface itself moves — the dispatch is what
-  guarantees the release candidate compiles before Fly does, with the build heap
-  pinned to 4096 MB to match the Dockerfile's stage, so a build that would
-  exhaust the Fly builder fails in CI first (see Troubleshooting).
+  **`gh workflow run CI --ref main`** and wait for green (`gh run watch`). A
+  dispatch runs every gate unconditionally ([testing.md](testing.md) §The
+  verification gate). That matters because PR CI runs the production build only
+  when the build surface itself moves — the dispatch is what guarantees the
+  release candidate compiles before Fly does, so a build that would exhaust the
+  Fly builder fails in CI first (see Troubleshooting).
 - **Deploy the same tree CI validated.** `fly deploy` ships your working tree,
   not a git ref — deploy from a clean `main` checkout at the commit the
   dispatch ran against.
@@ -242,14 +240,12 @@ a Tailscale sidecar.) Set strong, unique `BETTER_AUTH_SECRET` and `DEV_PASSWORD`
   137 with no V8 stack. The Dockerfile raises the ceiling to 4096 MB on the build
   step; if it recurs the app simply grew again, so raise that number (and only if
   exit 137 appears instead, give the builder more RAM rather than more heap).
-  First seen 2026-08-02, after four PRs landed between deploys.
 - **Images vanish after restart** — the `[[mounts]]` volume is missing or
   `DATA_ROOT` doesn't point at it.
 - **React error #418 (hydration mismatch) in the console on loads right after a
   deploy** — deploy skew, not an app bug: a browser with cached assets from the
   previous build straddles the Machine cutover, React logs #418, discards the
   server HTML, and client-renders — the page still works. It self-heals and has
-  never reproduced outside the few minutes around a cutover (probed 2026-07-09:
-  warm-cache, hard-reload, and CDP cache-disabled loads across several pages on a
-  settled build were all clean). Don't chase it unless it appears on a settled
-  build.
+  never reproduced outside the few minutes around a cutover — warm-cache,
+  hard-reload, and CDP cache-disabled loads across several pages on a settled
+  build were all clean. Don't chase it unless it appears on a settled build.

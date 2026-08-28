@@ -2,7 +2,8 @@
 
 **Slug:** `lucataco/juggernaut-xl-v9`
 **Registered as:** `lucataco/juggernaut-xl-v9:bea09cf018e513cef0841719559ea86d2299e05448633ac8fe270b5d5cd6777e`
-**Probed:** 2026-08-05, version `bea09cf018e513cef0841719559ea86d2299e05448633ac8fe270b5d5cd6777e`
+**Provenance:** probed 2026-08-05 against pinned version `bea09cf018e513cef0841719559ea86d2299e05448633ac8fe270b5d5cd6777e`.
+
 **Quality ruling:** outside the reviewed set — runs on the wrapper's own defaults
 
 > Juggernaut XL v9

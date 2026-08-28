@@ -4,7 +4,7 @@ The simulation engine's material economy: where items sit, who holds and owns th
 how they move, wear, and get consumed, and the coarser household-scale economy — lots,
 means, and restock — that backs a world too detailed to track every spoon. See
 [bodies.md](bodies.md) for meters and conditions on characters, and
-[../contracts/items.md](../contracts/items.md) for the item/wardrobe registry
+[../contracts/items/README.md](../contracts/items/README.md) for the item/wardrobe registry
 (`ItemDefinition`, coverage, visibility) this model builds on.
 
 ## Items and holding loci
@@ -12,7 +12,7 @@ means, and restock — that backs a world too detailed to track every spoon. See
 Every material item occupies exactly one holding locus at any story second:
 
 - **held** — carried by an actor;
-- **worn** — on an actor in a named slot (slot keys are free text for now);
+- **worn** — on an actor in a named slot (slot keys are free text);
 - **container** — inside another item that declares container configuration;
 - **zone** — resting at a place;
 - **gone** — terminal: consumed, destroyed, or lost.
@@ -241,5 +241,5 @@ quiet.
 
 - [bodies.md](bodies.md) — the meter/condition kernel item condition and consumption
   both run on, and the character-side model materials feed into.
-- [../contracts/items.md](../contracts/items.md) — the item and wardrobe registry
+- [../contracts/items/README.md](../contracts/items/README.md) — the item and wardrobe registry
   (`ItemDefinition`, coverage, visibility) that engine items are instances of.

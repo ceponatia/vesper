@@ -109,7 +109,7 @@ Each outfit garment is phrased by its **description + sensory appearance, untrun
 name is only a fallback when a garment has no description — and an accessory's **subtype label
 leads the phrase** (`nose ring: thin gold hoop`, `formatGarment`; skipped when the text
 already names the type). Jewelry names alone gave the model nothing to place the piece
-([../../contracts/items.md](../../contracts/items.md) §Clothing subtypes); the same phrasing
+([../../contracts/items/README.md](../../contracts/items/README.md) §Clothing subtypes); the same phrasing
 feeds scene wardrobe lines and the narrator's Visible-wardrobe block.
 
 The wardrobe segment is marked authoritative ("depict exactly this clothing") — without it the
@@ -130,7 +130,7 @@ wardrobe — a successful load with zero rows — still states its bare regions.
 
 The outfit is **occlusion-filtered** first (`visibleAvatarOutfit`, the shared
 `resolveWardrobeVisibility` rule owned by
-[../../contracts/items.md](../../contracts/items.md) §Visibility): layers fully hidden under
+[../../contracts/items/visibility.md](../../contracts/items/visibility.md)): layers fully hidden under
 opaque outer layers are omitted — mentioning the t-shirt under a closed abaya makes the model
 paint the abaya open — sheer-covered items become a vague hint, and coverage-less items
 (jewelry) stay.

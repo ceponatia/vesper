@@ -2,7 +2,8 @@
 
 **Slug:** `nsfw-api/realvis-hyper-lora`
 **Registered as:** `nsfw-api/realvis-hyper-lora:9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
-**Probed:** 2026-08-05, version `9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
+**Provenance:** probed 2026-08-05 against pinned version `9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`.
+
 **Quality ruling:** outside the reviewed set — runs on the wrapper's own defaults
 
 The model page carries no descriptive README. Its schema exposes a HyperLoRA +

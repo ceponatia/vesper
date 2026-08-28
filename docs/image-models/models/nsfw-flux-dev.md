@@ -2,8 +2,7 @@
 
 **Slug:** `aisha-ai-official/nsfw-flux-dev`
 **Registered as:** `aisha-ai-official/nsfw-flux-dev:fb4f086702d6a301ca32c170d926239324a7b7b2f0afc3d232a9c4be382dc3fa`
-**Probed:** 2026-08-11, version `fb4f086702d6a301ca32c170d926239324a7b7b2f0afc3d232a9c4be382dc3fa`
-**Quality ruling:** 2026-08-11
+**Provenance:** probed 2026-08-11 against pinned version `fb4f086702d6a301ca32c170d926239324a7b7b2f0afc3d232a9c4be382dc3fa`.
 
 The model page carries no description text. Its schema is five fields —
 `prompt`, `seed`, `steps`, `width`, `height`, `guidance_scale` — with no

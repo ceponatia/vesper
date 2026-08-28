@@ -8,13 +8,12 @@ row per character, and each revision carries its status (`pending`/`ready`/`unus
 crop method (`detector`/`heuristic`/`manual`), geometry, measurements, warning codes and review actor. The **pack row,
 not the crop's `images.meta`, is the authority** for which crop is current.
 
-**The crop is a hidden asset.** `kind: "identity_face_crop"` is written through the normal row-before-file WebP path ([asset-registry.md](asset-registry.md)),
-then subtracted from every user surface by `HIDDEN_IMAGE_KINDS` (`images/assets.ts`): the character detail response's
-portrait strip, `cloneEntityImages`, and the public-widening branch of `GET /api/images/:id/file` (a hidden row stays
-owner-only whatever entity it names). The portrait studio's routes use a positive allow-list instead
-(`PORTRAIT_STUDIO_KINDS` = avatar + variant), so list/read/delete/promote cannot address one; the Gallery's
-`GALLERY_IMAGE_KINDS` never included it; and `promoteVariant` refuses a hidden kind outright
-(`images.promote.hidden_kind`) — a render *input* is never a portrait.
+**The crop is a hidden asset.** `kind: "identity_face_crop"` is written through the normal row-before-file WebP path
+and is a member of `HIDDEN_IMAGE_KINDS`, whose membership and reach are owned by
+[asset-registry.md](asset-registry.md) §Hidden kinds. Two further gates are this lane's own: the portrait studio's
+routes use a positive allow-list (`PORTRAIT_STUDIO_KINDS` = avatar + variant), so list/read/delete/promote cannot
+address a crop, and `promoteVariant` refuses a hidden kind outright (`images.promote.hidden_kind`) — a render *input*
+is never a portrait.
 
 **Derivation v1 is heuristic-only, deliberately.** `IdentityFaceDetector` (`images/identity-pack-detector.ts`) is a
 real seam, but the shipped adapter is `nullIdentityFaceDetector` (`"null_v1"`) and reports nothing: picking a library

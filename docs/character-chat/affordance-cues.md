@@ -74,7 +74,7 @@ The read also produces the final **effective-coverage read** (opaque/hinted/expo
 location, with contributing garment evidence), and that answer is **captured** onto
 `ChatGarmentStore.coverage` rather than recomputed by each consumer — so it rides
 `pre_exchange_scenario` with the garments it describes and a retake restores both or
-neither. See [../contracts/items.md](../contracts/items.md) §Effective coverage — the final read.
+neither. See [../contracts/items/visibility.md](../contracts/items/visibility.md) §Effective coverage.
 
 ## Two narrator cue blocks, one boundary
 

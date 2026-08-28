@@ -1,7 +1,7 @@
 # FLUX.1 [dev]
 
 **Slug:** `black-forest-labs/flux-dev`
-**Probed:** 2026-08-05, version `6e4a938f85952bdabcc15aa329178c4d681c52bf25a0342403287dc26944661d`
+**Provenance:** probed 2026-08-05 against pinned version `6e4a938f85952bdabcc15aa329178c4d681c52bf25a0342403287dc26944661d`.
 
 > A 12 billion parameter rectified flow transformer capable of generating images
 > from text descriptions

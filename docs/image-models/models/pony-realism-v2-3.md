@@ -2,7 +2,8 @@
 
 **Slug:** `nsfw-api/pony-realism-v2.3`
 **Registered as:** `nsfw-api/pony-realism-v2.3:7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
-**Probed:** 2026-08-05, version `7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
+**Provenance:** probed 2026-08-05 against pinned version `7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`.
+
 **Quality ruling:** outside the reviewed set — runs on the wrapper's own defaults
 
 The model page carries no descriptive README. Its schema exposes an InstantID /
@@ -38,16 +39,13 @@ semantic review, fixed-matrix trial, and license/terms review.
 must not be represented as two anonymous slots.
 
 The current generic adapter sends only the registered identity field, so
-`pose_image` is unused. The identity-repair trial depends on role-aware reference
-bindings from the capabilities plan:
+`pose_image` is unused. Using this model for identity repair needs role-aware
+reference bindings — the identity-pack face crop on `image`, the source scene
+output on `pose_image`, the scene's compact Pony dialect as the prompt, and an
+explicit single-character guard.
 
-- identity-pack face crop → `image`;
-- source scene output → `pose_image`;
-- prompt → the scene's compact Pony dialect;
-- explicit single-character guard.
-
-Until that binding exists, Pony is not a normal scene option and no route should
-bypass the shared adapter with a permanent special-case payload.
+Without those bindings Pony is not a normal scene option, and no route may bypass
+the shared adapter with a permanent special-case payload.
 
 ## Identity/detail controls
 

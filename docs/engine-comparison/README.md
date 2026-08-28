@@ -2,13 +2,21 @@
 
 Engine Comparison is Vesper's legacy-versus-successor migration harness. It lets a normal legacy character chat remain authoritative while the successor simulation independently evaluates the same player turns against a dedicated mirror world. The results are recorded for later review; the successor comparison never rewrites the legacy transcript or legacy chat state.
 
-The feature was originally called **Shadow Parity**. That name is retired in user-facing documentation and UI because it obscured the purpose of the system and implied that the two engines are expected to be identical. Internal identifiers such as `successor_shadow`, `/admin/shadow`, `sim_shadow_divergences`, and `shadow-parity.ts` remain for compatibility unless a separate refactor changes them.
+The lane-separation contract governs it: no fact ever has two authorities at once, and the per-chat `engine_authority` flag names which lane holds a chat ([../engine/operations.md](../engine/operations.md) §Feature flags owns that flag and its values). A comparison chat sits at the `successor_shadow` value — the legacy pipeline stays authoritative and the successor leg is evidence.
 
-## Tracking and authority
+## The retired name
 
-Engine Comparison originated in **R4 — shadow mode under chat** of the successor engine rollout. R4 exited on 2026-07-22 after the recorder, fixed corpus, analyzer, and review surface were proven, but the setup still depended on manually supplying a simulation branch and actor mappings. The 2026-08-22 comparison-session provisioning work is a **post-exit productization of that same R4 system**: it supplies the missing in-app front door without changing the comparison semantics R4 established.
+The feature is called **Engine Comparison**. The name **Shadow Parity** is retired in documentation and UI because it obscured the purpose of the system and implied that the two engines are expected to be identical. Internal identifiers keep the old word, and a reader following code will meet both:
 
-The authority and lane-separation contract still governs: no fact ever has two authorities at once, the per-chat `engine_authority` flag names which lane holds a chat, and `successor_rag_eligibility` is read independently of that flag. This directory is the current operator documentation.
+| Retired vocabulary | Current vocabulary     |
+| ------------------ | ---------------------- |
+| Shadow Parity      | Engine Comparison      |
+| shadow mode        | comparison mode        |
+| divergence         | comparison row         |
+| parity check       | finding                |
+| verdict            | review status / ruling |
+
+The identifiers `successor_shadow`, `/admin/shadow`, `sim_shadow_divergences`, and `shadow-parity.ts` stay as they are unless a separate refactor renames them.
 
 ## What the system is for
 
@@ -78,12 +86,12 @@ A historical/manually mapped comparison world is unlinked but is not destructive
 
 A chat in the internal `successor_shadow` authority mode continues to run the legacy pipeline normally. After a plain-send exchange settles, Vesper runs a detached successor comparison against the linked mirror branch and records four rows for the exchange:
 
-| Domain | What is compared | How it is judged |
-| --- | --- | --- |
-| Prose | Legacy reply vs successor render | Human review; the analyzer only detects render failures |
-| Presence | Legacy roster presence vs successor physical/engagement truth | Recorder can identify mismatches |
-| Meters | Legacy 0..1 meters vs successor fixed-point body meters normalized to 0..1 | Analyzer flags shared-meter differences beyond the configured tolerance and missing mirror meters |
-| Clock | Story-time movement in each lane | Analyzer compares successive deltas rather than incompatible absolute clock values |
+| Domain   | What is compared                                                           | How it is judged                                                                                  |
+| -------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Prose    | Legacy reply vs successor render                                           | Human review; the analyzer only detects render failures                                           |
+| Presence | Legacy roster presence vs successor physical/engagement truth              | Recorder can identify mismatches                                                                  |
+| Meters   | Legacy 0..1 meters vs successor fixed-point body meters normalized to 0..1 | Analyzer flags shared-meter differences beyond the configured tolerance and missing mirror meters |
+| Clock    | Story-time movement in each lane                                           | Analyzer compares successive deltas rather than incompatible absolute clock values                |
 
 A legacy time skip is mirrored onto the comparison branch so clock movement remains comparable.
 
@@ -104,11 +112,11 @@ Neither replaces the other. A clean fixed corpus can miss a problem that appears
 
 The database still stores the original three `verdict` values for compatibility. The Engine Comparison UI gives them clearer meanings:
 
-| UI status | Stored value | Meaning |
-| --- | --- | --- |
-| **Unreviewed** | `open` | No final decision has been recorded. Also use this while a required fix is still outstanding. |
+| UI status                    | Stored value  | Meaning                                                                                                       |
+| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Unreviewed**               | `open`        | No final decision has been recorded. Also use this while a required fix is still outstanding.                 |
 | **Accepted / no fix needed** | `intentional` | The row was reviewed and is acceptable. This includes a clean comparison or a deliberate/harmless difference. |
-| **Fixed & verified** | `fixed` | The row exposed a real defect, the defect was corrected, and a follow-up comparison verified the correction. |
+| **Fixed & verified**         | `fixed`       | The row exposed a real defect, the defect was corrected, and a follow-up comparison verified the correction.  |
 
 A row being **Unreviewed does not mean Vesper detected a bug**. All rows begin in that state. Separately, the comparison report surfaces automatically detected unresolved findings from clock, meters, presence, and successor render failures.
 

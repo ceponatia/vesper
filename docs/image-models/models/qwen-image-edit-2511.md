@@ -1,9 +1,7 @@
 # Qwen Image Edit 2511
 
 **Slug:** `qwen/qwen-image-edit-2511`
-**Vesper probe snapshot:** 2026-08-05, version `a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729`
-**Provider LoRA schema rechecked:** 2026-08-24
-**Quality ruling:** 2026-08-05
+**Provenance:** probed 2026-08-05 against pinned version `a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729`.
 
 > An enhanced version over Qwen-Image-Edit-2509, featuring multiple improvements
 > including notably better consistency.

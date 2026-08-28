@@ -1,7 +1,8 @@
 # Stable Diffusion 3.5 Large
 
 **Slug:** `stability-ai/stable-diffusion-3.5-large`
-**Probed:** 2026-08-05, version `2fdf9488b53c1e0fd3aef7b477def1c00d1856a38466733711f9c769942598f5`
+**Provenance:** probed 2026-08-05 against pinned version `2fdf9488b53c1e0fd3aef7b477def1c00d1856a38466733711f9c769942598f5`.
+
 **Quality ruling:** no transitional runtime override
 
 > A text-to-image model that generates high-resolution images with fine details.

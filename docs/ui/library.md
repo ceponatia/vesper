@@ -50,7 +50,7 @@ The library **item** and **location** editors are split into **Details · Image*
 
 The item Details tab shows a **Type** select when the picked clothing category has a subtype
 vocabulary — jewelry, headwear, eyewear
-([../contracts/items.md](../contracts/items.md) §Clothing subtypes). Picking one pre-fills
+([../contracts/items/README.md](../contracts/items/README.md) §Clothing subtypes). Picking one pre-fills
 coverage like a category template, and cards and rows chip the type instead of the broad
 category.
 

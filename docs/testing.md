@@ -137,9 +137,8 @@ force test edits, while broken production logic and crossed policy tripwires
 - LLM calls are **never** mocked at the fetch layer — `server/ai` exposes a fake provider (`AI_FAKE=1` / demo mode, forced globally by `apps/web/src/test/setup.ts` — don't re-set it per file) returning canned typed results; tests exercise real parsing/degradation paths.
 - Degradation tests assert the fallback **and** the diagnostic code ([resilience.md](resilience.md) §8) — via `@/test/diagnostics` so the idiom stays uniform.
 - Every bug fix lands with the regression test that would have caught it.
-- `pnpm jscpd` covers test files too (threshold 3; they were excluded until
-  2026-07-28, which is how ~3.2k duplicated test lines accumulated) — reuse the
-  shared utilities instead of copy-pasting scaffolding.
+- `pnpm jscpd` covers test files too, at threshold 3 — reuse the shared utilities
+  instead of copy-pasting scaffolding.
 - Embedding-dependent logic tests use `pseudoEmbed` (deterministic, from `server/ai/embeddings`) so similarity thresholds are exact.
 - The symlink-escape containment cases (`server/images/paths.test.ts`, `server/images/assets.test.ts`) gate on `canCreateSymlinks()` (`@/server/test-support`), which probes once by planting a symlink in a temp dir: on Windows without Developer Mode or elevation `fs.symlink` fails with EPERM, so those cases self-skip with a stderr note rather than failing on fixture setup. `CI=true` is honored as a strict signal: with it set, a failed probe **throws** instead — the escape tests are a security gate and must never silently vanish from a run that claims to have verified them. The containment logic itself is never weakened by the skip.
 
@@ -151,13 +150,13 @@ The gate is CI: GitHub Actions on AWS CodeBuild managed runners
 mark a PR ready to run the applicable gates, and `gh workflow run CI --ref main`
 is the deliberate full pre-deploy run (engine and build included).
 
-| Job                | Runs                                                          |
-| ------------------ | ------------------------------------------------------------- |
-| lint               | type-aware ESLint at `--max-warnings 0`                       |
+| Job                | Runs                                                           |
+| ------------------ | -------------------------------------------------------------- |
+| lint               | type-aware ESLint at `--max-warnings 0`                        |
 | static checks      | cycles, authz, package boundaries/resolution, typecheck, jscpd |
-| unit tests         | the pure Vitest suite (no database)                           |
-| engine integration | `pnpm test:engine` (strict) + the Gate 1 benchmark            |
-| production build   | the Next production build, heap-pinned to 4096 MB             |
+| unit tests         | the pure Vitest suite (no database)                            |
+| engine integration | `pnpm test:engine` (strict) + the Gate 1 benchmark             |
+| production build   | the Next production build, heap-pinned to 4096 MB              |
 
 The **engine job** is the only one that needs Docker, so it is also the only one
 billed on an EC2 runner rather than Lambda. On an ordinary PR into `main` it is
@@ -252,4 +251,4 @@ Fixtures inserting `images` rows must go through **`canonicalImageRow`**
 path to be exactly `images/<owner_id>/<id>.webp`, and the helper derives the id
 and the path together so a suite cannot pick one without the other.
 
-The probe lives in one place, `apps/web/src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel (the simulation suites get it via `simulationSuiteHarness`). **Every `.int.test.ts` suite uses it as of 2026-07-28** — the last 51 inline copies were converted, so strict mode genuinely gates the whole integration surface. A new suite must use the helper (or the harness) from day one; an inline probe silently opts the suite out of the release gate.
+The probe lives in one place, `apps/web/src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel (the simulation suites get it via `simulationSuiteHarness`). **Every `.int.test.ts` suite uses it**, so strict mode genuinely gates the whole integration surface. A new suite must use the helper (or the harness) from day one; an inline probe silently opts the suite out of the release gate.

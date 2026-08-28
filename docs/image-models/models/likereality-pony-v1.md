@@ -2,8 +2,7 @@
 
 **Slug:** `aisha-ai-official/likereality-pony-v1`
 **Registered as:** `aisha-ai-official/likereality-pony-v1:f777e1c330555044053ad5089fbcee89804e3df2419c1e09d9bbc80a399b01a2`
-**Probed:** 2026-08-11, version `f777e1c330555044053ad5089fbcee89804e3df2419c1e09d9bbc80a399b01a2`
-**Quality ruling:** 2026-08-11
+**Provenance:** probed 2026-08-11 against pinned version `f777e1c330555044053ad5089fbcee89804e3df2419c1e09d9bbc80a399b01a2`.
 
 The model page carries no description text. Its schema is a Pony/SDXL-lineage
 fine-tune behind a full ComfyUI-style wrapper: VAE choice, scheduler choice,

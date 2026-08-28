@@ -1,7 +1,7 @@
 # Seedream 4.5
 
 **Slug:** `bytedance/seedream-4.5`
-**Probed:** 2026-08-05, version `9fe3b8282dcb9d9063b05e33210a1432801f7c5a6641db944baefcec4886761a`
+**Provenance:** probed 2026-08-05 against pinned version `9fe3b8282dcb9d9063b05e33210a1432801f7c5a6641db944baefcec4886761a`.
 
 > Seedream 4.5: Upgraded Bytedance image model with stronger spatial
 > understanding and world knowledge.

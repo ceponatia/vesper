@@ -21,11 +21,9 @@ pnpm dev                    # http://localhost:3200
 
 No API keys? Everything still runs in **demo mode** (deterministic narrative, placeholder images) — see [resilience.md](resilience.md) §6.
 
-> **UI testing runs against the Fly deploy, not this local server.** To verify a UI
-> change, deploy it (`fly deploy -a vesper`) and drive `https://vesper.fly.dev` — see
-> [deployment.md](deployment.md) and [CLAUDE.md](../CLAUDE.md). The local `pnpm dev` +
-> Postgres above remain for code/test iteration. (On the Fly production build the
-> `/api/dev/*` routes 404, so sign in at `/sign-in` rather than using `impersonate`.)
+> **UI testing runs against the Fly deploy, not this local server** —
+> [deployment.md](deployment.md) owns that rule and the flow. The local `pnpm dev`
+> plus Postgres above remain for code and test iteration.
 
 ## Environment
 
@@ -116,12 +114,8 @@ pnpm db:migrate
 pnpm db:studio                              # drizzle studio
 ```
 
-> **CI is the verification gate.** GitHub Actions runs on AWS CodeBuild managed
-> runners (`.github/workflows/ci.yml`); the aggregate `verify` status check is
-> required on `main` and `prod`, so a PR merges only when it is green. There are
-> no local git hooks — commits and pushes run nothing — and no local gate:
-> push the branch and let CI validate. Before a deploy, run the full CI
-> dispatch: `gh workflow run CI --ref main`.
-> See [testing.md](testing.md) and [deployment.md](deployment.md).
+> **CI is the verification gate** — [testing.md](testing.md) §The verification gate
+> owns it. There are no local git hooks and no local gate: push the branch and let
+> CI validate.
 
 Vesper owns its local `vesper-postgres` container and `vesper_dev` database.
