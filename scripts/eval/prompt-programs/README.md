@@ -20,7 +20,7 @@ AB_TRIAL=all ... --render                                                       
 pnpm tsx scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts --report    # rates + deltas from the graded CSVs
 ```
 
-Renders land in `screenshots/qwen-negative-blocks/<trial>/`, one file per
+Renders land in `eval-images/qwen-negative-blocks/<trial>/`, one file per
 fixture × arm × seed, plus a labeled contact sheet per fixture × arm for
 grading, a `manifest.json` recording the executed version id per render, and a
 `scores-<trial>.csv` template (never overwritten once it exists). Grade the
@@ -60,12 +60,13 @@ and writes a blank `scores.csv`. Nothing is sent.
 pnpm tsx scripts/eval/prompt-programs/entity-negative-ab.ts --render
 ```
 
-Paid. Renders both arms per case into `screenshots/entity-negative-ab/`.
+Paid. Renders both arms per case into `eval-images/entity-negative-ab/`.
 `AB_CASE=<id>` runs one row, `AB_SEED=<n>` moves the held seed, `AB_OUT=<dir>`
 moves the output.
 
-Grade `scores.csv` by eye, then promote only the two or three renders the verdict
-rests on into `evidence/` — see `evidence/README.md`.
+Grade `scores.csv` by eye. Every render stays local, under the untracked root
+`eval-images/` (owner ruling 2026-08-28) — nothing is promoted into git, so the
+verdict itself has to be written up on the issue the run was for.
 
 **It does not touch production.** The negative field is switched by a local model
 literal, not by probing the database row: activating that row's version would

@@ -15,7 +15,7 @@ paint hands gripping a camera; its replacement "no hands or held objects in fram
 disembodied foreground hands whenever the pose text mentioned the character's hands or feet;
 and an enumerated possession line — "every hand, arm, leg and foot belongs to Kristin" — still
 painted a phantom viewer hand when A/B'd live
-(`scripts/eval/scene-images/phantom-limb-ab.ts`). A limb noun summons a limb even when
+(the phantom-limb A/B; its probe script is retired to git history). A limb noun summons a limb even when
 possessively bound.
 
 What ships, clean 3/3, is three parts together:

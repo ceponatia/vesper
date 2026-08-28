@@ -72,7 +72,7 @@ import {
  */
 
 const SLUG = "qwen/qwen-image-2512";
-const OUT_DEFAULT = "screenshots/entity-negative-ab";
+const OUT_DEFAULT = "eval-images/entity-negative-ab";
 
 /** The seed every cell holds, so the two arms differ only in the negative field. */
 const DEFAULT_SEED = 20_260_819;

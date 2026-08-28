@@ -23,8 +23,8 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 // made image models paint hands gripping a camera; its replacement "no hands or
 // held objects in frame" summoned disembodied foreground hands; and the first
 // fix attempt — an enumerated possession line, "every hand, arm, leg and foot
-// belongs to Mira" — STILL painted a phantom viewer hand (phantom-limb A/B,
-// scripts/eval/scene-images/phantom-limb-ab.ts): even a possessively-bound
+// belongs to Mira" — STILL painted a phantom viewer hand (phantom-limb A/B;
+// probe script retired to git history): even a possessively-bound
 // enumeration summons what it names. What held up (3/3 clean) is this opening +
 // the person-count assertion + an abstract possession clause ("every visible
 // body part belongs to Mira") appended by sceneFramingRule — plus the pose

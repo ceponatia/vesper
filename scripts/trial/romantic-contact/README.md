@@ -107,10 +107,12 @@ those collapse to the single participant and the difference vanishes.
 | `TRIAL_CHAT_ID` | none — required |
 | `TRIAL_CHARACTER` | `Sabrina Vale` |
 | `TRIAL_USER_ID` | the QA account |
-| `TRIAL_OUT_DIR` | `evidence/romantic-contact-rerun` |
+| `TRIAL_OUT_DIR` | `eval-images/romantic-contact-rerun` |
 
 It writes a JSON record and a Markdown report per run, and exits non-zero if any
-case fails either check.
+case fails either check. Both land under the untracked root `eval-images/` and
+stay local (owner ruling 2026-08-28), so a result worth keeping gets written up
+on the issue the run was for.
 
 ## What is tested
 

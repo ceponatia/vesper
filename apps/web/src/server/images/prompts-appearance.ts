@@ -154,7 +154,8 @@ export function identityAnchorSummary(
  *    apparent age" preserves the model's own over-estimate of an age-ambiguous
  *    reference, compounding a step older per edit generation. The anchor sentence
  *    is what pulls it back — A/B'd at ~15–20 apparent years on the reporting
- *    chat's avatar (phantom-limb-ab.ts, age variant).
+ *    chat's avatar (the phantom-limb A/B's age variant; probe script retired
+ *    to git history).
  */
 const IMAGE_AGE_PHRASES: Record<string, string> = {
   eighteen: "exactly eighteen years old, an adult",

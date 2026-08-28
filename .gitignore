@@ -32,7 +32,10 @@ screenshots/
 *.tif
 *.tiff
 
-# evidence is for local dev evaluation, not necessary on remote or other checkouts.
+# Tombstone: evidence/ was retired 2026-08-28 (its files left the index in
+# 17a7090c), but a checkout that pulled before deleting may still hold them —
+# keep resurrected copies out of `git add -A` (the `git doc` shortcut stages
+# everything).
 /evidence/
 
 # Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.

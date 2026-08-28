@@ -100,7 +100,8 @@ Two things are worth knowing before reading the code:
   identity arrives at run time as a reference image, so a prompt naming an age or
   a hair colour would turn those grades into prompt-following. The images, the
   grades and the verdict belong to the run that produced them
-  (`scripts/eval/sd-identity-matrix.ts`, writing into `evidence/`).
+  (`scripts/eval/sd-identity-matrix.ts`, writing into the untracked root
+  `eval-images/`).
 - **The renderer's input contract is deliberately small and snake_case.** One
   prediction may internally run identity conditioning, a ControlNet, sampling,
   targeted repair and a finishing pass — from Vesper's side that is one image

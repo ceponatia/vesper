@@ -62,7 +62,7 @@ import { gradeContactCase, judgeContactReply, type ContactCaseGrade, type Contac
  * to revert them afterwards.
  */
 
-const OUT_DIR = process.env.TRIAL_OUT_DIR ?? "evidence/romantic-contact-rerun";
+const OUT_DIR = process.env.TRIAL_OUT_DIR ?? "eval-images/romantic-contact-rerun";
 const CHARACTER_NAME = process.env.TRIAL_CHARACTER ?? "Sabrina Vale";
 const QA_USER_ID = process.env.TRIAL_USER_ID ?? "uxtestmaina1b2c3d4e5f6g7";
 
