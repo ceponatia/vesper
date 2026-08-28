@@ -63,8 +63,10 @@ plan" issue form produces it):
 ## References           — the reference pages this work implements
 ```
 
-- **Sub-issues are the implementation stages**, created when work on the parent
-  actually starts — not speculatively. Finishing a stage closes its sub-issue;
+- **Sub-issues are the implementation stages, created together with their
+  parent whenever possible** (owner ruling 2026-08-28). Defer a stage only when
+  there is not yet enough information to start even a draft sub-issue — and
+  create it the moment there is. Finishing a stage closes its sub-issue;
   nothing else needs updating, because nothing else records it.
 - **A discovered prerequisite is a new sub-issue plus a blocked-by relation** on
   the work it gates — never a prose note. Dependencies are structural: there is
