@@ -29,7 +29,7 @@ Reference capacity is also checked before rendering. Unlike production-shaped co
 
 The runner supports normalized image controls plus a raw provider-shaped `controlInput` overlay. The raw bag is deliberately a probe-only escape hatch; production-shaped recipe experiments refuse it.
 
-**Current UI limitation:** the experiment form does not expose a general normalized-control editor or raw provider-input editor, so this capability is substantially more accessible through the API/service contract than through the admin form. See [Current limitations](limitations.md).
+The experiment form exposes neither a general normalized-control editor nor a raw provider-input editor ([README.md](README.md) §Constraints), so this capability is substantially more accessible through the API/service contract than through the admin form.
 
 ## Fixture integrity gates
 
@@ -41,15 +41,13 @@ Before rendering the runner verifies that:
 - it has been reviewed;
 - if it was extracted from a source render, that source render is **not** also being sent.
 
-The last rule prevents false passes: a model could reproduce the source image's pose/depth by copying the source rather than obeying the extracted control map.
+The review and source-contamination rules, and why they exist, are owned by [Generating and reviewing control fixtures](generating-control-fixtures.md).
 
 ## Important transport limitation
 
 The probe's direct runner hands its ordered images to the model as the primary reference list. That is correct for models such as Qwen Image Edit 2511, where a pose/depth fixture is an ordinary numbered reference.
 
-It is **not** sufficient for a renderer that exposes a dedicated control-image field such as `pose_image` or `depth_image`. The production render-intent path has machinery for dedicated structural inputs, but `runControlProbe` does not use it. A probe against such a renderer can therefore test the wrong provider input even though the fixture role is correct in the lab record.
-
-See [Current limitations](limitations.md) before using probes to judge a dedicated-ControlNet-style renderer.
+It is **not** sufficient for a renderer that exposes a dedicated control-image field such as `pose_image` or `depth_image`. The production render-intent path has machinery for dedicated structural inputs, but `runControlProbe` does not use it. A probe against such a renderer can therefore test the wrong provider input even though the fixture role is correct in the lab record — so a probe is not a verdict on a dedicated-ControlNet-style renderer.
 
 ## Verdicts
 

@@ -20,9 +20,7 @@ The admin's instruction becomes the base prompt. The experiment records the prof
 
 ## The model is not selectable
 
-For a portrait baseline the New Experiment form shows no Model picker: the Model slot is read-only copy stating that the model resolves from the active production profile when the run starts, and the form sends no model slug. At run time the baseline resolves the production variant profile and records that profile's resolved model slug on the experiment — a baseline reproduces production selection rather than forcing a different model.
-
-A baseline portrait is therefore only appropriate when the production-profile result is the comparison target. A selected-model smoke test is an [Image Generator](../image-generator/README.md) run; see [Current limitations](limitations.md).
+The New Experiment form shows no Model picker for this kind; the run resolves the production `variant` profile and records that profile's model ([README.md](README.md) §Model/version behavior owns the rule). A baseline portrait is therefore only appropriate when the production-profile result is the comparison target.
 
 ## Version behavior
 

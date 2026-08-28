@@ -20,6 +20,4 @@ When the drawing was made over a particular source render, that source image can
 
 ## Review requirement
 
-A pose fixture cannot be used by a control experiment until a human records a review note. Review stamps `reviewedAt` server-side and keeps the creation/origin note separate from the review note.
-
-See [Generating and reviewing control fixtures](generating-control-fixtures.md) for the complete workflow.
+A pose fixture cannot be used by a control experiment until it is reviewed — [Generating and reviewing control fixtures](generating-control-fixtures.md) owns the review and source-contamination rules.

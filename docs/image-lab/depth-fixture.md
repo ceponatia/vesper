@@ -18,6 +18,4 @@ The upload path can store a depth map as `hand_authored`. The selected kind, opt
 
 ## Review requirement
 
-A depth fixture must be reviewed and receive a non-empty review note before an experiment may rely on it. This makes an `ignores_control` result distinguishable from a bad/uninspected depth map.
-
-See [Generating and reviewing control fixtures](generating-control-fixtures.md).
+A depth fixture must be reviewed before an experiment may rely on it — [Generating and reviewing control fixtures](generating-control-fixtures.md) owns the rule. Review is what makes an `ignores_control` result distinguishable from a bad or uninspected depth map.

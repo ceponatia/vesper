@@ -271,8 +271,8 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `SceneVisualReference` is the render-input superset, `SceneReference` the Gallery
   projection (packages/image-core/src/references/scene-reference.ts).
 - **`image_lab_experiments`** — the Advanced Image Lab's durable experiment record
-  (images/advanced-image-lab.md): `owner_id` (→ `users`, **FK-cascade**), `kind`
-  (`control_probe`/`baseline_portrait`/`baseline_scene`, later stages reserved), `character_id?`
+  ([image-lab/README.md](image-lab/README.md)): `owner_id` (→ `users`, **FK-cascade**), `kind`
+  (`control_probe`/`baseline_portrait`/`baseline_scene`, and the other registered kinds), `character_id?`
   / `chat_id?` (SET NULL), `model_slug`, `requested_version_id?` / `executed_version_id?`,
   `profile_id?` (plain snapshot, no FK — a deleted profile must not erase what a finished
   baseline ran), `instruction` + `final_prompt`, `inputs` JSONB (ordered role-tagged image

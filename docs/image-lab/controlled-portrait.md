@@ -31,11 +31,11 @@ Unlike a baseline, this kind **does** use the experiment's selected model. The m
 
 ## Raw provider inputs
 
-A controlled portrait is intended to be production-shaped. A raw provider `controlInput` bag is therefore refused as `settings_unsupported`. A [Control probe](control-probe.md) supports that raw bag but also requires a reviewed control fixture; the lab has no neutral provider-input experiment — that is [Image Generator](../image-generator/README.md) territory. See [Current limitations](limitations.md).
+A controlled portrait is intended to be production-shaped. A raw provider `controlInput` bag is therefore refused as `settings_unsupported`. A [Control probe](control-probe.md) supports that raw bag but also requires a reviewed control fixture; the lab has no neutral provider-input experiment — that is [Image Generator](../image-generator/README.md) territory.
 
 ## Mode field
 
-The experiment contract can store one of four modes (`identity_priority`, `controlled_composition`, `balanced`, `style_priority`), but no runner or recipe path consumes `row.mode` to alter the render request — it is recorded metadata, not an active bias control. The create form does not offer it; historic stored values remain visible on the experiment detail view. See [Current limitations](limitations.md).
+The experiment contract can store one of four modes (`identity_priority`, `controlled_composition`, `balanced`, `style_priority`), but no runner or recipe path consumes `row.mode` to alter the render request — it is recorded metadata, not an active bias control. The create form does not offer it; historic stored values remain visible on the experiment detail view.
 
 ## Verdicts
 

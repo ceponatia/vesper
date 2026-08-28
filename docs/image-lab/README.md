@@ -4,7 +4,7 @@ The Advanced Image Lab is Vesper's admin-only image experimentation bench at `/s
 
 The lab is deliberately separate from player-facing image generation. Some experiment kinds reproduce a production-shaped request, while others bypass production policy to test a specific capability. Those are different kinds because evidence is only useful when the record says which question was being asked.
 
-> **Boundary:** the lab is not a general model playground, by design. Raw prompt-and-model runs belong to the separate admin [Image Generator](../image-generator/README.md), which shares the registry/capability/render stack but none of the lab's evidence rules — and neither surface imports the other. The lab's own current constraints are in [Current limitations](limitations.md).
+> **Boundary:** the lab is not a general model playground, by design. Raw prompt-and-model runs belong to the separate admin [Image Generator](../image-generator/README.md), which shares the registry/capability/render stack but none of the lab's evidence rules — and neither surface imports the other. The lab's own constraints are stated in [Constraints](#constraints) below.
 
 ## Table of contents
 
@@ -31,10 +31,6 @@ The lab is deliberately separate from player-facing image generation. Some exper
 
 See [Generating and reviewing control fixtures](generating-control-fixtures.md) for the complete fixture workflow.
 
-### Current constraints
-
-- [Current limitations](limitations.md)
-
 ## How an experiment moves through the lab
 
 1. An admin creates an experiment. The request records its kind, subject pointers, prompt/instruction, ordered inputs, selected model slug where applicable, and settings.
@@ -60,7 +56,16 @@ Baselines therefore do not serve as selected-model smoke tests; a selected-model
 
 ## Control fixture rule
 
-A fixture-sending experiment may only rely on a fixture that is identifiable and reviewed. The lab checks that the declared fixture is a hidden `lab_control` asset of the declared kind, appears exactly once in the experiment's send list under a control role, and has a recorded human review. If the fixture was extracted from an image, that same source image may not also be sent in the experiment: doing so would let the output match the fixture by copying the source instead of proving control obedience.
+A fixture-sending experiment may only rely on a fixture that is identifiable and reviewed, and may not also send the image that fixture was extracted from. [Generating and reviewing control fixtures](generating-control-fixtures.md) owns both rules.
+
+## Constraints
+
+The lab is a collection of specialized experiment instruments, not a general-purpose image-model playground. Each experiment kind has its own subject, inputs, prompt ownership, and evidence rules — which is what gives the lab strong records, and also what these constraints follow from.
+
+- **No lab kind means "run this model with this prompt."** Every kind carries required evidence, stated on its own page's Required setup. A request with no evidence requirement is an [Image Generator](../image-generator/README.md) run.
+- **General controls and provider-specific inputs are not exposed in the form.** `ImageLabSettings` supports normalized render controls and a raw provider-shaped `controlInput` bag, but the experiment form offers no general editor for either layer; curated LoRA controls on finishing and staged experiments are the main exception. A model-specific input such as the Vesper SDXL renderer's `recipe` field can exist in the provider schema and still be unreachable from the lab UI. The Image Generator's capability-driven form is where bound controls and probed provider inputs are editable.
+- **Repeatability controls are limited.** The lab form has no seed control and no clone/rerun-with-one-change workflow. Even when a selected model exposes a seed input, an admin cannot hold that seed constant across a lab A/B comparison. Those affordances live on the Image Generator: an explicit seed control where the model binds one, and duplicate runs with recorded lineage.
+- **A staged parity prompt can outgrow the edit prompt limit.** Describing the subject adds roughly 500–700 characters to a staged prompt, so a character with a rich sheet can push one past the 1,500-character edit limit. A bench prompt has little the budgeter can shrink, so the clamp cuts the tail — the mood, lighting, and quality sentences — before it cuts anything the staging depends on. Production clamps a chat scene identically, so the parity claim still holds; the practical effect is that the most detailed characters buy the least room for style wording. The name-only ablation is unaffected.
 
 ## Failure records
 

@@ -50,19 +50,19 @@ A feature answers a semantic question such as "can this render carry several ref
 
 The package exports eleven feature constructors:
 
-| Feature id       | Meaning                                              | Documentation                            |
-| ---------------- | ---------------------------------------------------- | ---------------------------------------- |
-| `prompt`         | authored text prompt                                 | [Prompt](features/prompt.md)             |
-| `multiReference` | several role-bearing reference images                | [References](features/references.md)     |
-| `aspectRatio`    | caller-selected output shape                         | [Aspect ratio](features/aspect-ratio.md) |
-| `seed`           | reproducible seeded generation                       | [Controls](features/controls.md)         |
-| `guidance`       | prompt-guidance strength                             | [Controls](features/controls.md)         |
-| `fastMode`       | accelerated sampling the caller may choose or refuse | [Controls](features/controls.md)         |
-| `negativePrompt` | a negative prompt that actually affects output       | [Controls](features/controls.md)         |
-| `lora`           | one external LoRA with a chosen strength             | [LoRA](features/lora.md)                 |
-| `outputFormat`   | caller-selected output encoding                      | [Output](features/output.md)             |
-| `outputQuality`  | caller-selected encoding quality                     | [Output](features/output.md)             |
-| `safetyToggle`   | caller can disable the endpoint's own safety checker | [Safety](features/safety.md)             |
+| Feature id       | Meaning                                              | Documentation                                      |
+| ---------------- | ---------------------------------------------------- | -------------------------------------------------- |
+| `prompt`         | authored text prompt                                 | [Prompt](features/README.md#prompt)                |
+| `multiReference` | several role-bearing reference images                | [References](features/README.md#references)        |
+| `aspectRatio`    | caller-selected output shape                         | [Aspect ratio](features/README.md#aspect-ratio)    |
+| `seed`           | reproducible seeded generation                       | [Controls](features/README.md#generation-controls) |
+| `guidance`       | prompt-guidance strength                             | [Controls](features/README.md#generation-controls) |
+| `fastMode`       | accelerated sampling the caller may choose or refuse | [Controls](features/README.md#generation-controls) |
+| `negativePrompt` | a negative prompt that actually affects output       | [Controls](features/README.md#generation-controls) |
+| `lora`           | one external LoRA with a chosen strength             | [LoRA](features/README.md#lora)                    |
+| `outputFormat`   | caller-selected output encoding                      | [Output](features/README.md#output)                |
+| `outputQuality`  | caller-selected encoding quality                     | [Output](features/README.md#output)                |
+| `safetyToggle`   | caller can disable the endpoint's own safety checker | [Safety](features/README.md#safety-toggle)         |
 
 See [features/README.md](features/README.md) for the `ImageFeature` contract, binding rules, and request validation behavior.
 

@@ -21,7 +21,7 @@ The upload path can store an externally made edge map with generator `hand_autho
 
 ## Review requirement
 
-Edge fixtures must be human-reviewed before a control experiment can use them. Review requires a note.
+Edge fixtures must be reviewed before a control experiment can use them — [Generating and reviewing control fixtures](generating-control-fixtures.md) owns the rule.
 
 ## Current renderer support
 

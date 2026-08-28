@@ -18,9 +18,7 @@ The result therefore measures the current production profile/configuration, not 
 
 ## The model is not selectable
 
-As with [Baseline portrait](baseline-portrait.md), the New Experiment form shows no Model picker for this kind: the Model slot is read-only copy, no model slug is sent, and the runner records the model the production scene profile actually selects.
-
-The model therefore cannot be the experimental variable in this kind. A selected-model smoke test is an [Image Generator](../image-generator/README.md) run; see [Current limitations](limitations.md).
+As with [Baseline portrait](baseline-portrait.md), the form shows no Model picker and the runner records the model the production scene profile selects ([README.md](README.md) §Model/version behavior owns the rule). The model cannot be the experimental variable in this kind.
 
 ## Known parity limitation
 
