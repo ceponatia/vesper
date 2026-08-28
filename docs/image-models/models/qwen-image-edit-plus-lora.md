@@ -69,8 +69,8 @@ the prompt and reference are otherwise unchanged.
 
 Both fields are probe-derived into the row's `advancedCapabilities`
 (`loraWeights`/`loraScale`) and the render path maps a **library-resolved** LoRA
-onto them ([providers.md](../../images/providers/README.md) §"A LoRA is a curated
-library row").
+onto them ([loras.md](../../images/providers/loras.md) — a LoRA is a curated
+library row, never a raw locator on a request).
 
 - `lora_weights` — string. Prefer a Hugging Face repo slug (`owner/model`) or a
   direct `.safetensors` URL. **Blank means run without a custom LoRA.** A

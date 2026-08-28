@@ -41,7 +41,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > models (`lib/agent-models.ts`), the scene-composer/tool model, and the embedding
 > model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`). Image
 > models are rows in the `image_models` registry, managed from the admin-only
-> `/settings/image-models` page ([images/providers.md](images/providers/README.md)) — the
+> `/settings/image-models` page ([images/providers/README.md](images/providers/README.md)) — the
 > `REPLICATE_*` variables below configure the one image backend, never model choice.
 
 > **Tool-model candidate — `aion-labs/aion-3.0`.** Added to the narrator list
@@ -70,7 +70,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
   stored pick survives, so setting the token later restores it with no re-choosing.
 - **`REPLICATE_API_TOKEN`** — **the image backend**; no default. Every image (avatars,
   portrait variants, chat scenes, item/location shots) renders through Replicate
-  ([images/providers.md](images/providers/README.md)). Absent outside demo mode ⇒ every render fails the
+  ([images/providers/README.md](images/providers/README.md)). Absent outside demo mode ⇒ every render fails the
   row with `REPLICATE_API_TOKEN not configured`.
 - **`REPLICATE_PREDICTION_TIMEOUT_MS`** — prediction deadline; default `300000` (5m),
   clamped to 30s–30m. Sent as Replicate's `Cancel-After` **and** used as this client's poll

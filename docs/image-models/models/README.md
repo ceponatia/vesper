@@ -198,7 +198,7 @@ falls through the profile-resolution chain instead of rendering a stranger.
 `imageProfileOffered` composes this structural eligibility with the profile's
 enabled flag and the remaining legacy surface toggle. The database profile rows,
 not the prose here, are the runtime source of truth
-([providers.md](../../images/providers/README.md)).
+([providers/README.md](../../images/providers/README.md)).
 
 `probed_version_id` — the version the stored bindings came from, and the version named in each
 file's provenance line — is written on rows added through the admin page and on the four seeded
@@ -215,10 +215,11 @@ Beneath each model sit `image_model_profiles` rows — "how to use this model fo
 one job" (task, operation, prompt strategy, reference policy, control defaults,
 timeout). There are built-in profiles reproducing the production lanes plus
 curated alternatives, and **every production render resolves one**
-([providers.md](../../images/providers/README.md) §Every render resolves a
-profile). A model offered on a surface with no eligible profile for that task is
-passed over for the task default. Profiles are ordinary deletable rows; the
-database, not these files, is the runtime source of truth.
+([profiles.md](../../images/providers/profiles.md) §Every render resolves a
+profile, and every picker lists profiles). A model offered on a surface with no
+eligible profile for that task is passed over for the task default. Profiles are
+ordinary deletable rows; the database, not these files, is the runtime source of
+truth.
 
 The admin-only **Image Generator is intentionally different**: it is a freeform
 registered-model bench rather than a player task-profile picker. It derives its

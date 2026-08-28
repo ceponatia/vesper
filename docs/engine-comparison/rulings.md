@@ -112,7 +112,7 @@ The same logical meter exists on both sides, but successor intentionally uses a 
 
 **Ruling:** Accepted / no fix needed.
 
-Document the design decision in the owning spec or plan when it is important enough that future reviewers need the rationale.
+Record the reasoning as a dated ruling comment on the issue the review belongs to. Add an ADR under [../decisions/](../decisions/README.md) only when the same difference will be re-proposed as a defect; otherwise the resulting behavior belongs in the reference page that owns that meter.
 
 ### Wrong time advancement
 

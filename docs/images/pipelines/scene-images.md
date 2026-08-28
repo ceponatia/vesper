@@ -188,7 +188,7 @@ same character never leak in, and un-chat-keyed rows surface solely in the Galle
 carries its generation `prompt` for the dev-only lightbox prompt panel. The listing is
 DB-backed, so an in-flight render survives page refreshes and resurfaces there when it
 completes; the conversation page polls while a `chat_scene_image` job is live or a pending row
-exists ([../../ui/README.md](../../ui/README.md) §The conversation page), and ready anchored
+exists ([../../ui/conversation.md](../../ui/conversation.md) §Scene images), and ready anchored
 scenes render inline in the transcript under their message.
 
 An auto render at a big moment queues through the shared `queueChatScene`, deduped to one live

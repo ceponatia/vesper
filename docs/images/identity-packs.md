@@ -1,4 +1,5 @@
 # Identity packs (derived face crops)
+
 A character's **identity pack** records which bytes its face reference came from, how it was cropped, and what was
 measured about it. One **current** pack per character, derived from that
 character's **current canonical portrait** — never a gallery image, never an old avatar — keyed by a **SHA-256 over
@@ -8,14 +9,18 @@ row per character, and each revision carries its status (`pending`/`ready`/`unus
 crop method (`detector`/`heuristic`/`manual`), geometry, measurements, warning codes and review actor. The **pack row,
 not the crop's `images.meta`, is the authority** for which crop is current.
 
-**The crop is a hidden asset.** `kind: "identity_face_crop"` is written through the normal row-before-file WebP path
+## The crop is a hidden asset
+
+`kind: "identity_face_crop"` is written through the normal row-before-file WebP path
 and is a member of `HIDDEN_IMAGE_KINDS`, whose membership and reach are owned by
 [asset-registry.md](asset-registry.md) §Hidden kinds. Two further gates are this lane's own: the portrait studio's
 routes use a positive allow-list (`PORTRAIT_STUDIO_KINDS` = avatar + variant), so list/read/delete/promote cannot
 address a crop, and `promoteVariant` refuses a hidden kind outright (`images.promote.hidden_kind`) — a render *input*
 is never a portrait.
 
-**Derivation v1 is heuristic-only, deliberately.** `IdentityFaceDetector` (`images/identity-pack-detector.ts`) is a
+## Derivation v1 is heuristic-only, deliberately
+
+`IdentityFaceDetector` (`images/identity-pack-detector.ts`) is a
 real seam, but the shipped adapter is `nullIdentityFaceDetector` (`"null_v1"`) and reports nothing: picking a library
 is a trial-slice decision, and any candidate must run locally (the portrait never goes to a third-party face service).
 Automatic derivation is therefore the deterministic `heuristic_v1` crop for portrait-shaped sources (height/width
@@ -28,7 +33,9 @@ number lives in `packages/image-core/src/identity/identity-pack-policy.ts` behin
 crop moved" is always deliberate. The v1 values are conservative placeholders; blur and occlusion
 thresholds are `null` — defined, not armed.
 
-**A stored verdict is not eternal truth.** Rows persist *measurements*, never `quality.accepted`, so a revision stamped
+## A stored verdict is not eternal truth
+
+Rows persist *measurements*, never `quality.accepted`, so a revision stamped
 with an older `policyVersion` is **re-judged on read** by `projectIdentityPackPolicy` (`images/identity-pack-store.ts`) —
 one helper shared by all three read seams (`ensureIdentityPack`'s reuse path, `getIdentityPackForOwner`,
 `evaluateIdentityPackForProfile`), so a policy bump can never leave one of them quoting a verdict the others dropped.
@@ -39,7 +46,9 @@ with a non-retryable code, warnings are recomputed from the stored numbers, and 
 unchanged. Only `ready` revisions are projected: a loosened policy cannot promote a refused revision, which has no crop
 bytes to hand anybody, so that direction is a re-derivation.
 
-**`ensureIdentityPack` is the one entry point**, and idempotent: authorize → hash the source → reuse a matching
+## `ensureIdentityPack` is the one entry point
+
+It is idempotent: authorize → hash the source → reuse a matching
 ready/unusable revision → coalesce behind a **keyed single flight** (`identity_pack:<characterId>`, also the advisory
 lock inside both transactions) → else reserve a `pending` revision, derive **outside** the transaction, and finalize by
 **compare-and-set** on the same source pointer and hash; a derivation that loses that race goes stale and its crop is
@@ -71,7 +80,9 @@ the database is failing, and every recheck read is another one of those). Past t
 and leaves the character to the next trigger or a lazy ensure. The job payload records the source each pass targeted,
 the last outcome, and why it stopped — a detached job has no diagnostic sink, so the row is it.
 
-**Lifecycle.** A changed source makes the pack stale (read-time hash verification is the backstop), and a deleted one
+## Lifecycle
+
+A changed source makes the pack stale (read-time hash verification is the backstop), and a deleted one
 invalidates the pack through a **maintenance registration hook** (`registerIdentityPackMaintenance` — a registry rather
 than an import, because `assets.ts` importing the pack service would close a cycle). **Ordering is load-bearing:
 `purgeImagesWhere` fires that hook BEFORE the rows go**, because `source_image_id` is a `set null` FK and a pack is
@@ -89,7 +100,9 @@ hard-deleted with the character (`deleteCharacterIdentityAssets`, guarded by kin
 entity, which keeps them dying with it once data-lifecycle retires `deleteEntityImages`). Copy and publish stay
 isolated: a clone carries no crop, and the destination derives its own pack from its own copied portrait.
 
-**Surfaces.** Owner lane `/api/characters/:id/identity-pack` — `GET` (summary; a pure read that never derives, so
+## Surfaces
+
+Owner lane `/api/characters/:id/identity-pack` — `GET` (summary; a pure read that never derives, so
 `none` and `pending` are answers rather than spinners), `POST ensure`, `POST manual-crop` (409 with a fresh summary on
 a stale editor save, 422 on a measured rejection), `POST reset-automatic` (a new automatic revision, not an undo) — all
 authorized from the **character in the URL**, with a body `packId`/`revision`/`sourceContentHash` only as a concurrency
@@ -105,8 +118,9 @@ named trial-corpus registry, empty), per-pack `history`, and a recorded `overrid
 threshold* only (ownership, bounds and stale-hash refusals stand whoever asks; the revision records actor, reason and
 the `manual_admin_override` warning). No route returns image bytes or URLs, admin included.
 
-**Render-lane consumption is unconditional — the pack is the only identity source.**
-`images/identity-pack-references.ts`
+## Render-lane consumption is unconditional
+
+**The pack is the only identity source.** `images/identity-pack-references.ts`
 (`evaluateIdentityPackForProfile`) maps the current pack plus the profile's declared strategy
 (`referencePolicy.identityStrategy`: `canonical_only` — every profile's default ·
 `face_detail_only` · `canonical_then_face_detail` · `face_detail_then_canonical`) to ordered role candidates
@@ -121,7 +135,9 @@ image or reading the avatar row directly. A character whose pack cannot be prepa
 ambiguous source, an undersized crop) gets its identity-critical renders refused until the portrait or crop is fixed;
 a character with no portrait at all still renders scenes from text, since there is no identity to preserve.
 
-**The fixed-trial harness.** Admin-only infrastructure for the reference trial: four tables (migrations
+## The fixed-trial harness
+
+Admin-only infrastructure for the reference trial: four tables (migrations
 0102/0103 — `image_identity_pack_trial_runs`/`_cells`/`_grades`/`_verdicts`; one verdict row per
 profile/strategy slot, upserted so a concurrent ruling can never clobber another), a service
 (the `images/identity-pack-trial-*` modules: store, plan, execute, render, review), owner-admin routes under `/api/admin/self/identity-packs/trial`, and a Settings →
@@ -136,8 +152,11 @@ version, pack revision and controls hash before rendering, refusing on drift; ou
 and swept with the character. Review is blinded pairwise (left/right from sha256 parity of run + pair id, persisted on
 the grade row; grades stored unblinded), aggregated per profile/strategy pair, and closed by a recorded verdict with
 actor, reason and policy version. The harness measures packs through the same evaluation the lanes consume, and runs
-independently of any render. Detail lives in the spec's Implementation section, not here.
+independently of any render. The `images/identity-pack-trial-*` modules named above are the
+implementation record; this page states only what the harness guarantees.
 
-**A new warning or failure code requires copy.** The server reasons about stable codes only;
+## A new warning or failure code requires copy
+
+The server reasons about stable codes only;
 `components/characters/identity-pack-copy.ts` is the single exhaustive code → English map, so adding a code without
 copy is a **compile error**, not a raw identifier on someone's screen.
