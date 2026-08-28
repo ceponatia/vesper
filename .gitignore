@@ -16,7 +16,7 @@ screenshots/
 
 # Evaluation and dev-task imagery — agent screenshots included — lives at the
 # repository root and stays LOCAL (owner ruling 2026-08-28, #346). Never docs/.
-eval-images/
+/eval-images/
 
 # No raster imagery enters git anywhere (owner ruling 2026-08-28): eval renders,
 # evidence, and screenshots are all local-only, regenerable artifacts. Already-
@@ -33,7 +33,7 @@ eval-images/
 *.tiff
 
 # evidence is for local dev evaluation, not necessary on remote or other checkouts.
-evidence/
+/evidence/
 
 # Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.
 __pycache__/
