@@ -25,8 +25,11 @@ tell you nothing about whether the deployed app behaves.
    `browser_click`, `browser_resize` for mobile widths). The QA account owns
    the Tsukikage Onsen world/cast and the Lysandra Vane character with existing
    chats under `/chat`.
-4. **Screenshots** go in the untracked `screenshots/` folder at the repo root —
-   never the repo root or `docs/`.
+4. **Renders stay local.** Every screenshot and generated image a run produces
+   goes in the untracked root `eval-images/` — never the repo root, never
+   `docs/`, and never into git (root `AGENTS.md` owns this rule). A render a
+   verdict rests on stays local too; write the verdict up on the issue the run
+   was for.
 
 ## Gotchas
 
