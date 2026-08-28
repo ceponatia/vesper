@@ -98,7 +98,7 @@ export const sdEvaluationFixtures: readonly SdEvaluationFixture[] = [
     negativePrompt: SD_EVALUATION_NEGATIVE,
     seed: 331_408,
     notes:
-      "Probes: clothing_flexibility, face. The outfit is named in detail and chosen to be unlike anything an identity reference is likely to have been shot in. The failure this grades is the reference's own clothing bleeding into the render, which is expected to worsen as identity weight rises — the exact trade §8 says must not be hidden behind a single quality score.",
+      "Probes: clothing_flexibility, face. The outfit is named in detail and chosen to be unlike anything an identity reference is likely to have been shot in. The failure this grades is the reference's own clothing bleeding into the render, which is expected to worsen as identity weight rises — the exact trade the per-dimension grading exists to expose, and which a single overall quality score would bury.",
   },
   {
     id: "pose-seated-forward",
@@ -118,7 +118,7 @@ export const sdEvaluationFixtures: readonly SdEvaluationFixture[] = [
     negativePrompt: SD_EVALUATION_NEGATIVE,
     seed: 553_219,
     notes:
-      "Probes: face, hair. The hostile lighting case, and the counterpart to front-portrait-neutral: hard coloured light off a wet street throws shadow across half the face and a colour cast over skin and hair. §8 asks for location flexibility, and this is where a likeness that only survives studio light comes apart.",
+      "Probes: face, hair. The hostile lighting case, and the counterpart to front-portrait-neutral: hard coloured light off a wet street throws shadow across half the face and a colour cast over skin and hair. Surviving a change of location is one of the things the comparison has to establish, and this is where a likeness that only holds up under studio light comes apart.",
   },
   {
     id: "expression-laughing",
@@ -128,7 +128,7 @@ export const sdEvaluationFixtures: readonly SdEvaluationFixture[] = [
     negativePrompt: SD_EVALUATION_NEGATIVE,
     seed: 664_085,
     notes:
-      "Probes: face, age, pose_flexibility. §8 names expression flexibility explicitly, and a strong expression deforms exactly the features an identity adapter locks — so both failure directions are legible in one image: the laugh flattens back toward neutral (identity too strong), or the laughing face stops being the reference's (identity too weak). Age rides along because apparent age is what a model most often shifts when it redraws a creased, animated face.",
+      "Probes: face, age, pose_flexibility. Surviving a strong expression is one of the things the comparison has to establish, and a strong expression deforms exactly the features an identity adapter locks — so both failure directions are legible in one image: the laugh flattens back toward neutral (identity too strong), or the laughing face stops being the reference's (identity too weak). Age rides along because apparent age is what a model most often shifts when it redraws a creased, animated face.",
   },
   {
     id: "state-prosthetic-forearm",

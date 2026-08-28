@@ -3,10 +3,11 @@
  *
  * Extracted from the simulation body kernel so BOTH lanes run one
  * implementation: the successor's meter/item-condition substrate and the chat
- * lane's garment gradients, per the owner's ruling: *"Reuse the successor §25
- * fixed-point integration kernel rather than creating floating-point turn math;
- * generalize its pure numerics if needed; do not make chat depend on successor
- * persistence contracts"*.
+ * lane's garment gradients. The owner ruled that the chat lane reuse the
+ * successor's existing fixed-point integration kernel rather than grow its own
+ * floating-point turn math, generalizing the kernel's pure numerics where
+ * needed, and that chat must not end up depending on successor persistence
+ * contracts.
  *
  * It lives in the foundation package for exactly that reason. Its consumers are
  * the application's chat-lane garment math AND `@vesper/simulation-core`; a

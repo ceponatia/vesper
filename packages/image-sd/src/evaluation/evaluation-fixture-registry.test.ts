@@ -84,7 +84,7 @@ describe("seeded SD evaluation fixtures", () => {
     for (const term of FORBIDDEN_NEGATIVE_TERMS) {
       expect(
         mentions(negative, term),
-        `${fixture.id}'s negative prompt carries "${term}", which §19 lists as legitimate authored content`,
+        `${fixture.id}'s negative prompt carries "${term}", which Vesper renders as legitimate authored content`,
       ).toBe(false);
     }
   });
