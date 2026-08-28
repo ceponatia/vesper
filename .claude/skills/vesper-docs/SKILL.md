@@ -21,8 +21,8 @@ the code.** If a task requires reading six historical documents first, the
 information is in the wrong place — move it, don't add a seventh.
 
 The board is **Vesper Development** — project `7`, owner `ceponatia`, id
-`PVT_kwHOARzdw84BhlWR`. Its README holds the field and label conventions; the
-commands below are the verified essentials.
+`PVT_kwHOARzdw84BhlWR`. The board's own README on GitHub holds the field and
+label conventions; the commands below are the verified essentials.
 
 ## The routing table
 
@@ -30,19 +30,19 @@ One home per kind of information. Never write the same fact into two homes —
 status in an issue body, a slice list in a doc, or a dependency in prose
 re-creates exactly the drift this system deleted.
 
-| Information                  | Home                                          |
-| ---------------------------- | --------------------------------------------- |
-| Outcome, product intent      | parent issue                                  |
-| Current status               | project field, set at triage                  |
-| Implementation sequence      | sub-issues, in order                          |
-| Individual work items        | issues and sub-issues                         |
-| Dependencies                 | native blocked-by relations                   |
-| Design reasoning             | issue comments; a `research` issue            |
-| Owner rulings                | issue comment; ADR only if it becomes law     |
-| Open questions that block    | a `decision-needed` issue                     |
-| Acceptance criteria          | the issue that closes on them                 |
-| Technical laws               | a reference page under `docs/`                |
-| History, research residue    | closed issues, merged PRs, git                |
+| Information               | Home                                      |
+| ------------------------- | ----------------------------------------- |
+| Outcome, product intent   | parent issue                              |
+| Current status            | project field, set at triage              |
+| Implementation sequence   | sub-issues, in order                      |
+| Individual work items     | issues and sub-issues                     |
+| Dependencies              | native blocked-by relations               |
+| Design reasoning          | issue comments; a `research` issue        |
+| Owner rulings             | issue comment; ADR only if it becomes law |
+| Open questions that block | a `decision-needed` issue                 |
+| Acceptance criteria       | the issue that closes on them             |
+| Technical laws            | a reference page under `docs/`            |
+| History, research residue | closed issues, merged PRs, git            |
 
 ## Work state: issues, sub-issues, the board
 
@@ -80,7 +80,9 @@ plan" issue form produces it):
   decided: rationale worth keeping → ADR (rarely), resulting behavior →
   reference page, resulting work → issues, everything else → closed-issue
   history. Measured trials and benchmarks are the exception — reproducibility
-  can justify a durable evidence artifact in the repo.
+  can justify a durable, **text-only** record under `docs/`. The renders and
+  screenshots behind a verdict never enter git; root `CLAUDE.md` owns where
+  they go.
 - **Fields are set on the board at triage** (Status, Horizon, Priority, Area,
   Effort) — never restated in bodies or docs. New issues auto-add to the board
   as Inbox within a few minutes; Inbox means untriaged, not forgotten.
@@ -124,10 +126,15 @@ present-tense law an agent can check code against. It tells no story of how the
 feature was built, lists no alternatives, and records no progress. Template:
 `templates/reference-doc.md`.
 
+`docs/README.md` is the index and owns the tree itself: the reading-order table
+that every top-level area appears in, the one-doc-per-system rule, and the
+~400-line file-to-folder promotion rule. Read it before adding a page, and add
+the page's row there in the same change.
+
 - **Shape:** one paragraph of orientation; an "Owns / does not own" section
   naming the boundary and the owning page for what it excludes; then laws as
-  short declarative bullets grouped by aspect. Target 100–200 lines (the
-  reference tier's ~400-line promotion rule in `docs/README.md` still governs).
+  short declarative bullets grouped by aspect. Target 100–200 lines, well
+  inside the promotion threshold.
 - **One canonical owner per fact.** If two pages define the same thing, stop
   and designate the owner — delete the other side and link to the owner. Never
   resolve a conflict by making both sides agree.
@@ -170,23 +177,6 @@ system" earns one, because someone will propose collapsing them again. "Use 30
 days instead of 60" does not — that number belongs in the relevant reference
 page. Most owner rulings never become ADRs.
 
-## Transition — until #280 lands
-
-Issue #280 restructures `docs/` into `docs/architecture/`,
-`docs/systems/<area>/`, and `docs/decisions/`, converts surviving specs into
-reference pages, and retires the remaining working docs. Until it lands:
-
-- `docs/developer-notes/` still exists as a **legacy holding area** — its local
-  `CLAUDE.md` states the rules. Create nothing there.
-- Surviving `*.plan.md` files are **frozen**: the issues seeded from them
-  (#207–#232) own their live state. Never update a plan file for progress, and
-  never delete one piecemeal — retirement is #280's job, wholesale.
-- Specs under `docs/developer-notes/` remain live technical contracts: edit
-  them when behavior changes, and strip dynamic state from every section you
-  touch rather than adding any.
-- Do not begin the restructure opportunistically. Repointing seeded issues,
-  moving evidence, and the systems tree land together under #280.
-
 ## Validation
 
 Before finishing any change this skill governed:
@@ -206,13 +196,9 @@ Before finishing any change this skill governed:
   print('broken:',n)"
   ```
 
-- **No reference to a retired working document survives, in any form.** The
-  `docs/developer-notes/` tier is deleted, so a `*.plan.md` / `*.spec.md` name
-  points at nothing while still reading as authoritative — owner ruling
-  2026-08-27: the names go, links and plain text alike. State the rule instead.
-  The same applies to bare `§N` section numbers, which cited that tier's specs;
-  a `§` survives only when the sentence names a doc that still exists (a
-  `docs/resilience.md §2` citation is correct).
+- **No reference to a retired working document survives, in any form** — the
+  rule, its rationale, and the `§N` clause it carries are stated once, in
+  `docs/README.md`'s documentation rules. Enforce it here:
 
   ```bash
   git grep -nE "[a-z0-9-]+\.(plan|spec|trial|audit|deferred|research|followups)\.md|§[0-9]" -- apps packages scripts docs
@@ -224,7 +210,6 @@ Before finishing any change this skill governed:
 - **No dynamic state in any durable doc you touched** — check against the
   banned list above, and search touched files for `Status:`, `slice`,
   `remaining`, `awaiting`, `blocked on`.
-- **No new files under `docs/developer-notes/`.**
 - **Issues you filed are complete:** on the board with fields set, sub-issues
   linked to their parent, dependencies wired as relations, labels applied.
 - Tables you touched are aligned or converted to lists; no residue phrases in
