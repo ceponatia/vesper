@@ -41,7 +41,7 @@
 - **UI testing runs against the Fly deploy** (`https://vesper.fly.dev`), never a local Postgres + `pnpm dev`. Local dev stays valid for non-UI work and DB scripts.
   - **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin` — use it for manual/Playwright UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth.md`); sign in at `/sign-in` with the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is local-only, disabled in production.
   - Prefer an **existing** conversation. Create a new chat only when the test needs state you cannot edit into an existing one, and delete it when done.
-  - Screenshots and all other evaluation/dev-task imagery go in the gitignored root `eval-images/` — never under `docs/`; graded render evidence goes in `evidence/`.
+  - Screenshots and all other evaluation/dev-task output — graded render evidence included — go in the gitignored root `eval-images/`, never under `docs/`. That is the single destination; nothing evaluative enters git.
 
 ## Validation & CI
 

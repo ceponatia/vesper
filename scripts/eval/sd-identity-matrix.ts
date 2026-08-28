@@ -57,12 +57,12 @@ import { z } from "zod";
  * `cog push` printed. A default here would go stale silently and grade an old
  * build.
  *
- * WHAT IT WRITES, into `--out` (default `evidence/sd-identity-matrix-r1`):
+ * WHAT IT WRITES, into `--out` (default `eval-images/sd-identity-matrix-r1`):
  *
- * - `<arm>/<fixture>.png` — one image per cell. Gitignored; `evidence/README.md`
- *   is the owner ruling that generated imagery stays out of git history, and a
- *   cell whose bytes are not one of the covered formats is REFUSED rather than
- *   written, because the alternative is an image file git would happily track.
+ * - `<arm>/<fixture>.png` — one image per cell. Gitignored: the owner ruling of
+ *   2026-08-28 is that all evaluation output, graded or not, lives in the
+ *   untracked root `eval-images/` and never enters git history. A cell whose
+ *   bytes are not one of the covered formats is REFUSED rather than written.
  * - `manifest.csv` — one row per cell, appended as the run goes, so an
  *   interrupted run still records what it paid for.
  * - `scores.csv` — the grading sheet, header only. Columns come from
@@ -87,10 +87,10 @@ const POLL_INTERVAL_MS = 5_000;
 const TERMINAL_STATUSES = ["succeeded", "failed", "canceled"];
 const DEFAULT_TIMEOUT_SECONDS = 900;
 
-const DEFAULT_OUT = "evidence/sd-identity-matrix-r1";
+const DEFAULT_OUT = "eval-images/sd-identity-matrix-r1";
 
 /**
- * The image extensions `.gitignore` already keeps out of git under `evidence/**`.
+ * The image extensions `.gitignore` already keeps out of git repo-wide.
  *
  * Copied from the rules themselves rather than assumed: the owner ruling of
  * 2026-08-21 is that generated imagery must never enter git history, and this
@@ -710,9 +710,12 @@ Rendered by \`scripts/eval/sd-identity-matrix.ts\`.
 - **Reference provenance:** ${reference === undefined ? "none — this run was the control arm only, which sends no reference" : `\`${reference.provenance}\` — TO BE FILLED: which character, which identity-pack image, and why that one`}
 - **Cells:** ${String(cells.length)} (${arms.map(({ arm }) => arm.id).join(" / ")} x ${String(fixtures.length)} fixtures)
 
-The images beside this file are **local only** — \`evidence/README.md\` records the
-owner ruling that generated imagery stays out of git history. \`manifest.csv\` and
-\`scores.csv\` are tracked, and they are what a later reader actually has.
+Everything in this folder is **local only**. The owner ruling of 2026-08-28 is
+that all evaluation output lives in the untracked root \`eval-images/\` and none
+of it enters git — not the images, not \`manifest.csv\`, not \`scores.csv\`. It
+exists on the machine that ran the eval and nowhere else, so whatever a later
+reader needs to keep has to be written up somewhere durable: the issue this run
+was for.
 
 ## The arms
 
@@ -860,9 +863,10 @@ async function renderCell(cell: Cell, run: RunTarget, token: string, outDir: str
     const bytes = await downloadImage(url, token);
     const extension = imageExtension(bytes, url);
     if (extension === undefined || !GITIGNORED_IMAGE_EXTENSIONS.includes(extension)) {
-      // Fail-closed on purpose. Writing this file would put a generated image
-      // into a tracked folder, against the owner ruling in evidence/README.md.
-      const reason = `the renderer returned .${extension ?? "unknown"}, which evidence/'s gitignore does not cover — extend .gitignore before re-running; nothing was written`;
+      // Fail-closed on purpose. The owner ruling of 2026-08-28 is that generated
+      // imagery never enters git history, and writing an uncovered format is how
+      // a tracked image would get there if this ever ran outside `eval-images/`.
+      const reason = `the renderer returned .${extension ?? "unknown"}, which .gitignore's image rules do not cover — extend .gitignore before re-running; nothing was written`;
       console.error(`  ${label} REFUSED: ${reason}`);
       return { ok: false, row: [...base, settled.id, `error: uncovered output format .${extension ?? "unknown"}`, elapsed(), ""] };
     }

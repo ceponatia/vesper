@@ -32,9 +32,6 @@ screenshots/
 *.tif
 *.tiff
 
-# evidence is for local dev evaluation, not necessary on remote or other checkouts.
-/evidence/
-
 # Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.
 __pycache__/
 *.pyc
