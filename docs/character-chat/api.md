@@ -93,7 +93,8 @@ what keeps the client polling through the composer step *before* the pending ima
 exists. The chat's `sceneModel` pick (`character_chats.scene_model`, on the shared scenario;
 saved on select from the strip's dropdown via the state PATCH, or the Scenario modal's
 select) is **reference-only** — stored picks parse back to `reference`, and every render is
-the identity-locked avatar edit ([images/pipelines.md](../images/pipelines.md)).
+the identity-locked avatar edit
+([images/pipelines/chat-images.md](../images/pipelines/chat-images.md)).
 
 ## Admin routes
 

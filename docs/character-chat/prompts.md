@@ -185,7 +185,8 @@ passed:
   the binding per-turn **sensory allowance** from it
   ([perception-gates.md](perception-gates.md) §Character-chat sensory cues).
 
-The matching scene-image enrichment is in [images/pipelines.md](../images/pipelines.md).
+The matching scene-image enrichment is in
+[images/pipelines/scene-subjects.md](../images/pipelines/scene-subjects.md).
 
 ## Character-chat long-term memory (RAG)
 

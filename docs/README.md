@@ -4,30 +4,39 @@ Vesper is an LLM-powered romance roleplaying game: a web app where you forge cha
 
 It is a fork of reverie — itself a ground-up rewrite of the original companion-app — and shares reverie's lineage: dynamic state management, RAG memory, and multi-agent parallel orchestration feeding facts to the narrative model. The difference is focus. Reverie is a broadly-scoped roleplaying engine — it *can* host romantic and adult play, but as one mode among many. Vesper forks that engine to develop in a single direction: intimate, character-driven romance, optimized for mature, adult scenarios. Freed from staying general-purpose, the systems behind those scenarios — relationship and affinity progression, per-sense exposure gating, intimacy staging, and uncensored imagery — are first-class here and free to evolve as the product's core rather than incidental features.
 
-**Direction (owner, R6 rollout complete 2026-07-22):** the original turn-based **world/session model has been retired** — its play pages, session turn pipeline, world CRUD, and world-forge are deleted. Two lanes remain: the **character-chat** lane (`docs/character-chat/`), which was the test bed the successor grew out of, and the **successor simulation engine** (`apps/web/src/server/engine/simulation` + `sim_*` tables; reference in [engine/](engine/README.md)), whose successor chats are born via the `/worlds` front door. New interaction/state/narration patterns are still proven in chat first; character chat is expected to migrate onto the successor as it matures.
+**Direction (owner).** Vesper runs **two lanes**. The **character-chat** lane
+(`docs/character-chat/`) is the sessionless conversation surface the successor engine grew out of,
+and the **successor simulation engine** (`apps/web/src/server/engine/simulation` + the `sim_*`
+tables; reference in [engine/](engine/README.md)) is the event-sourced world model whose successor
+chats are born via the `/worlds` front door. There is no third lane: new interaction, state and
+narration patterns are proven in chat first, and a mechanism the two lanes share has **one**
+implementation neither may re-fork.
 
 ## Reading order
 
-| Doc                                                | What it covers                                                                                                                                |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| [getting-started.md](getting-started.md)           | Setup, env vars, database, running dev/tests                                                                                                  |
-| [architecture.md](architecture.md)                 | Stack, directory layout, module boundaries, data flow                                                                                         |
-| [resilience.md](resilience.md)                     | The error-handling philosophy every module must follow                                                                                        |
-| [contracts/](contracts/README.md)                  | Attribute registry, body model, meters, conditions — and how to extend them                                                                   |
-| [database.md](database.md)                         | Drizzle schema, pgvector, migration workflow                                                                                                  |
-| [character-chat/](character-chat/README.md)        | The chat lane: exchange pipeline, prompt architecture, tracked state, supporting cast & narrator input, initiative, the ensemble, images, API |
-| [engine/](engine/README.md)                        | The successor simulation engine: kernel and events, world, minds, bodies and materials, LOD, boundaries, operations                           |
-| [memory.md](memory.md)                             | Episodes, semantic facts + supersedence, fused retrieval — chat-scoped                                                                        |
-| [streaming-api.md](streaming-api.md)               | HTTP API surface (library, chat, auth, pagination)                                                                                            |
-| [auth.md](auth.md)                                 | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam                                        |
-| [images/](images/README.md)                        | Image suite: providers, asset registry, pipelines, identity packs, vision input                                                               |
-| [image-models/](image-models/README.md)            | Image-model behavior package: semantic features, Qwen family adapters, composer/registry, plus provider-model reference                       |
-| [image-generator/](image-generator/README.md)      | The Image Generator: admin raw prompt/model bench — one-off runs against any registered model, immutable run records, hidden outputs          |
-| [authoring.md](authoring.md)                       | AI-first character forge and manual-override editors                                                                                          |
-| [ui.md](ui.md)                                     | Pages, components, styling conventions                                                                                                        |
-| [testing.md](testing.md)                           | Test strategy and conventions                                                                                                                 |
-| [deployment.md](deployment.md)                     | Hosting the dev build online: Fly.io (Dockerfile, fly.toml, pgvector, volume, push-to-deploy, migrations)                                     |
-| [guide/](guide/README.md)                          | Task-oriented manual pages (creating characters, items, locations, social cards)                                                              |
+| Doc                                               | What it covers                                                                                                                                |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [getting-started.md](getting-started.md)          | Setup, env vars, database, running dev/tests                                                                                                  |
+| [architecture.md](architecture.md)                | Stack, directory layout, module boundaries, data flow                                                                                         |
+| [resilience.md](resilience.md)                    | The error-handling philosophy every module must follow                                                                                        |
+| [contracts/](contracts/README.md)                 | Attribute registry, body model, meters, conditions — and how to extend them                                                                   |
+| [database/](database/README.md)                   | Drizzle schema, pgvector, migration workflow, indexes and transactional invariants                                                            |
+| [character-chat/](character-chat/README.md)       | The chat lane: exchange pipeline, prompt architecture, tracked state, supporting cast & narrator input, initiative, the ensemble, images, API |
+| [engine/](engine/README.md)                       | The successor simulation engine: kernel and events, world, minds, bodies and materials, LOD, boundaries, operations                           |
+| [engine-comparison/](engine-comparison/README.md) | The two-lane comparison harness: provisioning, playtesting, and recorded rulings                                                              |
+| [memory.md](memory.md)                            | Episodes, semantic facts + supersedence, fused retrieval — chat-scoped                                                                        |
+| [streaming-api.md](streaming-api.md)              | HTTP API surface (library, chat, auth, pagination)                                                                                            |
+| [auth/](auth/README.md)                           | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam                                        |
+| [images/](images/README.md)                       | Image suite: providers, asset registry, pipelines, identity packs, vision input                                                               |
+| [image-models/](image-models/README.md)           | Image-model behavior package: semantic features, Qwen family adapters, composer/registry, plus provider-model reference                       |
+| [image-generator/](image-generator/README.md)     | The Image Generator: admin raw prompt/model bench — one-off runs against any registered model, immutable run records, hidden outputs          |
+| [image-lab/](image-lab/README.md)                 | The Advanced Image Lab: evidence-bearing experiment kinds, control fixtures, and lab constraints                                              |
+| [authoring/](authoring/README.md)                 | AI-first character forge and manual-override editors                                                                                          |
+| [ui/](ui/README.md)                               | Pages, components, styling conventions                                                                                                        |
+| [testing.md](testing.md)                          | Test strategy and conventions                                                                                                                 |
+| [deployment.md](deployment.md)                    | Hosting the dev build online: Fly.io (Dockerfile, fly.toml, pgvector, volume, push-to-deploy, migrations)                                     |
+| [guide/](guide/README.md)                         | Task-oriented manual pages (creating characters, items, locations, social cards)                                                              |
+| [decisions/](decisions/README.md)                 | Architecture decision records — the contested calls that would otherwise be re-litigated                                                      |
 
 ## Documentation rules
 

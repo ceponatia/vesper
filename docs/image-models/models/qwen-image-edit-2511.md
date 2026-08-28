@@ -151,7 +151,7 @@ drift from it.
 
 Three profiles exist, all `operation: edit` with the `instruction_edit` prompt
 strategy, and each is its task's global default
-([providers.md](../../images/providers.md)):
+([providers.md](../../images/providers/README.md)):
 
 - `variant-standard` — task `variant`; identity required, style optional;
 - `scene-standard` — task `scene`; identity → location → style → object. Its
@@ -174,7 +174,7 @@ gates, and provenance. A face crop that cannot clear the quality gate is never
 sent merely to fill a reference slot.
 
 Reference selection and ordering are the resolved profile's policy
-([providers.md](../../images/providers.md)). For portrait-bearing characters the
+([providers.md](../../images/providers/README.md)). For portrait-bearing characters the
 identity-pack lane fails closed before spend when the required identity source is
 blocked; it does not silently read an arbitrary gallery image. In chat scenes a
 current generated `chat_look` may be the cast member's anchor; otherwise the

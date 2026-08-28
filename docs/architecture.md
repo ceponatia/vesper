@@ -10,7 +10,7 @@
 | ORM        | Drizzle ORM + drizzle-kit                       | SQL migrations generated with `drizzle-kit generate`, applied with `pnpm db:migrate` (the drizzle-orm migrator in `scripts/db-migrate.ts`); never `drizzle-kit push` |
 | LLM        | AI SDK 6 (`ai`) + `@openrouter/ai-sdk-provider` | `streamText` for narrative, `generateChecked` (structured output + repair) for agents                                                                                |
 | Embeddings | OpenRouter `/embeddings` endpoint               | 1536-dim, pgvector columns on owning tables                                                                                                                          |
-| Image gen  | Replicate (text-to-image + reference edit)      | One backend; the model list is data in `image_models` — see [images/providers.md](images/providers.md)                                                               |
+| Image gen  | Replicate (text-to-image + reference edit)      | One backend; the model list is data in `image_models` — see [images/providers.md](images/providers/README.md)                                                               |
 | Validation | Zod 4                                           | All registries, all JSONB boundaries, all API input                                                                                                                  |
 | Styling    | Tailwind CSS 4                                  | Design tokens in `globals.css` `@theme`                                                                                                                              |
 | Tests      | Vitest 4                                        | See [testing.md](testing.md)                                                                                                                                         |
@@ -91,8 +91,8 @@ vesper/                  # the workspace root: operational scripts + repo toolin
           memory/            # fact supersedence, episodes, fused retrieval (chat-scoped)
           images/            # avatar/scene/variant pipelines, asset registry, identity-pack + lab lifecycle
           authoring/         # character forge + in-sheet fill/re-draft/portrait
-          auth/              # Better Auth instance + session resolution (docs/auth.md)
-          players/           # default player-character persona resolution (docs/auth.md)
+          auth/              # Better Auth instance + session resolution (docs/auth/)
+          players/           # default player-character persona resolution (docs/auth/player.md)
           log.ts             # logging (reads LOG_LEVEL — server-only, kept out of lib)
         app/                 # Next.js routes (pages + API route handlers)
         components/          # React components
@@ -128,7 +128,7 @@ stateful, which is the durable stores that read and write those projections.
 - `apps/web/src/contracts` and `apps/web/src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.
-- **Auth & ownership** ([auth.md](auth.md)): `server/auth` wraps Better Auth (signed sessions; `getCurrentUser` → 401 on no session). Every entity carries `ownerId` and every **write** is owner-strict. The single cross-owner relaxation is a **read** widening to owner-or-public (`findViewable`) confined to the browse/preview/copy path, and even there a foreign viewer receives an **allow-listed public representation** (`toPublicCharacter` & co.), never the persisted row; "using" a public entity copies it (no live cross-owner reference), preserving the IDOR-clean property.
+- **Auth & ownership** ([auth/README.md](auth/README.md)): `server/auth` wraps Better Auth (signed sessions; `getCurrentUser` → 401 on no session). Every entity carries `ownerId` and every **write** is owner-strict. The single cross-owner relaxation is a **read** widening to owner-or-public (`findViewable`) confined to the browse/preview/copy path, and even there a foreign viewer receives an **allow-listed public representation** (`toPublicCharacter` & co.), never the persisted row; "using" a public entity copies it (no live cross-owner reference), preserving the IDOR-clean property.
 
 ## Data flow (one chat exchange)
 

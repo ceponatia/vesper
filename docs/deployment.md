@@ -110,7 +110,7 @@ primary_region = 'iad'
    ```
    `REPLICATE_API_TOKEN` is **required for image generation** and set separately —
    every image render routes through Replicate
-   ([images/providers.md](images/providers.md)), and without it every render
+   ([images/providers.md](images/providers/README.md)), and without it every render
    outside demo mode fails the image row:
    ```
    fly secrets set REPLICATE_API_TOKEN="..." -a vesper
@@ -153,7 +153,7 @@ Fly↔GitHub integration firing; every release so far has been a hand-run
   and confirm the app is in your legacy org (`fly orgs list`, `fly apps list`).
 
 Migrations run automatically via `release_command` on every deploy. Author them
-locally (`pnpm db:generate`, review SQL — see [database.md](database.md)), commit
+locally (`pnpm db:generate`, review SQL — see [database/README.md](database/README.md)), commit
 the `drizzle/` files, and push; the server only ever runs the non-interactive
 `pnpm db:migrate`.
 
@@ -210,7 +210,7 @@ setup above as the template.
 ## Security
 
 The app is on the **public internet** at `https://vesper.fly.dev`, so access
-control rests entirely on **Better Auth** ([auth.md](auth.md)) plus the `admin`
+control rests entirely on **Better Auth** ([auth/README.md](auth/README.md)) plus the `admin`
 role and private entity `visibility`. For a dev build, **gate or disable open
 email sign-up** so only accounts you approve can get in. (This is the tradeoff
 versus the dropped Tailscale plan, where the app wasn't publicly reachable at

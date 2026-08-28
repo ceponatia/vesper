@@ -45,4 +45,4 @@ the same world.
   are data, defined once in [contracts/](../contracts/README.md) and shared by
   both lanes. Vocabulary changes are edits there, never engine changes.
 - **Images.** Scene and portrait rendering is a separate stack
-  ([images/](../images/pipelines.md)) that the engine only schedules work for.
+  ([images/](../images/pipelines/README.md)) that the engine only schedules work for.

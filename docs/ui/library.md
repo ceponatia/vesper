@@ -1,0 +1,186 @@
+# Library surfaces
+
+The grids, editors and pickers behind `/characters`, `/personas`, `/locations`, `/items` and
+`/social-cards`.
+
+## The portrait studio
+
+`components/characters/portrait-studio.tsx` generates the canonical avatar from attributes,
+accumulates pose/outfit/expression/setting variants, and promotes any variant to canonical.
+
+Between the avatar prompt and the variant controls sits the **Identity reference** block
+(`identity-reference-panel.tsx`): a status chip for the character's identity pack plus **Adjust
+face crop**, which opens `identity-crop-dialog.tsx` — a draggable, resizable square over the
+canonical portrait with live preview, plain-language warnings, save/retry/reset actions, and (for
+admins) the lazily-loaded revision-history and override inspector
+(`identity-pack-inspector.tsx`; [../images/identity-packs.md](../images/identity-packs.md)).
+
+Its **Portrait history** grid keeps non-canonical avatar attempts and variants visible; failed
+rows render as error cards using `images.meta.error` so provider failures do not vanish after
+polling.
+
+**Upload image** opens the crop dialog (`avatar-upload-dialog.tsx`): a modal whose helper text
+states the 768×1024 (3:4) target, then lets the user drag to reposition and a slider or scroll to
+zoom inside a 3:4 crop window before the framed region is scaled, saved, and set as the avatar —
+synchronous and demo-safe
+([../images/pipelines/avatar-upload.md](../images/pipelines/avatar-upload.md)).
+
+## The persona editor
+
+`components/personas/persona-editor.tsx` is **Profile · Body · Wardrobe** — three tabs against
+the character editor's eight, because a persona has a body, a wardrobe and a bio but no
+personality, disposition, drives, relationships or schedule (the narrator never writes the
+player's lines).
+
+It **embeds `AttributePicker` and `OutfitEditor` unchanged** — both are pure props-in,
+callback-out over contract shapes with no `characterId` coupling — and the species/heritage
+re-seeding rule is shared with the character editor via
+`speciesChangePatch` / `heritageChangePatch` (`components/characters/attribute-helpers.ts`), not
+copied.
+
+Its Profile tab is the one place a **title collision** surfaces: `(owner_id, title)` is UNIQUE,
+so a duplicate title returns a typed 409 that renders **inline on the Title field** (not a toast)
+and holds the draft dirty. Autosave pauses until the title changes, since retrying the same
+conflicting title every 1.5s would only churn 409s.
+
+## Item and location editors
+
+The library **item** and **location** editors are split into **Details · Image** tabs
+(`components/ui/tabs.tsx`).
+
+The item Details tab shows a **Type** select when the picked clothing category has a subtype
+vocabulary — jewelry, headwear, eyewear
+([../contracts/items.md](../contracts/items.md) §Clothing subtypes). Picking one pre-fills
+coverage like a category template, and cards and rows chip the type instead of the broad
+category.
+
+The Image tab is a minimal studio (`components/library/entity-image-studio.tsx`, shared by
+both): a Generate/Regenerate button and the current image with click-to-enlarge — no variants, no
+upload, regenerate if you dislike it. Generation runs as a background job and the tab polls until
+it lands, so leaving the page never interrupts it. Items get a 1:1 product photo; locations a 3:2
+establishing shot whose type follows the location's scale
+([../images/pipelines/entity-images.md](../images/pipelines/entity-images.md)).
+
+The **location** editor's Details tab carries the full location design, at parity with the world
+map tab: **Scale**, **Area**, and a **Connections** section — undirected links to other library
+locations added through the shared `EntityPickerDialog` (search + thumbnails), shown as removable
+tags. Connections persist as `location_links` and propagate into a world's map when the linked
+set is imported ([../database/README.md](../database/README.md)).
+
+Every lean library editor (items, locations, social cards — every branch, including loading and
+error) opens with a **`← <Library>` back link** (`components/library/back-link.tsx`,
+`.touch-target` on phones) returning to its grid, the mobile escape hatch; the grid restores the
+toolbar state the user left.
+
+## The shared library grid
+
+`components/library/entity-library.tsx` is config-driven per entity. The **Items** library is the
+full faceted browse:
+
+- Segmented **Clothing · Object · Container** buckets (live counts; no "All" — the page opens
+  straight into Clothing, the closet view), then **registry-backed facet chip rows** that adapt to
+  the bucket. Clothing gets category / wearer / layer chips plus color **swatches**; objects get
+  subtype chips (`components/library/item-facets.ts`; wearer follows `wearerMatchesFilter`, so
+  absent or unisex garments match every wearer chip). Facets filter the loaded set client-side
+  with counts scoped to the other active filters; options absent from the data are hidden.
+  Switching buckets clears facet picks.
+- With nothing narrowing, the grid renders **grouped sections** — Clothing by category (the
+  "closet" view), Object by subtype; any search, tag or facet goes flat. A single section renders
+  flat too, since one group is noise rather than organization. The `buckets.defaultId` config also
+  suppresses "All" and sets the initial bucket; items is the only entity using it, and
+  social-cards still opens on "All".
+- A **grid ⇄ list toggle** (persisted per entity in `localStorage`) swaps the rich cards for
+  compact rows — small thumb, name, structured chips (category/subtype + color dot), tags — for
+  hundreds-of-items scale, plus a **sort** select (Recent first / By name, applied server-side).
+- The rest of the toolbar state (bucket, scope, sort, search, tags, facet picks) persists **per
+  entity in `sessionStorage`**, restored through the lazy state initializers on mount — so
+  opening an editor and coming back (its back link, the nav, or browser back) lands on the same
+  view. Stored buckets and facet options absent from the vocabulary are dropped at read time, since
+  a stale pick would silently empty the grid. **New** creates in the active bucket — a blank
+  clothing item from the Clothing view, a taboo card from the Taboo tab (`config.create` receives
+  the bucket; "All" falls back to the schema default).
+- Free tags sit behind a **Tags** panel: multi-select chips (comma-joined into the `tag` param,
+  ANDed server-side via jsonb containment), with a filter input past 15 tags. **Machine tags**
+  (`suggested`, `seed:*`) are hidden from every filter UI and card chip row (`lib/tags.ts`); the
+  data keeps them.
+- Characters and items get a hover-revealed **Duplicate** action on cards and rows (the
+  `config.clone` seam → the kind's `/clone` endpoint; it works on public entries too —
+  copy-on-use) that opens the copy's editor. The character edit page header and the item editor
+  SaveBar carry the same **Duplicate**, save-first like the Forge. Wardrobe near-variants ("same
+  top in three colors") and archetype characters start here.
+- **New** creates the entity immediately with a **randomized placeholder name** ("Untitled item
+  k3f7" — concurrent drafts never collide) and routes to its editor: create-on-new means a draft
+  can never be lost before its first save.
+- **Editor autosave** (`components/hooks/use-autosave.ts`): the character and item editors save
+  silently ~1.5s after the last change, and immediately when focus leaves a field (`onBlur` on
+  the editable container — free text lands on field exit, never mid-typing). The Save button
+  stays as a loud manual flush, and `beforeunload` warns only while something is unsaved or in
+  flight. **Forge-draft discipline**: a staged ✦/↻/◉ result pauses autosave until the manual Save,
+  because the SaveBar is the review step. Advisory inline validation never blocks: empty Name, a
+  drive with a blank want, a schedule row with a blank activity ("this row is dropped on save").
+- **Attribute accordion summaries**: each collapsed section header previews its set values
+  ("auburn, shoulder-length, wavy", falling back to "N set" when long) with a distinct italic
+  *empty* for unauthored sections — fully-authored versus empty is scannable without expanding,
+  and Forge-the-rest and From-portrait output is reviewable at a glance.
+- **Generate images** (Items and Locations): ids visible under the active filter that lack an
+  image → confirm dialog → background batch, the grid polls, and the button is hidden on an empty
+  library. Items adds **Organize** beside it — the facet classify backfill: visible items missing a
+  facet go to `POST /api/items/classify`, a background `item_classify` job fills **only absent**
+  category/layer/wearer/color/subtype fields from name and description via a cheap model
+  (`server/api/item-classify.ts`), and the grid polls as chunks land. Present values are never
+  overwritten, so it is always safe to press again.
+
+## Facets on the other libraries
+
+`components/library/library-facets.ts` runs the same `FacetDef` machinery, which grew an optional
+multi-value `values` accessor: **characters** get species and gender (the natal-sex `…_born_*`
+variants collapse into one browse chip), **locations** get scale, and **social cards** get
+severity-tier plus trigger-concept chips — with matching card chips (a character's notable
+species, a location's scale, a card's tier plus first triggers) and the grid ⇄ list toggle on all
+of them.
+
+The list payloads carry the facet columns explicitly: `/api/characters` SQL-extracts `speciesId`
+and the `identity.gender` attribute value from the profile jsonb, and `/api/locations` ships
+`scale` — keeping the explicit-columns posture rather than shipping whole jsonb blobs.
+
+Server-side, the items list API takes the same facets as query params
+(`category` / `subtype` / `layer` / `wearer` / `color`, plus `sort` and comma-ANDed `tag`),
+applied **before** the result cap in `searchLibraryIds`, which is what the pickers lean on. List
+endpoints select explicit columns — a bare row would ship the 1536-dim search embedding to the
+browser. **Every shareable kind honors `?scope=all|public|owned` and `?sort`**, and the row
+SELECTs widen to owner-or-public so the discovery scopes can return another owner's published
+rows.
+
+## Pickers
+
+`components/library/entity-picker.tsx`: `EntityPickerDialog` is the one search-and-pick surface
+behind every "add from library" flow — debounced server search, thumbnails, per-row structured
+chips, optional **facet chip rows** that re-query, a **grouped empty-query browse** (clothing by
+category), and a **multi-select basket mode** (pick several, confirm once).
+
+Call sites: the character outfit tab, location connections, and the social-card import. The
+**new-chat dialog** keeps its bespoke avatar grid, but its filter input re-queries the server
+(`q`) rather than narrowing the capped first page
+(`components/hooks/use-debounced-value.ts`).
+
+## The outfit tab
+
+`components/characters/outfit-editor.tsx` is a **preset switcher over wardrobe slots**
+(`profile.outfits`, which supersedes a single `defaultOutfit`; legacy rows lift into an "Everyday"
+preset at parse). Named looks — casual, work, date night, sleep — are selectable chips, the
+**first preset is the default** (what the forge targets, the avatar wears, and a fresh chat starts
+in), with add / rename / duplicate / make-default / delete controls.
+
+The selected preset's items edit as wardrobe **slots** — Tops & dresses · Bottoms · Underwear ·
+Footwear · Accessories (`lib/clothing-slots.ts`, a pure category→slot map; unresolved or
+uncategorized references land in "Other"). Each slot's **+ Add** opens the EntityPicker
+pre-filtered to that slot's categories **and the character's wearer target** (from
+`identity.gender` via `wearerHintForGender`; always overridable in the picker's facet chips), so a
+long clothing library arrives as "the tops that fit her". Empty slots read "Nothing worn." A
+trailing "+ Add from the whole wardrobe…" opens the unscoped picker.
+
+The Profile tab's Daily-rhythm rows gain a **Wearing** preset pick — rhythm auto-dress, so a
+pickup skip landing in that window dresses the character for it. The chat Character sheet carries
+a **structured Wardrobe editor** (`components/characters/chat-wardrobe-editor.tsx`) reusing this
+same slot and picker design over the conversation's worn item ids
+([conversation.md](conversation.md)).

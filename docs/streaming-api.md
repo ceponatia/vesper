@@ -14,7 +14,7 @@ POST               /api/characters/:id/avatar          { style: "realistic"|"sty
 GET/POST           /api/characters/:id/portraits       GET lists all images for the character (avatar +
                                                        variants, newest first) as { portraits, rendering };
                                                        POST queues a portrait variant — a reference edit via
-                                                       the image-model registry (images/pipelines.md §Portrait
+                                                       the image-model registry (images/pipelines/ §Portrait
                                                        variants) — { kind: pose|outfit|expression|setting,
                                                        instruction, modelId? } ⇒ 202 { jobId, characterId }
 GET/DELETE         /api/characters/:id/portraits/:imageId   (+ POST /promote → set as avatar; 409 not_ready
@@ -28,7 +28,7 @@ GET/POST, GET/PATCH/DELETE        /api/social-cards, /api/social-cards/:id   (re
 
 Creates return 201 with the row. Deleting an entity still referenced by another row is a 409 `in_use` (FK violation mapped, never a cascade).
 
-The four shareable detail GETs (`characters`/`locations`/`items`/`social-cards`) carry a `mine` flag and shape the entity to it: the owner gets the full row, a **foreign viewer of a public row gets the allow-listed public representation** — no `ownerId`, no embedding/authoring internals, portraits reduced to `{ id, kind, entityKind, entityId, createdAt }`. See [auth.md](auth.md) §"Public" is a representation, not the row.
+The four shareable detail GETs (`characters`/`locations`/`items`/`social-cards`) carry a `mine` flag and shape the entity to it: the owner gets the full row, a **foreign viewer of a public row gets the allow-listed public representation** — no `ownerId`, no embedding/authoring internals, portraits reduced to `{ id, kind, entityKind, entityId, createdAt }`. See [auth/visibility.md](auth/visibility.md).
 
 The character-chat lane's HTTP surface (`/api/chats/*` — the transcript GET, the send/rerun SSE, scene/relationship/time-skip routes, and its diagnostic codes) is documented in [character-chat/api.md](character-chat/api.md). The successor engine's routes live under `/api/chats` and `/api/admin/*` (see [engine/boundaries.md](engine/boundaries.md)).
 
@@ -51,9 +51,9 @@ The one streaming surface is the character-chat exchange — `POST /api/chats/:c
 
 ## Auth
 
-Real accounts via [Better Auth](https://better-auth.com) ([auth.md](auth.md)), self-hosted in our Postgres. The `/api/auth/*` surface is owned by the library (signed, httpOnly, `secure` session cookies); our handlers only **read** the session. `getCurrentUser()` (`server/auth`) resolves it or throws `Unauthenticated`, which `withUser` maps to a **401** — there is no auto-minted default user. A genuine resolution failure (DB down) stays a **500 `auth_unavailable`**.
+Real accounts via [Better Auth](https://better-auth.com) ([auth/README.md](auth/README.md)), self-hosted in our Postgres. The `/api/auth/*` surface is owned by the library (signed, httpOnly, `secure` session cookies); our handlers only **read** the session. `getCurrentUser()` (`server/auth`) resolves it or throws `Unauthenticated`, which `withUser` maps to a **401** — there is no auto-minted default user. A genuine resolution failure (DB down) stays a **500 `auth_unavailable`**.
 
-**Authorization** is one seam ([auth.md](auth.md)): every **write** is owner-strict (`ownerId = me`; a non-owner write 404s, never confirming the row). **Reads** on the browse/preview/copy path widen to **owner-or-public** via `findViewable` — characters/locations/items/social-cards carry a `visibility` (`private` default | `public`); personas and chats are always private. A public entity is **copyable** (`POST /:kind/:id/clone` → an owned, private copy with `clonedFromId` provenance and self-contained images), never live-referenced.
+**Authorization** is one seam ([auth/visibility.md](auth/visibility.md)): every **write** is owner-strict (`ownerId = me`; a non-owner write 404s, never confirming the row). **Reads** on the browse/preview/copy path widen to **owner-or-public** via `findViewable` — characters/locations/items/social-cards carry a `visibility` (`private` default | `public`); personas and chats are always private. A public entity is **copyable** (`POST /:kind/:id/clone` → an owned, private copy with `clonedFromId` provenance and self-contained images), never live-referenced.
 
 **Dev/QA:** `POST /api/dev/impersonate { userId }` mints a real signed session (the old `vesper_user` raw-id cookie is gone). Dev routes 404 in production. See [CLAUDE.md](../CLAUDE.md) for the seeded credential.
 

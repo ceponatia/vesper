@@ -40,7 +40,7 @@ The memory is maintained **deterministic-first**, then reconciled by the archivi
    the raw `scene_memory` jsonb (deliberately NOT the exchange lock, so it can never 409 a send;
    a lost race re-fires while the sketch stays absent). Consumed by the narrator's Scene block
    (`- Setting (fixed reference): …`) and the scene image's `room`
-   ([images/pipelines.md](../images/pipelines.md)).
+   ([images/pipelines/scene-subjects.md](../images/pipelines/scene-subjects.md)).
 
 **Reset.** Scene memory rides the ordinary chat resets: a hard `deleteChat` clears it with
 the transcript/summary/memory; **archive** leaves it intact by design; and "another take"

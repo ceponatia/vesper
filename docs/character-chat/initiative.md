@@ -35,7 +35,7 @@ The opener is an ordinary continue exchange: the clock ticks, the archivist is o
 - **The unseen shift.** The cue names what just shifted between them, read through a
   one-column `loadMilestonesSeenAt` on initiative beats.
 - **The daily rhythm** (`profile.schedule` authoring — see
-  [authoring.md](../authoring.md) §Character forge), rendered as one compact line
+  [authoring/profile-leg.md](../authoring/profile-leg.md)), rendered as one compact line
   (`formatScheduleRhythm` — "mornings: waiting tables at the Dockside Café; evenings:
   sketching at the pier") grounding the life-meanwhile license, so "just got off shift"
   beats draw on authored routine instead of invention.

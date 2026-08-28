@@ -4,7 +4,7 @@ Everything visual the lane exchanges: photos the player attaches, selfies the
 character sends back, and the cached reference anchors renders are built from. This page
 owns the lane's **triggers, gates, cooldowns and lifecycle**; the render mechanics behind
 each kind — framing rules, reference routing, prompt segments, retry classification — are
-owned by [images/pipelines.md](../images/pipelines.md).
+owned by [images/pipelines/](../images/pipelines/README.md).
 
 ## Pipeline scope
 
@@ -83,7 +83,8 @@ The character can send photos back (owner rulings 2026-07-11):
   records an `offer` ring entry (same cooldown).
 - **Render**: `flavor: "selfie"` through `queueChatScene` →
   `renderCharacterSceneImage`. The framing, reference routing and the retry-once
-  failure policy are [images/pipelines.md](../images/pipelines.md); the lane's own rules
+  failure policy are [images/pipelines/chat-images.md](../images/pipelines/chat-images.md);
+  the lane's own rules
   are that the render shares the one-live-render-per-chat dedupe with scenes,
   `meta.flavor: "selfie"` rides the asset so lifecycle is unchanged, and a
   twice-failed render stays a `failed` row rendered in the transcript as a **"Failed"
@@ -97,7 +98,7 @@ The character can send photos back (owner rulings 2026-07-11):
 A conversation caches two render anchors so scenes stop arguing the edit model out of the
 canonical avatar's default outfit, and so a setting is more than a text sketch (owner
 rulings 2026-07-11). What each anchor's prompt contains is
-[images/pipelines.md](../images/pipelines.md); the lane owns when they mint and when they
+[images/pipelines/chat-images.md](../images/pipelines/chat-images.md); the lane owns when they mint and when they
 die.
 
 - **Current look** (`kind: "chat_look"`): an outfit-true, identity-locked variant of

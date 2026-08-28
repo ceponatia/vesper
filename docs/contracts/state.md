@@ -2,7 +2,7 @@
 
 # Pinned state shapes
 
-The **binding** schemas behind the JSONB columns in [database.md](../database.md).
+The **binding** schemas behind the JSONB columns in [database/README.md](../database/README.md).
 They live in `contracts/world/` and `contracts/state/`, and each
 exports an `empty*()` default used as the `parseOr` fallback. The character-chat lane's own tracked
 shapes (`character_chat_state`, the scenario, scene memory, plans) are covered by
@@ -54,7 +54,7 @@ type CharacterProfile = {
 
 See [body.md](body.md) §The realized body for `intimateRegions` / `bodyFeatures`, [attributes.md](attributes.md)
 for `AttributeValue`, and [relationships.md](relationships.md) for `traits` / `preferences` / `drives` /
-`playerRelationship`. The forge that drafts every field is [../authoring.md](../authoring.md).
+`playerRelationship`. The forge that drafts every field is [../authoring/README.md](../authoring/README.md).
 
 ## PersonaProfile
 
@@ -63,7 +63,7 @@ The player as a library entity (`contracts/players/persona-profile.ts`) — who
 never writes the player's lines). Carries bio, voice, `intimacy` (inverted semantics — what the player
 *responds to*), species/heritage/bodyPlan, `intimateRegions`, `bodyFeatures`, `attributes`, and `outfits`.
 `PlayerPersona` is the prompt-facing projection every consumer reads through `resolveChatPersona`
-([../auth.md](../auth.md)); it has no library `title` field.
+([../auth/player.md](../auth/player.md)); it has no library `title` field.
 
 ## SceneGenState
 
@@ -74,7 +74,7 @@ focal character from the conversation's roster.
 type SceneGenState = {                        // no subject field: the composer picks the focal character
   interval: number;                           // every N turns; 0 = off
   lastGeneratedTurn?: number;                 // turn number when an image was last generated
-  status: "idle" | "generating" | "failed";   // (../images/pipelines.md §Scene images)
+  status: "idle" | "generating" | "failed";   // (../images/pipelines/scene-images.md)
   referenceMode: "single" | "multi";          // single = one identity anchor; multi = multi-reference edit, up to the model's reference cap
 };
 ```

@@ -20,7 +20,7 @@ Source: [`packages/image-models`](../../packages/image-models/README.md).
 | [Features](features/README.md)                          | Semantic feature contract, current feature modules, binding rules, and Qwen capability matrix     |
 | [Provider model reference](models/README.md)            | Per-model Replicate/API snapshots, provider drift, reviewed capability, inputs, and payload notes |
 | [Image system overview](../images/README.md)            | Profiles, providers, asset registry, pipelines, identity packs, and the surrounding image system  |
-| [Provider probing and registry](../images/providers.md) | Provider fields, active versions, probing, profile resolution, and registry truth                 |
+| [Provider probing and registry](../images/providers/README.md) | Provider fields, active versions, probing, profile resolution, and registry truth                 |
 
 ## Current package state
 

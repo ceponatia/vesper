@@ -43,7 +43,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > models (`lib/agent-models.ts`), the scene-composer/tool model, and the embedding
 > model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`). Image
 > models are rows in the `image_models` registry, managed from the admin-only
-> `/settings/image-models` page ([images/providers.md](images/providers.md)) — the
+> `/settings/image-models` page ([images/providers.md](images/providers/README.md)) — the
 > `REPLICATE_*` variables below configure the one image backend, never model choice.
 
 > **Tool-model candidate — `aion-labs/aion-3.0`.** Added to the narrator list
@@ -72,7 +72,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
   stored pick survives, so setting the token later restores it with no re-choosing.
 - **`REPLICATE_API_TOKEN`** — **the image backend**; no default. Every image (avatars,
   portrait variants, chat scenes, item/location shots) renders through Replicate
-  ([images/providers.md](images/providers.md)). Absent outside demo mode ⇒ every render fails the
+  ([images/providers.md](images/providers/README.md)). Absent outside demo mode ⇒ every render fails the
   row with `REPLICATE_API_TOKEN not configured`.
 - **`REPLICATE_PREDICTION_TIMEOUT_MS`** — prediction deadline; default `300000` (5m),
   clamped to 30s–30m. Sent as Replicate's `Cancel-After` **and** used as this client's poll
@@ -80,18 +80,18 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 - **`REPLICATE_SAFE_MODE`** — Replicate safety-checker toggle; default `false`. Only sent to
   models whose schema declares the input.
 - **`BETTER_AUTH_SECRET`** — **required**, no default. Signs sessions/cookies
-  ([auth.md](auth.md)); generate with `openssl rand -base64 32`.
+  ([auth/README.md](auth/README.md)); generate with `openssl rand -base64 32`.
 - **`BETTER_AUTH_URL`** — app origin (OAuth callbacks + CSRF origin check). Default
   `http://localhost:3200`.
 - **`GOOGLE_/GITHUB_/DISCORD_CLIENT_ID`** + **`_SECRET`** — OAuth providers; no default. A
   provider is enabled only when **both** are set; absent ⇒ off.
 - **`ALLOW_SIGNUP`** — sign-up gate; default `false` (off). Email/OAuth/magic-link
-  registration is disabled unless `true` ([auth.md](auth.md) §Sign-up control).
+  registration is disabled unless `true` ([auth/sign-in.md](auth/sign-in.md)).
 - **`BETTER_AUTH_TRUSTED_ORIGINS`** — comma-separated extra allowed origins (CSRF); no
   default. Needed for LAN dev, e.g. `http://<lan-ip>:3200`.
 - **`RESEND_API_KEY`** / **`SMTP_URL`** — names **reserved** for a future magic-link email
   sender; no default. **Inert in v1** — no code reads them and setting one enables nothing
-  ([auth.md](auth.md) §Magic link).
+  ([auth/sign-in.md](auth/sign-in.md)).
 - **`DEV_PASSWORD`** — dev/QA password the seed sets on the Player + uxtest admin for
   `POST /api/dev/impersonate`; default `vesper-dev-password`. Local dev only — the endpoint
   404s on the production Fly build.
@@ -102,7 +102,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > `auth.magic_link`) and that is how you complete the sign-in, while a production
 > build drops the plugin entirely rather than log a live sign-in URL. Production
 > turns on only when a real sender is registered in `apps/web/src/server/auth/magic-link.ts`
-> — never by setting an env var ([auth.md](auth.md) §Magic link).
+> — never by setting an env var ([auth/sign-in.md](auth/sign-in.md)).
 
 ## Day-to-day
 

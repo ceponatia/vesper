@@ -29,4 +29,4 @@ To add an attribute, meter, condition, or fact kind:
 2. Run `vitest contracts` (the registry-invariant tests).
 3. Done.
 
-If you also need it persisted as its own column (rare — most state rides in validated JSONB), see [database.md](../database.md) for the migration workflow.
+If you also need it persisted as its own column (rare — most state rides in validated JSONB), see [database/README.md](../database/README.md) for the migration workflow.

@@ -99,7 +99,7 @@ over both stores (`ChatStateEdit` — per-character fields write the target's ro
 chat-wide fields write the scenario) and `chatStateSnapshot(state, scenario)` merges
 them back into the client's back-compat snapshot shape. State is inspected/edited
 through the per-character **Character sheet** and the chat-wide **Scenario** modal
-([ui.md](../ui.md) §The conversation page).
+([ui/conversation.md](../ui/conversation.md)).
 
 ## Retake rollback boundary
 
@@ -192,4 +192,4 @@ an optional `revealBand`), seeded into `character_chat_state.drives` (migration
   (`components/characters/drives-editor.tsx` — want/why/secrecy + a reveal-gate
   picker on secrets). Forge-the-rest fills drives **additively up to the 3-cap**
   (ruled — authored drives never change); a Disposition re-draft re-derives them
-  wholesale ([authoring.md](../authoring.md) §In-sheet forge).
+  wholesale ([authoring/in-sheet-forge.md](../authoring/in-sheet-forge.md)).

@@ -40,7 +40,7 @@ future use of its `strength` control.
 ## Seeded profiles
 
 Four `generate` profiles use the `text_to_image_description` strategy, and each
-is its task's global default ([providers.md](../../images/providers.md)):
+is its task's global default ([providers.md](../../images/providers/README.md)):
 
 - `portrait-standard`;
 - `item-standard`;

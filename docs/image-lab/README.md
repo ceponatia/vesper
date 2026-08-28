@@ -1,6 +1,6 @@
 # Advanced Image Lab
 
-The Advanced Image Lab is Vesper's admin-only image experimentation bench at `/settings/image-lab`, reached from the account dropdown in the global header ([ui.md](../ui.md)). It exists to answer narrow image-model questions with a durable record of what was requested, what was actually sent, which model/version ran, what image came back, and—where the experiment has a defined question—a human verdict.
+The Advanced Image Lab is Vesper's admin-only image experimentation bench at `/settings/image-lab`, reached from the account dropdown in the global header ([ui/pages.md](../ui/pages.md)). It exists to answer narrow image-model questions with a durable record of what was requested, what was actually sent, which model/version ran, what image came back, and—where the experiment has a defined question—a human verdict.
 
 The lab is deliberately separate from player-facing image generation. Some experiment kinds reproduce a production-shaped request, while others bypass production policy to test a specific capability. Those are different kinds because evidence is only useful when the record says which question was being asked.
 

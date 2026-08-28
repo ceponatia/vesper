@@ -63,8 +63,7 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
   player worn list (some elements corrupt, survivors kept) likewise cannot establish exposure:
   the parse marks it incomplete and the resolve takes the coverage-unreliable arm.
 - **Editing.** The Character sheet's per-slot equip/remove editor + preset switcher
-  (`components/characters/chat-wardrobe-editor.tsx` — [ui.md](../ui.md) §The conversation
-  page).
+  (`components/characters/chat-wardrobe-editor.tsx` — [ui/conversation.md](../ui/conversation.md)).
 
 ## Archivist outfit changes
 

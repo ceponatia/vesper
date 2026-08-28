@@ -197,7 +197,7 @@ exchange:
    `parseEmphasisRuns` (`lib/message-spans`) so a `_…_` pair nested inside quoted speech
    ("it's _perfect_!") renders italic instead of literal underscores (outermost-sigil rule —
    the quote stays one atomic speech span). Stored transcripts stay byte-verbatim. See
-   [narrator-craft.md](narrator-craft.md) §Dialogue tagging and [ui.md](../ui.md) §The conversation page.
+   [narrator-craft.md](narrator-craft.md) §Dialogue tagging and [ui/transcript.md](../ui/transcript.md).
 
 ## The one-turn notes (and why deferral happens pre-burn)
 
