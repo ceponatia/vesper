@@ -24,10 +24,13 @@ a new numbered ADR and a `Superseded by <NNN>` line under the original's
 date, leaving the rest of the original document intact as the record of
 what was believed at the time and why it changed.
 
-## The one exception to "no dates"
+## Why an ADR carries a date
 
 Every other document under `docs/` states what is true now, in present
-tense, with no dates and no preserved alternatives — history lives in git,
-not in prose. ADRs are the exception, alongside evidence records: they are
-dated by design, and they exist specifically to preserve the alternatives
-a reference page would otherwise omit.
+tense, with no preserved alternatives — history lives in git, not in prose.
+Dates are dynamic state, and ADRs are one of the narrow exceptions the
+`vesper-docs` skill's no-dynamic-state rule enumerates; that list lives
+there and is not repeated here. An ADR earns its date because the document
+records what was believed when the call was made: the `Date:` line the
+format requires, and the alternatives preserved below it, are the point of
+the record rather than residue for a later edit to clean up.

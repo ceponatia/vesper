@@ -127,9 +127,13 @@ feature was built, lists no alternatives, and records no progress. Template:
 `templates/reference-doc.md`.
 
 `docs/README.md` is the index and owns the tree itself: the reading-order table
-that every top-level area appears in, the one-doc-per-system rule, and the
-~400-line file-to-folder promotion rule. Read it before adding a page, and add
-the page's row there in the same change.
+of top-level areas, the one-doc-per-system rule, and the ~400-line
+file-to-folder promotion rule. Read it before adding a page, and index the new
+page in the same change — in the index for its tier. A **new top-level system**
+gets its row in `docs/README.md`'s reading-order table, which indexes areas and
+nothing finer. A **new part file inside a promoted folder** gets its row in that
+folder's own `README.md` index instead; the root table keeps pointing at the
+folder's `README.md`, so a nested page never earns a root row.
 
 - **Shape:** one paragraph of orientation; an "Owns / does not own" section
   naming the boundary and the owning page for what it excludes; then laws as
@@ -155,6 +159,33 @@ page; **project state** does not:
   participants."
 - Does not: "Blocked because player body-surface ownership isn't implemented
   yet."
+
+#### Dates: the three exceptions
+
+A durable page is written in the present tense and carries no dates — a date on
+a statement of current law is either history or a freshness claim the reader
+cannot check. **Exactly three kinds of line may carry one**, and this list is
+canonical: `docs/README.md` and `docs/decisions/README.md` point at it rather
+than restate it, and no page under `docs/` may add a fourth.
+
+1. **ADRs** under `docs/decisions/` — dated by design, because an ADR records
+   what was believed when the call was made. `docs/decisions/README.md` owns
+   why they exist and how they are written.
+2. **Evidence records** — a dated *measurement*, where the date is what makes
+   the measurement reproducible rather than a status marker, and it pairs with
+   the thing measured. Two shapes: the model catalog's dated `**Provenance:**`
+   line, which ties a probe date to the pinned provider version it read
+   (`docs/image-models/models/README.md` owns that line's exact form), and the
+   text-only record a measured trial or benchmark earns under the research rule
+   above, dated with the build, model version, or dataset it ran against. A
+   date pinned to nothing is not an evidence record.
+3. **Owner rulings** stated in a reference page, dated at the attribution —
+   an `Owner ruling <YYYY-MM-DD>:` line, or an inline `(owner ruling
+   <YYYY-MM-DD>)`. The date attributes the decision; the law it produced is
+   still written in the present tense around it.
+
+Every other date is banned: when work happened, when it will happen, when a
+page was last reviewed, or how current its contents are.
 
 ### Style guards
 
