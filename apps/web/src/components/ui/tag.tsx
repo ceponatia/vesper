@@ -8,7 +8,7 @@ export type TagTone = "default" | "accent" | "ai" | "danger" | "ok";
 const tones: Record<TagTone, string> = {
   default: "border-ink-500 text-paper-300",
   accent: "border-accent-500/50 text-accent-300",
-  /** Marks AI-sourced values until the human touches them (docs/authoring.md). */
+  /** Marks AI-sourced values until the human touches them (docs/authoring/manual-editing.md). */
   ai: "border-accent-500/60 bg-accent-500/10 text-accent-300",
   danger: "border-danger-500/50 text-danger-300",
   ok: "border-ok-400/50 text-ok-400",

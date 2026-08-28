@@ -289,7 +289,8 @@ versions through the image-model registry. Use the owner-admin
 
 That flow pins `owner/name:version` and updates the probed capability bindings
 atomically. The registry/version process is documented in
-[`docs/images/providers.md`](../../../docs/images/providers.md).
+[`docs/images/providers/registry.md`](../../../docs/images/providers/registry.md)
+§Version promotion.
 
 ## Operational notes
 
@@ -309,5 +310,5 @@ atomically. The registry/version process is documented in
 ## Related documentation
 
 - [`@vesper/image-sd` README](../README.md) — package ownership and boundaries.
-- [`docs/images/providers.md`](../../../docs/images/providers.md) — model registry, probing, profiles, and version promotion.
+- [`docs/images/providers/`](../../../docs/images/providers/README.md) — model registry, probing, profiles, and version promotion.
 - [`scripts/eval/sd-identity-matrix.ts`](../../../scripts/eval/sd-identity-matrix.ts) — the Stage 3 identity-matrix runner, and the source of its run-notes structure. Its output is local-only, under the untracked root `eval-images/`.

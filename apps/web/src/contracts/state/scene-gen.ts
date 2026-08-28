@@ -13,8 +13,9 @@ import { z } from "zod";
  * Scene-image generation settings/progress. There is no configurable subject:
  * the composer picks the focal character from the NPCs co-located with the
  * player, and the image is always the player's first-person POV
- * (docs/images/pipelines.md §Scene images). A legacy `subject` key on old rows is
- * stripped by parsing.
+ * (docs/images/pipelines/scene-images.md §Trigger and cast;
+ * docs/images/pipelines/scene-framing.md §Player POV). A legacy `subject` key
+ * on old rows is stripped by parsing.
  */
 export const sceneGenStateSchema = z.object({
   interval: z.number().int().min(0).default(0),

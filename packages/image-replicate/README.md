@@ -4,7 +4,7 @@ The Replicate transport. Everything here is about talking to
 `api.replicate.com`; nothing here knows that Vesper has characters, chats, a
 database, or a Next.js application.
 
-How the application drives it: [docs/images/providers.md](../../docs/images/providers.md).
+How the application drives it: [docs/images/providers/](../../docs/images/providers/README.md).
 
 ## Server-only, and configured from outside
 

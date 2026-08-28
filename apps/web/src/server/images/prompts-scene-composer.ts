@@ -464,8 +464,9 @@ export function wardrobeOutfitSummary(worn: ReadonlyArray<SceneWornItem>): strin
 
 /**
  * Explicit bare-skin phrasing for the uncovered regions an image model would
- * otherwise paint clothed (docs/images/pipelines.md §Scene images). Gated on
- * `wardrobeTracked`: callers set this only when wardrobe state is authoritative.
+ * otherwise paint clothed (docs/images/pipelines/scene-subjects.md
+ * §Bare-region phrasing). Gated on `wardrobeTracked`: callers set this only
+ * when wardrobe state is authoritative.
  * Region scope is torso + lower body + feet; head/hands are omitted because
  * bare there is the universal default and would fire on every clothed subject.
  * `legs` is stated only when the pelvis is covered — a bare pelvis already

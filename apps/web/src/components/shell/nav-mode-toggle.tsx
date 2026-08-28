@@ -10,8 +10,8 @@ const OPTIONS = [
 
 /**
  * Switches the mobile primary-nav chrome between the bottom tab bar and the
- * hamburger drawer (docs/ui.md §Mobile). Rendered inside whichever chrome is
- * active (the "More" sheet and the drawer footer) so you can always flip out of
+ * hamburger drawer (docs/ui/mobile.md §Primary nav). Rendered inside whichever
+ * chrome is active (the "More" sheet and the drawer footer) so you can always flip out of
  * the current mode. Persists via applyNavMode and lifts the change to AppShell,
  * which re-renders exactly one chrome — the two-value union makes "both at once"
  * and "neither" unrepresentable.

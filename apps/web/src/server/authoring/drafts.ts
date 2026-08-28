@@ -2,8 +2,8 @@ import { z } from "zod";
 import { characterProfileSchema, emptyCharacterProfile, itemDefinitionSchema } from "@/contracts";
 
 /**
- * Forge drafts (docs/authoring.md): plain JSON the AI fills and the human
- * edits. Every field is defaulted so a partial draft is always schema-valid —
+ * Forge drafts (docs/authoring/README.md): plain JSON the AI fills and the
+ * human edits. Every field is defaulted so a partial draft is always schema-valid —
  * a failed forge section simply leaves its slice at the default.
  */
 

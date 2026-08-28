@@ -4,8 +4,9 @@ import { parseOr } from "@/lib/parse";
 import { db, schema } from "@/server/db";
 
 /**
- * Name → library-row lookups used by the forges (docs/authoring.md: outfit
- * suggestions and cast suggestions match the caller's library by name).
+ * Name → library-row lookups used by the forges
+ * (docs/authoring/character-forge.md §The outfit agent: outfit suggestions and
+ * cast suggestions match the caller's library by name).
  * Injectable so pure tests never touch Postgres.
  */
 export type LibraryLookup = (
@@ -65,7 +66,8 @@ const candidateTagsSchema = z.array(z.string());
 
 /**
  * Clothing the caller already owns, offered to the outfit agent as reuse
- * candidates (docs/authoring.md §Character forge). Most-recently-updated first,
+ * candidates (docs/authoring/character-forge.md §The outfit agent).
+ * Most-recently-updated first,
  * capped so a large wardrobe stays a bounded prompt. coverage/layer are read
  * from the definition JSONB (degrading per parseOr) so the agent can judge a
  * garment's type, never its full sensory detail.

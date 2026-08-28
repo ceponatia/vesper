@@ -29,8 +29,8 @@ function TabLink({ dest, active, onClick }: { dest: NavDest; active: boolean; on
 }
 
 /**
- * Mobile primary navigation as a fixed bottom tab bar (docs/ui.md §Mobile) — the
- * default nav chrome. Four primary destinations plus a "More" tab opening a
+ * Mobile primary navigation as a fixed bottom tab bar (docs/ui/mobile.md
+ * §Primary nav) — the default nav chrome. Four primary destinations plus a "More" tab opening a
  * bottom sheet with the overflow links and the nav-style switch. `md:hidden`:
  * the desktop top-nav takes over at ≥768px. AppShell suppresses this entirely on
  * the play screen.

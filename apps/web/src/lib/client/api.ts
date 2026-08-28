@@ -69,8 +69,8 @@ import {
 } from "@vesper/image-core";
 
 /**
- * Client data layer (docs/streaming-api.md, docs/ui.md): typed fetch helpers
- * over the route-handler API. Every response crosses a trust boundary, so it
+ * Client data layer (docs/streaming-api.md, docs/ui/conventions.md): typed
+ * fetch helpers over the route-handler API. Every response crosses a trust boundary, so it
  * is parsed with forgiving schemas — unknown fields are stripped, bad fields
  * fall back, bad list elements are dropped. Errors use the
  * `{ error: { code, message } }` envelope.
@@ -743,9 +743,9 @@ export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 export type GalleryTab = "scenes" | "portraits" | "entity";
 
 /**
- * One image in the tabbed Gallery hub (docs/images/pipelines.md §Scene
- * images). Scenes carry a
- * `characterId` (character-chat, grouped under "Character chats"); portraits
+ * One image in the tabbed Gallery hub (docs/images/pipelines/scene-images.md
+ * §The Gallery hub). Scenes carry a `characterId` (character-chat, grouped
+ * under "Character chats"); portraits
  * carry `characterId`; entity art carries `entityKind`/`entityName`.
  */
 export const galleryImageSchema = z.object({

@@ -19,8 +19,8 @@ export interface EntityImageProps {
 }
 
 /**
- * Image with monogram CSS fallback (docs/ui.md): missing/broken images render
- * a deterministic gradient + initials, never a broken-image glyph.
+ * Image with monogram CSS fallback (docs/ui/conventions.md): missing/broken
+ * images render a deterministic gradient + initials, never a broken-image glyph.
  */
 export function EntityImage({ imageId, name, className, alt, privacy }: EntityImageProps) {
   const [failed, setFailed] = useState(false);

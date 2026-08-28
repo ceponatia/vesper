@@ -19,7 +19,8 @@ import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
 
 /**
- * Prose prompt → AI draft → human review/edit → save (docs/authoring.md).
+ * Prose prompt → AI draft → human review/edit → save
+ * (docs/authoring/character-forge.md).
  * The draft lives in component state only; abandoning the page writes nothing.
  */
 export function CharacterForgePage() {

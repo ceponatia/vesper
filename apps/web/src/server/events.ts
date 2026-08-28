@@ -2,7 +2,8 @@ import { db, events } from "./db";
 import { log } from "@/server/log";
 
 /**
- * Observability stream (docs/database.md). Fire-and-forget: an event insert
+ * Observability stream (docs/database/README.md §Operational tables).
+ * Fire-and-forget: an event insert
  * failure must never affect the caller.
  */
 export async function logEvent(type: string, payload: Record<string, unknown>): Promise<void> {

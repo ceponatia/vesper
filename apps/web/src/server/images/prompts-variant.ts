@@ -6,7 +6,7 @@ import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 // Portrait variants (reference edit)
 // ---------------------------------------------------------------------------
 
-/** Ported from the old app's portrait-regen prompt builder (docs/images/pipelines.md §Portrait variants). */
+/** Ported from the old app's portrait-regen prompt builder (docs/images/pipelines/portrait-variants.md). */
 export const PORTRAIT_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
 

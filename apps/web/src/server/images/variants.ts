@@ -113,7 +113,7 @@ function buildVariantDigest(
 }
 
 /**
- * Portrait-variant pipeline (docs/images/pipelines.md §Portrait variants):
+ * Portrait-variant pipeline (docs/images/pipelines/portrait-variants.md):
  * single-reference registry edit of
  * the canonical avatar, identity-locked + age-anchored (owner ruling 2026-07-29 —
  * "preserve apparent age" alone preserves the model's over-read and each

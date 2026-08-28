@@ -1,6 +1,6 @@
 /**
- * Pure Tab-key resolution for a modal focus trap (docs/ui.md — small owned
- * primitives): given the dialog's focusable elements and the element that
+ * Pure Tab-key resolution for a modal focus trap (docs/ui/README.md — small
+ * owned primitives): given the dialog's focusable elements and the element that
  * currently has focus, decide where Tab / Shift+Tab should land.
  *
  * Returns the element to focus (the caller prevents the default move), or

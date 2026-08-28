@@ -53,14 +53,16 @@ export { ambientSchema };
 // --- characters --------------------------------------------------------------
 
 // Strict: an unconverted draft shape posted here must fail loudly, never save
-// with fields silently stripped (docs/authoring.md §Saving drafts).
+// with fields silently stripped
+// (docs/authoring/README.md §"Saving drafts (draft → create-input)").
 export const characterCreateSchema = z
   .object({
     name: nameSchema,
     profile: characterProfileSchema.default(() => characterProfileSchema.parse({})),
     tags: tagsSchema.default([]),
     /**
-     * Forge outfit suggestions (docs/authoring.md): materialized as library
+     * Forge outfit suggestions (docs/authoring/character-forge.md §Saving a
+     * draft): materialized as library
      * items on save — reused by name when one already exists — and appended to
      * the default outfit preset (`profile.outfits[0]`).
      */

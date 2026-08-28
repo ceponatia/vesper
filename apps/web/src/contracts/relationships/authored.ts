@@ -2,7 +2,7 @@ import { z } from "zod";
 import { stageIdSchema } from "./stages";
 
 /**
- * Authored relationships (docs/authoring.md §Cast relationships): a world cast
+ * Authored relationships (docs/contracts/relationships.md): a world cast
  * entry may declare directed edges toward another cast member (by display
  * name) or the player (the literal "player"). Stored on
  * `world_cast.relationships` (jsonb, default `[]`); spawn seeds

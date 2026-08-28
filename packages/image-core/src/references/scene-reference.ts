@@ -5,7 +5,8 @@ import { z } from "zod";
  * `/api/gallery` payload and the Gallery UI consume: a character or location a
  * scene featured. `id` is the library entity id; `name` is the display fallback
  * captured at render. References are persisted in the `image_references` join
- * table (the authoritative, queryable source of truth — docs/database.md), not
+ * table (the authoritative, queryable source of truth —
+ * docs/database/images.md §Assets and references), not
  * on `images.meta`; this shape is just what the Gallery reads back.
  */
 export const sceneReferenceKinds = ["character", "location"] as const;

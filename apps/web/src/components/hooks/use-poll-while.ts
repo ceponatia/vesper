@@ -3,8 +3,8 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Poll-while-pending (docs/ui.md §Conventions; codebase-review E-U2): while
- * `active`, run `tick` every `intervalMs`. `tick` is read through a latest-ref
+ * Poll-while-pending (docs/ui/conventions.md §Polling; codebase-review E-U2):
+ * while `active`, run `tick` every `intervalMs`. `tick` is read through a latest-ref
  * (written in a bare effect, never during render — the strict hooks lint), so a
  * fresh closure per render never restarts the interval; only `active` flipping
  * (or the interval/cap changing) resubscribes.

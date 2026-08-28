@@ -1,7 +1,7 @@
 /**
  * Pure decision for seeding an editor's controlled draft from fetched detail
- * data (docs/ui.md §Conventions). Used by the long editors via the React
- * "adjust state while rendering" pattern.
+ * data (docs/ui/conventions.md §Forms and drafts). Used by the long editors
+ * via the React "adjust state while rendering" pattern.
  *
  * Invariants:
  * - An entity is seeded exactly once per visit ("keep" once `seededId`

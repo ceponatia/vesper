@@ -28,7 +28,8 @@ export const itemDefinitionSchema = z.object({
   /**
    * Clothing only: the category template this item started from (authoring
    * convenience). NEVER serialized into gameplay prompts — the engine reads
-   * coverage, not the template name (docs/prompts.md).
+   * coverage, not the template name (docs/character-chat/prompts.md §Style
+   * rules for prompt text).
    */
   category: z.string().optional().catch(undefined),
   /**

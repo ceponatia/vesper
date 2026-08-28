@@ -23,7 +23,7 @@ const forgeBodySchema = z.object({
    * entered. "redraft": rewrite one tab (`scope`) from the whole sheet.
    */
   mode: z.enum(["create", "fill", "redraft"]).default("create"),
-  /** Regenerate a single section against the supplied draft (docs/authoring.md). */
+  /** Regenerate a single section against the supplied draft (docs/authoring/character-forge.md). */
   section: characterForgeSectionSchema.optional(),
   /** The tab to rewrite (redraft mode). */
   scope: characterSheetScopeSchema.optional(),

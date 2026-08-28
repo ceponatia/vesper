@@ -11,8 +11,8 @@ import { NavSheetLink } from "./nav-sheet-link";
 
 /**
  * Mobile primary navigation as a hamburger button + left slide-in drawer
- * (docs/ui.md §Mobile) — the alternate nav chrome, off by default. The trigger
- * lives in the header where the desktop nav sits; both it and the drawer are
+ * (docs/ui/mobile.md §Primary nav) — the alternate nav chrome, off by default.
+ * The trigger lives in the header where the desktop nav sits; both it and the drawer are
  * `md:hidden`, so the top-nav owns ≥768px. Links close the drawer on tap (no
  * route-change effect needed, which keeps clear of the no-setState-in-effect rule).
  */

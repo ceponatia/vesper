@@ -21,9 +21,10 @@ import { findViewable, type ShareableKind } from "./visibility";
  * Re-affirmed by the owner 2026-07-31 ("Disclose on publish"): the duplication
  * stays full-profile, and the asymmetry is disclosed to the author **at the
  * publish control** instead (`components/library/publish-toggle.tsx`; policy in
- * docs/auth.md §"Publishing and cloning"). Publishing is therefore the consent
- * boundary for the whole profile — a new profile field is clone-visible the day
- * it is added, and preview-visible only if someone adds it to the projection.
+ * docs/auth/sharing.md §Disclosure at the publish control). Publishing is
+ * therefore the consent boundary for the whole profile — a new profile field is
+ * clone-visible the day it is added, and preview-visible only if someone adds
+ * it to the projection.
  *
  * Scope note: the snapshot is copied as-is — a character's `defaultOutfit` /
  * a location's links keep referencing the source owner's library ids, which

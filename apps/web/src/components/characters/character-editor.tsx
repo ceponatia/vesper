@@ -53,7 +53,7 @@ function genderValue(attributes: readonly { id: string; value: unknown }[]): str
 export interface CharacterEditorProps {
   draft: CharacterDraft;
   onChange: (next: CharacterDraft) => void;
-  /** Forge mode shows per-section regenerate buttons (docs/authoring.md). */
+  /** Forge mode shows per-section regenerate buttons (docs/authoring/character-forge.md). */
   onRegenerate?: (section: CharacterForgeSection) => void;
   regenerating?: CharacterForgeSection | null;
   /** Edit mode shows per-tab Re-draft buttons. */
@@ -76,7 +76,7 @@ export interface CharacterEditorProps {
   onChatModelChange?: (modelId: string) => void;
 }
 
-/** The character form — the forge review UI *is* the editor (docs/authoring.md). */
+/** The character form — the forge review UI *is* the editor (docs/authoring/manual-editing.md). */
 export function CharacterEditor({
   draft,
   onChange,

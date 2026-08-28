@@ -7,7 +7,8 @@ export interface TurnChunkEvent {
 }
 
 /**
- * Speaker-tagged narrative parsing (docs/prompts.md §Dialogue tagging). Pure —
+ * Speaker-tagged narrative parsing (docs/character-chat/narrator-craft.md
+ * §Dialogue tagging). Pure —
  * lives in `lib` so both the server turn pipeline and the client chat renderer
  * (which never imports `server/*`) can share it.
  *
@@ -16,7 +17,8 @@ export interface TurnChunkEvent {
  * fact and incrementally during streaming. Unknown bracketed names fail closed to
  * narrator prose. Ported from the proven old-app segmenter.
  *
- * The chat lane relaxes the required tag (docs/prompts.md §Dialogue tagging): in a
+ * The chat lane relaxes the required tag (docs/character-chat/narrator-craft.md
+ * §Dialogue tagging): in a
  * one-on-one the renderer opts into `attributeStandaloneQuotes`, so an untagged
  * whole-line quote attributes to the sole known name exactly as if tagged. The
  * session lane never sets it — a quote embedded in narration stays narrator prose

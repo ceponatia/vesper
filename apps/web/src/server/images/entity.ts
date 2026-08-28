@@ -24,8 +24,8 @@ export interface GenerateEntityImageInput {
 const ASPECT: Record<EntityImageKind, `${number}:${number}`> = { item: "1:1", location: "3:2" };
 
 /**
- * Entity image pipeline (docs/images/pipelines.md §Entity images): a single text→image
- * generation composed from the item/location's own fields, stored as a `kind:
+ * Entity image pipeline (docs/images/pipelines/entity-images.md): a single
+ * text→image generation composed from the item/location's own fields, stored as a `kind:
  * "entity"` asset and set as the row's `imageId`. There is no gallery — a
  * regenerate replaces the old image (the previous asset is reclaimed). No
  * reference edit, no variants. Runs on the shared reserve → generate →
@@ -211,8 +211,8 @@ export async function missingEntityImageIds(
 
 /**
  * Generate images for many entities in parallel batches of
- * ENTITY_IMAGE_BATCH_SIZE (docs/images/pipelines.md §Entity images). Used by the library
- * "Generate images" button and new-world auto-generation. A single failure
+ * ENTITY_IMAGE_BATCH_SIZE (docs/images/pipelines/entity-images.md). Used by
+ * the library "Generate images" button and new-world auto-generation. A single failure
  * never aborts the batch — each entity degrades independently. Returns how many
  * completed. Run inside a background job so it survives client navigation.
  */

@@ -16,7 +16,7 @@ export function attributeValueMap(values: readonly AttributeValue[]): Map<string
   return map;
 }
 
-/** Upsert with `source: "manual"` — touching an AI value claims it (docs/authoring.md). */
+/** Upsert with `source: "manual"` — touching an AI value claims it (docs/authoring/manual-editing.md). */
 export function setAttribute(
   values: readonly AttributeValue[],
   id: AttributeValue["id"],

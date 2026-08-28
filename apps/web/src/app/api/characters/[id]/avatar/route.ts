@@ -20,9 +20,9 @@ const avatarBodySchema = z.object({
 });
 
 /**
- * Generate the canonical avatar as an `avatar` job (docs/images/pipelines.md
- * §Avatar generation). The
- * pending image row is reserved inside the job — shortly AFTER this 202 — so
+ * Generate the canonical avatar as an `avatar` job
+ * (docs/images/pipelines/avatars.md). The pending image row is reserved
+ * inside the job — shortly AFTER this 202 — so
  * the portraits GET also reports the live job (`rendering`) and the studio
  * polls on that until the row lands and leaves `pending`.
  *

@@ -113,9 +113,9 @@ export function NarratorPromptsPage({ initialPromptId }: { initialPromptId?: str
   );
 
   // Seed the editor from the loaded template during render (the repo's
-  // "adjust state while rendering" pattern, docs/ui.md §Conventions). Each
-  // target is seeded exactly once, so a silent list refresh or a post-save
-  // reload can never clobber in-progress typing, and moving to another prompt
+  // "adjust state while rendering" pattern, docs/ui/conventions.md §Forms and
+  // drafts). Each target is seeded exactly once, so a silent list refresh or a
+  // post-save reload can never clobber in-progress typing, and moving to another prompt
   // drops the previous draft instead of showing it under the new name.
   const [seededTarget, setSeededTarget] = useState<string | null>(null);
   const seedAction = decideDraftSeed({

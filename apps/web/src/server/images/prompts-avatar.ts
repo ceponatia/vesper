@@ -67,7 +67,8 @@ export interface AvatarWardrobeItem {
   /** Clothing subtype id (contracts/items/subtypes) — resolved to its label for the prompt. */
   subtype?: string | null;
   /**
-   * `clothingCategories` id. NEVER prompt-bearing (docs/prompts.md) — it rides
+   * `clothingCategories` id. NEVER prompt-bearing
+   * (docs/character-chat/prompts.md §Style rules for prompt text) — it rides
    * here only so the garment store can pick a part template when it instantiates
    * this definition.
    */
@@ -101,7 +102,7 @@ export interface AvatarWardrobeItem {
  * trousers tempts a full-body shot against the "waist-up portrait" instruction.
  * A garment that also covers the torso (dress, coat, abaya) and coverage-less
  * props (jewelry) stay. Scene images never call this, so they keep full-body
- * garments (docs/images/pipelines.md §Avatar generation).
+ * garments (docs/images/pipelines/avatars.md §The waist-up cut).
  */
 /**
  * The GARMENT key for one wardrobe row — the instance id when the garment store

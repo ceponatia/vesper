@@ -128,7 +128,8 @@ interface ExtractorField {
   key: ChatExtractorFieldKey;
   /**
    * The numbered instruction line (the leg renders the number). References data blocks by
-   * HEADING NAME, never by field number (docs/prompts.md §Style rules) — so reordering a
+   * HEADING NAME, never by field number (docs/character-chat/prompts.md §Style
+   * rules for prompt text) — so reordering a
    * leg or arming a different field set can never leave a stale "see field 9" behind.
    */
   instruction: (ctx: ChatExtractorContext) => string;

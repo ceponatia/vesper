@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Vesper design tokens — quiet dark "reading room" (docs/ui.md).
+ * Vesper design tokens — quiet dark "reading room" (docs/ui/README.md).
  * Ink: cool near-black surfaces. Paper: warm off-white text scale.
  * Accent: lamplight amber, used sparingly.
  */
@@ -106,8 +106,8 @@
   }
 
   /*
-   * Touch & mobile (docs/ui.md §Mobile). Scoped to coarse pointers so the dense
-   * desktop UI is untouched.
+   * Touch & mobile (docs/ui/mobile.md §Touch). Scoped to coarse pointers so the
+   * dense desktop UI is untouched.
    */
   @media (pointer: coarse) {
     /* Small controls opt into a ≥44px tap height by adding `touch-target`. */

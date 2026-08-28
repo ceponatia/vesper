@@ -12,7 +12,7 @@ export interface FieldProps {
   className?: string;
 }
 
-/** Label + control + hint/error wrapper used by every form (docs/ui.md). */
+/** Label + control + hint/error wrapper used by every form (docs/ui/conventions.md §Forms and drafts). */
 export function Field({ label, hint, error, children, className }: FieldProps) {
   const controlId = useId();
   return (
