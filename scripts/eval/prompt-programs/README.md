@@ -65,7 +65,7 @@ Trial D renders one arm twice at one seed and the harness compares SHA-256
 hashes itself: identical files mean the seed pins sampling and OFF/ON byte
 differences are meaningful; differing files mean byte-level comparison says
 nothing (the qwen compass misreading is the precedent). Renders land in
-`eval-images/negative-canary/<endpoint>/<trial>/`, with the same manifests,
+`eval-images/negative-canary-fruit-bowl/<endpoint>/<trial>/`, with the same manifests,
 contact sheets, and `scores-<trial>.csv` templates as the block trials; grade
 `apple_present` per render and `--report` prints the OFF-arm base rate, the
 ON-vs-OFF delta per sampling path, and the determinism result, with a legend

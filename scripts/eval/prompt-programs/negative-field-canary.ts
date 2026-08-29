@@ -92,10 +92,10 @@ import {
  * A2/A3: 12 each, D: 2. Full programs: sd35 34, pulid 34, pony 46. The verdict
  * path that spends least: A + D (22 renders), then A2/A3 only if A shows no
  * suppression or its OFF-arm base rate is too low to read. Renders are
- * idempotent; output lands under `eval-images/negative-canary/<endpoint>/`.
+ * idempotent; output lands under `eval-images/negative-canary-fruit-bowl/<endpoint>/`.
  */
 
-const OUT_BASE = process.env["AB_OUT"] ?? "eval-images/negative-canary";
+const OUT_BASE = process.env["AB_OUT"] ?? "eval-images/negative-canary-fruit-bowl";
 const SEED_BASE = Number(process.env["AB_SEED_BASE"] ?? 101);
 
 // ---------------------------------------------------------------------------
