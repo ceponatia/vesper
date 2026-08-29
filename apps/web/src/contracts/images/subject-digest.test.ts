@@ -1,4 +1,11 @@
-import { imageConcept, imageMorphologyProtectionOf, type ImageWorldFact } from "@vesper/image-core";
+import {
+  buildImageWorldDigest,
+  imageConcept,
+  imageMorphologyProtectionOf,
+  qwenImage2512Dialect,
+  selectImagePositiveClaims,
+  type ImageWorldFact,
+} from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
 import { toUnitInterval } from "../affordances/core";
 import { visualAttentionContextFixture, visualAttentionSnapshotFixture } from "../affordances/recognition";
@@ -19,8 +26,11 @@ import {
 import {
   characterSemanticValueResolver,
   projectCharacterWorldSlices,
+  IMAGE_CHARACTER_AGE_UNRESOLVED,
   IMAGE_CHARACTER_AGE_WITHHELD,
   IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+  IMAGE_CHARACTER_COVERAGE_OWNER,
+  IMAGE_CHARACTER_COVERAGE_UNRESOLVED,
   type CharacterSubjectSources,
 } from "./character-adapter";
 import {
@@ -50,7 +60,10 @@ import {
  * (`visual-digest.test.ts` owns that classification), how a claim is worded
  * (`@vesper/image-core`'s dialect owns that), and whether a negative block fires
  * (the package's collision table owns that). Asserting any of them here would be
- * two layers proving one claim.
+ * two layers proving one claim. The one deliberate exception is the
+ * exposure-fragment composition case, which asserts the JOIN between the
+ * adapter's values and the dialect's subject wrapping — a property neither
+ * layer can prove alone, because the package cannot see the app's wording table.
  */
 
 // ---------------------------------------------------------------------------
@@ -495,8 +508,10 @@ describe("projectCharacterWorldSlices", () => {
 
   /**
    * Gap 2: exposure is the adapter's own authoritative claim over the coverage
-   * readout — required, worded by the one canonical table, silent where covered,
-   * and honoring the readout's bare-legs-under-a-bare-pelvis contract.
+   * readout — required, worded by the one canonical table in its
+   * predicate-fragment inflection (the value a dialect wraps as "<subject> is
+   * …"), silent where covered, and honoring the readout's
+   * bare-legs-under-a-bare-pelvis contract.
    */
   it("states the coverage readout as authoritative exposure claims", () => {
     const digest = characterDigest();
@@ -505,8 +520,8 @@ describe("projectCharacterWorldSlices", () => {
       (fact) => fact.concept === "subject.exposure",
     );
     expect(stated?.map((fact) => [fact.key, fact.value])).toEqual([
-      [`subject.${SUBJECT}.exposure.torso`, "the torso is bare"],
-      [`subject.${SUBJECT}.exposure.legs`, "the legs show through sheer fabric"],
+      [`subject.${SUBJECT}.exposure.torso`, "bare at the torso"],
+      [`subject.${SUBJECT}.exposure.legs`, "in sheer fabric that shows the legs"],
     ]);
     expect(stated?.every((fact) => fact.disposition === "required_visual")).toBe(true);
 
@@ -537,6 +552,83 @@ describe("projectCharacterWorldSlices", () => {
   });
 
   /**
+   * A subject `sources` never joined fails CLOSED: coverage is the one owner
+   * whose absence is otherwise silent, so the unresolved key must land in
+   * `missingRequired` — not only in the suppression record — or a lane compiled
+   * with `refuseOnMissingRequired` would render with no wardrobe-coverage
+   * authority at all. Falsified against the diagnostic-only version, which
+   * recorded the suppression and let the subject bind anyway.
+   */
+  it("fails a subject with no joined coverage source closed", () => {
+    const digest = characterDigest();
+    const slices = projectCharacterWorldSlices({ digest, sources: {} });
+    const exposureKey = `subject.${SUBJECT}.exposure`;
+    expect(slices.subjects[0]?.facts.some((fact) => fact.concept === "subject.exposure")).toBe(false);
+    expect(slices.subjects[0]?.missingRequired).toContain(exposureKey);
+    expect(slices.suppressions).toContainEqual({
+      key: exposureKey,
+      owner: IMAGE_CHARACTER_COVERAGE_OWNER,
+      reason: IMAGE_CHARACTER_COVERAGE_UNRESOLVED,
+    });
+  });
+
+  /**
+   * The seam with the dialect layer: a `subject.exposure` value is a PREDICATE
+   * fragment, because every dialect wraps it as "<subject> is <value>" — the
+   * defect this kills compiled "Mira is the torso is bare" from the segment
+   * path's standalone clause. Composed through the real Qwen dialect over every
+   * region/state cell of the canonical table (the two readouts together reach
+   * all eight), asserting the JOIN property rather than re-pinning the
+   * dialect's wording table: the compiled sentence names the subject once and
+   * the value contributes no second subject–verb clause.
+   */
+  it("shapes exposure values so the dialect's subject wrapping composes grammatically", () => {
+    const digest = characterDigest();
+    const readouts: readonly RegionExposure[] = [
+      { torso: "bare", pelvis: "bare", legs: "sheer", feet: "bare" },
+      { torso: "sheer", pelvis: "sheer", legs: "bare", feet: "sheer" },
+    ];
+    const sentences = readouts.flatMap((exposure) => {
+      const slices = projectCharacterWorldSlices({
+        digest,
+        labels: { [SUBJECT]: "Mira" },
+        sources: { [SUBJECT]: fixtureSources({ exposure }) },
+      });
+      const world = buildImageWorldDigest({
+        read: { kind: "transactional_projection", token: "read-exposure" },
+        operation: {
+          kind: "generate",
+          task: "portrait",
+          strategy: "text_to_image_description",
+          subjectCount: 1,
+          style: { medium: "photographic", descriptors: [] },
+          literalText: [],
+        },
+        subjects: slices.subjects,
+      }).digest;
+      const claims = selectImagePositiveClaims(world).filter((claim) => claim.concept === "subject.exposure");
+      const compiled = qwenImage2512Dialect.compilePositive({
+        claims,
+        operation: world.operation,
+        references: [],
+        entityLabels: { [`subject.${SUBJECT}`]: "Mira" },
+        budget: {},
+      });
+      expect(compiled.droppedClaimIds).toEqual([]);
+      return compiled.segments.map((segment) => segment.text);
+    });
+
+    expect(sentences).toHaveLength(8);
+    expect(sentences).toContain("Mira is bare at the torso.");
+    for (const sentence of sentences) {
+      const predicate = sentence.replace(/^Mira is /, "");
+      expect(predicate).not.toBe(sentence); // the dialect's wrapping actually applied
+      expect(predicate).not.toMatch(/^the\b/); // no article-led noun phrase after "is"
+      expect(predicate).not.toMatch(/\b(?:is|are)\b/); // no second finite verb — one clause, one subject
+    }
+  });
+
+  /**
    * Gap 1: the age anchor's canonical semantic path, with the owner-ruled floor.
    * An adult band becomes a required `subject.apparent_age` claim sourced from
    * the attribute registry; a minor band states NOTHING and refuses nothing (a
@@ -564,6 +656,22 @@ describe("projectCharacterWorldSlices", () => {
 
     const unset = adapterSlices(digest, { attributes: crookedNoseAttributes() });
     expect(unset.subjects[0]?.missingRequired).toContain(ageKey);
+
+    // Only a band the REGISTRY recognizes is withheld by ruling. A string it
+    // does not know ("adult", a legacy or malformed value the attribute schema
+    // lets through) is nobody's ruling: it must fail the mandatory anchor
+    // closed, never render age-silent. Falsified against the classifier that
+    // treated every non-phrase string as withheld.
+    const malformed = adapterSlices(digest, {
+      attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "adult" }],
+    });
+    expect(malformed.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
+    expect(malformed.subjects[0]?.missingRequired).toContain(ageKey);
+    expect(malformed.suppressions).toContainEqual({
+      key: ageKey,
+      owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+      reason: IMAGE_CHARACTER_AGE_UNRESOLVED,
+    });
   });
 
   /**
@@ -581,6 +689,14 @@ describe("projectCharacterWorldSlices", () => {
       owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
       reason: IMAGE_CHARACTER_AGE_WITHHELD,
     });
+
+    // The floor reclassifies only bands the registry knows: a malformed value
+    // on the projected anchor keeps the scaffold's fail-closed record instead
+    // of being rewritten into a ruling nobody made.
+    const malformed = adapterSlices(digest, {
+      attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "adult" }],
+    });
+    expect(malformed.subjects[0]?.missingRequired).toContain(`${SUBJECT}/face/apparent_age`);
   });
 
   /**

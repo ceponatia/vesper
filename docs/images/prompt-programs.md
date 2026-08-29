@@ -100,13 +100,17 @@ and states what translation alone cannot:
   so a lane compiled with `refuseOnMissingRequired` fails closed.
 - **Apparent age** is stated from the `identity.apparent_age` attribute through
   the image age vocabulary (`imageAgeBandPhrases`), whose floor is an explicit
-  adult (owner ruling 2026-07-29): a minor-band value states nothing — a
-  designed suppression, never a missing anchor — while an absent value fails the
-  mandatory age segment closed.
+  adult (owner ruling 2026-07-29): a minor band the registry recognizes states
+  nothing — a designed suppression, never a missing anchor — while an absent
+  value, or one outside the registry's vocabulary, fails the mandatory age
+  segment closed.
 - **Exposure** is the adapter's own authoritative `subject.exposure` claims over
   the garment coverage readout, worded by `visual-segments.ts`'s one canonical
-  clause table and gated to the regions the digest's framing band can show.
-  Covered regions are silent — silence is the covered statement.
+  table — in its predicate-fragment inflection, since dialects wrap exposure
+  values as `<subject> is <value>` — and gated to the regions the digest's
+  framing band can show. Covered regions are silent — silence is the covered
+  statement — and a subject with no joined coverage readout fails the mandatory
+  exposure closed.
 - **An authored absence** re-files its anatomy fact as `subject.absence` — the
   same `morphology` segment kind, a different protection — which takes the
   missing-part exclusions off the negative channel's table; a prosthetic

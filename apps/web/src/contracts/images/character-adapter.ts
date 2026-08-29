@@ -57,18 +57,21 @@ import { visualExposureReads } from "./visual-segments";
  *
  * 1. **Apparent age** gets its canonical semantic path: the subject's
  *    `identity.apparent_age` attribute value, rendered through the owner-ruled
- *    image age vocabulary ({@link imageAgeBandPhrases}). A minor-band value is
- *    WITHHELD by ruling — no age text ever beats a younger word — and recorded as
- *    a designed suppression, never as a missing anchor. An absent or unreadable
- *    value fails closed instead: the `age` segment kind is mandatory, so the key
- *    lands in `missingRequired` and an identity-critical lane refuses before
- *    provider spend.
+ *    image age vocabulary ({@link imageAgeBandPhrases}). A minor-band value the
+ *    registry recognizes is WITHHELD by ruling — no age text ever beats a
+ *    younger word — and recorded as a designed suppression, never as a missing
+ *    anchor. An absent, unreadable, or registry-unrecognized value fails closed
+ *    instead: the `age` segment kind is mandatory, so the key lands in
+ *    `missingRequired` and an identity-critical lane refuses before provider
+ *    spend.
  * 2. **Exposure and coverage** are stated by this adapter as authoritative
  *    `subject.exposure` claims over the caller-supplied garment coverage readout
  *    — the composition read the scaffold must never fake. The wording and the
  *    composition rules (covered = silence; bare legs unstated under a bare
  *    pelvis) are `visual-segments.ts`'s one canonical table, consumed through
  *    {@link visualExposureReads} so the two prompt paths cannot drift apart.
+ *    The claims carry the table's predicate-FRAGMENT inflection, because every
+ *    dialect wraps a `subject.exposure` value as "<subject> is <value>".
  * 3. **Authored absences** stop arriving opaque: an anatomy fact whose canonical
  *    state says `absent` (or `prosthetic`) is re-filed from `subject.morphology`
  *    to `subject.absence` — same `morphology` segment kind, so the scaffold's
@@ -106,7 +109,7 @@ export const IMAGE_CHARACTER_COVERAGE_OWNER = "character.wardrobe_coverage";
 export const IMAGE_CHARACTER_AGE_WITHHELD = "character.apparent_age.withheld";
 /** No usable apparent-age value from the canonical owner — fail-closed, lands in `missingRequired`. */
 export const IMAGE_CHARACTER_AGE_UNRESOLVED = "character.apparent_age.unresolved";
-/** No coverage readout was joined for this subject — wardrobe authority could not be stated. */
+/** No coverage readout was joined for this subject — fail-closed, lands in `missingRequired`. */
 export const IMAGE_CHARACTER_COVERAGE_UNRESOLVED = "character.wardrobe_coverage.unresolved";
 /** A record value with no readable member left after ids were stripped. */
 export const IMAGE_CHARACTER_VALUE_UNREADABLE = "character.value_unreadable";
@@ -142,14 +145,31 @@ export const imageAgeBandPhrases: Readonly<Record<string, string>> = {
 
 /**
  * The pronoun-free semantic value of one apparent-age band, or `null` for a band
- * the image vocabulary refuses (minor bands, unknown strings, non-string
- * values). `null` is the caller's cue to distinguish "withheld by ruling" (a
- * band the registry knows) from "unresolved" (anything else).
+ * the image vocabulary carries no phrase for (minor bands, unknown strings,
+ * non-string values). `null` alone does not say WHY — that classification is
+ * {@link isWithheldImageAgeBand}'s job, and the two answers diverge on purpose:
+ * withheld renders age-silent, unresolved fails the mandatory anchor closed.
  */
 export function imageApparentAgeValue(band: unknown): string | null {
   if (typeof band !== "string") return null;
   const phrase = imageAgeBandPhrases[band];
   return phrase === undefined ? null : phrase.replaceAll("{pos}", "the");
+}
+
+/**
+ * Whether a band is withheld BY RULING: a value the apparent-age registry
+ * recognizes and the image vocabulary deliberately refuses — exactly the minor
+ * bands (infant…teen). Derived from the canonical registry definition rather
+ * than a second list, so the registry stays the one owner of the band
+ * vocabulary. Anything the registry does NOT recognize ("adult", legacy free
+ * text, a typo) is no ruling of anybody's: `attributeValueSchema` accepts
+ * arbitrary strings, and classifying a malformed value as withheld would render
+ * the character age-silent instead of failing the mandatory anchor closed.
+ */
+function isWithheldImageAgeBand(band: unknown): boolean {
+  if (typeof band !== "string" || imageAgeBandPhrases[band] !== undefined) return false;
+  const allowed = attributeRegistry.byId(VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.allowedValues;
+  return allowed !== undefined && allowed.includes(band);
 }
 
 // ---------------------------------------------------------------------------
@@ -437,10 +457,13 @@ function exposureFacts(
     }
   }
   const regions = framing === undefined ? ALL_EXPOSURE_REGIONS : EXPOSURE_REGIONS_BY_FRAMING[framing];
+  // The FRAGMENT inflection, not the standalone clause: every dialect wraps a
+  // `subject.exposure` value as "<subject> is <value>", so the clause form
+  // would compile "Mira is the torso is bare". Same canonical table either way.
   return visualExposureReads(exposure, regions).map((read) => ({
     key: `${ref}.exposure.${read.region}`,
     concept: "subject.exposure",
-    value: read.clause,
+    value: read.fragment,
     subjectRef: ref,
     semanticTags: [`coverage:${read.coverage}`],
     disposition: "required_visual",
@@ -463,7 +486,7 @@ function exposureFacts(
  * suppressed and `missingRequired` is empty, so a character lane compiled with
  * `refuseOnMissingRequired` can bind. A subject whose owners were not supplied
  * fails closed instead — opaque anchors stay suppressed and reported, and its
- * age and coverage are recorded as unresolved rather than silently absent.
+ * age and coverage both land in `missingRequired` rather than silently absent.
  */
 export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): CharacterWorldSlices {
   const { digest } = input;
@@ -530,7 +553,7 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
         fact.sourceRef.ref.kind === "attribute" &&
         fact.sourceRef.ref.attributeId === VISUAL_IMAGE_AGE_ATTRIBUTE_ID,
     );
-    const bandWithheld = typeof ageBand === "string" && imageApparentAgeValue(ageBand) === null;
+    const bandWithheld = isWithheldImageAgeBand(ageBand);
 
     if (digestAgeFact !== undefined) {
       // Visual state projected the anchor; the resolver already valued an adult
@@ -573,8 +596,9 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
       } else if (bandWithheld) {
         suppressions.push({ key: ageKey, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_AGE_WITHHELD });
       } else {
-        // No band at all (or an unreadable one): the age segment is mandatory,
-        // so this is degradation and the lane must see it before spend.
+        // No band at all, or one the registry does not recognize ("adult", a
+        // legacy value): the age segment is mandatory, so this is degradation
+        // and the lane must see it before spend.
         suppressions.push({ key: ageKey, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_AGE_UNRESOLVED });
         missingRequired = [...missingRequired, ageKey];
       }
@@ -584,11 +608,18 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     if (sources !== undefined) {
       facts.push(...exposureFacts(ref, slice.entityId, digest, sources.exposure));
     } else {
+      // Fail-closed, not diagnostic-only: coverage is the one owner whose
+      // absence is otherwise silent, and the `exposure` segment kind is
+      // mandatory-protected — an unjoined subject must refuse a
+      // `refuseOnMissingRequired` lane rather than render without any
+      // wardrobe-coverage authority.
+      const exposureKey = `${ref}.exposure`;
       suppressions.push({
-        key: `${ref}.exposure`,
+        key: exposureKey,
         owner: IMAGE_CHARACTER_COVERAGE_OWNER,
         reason: IMAGE_CHARACTER_COVERAGE_UNRESOLVED,
       });
+      missingRequired = [...missingRequired, exposureKey];
     }
 
     // Morphology re-read from the mapped facts, exactly as the scaffold does it,
