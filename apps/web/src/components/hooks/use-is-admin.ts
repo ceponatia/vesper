@@ -24,7 +24,7 @@ function fetchIsAdmin(): Promise<boolean> {
 
 /**
  * Whether the current user is an admin/dev — the gate for dev-only affordances
- * (the lightbox generation-prompt panel, the play-screen Inspector tab). Resolves
+ * (the lightbox generation-prompt panel, the conversation-screen Inspector tab). Resolves
  * to `false` until the role is known, so a gated affordance stays hidden by
  * default and only appears once admin is confirmed.
  */

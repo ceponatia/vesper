@@ -19,8 +19,9 @@
     - `@vesper/simulation-core` (simulation contracts/kernels/scheduler)
     - `@vesper/contracts` (diagnostics/parsing/determinism primitives)
     - `@vesper/image-replicate` (server-only Replicate transport)
-    - `@vesper/image-sd` (Stable Diffusion recipes, training manifests, deployment contracts).
-  - `image-core` and `simulation-core` are peers, as are `image-sd` and `image-replicate`; peers never import each other, and the SD package never calls the provider. Stateful Vesper-specific image/simulation code stays under `apps/web/src/server`.
+    - `@vesper/image-sd` (Stable Diffusion recipes, training manifests, deployment contracts)
+    - `@vesper/image-models` (model-family behavior adapters: semantic feature vocabulary, per-family prompt dialects and execution hints, adapter composer/registry).
+  - `image-core` and `simulation-core` are peers, as are `image-sd`, `image-replicate`, and `image-models`; peers never import each other, and the SD package never calls the provider. Stateful Vesper-specific image/simulation code stays under `apps/web/src/server`.
   - Packages ship TypeScript source with declared `exports`. No tsconfig or Vitest alias may paper over a broken manifest, and published subpaths are exact entries, never `*` patterns.
   - Adding a package: two registrations fail late and name no cause — a manifest COPY in the `Dockerfile`, and a `transpilePackages` entry in `apps/web/next.config.ts`. Ordinary scaffolding aside, everything else is caught by `lint:package-boundaries` or `lint:package-resolution` with a message naming the fix. Do not enumerate the package in root scripts or a root Vitest project; `pnpm -r` recursion finds it.
   - `pnpm lint:package-boundaries` enforces dependency direction, declared dependencies/subpaths, browser-vs-Node runtime rules, no relative workspace escapes, and no published-entry `export *`. `pnpm lint:package-resolution` imports every declared entry. Both run in CI's static-checks job.

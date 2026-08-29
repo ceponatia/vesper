@@ -49,7 +49,7 @@ function itemEntry(item: ItemSummary): EntityPickerEntry {
 /**
  * Outfit-preset builder: a **preset switcher** (casual / work / date night /
  * sleep — the FIRST preset is the default the forge targets and the
- * avatar/sessions/chat wear) over the slot-based item editor (tops / bottoms /
+ * avatar/chat wear) over the slot-based item editor (tops / bottoms /
  * underwear / footwear / accessories), each slot adding from the shared
  * EntityPicker pre-filtered to its categories and the character's wearer target.
  */

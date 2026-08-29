@@ -11,12 +11,12 @@ const serif = Source_Serif_4({ subsets: ["latin"], variable: "--font-serif-base"
 
 export const metadata: Metadata = {
   title: { default: "Vesper", template: "%s · Vesper" },
-  description: "Forge worlds and characters, then play turn-based sessions with a living world model.",
+  description: "Forge characters and play out character-driven stories in chats backed by a living world model.",
 };
 
 /**
  * `viewportFit: "cover"` lets the app paint into the iOS safe areas; the bottom
- * tab bar and the play-screen composer claim them back with
+ * tab bar and the conversation-screen composer claim them back with
  * `env(safe-area-inset-bottom)`. `themeColor` = --color-ink-900 (app bg). No
  * `maximumScale`/`userScalable` — disabling zoom is an a11y regression.
  */
