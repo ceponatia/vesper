@@ -19,8 +19,20 @@ lets a resumed `--render` run keep skipped renders' recorded
 Issue #253. Qwen Image 2512 exposed `negative_prompt` and ignored it (16/16
 canary failures), so no endpoint's negative channel is trusted on the wrapper's
 word: before any per-block trial is bought on an endpoint, this program runs
-the red-apple protocol there — the qwen instrument's trials A/A2 fixture and
-arms verbatim, with per-endpoint sampling paths.
+the fruit-bowl protocol there (owner ruling 2026-08-29). The earlier
+direct-conflict canary — a requested red apple with "apple" in the negative —
+was retired because it measures whether the negative can override an explicit
+positive request, which is not how negative prompts are used and risks false
+"inert" verdicts. The corrected protocol tests suppression of prompt-IMPLIED
+content: the positive asks for "a classic bowl of assorted fresh fruit" and
+never names apples, the ON arm sends `apple, apples, red apple`, and a working
+field means apple incidence in the ON arm falls measurably below the OFF arm at
+paired seeds. The OFF arm doubles as the base-rate check — the delta is only
+readable if apples actually appear without the negative, and a low OFF rate
+makes the verdict unreadable: escalate to A2/A3 or re-fixture instead of
+recording "inert". Graders mark one binary per render, `apple_present`
+(collateral: `other_fruit_preserved`). The recorded qwen instrument below keeps
+its old conflict fixture verbatim so its 2026-08-19 runs stay reproducible.
 
 ```bash
 pnpm tsx scripts/eval/prompt-programs/negative-field-canary.ts                        # free: every endpoint's arms + CSV templates
@@ -38,8 +50,9 @@ Endpoints and per-endpoint render counts (`AB_TRIAL` picks one trial):
 | `pony`   | `aisha-ai-official/likereality-pony-v1` (pinned) | 20              | 12 (`prepend_preprompt: false`) | 12 (`cfg_scale: 10`) | 2          | 46   |
 
 The cheap verdict path is A + D (22 renders); A2/A3 are escalations for an A
-that shows no steering, mirroring how the qwen canary escalated through
-`go_fast` and guidance. Trial A runs each endpoint's production configuration:
+that shows no suppression — or whose OFF-arm base rate is too low to read —
+mirroring how the qwen canary escalated through `go_fast` and guidance. Trial A
+runs each endpoint's production configuration:
 the reviewed settings from `reviewed-profile-controls.ts` ride every render
 (PuLID 832×1216 + `method: "fidelity"`; Pony 832×1216 with the OFF arm sending
 `negative_prompt: ""` explicitly, because that wrapper's provider default is
@@ -52,11 +65,13 @@ Trial D renders one arm twice at one seed and the harness compares SHA-256
 hashes itself: identical files mean the seed pins sampling and OFF/ON byte
 differences are meaningful; differing files mean byte-level comparison says
 nothing (the qwen compass misreading is the precedent). Renders land in
-`eval-images/negative-canary/<endpoint>/<trial>/`, with the same manifests,
+`eval-images/negative-canary-fruit-bowl/<endpoint>/<trial>/`, with the same manifests,
 contact sheets, and `scores-<trial>.csv` templates as the block trials; grade
-the CSVs and `--report` computes per-arm rates and OFF→ON deltas. The verdict —
-working or inert, per endpoint — is recorded on issue #253, and dialects
-declare `negativeTransport` accordingly.
+`apple_present` per render and `--report` prints the OFF-arm base rate, the
+ON-vs-OFF delta per sampling path, and the determinism result, with a legend
+restating the base-rate caveat. The verdict — working or inert, per endpoint,
+or unreadable pending a better fixture — is recorded on issue #253, and
+dialects declare `negativeTransport` accordingly.
 
 ## `qwen-2512-negative-blocks.ts` — the per-block induction trials
 
