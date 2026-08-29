@@ -236,7 +236,7 @@ function enclosingHeads(
  * duplicates kept, so even a mention moved between two identically-spelled
  * homes changes the census.
  */
-function useSiteSignatures(stripped: string): string[] {
+function collectSiteSignatures(stripped: string): string[] {
   const blanked = blankLiterals(stripped);
   const strippedLines = stripped.split("\n");
   const blankedLines = blanked.split("\n");
@@ -362,7 +362,7 @@ describe("narrator instruction-source consumer census", () => {
     for (const file of APPROVED) {
       const stripped = stripComments(fs.readFileSync(path.join(process.cwd(), file), "utf8"));
       expect(
-        useSiteSignatures(stripped),
+        collectSiteSignatures(stripped),
         `the narrator instruction-source use sites in ${file} changed. Every mention of the resolved source is pinned by its consuming expression; re-review the new or moved site against the isolation law in this test's header — above all, that the source feeds NO helper agent (pulse, extractors, archivist, classifiers, composer, meanwhile, deliberator) — then update PINNED_USE_SITES for this file`,
       ).toEqual([...(PINNED_USE_SITES[file] ?? [])]);
     }
