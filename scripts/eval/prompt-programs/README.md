@@ -4,6 +4,58 @@ Paid, manually run trials for the prompt-program layer
 (`packages/image-core/src/prompt-program/`). Not a `pnpm test` gate — every
 question here is answered by looking at a picture.
 
+The endpoint-neutral machinery — trial/arm/fixture contracts, the paired-seed
+render loop, contact sheets, scoring templates, the rates report, and the
+determinism comparison — lives in `negative-trial-harness.ts` and is shared by
+the per-block trials and the canary program below. Each script owns only its
+endpoint description (the seeded row's shape plus the probed negative field),
+its trial definitions, and its CLI. `negative-block-report.ts` is the pure
+CSV/rate half, covered by `pnpm test`.
+
+## `negative-field-canary.ts` — is an endpoint's negative field even alive
+
+Issue #253. Qwen Image 2512 exposed `negative_prompt` and ignored it (16/16
+canary failures), so no endpoint's negative channel is trusted on the wrapper's
+word: before any per-block trial is bought on an endpoint, this program runs
+the red-apple protocol there — the qwen instrument's trials A/A2 fixture and
+arms verbatim, with per-endpoint sampling paths.
+
+```bash
+pnpm tsx scripts/eval/prompt-programs/negative-field-canary.ts                        # free: every endpoint's arms + CSV templates
+CANARY_ENDPOINT=sd35 AB_TRIAL=A pnpm tsx .../negative-field-canary.ts --render        # PAID: one trial on one endpoint
+CANARY_ENDPOINT=sd35 AB_TRIAL=all pnpm tsx .../negative-field-canary.ts --render      # PAID: that endpoint's full program
+CANARY_ENDPOINT=sd35 pnpm tsx .../negative-field-canary.ts --report                   # rates + deltas + determinism verdict
+```
+
+Endpoints and per-endpoint render counts (`AB_TRIAL` picks one trial):
+
+| endpoint | model                                        | A (production path) | A2 (alternate path)        | A3 (high guidance) | D (determinism) | full |
+| -------- | -------------------------------------------- | ------------------- | -------------------------- | ------------------ | --------------- | ---- |
+| `sd35`   | `stability-ai/stable-diffusion-3.5-large`    | 20                  | —                          | 12 (`cfg: 9`)      | 2               | 34   |
+| `pulid`  | `nsfw-api/sdxl-pulid` (pinned)               | 20                  | —                          | 12 (`cfg: 7`)      | 2               | 34   |
+| `pony`   | `aisha-ai-official/likereality-pony-v1` (pinned) | 20              | 12 (`prepend_preprompt: false`) | 12 (`cfg_scale: 10`) | 2          | 46   |
+
+The cheap verdict path is A + D (22 renders); A2/A3 are escalations for an A
+that shows no steering, mirroring how the qwen canary escalated through
+`go_fast` and guidance. Trial A runs each endpoint's production configuration:
+the reviewed settings from `reviewed-profile-controls.ts` ride every render
+(PuLID 832×1216 + `method: "fidelity"`; Pony 832×1216 with the OFF arm sending
+`negative_prompt: ""` explicitly, because that wrapper's provider default is
+`"nsfw, naked"` and an absent field would be a different negative, not none).
+The PuLID canary is bare-prompt — no `reference_image`, so no face adapter in
+the loop. Each endpoint's negative field and sampling knobs are the probed
+inputs recorded in `docs/image-models/models/<model>.md`.
+
+Trial D renders one arm twice at one seed and the harness compares SHA-256
+hashes itself: identical files mean the seed pins sampling and OFF/ON byte
+differences are meaningful; differing files mean byte-level comparison says
+nothing (the qwen compass misreading is the precedent). Renders land in
+`eval-images/negative-canary/<endpoint>/<trial>/`, with the same manifests,
+contact sheets, and `scores-<trial>.csv` templates as the block trials; grade
+the CSVs and `--report` computes per-arm rates and OFF→ON deltas. The verdict —
+working or inert, per endpoint — is recorded on issue #253, and dialects
+declare `negativeTransport` accordingly.
+
 ## `qwen-2512-negative-blocks.ts` — the per-block induction trials
 
 The Stage 6 promotion evidence. One trial per negative block, each built to
