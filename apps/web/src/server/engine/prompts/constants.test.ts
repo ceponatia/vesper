@@ -6,6 +6,7 @@ import {
   chatPhysicalConstraintsEnabled,
   chatRomanticPermissionDevOverrideEnabled,
   chatRomanticPermissionEnabled,
+  chatSensoryCuesEnabled,
   chatVisualStateShadowEnabled,
 } from "./constants";
 
@@ -108,5 +109,23 @@ describe("the visual-state shadow flag", () => {
     process.env.CHAT_VISUAL_STATE_SHADOW = "on";
     expect(chatVisualStateShadowEnabled()).toBe(true);
     delete process.env.CHAT_VISUAL_STATE_SHADOW;
+  });
+});
+
+/**
+ * The nonvisual sensory cue door defaults OFF — the switch the sibling sense
+ * owners' narration waits behind. Standalone by design: the sensory owners are
+ * shared presentation across producer domains, so this flag must not have
+ * picked up a contact-lane composition.
+ */
+describe("the sensory cue flag", () => {
+  it("is OFF by default, on anything other than the literal `on`, and composes with nothing", () => {
+    delete process.env.CHAT_SENSORY_CUES;
+    expect(chatSensoryCuesEnabled()).toBe(false);
+    process.env.CHAT_SENSORY_CUES = "true";
+    expect(chatSensoryCuesEnabled()).toBe(false);
+    process.env.CHAT_SENSORY_CUES = "on";
+    expect(chatSensoryCuesEnabled()).toBe(true);
+    delete process.env.CHAT_SENSORY_CUES;
   });
 });

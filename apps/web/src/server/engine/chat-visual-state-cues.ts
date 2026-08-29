@@ -247,9 +247,11 @@ function contactOwnerPhrase(
  * The paired everyday locations whose registry label is a plural: a SIDED
  * reference names one of the pair, so the clause needs the singular ("left
  * hand", never "left hands"). Renderer prose calibration only — the registry's
- * labels stay authoritative everywhere else.
+ * labels stay authoritative everywhere else. Exported for the sensory cue
+ * renderer, which names the same locations in the same register; one owner,
+ * so the two renderers cannot drift on what a sided hand is called.
  */
-const SIDED_SINGULAR_LABEL: Readonly<Record<string, string>> = {
+export const SIDED_SINGULAR_LABEL: Readonly<Record<string, string>> = {
   eyes: "eye",
   ears: "ear",
   shoulders: "shoulder",

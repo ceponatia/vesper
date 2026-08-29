@@ -7,7 +7,14 @@ import type {
   AffordanceSubjectId,
   AffordanceSuppression,
 } from "../core";
-import { CONTACT_CHANNEL_INVALID, CONTACT_CHANNEL_UNROUTED } from "./diagnostics";
+import type {
+  GustatoryObservation,
+  OlfactoryObservation,
+  SensoryBodyLocus,
+  SensoryLocus,
+  TactileObservation,
+} from "../../sensory";
+import { CONTACT_CHANNEL_INVALID } from "./diagnostics";
 import type { ContactBodySurfaceRef, ContactSurfaceRef } from "./surfaces";
 
 /**
@@ -23,8 +30,11 @@ import type { ContactBodySurfaceRef, ContactSurfaceRef } from "./surfaces";
  * The wall is the type system: `ContactPhenomenonObservation` is deliberately
  * not assignable to `AffordanceObservation` (no `kind` discriminant, its own
  * field names), so nothing can hand a tactile result to the visual-state
- * adapter by accident. `routeContactPhenomena` below is the ONLY conversion,
- * and it converts the visual channel alone.
+ * adapter by accident. `routeContactPhenomena` below is the ONLY conversion:
+ * each channel adapts into the contract its OWN presentation owner consumes —
+ * visual into the channel-less core observation, tactile/olfactory/gustatory
+ * into the sibling sense contracts under `contracts/sensory` — and the visual
+ * adaptation stays the only door into visual state.
  *
  * No producer registers phenomena yet — the effect slice is not live, and until
  * a domain's complete source → commitment → perception path exists its
@@ -92,12 +102,17 @@ export interface RoutedVisualContactObservation {
 export interface ContactPhenomenonRouting {
   /** Visual candidates only — the one channel the visual-state adapter may consume. */
   readonly visual: readonly RoutedVisualContactObservation[];
+  /** Tactile candidates, adapted into the tactile presentation owner's own contract. */
+  readonly tactile: readonly TactileObservation[];
+  /** Olfactory candidates, adapted into the olfactory presentation owner's own contract. */
+  readonly olfactory: readonly OlfactoryObservation[];
+  /** Gustatory candidates, adapted into the gustatory presentation owner's own contract. */
+  readonly gustatory: readonly GustatoryObservation[];
   /**
-   * Every nonvisual candidate, reduced to a diagnostic-only suppression. The
-   * payload is deliberately gone: tactile/olfactory/gustatory presentation
-   * waits on sibling sensory owners, and a withheld result that
-   * still carried its observation would be one convenient cast away from a
-   * narrator prompt.
+   * Candidates no owner may consume — an out-of-vocabulary channel, reduced to
+   * a diagnostic-only suppression. The payload is deliberately gone: a
+   * withheld result that still carried its observation would be one convenient
+   * cast away from a narrator prompt.
    */
   readonly withheld: readonly AffordanceSuppression[];
 }
@@ -117,56 +132,132 @@ function adaptVisualObservation(observation: ContactPhenomenonObservation): Affo
   };
 }
 
+/** A contact body surface as the sensory package's own body locus, field by field. */
+function adaptSensoryBodyLocus(ref: ContactBodySurfaceRef): SensoryBodyLocus {
+  return {
+    kind: "body",
+    subjectId: ref.subjectId,
+    locationId: ref.locationId,
+    ...(ref.side === undefined ? {} : { side: ref.side }),
+    ...(ref.detail === undefined ? {} : { detail: ref.detail }),
+  };
+}
+
+/** Either end of a contact as a sensory locus. */
+function adaptSensoryLocus(ref: ContactSurfaceRef): SensoryLocus {
+  return ref.kind === "body"
+    ? adaptSensoryBodyLocus(ref)
+    : { kind: "object", entityId: ref.entityId, surfaceId: ref.surfaceId };
+}
+
+/** The counterpart spread every nonvisual adaptation shares — locus/path preserved. */
+function adaptCounterpart(observation: ContactPhenomenonObservation): { counterpart?: SensoryLocus } {
+  return observation.targetLocus === undefined ? {} : { counterpart: adaptSensoryLocus(observation.targetLocus) };
+}
+
 /**
- * Split channel-tagged candidates at the presentation boundary: visual ones
- * adapt into the contract the visual-state observation adapter consumes,
- * everything else degrades to a suppression.
+ * Into the tactile owner's contract. `transmission` is deliberately NOT set:
+ * the envelope does not carry it, and inventing "direct skin" here would be a
+ * claim the producer never made — a producer that owns the read supplies it on
+ * the tactile contract directly.
+ */
+function adaptTactileObservation(observation: ContactPhenomenonObservation): TactileObservation {
+  return {
+    sense: "tactile",
+    phenomenonId: observation.phenomenonId,
+    participantIds: observation.subjectIds,
+    surface: adaptSensoryBodyLocus(observation.locus),
+    ...adaptCounterpart(observation),
+    intensityBand: observation.intensityBand,
+    semanticTags: observation.semanticTags,
+    repeatFamily: observation.repeatFamily,
+    evidence: observation.evidence,
+  };
+}
+
+/** Into the olfactory owner's contract: the phenomenon's locus is where the attested source stands. */
+function adaptOlfactoryObservation(observation: ContactPhenomenonObservation): OlfactoryObservation {
+  return {
+    sense: "olfactory",
+    phenomenonId: observation.phenomenonId,
+    sourceSubjectIds: observation.subjectIds,
+    source: adaptSensoryBodyLocus(observation.locus),
+    ...adaptCounterpart(observation),
+    intensityBand: observation.intensityBand,
+    semanticTags: observation.semanticTags,
+    repeatFamily: observation.repeatFamily,
+    evidence: observation.evidence,
+  };
+}
+
+/** Into the gustatory owner's contract: the phenomenon's locus is the qualifying tasted surface. */
+function adaptGustatoryObservation(observation: ContactPhenomenonObservation): GustatoryObservation {
+  return {
+    sense: "gustatory",
+    phenomenonId: observation.phenomenonId,
+    participantIds: observation.subjectIds,
+    tastedSurface: adaptSensoryBodyLocus(observation.locus),
+    ...adaptCounterpart(observation),
+    intensityBand: observation.intensityBand,
+    semanticTags: observation.semanticTags,
+    repeatFamily: observation.repeatFamily,
+    evidence: observation.evidence,
+  };
+}
+
+/**
+ * Split channel-tagged candidates at the presentation boundary: every channel
+ * adapts into the contract its own presentation owner consumes — visual into
+ * the visual-state observation path, tactile/olfactory/gustatory into the
+ * sibling sense owners under `contracts/sensory`. Delivery is not
+ * presentation: a routed nonvisual candidate still faces its owner's access
+ * law and selection, and reaches prose only through the narrator adapter
+ * behind its default-off switch.
  *
- * Fails CLOSED on the channel: only the literal `"visual"` routes, so a channel
- * this build does not know — a future member, a tampered stored value — is
- * withheld rather than presented, with an `error` diagnostic because an
- * out-of-vocabulary channel is a value nobody meant. Ordinary nonvisual
- * withholding is the designed permanent state until the sibling sensory owners
- * exist, so it reports one `info` diagnostic per routing rather than a warning
- * per candidate.
+ * Fails CLOSED on the channel: a channel this build does not know — a future
+ * member, a tampered stored value — is withheld rather than presented, with an
+ * `error` diagnostic because an out-of-vocabulary channel is a value nobody
+ * meant.
  */
 export function routeContactPhenomena(
   observations: readonly ContactPhenomenonObservation[],
   sink?: DiagnosticSink,
 ): ContactPhenomenonRouting {
   const visual: RoutedVisualContactObservation[] = [];
+  const tactile: TactileObservation[] = [];
+  const olfactory: OlfactoryObservation[] = [];
+  const gustatory: GustatoryObservation[] = [];
   const withheld: AffordanceSuppression[] = [];
-  const withheldByChannel = new Map<string, number>();
 
   for (const observation of observations) {
-    if (observation.channel === "visual") {
-      visual.push({ subjectIds: observation.subjectIds, observation: adaptVisualObservation(observation) });
-      continue;
+    switch (observation.channel) {
+      case "visual":
+        visual.push({ subjectIds: observation.subjectIds, observation: adaptVisualObservation(observation) });
+        break;
+      case "tactile":
+        tactile.push(adaptTactileObservation(observation));
+        break;
+      case "olfactory":
+        olfactory.push(adaptOlfactoryObservation(observation));
+        break;
+      case "gustatory":
+        gustatory.push(adaptGustatoryObservation(observation));
+        break;
+      default: {
+        sink?.push(
+          diag("error", CONTACT_CHANNEL_INVALID, "a contact phenomenon carries a channel this build does not know", {
+            context: { phenomenonId: observation.phenomenonId, channel: observation.channel },
+          }),
+        );
+        withheld.push({
+          kind: "suppressed",
+          phenomenonId: observation.phenomenonId,
+          code: CONTACT_CHANNEL_INVALID,
+          detail: observation.channel,
+        });
+      }
     }
-    const known = (contactPerceptionChannels as readonly string[]).includes(observation.channel);
-    if (!known) {
-      sink?.push(
-        diag("error", CONTACT_CHANNEL_INVALID, "a contact phenomenon carries a channel this build does not know", {
-          context: { phenomenonId: observation.phenomenonId, channel: observation.channel },
-        }),
-      );
-    }
-    withheld.push({
-      kind: "suppressed",
-      phenomenonId: observation.phenomenonId,
-      code: known ? CONTACT_CHANNEL_UNROUTED : CONTACT_CHANNEL_INVALID,
-      detail: observation.channel,
-    });
-    withheldByChannel.set(observation.channel, (withheldByChannel.get(observation.channel) ?? 0) + 1);
   }
 
-  if (withheld.length > 0) {
-    sink?.push(
-      diag("info", CONTACT_CHANNEL_UNROUTED, "nonvisual contact phenomena were withheld pending sensory owners", {
-        context: { withheld: Object.fromEntries(withheldByChannel) },
-      }),
-    );
-  }
-
-  return { visual, withheld };
+  return { visual, tactile, olfactory, gustatory, withheld };
 }
