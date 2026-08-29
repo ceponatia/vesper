@@ -8,6 +8,7 @@
 - **GitHub owns work state; the repository owns technical truth.** Plans, status, sequencing, dependencies, and open questions live on the [Vesper Development board](https://github.com/users/ceponatia/projects/7) and its issues — never in repo documents. Plan documents are retired: never create one. The skill below owns the mechanics that follow from this.
 - Documented system-by-system in `docs/`. **Read `docs/README.md` first** — it indexes the tree and owns the documentation rules — then the relevant system doc, and update it in the same change when behavior or patterns shift. Durable docs state present-tense law and carry no status, no remaining work, and no blockers.
 - **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before filing or restructuring issues, and whenever deciding where information belongs** (`.claude/skills/vesper-docs/`). It is the owner of the routing table, the issue and sub-issue conventions with verified commands, the durable-doc authoring law, the templates, and the validation checklist. This section states the principle only; the skill and `docs/README.md` state the rules, and neither is restated here.
+- **Invoke the `vesper-board` skill for board mechanics** (`.claude/skills/vesper-board/`): status moves, the owner-assignment convention (assigned to `ceponatia` ⇔ the next action is the owner's), labels, iterations, milestones, and PR↔issue linkage. `vesper-docs` owns filing and where information lives; `vesper-board` owns the lifecycle after filing.
 
 ## Architecture
 
