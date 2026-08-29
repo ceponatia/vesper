@@ -67,7 +67,9 @@ state stays explicitly visual — these owners sit beside it, not inside it.
 ### Presentation (shared)
 
 - One repeat family speaks once, through its strongest member; stronger
-  intensity bands outrank weaker ones; exact ties break on the phenomenon id;
+  intensity bands outrank weaker ones; ties break on the phenomenon id, then
+  the repeat family, then the observation's canonical encoding — a total
+  order, so selection is invariant under any permutation of the candidate set;
   at most `SENSORY_NARRATOR_CUE_BUDGET` cues survive per digest.
 - Digests carry structured observations and counts, never prose.
 - The owners are stateless: no persisted memory, every cut recomputes from

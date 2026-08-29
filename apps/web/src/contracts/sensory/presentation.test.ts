@@ -16,6 +16,14 @@ import { selectSensoryCues, SENSORY_NARRATOR_CUE_BUDGET } from "./presentation";
  * that collapses the senses into one cross-sensory type or widens the shared
  * contract to swallow them.
  */
+/** Every ordering of `items` — tiny n; exhausting them is the point of the pin. */
+function permutationsOf<T>(items: readonly T[]): readonly (readonly T[])[] {
+  if (items.length <= 1) return [items];
+  return items.flatMap((item, index) =>
+    permutationsOf([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]),
+  );
+}
+
 describe("selectSensoryCues", () => {
   it("dedupes a repeat family to its strongest member and counts everything left unsaid", () => {
     const selection = selectSensoryCues([
@@ -43,6 +51,31 @@ describe("selectSensoryCues", () => {
     expect(SENSORY_NARRATOR_CUE_BUDGET).toBe(2);
     expect(selection.selected.map((cue) => cue.phenomenonId)).toEqual(["probe.mid", "probe.alpha"]);
     expect(selection.suppressedCount).toBe(1);
+  });
+
+  it("selects identically under every permutation of the candidate set", () => {
+    // Engineered ties the cases above never hit: one phenomenon id at one band
+    // across three repeat families, plus a same-family twin differing only in
+    // a field the shared bound cannot see. A comparator whose order stops at
+    // the phenomenon id survives the other tests, leaves these ties to the
+    // stable sort's input order, and fails here — the deterministic-replay
+    // guarantee requires a merged candidate set to select the same cues in
+    // any producer order.
+    const alphaTwin = probeTactileObservation({
+      phenomenonId: "probe.same",
+      repeatFamily: "probe:family_a",
+      semanticTags: ["alpha"],
+    });
+    const omegaTwin = probeTactileObservation({
+      phenomenonId: "probe.same",
+      repeatFamily: "probe:family_a",
+      semanticTags: ["omega"],
+    });
+    const familyB = probeTactileObservation({ phenomenonId: "probe.same", repeatFamily: "probe:family_b" });
+    const familyC = probeTactileObservation({ phenomenonId: "probe.same", repeatFamily: "probe:family_c" });
+    for (const permutation of permutationsOf([alphaTwin, omegaTwin, familyB, familyC])) {
+      expect(selectSensoryCues(permutation)).toEqual({ selected: [alphaTwin, familyB], suppressedCount: 2 });
+    }
   });
 });
 

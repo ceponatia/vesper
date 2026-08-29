@@ -14,6 +14,8 @@
  *
  * ```text
  * affordances/core + contracts/diagnostics
+ *   (+ appearance-features, for its canonical-encoding determinism primitive
+ *      only — no visual truth crosses this edge)
  *         → contracts/sensory (this package)
  *         → producer domains adapt INTO it (affordances/contact routing among
  *           them) and the narrator adapter under src/server consumes it

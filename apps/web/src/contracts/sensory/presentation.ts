@@ -6,6 +6,7 @@ import {
   type AffordanceSubjectId,
   type AffordanceSuppression,
 } from "../affordances/core";
+import { appearanceCanonicalFingerprint } from "../appearance-features";
 
 /**
  * The ONE shared presentation architecture the sibling sense owners hang on
@@ -104,9 +105,24 @@ function intensityWeight(observation: PresentableSensoryObservation): number {
   return AFFORDANCE_INTENSITY_WEIGHT[observation.intensityBand];
 }
 
-/** Stronger band first; exact ties break on the phenomenon id, ascending. */
-function byIntensityThenId(left: PresentableSensoryObservation, right: PresentableSensoryObservation): number {
-  return intensityWeight(right) - intensityWeight(left) || compareStrings(left.phenomenonId, right.phenomenonId);
+/**
+ * Stronger band first; ties break on the phenomenon id, then the repeat
+ * family, then the observation's canonical encoding — a TOTAL order. The tail
+ * is load-bearing: `phenomenonId` names a phenomenon KIND, not one
+ * observation, so two same-strength instances in different repeat families —
+ * or two same-family instances differing only in a field this bound cannot
+ * see, a locus or a tag — would otherwise tie, hand the decision to the
+ * stable sort's input order, and let a permuted merge change which cues
+ * survive the budget on replay. The encoding delegates to the repository's
+ * ONE canonical-JSON form rather than growing a second.
+ */
+function byIntensityThenIdentity(left: PresentableSensoryObservation, right: PresentableSensoryObservation): number {
+  return (
+    intensityWeight(right) - intensityWeight(left) ||
+    compareStrings(left.phenomenonId, right.phenomenonId) ||
+    compareStrings(left.repeatFamily, right.repeatFamily) ||
+    compareStrings(appearanceCanonicalFingerprint(left), appearanceCanonicalFingerprint(right))
+  );
 }
 
 export interface SensoryCueSelection<TObservation> {
@@ -116,11 +132,13 @@ export interface SensoryCueSelection<TObservation> {
 
 /**
  * The shared cue selection: one repeat family speaks once (its strongest
- * member), stronger bands outrank weaker ones, exact ties break on the
- * phenomenon id, and at most `SENSORY_NARRATOR_CUE_BUDGET` survive.
+ * member), stronger bands outrank weaker ones, ties break on the phenomenon
+ * id, then the repeat family, then the observation's canonical encoding, and
+ * at most `SENSORY_NARRATOR_CUE_BUDGET` survive.
  *
- * Deterministic by construction — no clock, no randomness, no input-order
- * dependence beyond the tie-breaks above — so the same restored cut selects
+ * Deterministic by construction — no clock, no randomness, and NO input-order
+ * dependence: the tie-break chain is a total order, so any permutation of the
+ * same candidate set selects the same cues, and the same restored cut selects
  * the same cues on replay.
  */
 export function selectSensoryCues<TObservation extends PresentableSensoryObservation>(
@@ -129,11 +147,11 @@ export function selectSensoryCues<TObservation extends PresentableSensoryObserva
   const strongestByFamily = new Map<string, TObservation>();
   for (const observation of perceived) {
     const standing = strongestByFamily.get(observation.repeatFamily);
-    if (standing === undefined || byIntensityThenId(observation, standing) < 0) {
+    if (standing === undefined || byIntensityThenIdentity(observation, standing) < 0) {
       strongestByFamily.set(observation.repeatFamily, observation);
     }
   }
-  const ranked = [...strongestByFamily.values()].sort(byIntensityThenId);
+  const ranked = [...strongestByFamily.values()].sort(byIntensityThenIdentity);
   const selected = ranked.slice(0, SENSORY_NARRATOR_CUE_BUDGET);
   return { selected, suppressedCount: perceived.length - selected.length };
 }
