@@ -509,6 +509,15 @@ describe("applyChatAction (test-bed chips)", () => {
     expect(flushed?.durationMinutes).toBeGreaterThan(0);
   });
 
+  it("the fluster chip's own condition label reads flustered in the mood projection (#331)", () => {
+    // Regression: the chip minted "Flushed" while the projection keyed only
+    // flustered/bashful, so the tint never fired. Pin the chip-label ↔
+    // projection-key agreement through the production read (chatStateSnapshot),
+    // so either vocabulary drifting alone fails here.
+    const next = applyChatAction(state(), "fluster", 0);
+    expect(chatStateSnapshot(next, seedChatScenario(makeProfile())).emotion.label).toBe("flustered");
+  });
+
   it("re-applying a condition chip refreshes rather than duplicates it", () => {
     const once = applyChatAction(state(), "fluster", 0);
     const twice = applyChatAction(once, "fluster", 0);
