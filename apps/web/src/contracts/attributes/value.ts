@@ -68,6 +68,47 @@ export function promptValueWithNoneElided(
 }
 
 /**
+ * Non-visual attributes never belong in an image prompt — an image can't depict
+ * how someone sounds, smells, or how sensitive they are. `kind: "sensory"` is the
+ * auditory/olfactory/tactile-response set (voice pitch/timbre/cadence, baseline
+ * scent, intimate scent/taste, and per-region sensitivity), so every image prompt
+ * builder drops it. (Intimate sensory anatomy is additionally gated by the
+ * exposure predicates, which stay lane-side.)
+ */
+export function isNonVisualAttribute(def: AttributeDefinition): boolean {
+  return def.kind === "sensory";
+}
+
+/** A registry vocabulary member as a readable word — `tied_back` → `tied back`. */
+export function humanizeVocabularyValue(value: string): string {
+  return value.replaceAll("_", " ").trim();
+}
+
+/**
+ * Value-only prompt token for an attribute (no label noun) — the "none" elision
+ * applied, enum members humanized, numbers carrying their unit. `""` when nothing
+ * renderable remains. Shared by the grouped avatar prompt, the digest clause
+ * resolver and the character image adapter, so one rule owns how a stored
+ * vocabulary member becomes prompt text.
+ */
+export function formatAttributeValue(def: AttributeDefinition, value: string | string[] | number | boolean): string {
+  // "none" is elided unless the definition opts in (see promptValueWithNoneElided) —
+  // "piercings: none" plants the very noun the image model then paints anyway.
+  const rendered = promptValueWithNoneElided(def, value);
+  if (rendered === null) return "";
+  if (typeof rendered === "boolean") return rendered ? humanizeVocabularyValue(def.label).toLowerCase() : "";
+  if (typeof rendered === "number") return `${rendered}${def.unit ? ` ${def.unit}` : ""}`;
+  return Array.isArray(rendered) ? rendered.map(humanizeVocabularyValue).join(", ") : humanizeVocabularyValue(rendered);
+}
+
+/** Self-describing `Label: value` form (scene appearance summaries, digest fact values). */
+export function formatAttribute(def: AttributeDefinition, value: string | string[] | number | boolean): string {
+  if (typeof value === "boolean") return value ? def.label : "";
+  const text = formatAttributeValue(def, value);
+  return text ? `${def.label}: ${text}` : "";
+}
+
+/**
  * May an overlay from `source` change an attribute of this `mutability`?
  *
  * Inherent traits (eye color, gender, apparent age, species presentation, bone

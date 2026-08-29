@@ -279,15 +279,37 @@ const FRAME_REGIONS: Readonly<Record<VisualSegmentTaskPolicy["frame"], readonly 
   full_figure: ["torso", "pelvis", "legs", "feet"],
 };
 
-function exposureClauses(exposure: RegionExposure, frame: VisualSegmentTaskPolicy["frame"]): string[] {
-  const clauses: string[] = [];
-  for (const region of FRAME_REGIONS[frame]) {
+/** One region the readout says something about: which region, how, and the canonical clause. */
+export interface VisualExposureRead {
+  readonly region: keyof RegionExposure;
+  readonly coverage: "bare" | "sheer";
+  readonly clause: string;
+}
+
+/**
+ * The composition read over the coverage readout, per region — the shared core
+ * both exposure consumers state from: this builder's `exposure` segment, and the
+ * character image adapter's `subject.exposure` world-digest claims. One function,
+ * so the two prompt paths can never disagree about what a readout SAYS: covered
+ * regions are silent, and bare legs stay unstated when the pelvis is already
+ * bare, per the readout's own contract.
+ */
+export function visualExposureReads(
+  exposure: RegionExposure,
+  regions: readonly (keyof RegionExposure)[],
+): readonly VisualExposureRead[] {
+  const reads: VisualExposureRead[] = [];
+  for (const region of regions) {
     const coverage = exposure[region];
     if (coverage === "covered") continue;
     if (region === "legs" && coverage === "bare" && exposure.pelvis === "bare") continue;
-    clauses.push(EXPOSURE_CLAUSES[region][coverage]);
+    reads.push({ region, coverage, clause: EXPOSURE_CLAUSES[region][coverage] });
   }
-  return clauses;
+  return reads;
+}
+
+function exposureClauses(exposure: RegionExposure, frame: VisualSegmentTaskPolicy["frame"]): string[] {
+  return visualExposureReads(exposure, FRAME_REGIONS[frame]).map((read) => read.clause);
 }
 
 // ---------------------------------------------------------------------------
