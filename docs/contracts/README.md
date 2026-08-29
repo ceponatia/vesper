@@ -15,6 +15,7 @@
 | [conditions.md](conditions.md)       | Discrete, temporary states (e.g. "soaked", "exhausted")                                                      |
 | [relationships.md](relationships.md) | Affinity stages, the bond classifier, and disposition (traits, preferences, tags, modulation, the guardrail) |
 | [facts.md](facts.md)                 | The fact taxonomy and the `FactDraft` shape                                                                  |
+| [sensory.md](sensory.md)             | The nonvisual sensory presentation owners: touch/smell/taste contracts, access laws, routing, and narration  |
 | [state.md](state.md)                 | The pinned JSONB shapes: the authored character, persona, scene-gen, and game time                           |
 
 ## How the contracts are built
