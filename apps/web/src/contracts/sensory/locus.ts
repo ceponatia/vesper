@@ -39,11 +39,17 @@ export type SensoryLocus = SensoryBodyLocus | SensoryObjectLocus;
  * The stable identity key for one locus. Identity only — never shown to
  * anyone: access laws compare keys (a committed oral contact names the surface
  * it touches), and an id that leaked into prose would be worse than silence.
+ *
+ * Encoded as a JSON tuple, never a delimiter join: every token here is
+ * domain-owned and unconstrained, so a joined form lets two distinct loci
+ * collide — body ("a", "b|c") and ("a|b", "c") flatten to one "|" join — and
+ * a collided key is a hole in an access law (a taste admitted through a
+ * surface the mouth never touched), not a cosmetic bug.
  */
 export function sensoryLocusKey(locus: SensoryLocus): string {
   const parts: readonly string[] =
     locus.kind === "body"
       ? ["body", locus.subjectId, locus.locationId, locus.side ?? "", locus.detail ?? ""]
       : ["object", locus.entityId, locus.surfaceId];
-  return parts.join("|");
+  return JSON.stringify(parts);
 }
