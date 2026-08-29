@@ -33,7 +33,7 @@ function TabLink({ dest, active, onClick }: { dest: NavDest; active: boolean; on
  * §Primary nav) — the default nav chrome. Four primary destinations plus a "More" tab opening a
  * bottom sheet with the overflow links and the nav-style switch. `md:hidden`:
  * the desktop top-nav takes over at ≥768px. AppShell suppresses this entirely on
- * the play screen.
+ * the conversation screen.
  */
 export function BottomTabBar({
   navMode,
