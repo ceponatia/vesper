@@ -19,9 +19,11 @@ import type { VisualImageDigest, VisualImageFact } from "./visual-digest";
  * **Scaffold, not a finished character projection.** This is the structural half
  * of the character cutover: it translates one closed vocabulary into another and
  * nothing else. It is not bound to any production lane, and it cannot become one
- * on its own — see "What is still missing" below. It exists now so that the
- * character adapter, when it is written, has a seam to join onto rather than a
- * fourth route-specific appearance formatter to write.
+ * on its own — see "What this deliberately cannot say" below. The character
+ * image adapter (`character-adapter.ts`, `projectCharacterWorldSlices`) is the
+ * seam's other half: it CONSUMES this projection and joins the canonical
+ * owners' semantic values onto the selection, rather than anybody writing a
+ * fourth route-specific appearance formatter.
  *
  * The plan's ruling is that this WRAPS rather than replaces: visual state already
  * owns which facts apply to this committed cut and whether each is required or
@@ -63,28 +65,28 @@ import type { VisualImageDigest, VisualImageFact } from "./visual-digest";
  * `refuseOnMissingRequired` fails closed instead of rendering a character whose
  * anchors quietly turned into hashes.
  *
- * ## What is still missing before a character lane can bind
+ * ## What this deliberately cannot say — the character adapter's scope
  *
- * Three inputs are incomplete, and each is a deliberate absence rather than an
- * oversight to paper over:
+ * Three inputs never arrive through this translation, and each is a deliberate
+ * absence rather than an oversight. `projectCharacterWorldSlices` closes all
+ * three; a lane binds through it, never through this function alone:
  *
  * 1. **Apparent age.** `VisualImageDigest` classifies `identity.apparent_age`
  *    into the protected `age` segment, but no appearance catalog entry projects
- *    it, so no age fact reaches this adapter and existing image routes still
- *    source age from the attribute registry directly. There is no character
- *    prompt parity until age has a canonical semantic path into the world digest.
+ *    it, so no age fact reaches this projection. The character adapter states
+ *    the anchor itself from the attribute registry, under the owner-ruled adult
+ *    floor.
  * 2. **Exposure and coverage.** Exposure is a composition read over the garment
  *    coverage readout, not an ordinary `VisualImageFact` — `visualImageFactSegmentKind`
- *    deliberately never returns `exposure`. The character image adapter must add
- *    authoritative exposure/coverage claims itself; expecting them to arrive
- *    through this function would silently drop wardrobe authority.
+ *    deliberately never returns `exposure`. The character adapter adds the
+ *    authoritative exposure claims; expecting them to arrive through this
+ *    function would silently drop wardrobe authority.
  * 3. **Authored absences.** `subject.absence` — the concept that takes the
  *    `missing_limbs` and `missing_digits` exclusions off the table — needs to
  *    know that an anatomy fact says "absent". That is semantic content this
- *    adapter does not have, so an authored amputation currently arrives as an
- *    opaque anatomy fact and is suppressed rather than mistagged. Fail-closed,
- *    but not yet correct: the character adapter has to resolve those values
- *    before the anatomy exclusions are safe for a character-bearing render.
+ *    projection does not have, so an authored amputation leaves HERE as an
+ *    opaque anatomy fact, suppressed rather than mistagged; the character
+ *    adapter resolves the anatomy row and re-files the fact.
  */
 
 // ---------------------------------------------------------------------------
@@ -231,10 +233,11 @@ function conceptOfSegmentKind(kind: ImagePromptSegmentKind): ImageConceptId {
  * defend, and a projection that protected it would switch the block off for
  * every character.
  *
- * Authored ABSENCES are the gap this cannot close yet: `morphology.absent_limb`
+ * Authored ABSENCES are the gap this cannot close: `morphology.absent_limb`
  * would need to know an anatomy fact says "absent", which is semantic content
- * this adapter does not have. Until the character adapter resolves those values,
- * an amputation arrives opaque and is suppressed rather than mistagged.
+ * this projection does not have. The character adapter resolves the anatomy row
+ * and re-files such a fact as `subject.absence`; from here alone an amputation
+ * leaves opaque and suppressed rather than mistagged.
  */
 function morphologyTags(fact: VisualImageFact, morphology: ReadonlySet<string>): readonly string[] {
   if (!morphology.has(fact.key)) return fact.semanticTags;

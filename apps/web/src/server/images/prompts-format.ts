@@ -1,4 +1,4 @@
-import { type AttributeDefinition, promptValueWithNoneElided } from "@/contracts/attributes";
+import type { AttributeDefinition } from "@/contracts/attributes";
 import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
 import { realizeBody } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
@@ -9,7 +9,13 @@ import type { CharacterProfile } from "@/contracts/world/profile";
  *
  * The leaf of `./prompts-*.ts` — it imports no other prompt module, and the
  * families import it rather than each other.
+ *
+ * The attribute-value formatters (`formatAttribute`, `formatAttributeValue`,
+ * `isNonVisualAttribute`) moved to `contracts/attributes` so the pure character
+ * image adapter can consult the same one rule; they are re-exported here
+ * unchanged for the prompt families.
  */
+export { formatAttribute, formatAttributeValue, isNonVisualAttribute } from "@/contracts/attributes";
 
 /**
  * Intimate-anatomy attributes are withheld from image prompts unless the caller
@@ -17,17 +23,6 @@ import type { CharacterProfile } from "@/contracts/world/profile";
  * uncensored end-to-end, so avatar generation always sets it; the
  * gate remains off for the moderation-prone scene composer's appearance summary.
  */
-/**
- * Non-visual attributes never belong in an image prompt — an image can't depict
- * how someone sounds, smells, or how sensitive they are. `kind: "sensory"` is the
- * auditory/olfactory/tactile-response set (voice pitch/timbre/cadence, baseline
- * scent, intimate scent/taste, and per-region sensitivity), so it is dropped from
- * both the avatar prompt and the scene appearance summary. (Intimate sensory
- * anatomy is already gated separately by the exposure predicates.)
- */
-export function isNonVisualAttribute(def: AttributeDefinition): boolean {
-  return def.kind === "sensory";
-}
 
 export function isIntimateAttribute(def: AttributeDefinition): boolean {
   return (INTIMATE_ATTRIBUTE_CATEGORIES as readonly string[]).includes(def.category);
@@ -114,28 +109,6 @@ export function subjectDescriptor(apparentAge?: string, gender?: string, species
 // bios, or species phrases produced "…sharp fangs.." (UX-audit P4).
 export function clause(body: string): string {
   return body.replace(/[.\s]+$/, "");
-}
-
-/** `Label: value` form (the scene appearance summary still uses this). */
-export function formatAttribute(def: AttributeDefinition, value: string | string[] | number | boolean): string {
-  if (typeof value === "boolean") return value ? def.label : "";
-  const text = formatAttributeValue(def, value);
-  return text ? `${def.label}: ${text}` : "";
-}
-
-/** Value-only token (no label noun) for the grouped avatar prompt (scene-images C). */
-export function formatAttributeValue(def: AttributeDefinition, value: string | string[] | number | boolean): string {
-  // "none" is elided unless the definition opts in (contracts/attributes/value.ts) —
-  // "piercings: none" plants the very noun the image model then paints anyway.
-  const rendered = promptValueWithNoneElided(def, value);
-  if (rendered === null) return "";
-  if (typeof rendered === "boolean") return rendered ? humanize(def.label).toLowerCase() : "";
-  if (typeof rendered === "number") return `${rendered}${def.unit ? ` ${def.unit}` : ""}`;
-  return Array.isArray(rendered) ? rendered.map(humanize).join(", ") : humanize(rendered);
-}
-
-function humanize(value: string): string {
-  return value.replaceAll("_", " ").trim();
 }
 
 export function capitalizeFirst(value: string): string {

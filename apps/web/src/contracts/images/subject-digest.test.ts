@@ -1,8 +1,17 @@
-import { imageConcept, imageMorphologyProtectionOf, type ImageWorldFact } from "@vesper/image-core";
+import {
+  buildImageWorldDigest,
+  imageConcept,
+  imageMorphologyProtectionOf,
+  qwenImage2512Dialect,
+  selectImagePositiveClaims,
+  type ImageWorldFact,
+} from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
 import { toUnitInterval } from "../affordances/core";
 import { visualAttentionContextFixture, visualAttentionSnapshotFixture } from "../affordances/recognition";
 import { crookedNoseAttributes, freckleClusterFact, missingFingerState, projectFixture } from "../appearance-features";
+import type { AttributeValue } from "../attributes";
+import { FULLY_COVERED, type RegionExposure } from "../items/visibility";
 import {
   adaptProjectedAppearanceTruth,
   projectSpeciesFeatureGroups,
@@ -14,6 +23,16 @@ import {
   VISUAL_STATE_FIXTURE_ACTOR,
   type VisualStateFeature,
 } from "../visual-state";
+import {
+  characterSemanticValueResolver,
+  projectCharacterWorldSlices,
+  IMAGE_CHARACTER_AGE_UNRESOLVED,
+  IMAGE_CHARACTER_AGE_WITHHELD,
+  IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+  IMAGE_CHARACTER_COVERAGE_OWNER,
+  IMAGE_CHARACTER_COVERAGE_UNRESOLVED,
+  type CharacterSubjectSources,
+} from "./character-adapter";
 import {
   imageSubjectFactNeedsSemanticValue,
   projectSubjectDigests,
@@ -41,7 +60,10 @@ import {
  * (`visual-digest.test.ts` owns that classification), how a claim is worded
  * (`@vesper/image-core`'s dialect owns that), and whether a negative block fires
  * (the package's collision table owns that). Asserting any of them here would be
- * two layers proving one claim.
+ * two layers proving one claim. The one deliberate exception is the
+ * exposure-fragment composition case, which asserts the JOIN between the
+ * adapter's values and the dialect's subject wrapping — a property neither
+ * layer can prove alone, because the package cannot see the app's wording table.
  */
 
 // ---------------------------------------------------------------------------
@@ -409,6 +431,322 @@ describe("camera facts", () => {
       context: visualAttentionContextFixture("image", { motion: { status: "unknown" } }),
     });
     expect(projectCameraFacts(digest).map((fact) => fact.component)).not.toContain("motion");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The character image adapter — the join with the canonical owners
+// ---------------------------------------------------------------------------
+
+const ADULT_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "late_twenties", source: "creation" };
+const MINOR_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "teen", source: "creation" };
+
+/** The fixture subject's canonical owners — the values the resolver joins in. */
+function fixtureSources(overrides: Partial<CharacterSubjectSources> = {}): CharacterSubjectSources {
+  return {
+    attributes: [...crookedNoseAttributes(), ADULT_AGE_VALUE],
+    locatedFacts: [freckleClusterFact()],
+    anatomy: [missingFingerState()],
+    exposure: FULLY_COVERED,
+    ...overrides,
+  };
+}
+
+function adapterSlices(digest: VisualImageDigest, overrides: Partial<CharacterSubjectSources> = {}) {
+  return projectCharacterWorldSlices({ digest, sources: { [SUBJECT]: fixtureSources(overrides) } });
+}
+
+describe("projectCharacterWorldSlices", () => {
+  /**
+   * The issue's completion criterion, stated as one case: with every canonical
+   * owner joined, the fixture subject binds — no required anchor is suppressed,
+   * nothing lands in `missingRequired`, and every emitted value is readable
+   * prompt material rather than a fingerprint or a record. The per-owner
+   * assertions pin the value each canonical owner is expected to speak in.
+   */
+  it("completes the fixtures: every required anchor valued, none suppressed", () => {
+    const digest = characterDigest([ageAnchorFeature()]);
+    const subject = adapterSlices(digest).subjects[0];
+    expect(subject?.missingRequired).toEqual([]);
+    for (const fact of subject?.facts ?? []) {
+      expect(typeof fact.value).toBe("string");
+      expect(fact.value).not.toBe(fact.truthFingerprint);
+    }
+    const byKey = new Map((subject?.facts ?? []).map((fact) => [fact.key, fact]));
+    expect(byKey.get(`${SUBJECT}/nose/shape`)?.value).toBe("Nose shape: crooked");
+    expect(byKey.get(`${SUBJECT}/fingers:left:ring_finger/presence`)?.value).toBe("left ring finger: absent");
+    expect(byKey.get(`${SUBJECT}/face/apparent_age`)?.value).toBe("in the late twenties");
+    expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
+  });
+
+  /**
+   * Gap 3: the absence handshake. An anatomy fact whose canonical state says
+   * "absent" becomes `subject.absence` — the concept that takes the missing-part
+   * exclusions off the negative channel's table — while staying in the
+   * morphology guard subset and in the same segment kind visual state assigned.
+   * A prosthetic additionally claims the synthetic-surface protection; wings
+   * stay ordinary morphology.
+   */
+  it("re-files an authored absence as subject.absence without leaving the morphology guard", () => {
+    const digest = characterDigest();
+    const subject = adapterSlices(digest).subjects[0];
+    const fingerKey = `${SUBJECT}/fingers:left:ring_finger/presence`;
+    expect(subject?.facts.find((fact) => fact.key === fingerKey)?.concept).toBe("subject.absence");
+    expect(subject?.morphology.map((fact) => fact.key)).toContain(fingerKey);
+    expect(imageConcept("subject.absence")?.segmentKind).toBe(imageConcept("subject.morphology")?.segmentKind);
+    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/wings/species.feature_group`)?.concept).toBe(
+      "subject.morphology",
+    );
+
+    const prosthetic = adapterSlices(digest, {
+      anatomy: [{ ...missingFingerState(), state: "prosthetic" }],
+    }).subjects[0]?.facts.find((fact) => fact.key === fingerKey);
+    expect(prosthetic?.concept).toBe("subject.absence");
+    expect(prosthetic?.semanticTags).toContain("morphology.synthetic_surface");
+    expect(prosthetic?.value).toBe("left ring finger: prosthetic");
+  });
+
+  /**
+   * Gap 2: exposure is the adapter's own authoritative claim over the coverage
+   * readout — required, worded by the one canonical table in its
+   * predicate-fragment inflection (the value a dialect wraps as "<subject> is
+   * …"), silent where covered, and honoring the readout's
+   * bare-legs-under-a-bare-pelvis contract.
+   */
+  it("states the coverage readout as authoritative exposure claims", () => {
+    const digest = characterDigest();
+    const bare: RegionExposure = { torso: "bare", pelvis: "covered", legs: "sheer", feet: "covered" };
+    const stated = adapterSlices(digest, { exposure: bare }).subjects[0]?.facts.filter(
+      (fact) => fact.concept === "subject.exposure",
+    );
+    expect(stated?.map((fact) => [fact.key, fact.value])).toEqual([
+      [`subject.${SUBJECT}.exposure.torso`, "bare at the torso"],
+      [`subject.${SUBJECT}.exposure.legs`, "in sheer fabric that shows the legs"],
+    ]);
+    expect(stated?.every((fact) => fact.disposition === "required_visual")).toBe(true);
+
+    // Fully covered = silence: wardrobe authority says what covers the body.
+    expect(adapterSlices(digest).subjects[0]?.facts.some((fact) => fact.concept === "subject.exposure")).toBe(false);
+
+    const bareBelow = adapterSlices(digest, {
+      exposure: { torso: "covered", pelvis: "bare", legs: "bare", feet: "covered" },
+    }).subjects[0]?.facts.filter((fact) => fact.concept === "subject.exposure");
+    expect(bareBelow?.map((fact) => fact.key)).toEqual([`subject.${SUBJECT}.exposure.pelvis`]);
+  });
+
+  /**
+   * The frame gates which regions may be stated at all: a portrait shows no
+   * pelvis, so a portrait-framed digest says nothing about it even when the
+   * readout reads bare — stating out-of-frame skin would be the prompt arguing
+   * with the shot.
+   */
+  it("gates exposure regions by the digest's framing", () => {
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([...appearanceFeatures()]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
+    });
+    const subject = adapterSlices(digest, {
+      exposure: { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" },
+    }).subjects[0];
+    expect(subject?.facts.some((fact) => fact.concept === "subject.exposure")).toBe(false);
+  });
+
+  /**
+   * A subject `sources` never joined fails CLOSED: coverage is the one owner
+   * whose absence is otherwise silent, so the unresolved key must land in
+   * `missingRequired` — not only in the suppression record — or a lane compiled
+   * with `refuseOnMissingRequired` would render with no wardrobe-coverage
+   * authority at all. Falsified against the diagnostic-only version, which
+   * recorded the suppression and let the subject bind anyway.
+   */
+  it("fails a subject with no joined coverage source closed", () => {
+    const digest = characterDigest();
+    const slices = projectCharacterWorldSlices({ digest, sources: {} });
+    const exposureKey = `subject.${SUBJECT}.exposure`;
+    expect(slices.subjects[0]?.facts.some((fact) => fact.concept === "subject.exposure")).toBe(false);
+    expect(slices.subjects[0]?.missingRequired).toContain(exposureKey);
+    expect(slices.suppressions).toContainEqual({
+      key: exposureKey,
+      owner: IMAGE_CHARACTER_COVERAGE_OWNER,
+      reason: IMAGE_CHARACTER_COVERAGE_UNRESOLVED,
+    });
+  });
+
+  /**
+   * The seam with the dialect layer: a `subject.exposure` value is a PREDICATE
+   * fragment, because every dialect wraps it as "<subject> is <value>" — the
+   * defect this kills compiled "Mira is the torso is bare" from the segment
+   * path's standalone clause. Composed through the real Qwen dialect over every
+   * region/state cell of the canonical table (the two readouts together reach
+   * all eight), asserting the JOIN property rather than re-pinning the
+   * dialect's wording table: the compiled sentence names the subject once and
+   * the value contributes no second subject–verb clause.
+   */
+  it("shapes exposure values so the dialect's subject wrapping composes grammatically", () => {
+    const digest = characterDigest();
+    const readouts: readonly RegionExposure[] = [
+      { torso: "bare", pelvis: "bare", legs: "sheer", feet: "bare" },
+      { torso: "sheer", pelvis: "sheer", legs: "bare", feet: "sheer" },
+    ];
+    const sentences = readouts.flatMap((exposure) => {
+      const slices = projectCharacterWorldSlices({
+        digest,
+        labels: { [SUBJECT]: "Mira" },
+        sources: { [SUBJECT]: fixtureSources({ exposure }) },
+      });
+      const world = buildImageWorldDigest({
+        read: { kind: "transactional_projection", token: "read-exposure" },
+        operation: {
+          kind: "generate",
+          task: "portrait",
+          strategy: "text_to_image_description",
+          subjectCount: 1,
+          style: { medium: "photographic", descriptors: [] },
+          literalText: [],
+        },
+        subjects: slices.subjects,
+      }).digest;
+      const claims = selectImagePositiveClaims(world).filter((claim) => claim.concept === "subject.exposure");
+      const compiled = qwenImage2512Dialect.compilePositive({
+        claims,
+        operation: world.operation,
+        references: [],
+        entityLabels: { [`subject.${SUBJECT}`]: "Mira" },
+        budget: {},
+      });
+      expect(compiled.droppedClaimIds).toEqual([]);
+      return compiled.segments.map((segment) => segment.text);
+    });
+
+    expect(sentences).toHaveLength(8);
+    expect(sentences).toContain("Mira is bare at the torso.");
+    for (const sentence of sentences) {
+      const predicate = sentence.replace(/^Mira is /, "");
+      expect(predicate).not.toBe(sentence); // the dialect's wrapping actually applied
+      expect(predicate).not.toMatch(/^the\b/); // no article-led noun phrase after "is"
+      expect(predicate).not.toMatch(/\b(?:is|are)\b/); // no second finite verb — one clause, one subject
+    }
+  });
+
+  /**
+   * Gap 1: the age anchor's canonical semantic path, with the owner-ruled floor.
+   * An adult band becomes a required `subject.apparent_age` claim sourced from
+   * the attribute registry; a minor band states NOTHING and refuses nothing (a
+   * designed suppression, never a missing anchor); no band at all fails the
+   * mandatory age closed so the lane can refuse before spend.
+   */
+  it("anchors apparent age from the attribute registry with the adult floor", () => {
+    const digest = characterDigest();
+    const ageKey = `subject.${SUBJECT}.apparent_age`;
+
+    const adult = adapterSlices(digest);
+    const age = adult.subjects[0]?.facts.find((fact) => fact.concept === "subject.apparent_age");
+    expect(age).toMatchObject({ key: ageKey, value: "in the late twenties", disposition: "required_visual" });
+    expect(age?.source.owner).toBe(IMAGE_CHARACTER_ATTRIBUTE_OWNER);
+    expect(adult.subjects[0]?.missingRequired).toEqual([]);
+
+    const minor = adapterSlices(digest, { attributes: [...crookedNoseAttributes(), MINOR_AGE_VALUE] });
+    expect(minor.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
+    expect(minor.subjects[0]?.missingRequired).toEqual([]);
+    expect(minor.suppressions).toContainEqual({
+      key: ageKey,
+      owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+      reason: IMAGE_CHARACTER_AGE_WITHHELD,
+    });
+
+    const unset = adapterSlices(digest, { attributes: crookedNoseAttributes() });
+    expect(unset.subjects[0]?.missingRequired).toContain(ageKey);
+
+    // Only a band the REGISTRY recognizes is withheld by ruling. A string it
+    // does not know ("adult", a legacy or malformed value the attribute schema
+    // lets through) is nobody's ruling: it must fail the mandatory anchor
+    // closed, never render age-silent. Falsified against the classifier that
+    // treated every non-phrase string as withheld.
+    const malformed = adapterSlices(digest, {
+      attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "adult" }],
+    });
+    expect(malformed.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
+    expect(malformed.subjects[0]?.missingRequired).toContain(ageKey);
+    expect(malformed.suppressions).toContainEqual({
+      key: ageKey,
+      owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+      reason: IMAGE_CHARACTER_AGE_UNRESOLVED,
+    });
+  });
+
+  /**
+   * The same floor when visual state DID project the anchor: the scaffold's
+   * fail-closed unresolved record is reclassified as the owner ruling it is, so
+   * the lane renders age-silent instead of refusing over a designed absence.
+   */
+  it("applies the same floor to a projected age anchor", () => {
+    const digest = characterDigest([ageAnchorFeature()]);
+    const minor = adapterSlices(digest, { attributes: [...crookedNoseAttributes(), MINOR_AGE_VALUE] });
+    expect(minor.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
+    expect(minor.subjects[0]?.missingRequired).toEqual([]);
+    expect(minor.suppressions).toContainEqual({
+      key: `${SUBJECT}/face/apparent_age`,
+      owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+      reason: IMAGE_CHARACTER_AGE_WITHHELD,
+    });
+
+    // The floor reclassifies only bands the registry knows: a malformed value
+    // on the projected anchor keeps the scaffold's fail-closed record instead
+    // of being rewritten into a ruling nobody made.
+    const malformed = adapterSlices(digest, {
+      attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "adult" }],
+    });
+    expect(malformed.subjects[0]?.missingRequired).toContain(`${SUBJECT}/face/apparent_age`);
+  });
+
+  /**
+   * Gap 4: record-shaped values become readable prompt values — the garment's
+   * name (subtype-led for an accessory, per the face-jewelry rule) with `locus`,
+   * `definitionId` and every other handle stripped — instead of relying on the
+   * dialect's record-flattening fallback, which is one member away from putting
+   * an id in a payload.
+   */
+  it("resolves record values to readable prompt values with every id stripped", () => {
+    const ring = projectWardrobeFeatures({
+      garments: [
+        visualStateGarmentFixture({ id: "g_ring", categoryId: "jewelry", subtypeId: "nose_ring", name: "Thin gold hoop" }),
+      ],
+      subjectsByActor: new Map([[VISUAL_STATE_FIXTURE_ACTOR, SUBJECT]]),
+      sceneSubjectId: SUBJECT,
+    });
+    const subject = adapterSlices(characterDigest(ring)).subjects[0];
+    const byKey = new Map((subject?.facts ?? []).map((fact) => [fact.key, fact]));
+    expect(byKey.get(`${SUBJECT}/item:g_ring/wardrobe.item`)?.value).toBe("nose ring: Thin gold hoop");
+    expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
+    expect(byKey.get(`${SUBJECT}/subject:${SUBJECT}/body_language.posture`)?.value).toBe("kneeling");
+    expect(byKey.get(`${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("loose");
+    expect(byKey.get(`${SUBJECT}/wings/species.feature_group`)?.value).toBe("wings");
+
+    const prose = (subject?.facts ?? []).map((fact) => String(fact.value)).join(" ");
+    expect(prose).not.toContain("def_");
+    expect(prose).not.toContain(VISUAL_STATE_FIXTURE_ACTOR);
+  });
+
+  /**
+   * The resolver arm the digest cannot exercise deterministically (a located
+   * fact may fall to camera coverage), asserted at the join itself: the value
+   * comes from the row's PARSED value through its kind's own label, and a row
+   * outside its validity window resolves nothing rather than resurrecting.
+   */
+  it("answers a located fact from its canonical row, honoring the validity window", () => {
+    const freckle = appearanceFeatures().find(
+      (feature) => feature.key === `${SUBJECT}/shoulders/pigmentation.freckle_cluster`,
+    );
+    expect(freckle).toBeDefined();
+
+    const resolver = characterSemanticValueResolver({ sources: { [SUBJECT]: fixtureSources() }, atMinutes: 0 });
+    expect(freckle && resolver(freckle)).toBe("Freckle cluster: dense, clustered");
+
+    const expired = characterSemanticValueResolver({
+      sources: { [SUBJECT]: fixtureSources({ locatedFacts: [freckleClusterFact({ validUntil: 5 })] }) },
+      atMinutes: 10,
+    });
+    expect(freckle && expired(freckle)).toBeUndefined();
   });
 });
 
