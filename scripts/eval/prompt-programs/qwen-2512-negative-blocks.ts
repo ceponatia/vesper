@@ -1,10 +1,7 @@
 import "dotenv/config";
-import fs from "node:fs/promises";
-import path from "node:path";
-import sharp from "sharp";
 import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
-import { hasReplicate, replicateClient } from "@/server/ai";
-import { negativeBlockDelta, parseNegativeBlockCsv, summarizeNegativeBlockRows } from "./negative-block-report";
+import { hasReplicate } from "@/server/ai";
+import { type NegativeBlockTrial, type NegativeTrialProgram, reportTrials, runTrial } from "./negative-trial-harness";
 
 /**
  * Per-block negative-prompt induction trials for Qwen Image 2512, for the
@@ -40,6 +37,12 @@ import { negativeBlockDelta, parseNegativeBlockCsv, summarizeNegativeBlockRows }
  * field steers at all before subtler results are interpreted. If A shows no
  * repeatable steering, stop and report that first.
  *
+ * The 2026-08-19 verdict: A and A2 failed 16/16 — this endpoint ignores its
+ * negative field on both sampling paths, so trials C–I are VOID here. They stay
+ * defined because their fixtures and metrics are endpoint-neutral: the day an
+ * endpoint passes its canary (`negative-field-canary.ts`), its block trials are
+ * these definitions with per-endpoint arms.
+ *
  * ## Running it
  *
  * ```
@@ -62,58 +65,6 @@ const SEED_BASE = Number(process.env["AB_SEED_BASE"] ?? 101);
 // ---------------------------------------------------------------------------
 // Trial definitions
 // ---------------------------------------------------------------------------
-
-interface TrialArm {
-  readonly id: string;
-  /** The exact negative_prompt this arm sends; null sends no field at all. */
-  readonly negative: string | null;
-  /**
-   * Text appended to the positive prompt for this arm.
-   *
-   * The positive-side transports an endpoint with no working negative field is
-   * left with: affirmative replacement, and inline exclusion. Held to a SUFFIX
-   * so the baseline prompt is byte-identical across arms and only the added
-   * clause varies.
-   */
-  readonly positiveSuffix?: string;
-  /**
-   * A wholly different positive, replacing the fixture's.
-   *
-   * One legitimate use: a `production` control arm carrying the prompt the
-   * shipped lane compiles TODAY, so a proposed rewording is measured against
-   * what it would replace at matched seeds rather than against a recollection.
-   */
-  readonly positiveOverride?: string;
-}
-
-interface TrialFixture {
-  readonly id: string;
-  readonly positive: string;
-  readonly aspect: string;
-  /** Fixture-specific ON negatives, when the block wording must specialize. */
-  readonly negatives?: Readonly<Record<string, string>>;
-}
-
-interface NegativeBlockTrial {
-  readonly id: string;
-  readonly title: string;
-  /** The production block (or distinction) under test. */
-  readonly block: string;
-  /** The failure this trial induces, in one line. */
-  readonly failure: string;
-  /**
-   * Provider fields held CONSTANT across every arm of this trial — a canary
-   * diagnostic varying the sampler configuration, never a per-arm variable.
-   */
-  readonly providerControls?: Readonly<Record<string, unknown>>;
-  readonly seeds: number;
-  readonly fixtures: readonly TrialFixture[];
-  readonly arms: readonly TrialArm[];
-  /** Primary binary metrics, graded per render. */
-  readonly metrics: readonly string[];
-  /** Collateral checks — the damage a block must not cause. */
-  readonly collateral: readonly string[];
-}
 
 const ANTI_SUPPORT = "mannequin, dress form, torso, bust, human body, visible support structure, hanger";
 
@@ -428,25 +379,8 @@ const TRIALS: readonly NegativeBlockTrial[] = [
   },
 ];
 
-/** The positive prompt this arm sends: the fixture's, plus the arm's own clause. */
-function armPositive(fixture: TrialFixture, arm: TrialArm): string {
-  const base = arm.positiveOverride ?? fixture.positive;
-  return arm.positiveSuffix === undefined ? base : `${base} ${arm.positiveSuffix}`;
-}
-
-/** The ON negative for one fixture — per-fixture wording wins over the arm's. */
-function armNegative(fixture: TrialFixture, arm: TrialArm): string | null {
-  if (arm.negative === null) return null;
-  const negative = fixture.negatives?.[arm.id] ?? arm.negative;
-  // An arm may declare "" to mean "every fixture specializes me" (Trial F:
-  // "second glove" does not belong in a boot shot). A fixture that then fails
-  // to specialize is a definition bug, not a quiet no-negative render.
-  if (negative.length === 0) throw new Error(`${fixture.id} does not specialize the ${arm.id} negative`);
-  return negative;
-}
-
 // ---------------------------------------------------------------------------
-// Rendering
+// Endpoint
 // ---------------------------------------------------------------------------
 
 /**
@@ -483,223 +417,26 @@ function trialModel(): ImageModel {
   } satisfies ImageModel;
 }
 
-interface RenderRecord {
-  readonly file: string;
-  readonly seed: number;
-  readonly arm: string;
-  readonly fixture: string;
-  readonly executedVersionId: string | null;
-  readonly predictionId: string | null;
-}
-
-async function renderOne(
-  positive: string,
-  negative: string | null,
-  aspect: string,
-  seed: number,
-  providerControls?: Readonly<Record<string, unknown>>,
-): Promise<{ image: Buffer; executedVersionId: string | null; predictionId: string | null } | null> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await replicateClient().runRegistryImageModel(trialModel(), {
-      prompt: positive,
-      aspect,
-      // controlInput merges LAST, so a trial's go_fast/guidance overrides the
-      // model literal's extraInput constant — for BOTH arms alike.
-      controlInput: { seed, ...providerControls, ...(negative === null ? {} : { negative_prompt: negative }) },
-    });
-    if (result.ok && result.image) {
-      return {
-        image: result.image,
-        executedVersionId: result.executedVersionId ?? null,
-        predictionId: result.predictionId ?? null,
-      };
-    }
-    console.log(`    retryable failure (${result.error ?? "no image"})`);
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-  }
-  return null;
-}
-
-async function fileExists(file: string): Promise<boolean> {
-  return fs.access(file).then(
-    () => true,
-    () => false,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Contact sheets — one grid per fixture × arm, so grading reads one image
-// ---------------------------------------------------------------------------
-
-const PANEL_WIDTH = 380;
-const LABEL_HEIGHT = 26;
-const SHEET_COLUMNS = 4;
-
-async function contactSheet(files: readonly { file: string; label: string }[], out: string): Promise<void> {
-  const panels: Buffer[] = [];
-  let panelHeight = 0;
-  for (const entry of files) {
-    const resized = await sharp(await fs.readFile(entry.file)).resize(PANEL_WIDTH).png().toBuffer();
-    const meta = await sharp(resized).metadata();
-    panelHeight = Math.max(panelHeight, meta.height ?? PANEL_WIDTH);
-    const labeled = await sharp({
-      create: { width: PANEL_WIDTH, height: (meta.height ?? PANEL_WIDTH) + LABEL_HEIGHT, channels: 3, background: "#101010" },
-    })
-      .composite([
-        {
-          input: Buffer.from(
-            `<svg width="${PANEL_WIDTH}" height="${LABEL_HEIGHT}"><text x="8" y="19" font-family="sans-serif" font-size="16" fill="#ffffff">${entry.label}</text></svg>`,
-          ),
-          top: 0,
-          left: 0,
-        },
-        { input: resized, top: LABEL_HEIGHT, left: 0 },
-      ])
-      .png()
-      .toBuffer();
-    panels.push(labeled);
-  }
-  const rows = Math.ceil(panels.length / SHEET_COLUMNS);
-  const cellHeight = panelHeight + LABEL_HEIGHT;
-  await sharp({
-    create: { width: PANEL_WIDTH * SHEET_COLUMNS, height: cellHeight * rows, channels: 3, background: "#101010" },
-  })
-    .composite(panels.map((panel, index) => ({ input: panel, top: Math.floor(index / SHEET_COLUMNS) * cellHeight, left: (index % SHEET_COLUMNS) * PANEL_WIDTH })))
-    .webp({ quality: 82 })
-    .toFile(out);
-}
+const PROGRAM: NegativeTrialProgram = {
+  endpoint: {
+    key: "qwen-2512",
+    model: trialModel,
+    negativeField: "negative_prompt",
+    sendAspect: true,
+    fileExt: "webp",
+  },
+  outRoot: OUT_ROOT,
+  seedBase: SEED_BASE,
+  trials: TRIALS,
+};
 
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
-function seedsOf(trial: NegativeBlockTrial): number[] {
-  const count = Number(process.env["AB_SEEDS"] ?? trial.seeds);
-  return Array.from({ length: count }, (_, index) => SEED_BASE + index);
-}
-
-async function writeScoresTemplate(trial: NegativeBlockTrial, records: readonly RenderRecord[]): Promise<string> {
-  const file = path.join(OUT_ROOT, `scores-${trial.id}.csv`);
-  if (await fileExists(file)) {
-    console.log(`  scores template exists, not overwritten: ${file}`);
-    return file;
-  }
-  const columns = ["trial", "fixture", "arm", "seed", "file", ...trial.metrics, ...trial.collateral, "notes"];
-  const rows = records.map((record) =>
-    [trial.id, record.fixture, record.arm, String(record.seed), record.file, ...trial.metrics.map(() => ""), ...trial.collateral.map(() => ""), ""].join(","),
-  );
-  await fs.writeFile(file, `${columns.join(",")}\n${rows.join("\n")}\n`);
-  return file;
-}
-
-async function runTrial(trial: NegativeBlockTrial, shouldRender: boolean): Promise<void> {
-  const seeds = seedsOf(trial);
-  console.log(`\n=== Trial ${trial.id} — ${trial.title}`);
-  console.log(`    block: ${trial.block}`);
-  console.log(`    failure: ${trial.failure}`);
-  console.log(`    seeds: ${seeds.join(", ")}`);
-
-  const records: RenderRecord[] = [];
-  for (const fixture of trial.fixtures) {
-    console.log(`  fixture ${fixture.id} (${fixture.aspect})`);
-    console.log(`    POSITIVE ${fixture.positive}`);
-    for (const arm of trial.arms) {
-      const negative = armNegative(fixture, arm);
-      console.log(`    ${arm.id.toUpperCase().padEnd(12)} +${arm.positiveSuffix ?? " (bare positive)"}`);
-      console.log(`    ${"".padEnd(12)} neg: ${negative ?? "(no negative field)"}`);
-    }
-
-    for (const seed of seeds) {
-      for (const arm of trial.arms) {
-        const negative = armNegative(fixture, arm);
-        const file = path.join(OUT_ROOT, trial.id, `${fixture.id}-${arm.id}-s${seed}.webp`);
-        records.push({ file, seed, arm: arm.id, fixture: fixture.id, executedVersionId: null, predictionId: null });
-        if (!shouldRender) continue;
-        if (await fileExists(file)) continue;
-        await fs.mkdir(path.dirname(file), { recursive: true });
-        const rendered = await renderOne(armPositive(fixture, arm), negative, fixture.aspect, seed, trial.providerControls);
-        if (rendered === null) {
-          console.log(`    FAILED   ${file}`);
-          records.pop();
-          continue;
-        }
-        await fs.writeFile(file, rendered.image);
-        const record = records[records.length - 1];
-        if (record !== undefined) {
-          records[records.length - 1] = { ...record, executedVersionId: rendered.executedVersionId, predictionId: rendered.predictionId };
-        }
-        console.log(`    rendered ${file}${rendered.executedVersionId === null ? "" : ` (${rendered.executedVersionId.slice(0, 12)})`}`);
-      }
-    }
-
-    if (shouldRender) {
-      for (const arm of trial.arms) {
-        const armFiles: { file: string; label: string }[] = [];
-        for (const seed of seeds) {
-          const file = path.join(OUT_ROOT, trial.id, `${fixture.id}-${arm.id}-s${seed}.webp`);
-          if (await fileExists(file)) armFiles.push({ file, label: `${fixture.id} ${arm.id} s${seed}` });
-        }
-        if (armFiles.length === 0) continue;
-        const sheet = path.join(OUT_ROOT, trial.id, `sheet-${fixture.id}-${arm.id}.webp`);
-        await contactSheet(armFiles, sheet);
-        console.log(`    sheet    ${sheet}`);
-      }
-    }
-  }
-
-  await fs.mkdir(OUT_ROOT, { recursive: true });
-  const scores = await writeScoresTemplate(trial, records);
-  if (shouldRender) {
-    const manifest = path.join(OUT_ROOT, trial.id, "manifest.json");
-    await fs.mkdir(path.dirname(manifest), { recursive: true });
-    await fs.writeFile(
-      manifest,
-      JSON.stringify(
-        { trial: trial.id, slug: SLUG, block: trial.block, seeds, fixtures: trial.fixtures.map((f) => f.id), records },
-        null,
-        2,
-      ),
-    );
-    console.log(`  manifest ${manifest}`);
-  }
-  console.log(`  scores   ${scores}`);
-}
-
-async function report(): Promise<void> {
-  for (const trial of TRIALS) {
-    const file = path.join(OUT_ROOT, `scores-${trial.id}.csv`);
-    if (!(await fileExists(file))) continue;
-    const rows = parseNegativeBlockCsv(await fs.readFile(file, "utf8"));
-    const graded = rows.filter((row) => Object.values(row.values).some((value) => value.length > 0));
-    if (graded.length === 0) continue;
-    const summaries = summarizeNegativeBlockRows(rows);
-    console.log(`\n=== Trial ${trial.id} — ${trial.title}`);
-    for (const fixture of trial.fixtures) {
-      for (const metric of [...trial.metrics, ...trial.collateral]) {
-        const line: string[] = [];
-        for (const arm of trial.arms) {
-          const cell = summaries.find((s) => s.fixture === fixture.id && s.arm === arm.id);
-          const m = cell?.metrics.find((entry) => entry.metric === metric);
-          if (m === undefined || m.n === 0) continue;
-          line.push(`${arm.id} ${m.rate === null ? `mean ${m.mean?.toFixed(1) ?? "—"}` : `${m.yes}/${m.n} (${Math.round(m.rate * 100)}%)`}`);
-        }
-        if (line.length === 0) continue;
-        const deltas = trial.arms
-          .filter((arm) => arm.id !== "off")
-          .map((arm) => {
-            const delta = negativeBlockDelta(summaries, { trial: trial.id, fixture: fixture.id, metric, offArm: "off", onArm: arm.id });
-            return delta === null ? null : `Δ${arm.id} ${(delta.delta * 100).toFixed(0)}pp`;
-          })
-          .filter((entry): entry is string => entry !== null);
-        console.log(`  ${fixture.id}.${metric.padEnd(28)} ${line.join("  ")}${deltas.length > 0 ? `  ${deltas.join("  ")}` : ""}`);
-      }
-    }
-  }
-}
-
 async function main(): Promise<void> {
   if (process.argv.includes("--report")) {
-    await report();
+    await reportTrials(PROGRAM);
     return;
   }
   const shouldRender = process.argv.includes("--render");
@@ -710,7 +447,7 @@ async function main(): Promise<void> {
   }
   const selected = TRIALS.filter((trial) => wanted === undefined || wanted === "all" || trial.id === wanted);
   if (selected.length === 0) throw new Error(`no trial named ${wanted ?? ""}`);
-  for (const trial of selected) await runTrial(trial, shouldRender);
+  for (const trial of selected) await runTrial(PROGRAM, trial, shouldRender);
   if (!shouldRender) console.log("\nNothing was sent. Re-run with AB_TRIAL=<id> --render to spend.");
 }
 
