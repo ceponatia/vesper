@@ -1,6 +1,7 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { narratorRunProvenanceSchema, type NarratorRunProvenance } from "@/contracts/narrator-prompts";
 import { newId } from "@/lib/ids";
 import {
   characterChatMessages,
@@ -40,6 +41,7 @@ import {
   type ReplyTakes,
 } from "@/server/engine";
 import { resetRateLimits } from "@/server/api";
+import { createNarratorPromptTemplate, setChatNarratorPromptSelection } from "@/server/narrator-prompts";
 import { log } from "@/server/log";
 import {
   apiRequest,
@@ -1377,5 +1379,92 @@ describe.runIf(ready)("relationship matrix — seeding + routes", () => {
     expect(got.edges[0]?.toCharacterId).toBe(bId);
     expect(got.edges[0]?.toName).toBe("Lib B");
     expect(got.edges[0]?.record.familiarity).toBe("familiar");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Narrator Prompt Lab — the selection reaches a real exchange (slice 7)
+// ---------------------------------------------------------------------------
+
+/** The newest assistant reply's parsed `meta.narratorRun`, or null while absent. */
+async function latestNarratorRun(chatId: string): Promise<NarratorRunProvenance | null> {
+  const [row] = await db()
+    .select({ meta: characterChatMessages.meta })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "assistant")))
+    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(1);
+  const run = (row?.meta as { narratorRun?: unknown } | null | undefined)?.narratorRun;
+  return run === undefined ? null : narratorRunProvenanceSchema.parse(run);
+}
+
+describe.runIf(ready)("narrator prompt selection → exchange provenance", () => {
+  /**
+   * The one end-to-end proof that a Prompt Lab selection reaches a REAL
+   * exchange. The service suite (narrator-prompts.int.test.ts) owns resolution
+   * semantics and the prompt suites own what an override renders; what neither
+   * can see is the WIRING — chat-pipeline resolving the source under the
+   * exchange lock, threading it into the build, and stamping the reply's
+   * `meta.narratorRun` from it. Kills the pipeline that resolves but never
+   * consumes (or stamps the fresh resolution backwards onto history): every
+   * pure test passes under that bug, and the owner's A/B comparison silently
+   * labels both replies with the wrong prompt.
+   */
+  it("stamps each reply with the run that wrote it; a selection applies from the next exchange only", async () => {
+    const chat = await createChat(ids.character);
+
+    // Exchange 1 — no selection: the reply is stamped as a production run.
+    const first = await chatSend(postReq(chat.id, { content: "Hello out there" }), ctx(chat.id));
+    expect(first.status).toBe(200);
+    await drainStream(first);
+    const production = await pollUntil(() => latestNarratorRun(chat.id));
+    expect(production).toMatchObject({ lane: "legacy_chat", promptSource: "production" });
+    expect(production?.templateId).toBeUndefined();
+
+    // Select a test template mid-conversation (the manual A/B workflow).
+    const created = await createNarratorPromptTemplate(authState.user.id, {
+      name: "Exchange Provenance",
+      notes: "",
+      body: "You are the narrator. Resolve the immediate beat before advancing the scene.",
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(await setChatNarratorPromptSelection(authState.user.id, chat.id, created.value.id)).toMatchObject({
+      ok: true,
+    });
+
+    // Exchange 2 — the NEXT exchange resolves the selection and records the
+    // exact revision, so the take browser can later tell the two replies apart.
+    const second = await chatSend(postReq(chat.id, { content: "And once more" }), ctx(chat.id));
+    expect(second.status).toBe(200);
+    await drainStream(second);
+    const test = await pollUntil(async () => {
+      const run = await latestNarratorRun(chat.id);
+      return run?.promptSource === "test" ? run : null;
+    });
+    expect(test).toMatchObject({
+      lane: "legacy_chat",
+      promptSource: "test",
+      templateId: created.value.id,
+      revisionId: created.value.currentRevisionId,
+      revision: 1,
+      instructionHash: created.value.bodyHash,
+      mode: "instruction_override_v1",
+    });
+
+    // The first reply keeps the provenance of the run that wrote IT — selecting
+    // a template is never stamped backwards onto history.
+    const transcript = await db()
+      .select({ meta: characterChatMessages.meta })
+      .from(characterChatMessages)
+      .where(and(eq(characterChatMessages.chatId, chat.id), eq(characterChatMessages.role, "assistant")))
+      .orderBy(characterChatMessages.createdAt, characterChatMessages.id);
+    expect(transcript).toHaveLength(2);
+    const firstRun = narratorRunProvenanceSchema.parse(
+      (transcript[0]?.meta as { narratorRun?: unknown }).narratorRun,
+    );
+    expect(firstRun.promptSource).toBe("production");
+    // Two different assemblies, each identified by its own hash.
+    expect(firstRun.assembledSystemHash).not.toBe(test?.assembledSystemHash);
   });
 });
