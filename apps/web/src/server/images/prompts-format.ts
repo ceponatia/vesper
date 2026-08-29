@@ -1,4 +1,4 @@
-import { type AttributeDefinition } from "@/contracts/attributes";
+import type { AttributeDefinition } from "@/contracts/attributes";
 import { INTIMATE_ATTRIBUTE_CATEGORIES } from "@/contracts/body/locations";
 import { realizeBody } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
