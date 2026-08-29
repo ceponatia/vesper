@@ -1,5 +1,6 @@
 import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import type { RegionExposure } from "@/contracts/items/visibility";
+import { imageAgeBandPhrases } from "@/contracts/images/character-adapter";
 import { VIEWER_SKIN_ATTRIBUTE_IDS, type ViewerBodyPart } from "@/contracts/images/viewer-body";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import {
@@ -141,33 +142,21 @@ export function identityAnchorSummary(
 }
 
 /**
- * The image lane's apparent-age vocabulary (owner ruling 2026-07-29) — the ONLY
- * age words an image prompt may carry. Two rules, both safety-shaped:
+ * The image lane's apparent-age vocabulary — the ONLY age words an image prompt
+ * may carry. The table itself (bands, floor, `{pos}` placeholders) moved to
+ * `@/contracts/images/character-adapter` so the world-digest character path
+ * states age from the SAME owner-ruled vocabulary; this module keeps the
+ * lane-side wording built on it.
  *
- * 1. **The floor is an explicit adult.** The registry's minor bands (infant…teen)
- *    are narrator/world vocabulary and are deliberately ABSENT here — "teen" could
- *    read 15–17, and no such word may ever reach an image model. A minor-band or
- *    unknown value produces NO age text at all (the pre-ruling behavior), never a
- *    younger word. `eighteen` states the number outright.
- * 2. **The ceiling problem is drift, not text** (the Kristin aging report): Qwen
- *    edits re-synthesize skin with a texture-amplifying prior and "preserve
- *    apparent age" preserves the model's own over-estimate of an age-ambiguous
- *    reference, compounding a step older per edit generation. The anchor sentence
- *    is what pulls it back — A/B'd at ~15–20 apparent years on the reporting
- *    chat's avatar (the phantom-limb A/B's age variant; probe script retired
- *    to git history).
+ * Why the ceiling problem is drift, not text (the Kristin aging report): Qwen
+ * edits re-synthesize skin with a texture-amplifying prior and "preserve
+ * apparent age" preserves the model's own over-estimate of an age-ambiguous
+ * reference, compounding a step older per edit generation. The anchor sentence
+ * is what pulls it back — A/B'd at ~15–20 apparent years on the reporting
+ * chat's avatar (the phantom-limb A/B's age variant; probe script retired
+ * to git history).
  */
-const IMAGE_AGE_PHRASES: Record<string, string> = {
-  eighteen: "exactly eighteen years old, an adult",
-  young_adult: "a young adult in {pos} early twenties",
-  mid_twenties: "in {pos} mid-twenties",
-  late_twenties: "in {pos} late twenties",
-  early_thirties: "in {pos} early thirties",
-  late_thirties: "in {pos} late thirties",
-  forties: "in {pos} forties",
-  fifties: "in {pos} fifties",
-  sixties_plus: "in {pos} sixties or beyond",
-};
+const IMAGE_AGE_PHRASES: Readonly<Record<string, string>> = imageAgeBandPhrases;
 
 /** Bands whose anchor also claims youthful skin — only when the sheet authors `skin.texture: smooth`. */
 const YOUTHFUL_SKIN_BANDS = new Set(["eighteen", "young_adult", "mid_twenties", "late_twenties", "early_thirties"]);

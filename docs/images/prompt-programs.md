@@ -75,6 +75,46 @@ definition** — `world-projection-coverage.test.ts` derives the field list from
 table columns and the definition schemas and fails when one is unclassified.
 `nonvisual` and `restricted` are good answers; silence is not.
 
+### The character projection
+
+Character subjects reach the digest through a two-module seam in
+`apps/web/src/contracts/images/`, and the split is an ownership boundary, not a
+convenience:
+
+| Layer                          | Owns                                              |
+| ------------------------------ | ------------------------------------------------- |
+| visual state                   | which facts apply, and required vs camera-visible |
+| canonical character owners     | the semantic value of each selected fact          |
+| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth          |
+| `character-adapter.ts`         | joining selection to values as complete claims    |
+
+`projectSubjectDigests` translates the visual digest's classification into
+concepts and dispositions, verbatim. `projectCharacterWorldSlices` consumes it
+and states what translation alone cannot:
+
+- **A truth fingerprint is provenance, never prompt semantics.** Appearance
+  facts arrive carrying their fingerprint as `value`; the adapter answers them
+  from the canonical owners — the attribute registry, the located-fact rows, the
+  anatomy rows — and never decodes or guesses from a fingerprint. A fact no
+  owner can value is suppressed, and a required one lands in `missingRequired`
+  so a lane compiled with `refuseOnMissingRequired` fails closed.
+- **Apparent age** is stated from the `identity.apparent_age` attribute through
+  the image age vocabulary (`imageAgeBandPhrases`), whose floor is an explicit
+  adult (owner ruling 2026-07-29): a minor-band value states nothing — a
+  designed suppression, never a missing anchor — while an absent value fails the
+  mandatory age segment closed.
+- **Exposure** is the adapter's own authoritative `subject.exposure` claims over
+  the garment coverage readout, worded by `visual-segments.ts`'s one canonical
+  clause table and gated to the regions the digest's framing band can show.
+  Covered regions are silent — silence is the covered statement.
+- **An authored absence** re-files its anatomy fact as `subject.absence` — the
+  same `morphology` segment kind, a different protection — which takes the
+  missing-part exclusions off the negative channel's table; a prosthetic
+  additionally tags `morphology.synthetic_surface`.
+- **Every emitted value is prompt-ready.** Record-shaped values resolve to their
+  readable members with ids stripped; a record with nothing readable left is
+  suppressed rather than flattened into a payload.
+
 ## Concepts
 
 A concept is what a fact MEANS, in a closed registry no model owns
