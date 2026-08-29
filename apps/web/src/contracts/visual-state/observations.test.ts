@@ -93,8 +93,9 @@ describe("projectObservationFeatures", () => {
     // The seam proof for the effects spec's routing law: the contact router's
     // visual output is exactly the contract this adapter consumes, so a visual
     // contact candidate reaches visual-state selection through the SAME path as
-    // every other observation — and a nonvisual one, which the router never
-    // adapts, has no path here at all (contact/phenomena.test.ts owns that half).
+    // every other observation — and a nonvisual one adapts into its sibling
+    // sense owner's own contract, which this adapter cannot consume
+    // (contact/phenomena.test.ts and contracts/sensory own that half).
     const sink = new DiagnosticCollector();
     const subject = affordanceSubjectId(SUBJECT);
     const routing = routeContactPhenomena([

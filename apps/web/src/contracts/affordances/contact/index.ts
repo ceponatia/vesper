@@ -28,15 +28,18 @@
  * ```
  *
  * `contact/` may import `../core`, `../../body/locations`, `../../diagnostics`,
- * and `@/lib/*`. It may never import `../domains/*`, `../guidance`, `@/server`,
- * `@/app`, or `@/components` — the narrator seam consumes a resolution, it does
- * not participate in producing one.
+ * `../../sensory` (the sibling sensory presentation contracts its routing seam
+ * adapts nonvisual candidates into — one-way: the sensory package never imports
+ * contact), and `@/lib/*`. It may never import `../domains/*`, `../guidance`,
+ * `@/server`, `@/app`, or `@/components` — the narrator seam consumes a
+ * resolution, it does not participate in producing one.
  *
  * What is deliberately NOT here: cue ranking, effect commits, perception
  * filtering, and any lane wiring or storage. `phenomena.ts` carries only the
- * channel-tagged observation SEAM and its visual-only routing; no phenomenon
- * producer is registered until its complete source → commitment → perception
- * path exists. `effects.ts` carries effect PROPOSALS — requests the
+ * channel-tagged observation SEAM and its per-channel routing — visual into
+ * the visual-state path, the rest into the sibling sensory owners' own
+ * contracts; no phenomenon producer is registered until its complete source →
+ * commitment → perception path exists. `effects.ts` carries effect PROPOSALS — requests the
  * body-surface owner validates and commits in `turns/chat-contact-effects.ts`;
  * contact itself persists no aftermath. Pose, reach, support, and
  * material-between are unowned in both lanes, so the resolver takes them as

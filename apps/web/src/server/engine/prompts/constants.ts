@@ -257,6 +257,34 @@ export function chatContactEffectsEnabled(): boolean {
 }
 
 /**
+ * The NONVISUAL SENSORY CUE switch — default-off, the same literal-`on` shape
+ * as every flag above.
+ *
+ * The one door between the sibling sensory presentation owners
+ * (`contracts/sensory` — touch, smell, taste) and the narrator prompt: a
+ * nonvisual cue reaches prose only through a sense owner's digest and the
+ * `chat-sensory-cues.ts` renderer, and only when this flag says the pipeline
+ * may call that renderer at all.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no sensory cue lines are rendered or added to any prompt. ON permits
+ * the narrator sensory cue block — and TODAY adds nothing anyway, because no
+ * producer emits nonvisual phenomena yet (a phenomenon is registered only when
+ * its complete source → commitment → perception path exists). The switch ships
+ * ahead of its first producer so that producer lands behind an
+ * already-deployed default-off door, the same order the pressure-mark commit
+ * leg shipped in behind `CHAT_CONTACT_EFFECTS`. Env-only, no dev route.
+ *
+ * Deliberately NOT composed with `CHAT_CONTACT_ACTIONS`: the sensory owners
+ * are shared presentation across every producer domain, not contact-lane
+ * authority — each producer is gated by its own lane's flags, and this flag
+ * owns only the prompt door (the `CHAT_PHYSICAL_CONSTRAINTS` precedent).
+ */
+export function chatSensoryCuesEnabled(): boolean {
+  return process.env.CHAT_SENSORY_CUES === "on";
+}
+
+/**
  * The NPC REPLY-SCENE DECISION SHADOW switch — experimental, default-off, the same
  * literal-`on` shape as every flag above.
  *

@@ -80,19 +80,14 @@ export const CONTACT_AUTHORIZATION_LAPSED = "contact.authorization_lapsed";
 export const CONTACT_STATE_RECOMPUTED = "contact.state_recomputed";
 
 /**
- * Nonvisual contact phenomena were withheld at the routing boundary. `info`.
- *
- * The designed permanent state until the sibling sensory presentation owners
- * exist: a tactile, olfactory, or gustatory candidate is a pure/diagnostic
- * result, never a presented cue.
- * Reported so the withheld volume is measurable, not because anything degraded.
- */
-export const CONTACT_CHANNEL_UNROUTED = "contact.channel_unrouted";
-
-/**
  * A contact phenomenon carried a perception channel outside the vocabulary.
  * `error` — a value nobody meant, and it fails closed: the candidate is
- * withheld exactly like a nonvisual one rather than defaulting to visual.
+ * withheld from every presentation owner rather than defaulting to visual.
+ *
+ * The retired `contact.channel_unrouted` sibling reported known nonvisual
+ * channels while their presentation owners did not exist; every known channel
+ * now routes to its own owner under `contracts/sensory`, so only the invalid
+ * case withholds.
  */
 export const CONTACT_CHANNEL_INVALID = "contact.channel_invalid";
 
