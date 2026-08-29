@@ -4,7 +4,15 @@ import path from "node:path";
 import sharp from "sharp";
 import type { ImageModel } from "@vesper/image-core";
 import { replicateClient } from "@/server/ai";
-import { negativeBlockDelta, parseNegativeBlockCsv, summarizeNegativeBlockRows } from "./negative-block-report";
+import {
+  negativeBlockDelta,
+  parseManifestProvenance,
+  parseNegativeBlockCsv,
+  type RenderProvenance,
+  type RenderRecord,
+  resumedRenderRecord,
+  summarizeNegativeBlockRows,
+} from "./negative-block-report";
 
 /**
  * The endpoint-neutral core of the negative-prompt trial instrument, extracted
@@ -20,7 +28,9 @@ import { negativeBlockDelta, parseNegativeBlockCsv, summarizeNegativeBlockRows }
  *
  * The rules the original harness holds are unchanged and stated there:
  * paired seed sets, one variable per comparison, idempotent renders, scores
- * CSVs never overwritten, `executedVersionId` recorded per render.
+ * CSVs never overwritten, `executedVersionId` recorded per render — and on a
+ * resumed `--render` run, a skipped render keeps the provenance its prior
+ * manifest recorded rather than being rewritten as null.
  */
 
 export interface TrialArm {
@@ -174,15 +184,6 @@ function describeNegative(endpoint: NegativeTrialEndpoint, negative: string | nu
 // Rendering
 // ---------------------------------------------------------------------------
 
-export interface RenderRecord {
-  readonly file: string;
-  readonly seed: number;
-  readonly arm: string;
-  readonly fixture: string;
-  readonly executedVersionId: string | null;
-  readonly predictionId: string | null;
-}
-
 async function renderOne(
   endpoint: NegativeTrialEndpoint,
   positive: string,
@@ -225,6 +226,10 @@ async function fileExists(file: string): Promise<boolean> {
     () => true,
     () => false,
   );
+}
+
+async function readIfExists(file: string): Promise<string | null> {
+  return fs.readFile(file, "utf8").catch(() => null);
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +358,16 @@ export async function runTrial(program: NegativeTrialProgram, trial: NegativeBlo
   if (endpoint.baseControls) console.log(`    base controls: ${JSON.stringify(endpoint.baseControls)}`);
   if (trial.providerControls) console.log(`    trial controls: ${JSON.stringify(trial.providerControls)}`);
 
+  // A resumed --render run rewrites the manifest, so the provenance its prior
+  // version recorded for already-rendered (skipped) files has to be read back
+  // first — otherwise a resume silently replaces every skipped render's
+  // executedVersionId/predictionId with nulls, and a mid-trial provider
+  // re-point becomes invisible.
+  const manifestFile = path.join(outRoot, trial.id, "manifest.json");
+  const priorProvenance: ReadonlyMap<string, RenderProvenance> = shouldRender
+    ? parseManifestProvenance(await readIfExists(manifestFile))
+    : new Map();
+
   const records: RenderRecord[] = [];
   for (const fixture of trial.fixtures) {
     console.log(`  fixture ${fixture.id} (${endpoint.sendAspect ? fixture.aspect : "shape from controls"})`);
@@ -367,21 +382,25 @@ export async function runTrial(program: NegativeTrialProgram, trial: NegativeBlo
       for (const arm of trial.arms) {
         const negative = armNegative(fixture, arm);
         const file = trialFile(program, trial, fixture.id, arm.id, seed);
-        records.push({ file, seed, arm: arm.id, fixture: fixture.id, executedVersionId: null, predictionId: null });
-        if (!shouldRender) continue;
-        if (await fileExists(file)) continue;
+        const base = { file, seed, arm: arm.id, fixture: fixture.id };
+        if (!shouldRender) {
+          records.push({ ...base, executedVersionId: null, predictionId: null });
+          continue;
+        }
+        if (await fileExists(file)) {
+          // Idempotent skip: the image stands, so its record must carry the
+          // provenance the prior manifest recorded, never a fresh null pair.
+          records.push(resumedRenderRecord(base, priorProvenance));
+          continue;
+        }
         await fs.mkdir(path.dirname(file), { recursive: true });
         const rendered = await renderOne(endpoint, armPositive(fixture, arm), negative, fixture.aspect, seed, trial.providerControls);
         if (rendered === null) {
           console.log(`    FAILED   ${file}`);
-          records.pop();
           continue;
         }
         await fs.writeFile(file, rendered.image);
-        const record = records[records.length - 1];
-        if (record !== undefined) {
-          records[records.length - 1] = { ...record, executedVersionId: rendered.executedVersionId, predictionId: rendered.predictionId };
-        }
+        records.push({ ...base, executedVersionId: rendered.executedVersionId, predictionId: rendered.predictionId });
         console.log(`    rendered ${file}${rendered.executedVersionId === null ? "" : ` (${rendered.executedVersionId.slice(0, 12)})`}`);
       }
     }
@@ -407,10 +426,9 @@ export async function runTrial(program: NegativeTrialProgram, trial: NegativeBlo
   const scores = trial.determinism === true ? null : await writeScoresTemplate(outRoot, trial, records);
   const hashes = trial.determinism === true ? await compareDeterminism(program, trial, seeds) : null;
   if (shouldRender) {
-    const manifest = path.join(outRoot, trial.id, "manifest.json");
-    await fs.mkdir(path.dirname(manifest), { recursive: true });
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
     await fs.writeFile(
-      manifest,
+      manifestFile,
       JSON.stringify(
         {
           trial: trial.id,
@@ -427,7 +445,7 @@ export async function runTrial(program: NegativeTrialProgram, trial: NegativeBlo
         2,
       ),
     );
-    console.log(`  manifest ${manifest}`);
+    console.log(`  manifest ${manifestFile}`);
   }
   if (scores !== null) console.log(`  scores   ${scores}`);
 }

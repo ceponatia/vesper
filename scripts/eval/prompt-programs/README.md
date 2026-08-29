@@ -10,7 +10,9 @@ determinism comparison — lives in `negative-trial-harness.ts` and is shared by
 the per-block trials and the canary program below. Each script owns only its
 endpoint description (the seeded row's shape plus the probed negative field),
 its trial definitions, and its CLI. `negative-block-report.ts` is the pure
-CSV/rate half, covered by `pnpm test`.
+half — CSV parsing, rate arithmetic, and the manifest-provenance merge that
+lets a resumed `--render` run keep skipped renders' recorded
+`executedVersionId`/`predictionId` — covered by `pnpm test`.
 
 ## `negative-field-canary.ts` — is an endpoint's negative field even alive
 
