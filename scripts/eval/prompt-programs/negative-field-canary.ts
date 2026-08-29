@@ -18,10 +18,30 @@ import {
  * Qwen Image 2512 exposed `negative_prompt` and ignored it — 16/16 canary
  * failures — so no channel is trusted on the wrapper's word. Before any
  * per-block negative trial is bought on an endpoint, this program proves (or
- * refutes) that its field does anything at all: ask for a simple subject, put
- * that subject in the negative field, and see whether the negative removes it.
- * The fixture, arms, and metrics are the qwen instrument's trials A/A2
- * verbatim — only the endpoint changes.
+ * refutes) that its field does anything at all.
+ *
+ * ## The fruit-bowl protocol (owner ruling 2026-08-29)
+ *
+ * The retired first canary was a direct-conflict test: it asked for a red
+ * apple in the POSITIVE prompt and put "apple" in the negative. That measures
+ * whether the negative can override an explicit positive request — which is
+ * not how negative prompts are used — and risks false "inert" verdicts,
+ * because a working CFG negative can lose to an explicit positive. The
+ * corrected protocol tests suppression of prompt-IMPLIED content instead:
+ *
+ * - The positive asks for a classic bowl of assorted fresh fruit and never
+ *   names apples; a classic assorted-fruit bowl should produce them at high
+ *   rate on its own.
+ * - The ON arm negates the apple terms. A working field ⇔ apple incidence in
+ *   the ON arm is measurably below the OFF arm at paired seeds.
+ * - The OFF arm doubles as the base-rate check: the delta is only readable if
+ *   apples actually appear without the negative. A low OFF-arm rate makes the
+ *   verdict UNREADABLE, not "inert" — escalate (A2/A3) or re-fixture before
+ *   reading anything.
+ *
+ * The recorded qwen instrument (`qwen-2512-negative-blocks.ts`) keeps its old
+ * conflict fixture verbatim so its 2026-08-19 runs stay reproducible; only
+ * this canary moved to the corrected protocol.
  *
  * ## Trial design per endpoint
  *
@@ -40,10 +60,12 @@ import {
  *   when content is provably unsteered, and only a reproducibility baseline
  *   says whether a byte difference means anything.
  *
- * Reading the verdict: at matched seeds, a WORKING field collapses the ON arm's
- * `red_apple_present` rate against OFF; an INERT field leaves it untouched (the
- * Qwen outcome was 16/16 apples). `blue_mug_preserved` is the collateral check
- * that the field steered rather than destroyed the scene.
+ * Reading the verdict: read the OFF arm FIRST — its `apple_present` rate is the
+ * base rate, and if it is low the cell is unreadable, not a verdict. With a
+ * high base rate, a WORKING field collapses the ON arm's `apple_present` rate
+ * against OFF at matched seeds; an INERT field leaves it untouched.
+ * `other_fruit_preserved` is the collateral check that the field removed apples
+ * rather than destroying the bowl.
  *
  * ## Where the endpoint facts come from
  *
@@ -69,24 +91,30 @@ import {
  * Endpoints: `sd35`, `pulid`, `pony`. Render counts per endpoint — A: 20,
  * A2/A3: 12 each, D: 2. Full programs: sd35 34, pulid 34, pony 46. The verdict
  * path that spends least: A + D (22 renders), then A2/A3 only if A shows no
- * steering. Renders are idempotent; output lands under
- * `eval-images/negative-canary/<endpoint>/`.
+ * suppression or its OFF-arm base rate is too low to read. Renders are
+ * idempotent; output lands under `eval-images/negative-canary/<endpoint>/`.
  */
 
 const OUT_BASE = process.env["AB_OUT"] ?? "eval-images/negative-canary";
 const SEED_BASE = Number(process.env["AB_SEED_BASE"] ?? 101);
 
 // ---------------------------------------------------------------------------
-// The endpoint-neutral canary pieces — trials A/A2 of the qwen instrument
+// The endpoint-neutral canary pieces — the fruit-bowl suppression protocol
 // ---------------------------------------------------------------------------
 
-const APPLE_MUG: TrialFixture = {
-  id: "apple_mug",
-  positive: "A studio photograph of a bright red apple beside a blue ceramic mug on a plain white surface.",
+/**
+ * The positive never names apples; it implies them. Owner's exact wording
+ * (ruling 2026-08-29) — do not reword without a new ruling, the base rate is
+ * calibrated to "classic" + "assorted".
+ */
+const FRUIT_BOWL: TrialFixture = {
+  id: "fruit_bowl",
+  positive:
+    "A studio photograph of a classic bowl of assorted fresh fruit on a plain white surface, natural colors, realistic photography.",
   aspect: "1:1",
 };
 
-const CANARY_NEGATIVE = "red apple, apple";
+const CANARY_NEGATIVE = "apple, apples, red apple";
 
 function canaryTrial(input: {
   id: string;
@@ -102,13 +130,14 @@ function canaryTrial(input: {
     failure: input.failure,
     ...(input.providerControls ? { providerControls: input.providerControls } : {}),
     seeds: input.seeds,
-    fixtures: [APPLE_MUG],
+    fixtures: [FRUIT_BOWL],
     arms: [
       { id: "off", negative: null },
       { id: "on", negative: CANARY_NEGATIVE },
     ],
-    metrics: ["red_apple_present", "any_apple_present"],
-    collateral: ["blue_mug_preserved"],
+    // Graders answer one question per render: is an apple present, yes or no.
+    metrics: ["apple_present"],
+    collateral: ["other_fruit_preserved"],
   };
 }
 
@@ -119,7 +148,7 @@ function determinismTrial(): NegativeBlockTrial {
     block: "none — instrumentation",
     failure: "does a held seed reproduce a byte-identical image, so OFF/ON byte differences can be read at all",
     seeds: 1,
-    fixtures: [APPLE_MUG],
+    fixtures: [FRUIT_BOWL],
     arms: [
       { id: "first", negative: null },
       { id: "second", negative: null },
@@ -280,13 +309,13 @@ const ENDPOINTS: Readonly<Record<string, CanaryEndpoint>> = {
     trials: [
       canaryTrial({
         id: "A",
-        title: "Transport canary — production path (provider defaults, cfg 5)",
-        failure: "does changing negative_prompt measurably steer content at all",
+        title: "Suppression canary — production path (provider defaults, cfg 5)",
+        failure: "does the negative field suppress prompt-implied apples below the OFF-arm base rate",
         seeds: 10,
       }),
       canaryTrial({
         id: "A3",
-        title: "Transport canary — high guidance",
+        title: "Suppression canary — high guidance",
         failure: "does negative conditioning appear only at high guidance",
         seeds: 6,
         providerControls: { cfg: 9 },
@@ -306,13 +335,13 @@ const ENDPOINTS: Readonly<Record<string, CanaryEndpoint>> = {
     trials: [
       canaryTrial({
         id: "A",
-        title: "Transport canary — production path (defaults: euler_ancestral, cfg 3, steps 30)",
-        failure: "does changing negative_prompt measurably steer content at all",
+        title: "Suppression canary — production path (defaults: euler_ancestral, cfg 3, steps 30)",
+        failure: "does the negative field suppress prompt-implied apples below the OFF-arm base rate",
         seeds: 10,
       }),
       canaryTrial({
         id: "A3",
-        title: "Transport canary — high guidance",
+        title: "Suppression canary — high guidance",
         failure: "is the negative applied but drowned at the default cfg 3",
         seeds: 6,
         providerControls: { cfg: 7 },
@@ -335,20 +364,20 @@ const ENDPOINTS: Readonly<Record<string, CanaryEndpoint>> = {
     trials: [
       canaryTrial({
         id: "A",
-        title: "Transport canary — production path (defaults: Euler a, cfg_scale 7, preamble on)",
-        failure: "does changing negative_prompt measurably steer content at all",
+        title: "Suppression canary — production path (defaults: Euler a, cfg_scale 7, preamble on)",
+        failure: "does the negative field suppress prompt-implied apples below the OFF-arm base rate",
         seeds: 10,
       }),
       canaryTrial({
         id: "A2",
-        title: "Transport canary — score-tag preamble off",
+        title: "Suppression canary — score-tag preamble off",
         failure: "does the raw field work when the wrapper's own negative preamble is not composed around it",
         seeds: 6,
         providerControls: { prepend_preprompt: false },
       }),
       canaryTrial({
         id: "A3",
-        title: "Transport canary — high guidance",
+        title: "Suppression canary — high guidance",
         failure: "does negative conditioning appear only above the default cfg_scale 7",
         seeds: 6,
         providerControls: { cfg_scale: 10 },
@@ -380,6 +409,18 @@ async function main(): Promise<void> {
   const selectedEndpoints = endpointKeys.filter((key) => wantedEndpoint === undefined || key === wantedEndpoint);
 
   if (process.argv.includes("--report")) {
+    console.log(
+      [
+        "How to read a canary cell, per sampling path (trial):",
+        "  1. apple_present OFF is the base rate. If it is low, the cell is UNREADABLE —",
+        "     escalate to A2/A3 or re-fixture; do not record an inert verdict from it.",
+        "  2. With a high base rate, Δon on apple_present is the suppression: a working",
+        "     field pulls the ON rate measurably below OFF at paired seeds.",
+        "  3. other_fruit_preserved is collateral — the field must remove apples, not the bowl.",
+        "  4. Trial D says whether a held seed reproduces bytes; without it, byte-level",
+        "     OFF/ON differences mean nothing.",
+      ].join("\n"),
+    );
     for (const key of selectedEndpoints) {
       const entry = ENDPOINTS[key];
       if (entry === undefined) continue;
@@ -396,7 +437,7 @@ async function main(): Promise<void> {
     throw new Error(`--render needs CANARY_ENDPOINT=<${endpointKeys.join("|")}> — one endpoint's spend at a time, chosen deliberately`);
   }
   if (shouldRender && wantedTrial === undefined) {
-    throw new Error("--render needs AB_TRIAL=<id> or AB_TRIAL=all — run A (20 renders) and D (2) first; A2/A3 are escalations for a failed A");
+    throw new Error("--render needs AB_TRIAL=<id> or AB_TRIAL=all — run A (20 renders) and D (2) first; A2/A3 are escalations for a failed or unreadable A");
   }
 
   for (const key of selectedEndpoints) {
