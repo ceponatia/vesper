@@ -253,6 +253,7 @@ export {
   qwenImage2512NegativePhrase,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
+  qwenImageEdit2511Dialect,
   registerImageNegativePack,
   registerImagePositivePack,
   registerImagePromptBinding,
@@ -263,6 +264,11 @@ export {
   IMAGE_PROMPT_PROGRAM_META_KEY,
   IMAGE_PROVIDER_DEFAULT_OVERRIDE_BLOCK,
   IMAGE_WORLD_STATE_META_KEY,
+  // The 2511 identity-lock byte contract with `@vesper/image-models` — public so
+  // the root parity tripwire (scripts/qwen-identity-lock-parity.test.ts) and the
+  // app's shadow comparison can pin the exact bytes.
+  QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   imagePromptProgramProvenanceSchema,
   imageWorldStateProvenanceSchema,
 } from "./prompt-program";
