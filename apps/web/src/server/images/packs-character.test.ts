@@ -108,6 +108,25 @@ describe("tranche-1 pack resolution", () => {
   });
 
   /**
+   * The profile-keyed resolution the shadow wiring uses (Round 2): asked WITH a
+   * profile key, `activeImagePromptBinding` returns exactly that key's own row —
+   * never a sibling portrait profile's — and a key no row carries resolves null
+   * instead of falling back across profiles. Kills a resolver that ignores the
+   * key (any of the four rows would satisfy the keyless assertion above) and a
+   * fallback that would silently hand one profile another profile's pack pins.
+   */
+  it("resolves the portrait binding per profile key, and only per profile key", () => {
+    for (const binding of qwenImage2512PortraitBindings) {
+      expect(
+        activeImagePromptBinding({ modelSlug: GENERATE_SLUG, task: "portrait", profileKey: binding.profileKey })?.id,
+      ).toBe(binding.id);
+    }
+    expect(
+      activeImagePromptBinding({ modelSlug: GENERATE_SLUG, task: "portrait", profileKey: "portrait-nonexistent" }),
+    ).toBeNull();
+  });
+
+  /**
    * The deliberate absence stays deliberate: chat-place is identity-free and
    * keeps its legacy prompt path, so no binding may resolve for it. Binding it
    * later must be a conscious act that updates this pin.

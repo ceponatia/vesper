@@ -23,7 +23,7 @@ import {
   orderedAppearanceClauses,
   subjectDescriptor,
 } from "./prompts-format";
-import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
+import { buildStandaloneSubjectVisual, type StandaloneSubjectVisual } from "./standalone-subject-visual";
 import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
 
 /**
@@ -270,6 +270,13 @@ export interface AvatarSegmentAssembly {
   readonly missingRequired: readonly string[];
   /** Every fact a policy or the resolver excluded, and why. */
   readonly suppressions: readonly VisualStateSuppression[];
+  /**
+   * The standalone visual cut the segments were built from — digest, resolved
+   * attributes, realized body and the canonical coverage readout. Read by the
+   * Round 2 shadow instrumentation (`character-shadow.ts`) to assemble the
+   * compiled-program side over the SAME cut; nothing production sends reads it.
+   */
+  readonly visual: StandaloneSubjectVisual;
 }
 
 /**
@@ -339,5 +346,6 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
     digestMeta: visual.digestMeta,
     missingRequired: visual.subject.missingRequired,
     suppressions: visual.subject.suppressions,
+    visual,
   };
 }

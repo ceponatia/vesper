@@ -59,6 +59,12 @@ export const IMAGE_SHADOW_STALE_ALLOWLIST = "image_shadow.stale_allowlist";
 export const IMAGE_SHADOW_TRANSPORT_MISMATCH = "image_shadow.transport_mismatch";
 /** A side carried no capture — parity was not measured. Log-only, never a divergence. */
 export const IMAGE_SHADOW_TRANSPORT_UNCAPTURED = "image_shadow.transport_uncaptured";
+/**
+ * The lane supplied neither a structural fact list nor probes — coverage was not
+ * measured. Never a divergence: the record says "no evidence", not "drift". The
+ * verdict is `unmeasured` unless some OTHER check diverged.
+ */
+export const IMAGE_SHADOW_COVERAGE_UNMEASURED = "image_shadow.coverage_unmeasured";
 /** The compiled assembly lost a mandatory anchor. */
 export const IMAGE_SHADOW_MANDATORY_LOST = "image_shadow.mandatory_lost";
 /** The compiled capture carries no digest provenance — the shadow never read the digest. */
@@ -85,12 +91,18 @@ export const imageShadowComparisonSchema = z.object({
   version: z.literal(1),
   /** The lane that ran the shadow — `avatar`, `variant`, `scene`, `chat_look`. */
   lane: z.string().min(1),
-  /** `parity` = cut over safely on this render's evidence; `divergence` = do not. */
-  verdict: z.enum(["parity", "divergence", "error"]),
-  /** Every divergence, as diagnostic codes — empty exactly when the verdict is `parity`. */
+  /**
+   * `parity` = cut over safely on this render's evidence; `divergence` = do
+   * not; `unmeasured` = this render produced no coverage evidence either way (a
+   * deliberate refusal — no binding, a multi-subject cast, the LoRA route — or
+   * a lane with no usable fact list); `error` = the comparator itself failed.
+   */
+  verdict: z.enum(["parity", "divergence", "unmeasured", "error"]),
+  /** Every divergence (plus the unmeasured reason) — empty exactly when the verdict is `parity`. */
   codes: z.array(z.string()).default((): string[] => []),
   coverage: z.object({
-    matches: z.boolean(),
+    /** Null when coverage was not measured — the transport-parity null pattern. */
+    matches: z.boolean().nullable(),
     /** Probe keys expected on the compiled side and absent — lost facts. */
     missing: z.array(z.string()),
     /** Probe keys present on the compiled side that nothing explains — new leaks. */
@@ -107,7 +119,8 @@ export const imageShadowComparisonSchema = z.object({
     firstMismatch: z.string().nullable(),
   }),
   mandatory: z.object({
-    survived: z.boolean(),
+    /** Null when mandatory survival was not measured (an unmeasured verdict). */
+    survived: z.boolean().nullable(),
     /** The compiled assembly's missing required keys, sorted. */
     missing: z.array(z.string()),
   }),
@@ -231,6 +244,61 @@ export function compareShadowFactCoverage(input: {
   };
 }
 
+/**
+ * Structural fact lists — the PRODUCTION coverage source. A lane's legacy
+ * segments are built from the same visual digest the compiled program consumes,
+ * so both sides can NAME the facts they stated (canonical shadow fact names,
+ * `character-shadow.ts`) instead of proving them with prose probes; probes stay
+ * the fixture-side spelling, where a curated token table exists.
+ */
+export interface ShadowFactSets {
+  /** Fact names the lane's own segment build stated. */
+  readonly legacy: readonly string[];
+  /** Fact names the compiled program kept, in claim order — duplicates count. */
+  readonly compiled: readonly string[];
+}
+
+/**
+ * The same fact-set rules as {@link compareShadowFactCoverage}, over named sets
+ * instead of probed prompts: legacy ± the named allowlist must be exactly the
+ * compiled facts, the allowlist must be real over THIS render, and nothing may
+ * be stated twice. Every named fact is readable by definition, so the probe-key
+ * readability clause of the stale check has no structural counterpart.
+ */
+export function compareShadowFactSets(input: {
+  readonly facts: ShadowFactSets;
+  readonly allowlist: ShadowCoverageAllowlist;
+}): ShadowCoverageComparison {
+  const legacy = new Set(input.facts.legacy);
+  const compiledCounts = new Map<string, number>();
+  for (const name of input.facts.compiled) compiledCounts.set(name, (compiledCounts.get(name) ?? 0) + 1);
+  const compiledPresent = [...compiledCounts.keys()];
+
+  const staleAllowlist = [
+    ...input.allowlist.removed.filter((name) => !legacy.has(name)),
+    ...input.allowlist.added.filter((name) => legacy.has(name)),
+  ];
+  const universe = [...new Set([...input.facts.legacy, ...compiledPresent, ...input.allowlist.added])];
+  const expected = new Set(
+    universe.filter(
+      (name) =>
+        input.allowlist.added.includes(name) || (legacy.has(name) && !input.allowlist.removed.includes(name)),
+    ),
+  );
+  const missing = [...expected].filter((name) => !compiledCounts.has(name));
+  const unexpected = compiledPresent.filter((name) => !expected.has(name));
+  const duplicated = compiledPresent.filter((name) => (compiledCounts.get(name) ?? 0) > 1);
+
+  return {
+    matches:
+      missing.length === 0 && unexpected.length === 0 && duplicated.length === 0 && staleAllowlist.length === 0,
+    missing,
+    unexpected,
+    duplicated,
+    staleAllowlist,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Transport parity
 // ---------------------------------------------------------------------------
@@ -291,7 +359,17 @@ export interface ShadowRenderComparisonInput {
     /** The assembly's aggregated missing mandatory keys. */
     readonly missingRequired?: readonly string[];
   };
-  readonly probes: readonly ShadowFactProbe[];
+  /**
+   * Prose probes — the fixture-side coverage source. Omit (or pass empty) when
+   * the lane has no curated token table; with no `facts` either, coverage reads
+   * unmeasured rather than being invented.
+   */
+  readonly probes?: readonly ShadowFactProbe[];
+  /**
+   * Structural fact lists — the production coverage source, taking precedence
+   * over probes when both are supplied.
+   */
+  readonly facts?: ShadowFactSets | null;
   readonly allowlist: ShadowCoverageAllowlist;
   readonly sink?: DiagnosticSink;
 }
@@ -304,6 +382,47 @@ function promptChars(side: { readonly prompt?: unknown } | undefined): number {
   return typeof side?.prompt === "string" ? side.prompt.length : 0;
 }
 
+/** A coverage comparison whose `matches` may honestly be "not measured". */
+type ShadowCoverageOutcome = Omit<ShadowCoverageComparison, "matches"> & { readonly matches: boolean | null };
+
+/** The unmeasured-coverage placeholder — the transport-parity null pattern. */
+const COVERAGE_UNMEASURED: ShadowCoverageOutcome = {
+  matches: null,
+  missing: [],
+  unexpected: [],
+  duplicated: [],
+  staleAllowlist: [],
+};
+
+/**
+ * The coverage half's source resolution: structural fact lists first (the
+ * production source), prose probes second (the fixture source), and honesty
+ * third — a lane that can supply neither gets `matches: null` and a diagnostic,
+ * never probes invented on its behalf. A `probes` value that is present but not
+ * a usable array (hostile input) falls through to the prose path and fails into
+ * the comparator's own `error` containment.
+ */
+function resolvedShadowCoverage(input: ShadowRenderComparisonInput): {
+  coverage: ShadowCoverageOutcome;
+  unmeasured: boolean;
+} {
+  if (input.facts !== undefined && input.facts !== null) {
+    return { coverage: compareShadowFactSets({ facts: input.facts, allowlist: input.allowlist }), unmeasured: false };
+  }
+  if (input.probes === undefined || (Array.isArray(input.probes) && input.probes.length === 0)) {
+    return { coverage: COVERAGE_UNMEASURED, unmeasured: true };
+  }
+  return {
+    coverage: compareShadowFactCoverage({
+      legacyPrompt: input.legacy.prompt,
+      compiledPrompt: input.compiled.prompt,
+      probes: input.probes,
+      allowlist: input.allowlist,
+    }),
+    unmeasured: false,
+  };
+}
+
 function comparedShadowRender(input: ShadowRenderComparisonInput): ImageShadowComparison {
   const codes: string[] = [];
   const report = (code: string, message: string, context: Record<string, unknown>): void => {
@@ -311,12 +430,15 @@ function comparedShadowRender(input: ShadowRenderComparisonInput): ImageShadowCo
     input.sink?.push(diag("warn", code, message, { path: PATH, context: { lane: input.lane, ...context } }));
   };
 
-  const coverage = compareShadowFactCoverage({
-    legacyPrompt: input.legacy.prompt,
-    compiledPrompt: input.compiled.prompt,
-    probes: input.probes,
-    allowlist: input.allowlist,
-  });
+  const { coverage, unmeasured: coverageUnmeasured } = resolvedShadowCoverage(input);
+  if (coverageUnmeasured) {
+    input.sink?.push(
+      diag("info", IMAGE_SHADOW_COVERAGE_UNMEASURED, "no fact list and no probes — coverage unmeasured", {
+        path: PATH,
+        context: { lane: input.lane },
+      }),
+    );
+  }
   if (coverage.missing.length > 0) {
     report(IMAGE_SHADOW_FACT_LOST, "the compiled prompt lost character facts the legacy prompt states", {
       missing: coverage.missing,
@@ -368,10 +490,15 @@ function comparedShadowRender(input: ShadowRenderComparisonInput): ImageShadowCo
     });
   }
 
+  // A real divergence outranks an unmeasured coverage half; with no divergence
+  // an unmeasured coverage forbids the parity claim — parity is a cutover
+  // go-ahead, and a record with no coverage evidence has not earned one.
+  const verdict = codes.length > 0 ? "divergence" : coverageUnmeasured ? "unmeasured" : "parity";
+  if (coverageUnmeasured) codes.push(IMAGE_SHADOW_COVERAGE_UNMEASURED);
   return {
     version: 1,
     lane: input.lane,
-    verdict: codes.length === 0 ? "parity" : "divergence",
+    verdict,
     codes,
     coverage: {
       matches: coverage.matches,
@@ -400,26 +527,86 @@ export function compareShadowRender(input: ShadowRenderComparisonInput): ImageSh
   try {
     return comparedShadowRender(input);
   } catch (error) {
-    const lane = typeof input.lane === "string" && input.lane.length > 0 ? input.lane : "unknown";
-    try {
-      input.sink?.push(
-        diag("warn", IMAGE_SHADOW_COMPARATOR_FAILED, "the shadow comparator failed; the render is unaffected", {
-          path: PATH,
-          context: { lane, error: error instanceof Error ? error.message : String(error) },
-        }),
-      );
-    } catch {
-      // A sink that throws must not resurrect the failure this catch exists to bury.
-    }
-    return {
-      version: 1,
-      lane,
-      verdict: "error",
-      codes: [IMAGE_SHADOW_COMPARATOR_FAILED],
-      coverage: { matches: false, missing: [], unexpected: [], duplicated: [], staleAllowlist: [] },
-      transport: { parity: null, firstMismatch: null },
-      mandatory: { survived: false, missing: [] },
+    return shadowErrorComparison({
+      lane: typeof input.lane === "string" && input.lane.length > 0 ? input.lane : "unknown",
+      error,
       payload: { legacyChars: promptChars(input.legacy), compiledChars: promptChars(input.compiled) },
-    };
+      ...(input.sink === undefined ? {} : { sink: input.sink }),
+    });
   }
+}
+
+/**
+ * A DELIBERATE shadow refusal as a stored record: no binding for this model and
+ * task, a compile the program refused, a multi-subject cast with no frozen row,
+ * the intimate-LoRA route. The verdict claims nothing about the lane — this
+ * render produced no coverage evidence either way — and the reason rides both
+ * the record's `codes` and the sink. Refusals are shadow OUTCOMES, never render
+ * failures; the render this record rides beside is untouched.
+ */
+export function shadowUnmeasuredComparison(input: {
+  readonly lane: string;
+  readonly code: string;
+  readonly message: string;
+  readonly context?: Record<string, unknown>;
+  readonly sink?: DiagnosticSink;
+  readonly payload?: { legacyChars: number; compiledChars: number };
+}): ImageShadowComparison {
+  try {
+    input.sink?.push(
+      diag("info", input.code, input.message, {
+        path: PATH,
+        context: { lane: input.lane, ...(input.context ?? {}) },
+      }),
+    );
+  } catch {
+    // A sink that throws must not turn a recorded refusal into a render failure.
+  }
+  return {
+    version: 1,
+    lane: input.lane,
+    verdict: "unmeasured",
+    codes: [input.code],
+    coverage: { matches: null, missing: [], unexpected: [], duplicated: [], staleAllowlist: [] },
+    transport: { parity: null, firstMismatch: null },
+    mandatory: { survived: null, missing: [] },
+    payload: input.payload ?? { legacyChars: 0, compiledChars: 0 },
+  };
+}
+
+/**
+ * The comparator-failed record: the shadow instrument itself broke, the render
+ * is unaffected, and the record says "no evidence" rather than pretending to a
+ * verdict. Shared by {@link compareShadowRender}'s own containment and the lane
+ * wiring's (`character-shadow.ts`), so the two spellings cannot drift.
+ */
+export function shadowErrorComparison(input: {
+  readonly lane: string;
+  readonly error: unknown;
+  readonly sink?: DiagnosticSink;
+  readonly payload?: { legacyChars: number; compiledChars: number };
+}): ImageShadowComparison {
+  try {
+    input.sink?.push(
+      diag("warn", IMAGE_SHADOW_COMPARATOR_FAILED, "the shadow comparator failed; the render is unaffected", {
+        path: PATH,
+        context: {
+          lane: input.lane,
+          error: input.error instanceof Error ? input.error.message : String(input.error),
+        },
+      }),
+    );
+  } catch {
+    // A sink that throws must not resurrect the failure this factory exists to bury.
+  }
+  return {
+    version: 1,
+    lane: input.lane,
+    verdict: "error",
+    codes: [IMAGE_SHADOW_COMPARATOR_FAILED],
+    coverage: { matches: false, missing: [], unexpected: [], duplicated: [], staleAllowlist: [] },
+    transport: { parity: null, firstMismatch: null },
+    mandatory: { survived: false, missing: [] },
+    payload: input.payload ?? { legacyChars: 0, compiledChars: 0 },
+  };
 }

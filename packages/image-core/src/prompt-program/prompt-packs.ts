@@ -265,15 +265,27 @@ export function imageNegativePack(id: string): ImageNegativePackVersion | null {
  * endpoint/task lane at a time happen without a flag. A version-
  * pinned binding wins over a floating one for the same pair, because a pin exists
  * precisely to say "this version behaves differently".
+ *
+ * `profileKey` narrows to the binding rows registered for one profile key —
+ * additive, for the tasks that bind PER PROFILE (the four portrait rows, owner
+ * ruling 2026-08-29 #2). Omitted, resolution behaves exactly as before, so the
+ * entity lanes and every existing caller are untouched; supplied, a key no
+ * active row carries resolves null rather than falling back to a sibling
+ * profile's row, because "this profile's binding" answered with another
+ * profile's would be the silent substitution the per-key rows exist to prevent.
  */
 export function activeImagePromptBinding(query: {
   readonly modelSlug: string;
   readonly task: string;
   readonly versionId?: string | null;
+  readonly profileKey?: string;
 }): ImagePromptProfileBinding | null {
   const candidates = bindings.filter(
     (binding) =>
-      binding.status === "active" && binding.modelSlug === query.modelSlug && binding.task === query.task,
+      binding.status === "active" &&
+      binding.modelSlug === query.modelSlug &&
+      binding.task === query.task &&
+      (query.profileKey === undefined || binding.profileKey === query.profileKey),
   );
   const pinned = query.versionId
     ? candidates.find((binding) => binding.versionId === query.versionId)

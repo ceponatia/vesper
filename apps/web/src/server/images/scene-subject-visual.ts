@@ -15,6 +15,7 @@ import {
   type RegionExposure,
   type RealizedBody,
   type SceneCameraSpec,
+  type VisualImageDigest,
   type VisualImageProvenance,
   type VisualStateSuppression,
 } from "@/contracts";
@@ -304,6 +305,27 @@ export interface SceneSubjectVisualInput {
   readonly sink?: DiagnosticSink;
 }
 
+/**
+ * One subject's realized cut behind the produced fields — everything the Round 2
+ * shadow instrumentation (`character-shadow.ts`) needs to assemble the
+ * compiled-program side over the SAME selection. Nothing production sends reads
+ * these; a member whose fields were not applied contributes none.
+ */
+export interface SceneSubjectVisualSlice {
+  readonly subjectId: string;
+  readonly cutId: string;
+  readonly name: string;
+  readonly digest: VisualImageDigest;
+  /** The three-layer resolve the clause table ran under. */
+  readonly attributes: readonly AttributeValue[];
+  readonly realizedBody: RealizedBody;
+  /** The canonical coverage readout the exposure claims are made over. */
+  readonly exposure: RegionExposure;
+  /** This subject's own segment-pass exclusions and missing anchors. */
+  readonly suppressions: readonly VisualStateSuppression[];
+  readonly missingRequired: readonly string[];
+}
+
 export interface SceneSubjectVisualBuild {
   /** The plan with every supplied subject's character fields produced from their digest. */
   readonly plan: SceneRenderPlan;
@@ -313,6 +335,8 @@ export interface SceneSubjectVisualBuild {
   readonly refusal: string | null;
   /** Every fact a policy or the resolver excluded, and why — the degradation record. */
   readonly suppressions: readonly VisualStateSuppression[];
+  /** The realized cuts behind the applied fields, in the processed order — for the shadow. */
+  readonly visuals: readonly SceneSubjectVisualSlice[];
 }
 
 /**
@@ -342,6 +366,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
   const fieldsByName = new Map<string, SceneSubjectVisualFields>();
   const provenanceRecords: VisualImageProvenance[] = [];
   const suppressions: VisualStateSuppression[] = [];
+  const visuals: SceneSubjectVisualSlice[] = [];
   for (const subject of ordered) {
     const produced = produceSubjectVisual(plan.camera, subject, sink);
     suppressions.push(...produced.suppressions);
@@ -351,7 +376,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
       // is called. A digest that WAS built before the refusal still travels, so
       // the failed row records the moment it was asked over.
       if (produced.provenance !== undefined) provenanceRecords.push(produced.provenance);
-      return { plan, ...digestMetaOf(provenanceRecords), refusal: produced.refusal, suppressions };
+      return { plan, ...digestMetaOf(provenanceRecords), refusal: produced.refusal, suppressions, visuals: [] };
     }
     if (!specKeys.has(normalizeName(subject.member.name))) {
       // The plan has no spec to carry this subject's fields — a location-only
@@ -366,9 +391,12 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
       continue;
     }
     provenanceRecords.push(produced.provenance);
+    visuals.push(produced.visual);
     fieldsByName.set(normalizeName(subject.member.name), produced.fields);
   }
-  if (fieldsByName.size === 0) return { plan, ...digestMetaOf(provenanceRecords), refusal: null, suppressions };
+  if (fieldsByName.size === 0) {
+    return { plan, ...digestMetaOf(provenanceRecords), refusal: null, suppressions, visuals: [] };
+  }
 
   const focalFields = focalKey === null ? undefined : fieldsByName.get(focalKey);
   return {
@@ -384,6 +412,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
     ...digestMetaOf(provenanceRecords),
     refusal: null,
     suppressions,
+    visuals,
   };
 }
 
@@ -427,6 +456,7 @@ type SceneSubjectVisualProduction =
       readonly fields: SceneSubjectVisualFields;
       readonly provenance: VisualImageProvenance;
       readonly suppressions: readonly VisualStateSuppression[];
+      readonly visual: SceneSubjectVisualSlice;
     };
 
 /**
@@ -514,6 +544,17 @@ function produceSubjectVisual(
     ok: true,
     provenance: digestBuild.provenance,
     suppressions: segments.suppressions,
+    visual: {
+      subjectId: shadow.subjectId,
+      cutId: shadow.cutId,
+      name: member.name,
+      digest: digestBuild.digest,
+      attributes: resolved,
+      realizedBody,
+      exposure,
+      suppressions: segments.suppressions,
+      missingRequired: segments.missingRequired,
+    },
     fields: {
       appearance: [
         digestIdentity,

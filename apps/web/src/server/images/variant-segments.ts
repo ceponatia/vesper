@@ -9,7 +9,7 @@ import type { CharacterProfile } from "@/contracts/world/profile";
 import { intimateAnatomySummary } from "./prompts-appearance";
 import { toWornInputs, type AvatarWardrobeItem } from "./prompts-avatar";
 import { NSFW_TEST_VARIANT_KIND, PORTRAIT_IDENTITY_LOCK, type VariantKind } from "./prompts-variant";
-import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
+import { buildStandaloneSubjectVisual, type StandaloneSubjectVisual } from "./standalone-subject-visual";
 
 /**
  * THE VARIANT/EDIT LANE'S SEGMENT ASSEMBLY: the requested delta is expressed as
@@ -199,6 +199,13 @@ export interface VariantSegmentAssembly {
   readonly missingRequired: readonly string[];
   /** Every fact a policy or the resolver excluded, and why. */
   readonly suppressions: readonly VisualStateSuppression[];
+  /**
+   * The standalone visual cut the segments were built from — digest, resolved
+   * attributes, realized body and the canonical coverage readout. Read by the
+   * Round 2 shadow instrumentation (`character-shadow.ts`) to assemble the
+   * compiled-program side over the SAME cut; nothing production sends reads it.
+   */
+  readonly visual: StandaloneSubjectVisual;
 }
 
 /**
@@ -256,5 +263,6 @@ export function buildVariantSegments(input: VariantSegmentAssemblyInput): Varian
     digestMeta: visual.digestMeta,
     missingRequired: visual.subject.missingRequired,
     suppressions: visual.subject.suppressions,
+    visual,
   };
 }
