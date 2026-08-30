@@ -81,6 +81,27 @@ of its own. That prepending is standard practice for this checkpoint family —
 it is not the same thing as the `"nsfw, naked"` default, and clearing
 `negative_prompt` does not touch it.
 
+The field is measured working and selective (fruit-bowl suppression canary,
+2026-08-29, against the pinned version above, production path: Euler a,
+cfg_scale 7, preamble on): with an 80% OFF-arm base rate, negating
+`apple, apples, red apple` dropped apple incidence to 1/10 while 8/10 ON
+bowls kept their other fruit — suppressed content tends to be replaced by
+semantically adjacent items (vegetables filling the apples' place) rather
+than by scene collapse. The endpoint reproduces byte-identically at a held
+seed, so paired-seed comparisons are meaningful here. This is the only
+registered endpoint with a proven selective negative channel; per-block
+negative trials may proceed on it.
+
+Two more measurements from the same canary:
+
+- The checkpoint inserts an unrequested woman into essentially every render
+  of a subjectless still-life prompt — its person bias operates through the
+  score-tag preamble path and is independent of the negative field.
+- With `negative_prompt` cleared per the policy above, unprompted nudity can
+  appear in non-intimate scenes (2 of 20 canary renders). That is the known
+  cost of neutralizing the `"nsfw, naked"` default; lanes that need clothed
+  output state it in the positive prompt or carry their own negative terms.
+
 ## Reviewed capability
 
 - **Edit kind:** `none` — no image input exists to rate.
