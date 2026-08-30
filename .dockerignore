@@ -37,6 +37,17 @@ scratchpad/
 # Local-only UI/QA artifacts — Playwright scratch.
 .playwright-mcp/
 
+# Eval/dev-task render output (gitignored; the designated destination for all
+# graded evidence). Never referenced by the app, and at ~70 MB it dominated the
+# build context.
+eval-images/
+
+# drizzle-kit's per-migration schema snapshots are generate-time diff inputs
+# only (~24 MB). The release-time migrator (scripts/db-migrate.ts →
+# drizzle-orm's migrate()) reads meta/_journal.json and the .sql files, never
+# the snapshots — so those two stay in the context.
+drizzle/meta/*_snapshot.json
+
 # The Vesper-owned SDXL renderer: a separate Cog/ComfyUI image built and pushed
 # to Replicate on its own, never part of the web app. The Dockerfile's blanket
 # `COPY . .` would otherwise ship its Python, its Cog definition and its workflow
