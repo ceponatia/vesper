@@ -57,7 +57,13 @@ export const IMAGE_SHADOW_FACT_DUPLICATED = "image_shadow.fact_duplicated";
 export const IMAGE_SHADOW_STALE_ALLOWLIST = "image_shadow.stale_allowlist";
 /** The two captures disagree on something a provider is configured with. */
 export const IMAGE_SHADOW_TRANSPORT_MISMATCH = "image_shadow.transport_mismatch";
-/** A side carried no capture — parity was not measured. Log-only, never a divergence. */
+/**
+ * A side carried no capture — transport parity was not measured. Never a
+ * divergence by itself, but it FORBIDS the parity claim: with nothing else
+ * diverged the verdict is `unmeasured` and this code rides the stored record,
+ * because `parity` is a cutover go-ahead and a record with no transport
+ * evidence has not earned one.
+ */
 export const IMAGE_SHADOW_TRANSPORT_UNCAPTURED = "image_shadow.transport_uncaptured";
 /**
  * The lane supplied neither a structural fact list nor probes — coverage was not
@@ -93,12 +99,14 @@ export const imageShadowComparisonSchema = z.object({
   lane: z.string().min(1),
   /**
    * `parity` = cut over safely on this render's evidence; `divergence` = do
-   * not; `unmeasured` = this render produced no coverage evidence either way (a
-   * deliberate refusal — no binding, a multi-subject cast, the LoRA route — or
-   * a lane with no usable fact list); `error` = the comparator itself failed.
+   * not; `unmeasured` = a half of the evidence is missing (a deliberate
+   * refusal — no binding, a multi-subject cast, the LoRA route — a lane with
+   * no usable fact list, or a transport capture that refused to plan);
+   * `error` = the comparator itself failed. Parity requires EVERY half
+   * measured: coverage, transport and mandatory survival.
    */
   verdict: z.enum(["parity", "divergence", "unmeasured", "error"]),
-  /** Every divergence (plus the unmeasured reason) — empty exactly when the verdict is `parity`. */
+  /** Every divergence (plus any unmeasured-half reason) — empty exactly when the verdict is `parity`. */
   codes: z.array(z.string()).default((): string[] => []),
   coverage: z.object({
     /** Null when coverage was not measured — the transport-parity null pattern. */
@@ -490,11 +498,17 @@ function comparedShadowRender(input: ShadowRenderComparisonInput): ImageShadowCo
     });
   }
 
-  // A real divergence outranks an unmeasured coverage half; with no divergence
-  // an unmeasured coverage forbids the parity claim — parity is a cutover
-  // go-ahead, and a record with no coverage evidence has not earned one.
-  const verdict = codes.length > 0 ? "divergence" : coverageUnmeasured ? "unmeasured" : "parity";
+  // A real divergence outranks an unmeasured half; with no divergence an
+  // unmeasured half forbids the parity claim — parity is a cutover go-ahead,
+  // and a record missing coverage evidence (no fact list, no probes) OR
+  // transport evidence (a side's capture refused to plan) has not earned one.
+  // The unmeasured-half codes are stored whatever the verdict, so the record
+  // always says which halves this render actually measured.
+  const transportUnmeasured = transport.parity === null;
+  const verdict =
+    codes.length > 0 ? "divergence" : coverageUnmeasured || transportUnmeasured ? "unmeasured" : "parity";
   if (coverageUnmeasured) codes.push(IMAGE_SHADOW_COVERAGE_UNMEASURED);
+  if (transportUnmeasured) codes.push(IMAGE_SHADOW_TRANSPORT_UNCAPTURED);
   return {
     version: 1,
     lane: input.lane,

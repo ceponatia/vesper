@@ -13,6 +13,7 @@ import {
   IMAGE_SHADOW_MANDATORY_LOST,
   IMAGE_SHADOW_STALE_ALLOWLIST,
   IMAGE_SHADOW_TRANSPORT_MISMATCH,
+  IMAGE_SHADOW_TRANSPORT_UNCAPTURED,
   parseImageShadowComparison,
   shadowComparisonMeta,
   shadowUnmeasuredComparison,
@@ -76,9 +77,21 @@ describe("fact coverage", () => {
    * the garment gain are named, so nothing diverges, and the payload lengths
    * are the two prompts' own. Kills a comparator that treats any wording
    * change as failure — normalizing intentional deltas is the entire point.
+   * Both sides carry captures because parity requires EVERY half measured:
+   * only the prompt hash moves here, the allowed migration.
    */
   it("passes when legacy ± the named allowlist is exactly the compiled fact set", () => {
-    const verdict = compared({});
+    const verdict = compared({
+      legacy: {
+        prompt: "spiraled horns, painted toenails",
+        capture: capture({ requiredFactKeys: [], cameraFingerprint: null }),
+      },
+      compiled: {
+        prompt: "spiraled horns and a wine-red kimono",
+        capture: capture({ promptHash: "b".repeat(64) }),
+        missingRequired: [],
+      },
+    });
     expect(verdict.verdict).toBe("parity");
     expect(verdict.codes).toEqual([]);
     expect(verdict.coverage.matches).toBe(true);
@@ -147,6 +160,14 @@ describe("structural fact lists and unmeasured coverage", () => {
     const parity = compared({
       facts: { legacy: ["horns", "toenails"], compiled: ["horns", "garment"] },
       allowlist,
+      // Captures on both sides: the parity claim needs the transport half
+      // measured, and this case is about the coverage rules alone.
+      legacy: { prompt: "spiraled horns, painted toenails", capture: capture({ requiredFactKeys: [], cameraFingerprint: null }) },
+      compiled: {
+        prompt: "spiraled horns and a wine-red kimono",
+        capture: capture({ promptHash: "b".repeat(64) }),
+        missingRequired: [],
+      },
     });
     expect(parity.verdict).toBe("parity");
     expect(parity.coverage.matches).toBe(true);
@@ -182,8 +203,9 @@ describe("structural fact lists and unmeasured coverage", () => {
     const sink = new DiagnosticCollector();
     const unmeasured = compareShadowRender({
       lane: "variant",
-      legacy: { prompt: "spiraled horns" },
-      compiled: { prompt: "spiraled horns", missingRequired: [] },
+      // Captures on both sides, so the one unmeasured half here is coverage.
+      legacy: { prompt: "spiraled horns", capture: capture({ requiredFactKeys: [], cameraFingerprint: null }) },
+      compiled: { prompt: "spiraled horns", capture: capture(), missingRequired: [] },
       allowlist: NO_DELTA,
       sink,
     });
@@ -249,6 +271,38 @@ describe("transport and mandatory survival", () => {
     });
     expect(verdict.transport).toEqual({ parity: false, firstMismatch: "referenceRoles" });
     expect(verdict.codes).toContain(IMAGE_SHADOW_TRANSPORT_MISMATCH);
+  });
+
+  /**
+   * The uncaptured-transport law (Codex P2, PR #381): a null transport parity
+   * is missing EVIDENCE, not passing evidence — structural coverage agreement
+   * alone must not produce the parity go-ahead a cutover reads. With nothing
+   * else diverged the verdict is `unmeasured` and the stored codes name the
+   * uncaptured transport; a real divergence still outranks it, with the code
+   * kept on the record so the row says which halves were measured.
+   */
+  it("refuses the parity claim when a transport capture is missing", () => {
+    const matched = { legacy: ["horns"], compiled: ["horns"] };
+    const uncaptured = compared({
+      legacy: { prompt: "spiraled horns" },
+      compiled: { prompt: "spiraled horns", missingRequired: [] },
+      facts: matched,
+      allowlist: NO_DELTA,
+    });
+    expect(uncaptured.verdict).toBe("unmeasured");
+    expect(uncaptured.codes).toEqual([IMAGE_SHADOW_TRANSPORT_UNCAPTURED]);
+    expect(uncaptured.transport.parity).toBeNull();
+    expect(uncaptured.coverage.matches).toBe(true);
+
+    const diverged = compared({
+      legacy: { prompt: "spiraled horns" },
+      compiled: { prompt: "a bare prompt", missingRequired: [] },
+      facts: { legacy: ["horns"], compiled: [] },
+      allowlist: NO_DELTA,
+    });
+    expect(diverged.verdict).toBe("divergence");
+    expect(diverged.codes).toContain(IMAGE_SHADOW_FACT_LOST);
+    expect(diverged.codes).toContain(IMAGE_SHADOW_TRANSPORT_UNCAPTURED);
   });
 
   /**
