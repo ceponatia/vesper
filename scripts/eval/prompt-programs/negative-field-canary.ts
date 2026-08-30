@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
 import { hasReplicate } from "@/server/ai";
 import {
@@ -224,6 +225,34 @@ function sd35Model(): ImageModel {
  * bought blind — no sampler classically gates negative conditioning. Seed note:
  * this wrapper treats seed 0 as random; the seed base never sends 0.
  */
+/**
+ * PuLID's workflow refuses bare prompts (measured 2026-08-29: every prediction
+ * fails with "PuLID requires a reference face image to work properly" — the
+ * schema's prompt-only claim is wrong live). The canary therefore runs in the
+ * endpoint's real production shape: one fixed synthetic reference face rides
+ * every arm, OFF and ON alike, so the negative field stays the only variable.
+ * Any clear synthetic front-facing portrait works; keep the same file across
+ * every arm and trial of one endpoint run.
+ */
+const CANARY_FACE = process.env["CANARY_FACE"] ?? "eval-images/negative-canary-fruit-bowl/reference-face.webp";
+
+function pulidReferenceExtraInput(): Readonly<Record<string, unknown>> {
+  // Only a pulid --render needs the face; reports and other endpoints must not
+  // require the file (and the data URI must never land in a manifest, which
+  // records baseControls verbatim — extraInput is not recorded).
+  if (process.env["CANARY_ENDPOINT"] !== "pulid" || !process.argv.includes("--render")) return {};
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(CANARY_FACE);
+  } catch {
+    throw new Error(
+      `PuLID renders need a reference face at ${CANARY_FACE} (or CANARY_FACE=<path>) — ` +
+        "the wrapper's workflow refuses bare prompts. Any clear synthetic front-facing portrait works.",
+    );
+  }
+  return { reference_image: `data:image/webp;base64,${bytes.toString("base64")}` };
+}
+
 function pulidModel(): ImageModel {
   return {
     id: "trial-sdxl-pulid",
@@ -238,7 +267,7 @@ function pulidModel(): ImageModel {
     aspectMode: "aspect_ratio",
     supportedAspects: [],
     outputFormat: null,
-    extraInput: {},
+    extraInput: { ...pulidReferenceExtraInput() },
     probedVersionId: "83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5",
     editKind: "unknown",
     identityPreservation: "unknown",
