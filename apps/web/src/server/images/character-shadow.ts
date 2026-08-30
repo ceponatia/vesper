@@ -373,7 +373,8 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
   // it), so a change contract can derive its preserve set from the REAL
   // subjects, then the final operation replaces the placeholder wholesale.
   const preview = assembleCharacterWorldDigest({ ...input.assembly, operation: characterPortraitImageOperation() });
-  const operation = input.operation(preview.input.subjects);
+  const subjects = preview.input.subjects ?? [];
+  const operation = input.operation(subjects);
   const built = buildImageWorldDigest({ ...preview.input, operation });
   for (const issue of built.issues) {
     sink?.push(
@@ -441,7 +442,7 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
 
   // --- 5. Structural fact lists and the live allowlist ----------------------
   const keptIds = new Set(compiled.compiled.promptProgramProvenance.positiveClaimIds);
-  const compiledFactNames = preview.input.subjects
+  const compiledFactNames = subjects
     .flatMap((subject) => subject.facts)
     .filter((fact) => keptIds.has(fact.key))
     .map((fact) => shadowFactName(fact.key, input.subjectId));
