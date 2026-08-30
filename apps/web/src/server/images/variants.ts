@@ -14,6 +14,7 @@ import { HIDDEN_IMAGE_KINDS, runImagePipeline, type ImageKind } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
+import { variantShadowMeta } from "./character-shadow";
 import { monogramSvg } from "./monogram";
 import { pairProfileWithNsfwLora } from "./nsfw-lora";
 import { NSFW_TEST_VARIANT_KIND, type VariantKind } from "./prompts-variant";
@@ -205,6 +206,27 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       : null;
   const packSelection = packIdentity?.ok ? packIdentity : null;
 
+  // The Round 2 shadow (issue #256): the compiled prompt program is built
+  // BESIDE this exact request and its verdict recorded on the row's meta.
+  // Observation only — nothing the render sends reads it, and any shadow
+  // failure degrades to a recorded verdict (character-shadow.ts), never a
+  // failed or altered render.
+  const shadowMeta =
+    character && resolved && digest.assembly
+      ? variantShadowMeta({
+          characterId: input.characterId,
+          characterName: character.name,
+          revision: character.updatedAt.toISOString(),
+          extraRevisions: load.revisions,
+          kind: input.kind,
+          instruction: input.instruction,
+          assembly: digest.assembly,
+          profile: resolved,
+          references: packSelection?.references.map((entry) => entry.reference) ?? [],
+          ...(input.sink === undefined ? {} : { sink: input.sink }),
+        })
+      : {};
+
   const { imageId } = await runImagePipeline({
     asset: {
       ownerId: input.userId,
@@ -225,6 +247,8 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         // beside the model decisions: a thrown or refused produce carries no
         // meta, and the provenance must survive a failed render.
         ...(digest.assembly?.digestMeta ?? {}),
+        // The shadow verdict, beside the provenance it was measured over.
+        ...shadowMeta,
       },
     },
     // The row is on record for a missing character too — failed, unlogged. An

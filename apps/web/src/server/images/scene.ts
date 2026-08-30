@@ -32,6 +32,7 @@ import {
 } from "@vesper/image-core";
 import type { SceneGenState } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
+import { sceneShadowMeta, type CharacterSceneShadow } from "./character-shadow";
 import { monogramSvg } from "./monogram";
 import {
   buildSceneComposerPrompt,
@@ -202,6 +203,14 @@ export interface RenderResolvedSceneInput {
    */
   visualStateMeta?: Record<string, unknown>;
   /**
+   * The Round 2 shadow bundle (issue #256): the single realized cut this render
+   * draws, or the multi-subject marker. Present only for the chat scene caller
+   * with committed cuts; absent leaves the render byte-identical to before the
+   * field existed. The shadow runs HERE because the legacy side must be the
+   * exact prompt and reference set the reserve-time row records.
+   */
+  shadow?: CharacterSceneShadow;
+  /**
    * Non-null refuses the render before generation: the row is reserved and
    * failed with this text, no provider is called. The flag-on identity-pack
    * refusal settles here — a scene may not substitute another reference for a
@@ -317,6 +326,24 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   };
   const reservedProvenance = provenanceFor(primary);
 
+  // The Round 2 shadow (issue #256): compiled beside the PRIMARY rung's exact
+  // prompt and reference set — the render the reserve-time row describes.
+  // Observation only; any shadow failure degrades to a recorded verdict
+  // (character-shadow.ts), and a caller that passes no bundle is untouched.
+  const shadowMeta =
+    input.shadow === undefined
+      ? undefined
+      : sceneShadowMeta({
+          shadow: input.shadow,
+          profile,
+          loraRoute: input.resolvedLora !== undefined,
+          primaryAttempt: primary,
+          legacyPrompt: primary ? promptFor(primary) : textPrompt,
+          references: primary ? sentReferencesFor(primary) : [],
+          ...(input.visualStateMeta === undefined ? {} : { digestMeta: input.visualStateMeta }),
+          sink,
+        });
+
   const ctx: SceneAttemptContext = {
     promptFor,
     primaryReference,
@@ -365,6 +392,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           ...(input.resolvedLora ? { lora: input.resolvedLora.id } : {}),
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
+          // The shadow verdict, beside the visual provenance it was measured
+          // over. Reserve-time like the rest: the verdict describes the primary
+          // rung's request, which no fallback or failure changes.
+          ...(shadowMeta ?? {}),
         },
       },
       failedPrecondition: input.failedPrecondition ?? null,

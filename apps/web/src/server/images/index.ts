@@ -262,6 +262,8 @@ export {
 // entity lane resolves bindings today, and it asks for item/location alone.
 export * from "./packs-qwen-2511";
 export * from "./packs-qwen-2512-portrait";
+// The Round 2 shadow wiring: lane entries, seeded deltas, canonical fact names.
+export * from "./character-shadow";
 export * from "./avatar";
 export {
   AVATAR_PORTRAIT_CAMERA,

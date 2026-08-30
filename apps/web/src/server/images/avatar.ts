@@ -17,6 +17,7 @@ import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { runImagePipeline } from "./assets";
 import { buildAvatarSegments, type AvatarSegmentAssembly, type AvatarSegmentAssemblyInput } from "./avatar-segments";
+import { avatarShadowMeta } from "./character-shadow";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
 import {
@@ -144,6 +145,23 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
   const digestRefusal = character ? avatarDigestRefusal(assembly, input.characterId, input.sink) : null;
   const prompt = assembly?.prompt ?? "";
 
+  // The Round 2 shadow (issue #256): the compiled prompt program is built
+  // BESIDE this exact request and its verdict recorded on the row's meta.
+  // Observation only — nothing the render sends reads it, and any shadow
+  // failure degrades to a recorded verdict (character-shadow.ts).
+  const shadowMeta =
+    character && resolved && assembly
+      ? avatarShadowMeta({
+          characterId: input.characterId,
+          characterName: character.name,
+          revision: character.updatedAt.toISOString(),
+          extraRevisions: load.revisions,
+          assembly,
+          profile: resolved,
+          ...(input.sink === undefined ? {} : { sink: input.sink }),
+        })
+      : {};
+
   const { imageId } = await runImagePipeline({
     asset: {
       ownerId: input.userId,
@@ -156,6 +174,8 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
         model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
         demo,
         ...(assembly?.digestMeta ?? {}),
+        // The shadow verdict, beside the provenance it was measured over.
+        ...shadowMeta,
       },
     },
     failedPrecondition: character

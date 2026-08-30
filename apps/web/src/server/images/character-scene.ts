@@ -24,9 +24,15 @@ import {
 } from "./prompts-appearance";
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
+import type { CharacterSceneShadow } from "./character-shadow";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
-import { applySceneCastVisual, visualStateNote, type SceneCastVisualSubject } from "./scene-subject-visual";
+import {
+  applySceneCastVisual,
+  visualStateNote,
+  type SceneCastVisualSubject,
+  type SceneSubjectVisualSlice,
+} from "./scene-subject-visual";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 
 // The meter note moved to the cutover module with WP-C; the legacy no-cut path
@@ -274,6 +280,7 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // and losing the whole picture over it would be the worse degradation.
   let visualRefusal: string | null = null;
   let visualStateMeta: Record<string, unknown> | undefined;
+  let appliedVisuals: readonly SceneSubjectVisualSlice[] = [];
   const castVisuals: SceneCastVisualSubject[] = [];
   for (const member of cast) {
     const shadow = input.subjectVisuals?.get(member.characterId);
@@ -293,7 +300,23 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
     plan = applied.plan;
     visualRefusal = applied.refusal;
     visualStateMeta = applied.digestMeta;
+    appliedVisuals = applied.visuals;
   }
+
+  // The Round 2 shadow bundle (issue #256): a single-subject scene with a
+  // realized cut carries it for comparison; a cast of two or more records the
+  // designed multi-subject refusal instead (no frozen comparison row exists for
+  // it). A render with no cuts at all — pre-digest callers, the lab — records
+  // nothing. The shadow itself runs inside `renderResolvedScene`, where the
+  // reserve-time prompt and reference set are decided.
+  const sceneShadow: CharacterSceneShadow | undefined =
+    castVisuals.length === 0
+      ? undefined
+      : cast.length >= 2
+        ? { kind: "multi_subject", subjectIds: cast.map((member) => member.characterId) }
+        : appliedVisuals[0] !== undefined
+          ? { kind: "single", slice: appliedVisuals[0] }
+          : undefined;
 
   // The chat's stored scene-model pick, resolved against the profile registry. A
   // pick that no longer exists degrades to the scene task's default (owner ruling
@@ -436,6 +459,12 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // survives failures — which visual moment fed this render, whatever the
       // provider then did with it.
       ...(visualStateMeta === undefined ? {} : { visualStateMeta }),
+      // The shadow bundle rides only past the refusals: a render that fails its
+      // precondition records the refusal, not a comparison of a request that
+      // never went.
+      ...(sceneShadow === undefined || identityRefusal !== null || visualRefusal !== null
+        ? {}
+        : { shadow: sceneShadow }),
       failedPrecondition: identityRefusal ?? visualRefusal,
       linkage: {
         ownerId: input.userId,
