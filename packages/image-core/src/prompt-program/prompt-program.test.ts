@@ -855,6 +855,84 @@ describe("the Qwen 2511 delta-edit dialect", () => {
   });
 
   /**
+   * The lock's sentence contract, held in the COMPILED output (owner
+   * correction 2026-08-29 #4): the multi lock promises "Use numbered
+   * references as assigned below", and the canonical operation-first segment
+   * order emitted the `Image N` assignments AHEAD of the identity-kind lock —
+   * so "below" was false in the very prompt that said it. The lock bytes are
+   * frozen for kernel-quirk parity, so the dialect's own emission order moved
+   * instead: lock first, then the assignments, then the delta-first tail the
+   * research doc names — the one change, the limited preserve set, the
+   * geometry permission. Falsified against the canonical order (assignments
+   * lead) and against a reorder that scrambled the operation band while moving
+   * the lock.
+   */
+  it("emits the identity lock before the numbered assignments, delta order intact", () => {
+    const digest = editWorld({
+      operation: operation({
+        kind: "edit",
+        task: "variant",
+        strategy: "instruction_edit",
+        change: {
+          concept: "subject.pose",
+          value: "raise her left hand to shoulder height",
+          replacements: [],
+          preserve: ["outfit", "hair"],
+          geometry: "canvas_may_expand",
+        },
+      }),
+      location: {
+        ...entity("location", "l1", [
+          fact({ key: "l1.identity", concept: "location.identity", value: "a narrow tea shop", disposition: "required_visual" }),
+        ]),
+        label: "the tea shop",
+      },
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "location", subjectRef: "l1", required: false, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1" },
+        { position: 2, role: "location", subjectRef: "l1" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    // "as assigned below" is now TRUE: the lock opens the prompt, and every
+    // numbered assignment sits after it.
+    expect(text.startsWith(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK)).toBe(true);
+    const lockIndex = text.indexOf(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    const firstAssignment = text.indexOf("Image ");
+    expect(firstAssignment).toBeGreaterThan(lockIndex);
+
+    // The delta-first properties survive the move: assignments, then the one
+    // change, then the preserve set, then the geometry permission.
+    const secondAssignment = text.indexOf("Image 2 shows the place, the tea shop.");
+    const change = text.indexOf("Make exactly this change: raise her left hand to shoulder height.");
+    const preserve = text.indexOf("Keep hair and outfit unchanged from the source.");
+    const geometry = text.indexOf(
+      "You may extend the canvas and paint in the newly required space rather than compressing the subject to fit.",
+    );
+    expect(secondAssignment).toBeGreaterThan(firstAssignment);
+    expect(change).toBeGreaterThan(secondAssignment);
+    expect(preserve).toBeGreaterThan(change);
+    expect(geometry).toBeGreaterThan(preserve);
+
+    // The single-reference lock opens its prompt the same way; its own first
+    // sentence IS an assignment ("Image 1 is the identity reference."), so the
+    // pin is that the lane's other numbered sentence follows it.
+    const single = compile2511(editWorld());
+    if (!single.ok) throw new Error(`unexpected refusal: ${single.refusal.code}`);
+    expect(single.compiled.positiveText.startsWith(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK)).toBe(true);
+    expect(single.compiled.positiveText.indexOf("Image 1 shows Wren.")).toBeGreaterThan(
+      single.compiled.positiveText.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
+    );
+  });
+
+  /**
    * The fail-closed half of the identity contract. On this endpoint the
    * reference IS the identity transport, so an identity claim with nothing to
    * lock to must refuse — compiling prose that describes a face instead would

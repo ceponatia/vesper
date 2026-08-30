@@ -1,5 +1,5 @@
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
-import type { ImagePromptSegment } from "../render-intent/prompt-segments";
+import { joinImagePromptSegments, type ImagePromptSegment } from "../render-intent/prompt-segments";
 import type { ImageAngleBand, ImageDistanceBand, ImageFramingBand, ImageLightingBand } from "./camera-bands";
 import type { ImageStyleMedium } from "./conflict-keys";
 import {
@@ -39,11 +39,15 @@ import type { ImagePositiveClaim } from "./positive-claims";
  * 1. **It is an EDIT model.** Its `prompt` is "Text instruction on how to edit
  *    the given image" (probed schema, drizzle/0119), its reference input is
  *    required, and it cannot generate from text alone. So the compile is
- *    delta-first, in the research doc's order: numbered references and their
- *    roles, the one requested change, the limited preserve set, and any
- *    geometry/canvas permission — never a broad "preserve everything" clause,
- *    which is the wording the research blames for Qwen's squashed-figure
- *    geometry failure when it fights a requested pose or framing change.
+ *    delta-first, in the research doc's order: the identity lock, the numbered
+ *    references and their roles, the one requested change, the limited
+ *    preserve set, and any geometry/canvas permission — never a broad
+ *    "preserve everything" clause, which is the wording the research blames
+ *    for Qwen's squashed-figure geometry failure when it fights a requested
+ *    pose or framing change. The lock leading the assignments is this
+ *    dialect's own emission order (`compilePositive`): the multi-reference
+ *    lock promises "as assigned below", so the assignments must actually be
+ *    below it (owner correction 2026-08-29 #4).
  * 2. **Numbered references are a FAMILY behavior** (owner ruling 2026-08-24):
  *    Qwen Edit's own multi-image guidance asks callers to identify images by
  *    number and assign each an explicit purpose, so this dialect declares
@@ -134,6 +138,12 @@ const IDENTITY_LOCK_PRIORITY = 99;
 /** Per-compile render state. Created fresh in `compilePositive`, never shared. */
 interface RenderState {
   lockEmitted: boolean;
+  /**
+   * The claim id whose segment carries the lock bytes — how `compilePositive`
+   * finds the lock again after fitting, structurally rather than by matching
+   * text (the segments carry the claim id as `source`).
+   */
+  lockClaimId: string | null;
   readonly takenSlots: Set<number>;
 }
 
@@ -280,6 +290,7 @@ function renderClaim(
       if (lock === null) return null;
       if (!state.lockEmitted) {
         state.lockEmitted = true;
+        state.lockClaimId = claim.id;
         return { kind: claim.segmentKind, text: lock, mandatory: true, priority: IDENTITY_LOCK_PRIORITY };
       }
       // Further subjects: the multi lock already covers "each person", so their
@@ -413,13 +424,31 @@ function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositiv
   // per-render facts, and state leaking across compiles would make the second
   // compile of one digest differ from the first, which the determinism
   // guarantee forbids.
-  const state: RenderState = { lockEmitted: false, takenSlots: new Set<number>() };
-  return compileDialectClaims({
+  const state: RenderState = { lockEmitted: false, lockClaimId: null, takenSlots: new Set<number>() };
+  const compiled = compileDialectClaims({
     claims: input.claims,
     render: (claim) => renderClaim(claim, input, state),
     budget: input.budget,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
+
+  // This dialect's OWN emission order (the canonical segment order permits a
+  // dialect reorder): the identity lock leads the compiled prompt, ahead of
+  // the numbered `Image N` assignments the canonical operation-first order
+  // would otherwise put in front of it. The multi-reference lock says "Use
+  // numbered references as assigned below", and under the canonical order that
+  // "below" was false in the compiled output (owner correction 2026-08-29 #4)
+  // — the lock BYTES are frozen for kernel-quirk parity, so the order moves
+  // instead. The requested change, the preserve set and the geometry
+  // permission keep their delta-first order after the assignments; nothing
+  // else moves. Reordering happens AFTER fitting, so what a budget squeeze
+  // keeps or trims is unchanged by this.
+  if (state.lockClaimId === null) return compiled;
+  const lockIndex = compiled.segments.findIndex((segment) => segment.source === state.lockClaimId);
+  const lock = compiled.segments[lockIndex];
+  if (lock === undefined || lockIndex <= 0) return compiled;
+  const segments = [lock, ...compiled.segments.slice(0, lockIndex), ...compiled.segments.slice(lockIndex + 1)];
+  return { ...compiled, segments, text: joinImagePromptSegments(segments) };
 }
 
 // ---------------------------------------------------------------------------
