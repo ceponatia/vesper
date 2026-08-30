@@ -57,9 +57,15 @@ the reviewed settings from `reviewed-profile-controls.ts` ride every render
 (PuLID 832×1216 + `method: "fidelity"`; Pony 832×1216 with the OFF arm sending
 `negative_prompt: ""` explicitly, because that wrapper's provider default is
 `"nsfw, naked"` and an absent field would be a different negative, not none).
-The PuLID canary is bare-prompt — no `reference_image`, so no face adapter in
-the loop. Each endpoint's negative field and sampling knobs are the probed
-inputs recorded in `docs/image-models/models/<model>.md`.
+The PuLID canary sends a fixed synthetic `reference_image` on every arm — the
+wrapper's workflow refuses bare prompts ("PuLID requires a reference face
+image", measured 2026-08-29; the schema's prompt-only claim is wrong live), so
+with-reference is both the only runnable shape and the production shape. The
+face rides from `eval-images/negative-canary-fruit-bowl/reference-face.webp`
+(override with `CANARY_FACE=<path>`); any clear synthetic front-facing
+portrait works, held constant across every arm of a run. Each endpoint's
+negative field and sampling knobs are the probed inputs recorded in
+`docs/image-models/models/<model>.md`.
 
 Trial D renders one arm twice at one seed and the harness compares SHA-256
 hashes itself: identical files mean the seed pins sampling and OFF/ON byte

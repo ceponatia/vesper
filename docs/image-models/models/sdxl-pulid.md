@@ -21,7 +21,11 @@ trial, and license/terms review.
 
 ## Capabilities
 
-- **Generate without a reference:** yes. `prompt` is the only required input.
+- **Generate without a reference:** no in practice. The schema marks `prompt`
+  as the only required input, but the live workflow refuses bare prompts —
+  every prediction fails with "PuLID requires a reference face image to work
+  properly" (measured 2026-08-29 against the pinned version above). A
+  `reference_image` must ride every request.
 - **Edit from a reference:** yes, through PuLID's face-embedding adapter.
 - **Reference field:** `reference_image`, one URI. See below for why this is
   not `depth_image`.
