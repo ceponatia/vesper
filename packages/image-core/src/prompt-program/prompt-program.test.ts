@@ -738,7 +738,12 @@ describe("the Qwen 2511 delta-edit dialect", () => {
         disposition: "required_visual",
         priority: 1,
       }),
-      fact({ key: "s1.exposure", concept: "subject.exposure", value: "bare from the waist up" }),
+      // `subjectRef` mirrors production: the character adapter's synthesized
+      // exposure facts always carry their subject's ref
+      // (`exposureFacts`, apps/web character-adapter), which is what lets the
+      // dialect bind the fragment to the person — "Wren is …", never the
+      // anonymous "The subject is …" fallback for an unowned claim.
+      fact({ key: "s1.exposure", concept: "subject.exposure", value: "bare from the waist up", subjectRef: "s1" }),
     ]),
     label: "Wren",
   });
