@@ -95,8 +95,10 @@ negative trials may proceed on it.
 Two more measurements from the same canary:
 
 - The checkpoint inserts an unrequested woman into essentially every render
-  of a subjectless still-life prompt — its person bias operates through the
-  score-tag preamble path and is independent of the negative field.
+  of a subjectless still-life prompt. The person bias is independent of the
+  negative field (both arms show it) and is consistent with the score-tag
+  preamble's training corpus, though the preamble was not isolated (the
+  preamble-off trial was not bought).
 - With `negative_prompt` cleared per the policy above, unprompted nudity can
   appear in non-intimate scenes (2 of 20 canary renders). That is the known
   cost of neutralizing the `"nsfw, naked"` default; lanes that need clothed
