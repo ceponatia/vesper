@@ -86,16 +86,23 @@ describe("tranche-1 pack resolution", () => {
   });
 
   /**
-   * Ruling 2 as an assertion: binding rows exist for ALL FOUR portrait profile
-   * keys and every one of them pins the SAME pack pair. Kills a per-profile
-   * pack fork and a portrait key quietly left unbound.
+   * Ruling 2 plus correction 1 as one assertion: binding rows exist for exactly
+   * the THREE portrait profile keys that run on this endpoint, every one pins
+   * the SAME pack pair, and `stylized-portrait-high-guidance` is DELIBERATELY
+   * UNBOUND — its database profile rides SD 3.5 Large, and a binding is a real
+   * (profile, model, dialect, packs) combination, never a namespace
+   * reservation for a profile name (owner correction 2026-08-29 #1). Kills a
+   * per-profile pack fork, a 2512 portrait key quietly left unbound, and a row
+   * that re-binds the SD profile to an endpoint it never renders on. Binding
+   * the stylized key later requires the `sd35_large_prose` dialect and must
+   * update this pin.
    */
-  it("binds all four portrait profile keys to one shared pack pair", () => {
+  it("binds the three 2512 portrait keys to one pack pair and leaves the SD 3.5 key unbound", () => {
     const rows = registeredImagePromptBindings().filter(
       (binding) => binding.modelSlug === GENERATE_SLUG && binding.task === "portrait",
     );
     expect(new Set(rows.map((binding) => binding.profileKey))).toEqual(
-      new Set(["portrait-standard", "portrait-fast", "portrait-quality", "stylized-portrait-high-guidance"]),
+      new Set(["portrait-standard", "portrait-fast", "portrait-quality"]),
     );
     expect(new Set(rows.map((binding) => binding.positivePackVersionId))).toEqual(
       new Set([qwenImage2512PortraitPositivePack.id]),
@@ -103,6 +110,9 @@ describe("tranche-1 pack resolution", () => {
     expect(new Set(rows.map((binding) => binding.negativePackVersionId))).toEqual(
       new Set([qwenImage2512PortraitNegativePack.id]),
     );
+    expect(
+      registeredImagePromptBindings().some((binding) => binding.profileKey === "stylized-portrait-high-guidance"),
+    ).toBe(false);
     // The 2511 side shares its own pair the same way — one pack pair per endpoint.
     expect(new Set(qwenImageEdit2511Bindings.map((binding) => binding.positivePackVersionId)).size).toBe(1);
   });

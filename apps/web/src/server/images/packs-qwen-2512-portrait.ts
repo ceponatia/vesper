@@ -11,8 +11,10 @@ import {
 
 /**
  * The portrait extension of the `qwen/qwen-image-2512` seed — one shared
- * portrait pack pair, and a binding row for EVERY portrait profile key (owner
- * ruling 2026-08-29 #2: all rows, one pack).
+ * portrait pack pair, and a binding row for every portrait profile key THAT
+ * ACTUALLY RUNS ON THIS ENDPOINT (owner ruling 2026-08-29 #2: all rows, one
+ * pack; owner correction 2026-08-29 #1: a profile bound to another model gets
+ * no row here).
  *
  * The pack pair is a distinct version with the SAME manifests as the endpoint's
  * item/location pair, and both halves of that are deliberate. Distinct, because
@@ -30,15 +32,15 @@ import {
  * on this endpoint that is not even a deferral: the portrait profiles allow no
  * reference roles at all, so there is no identity input to hold.
  *
- * The `stylized-portrait-high-guidance` row is the ruling's reach case: its
- * database profile currently rides SD 3.5 Large, but the ruling binds every
- * portrait profile KEY to this one pack on this model slug so the
- * profile-keyed resolution the cutover plans finds one answer for every
- * portrait key. An SD 3.5-slug binding would need the (unimplemented)
- * `sd35_large_prose` dialect and its own pack — deferred with the rest of that
- * endpoint's cutover. Today's `activeImagePromptBinding` keys on model slug and
- * task, so the four rows are interchangeable candidates pinning one pair; the
- * per-key distinction pays off when resolution learns profile keys.
+ * `stylized-portrait-high-guidance` is DELIBERATELY UNBOUND (owner correction
+ * 2026-08-29 #1). A binding is a real (profile, model, dialect, packs)
+ * combination, not a namespace reservation for profile names — and that
+ * profile's database row rides SD 3.5 Large, so a row here would have bound it
+ * to qwen/qwen-image-2512, an endpoint it never renders on. Its real binding
+ * arrives with the (unimplemented) `sd35_large_prose` dialect and that
+ * endpoint's own pack pair; until then the profile-keyed resolution answers
+ * null for the key, which is the staged-rollout contract's honest "not cut
+ * over here". The pin lives in `packs-character.test.ts`.
  */
 
 const MODEL_SLUG = "qwen/qwen-image-2512";
@@ -80,14 +82,13 @@ export const qwenImage2512PortraitNegativePack: ImageNegativePackVersion = {
 };
 
 // ---------------------------------------------------------------------------
-// Bindings — every portrait profile key, one pack pair
+// Bindings — every 2512 portrait profile key, one pack pair
 // ---------------------------------------------------------------------------
 
 const PORTRAIT_PROFILE_KEYS = [
   ["binding-qwen-2512-portrait-standard-v1", "portrait-standard"],
   ["binding-qwen-2512-portrait-fast-v1", "portrait-fast"],
   ["binding-qwen-2512-portrait-quality-v1", "portrait-quality"],
-  ["binding-qwen-2512-portrait-stylized-high-guidance-v1", "stylized-portrait-high-guidance"],
 ] as const;
 
 export const qwenImage2512PortraitBindings = PORTRAIT_PROFILE_KEYS.map(([id, profileKey]) => ({
