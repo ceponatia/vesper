@@ -1,0 +1,319 @@
+import { describe, expect, it } from "vitest";
+import {
+  imageModelProfileSchema,
+  imageModelSchema,
+  type ImageProfileOperation,
+  type ImageProfileTask,
+  type ImagePromptStrategy,
+  type ImageRenderReference,
+  type ResolvedImageProfile,
+} from "@vesper/image-core";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
+import {
+  LANE_PROBE_NAME,
+  LANE_PROBE_SUBJECT_ID,
+  laneProbeAvatarSegments,
+  laneProbeCastMember,
+  laneProbeDressedExposure,
+  laneProbeScenePlan,
+  laneProbeShadowInput,
+  laneProbeVariantSegments,
+  laneProbeWardrobe,
+} from "@/server/test-support";
+import {
+  avatarShadowMeta,
+  chatLookShadowMeta,
+  IMAGE_SHADOW_BINDING_MISSING,
+  IMAGE_SHADOW_LORA_ROUTE,
+  IMAGE_SHADOW_MULTI_SUBJECT,
+  sceneShadowMeta,
+  variantShadowMeta,
+  type CharacterSceneShadow,
+} from "./character-shadow";
+import { buildChatLookSegments } from "./chat-look-segments";
+import { applySceneSubjectVisual } from "./scene-subject-visual";
+import {
+  IMAGE_SHADOW_COMPARISON_META_KEY,
+  parseImageShadowComparison,
+  type ImageShadowComparison,
+} from "./shadow-comparison";
+
+/**
+ * THE ROUND 2 SHADOW WIRING (issue #256): each character lane's entry, run over
+ * the same probe fixture the characterization freeze and the cutover comparison
+ * use, must produce a meta fragment whose verdict parses — and must produce
+ * NOTHING else. Two invariants carry the whole file:
+ *
+ * - **A verdict lands.** The full chain — world-digest assembly over the lane's
+ *   realized cut, binding resolution on the lane's own model, the prompt-program
+ *   compile, both transport captures, the structural comparison — runs to a
+ *   MEASURED verdict on the seeded qwen bindings. Kills a wiring seam that
+ *   throws, silently skips, or loses the digest between the lane and the
+ *   comparator; the deliberate-refusal cases pin their own codes instead.
+ * - **Observation only.** Every lane input is deep-frozen before the call: a
+ *   shadow that wrote into the assembly, the references, or the profile — the
+ *   objects production sends from — would throw inside and surface as the
+ *   contained `error` verdict, which the measured-verdict assertion refuses.
+ *   With the freeze pins already proving the production strings, this is the
+ *   cheap spelling of "the sent payload is byte-identical with shadow present":
+ *   the shadow's entire output is the one meta key asserted below.
+ */
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+/** One resolved profile on a REAL seeded slug, so binding resolution is live. */
+function shadowProfile(over: {
+  slug: string;
+  key: string;
+  task: ImageProfileTask;
+  operation: ImageProfileOperation;
+  promptStrategy: ImagePromptStrategy;
+}): ResolvedImageProfile {
+  const model = imageModelSchema.parse({
+    id: `mdl-shadow-${over.task}`,
+    slug: over.slug,
+    label: "Shadow Fixture",
+    canGenerate: true,
+    canEdit: true,
+    referenceField: "image",
+    referenceArity: "array",
+    maxReferences: 3,
+    supportedAspects: ["3:4"],
+  });
+  const profile = imageModelProfileSchema.parse({
+    id: `prf-shadow-${over.key}`,
+    imageModelId: model.id,
+    key: over.key,
+    label: "Shadow Fixture",
+    task: over.task,
+    operation: over.operation,
+    promptStrategy: over.promptStrategy,
+  });
+  return { model, profile };
+}
+
+/** Deep-freeze every plain object and array; typed arrays stay as they are. */
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || ArrayBuffer.isView(value) || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const member of Object.values(value)) deepFreeze(member);
+  return value;
+}
+
+/** The one identity reference an edit lane sends, buffer included. */
+function identityReference(): ImageRenderReference {
+  return { role: "identity", buffer: Buffer.from("identity-anchor"), name: LANE_PROBE_NAME };
+}
+
+/** The parsed verdict a lane's meta fragment carries — and the ONLY key it carries. */
+function verdictOf(meta: Record<string, unknown> | undefined): ImageShadowComparison {
+  expect(meta).toBeDefined();
+  expect(Object.keys(meta ?? {})).toEqual([IMAGE_SHADOW_COMPARISON_META_KEY]);
+  const parsed = parseImageShadowComparison(meta?.[IMAGE_SHADOW_COMPARISON_META_KEY]);
+  expect(parsed).not.toBeNull();
+  return parsed as ImageShadowComparison;
+}
+
+/** A verdict the full chain measured — parity or divergence, never contained failure. */
+function expectMeasured(verdict: ImageShadowComparison): void {
+  expect(["parity", "divergence"]).toContain(verdict.verdict);
+  expect(verdict.coverage.matches).not.toBeNull();
+  expect(verdict.payload.compiledChars).toBeGreaterThan(0);
+}
+
+const VARIANT_INSTRUCTION = "wearing a floor-length wine-red silk kimono";
+
+function variantInput(): Parameters<typeof variantShadowMeta>[0] {
+  return {
+    characterId: LANE_PROBE_SUBJECT_ID,
+    characterName: LANE_PROBE_NAME,
+    revision: "2026-08-30T00:00:00.000Z",
+    extraRevisions: [],
+    kind: "outfit",
+    instruction: VARIANT_INSTRUCTION,
+    assembly: laneProbeVariantSegments("outfit", VARIANT_INSTRUCTION),
+    profile: shadowProfile({
+      slug: "qwen/qwen-image-edit-2511",
+      key: "variant-standard",
+      task: "variant",
+      operation: "edit",
+      promptStrategy: "instruction_edit",
+    }),
+    references: [identityReference()],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The lanes
+// ---------------------------------------------------------------------------
+
+describe("character-lane shadow wiring", () => {
+  it("variant: a measured, deterministic verdict from frozen production inputs", () => {
+    const first = verdictOf(variantShadowMeta(deepFreeze(variantInput())));
+    expect(first.lane).toBe("variant");
+    expectMeasured(first);
+    // Determinism is the retry contract: two shadows of one request are one
+    // verdict, or the stored record could not be trusted against a re-run.
+    expect(verdictOf(variantShadowMeta(deepFreeze(variantInput())))).toEqual(first);
+  });
+
+  it("avatar: binds per profile key, and records the miss for a key with no row", () => {
+    const assembly = laneProbeAvatarSegments(laneProbeWardrobe());
+    const shared = {
+      characterId: LANE_PROBE_SUBJECT_ID,
+      characterName: LANE_PROBE_NAME,
+      revision: "2026-08-30T00:00:00.000Z",
+      extraRevisions: [],
+      assembly,
+    } as const;
+    const bound = verdictOf(
+      avatarShadowMeta(
+        deepFreeze({
+          ...shared,
+          profile: shadowProfile({
+            slug: "qwen/qwen-image-2512",
+            key: "portrait-standard",
+            task: "portrait",
+            operation: "generate",
+            promptStrategy: "text_to_image_description",
+          }),
+        }),
+      ),
+    );
+    expect(bound.lane).toBe("avatar");
+    expectMeasured(bound);
+
+    // The strict half of profile-keyed resolution, through the lane entry: a
+    // profile key with no binding row records the refusal rather than borrowing
+    // a sibling portrait profile's packs — and rather than failing anything.
+    const sink = new DiagnosticCollector();
+    const missed = verdictOf(
+      avatarShadowMeta({
+        // The collector must stay writable, so it joins after the freeze.
+        ...deepFreeze({
+          ...shared,
+          profile: shadowProfile({
+            slug: "qwen/qwen-image-2512",
+            key: "portrait-unbound",
+            task: "portrait",
+            operation: "generate",
+            promptStrategy: "text_to_image_description",
+          }),
+        }),
+        sink,
+      }),
+    );
+    expect(missed.verdict).toBe("unmeasured");
+    expect(missed.codes).toEqual([IMAGE_SHADOW_BINDING_MISSING]);
+    expect(sink.items.some((entry) => entry.code === IMAGE_SHADOW_BINDING_MISSING)).toBe(true);
+  });
+
+  it("chat look: a measured verdict from the committed cut, and nothing from the degraded mint", () => {
+    const assembly = buildChatLookSegments({
+      outfit: VARIANT_INSTRUCTION,
+      outfitExposed: false,
+      shadow: laneProbeShadowInput(),
+      exposure: laneProbeDressedExposure(),
+    });
+    expect(assembly.refusal).toBeNull();
+    const verdict = verdictOf(
+      chatLookShadowMeta(
+        deepFreeze({
+          characterId: LANE_PROBE_SUBJECT_ID,
+          cutId: "lane-probe-cut",
+          outfit: VARIANT_INSTRUCTION,
+          outfitExposed: false,
+          assembly,
+          profile: shadowProfile({
+            slug: "qwen/qwen-image-edit-2511",
+            key: "chat-look-standard",
+            task: "chat_look",
+            operation: "edit",
+            promptStrategy: "instruction_edit",
+          }),
+          references: [identityReference()],
+        }),
+      ),
+    );
+    expect(verdict.lane).toBe("chat_look");
+    expectMeasured(verdict);
+
+    // The route-only mint realized no cut: there is no digest to compile a
+    // program over, and a shadow that fabricated one anyway would be comparing
+    // prompts nobody derives from world state.
+    const degraded = buildChatLookSegments({ outfit: "", outfitExposed: false });
+    expect(
+      chatLookShadowMeta({
+        characterId: LANE_PROBE_SUBJECT_ID,
+        cutId: "lane-probe-cut",
+        outfit: "",
+        outfitExposed: false,
+        assembly: degraded,
+        profile: shadowProfile({
+          slug: "qwen/qwen-image-edit-2511",
+          key: "chat-look-standard",
+          task: "chat_look",
+          operation: "edit",
+          promptStrategy: "instruction_edit",
+        }),
+        references: [],
+      }),
+    ).toBeUndefined();
+  });
+
+  it("scene: measures the single-subject cut, and records the designed refusals", () => {
+    const member = laneProbeCastMember();
+    const applied = applySceneSubjectVisual({
+      plan: laneProbeScenePlan(member),
+      member,
+      shadow: laneProbeShadowInput(),
+    });
+    expect(applied.refusal).toBeNull();
+    const slice = applied.visuals[0];
+    expect(slice).toBeDefined();
+    if (slice === undefined) throw new Error("the scene fixture produced no visual slice");
+    const single: CharacterSceneShadow = { kind: "single", slice };
+    const profile = shadowProfile({
+      slug: "qwen/qwen-image-edit-2511",
+      key: "scene-standard",
+      task: "scene",
+      operation: "edit",
+      promptStrategy: "instruction_edit",
+    });
+    const shared = {
+      profile,
+      loraRoute: false,
+      primaryAttempt: "edit",
+      legacyPrompt: "the probe scene prompt, as the reserve-time row records it",
+      references: [identityReference()],
+    } as const;
+
+    const measured = verdictOf(sceneShadowMeta(deepFreeze({ ...shared, shadow: single })));
+    expect(measured.lane).toBe("scene");
+    expectMeasured(measured);
+
+    // A cast of two has no frozen comparison row BY DESIGN, and the intimate
+    // LoRA slug carries no dialect: both are recorded refusals — observation
+    // notes, never render failures — each under its own code.
+    const multi = verdictOf(
+      sceneShadowMeta({
+        ...shared,
+        shadow: { kind: "multi_subject", subjectIds: [LANE_PROBE_SUBJECT_ID, "probe-character-second"] },
+      }),
+    );
+    expect(multi.verdict).toBe("unmeasured");
+    expect(multi.codes).toEqual([IMAGE_SHADOW_MULTI_SUBJECT]);
+
+    const lora = verdictOf(sceneShadowMeta({ ...shared, shadow: single, loraRoute: true }));
+    expect(lora.verdict).toBe("unmeasured");
+    expect(lora.codes).toEqual([IMAGE_SHADOW_LORA_ROUTE]);
+
+    // Demo mode and a chain with no rung record nothing at all.
+    expect(sceneShadowMeta({ ...shared, shadow: single, primaryAttempt: "demo" })).toBeUndefined();
+    expect(sceneShadowMeta({ ...shared, shadow: single, profile: null })).toBeUndefined();
+  });
+});

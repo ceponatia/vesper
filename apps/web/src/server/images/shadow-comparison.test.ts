@@ -6,6 +6,7 @@ import {
   compareShadowTransport,
   IMAGE_SHADOW_COMPARATOR_FAILED,
   IMAGE_SHADOW_COMPARISON_META_KEY,
+  IMAGE_SHADOW_COVERAGE_UNMEASURED,
   IMAGE_SHADOW_FACT_DUPLICATED,
   IMAGE_SHADOW_FACT_LEAKED,
   IMAGE_SHADOW_FACT_LOST,
@@ -14,6 +15,7 @@ import {
   IMAGE_SHADOW_TRANSPORT_MISMATCH,
   parseImageShadowComparison,
   shadowComparisonMeta,
+  shadowUnmeasuredComparison,
   type ShadowRenderComparisonInput,
 } from "./shadow-comparison";
 
@@ -129,6 +131,97 @@ describe("fact coverage", () => {
     expect(verdict.codes).toContain(IMAGE_SHADOW_STALE_ALLOWLIST);
     expect(verdict.coverage.staleAllowlist).toEqual(["toenails", "unknowable"]);
     expect(sink.items.some((entry) => entry.code === IMAGE_SHADOW_STALE_ALLOWLIST)).toBe(true);
+  });
+});
+
+describe("structural fact lists and unmeasured coverage", () => {
+  /**
+   * The production coverage source: both sides NAME their facts, and the rules
+   * are the probe mode's — legacy ± the named allowlist is exactly the compiled
+   * set, the allowlist must be real, nothing stated twice. One walk through
+   * every failure direction over sets kills a structural mode whose semantics
+   * quietly diverged from the probe mode it mirrors.
+   */
+  it("applies the same coverage rules to named fact sets", () => {
+    const allowlist = { removed: ["toenails"], added: ["garment"] };
+    const parity = compared({
+      facts: { legacy: ["horns", "toenails"], compiled: ["horns", "garment"] },
+      allowlist,
+    });
+    expect(parity.verdict).toBe("parity");
+    expect(parity.coverage.matches).toBe(true);
+
+    const diverged = compared({
+      facts: { legacy: ["horns", "toenails"], compiled: ["garment", "garment", "wings", "toenails"] },
+      allowlist,
+    });
+    expect(diverged.verdict).toBe("divergence");
+    expect(diverged.coverage.missing).toEqual(["horns"]);
+    expect(diverged.coverage.unexpected).toEqual(["wings", "toenails"]);
+    expect(diverged.coverage.duplicated).toEqual(["garment"]);
+    expect(diverged.codes).toContain(IMAGE_SHADOW_FACT_LOST);
+    expect(diverged.codes).toContain(IMAGE_SHADOW_FACT_LEAKED);
+    expect(diverged.codes).toContain(IMAGE_SHADOW_FACT_DUPLICATED);
+
+    const stale = compared({
+      facts: { legacy: ["horns", "garment"], compiled: ["horns", "garment"] },
+      allowlist,
+    });
+    expect(stale.codes).toContain(IMAGE_SHADOW_STALE_ALLOWLIST);
+    expect(stale.coverage.staleAllowlist).toEqual(["toenails", "garment"]);
+  });
+
+  /**
+   * A lane with neither a fact list nor probes gets `matches: null` and the
+   * `unmeasured` verdict — never a parity claim, because parity is a cutover
+   * go-ahead and this record holds no coverage evidence. A real divergence in
+   * another half (a lost mandatory anchor) still outranks it. Kills a
+   * comparator that reads "nothing to compare" as "nothing diverged".
+   */
+  it("reads absent coverage sources as unmeasured, never as parity", () => {
+    const sink = new DiagnosticCollector();
+    const unmeasured = compareShadowRender({
+      lane: "variant",
+      legacy: { prompt: "spiraled horns" },
+      compiled: { prompt: "spiraled horns", missingRequired: [] },
+      allowlist: NO_DELTA,
+      sink,
+    });
+    expect(unmeasured.verdict).toBe("unmeasured");
+    expect(unmeasured.codes).toEqual([IMAGE_SHADOW_COVERAGE_UNMEASURED]);
+    expect(unmeasured.coverage.matches).toBeNull();
+    expect(sink.items.some((entry) => entry.code === IMAGE_SHADOW_COVERAGE_UNMEASURED)).toBe(true);
+
+    const diverged = compareShadowRender({
+      lane: "variant",
+      legacy: { prompt: "spiraled horns" },
+      compiled: { prompt: "spiraled horns", missingRequired: ["subject.probe.apparent_age"] },
+      allowlist: NO_DELTA,
+    });
+    expect(diverged.verdict).toBe("divergence");
+    expect(diverged.codes).toContain(IMAGE_SHADOW_MANDATORY_LOST);
+  });
+
+  /**
+   * The recorded-refusal factory: a deliberate shadow refusal (no binding, a
+   * multi-subject cast, the LoRA route) must survive its own trip through the
+   * defensive parser, or every refusal record would vanish at the gallery
+   * reader that goes looking for it.
+   */
+  it("round-trips a recorded refusal through the meta parser", () => {
+    const sink = new DiagnosticCollector();
+    const refusal = shadowUnmeasuredComparison({
+      lane: "scene",
+      code: "image_shadow.multi_subject",
+      message: "no frozen row for a cast of two",
+      sink,
+    });
+    expect(parseImageShadowComparison(shadowComparisonMeta(refusal)[IMAGE_SHADOW_COMPARISON_META_KEY])).toEqual(
+      refusal,
+    );
+    expect(refusal.verdict).toBe("unmeasured");
+    expect(refusal.mandatory.survived).toBeNull();
+    expect(sink.items.some((entry) => entry.code === "image_shadow.multi_subject")).toBe(true);
   });
 });
 

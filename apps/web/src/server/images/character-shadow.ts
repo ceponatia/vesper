@@ -38,7 +38,7 @@ import type { AvatarSegmentAssembly } from "./avatar-segments";
 import type { ChatLookSegmentAssembly } from "./chat-look-segments";
 import { imageRenderRuntimeFacts } from "./model-adapters";
 import type { VariantKind } from "./prompts-variant";
-import { captureRenderIntent } from "./render-intent-capture";
+import { captureRenderIntent, type RenderIntentCapture } from "./render-intent-capture";
 import type { SceneSubjectVisualSlice } from "./scene-subject-visual";
 import {
   compareShadowRender,
@@ -360,7 +360,11 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
 
   // --- 4. Capture both transports -------------------------------------------
   const runtime = imageRenderRuntimeFacts(profile.model);
-  const capture = (side: "legacy" | "compiled", prompt: string, segments?: readonly ImagePromptSegment[]) => {
+  const capture = (
+    side: "legacy" | "compiled",
+    prompt: string,
+    segments?: readonly ImagePromptSegment[],
+  ): RenderIntentCapture | null => {
     const result = captureRenderIntent({
       intent: {
         profile,
