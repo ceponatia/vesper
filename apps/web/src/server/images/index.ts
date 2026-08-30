@@ -187,6 +187,7 @@ export * from "./model-profiles";
 export * from "./model-versions";
 export * from "./render-intent";
 export * from "./render-intent-capture";
+export * from "./shadow-comparison";
 export * from "./render-fingerprint";
 export * from "./route-safe";
 export * from "./chat-look";
@@ -254,6 +255,13 @@ export {
   type EntityPromptProgramInput,
   type EntityPromptProgramResult,
 } from "./entity-prompt-program";
+// The character-lane pack seeds register their packs and bindings at import
+// time, exactly like the package's own 2512 seed. Exporting them here makes the
+// registration a visible import edge of the folder rather than a side effect of
+// whichever module loads first; it changes no production render — only the
+// entity lane resolves bindings today, and it asks for item/location alone.
+export * from "./packs-qwen-2511";
+export * from "./packs-qwen-2512-portrait";
 export * from "./avatar";
 export {
   AVATAR_PORTRAIT_CAMERA,
