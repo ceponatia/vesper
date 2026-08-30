@@ -132,6 +132,13 @@ export const IMAGE_SHADOW_MULTI_SUBJECT = "image_shadow.multi_subject";
 export const IMAGE_SHADOW_LORA_ROUTE = "image_shadow.lora_route";
 /** A capture refused to plan — transport parity reads unmeasured for that side. */
 export const IMAGE_SHADOW_CAPTURE_REFUSED = "image_shadow.capture_refused";
+/**
+ * A fallback rung won the scene chain and no shadow could be recomputed for
+ * it — the primary rung's verdict was DISCARDED rather than left beside the
+ * winning rung's prompt and model, because a row pairing one rung's provenance
+ * with another rung's comparison corrupts the shadow dataset.
+ */
+export const IMAGE_SHADOW_RUNG_FALLBACK = "image_shadow.rung_fallback";
 /** A seeded allowlist entry that is not a delta over THIS render — dropped, logged. */
 export const IMAGE_SHADOW_ALLOWLIST_INERT = "image_shadow.allowlist_inert";
 
@@ -743,7 +750,11 @@ export interface SceneShadowInput {
   readonly profile: ResolvedImageProfile | null;
   /** True when the intimate-LoRA route is riding this render. */
   readonly loraRoute: boolean;
-  /** The chain's primary rung — the render the reserve-time row describes. */
+  /**
+   * The rung the stored row describes — the chain's primary at reserve time,
+   * or the WINNING rung when a fallback correction recomputes the shadow
+   * ({@link sceneFallbackShadowMeta}).
+   */
   readonly primaryAttempt: SceneAttemptId | undefined;
   /** The exact prompt the row stores for that rung. */
   readonly legacyPrompt: string;
@@ -809,4 +820,34 @@ export function sceneShadowMeta(input: SceneShadowInput): Record<string, unknown
       ...(sink === undefined ? {} : { sink }),
     });
   });
+}
+
+/**
+ * The shadow for the WINNING rung, when a later rung of the scene chain won
+ * after the primary failed. The reserve-time record compared the primary
+ * rung's request, and the fallback correction rewrites the row's prompt,
+ * model and identity provenance to the winning rung — leaving the old record
+ * in place would pair that rung's provenance with a verdict measured over a
+ * DIFFERENT prompt, model shape and reference set, corrupting the shadow
+ * dataset. The recompute runs over the winning rung's own prompt and send
+ * list (all in scope at correction time), so the stored record describes the
+ * render the row actually kept; in the degenerate case where the winning rung
+ * yields no shadow at all, the stale record is REPLACED by an explicit
+ * unmeasured verdict under {@link IMAGE_SHADOW_RUNG_FALLBACK} — a row must
+ * never present one rung's request beside another rung's comparison.
+ */
+export function sceneFallbackShadowMeta(input: SceneShadowInput): Record<string, unknown> {
+  return (
+    sceneShadowMeta(input) ??
+    shadowComparisonMeta(
+      shadowUnmeasuredComparison({
+        lane: "scene",
+        code: IMAGE_SHADOW_RUNG_FALLBACK,
+        message: "a fallback rung won and no shadow could be recomputed for it — the primary rung's verdict is discarded",
+        context: { attempt: input.primaryAttempt ?? null },
+        payload: { legacyChars: input.legacyPrompt.length, compiledChars: 0 },
+        ...(input.sink === undefined ? {} : { sink: input.sink }),
+      }),
+    )
+  );
 }
