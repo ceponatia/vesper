@@ -289,6 +289,94 @@ describe("character-lane shadow wiring", () => {
     expect(sink.items.some((entry) => entry.code === IMAGE_SHADOW_BINDING_MISSING)).toBe(true);
   });
 
+  /**
+   * The exposure-ledger property (Codex P1, PR #381): a confirmed-bare
+   * in-frame region is stated by BOTH prompt roads from the same coverage
+   * readout — the legacy builder's `exposure` segment and the compiled
+   * program's synthesized `subject.exposure` claim — so the shadow must read
+   * coverage AGREEMENT there, never a systematic leak on every bare render.
+   * The tampered half keeps the true mismatch detectable: a legacy build whose
+   * ledger carries no exposure row (the silent-drop simulation) diverges, with
+   * the compiled exposure key reported as unexplained.
+   */
+  it("avatar: a bare in-frame region reads as coverage agreement, and a lost exposure emission still diverges", () => {
+    const assembly = laneProbeAvatarSegments([]); // no wardrobe: confirmed bare — the exposure segment is stated
+    const bareKey = assembly.emittedFactKeys.find(
+      (key) => shadowFactName(key, LANE_PROBE_SUBJECT_ID) === "exposure.torso",
+    );
+    expect(bareKey).toBeDefined();
+    if (bareKey === undefined) throw new Error("the bare fixture ledgered no exposure.torso emission");
+    const shared = {
+      characterId: LANE_PROBE_SUBJECT_ID,
+      characterName: LANE_PROBE_NAME,
+      revision: "2026-08-30T00:00:00.000Z",
+      extraRevisions: [],
+      profile: shadowProfile({
+        slug: "qwen/qwen-image-2512",
+        key: "portrait-standard",
+        task: "portrait",
+        operation: "generate",
+        promptStrategy: "text_to_image_description",
+      }),
+    } as const;
+
+    const verdict = verdictOf(avatarShadowMeta(deepFreeze({ ...shared, assembly })));
+    expectMeasured(verdict);
+    expect(verdict.coverage.unexpected.filter((name) => name.startsWith("exposure."))).toEqual([]);
+    expect(verdict.coverage.missing.filter((name) => name.startsWith("exposure."))).toEqual([]);
+
+    const tampered = verdictOf(
+      avatarShadowMeta(
+        deepFreeze({
+          ...shared,
+          assembly: { ...assembly, emittedFactKeys: assembly.emittedFactKeys.filter((key) => key !== bareKey) },
+        }),
+      ),
+    );
+    expect(tampered.verdict).toBe("divergence");
+    expect(tampered.codes).toContain(IMAGE_SHADOW_FACT_LEAKED);
+    expect(tampered.coverage.unexpected).toContain("exposure.torso");
+  });
+
+  /**
+   * The scene spelling of the same property: the transport does not fold the
+   * builder's exposure segment, but it states the SAME coverage from the same
+   * readout through its own line (`formatExposure`), so the slice ledger
+   * carries the stated region keys and a bare torso reads as agreement rather
+   * than a leak.
+   */
+  it("scene: the transport-stated coverage rides the slice ledger, so a bare torso is agreement", () => {
+    const member = laneProbeCastMember({ exposure: { ...laneProbeDressedExposure(), torso: "bare" } });
+    const applied = applySceneSubjectVisual({
+      plan: laneProbeScenePlan(member),
+      member,
+      shadow: laneProbeShadowInput(),
+    });
+    expect(applied.refusal).toBeNull();
+    const slice = applied.visuals[0];
+    expect(slice).toBeDefined();
+    if (slice === undefined) throw new Error("the scene fixture produced no visual slice");
+    expect(slice.emittedFactKeys).toContain(`${LANE_PROBE_SUBJECT_ID}/exposure.torso`);
+
+    const single: CharacterSceneShadow = { kind: "single", slice };
+    const shared = {
+      profile: shadowProfile({
+        slug: "qwen/qwen-image-edit-2511",
+        key: "scene-standard",
+        task: "scene",
+        operation: "edit",
+        promptStrategy: "instruction_edit",
+      }),
+      loraRoute: false,
+      primaryAttempt: "edit",
+      legacyPrompt: "the probe scene prompt — topless, bare chest — as the reserve-time row records it",
+      references: [identityReference()],
+    } as const;
+    const verdict = verdictOf(sceneShadowMeta(deepFreeze({ ...shared, shadow: single })));
+    expectMeasured(verdict);
+    expect(verdict.coverage.unexpected.filter((name) => name.startsWith("exposure."))).toEqual([]);
+  });
+
   it("chat look: a measured verdict from the committed cut, and nothing from the degraded mint", () => {
     const assembly = buildChatLookSegments({
       outfit: VARIANT_INSTRUCTION,

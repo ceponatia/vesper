@@ -167,14 +167,24 @@ export interface VisualSubjectSegmentsInput {
 }
 
 /**
- * One digest fact that ACTUALLY became segment text — the emission ledger's
- * unit. Recorded at the moment the fact's clause lands in a segment, so the
+ * One statement that ACTUALLY became segment text — the emission ledger's
+ * unit. Recorded at the moment the clause lands in a segment, so the
  * ledger is evidence of emission rather than a derivation from what was NOT
  * excluded: a builder bug that silently dropped a fact (no suppression, no
  * missing-required entry) leaves no ledger row, which is exactly how the
  * shadow comparison gets to see it (owner correction 2026-08-29 #3). The
  * segment kind rides along because a consumer that folds only SOME kinds into
  * its prompt (the scene transport) emits only those facts.
+ *
+ * Most rows carry a digest fact's own key. The `exposure` segment is the one
+ * exception: it is a composition read over the coverage readout, not a digest
+ * fact, so its rows carry the synthetic key `<subjectId>/exposure.<region>` —
+ * chosen so the shadow's canonical naming (`shadowFactName`) reduces it to the
+ * same `exposure.<region>` the character adapter's synthesized
+ * `subject.exposure` world-digest facts reduce to. Without those rows a stated
+ * "the torso is bare" was invisible to the ledger and every bare-region render
+ * read as a systematic false divergence against the compiled program, which
+ * states the same coverage from the same readout.
  */
 export interface VisualFactEmission {
   readonly key: string;
@@ -185,10 +195,11 @@ export interface VisualSubjectSegmentsBuild {
   /** The subject's segments, in canonical emission order. */
   readonly segments: readonly ImagePromptSegment[];
   /**
-   * The facts whose clauses actually landed in {@link segments}, in emission
-   * order — the ledger the shadow's legacy fact coverage measures. Exposure
-   * statements are absent by construction: the `exposure` segment is a
-   * composition read over the coverage readout, never a digest fact.
+   * The statements whose clauses actually landed in {@link segments}, in
+   * emission order — the ledger the shadow's legacy fact coverage measures.
+   * A stated `exposure` segment ledgers one row per region read, under the
+   * synthetic key {@link VisualFactEmission} documents; a policy-omitted
+   * exposure ledgers nothing, exactly as it emits nothing.
    */
   readonly emitted: readonly VisualFactEmission[];
   /** Every fact a policy or the resolver excluded, and why. */
@@ -355,9 +366,6 @@ export function visualExposureReads(
   return reads;
 }
 
-function exposureClauses(exposure: RegionExposure, frame: VisualSegmentTaskPolicy["frame"]): string[] {
-  return visualExposureReads(exposure, FRAME_REGIONS[frame]).map((read) => read.clause);
-}
 
 // ---------------------------------------------------------------------------
 // Assembly
@@ -450,16 +458,25 @@ export function buildVisualSubjectSegments(input: VisualSubjectSegmentsInput): V
   }
   segments.push(...optionalSegments);
 
-  const bared = exposureClauses(exposure, policy.frame);
-  if (bared.length > 0) {
+  const exposureReads = visualExposureReads(exposure, FRAME_REGIONS[policy.frame]);
+  if (exposureReads.length > 0) {
     if (policy.exposure === "omit") {
       // Recorded per clause rather than as one line, so the degradation record
       // names every region the lane chose not to state.
-      for (const clause of bared) {
-        suppressions.push({ key: `exposure:${clause}`, code: VISUAL_SEGMENTS_EXPOSURE_POLICY, detail: "exposure:omit" });
+      for (const read of exposureReads) {
+        suppressions.push({ key: `exposure:${read.clause}`, code: VISUAL_SEGMENTS_EXPOSURE_POLICY, detail: "exposure:omit" });
       }
     } else {
-      segments.push(segmentOf("exposure", joinClauses(bared), true, AFFORDANCE_UNIT_ONE));
+      segments.push(segmentOf("exposure", joinClauses(exposureReads.map((read) => read.clause)), true, AFFORDANCE_UNIT_ONE));
+      // The exposure segment ledgers exactly like every other emission: one
+      // row per region the segment just stated, at the moment it landed. The
+      // synthetic key spelling is the {@link VisualFactEmission} contract —
+      // canonically equal to the adapter's synthesized `subject.exposure`
+      // fact for the same region, so a shadow's two sides name one coverage
+      // statement one way.
+      for (const read of exposureReads) {
+        emitted.push({ key: `${input.subjectId}/exposure.${read.region}`, segmentKind: "exposure" });
+      }
     }
   }
 

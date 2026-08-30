@@ -183,12 +183,18 @@ export function shadowFactName(key: string, subjectId: string): string {
  * The legacy side's structural fact list: the segment build's EMISSION LEDGER
  * under canonical shadow names. The ledger is recorded at the moment each fact
  * became a sent segment (`VisualSubjectSegmentsBuild.emitted`, restricted by
- * the scene lane to the kinds its transport folds), so it is evidence of what
- * the builder actually emitted — never a derivation from the digest minus the
- * recorded exclusions, which would count a fact a buggy builder silently
+ * the scene lane to what its transport actually states), so it is evidence of
+ * what the builder actually emitted — never a derivation from the digest minus
+ * the recorded exclusions, which would count a fact a buggy builder silently
  * dropped (no suppression, no missing-required entry) and, with the compiled
  * side built from the same digest, report FALSE PARITY on the exact defect the
  * shadow exists to catch (owner correction 2026-08-29 #3).
+ *
+ * Exposure rides the ledger under `<subjectId>/exposure.<region>`, which this
+ * canonicalization reduces to the same `exposure.<region>` the adapter's
+ * synthesized `subject.exposure` facts reduce to — so a bare in-frame region
+ * both prompts state reads as agreement, and a compiled exposure key the
+ * legacy build never emitted stays a real, reported divergence.
  */
 export function ledgerShadowFactNames(emittedFactKeys: readonly string[], subjectId: string): string[] {
   return [...new Set(emittedFactKeys.map((key) => shadowFactName(key, subjectId)))];

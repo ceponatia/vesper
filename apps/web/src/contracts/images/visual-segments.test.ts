@@ -199,6 +199,18 @@ describe("buildVisualSubjectSegments", () => {
     const exposureSegment = bared.segments.find((segment) => segment.kind === "exposure");
     expect(exposureSegment?.mandatory).toBe(true);
     expect(exposureSegment?.text).toContain("torso");
+    // A STATED exposure segment ledgers its region reads under the synthetic
+    // `<subjectId>/exposure.<region>` key — the spelling the shadow reduces to
+    // the same canonical name as the adapter's synthesized `subject.exposure`
+    // facts — while a policy-omitted exposure ledgers nothing, exactly as it
+    // emits nothing.
+    expect(bared.emitted).toContainEqual({ key: `${SUBJECT}/exposure.torso`, segmentKind: "exposure" });
+    const omitted = build({
+      digest,
+      policy: { ...FULL, intimate: "when_bare", exposure: "omit" },
+      exposure: { ...FULLY_COVERED, torso: "bare" },
+    });
+    expect(omitted.emitted.some((emission) => emission.segmentKind === "exposure")).toBe(false);
 
     // The avatar rule: no intimate anatomy at all, whatever the wardrobe exposes.
     const never = build({ digest, exposure: { ...FULLY_COVERED, torso: "bare" } });
