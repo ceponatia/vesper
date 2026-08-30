@@ -15,11 +15,16 @@ import {
   qwenImage2512PositivePack,
   selectImageNegativeConstraints,
   selectImagePositiveClaims,
+  QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   type CompileImagePromptProgramInput,
   type ImageCameraFact,
   type ImageConflictKey,
   type ImageEntityDigest,
+  type ImageNegativePackVersion,
   type ImageOperationContract,
+  type ImagePositivePackVersion,
+  type ImagePromptProfileBinding,
   type ImageWorldDigest,
   type ImageWorldDigestInput,
   type ImageWorldFact,
@@ -34,7 +39,7 @@ import {
  * together decide whether an exclusion is safe — and splitting them would mean
  * three copies of the same world fixture.
  *
- * Three claims are under test, and nothing else:
+ * Four claims are under test, and nothing else:
  *
  * 1. **The negative channel can never forbid what the world requires.** This is
  *    the safety property the whole two-channel design exists for, it fails
@@ -44,6 +49,11 @@ import {
  *    a contradicted required exclusion, a refusal rather than a generic prompt.
  * 3. **The digest cannot carry what a projection may not send.** A `restricted`
  *    or `nonvisual` field arriving as a fact is dropped, not downgraded.
+ * 4. **The 2511 delta-edit dialect honors its cutover contract.** The identity
+ *    lock is the exact bytes the render kernel's quirk writes (owner ruling
+ *    2026-08-29), references are numbered from the final send order, an
+ *    identity claim with nothing to reference refuses, and every exclusion
+ *    drops with the endpoint's own recorded reason.
  *
  * Deliberately NOT tested: each of the ~55 concepts' Qwen wording, each block's
  * guard in isolation, and the seeded pack contents. The first two are covered
@@ -631,5 +641,347 @@ describe("compiling a prompt program", () => {
     if (!result.ok) throw new Error("unexpected refusal");
     expect(result.compiled.positiveText).toContain("brass compass");
     expect(result.compiled.droppedClaimIds).toContain("i1.form");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. The Qwen 2511 delta-edit dialect
+// ---------------------------------------------------------------------------
+
+describe("the Qwen 2511 delta-edit dialect", () => {
+  const referenceSource = { owner: "test", key: "ref" };
+
+  // Fixture packs and binding rather than seeded ones: no 2511 lane is bound
+  // this round — registering production packs would silently arm
+  // `activeImagePromptBinding` for the shipping edit lanes before their shadow
+  // trial. The compile call takes the pair directly, so nothing global is
+  // registered here either.
+  const positivePack2511: ImagePositivePackVersion = {
+    id: "pack-2511-positive-test",
+    packId: "pack-2511-positive",
+    channel: "positive",
+    slug: "qwen-2511-positive-test",
+    version: 1,
+    dialectId: "qwen_2511_delta_edit",
+    manifest: {
+      version: 1,
+      suppressedConcepts: [],
+      priorityAdjustments: {},
+      wordingVariant: "default",
+      renderingIntent: [],
+    },
+    contentHash: "test",
+    status: "active",
+    evidence: [],
+    supersedesVersionId: null,
+  };
+  const negativePack2511: ImageNegativePackVersion = {
+    id: "pack-2511-negative-test",
+    packId: "pack-2511-negative",
+    channel: "negative",
+    slug: "qwen-2511-negative-test",
+    version: 1,
+    dialectId: "qwen_2511_delta_edit",
+    manifest: {
+      version: 1,
+      enabledBlockIds: [
+        "generated_text_artifacts",
+        "watermark_and_signature",
+        "anatomy_duplication",
+        "single_subject_integrity",
+        "identity_drift",
+      ],
+      priorityOverrides: {},
+      evidenceIds: {},
+      wordingVariant: "default",
+    },
+    contentHash: "test",
+    status: "active",
+    evidence: [],
+    supersedesVersionId: null,
+  };
+  const binding2511: ImagePromptProfileBinding = {
+    id: "binding-2511-test",
+    profileKey: "variant-standard",
+    profileId: null,
+    modelId: null,
+    modelSlug: "qwen/qwen-image-edit-2511",
+    versionId: null,
+    task: "variant",
+    promptStrategy: "instruction_edit",
+    promptDialectId: "qwen_2511_delta_edit",
+    positivePackVersionId: "pack-2511-positive-test",
+    negativePackVersionId: "pack-2511-negative-test",
+    status: "active",
+  };
+
+  const editOperation = (): ImageOperationContract =>
+    operation({
+      kind: "edit",
+      task: "variant",
+      strategy: "instruction_edit",
+      change: {
+        concept: "subject.pose",
+        value: "raise her left hand to shoulder height",
+        replacements: [],
+        preserve: ["outfit", "hair"],
+        geometry: "locked",
+      },
+    });
+
+  const wren = () => ({
+    ...entity("subject", "s1", [
+      fact({
+        key: "s1.identity",
+        concept: "subject.identity",
+        value: "Wren, a wiry courier",
+        disposition: "required_visual",
+        priority: 1,
+      }),
+      // `subjectRef` mirrors production: the character adapter's synthesized
+      // exposure facts always carry their subject's ref
+      // (`exposureFacts`, apps/web character-adapter), which is what lets the
+      // dialect bind the fragment to the person — "Wren is …", never the
+      // anonymous "The subject is …" fallback for an unowned claim.
+      fact({ key: "s1.exposure", concept: "subject.exposure", value: "bare from the waist up", subjectRef: "s1" }),
+    ]),
+    label: "Wren",
+  });
+
+  const editWorld = (input: Partial<ImageWorldDigestInput> = {}): ImageWorldDigest =>
+    world({
+      operation: editOperation(),
+      subjects: [wren()],
+      references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
+      ...input,
+    });
+
+  const compile2511 = (digest: ImageWorldDigest, overrides: Partial<CompileImagePromptProgramInput> = {}) =>
+    compileImagePromptProgram({
+      digest,
+      binding: binding2511,
+      positivePack: positivePack2511,
+      negativePack: negativePack2511,
+      references: [{ position: 1, role: "identity", subjectRef: "s1" }],
+      budget: {},
+      // The probed 0119 schema exposes no negative input of any kind.
+      negativeFieldAvailable: false,
+      refuseOnMissingRequired: false,
+      ...overrides,
+    });
+
+  /**
+   * The byte contract of the cutover (owner ruling 2026-08-29): the compiled
+   * identity claim IS the sentence the render kernel's quirk writes today, so a
+   * shadow compile can be checked byte-for-byte against the shipping edit path.
+   * The exact-literal `toContain` is the assertion — a paraphrase that "means
+   * the same" is precisely the defect it kills, and emitted-once is what keeps
+   * a two-fixture prompt from carrying the sentence twice.
+   *
+   * Compiled twice because the renderer keeps per-compile state (the lock
+   * emits once, send slots are consumed): state leaking across compiles would
+   * make the second compile of one digest differ from the first, which breaks
+   * the layer's determinism guarantee.
+   */
+  it("emits the single-reference identity lock byte-exactly, once, and delta-first", () => {
+    const digest = editWorld();
+    const first = compile2511(digest);
+    const second = compile2511(digest);
+    if (!first.ok || !second.ok) throw new Error("unexpected refusal");
+    expect(second.compiled.positiveText).toBe(first.compiled.positiveText);
+    expect(second.compiled.program.fingerprint).toBe(first.compiled.program.fingerprint);
+
+    const text = first.compiled.positiveText;
+    expect(text).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(text.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK)).toBe(
+      text.lastIndexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
+    );
+    expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+
+    // The research doc's delta-first order: the numbered assignment, then the
+    // one requested change, then the LIMITED preserve set. The blanket wording
+    // is asserted absent because it is the documented squashed-figure failure:
+    // "preserve everything" fighting a requested pose change.
+    const assignment = text.indexOf("Image 1 shows Wren.");
+    const change = text.indexOf("Make exactly this change: raise her left hand to shoulder height.");
+    const preserve = text.indexOf("Keep hair and outfit unchanged from the source.");
+    expect(assignment).toBeGreaterThanOrEqual(0);
+    expect(change).toBeGreaterThan(assignment);
+    expect(preserve).toBeGreaterThan(change);
+    expect(text.toLowerCase()).not.toContain("everything else");
+
+    // An exposure fragment composes as a subject-scoped sentence, not as a bare
+    // fragment dropped into the payload.
+    expect(text).toContain("Wren is bare from the waist up.");
+  });
+
+  /**
+   * Falsified against a compiler that numbered references from array index or
+   * from the digest's own order: the slots below arrive scrambled, and each
+   * sentence must carry the slot's SEND position. Also pins the multi lock —
+   * chosen by reference count, exactly as the kernel quirk chooses — emitted
+   * once for the whole render.
+   */
+  it("chooses the multi-reference lock and numbers references by send order", () => {
+    const digest = editWorld({
+      location: {
+        ...entity("location", "l1", [
+          fact({ key: "l1.identity", concept: "location.identity", value: "a narrow tea shop", disposition: "required_visual" }),
+        ]),
+        label: "the tea shop",
+      },
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "location", subjectRef: "l1", required: false, source: referenceSource },
+        { role: "style", required: false, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        // Deliberately NOT in position order: numbering must come from the
+        // slot's own send position, never from where it sits in the array.
+        { position: 2, role: "location", subjectRef: "l1" },
+        { position: 3, role: "style" },
+        { position: 1, role: "identity", subjectRef: "s1" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text.indexOf(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK)).toBe(
+      text.lastIndexOf(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK),
+    );
+    expect(text).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+
+    expect(text).toContain("Image 1 shows Wren.");
+    expect(text).toContain("Image 2 shows the place, the tea shop.");
+    expect(text).toContain("Image 3 is the style reference; take only its rendering style.");
+  });
+
+  /**
+   * The lock's sentence contract, held in the COMPILED output (owner
+   * correction 2026-08-29 #4): the multi lock promises "Use numbered
+   * references as assigned below", and the canonical operation-first segment
+   * order emitted the `Image N` assignments AHEAD of the identity-kind lock —
+   * so "below" was false in the very prompt that said it. The lock bytes are
+   * frozen for kernel-quirk parity, so the dialect's own emission order moved
+   * instead: lock first, then the assignments, then the delta-first tail the
+   * research doc names — the one change, the limited preserve set, the
+   * geometry permission. Falsified against the canonical order (assignments
+   * lead) and against a reorder that scrambled the operation band while moving
+   * the lock.
+   */
+  it("emits the identity lock before the numbered assignments, delta order intact", () => {
+    const digest = editWorld({
+      operation: operation({
+        kind: "edit",
+        task: "variant",
+        strategy: "instruction_edit",
+        change: {
+          concept: "subject.pose",
+          value: "raise her left hand to shoulder height",
+          replacements: [],
+          preserve: ["outfit", "hair"],
+          geometry: "canvas_may_expand",
+        },
+      }),
+      location: {
+        ...entity("location", "l1", [
+          fact({ key: "l1.identity", concept: "location.identity", value: "a narrow tea shop", disposition: "required_visual" }),
+        ]),
+        label: "the tea shop",
+      },
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "location", subjectRef: "l1", required: false, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1" },
+        { position: 2, role: "location", subjectRef: "l1" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    // "as assigned below" is now TRUE: the lock opens the prompt, and every
+    // numbered assignment sits after it.
+    expect(text.startsWith(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK)).toBe(true);
+    const lockIndex = text.indexOf(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    const firstAssignment = text.indexOf("Image ");
+    expect(firstAssignment).toBeGreaterThan(lockIndex);
+
+    // The delta-first properties survive the move: assignments, then the one
+    // change, then the preserve set, then the geometry permission.
+    const secondAssignment = text.indexOf("Image 2 shows the place, the tea shop.");
+    const change = text.indexOf("Make exactly this change: raise her left hand to shoulder height.");
+    const preserve = text.indexOf("Keep hair and outfit unchanged from the source.");
+    const geometry = text.indexOf(
+      "You may extend the canvas and paint in the newly required space rather than compressing the subject to fit.",
+    );
+    expect(secondAssignment).toBeGreaterThan(firstAssignment);
+    expect(change).toBeGreaterThan(secondAssignment);
+    expect(preserve).toBeGreaterThan(change);
+    expect(geometry).toBeGreaterThan(preserve);
+
+    // The single-reference lock opens its prompt the same way; its own first
+    // sentence IS an assignment ("Image 1 is the identity reference."), so the
+    // pin is that the lane's other numbered sentence follows it.
+    const single = compile2511(editWorld());
+    if (!single.ok) throw new Error(`unexpected refusal: ${single.refusal.code}`);
+    expect(single.compiled.positiveText.startsWith(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK)).toBe(true);
+    expect(single.compiled.positiveText.indexOf("Image 1 shows Wren.")).toBeGreaterThan(
+      single.compiled.positiveText.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
+    );
+  });
+
+  /**
+   * The fail-closed half of the identity contract. On this endpoint the
+   * reference IS the identity transport, so an identity claim with nothing to
+   * lock to must refuse — compiling prose that describes a face instead would
+   * have the endpoint repaint a stranger, which is the failure the lock exists
+   * to prevent. The second case is the send-order rule biting: a reference the
+   * planner trimmed out of the payload may not be described, and the digest's
+   * intent alone cannot resurrect it.
+   */
+  it.each([
+    {
+      name: "an identity-bearing edit with no reference at all",
+      run: () => compile2511(editWorld({ references: [] }), { references: [] }),
+    },
+    {
+      name: "a planned identity reference the payload no longer carries",
+      run: () => compile2511(editWorld(), { references: [{ position: 1, role: "style" }] }),
+    },
+  ])("refuses $name before provider spend", ({ run }) => {
+    const result = run();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.refusal.code).toBe("image_prompt_program.mandatory_claim_dropped");
+  });
+
+  /**
+   * The degradation record (owner ruling 2026-08-29): no negative input exists
+   * on the probed 0119 schema, so every exclusion drops with THIS endpoint's
+   * reason — distinct from 2512's `endpoint_ignores_negative_field` (a field
+   * that exists and does nothing) and from the version gate's
+   * `no_negative_field_on_version`. Falsified against a compileNegative that
+   * emits text anyway, drops without recording, or borrows a neighbour's
+   * reason and makes the provenance lie about why nothing was excluded.
+   */
+  it("drops every exclusion with the endpoint's own recorded reason", () => {
+    const result = compile2511(editWorld());
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    expect(result.compiled.negativeText).toBeNull();
+    expect(result.compiled.inlineExclusions).toEqual([]);
+    expect(result.compiled.program.deliveredNegativeIds).toEqual([]);
+    expect(result.compiled.transports.length).toBeGreaterThan(0);
+    for (const outcome of result.compiled.transports) {
+      expect(outcome.transport).toEqual({ kind: "dropped", reason: "endpoint_has_no_negative_field" });
+    }
+    // Still recorded in provenance, so an operator can see what this render
+    // WOULD have excluded on an endpoint with a channel for it.
+    expect(result.compiled.promptProgramProvenance.negativeOutcomes.length).toBe(result.compiled.transports.length);
   });
 });

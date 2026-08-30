@@ -141,11 +141,26 @@ describe("generateAvatar digest wiring", () => {
   it("fails the row before provider spend when required facts are missing, with the diagnostic", async () => {
     primePipeline();
     vi.mocked(buildAvatarSegments).mockReturnValue({
+      // A refused assembly still CARRIES the cut it refused over — the builder
+      // always returns `visual` (refusal means a required fact resolved no
+      // clause, not that the cut failed to build) — so the fixture takes a real
+      // build's cut and overrides only the refusal-bearing fields. The empty
+      // ledger is the honest pairing of the empty segment list: nothing was
+      // emitted, so nothing is ledgered.
+      ...actualBuildAvatarSegments({
+        characterId: "chr-1",
+        name: "Mira",
+        profile: laneProbeProfile(),
+        style: "realistic",
+        wardrobe: [],
+        readToken: "refused-fixture-token",
+      }),
       segments: [],
       prompt: "",
       digestMeta: { visualState: { refused: true } },
       missingRequired: ["chr-1/wings"],
       suppressions: [],
+      emittedFactKeys: [],
     });
     const sink = new DiagnosticCollector();
     await generateAvatar({ characterId: "chr-1", userId: "u-1", sink });

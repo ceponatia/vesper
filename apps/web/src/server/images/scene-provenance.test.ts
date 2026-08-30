@@ -42,8 +42,10 @@ import { classifyImageFailure, isDemoMode } from "../ai";
 import { db } from "../db";
 import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult, type ImageRow } from "./assets";
 import { renderImageIntent } from "./render-intent";
+import { IMAGE_SHADOW_MULTI_SUBJECT } from "./character-shadow";
 import { emptySceneRenderPlan } from "./prompts-scene-plan";
 import { renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
+import { IMAGE_SHADOW_COMPARISON_META_KEY, parseImageShadowComparison } from "./shadow-comparison";
 
 const mockPipeline = vi.mocked(runImagePipeline);
 const mockIntent = vi.mocked(renderImageIntent);
@@ -236,6 +238,62 @@ describe("renderResolvedScene identity provenance", () => {
     expect(produced?.ok).toBe(false);
     // The deeper `edit` rung's attempt, not the primary `multi_edit` plan's.
     expect((produced?.meta?.render as ResolvedImageAttempt | undefined)?.predictionId).toBe("pred-edit");
+  });
+
+  /**
+   * Codex P1 (PR #381): the reserve-time shadow record compares the PRIMARY
+   * rung's request, and the fallback correction rewrites the row to the
+   * winning rung — so it must replace the shadow record too. Pinned as: the
+   * corrected row's record measures the corrected prompt (the winning rung's),
+   * and the stale reserve-time fragment is gone; a row never pairs one rung's
+   * prompt and model with another rung's verdict.
+   */
+  it("a fallback correction replaces the reserve-time shadow record with the winning rung's", async () => {
+    mockIntent
+      .mockResolvedValueOnce({ ok: false, error: "multi boom" })
+      .mockResolvedValueOnce({ ok: true, image: Buffer.from("rendered") });
+    rowQueue.push([
+      {
+        meta: {
+          model: "replicate/vendor/model",
+          [IMAGE_SHADOW_COMPARISON_META_KEY]: { stale: true },
+        },
+      },
+    ]);
+
+    await renderResolvedScene(
+      baseInput({
+        references: [characterRef("Mira", "imgA"), characterRef("Nadia", "imgB")],
+        referenceBuffers: new Map([
+          ["imgA", Buffer.from("a")],
+          ["imgB", Buffer.from("b")],
+        ]),
+        // The multi-subject marker: a deterministic recorded refusal whose
+        // payload still measures the rung's own prompt — which is exactly what
+        // distinguishes the primary's record from the winning rung's.
+        shadow: { kind: "multi_subject", subjectIds: ["chr-a", "chr-b"] },
+      }),
+    );
+
+    // Reserved beside the primary (multi_edit) rung's prompt.
+    const reservedPrompt = pipelineCalls[0]?.asset.prompt as string;
+    const reserved = parseImageShadowComparison(
+      pipelineCalls[0]?.asset.meta?.[IMAGE_SHADOW_COMPARISON_META_KEY],
+    );
+    expect(reserved?.codes).toEqual([IMAGE_SHADOW_MULTI_SUBJECT]);
+    expect(reserved?.payload.legacyChars).toBe(reservedPrompt.length);
+
+    // The corrected row describes the WINNING rung: its shadow record measures
+    // the corrected prompt, and the stale fragment did not survive the merge.
+    const corrected = updateCalls[0];
+    expect(corrected).toBeDefined();
+    const correctedPrompt = corrected?.prompt as string;
+    expect(correctedPrompt).not.toBe(reservedPrompt);
+    const correctedMeta = corrected?.meta as Record<string, unknown>;
+    const record = parseImageShadowComparison(correctedMeta[IMAGE_SHADOW_COMPARISON_META_KEY]);
+    expect(record).not.toBeNull();
+    expect(record?.codes).toEqual([IMAGE_SHADOW_MULTI_SUBJECT]);
+    expect(record?.payload.legacyChars).toBe(correctedPrompt.length);
   });
 
   it("a pack-sourced PRIMARY anchor keeps its provenance across the same fallback", async () => {

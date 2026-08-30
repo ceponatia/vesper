@@ -14,6 +14,7 @@ import {
   type RegionExposure,
   type SceneCameraSpec,
   type VisualAttentionContext,
+  type VisualImageDigest,
   type WornItemInput,
 } from "@/contracts";
 import {
@@ -213,6 +214,13 @@ export interface StandaloneSubjectVisualInput {
 export interface StandaloneSubjectVisual {
   /** The digest's segments for this subject, plus its suppressions and missing anchors. */
   readonly subject: VisualSubjectSegmentsBuild;
+  /**
+   * The realized visual image digest itself — the ONE cut both prompt roads
+   * describe. The Round 2 shadow instrumentation (`character-shadow.ts`) reads
+   * it to assemble the compiled-program side from the very selection the
+   * segments were built from, never a re-select.
+   */
+  readonly digest: VisualImageDigest;
   /** The `meta.visualState` fragment the row records at reserve time. */
   readonly digestMeta: Record<string, unknown>;
   /** Base + persisted overlays — the canonical owner a lane's own prose phrases from. */
@@ -307,6 +315,7 @@ export function buildStandaloneSubjectVisual(input: StandaloneSubjectVisualInput
 
   return {
     subject,
+    digest: digestBuild.digest,
     digestMeta: digestBuild.meta,
     resolved,
     realizedBody: assembly.realizedBody,

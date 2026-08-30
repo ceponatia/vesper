@@ -14,6 +14,7 @@ import {
 } from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
 import { buildChatLookSegments, type ChatLookVisualCut } from "./chat-look-segments";
+import { chatLookShadowMeta } from "./character-shadow";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
@@ -263,6 +264,25 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     if (!identity) return null;
     const model = resolved.model;
     const prompt = assembly.prompt;
+    // The Round 2 shadow (issue #256): the compiled prompt program is built
+    // BESIDE this exact mint and its verdict recorded on the row's meta.
+    // Observation only — nothing the mint sends reads it, and any shadow
+    // failure degrades to a recorded verdict (character-shadow.ts). The
+    // route-only degraded mint (no cut) records none — there is no digest to
+    // compile a program over.
+    const shadowMeta =
+      input.visual === undefined
+        ? undefined
+        : chatLookShadowMeta({
+            characterId: input.characterId,
+            cutId: input.visual.cutId,
+            outfit: input.outfit,
+            outfitExposed: input.outfitExposed,
+            assembly,
+            profile: resolved,
+            references: identity.references,
+            sink,
+          });
     const { imageId, status } = await runImagePipeline({
       asset: {
         ownerId: input.userId,
@@ -279,6 +299,8 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
           // visual moment that shaped the prompt survives a failed render — the
           // avatar and scene lanes record it the same way.
           ...(assembly.digestMeta ?? {}),
+          // The shadow verdict, beside the provenance it was measured over.
+          ...(shadowMeta ?? {}),
         },
       },
       produce: async () => {

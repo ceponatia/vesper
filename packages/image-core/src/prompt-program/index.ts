@@ -20,6 +20,7 @@ export * from "./collision";
 export * from "./compile-program";
 export * from "./concepts";
 export * from "./conflict-keys";
+export * from "./dialect-qwen-2511";
 export * from "./dialect-qwen-2512";
 export * from "./dialects";
 export * from "./negative-constraints";

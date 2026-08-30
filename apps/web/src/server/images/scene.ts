@@ -32,6 +32,7 @@ import {
 } from "@vesper/image-core";
 import type { SceneGenState } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
+import { sceneFallbackShadowMeta, sceneShadowMeta, type CharacterSceneShadow } from "./character-shadow";
 import { monogramSvg } from "./monogram";
 import {
   buildSceneComposerPrompt,
@@ -202,6 +203,14 @@ export interface RenderResolvedSceneInput {
    */
   visualStateMeta?: Record<string, unknown>;
   /**
+   * The Round 2 shadow bundle (issue #256): the single realized cut this render
+   * draws, or the multi-subject marker. Present only for the chat scene caller
+   * with committed cuts; absent leaves the render byte-identical to before the
+   * field existed. The shadow runs HERE because the legacy side must be the
+   * exact prompt and reference set the reserve-time row records.
+   */
+  shadow?: CharacterSceneShadow;
+  /**
    * Non-null refuses the render before generation: the row is reserved and
    * failed with this text, no provider is called. The flag-on identity-pack
    * refusal settles here — a scene may not substitute another reference for a
@@ -317,6 +326,24 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   };
   const reservedProvenance = provenanceFor(primary);
 
+  // The Round 2 shadow (issue #256): compiled beside the PRIMARY rung's exact
+  // prompt and reference set — the render the reserve-time row describes.
+  // Observation only; any shadow failure degrades to a recorded verdict
+  // (character-shadow.ts), and a caller that passes no bundle is untouched.
+  const shadowMeta =
+    input.shadow === undefined
+      ? undefined
+      : sceneShadowMeta({
+          shadow: input.shadow,
+          profile,
+          loraRoute: input.resolvedLora !== undefined,
+          primaryAttempt: primary,
+          legacyPrompt: primary ? promptFor(primary) : textPrompt,
+          references: primary ? sentReferencesFor(primary) : [],
+          ...(input.visualStateMeta === undefined ? {} : { digestMeta: input.visualStateMeta }),
+          sink,
+        });
+
   const ctx: SceneAttemptContext = {
     promptFor,
     primaryReference,
@@ -365,6 +392,13 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           ...(input.resolvedLora ? { lora: input.resolvedLora.id } : {}),
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
+          // The shadow verdict, beside the visual provenance it was measured
+          // over. Written at reserve time against the PRIMARY rung's request;
+          // unlike the camera and the visual provenance it IS rung-specific,
+          // so a fallback rung winning replaces it in the correction pass
+          // below (`sceneFallbackShadowMeta`) — the stored record always
+          // describes the rung the row's prompt and model describe.
+          ...(shadowMeta ?? {}),
         },
       },
       failedPrecondition: input.failedPrecondition ?? null,
@@ -384,11 +418,32 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           return { ok: false, error: sceneFailureMessage(collected.items), ...renderAttemptMeta(lastAttempt) };
         }
         if (outcome.attemptId !== primary) {
+          // The reserve-time shadow record compared the PRIMARY rung's request,
+          // and this correction is about to make the row describe the winning
+          // rung — so the shadow is recomputed over the winning rung's own
+          // prompt, references and operation kind (all in scope here), and the
+          // corrected row never pairs one rung's provenance with another
+          // rung's verdict. Only a row that recorded a shadow at reserve time
+          // gets one corrected; a caller that passed no bundle stays untouched.
+          const correctedShadow =
+            input.shadow !== undefined && shadowMeta !== undefined
+              ? sceneFallbackShadowMeta({
+                  shadow: input.shadow,
+                  profile,
+                  loraRoute: input.resolvedLora !== undefined,
+                  primaryAttempt: outcome.attemptId,
+                  legacyPrompt: promptFor(outcome.attemptId),
+                  references: sentReferencesFor(outcome.attemptId),
+                  ...(input.visualStateMeta === undefined ? {} : { digestMeta: input.visualStateMeta }),
+                  sink,
+                })
+              : undefined;
           await correctProviderMeta(
             asset.id,
             promptFor(outcome.attemptId),
             modelFor(outcome.attemptId),
             provenanceFor(outcome.attemptId),
+            correctedShadow,
           );
         }
         // The WINNING rung's provenance — the render the stored image came from,
@@ -580,16 +635,21 @@ async function recordImageReferences(
  * Re-stamp the row after a fallback rung won: the prompt and model that actually
  * rendered, and the identity provenance for the references that rung actually
  * sent — an empty set REMOVES `identityReferences`, because the reserve-time
- * value described the primary attempt's send, not this one's.
+ * value described the primary attempt's send, not this one's. The shadow
+ * fragment follows the same rule: when the reserve recorded one, the winning
+ * rung's recomputed fragment replaces it wholesale (its key overwrites the
+ * stale record), so the row never carries the primary rung's verdict beside
+ * this rung's prompt and model.
  */
 async function correctProviderMeta(
   assetId: string,
   prompt: string,
   model: string,
   identityReferences: IdentityReferenceProvenance[],
+  shadow?: Record<string, unknown>,
 ): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
-  const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model };
+  const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model, ...(shadow ?? {}) };
   if (identityReferences.length > 0) meta.identityReferences = identityReferences;
   else delete meta.identityReferences;
   await db().update(images).set({ prompt, meta }).where(eq(images.id, assetId));

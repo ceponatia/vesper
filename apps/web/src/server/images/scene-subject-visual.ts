@@ -15,10 +15,11 @@ import {
   type RegionExposure,
   type RealizedBody,
   type SceneCameraSpec,
+  type VisualImageDigest,
   type VisualImageProvenance,
   type VisualStateSuppression,
 } from "@/contracts";
-import { buildVisualSubjectSegments } from "@/contracts/images/visual-segments";
+import { buildVisualSubjectSegments, visualExposureReads } from "@/contracts/images/visual-segments";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { fnv1aHex } from "@/lib/hash";
 import {
@@ -106,7 +107,12 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  * so both fields may carry the digest's identity/morphology clauses without a
  * fact ever being stated twice in one prompt. The builder's own `exposure`
  * segment is deliberately NOT consumed: the transport already states coverage
- * once, from the queue's canonical readout (`formatExposure`).
+ * once, from the queue's canonical readout (`formatExposure`) — the same
+ * `exposure` value this seam reads, over the same region table. That
+ * transport-owned statement is why the slice's emission ledger still carries
+ * the exposure region keys ({@link SceneSubjectVisualSlice.emittedFactKeys}):
+ * the coverage the shadow compares genuinely reaches the sent prompt, just
+ * through the transport's line rather than the builder's segment.
  *
  * ## Failure behavior
  *
@@ -304,6 +310,43 @@ export interface SceneSubjectVisualInput {
   readonly sink?: DiagnosticSink;
 }
 
+/**
+ * One subject's realized cut behind the produced fields — everything the Round 2
+ * shadow instrumentation (`character-shadow.ts`) needs to assemble the
+ * compiled-program side over the SAME selection. Nothing production sends reads
+ * these; a member whose fields were not applied contributes none.
+ */
+export interface SceneSubjectVisualSlice {
+  readonly subjectId: string;
+  readonly cutId: string;
+  readonly name: string;
+  readonly digest: VisualImageDigest;
+  /** The three-layer resolve the clause table ran under. */
+  readonly attributes: readonly AttributeValue[];
+  readonly realizedBody: RealizedBody;
+  /** The canonical coverage readout the exposure claims are made over. */
+  readonly exposure: RegionExposure;
+  /**
+   * The statement keys that ACTUALLY reach this subject's sent prompt — the
+   * builder's emission ledger, RESTRICTED to what the transport folds (owner
+   * correction 2026-08-29 #3). The restriction is the honest half: this lane's
+   * field strings consume only the identity/morphology and current-state/pose
+   * kinds, so a fact whose clause landed in any other kind was built and then
+   * never sent, and counting it "emitted" would be exactly the false parity
+   * the ledger exists to end. The one addition past the folded kinds is the
+   * exposure region keys — the transport states coverage itself, from the
+   * same readout, through `formatExposure` (`wardrobeTracked` is
+   * unconditionally true for a chat cast member) — cut to the region reads
+   * that line actually words: bare anywhere in its scope, sheer only at the
+   * torso and pelvis (it has no sheer wording for legs or feet). The shadow's
+   * legacy fact coverage reads this, never digest-minus-suppressions.
+   */
+  readonly emittedFactKeys: readonly string[];
+  /** This subject's own segment-pass exclusions and missing anchors. */
+  readonly suppressions: readonly VisualStateSuppression[];
+  readonly missingRequired: readonly string[];
+}
+
 export interface SceneSubjectVisualBuild {
   /** The plan with every supplied subject's character fields produced from their digest. */
   readonly plan: SceneRenderPlan;
@@ -313,6 +356,8 @@ export interface SceneSubjectVisualBuild {
   readonly refusal: string | null;
   /** Every fact a policy or the resolver excluded, and why — the degradation record. */
   readonly suppressions: readonly VisualStateSuppression[];
+  /** The realized cuts behind the applied fields, in the processed order — for the shadow. */
+  readonly visuals: readonly SceneSubjectVisualSlice[];
 }
 
 /**
@@ -342,6 +387,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
   const fieldsByName = new Map<string, SceneSubjectVisualFields>();
   const provenanceRecords: VisualImageProvenance[] = [];
   const suppressions: VisualStateSuppression[] = [];
+  const visuals: SceneSubjectVisualSlice[] = [];
   for (const subject of ordered) {
     const produced = produceSubjectVisual(plan.camera, subject, sink);
     suppressions.push(...produced.suppressions);
@@ -351,7 +397,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
       // is called. A digest that WAS built before the refusal still travels, so
       // the failed row records the moment it was asked over.
       if (produced.provenance !== undefined) provenanceRecords.push(produced.provenance);
-      return { plan, ...digestMetaOf(provenanceRecords), refusal: produced.refusal, suppressions };
+      return { plan, ...digestMetaOf(provenanceRecords), refusal: produced.refusal, suppressions, visuals: [] };
     }
     if (!specKeys.has(normalizeName(subject.member.name))) {
       // The plan has no spec to carry this subject's fields — a location-only
@@ -366,9 +412,12 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
       continue;
     }
     provenanceRecords.push(produced.provenance);
+    visuals.push(produced.visual);
     fieldsByName.set(normalizeName(subject.member.name), produced.fields);
   }
-  if (fieldsByName.size === 0) return { plan, ...digestMetaOf(provenanceRecords), refusal: null, suppressions };
+  if (fieldsByName.size === 0) {
+    return { plan, ...digestMetaOf(provenanceRecords), refusal: null, suppressions, visuals: [] };
+  }
 
   const focalFields = focalKey === null ? undefined : fieldsByName.get(focalKey);
   return {
@@ -384,6 +433,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
     ...digestMetaOf(provenanceRecords),
     refusal: null,
     suppressions,
+    visuals,
   };
 }
 
@@ -427,6 +477,7 @@ type SceneSubjectVisualProduction =
       readonly fields: SceneSubjectVisualFields;
       readonly provenance: VisualImageProvenance;
       readonly suppressions: readonly VisualStateSuppression[];
+      readonly visual: SceneSubjectVisualSlice;
     };
 
 /**
@@ -510,10 +561,45 @@ function produceSubjectVisual(
   // and per-route intimate gating byte-compatible.
   const digestIdentity = segmentText(segments.segments, IDENTITY_SEGMENT_KINDS);
   const digestState = segmentText(segments.segments, STATE_SEGMENT_KINDS);
+  // The slice's ledger is the builder's, cut to what the sent prompt actually
+  // states: the two folds above, plus the coverage statement the TRANSPORT
+  // makes on its own line (`formatExposure` over this same `exposure` value —
+  // see the module doc §Transport is untouched). A fact in any other kind
+  // never reached a field string, and the shadow must not be told it did.
+  // The exposure rows are kept only where formatExposure actually words the
+  // read: every bare region in its torso-through-feet scope, sheer only at
+  // the torso and pelvis — it has no sheer wording for legs or feet, and a
+  // ledger row for an unworded read would claim a statement the prompt does
+  // not make.
+  const statedExposureKeys = new Set(
+    visualExposureReads(exposure, ["torso", "pelvis", "legs", "feet"])
+      .filter((read) => read.coverage === "bare" || read.region === "torso" || read.region === "pelvis")
+      .map((read) => `${shadow.subjectId}/exposure.${read.region}`),
+  );
+  const emittedFactKeys = segments.emitted
+    .filter(
+      (emission) =>
+        IDENTITY_SEGMENT_KINDS.has(emission.segmentKind) ||
+        STATE_SEGMENT_KINDS.has(emission.segmentKind) ||
+        (emission.segmentKind === "exposure" && statedExposureKeys.has(emission.key)),
+    )
+    .map((emission) => emission.key);
   return {
     ok: true,
     provenance: digestBuild.provenance,
     suppressions: segments.suppressions,
+    visual: {
+      subjectId: shadow.subjectId,
+      cutId: shadow.cutId,
+      name: member.name,
+      digest: digestBuild.digest,
+      attributes: resolved,
+      realizedBody,
+      exposure,
+      emittedFactKeys,
+      suppressions: segments.suppressions,
+      missingRequired: segments.missingRequired,
+    },
     fields: {
       appearance: [
         digestIdentity,
