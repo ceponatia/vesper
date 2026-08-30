@@ -20,6 +20,9 @@ import {
 } from "@vesper/image-core";
 import {
   VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID,
+  type AttributeValue,
+  type RealizedBody,
+  type RegionExposure,
   type VisualImageDigest,
   type VisualStateSuppression,
 } from "@/contracts";
@@ -221,6 +224,51 @@ function liveShadowAllowlist(
     );
   }
   return { removed, added };
+}
+
+// ---------------------------------------------------------------------------
+// One subject's cut, adapted for the core
+// ---------------------------------------------------------------------------
+
+/** The realized cut every lane hands over, in one vocabulary. */
+interface SubjectShadowCut {
+  readonly subjectId: string;
+  readonly name?: string;
+  readonly digest: VisualImageDigest;
+  readonly attributes: readonly AttributeValue[];
+  readonly exposure: RegionExposure;
+  readonly realizedBody: RealizedBody;
+  readonly suppressions: readonly VisualStateSuppression[];
+  readonly missingRequired: readonly string[];
+}
+
+/** The cut's two derived halves: the structural legacy fact list and the assembly input. */
+function cutShadowInputs(
+  cut: SubjectShadowCut,
+  read: CharacterWorldReadInput,
+  references?: readonly ImageReferenceFact[],
+): Pick<CharacterShadowCoreInput, "legacyFactNames" | "assembly"> {
+  return {
+    legacyFactNames: legacyShadowFactNames({
+      digest: cut.digest,
+      subjectId: cut.subjectId,
+      suppressions: cut.suppressions,
+      missingRequired: cut.missingRequired,
+    }),
+    assembly: {
+      digest: cut.digest,
+      ...(cut.name === undefined ? {} : { labels: { [cut.subjectId]: cut.name } }),
+      sources: {
+        [cut.subjectId]: {
+          attributes: cut.attributes,
+          exposure: cut.exposure,
+          realizedBody: cut.realizedBody,
+        },
+      },
+      read,
+      ...(references === undefined ? {} : { references }),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -501,25 +549,20 @@ export function variantShadowMeta(input: VariantShadowInput): Record<string, unk
       legacySegments: assembly.segments,
       references: input.references,
       digestMeta: assembly.digestMeta,
-      legacyFactNames: legacyShadowFactNames({
-        digest: visual.digest,
-        subjectId: characterId,
-        suppressions: assembly.suppressions,
-        missingRequired: assembly.missingRequired,
-      }),
-      assembly: {
-        digest: visual.digest,
-        labels: { [characterId]: input.characterName },
-        sources: {
-          [characterId]: {
-            attributes: visual.resolved,
-            exposure: visual.exposure,
-            realizedBody: visual.realizedBody,
-          },
+      ...cutShadowInputs(
+        {
+          subjectId: characterId,
+          name: input.characterName,
+          digest: visual.digest,
+          attributes: visual.resolved,
+          exposure: visual.exposure,
+          realizedBody: visual.realizedBody,
+          suppressions: assembly.suppressions,
+          missingRequired: assembly.missingRequired,
         },
-        read: standaloneRead(characterId, input.revision, input.extraRevisions),
-        references: referenceFacts("variant", characterId, input.references),
-      },
+        standaloneRead(characterId, input.revision, input.extraRevisions),
+        referenceFacts("variant", characterId, input.references),
+      ),
       operation: (subjects) =>
         characterVariantImageOperation({
           change: characterChangeContract(
@@ -567,24 +610,19 @@ export function avatarShadowMeta(input: AvatarShadowInput): Record<string, unkno
       legacySegments: assembly.segments,
       references: [],
       digestMeta: assembly.digestMeta,
-      legacyFactNames: legacyShadowFactNames({
-        digest: visual.digest,
-        subjectId: characterId,
-        suppressions: assembly.suppressions,
-        missingRequired: assembly.missingRequired,
-      }),
-      assembly: {
-        digest: visual.digest,
-        labels: { [characterId]: input.characterName },
-        sources: {
-          [characterId]: {
-            attributes: visual.resolved,
-            exposure: visual.exposure,
-            realizedBody: visual.realizedBody,
-          },
+      ...cutShadowInputs(
+        {
+          subjectId: characterId,
+          name: input.characterName,
+          digest: visual.digest,
+          attributes: visual.resolved,
+          exposure: visual.exposure,
+          realizedBody: visual.realizedBody,
+          suppressions: assembly.suppressions,
+          missingRequired: assembly.missingRequired,
         },
-        read: standaloneRead(characterId, input.revision, input.extraRevisions),
-      },
+        standaloneRead(characterId, input.revision, input.extraRevisions),
+      ),
       operation: () => characterPortraitImageOperation(),
       allowlist: AVATAR_SHADOW_DELTA,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
@@ -628,25 +666,20 @@ export function chatLookShadowMeta(input: ChatLookShadowInput): Record<string, u
       legacySegments: assembly.segments,
       references: input.references,
       ...(assembly.digestMeta === undefined ? {} : { digestMeta: assembly.digestMeta }),
-      legacyFactNames: legacyShadowFactNames({
-        digest: visual.digest,
-        subjectId: characterId,
-        suppressions: assembly.suppressions,
-        missingRequired: assembly.missingRequired,
-      }),
-      assembly: {
-        digest: visual.digest,
-        ...(input.characterName === undefined ? {} : { labels: { [characterId]: input.characterName } }),
-        sources: {
-          [characterId]: {
-            attributes: visual.attributes,
-            exposure: visual.exposure,
-            realizedBody: visual.realizedBody,
-          },
+      ...cutShadowInputs(
+        {
+          subjectId: characterId,
+          ...(input.characterName === undefined ? {} : { name: input.characterName }),
+          digest: visual.digest,
+          attributes: visual.attributes,
+          exposure: visual.exposure,
+          realizedBody: visual.realizedBody,
+          suppressions: assembly.suppressions,
+          missingRequired: assembly.missingRequired,
         },
-        read: { kind: "committed_cut", token: input.cutId },
-        references: referenceFacts("chat_look", characterId, input.references),
-      },
+        { kind: "committed_cut", token: input.cutId },
+        referenceFacts("chat_look", characterId, input.references),
+      ),
       operation: (subjects) =>
         characterChatLookImageOperation({
           change: characterChangeContract(
@@ -739,25 +772,11 @@ export function sceneShadowMeta(input: SceneShadowInput): Record<string, unknown
       legacyPrompt: input.legacyPrompt,
       references: input.references,
       ...(input.digestMeta === undefined ? {} : { digestMeta: input.digestMeta }),
-      legacyFactNames: legacyShadowFactNames({
-        digest: slice.digest,
-        subjectId: slice.subjectId,
-        suppressions: slice.suppressions,
-        missingRequired: slice.missingRequired,
-      }),
-      assembly: {
-        digest: slice.digest,
-        labels: { [slice.subjectId]: slice.name },
-        sources: {
-          [slice.subjectId]: {
-            attributes: slice.attributes,
-            exposure: slice.exposure,
-            realizedBody: slice.realizedBody,
-          },
-        },
-        read: { kind: "committed_cut", token: slice.cutId },
-        references: referenceFacts("scene", slice.subjectId, input.references),
-      },
+      ...cutShadowInputs(
+        slice,
+        { kind: "committed_cut", token: slice.cutId },
+        referenceFacts("scene", slice.subjectId, input.references),
+      ),
       operation: () => characterSceneImageOperation({ subjectCount: 1, kind }),
       allowlist: kind === "generate" ? SCENE_T2I_DRESSED_SHADOW_DELTA : SCENE_REFERENCE_SHADOW_DELTA,
       ...(sink === undefined ? {} : { sink }),
