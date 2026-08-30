@@ -86,6 +86,11 @@ import "./packs-qwen-2512-portrait";
  *    comparable prompt and the loss is recorded as `mandatory_lost`).
  * 4. Capture both transports (`captureRenderIntent`) over the same profile,
  *    references and target — only the prompt differs, which is the migration.
+ *    The compiled side's intent additionally carries the program's compiled
+ *    NEGATIVE through the intent's controls seam when the dialect produced
+ *    one (owner correction 2026-08-29 #5), so `negativeHash` compares the
+ *    program's negative rather than the legacy profile's resolution; on the
+ *    Qwen endpoints the program compiles none and the seam is inert.
  * 5. Compare (`compareShadowRender`) with STRUCTURAL fact lists: the legacy
  *    side is the segment build's EMISSION LEDGER — the fact keys recorded at
  *    the moment each clause landed in a sent segment (owner correction
@@ -412,13 +417,29 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
   const capture = (
     side: "legacy" | "compiled",
     prompt: string,
-    segments?: readonly ImagePromptSegment[],
+    options?: {
+      readonly segments?: readonly ImagePromptSegment[] | undefined;
+      readonly negative?: string | null | undefined;
+    },
   ): RenderIntentCapture | null => {
+    const segments = options?.segments;
+    const negative = options?.negative ?? null;
     const result = captureRenderIntent({
       intent: {
         profile,
         prompt,
         ...(segments === undefined ? {} : { promptSegments: segments }),
+        // The compiled side's intent carries the PROGRAM's negative channel
+        // through the intent's own controls seam (owner correction 2026-08-29
+        // #5): `planImageRender` resolves a requested negative over the
+        // profile's default exactly as a cutover render would, so this side's
+        // `negativeHash` hashes what the program actually compiled — not
+        // whatever the legacy profile happens to resolve. On the Qwen
+        // endpoints the program compiles NO negative (2511 exposes no field;
+        // 2512's is ignored and the dialect declares unsupported), nothing is
+        // passed, and the constructed intent is byte-identical to before —
+        // the seam is armed for the first endpoint whose field works.
+        ...(negative === null || negative.length === 0 ? {} : { controls: { negativePrompt: negative } }),
         references: [...input.references],
         target: { aspectRatio: IMAGE_TARGET_ASPECT },
       },
@@ -437,8 +458,8 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
     );
     return null;
   };
-  const legacyCapture = capture("legacy", input.legacyPrompt, input.legacySegments);
-  const compiledCapture = capture("compiled", compiledText);
+  const legacyCapture = capture("legacy", input.legacyPrompt, { segments: input.legacySegments });
+  const compiledCapture = capture("compiled", compiledText, { negative: compiled.compiled.negativeText });
 
   // --- 5. Structural fact lists and the live allowlist ----------------------
   const keptIds = new Set(compiled.compiled.promptProgramProvenance.positiveClaimIds);

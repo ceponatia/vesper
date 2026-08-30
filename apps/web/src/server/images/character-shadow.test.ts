@@ -2,8 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   imageModelProfileSchema,
   imageModelSchema,
+  qwenImageEdit2511Dialect,
+  registerImageNegativePack,
+  registerImagePositivePack,
+  registerImagePromptBinding,
+  registerImagePromptDialect,
+  type ImageNegativePackVersion,
+  type ImagePositivePackVersion,
   type ImageProfileOperation,
   type ImageProfileTask,
+  type ImagePromptDialectDefinition,
   type ImagePromptStrategy,
   type ImageRenderReference,
   type ResolvedImageProfile,
@@ -33,10 +41,12 @@ import {
   type CharacterSceneShadow,
 } from "./character-shadow";
 import { buildChatLookSegments } from "./chat-look-segments";
+import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./packs-qwen-2511";
 import { applySceneSubjectVisual } from "./scene-subject-visual";
 import {
   IMAGE_SHADOW_COMPARISON_META_KEY,
   IMAGE_SHADOW_FACT_LEAKED,
+  IMAGE_SHADOW_TRANSPORT_MISMATCH,
   parseImageShadowComparison,
   type ImageShadowComparison,
 } from "./shadow-comparison";
@@ -66,13 +76,19 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** One resolved profile on a REAL seeded slug, so binding resolution is live. */
+/**
+ * One resolved profile on a REAL seeded slug, so binding resolution is live.
+ * `negativeField` declares a working negative-prompt input on the model — the
+ * synthetic-endpoint case the compiled-negative seam test needs; the Qwen
+ * fixtures leave it off, exactly like the probed endpoints.
+ */
 function shadowProfile(over: {
   slug: string;
   key: string;
   task: ImageProfileTask;
   operation: ImageProfileOperation;
   promptStrategy: ImagePromptStrategy;
+  negativeField?: boolean;
 }): ResolvedImageProfile {
   const model = imageModelSchema.parse({
     id: `mdl-shadow-${over.task}`,
@@ -84,6 +100,14 @@ function shadowProfile(over: {
     referenceArity: "array",
     maxReferences: 3,
     supportedAspects: ["3:4"],
+    ...(over.negativeField === true
+      ? {
+          advancedCapabilities: {
+            controls: { negativePrompt: { field: "negative_prompt", type: "string" } },
+            knownInputFields: ["negative_prompt"],
+          },
+        }
+      : {}),
   });
   const profile = imageModelProfileSchema.parse({
     id: `prf-shadow-${over.key}`,
@@ -368,5 +392,124 @@ describe("character-lane shadow wiring", () => {
     // Demo mode and a chain with no rung record nothing at all.
     expect(sceneShadowMeta({ ...shared, shadow: single, primaryAttempt: "demo" })).toBeUndefined();
     expect(sceneShadowMeta({ ...shared, shadow: single, profile: null })).toBeUndefined();
+  });
+
+  /**
+   * The compiled-negative seam's INERT half (owner correction 2026-08-29 #5):
+   * on the Qwen endpoints the program compiles no negative — 2511 exposes no
+   * field, 2512's is ignored and its dialect declares unsupported — so the
+   * seam must change nothing there: full transport parity, negative hash
+   * included, on both an edit lane and the portrait lane. Falsified against a
+   * seam that injects a negative control (a droppedControls or negativeHash
+   * mismatch would break parity) or otherwise perturbs the constructed intent.
+   */
+  it("keeps the compiled-negative seam behaviorally inert on the Qwen lanes", () => {
+    const variant = verdictOf(variantShadowMeta(deepFreeze(variantInput())));
+    expect(variant.transport.parity).toBe(true);
+    expect(variant.transport.firstMismatch).toBeNull();
+
+    const avatar = verdictOf(
+      avatarShadowMeta(
+        deepFreeze({
+          characterId: LANE_PROBE_SUBJECT_ID,
+          characterName: LANE_PROBE_NAME,
+          revision: "2026-08-30T00:00:00.000Z",
+          extraRevisions: [],
+          assembly: laneProbeAvatarSegments(laneProbeWardrobe()),
+          profile: shadowProfile({
+            slug: "qwen/qwen-image-2512",
+            key: "portrait-standard",
+            task: "portrait",
+            operation: "generate",
+            promptStrategy: "text_to_image_description",
+          }),
+        }),
+      ),
+    );
+    expect(avatar.transport.parity).toBe(true);
+    expect(avatar.transport.firstMismatch).toBeNull();
+  });
+
+  /**
+   * The compiled-negative seam's ARMED half (owner correction 2026-08-29 #5):
+   * on an endpoint whose dialect compiles a negative into a WORKING field, the
+   * shadow's compiled-side intent must carry it, so `negativeHash` on that
+   * capture hashes the program's negative instead of whatever
+   * `planImageRender` resolves for the legacy profile. Proven end to end with
+   * a synthetic dialect registered under a declared-but-unimplemented id: the
+   * legacy side resolves no negative, the compiled side carries the program's,
+   * and the verdict records exactly that transport divergence — firstMismatch
+   * is `negativeHash`, the field the old seam could never move. Falsified
+   * against the pre-correction wiring, where both captures planned the same
+   * negative-free intent and this comparison read parity.
+   */
+  it("carries the program's compiled negative into the compiled-side capture", () => {
+    const SLUG = "vesper-test/negative-probe";
+    const DIALECT_ID = "seedream_45_prose" as const;
+    // The 2511 dialect's positive compile, with a negative channel that
+    // actually produces dedicated-field text — the endpoint shape Qwen lacks.
+    registerImagePromptDialect({
+      ...qwenImageEdit2511Dialect,
+      id: DIALECT_ID,
+      negativeSyntax: "natural_language",
+      negativeTransport: "dedicated_field",
+      compileNegative: (negativeInput) => ({
+        text: "synthetic exclusions for the negative field",
+        replacementClaims: [],
+        inlineText: [],
+        outcomes: negativeInput.constraints.map((constraint) => ({
+          constraintId: constraint.id,
+          transport: { kind: "dedicated_field", text: "synthetic exclusions for the negative field" },
+        })),
+      }),
+    } satisfies ImagePromptDialectDefinition);
+    const positivePack: ImagePositivePackVersion = {
+      ...qwenImageEdit2511PositivePack,
+      id: "pack-synthetic-negative-positive-v1",
+      packId: "pack-synthetic-negative-positive",
+      dialectId: DIALECT_ID,
+    };
+    const negativePack: ImageNegativePackVersion = {
+      ...qwenImageEdit2511NegativePack,
+      id: "pack-synthetic-negative-negative-v1",
+      packId: "pack-synthetic-negative-negative",
+      dialectId: DIALECT_ID,
+    };
+    registerImagePositivePack(positivePack);
+    registerImageNegativePack(negativePack);
+    registerImagePromptBinding({
+      id: "binding-synthetic-negative-v1",
+      profileKey: "variant-standard",
+      profileId: null,
+      modelId: null,
+      modelSlug: SLUG,
+      versionId: null,
+      task: "variant",
+      promptStrategy: "instruction_edit",
+      promptDialectId: DIALECT_ID,
+      positivePackVersionId: positivePack.id,
+      negativePackVersionId: negativePack.id,
+      status: "candidate",
+    });
+
+    const verdict = verdictOf(
+      variantShadowMeta(
+        deepFreeze({
+          ...variantInput(),
+          profile: shadowProfile({
+            slug: SLUG,
+            key: "variant-standard",
+            task: "variant",
+            operation: "edit",
+            promptStrategy: "instruction_edit",
+            negativeField: true,
+          }),
+        }),
+      ),
+    );
+    expect(verdict.verdict).toBe("divergence");
+    expect(verdict.codes).toContain(IMAGE_SHADOW_TRANSPORT_MISMATCH);
+    expect(verdict.transport.parity).toBe(false);
+    expect(verdict.transport.firstMismatch).toBe("negativeHash");
   });
 });
