@@ -321,6 +321,18 @@ export interface SceneSubjectVisualSlice {
   readonly realizedBody: RealizedBody;
   /** The canonical coverage readout the exposure claims are made over. */
   readonly exposure: RegionExposure;
+  /**
+   * The digest fact keys that ACTUALLY reached this subject's produced fields —
+   * the builder's emission ledger, RESTRICTED to the segment kinds
+   * `segmentText` folds into the transport's field strings (owner correction
+   * 2026-08-29 #3). The restriction is the honest half: this lane consumes
+   * only the identity/morphology and current-state/pose kinds, so a fact whose
+   * clause landed in any other kind was built and then never sent, and
+   * counting it "emitted" would be exactly the false parity the ledger exists
+   * to end. The shadow's legacy fact coverage reads this, never
+   * digest-minus-suppressions.
+   */
+  readonly emittedFactKeys: readonly string[];
   /** This subject's own segment-pass exclusions and missing anchors. */
   readonly suppressions: readonly VisualStateSuppression[];
   readonly missingRequired: readonly string[];
@@ -540,6 +552,15 @@ function produceSubjectVisual(
   // and per-route intimate gating byte-compatible.
   const digestIdentity = segmentText(segments.segments, IDENTITY_SEGMENT_KINDS);
   const digestState = segmentText(segments.segments, STATE_SEGMENT_KINDS);
+  // The slice's ledger is the builder's, cut to the kinds the two folds above
+  // actually consume — a fact in any other kind never reached a field string,
+  // and the shadow must not be told it did.
+  const emittedFactKeys = segments.emitted
+    .filter(
+      (emission) =>
+        IDENTITY_SEGMENT_KINDS.has(emission.segmentKind) || STATE_SEGMENT_KINDS.has(emission.segmentKind),
+    )
+    .map((emission) => emission.key);
   return {
     ok: true,
     provenance: digestBuild.provenance,
@@ -552,6 +573,7 @@ function produceSubjectVisual(
       attributes: resolved,
       realizedBody,
       exposure,
+      emittedFactKeys,
       suppressions: segments.suppressions,
       missingRequired: segments.missingRequired,
     },

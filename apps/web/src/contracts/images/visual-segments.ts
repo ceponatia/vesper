@@ -166,9 +166,31 @@ export interface VisualSubjectSegmentsInput {
   readonly sink?: DiagnosticSink;
 }
 
+/**
+ * One digest fact that ACTUALLY became segment text — the emission ledger's
+ * unit. Recorded at the moment the fact's clause lands in a segment, so the
+ * ledger is evidence of emission rather than a derivation from what was NOT
+ * excluded: a builder bug that silently dropped a fact (no suppression, no
+ * missing-required entry) leaves no ledger row, which is exactly how the
+ * shadow comparison gets to see it (owner correction 2026-08-29 #3). The
+ * segment kind rides along because a consumer that folds only SOME kinds into
+ * its prompt (the scene transport) emits only those facts.
+ */
+export interface VisualFactEmission {
+  readonly key: string;
+  readonly segmentKind: ImagePromptSegmentKind;
+}
+
 export interface VisualSubjectSegmentsBuild {
   /** The subject's segments, in canonical emission order. */
   readonly segments: readonly ImagePromptSegment[];
+  /**
+   * The facts whose clauses actually landed in {@link segments}, in emission
+   * order — the ledger the shadow's legacy fact coverage measures. Exposure
+   * statements are absent by construction: the `exposure` segment is a
+   * composition read over the coverage readout, never a digest fact.
+   */
+  readonly emitted: readonly VisualFactEmission[];
   /** Every fact a policy or the resolver excluded, and why. */
   readonly suppressions: readonly VisualStateSuppression[];
   /**
@@ -371,11 +393,13 @@ export function buildVisualSubjectSegments(input: VisualSubjectSegmentsInput): V
         context: { subjectId: input.subjectId, cutId: digest.cutId },
       }),
     );
-    return { segments: [], suppressions: [], missingRequired: [] };
+    return { segments: [], emitted: [], suppressions: [], missingRequired: [] };
   }
 
   const suppressions: VisualStateSuppression[] = [];
   const unresolvedRequired: string[] = [];
+  /** The emission ledger: appended exactly where a fact's clause lands in a segment. */
+  const emitted: VisualFactEmission[] = [];
   /** One mandatory segment per kind: required clauses first, optional detail after. */
   const grouped = new Map<ImagePromptSegmentKind, string[]>();
   const optionalSegments: ImagePromptSegment[] = [];
@@ -417,6 +441,7 @@ export function buildVisualSubjectSegments(input: VisualSubjectSegmentsInput): V
     } else {
       optionalSegments.push(segmentOf(fact.segmentKind, `${text}.`, false, fact.priority));
     }
+    emitted.push({ key: fact.key, segmentKind: fact.segmentKind });
   }
 
   const segments: ImagePromptSegment[] = [];
@@ -440,6 +465,7 @@ export function buildVisualSubjectSegments(input: VisualSubjectSegmentsInput): V
 
   return {
     segments: orderImagePromptSegments(segments),
+    emitted,
     suppressions,
     missingRequired: [...subject.missingMandatory, ...unresolvedRequired],
   };

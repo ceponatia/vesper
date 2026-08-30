@@ -271,6 +271,16 @@ export interface AvatarSegmentAssembly {
   /** Every fact a policy or the resolver excluded, and why. */
   readonly suppressions: readonly VisualStateSuppression[];
   /**
+   * The digest fact keys this build ACTUALLY emitted as segment text — the
+   * builder's emission ledger, recorded fact by fact as each clause landed
+   * (owner correction 2026-08-29 #3). This lane appends every builder segment
+   * to the render intent, so the ledger is the whole of `subject.emitted`.
+   * The shadow's legacy fact coverage reads THIS, never digest-minus-
+   * suppressions: a builder bug that silently dropped a fact must read as a
+   * divergence, not as false parity.
+   */
+  readonly emittedFactKeys: readonly string[];
+  /**
    * The standalone visual cut the segments were built from — digest, resolved
    * attributes, realized body and the canonical coverage readout. Read by the
    * Round 2 shadow instrumentation (`character-shadow.ts`) to assemble the
@@ -346,6 +356,7 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
     digestMeta: visual.digestMeta,
     missingRequired: visual.subject.missingRequired,
     suppressions: visual.subject.suppressions,
+    emittedFactKeys: visual.subject.emitted.map((emission) => emission.key),
     visual,
   };
 }

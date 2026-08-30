@@ -15,6 +15,7 @@ import {
   laneProbeAvatarSegments,
   laneProbeCastMember,
   laneProbeDressedExposure,
+  laneProbeMarkedProfile,
   laneProbeScenePlan,
   laneProbeShadowInput,
   laneProbeVariantSegments,
@@ -27,6 +28,7 @@ import {
   IMAGE_SHADOW_LORA_ROUTE,
   IMAGE_SHADOW_MULTI_SUBJECT,
   sceneShadowMeta,
+  shadowFactName,
   variantShadowMeta,
   type CharacterSceneShadow,
 } from "./character-shadow";
@@ -34,6 +36,7 @@ import { buildChatLookSegments } from "./chat-look-segments";
 import { applySceneSubjectVisual } from "./scene-subject-visual";
 import {
   IMAGE_SHADOW_COMPARISON_META_KEY,
+  IMAGE_SHADOW_FACT_LEAKED,
   parseImageShadowComparison,
   type ImageShadowComparison,
 } from "./shadow-comparison";
@@ -159,6 +162,56 @@ describe("character-lane shadow wiring", () => {
     // Determinism is the retry contract: two shadows of one request are one
     // verdict, or the stored record could not be trusted against a re-run.
     expect(verdictOf(variantShadowMeta(deepFreeze(variantInput())))).toEqual(first);
+  });
+
+  /**
+   * The emission-ledger property (owner correction 2026-08-29 #3): legacy fact
+   * coverage measures what the builder ACTUALLY emitted, so a builder that
+   * silently drops a digest-selected fact — no suppression record, no
+   * missing-required entry — yields a coverage divergence, never parity. The
+   * old digest-minus-suppressions derivation could not fail this way: it would
+   * count the dropped fact as present, the compiled side comes from the same
+   * digest, and the record would read as false parity.
+   *
+   * Simulated at the seam the bug class lives on: the ledger alone loses the
+   * fixture's cataloged distinctive mark (a fact deliberately OUTSIDE the
+   * lane's named delta allowlist, so nothing forgives it) while the digest and
+   * the compiled program still carry it. The divergence surfaces under the
+   * comparator's directional vocabulary as the compiled side stating a fact
+   * the legacy build never emitted.
+   */
+  it("variant: a builder emission that omits a digest-selected fact is a divergence, not parity", () => {
+    const assembly = laneProbeVariantSegments(
+      "outfit",
+      VARIANT_INSTRUCTION,
+      laneProbeWardrobe(),
+      laneProbeMarkedProfile(),
+    );
+    const markKey = assembly.emittedFactKeys.find(
+      (key) => shadowFactName(key, LANE_PROBE_SUBJECT_ID) === "nose/shape",
+    );
+    expect(markKey).toBeDefined();
+    if (markKey === undefined) throw new Error("the marked fixture emitted no nose/shape fact");
+    const inputWith = (emittedFactKeys: readonly string[]): Parameters<typeof variantShadowMeta>[0] => ({
+      ...variantInput(),
+      assembly: { ...assembly, emittedFactKeys },
+    });
+
+    // Intact ledger: the mark is stated on BOTH sides — neither lost by the
+    // compiled program nor unexplained on it — which is what makes the
+    // tampered run below a test of the ledger rather than of the mark.
+    const intact = verdictOf(variantShadowMeta(deepFreeze(inputWith(assembly.emittedFactKeys))));
+    expectMeasured(intact);
+    expect(intact.coverage.unexpected).not.toContain("nose/shape");
+    expect(intact.coverage.missing).not.toContain("nose/shape");
+
+    // The ledger loses the mark — the silent-builder-drop simulation.
+    const tampered = verdictOf(
+      variantShadowMeta(deepFreeze(inputWith(assembly.emittedFactKeys.filter((key) => key !== markKey)))),
+    );
+    expect(tampered.verdict).toBe("divergence");
+    expect(tampered.codes).toContain(IMAGE_SHADOW_FACT_LEAKED);
+    expect(tampered.coverage.unexpected).toContain("nose/shape");
   });
 
   it("avatar: binds per profile key, and records the miss for a key with no row", () => {

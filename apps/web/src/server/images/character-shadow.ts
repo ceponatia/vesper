@@ -24,7 +24,6 @@ import {
   type RealizedBody,
   type RegionExposure,
   type VisualImageDigest,
-  type VisualStateSuppression,
 } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -88,11 +87,15 @@ import "./packs-qwen-2512-portrait";
  * 4. Capture both transports (`captureRenderIntent`) over the same profile,
  *    references and target — only the prompt differs, which is the migration.
  * 5. Compare (`compareShadowRender`) with STRUCTURAL fact lists: the legacy
- *    side is what the lane's segment build stated (digest facts minus its own
- *    suppressions and missing anchors), the compiled side is the program's
- *    kept subject-fact claims, both under canonical shadow fact names. The
- *    route-owned prose residue (a scene's residual attribute sheet) is outside
- *    this fact space on BOTH sides; the fixture suites own that space.
+ *    side is the segment build's EMISSION LEDGER — the fact keys recorded at
+ *    the moment each clause landed in a sent segment (owner correction
+ *    2026-08-29 #3), never digest-minus-suppressions, which would count a
+ *    fact a buggy builder silently dropped and report false parity — and the
+ *    compiled side is the program's kept subject-fact claims, both under
+ *    canonical shadow fact names. The route-owned prose residue (a scene's
+ *    residual attribute sheet) is outside this fact space on BOTH sides; the
+ *    fixture suites own that space. A lane input that genuinely lacks a
+ *    ledger keeps the unmeasured path: coverage reads null, never invented.
  *
  * ## The seeded delta allowlists
  *
@@ -172,25 +175,18 @@ export function shadowFactName(key: string, subjectId: string): string {
 }
 
 /**
- * The legacy side's structural fact list: every fact the lane's ONE selection
- * put in the digest, minus what the segment build itself excluded (its
- * suppressions and its missing anchors) — i.e. what the lane's segment builder
- * actually emitted, derived from structure rather than probed from prose.
+ * The legacy side's structural fact list: the segment build's EMISSION LEDGER
+ * under canonical shadow names. The ledger is recorded at the moment each fact
+ * became a sent segment (`VisualSubjectSegmentsBuild.emitted`, restricted by
+ * the scene lane to the kinds its transport folds), so it is evidence of what
+ * the builder actually emitted — never a derivation from the digest minus the
+ * recorded exclusions, which would count a fact a buggy builder silently
+ * dropped (no suppression, no missing-required entry) and, with the compiled
+ * side built from the same digest, report FALSE PARITY on the exact defect the
+ * shadow exists to catch (owner correction 2026-08-29 #3).
  */
-export function legacyShadowFactNames(input: {
-  readonly digest: VisualImageDigest;
-  readonly subjectId: string;
-  readonly suppressions: readonly VisualStateSuppression[];
-  readonly missingRequired: readonly string[];
-}): string[] {
-  const excluded = new Set<string>([
-    ...input.suppressions.map((suppression) => suppression.key),
-    ...input.missingRequired,
-  ]);
-  const names = [...input.digest.mandatoryFacts, ...input.digest.optionalFacts]
-    .filter((fact) => fact.subjectId === input.subjectId && !excluded.has(fact.key))
-    .map((fact) => shadowFactName(fact.key, input.subjectId));
-  return [...new Set(names)];
+export function ledgerShadowFactNames(emittedFactKeys: readonly string[], subjectId: string): string[] {
+  return [...new Set(emittedFactKeys.map((key) => shadowFactName(key, subjectId)))];
 }
 
 /**
@@ -239,8 +235,11 @@ interface SubjectShadowCut {
   readonly attributes: readonly AttributeValue[];
   readonly exposure: RegionExposure;
   readonly realizedBody: RealizedBody;
-  readonly suppressions: readonly VisualStateSuppression[];
-  readonly missingRequired: readonly string[];
+  /**
+   * The lane's emission ledger, or null for an input that genuinely lacks one
+   * — coverage then reads unmeasured rather than being derived.
+   */
+  readonly emittedFactKeys: readonly string[] | null;
 }
 
 /** The cut's two derived halves: the structural legacy fact list and the assembly input. */
@@ -250,12 +249,8 @@ function cutShadowInputs(
   references?: readonly ImageReferenceFact[],
 ): Pick<CharacterShadowCoreInput, "legacyFactNames" | "assembly"> {
   return {
-    legacyFactNames: legacyShadowFactNames({
-      digest: cut.digest,
-      subjectId: cut.subjectId,
-      suppressions: cut.suppressions,
-      missingRequired: cut.missingRequired,
-    }),
+    legacyFactNames:
+      cut.emittedFactKeys === null ? null : ledgerShadowFactNames(cut.emittedFactKeys, cut.subjectId),
     assembly: {
       digest: cut.digest,
       ...(cut.name === undefined ? {} : { labels: { [cut.subjectId]: cut.name } }),
@@ -563,8 +558,7 @@ export function variantShadowMeta(input: VariantShadowInput): Record<string, unk
           attributes: visual.resolved,
           exposure: visual.exposure,
           realizedBody: visual.realizedBody,
-          suppressions: assembly.suppressions,
-          missingRequired: assembly.missingRequired,
+          emittedFactKeys: assembly.emittedFactKeys,
         },
         standaloneRead(characterId, input.revision, input.extraRevisions),
         referenceFacts("variant", characterId, input.references),
@@ -624,8 +618,7 @@ export function avatarShadowMeta(input: AvatarShadowInput): Record<string, unkno
           attributes: visual.resolved,
           exposure: visual.exposure,
           realizedBody: visual.realizedBody,
-          suppressions: assembly.suppressions,
-          missingRequired: assembly.missingRequired,
+          emittedFactKeys: assembly.emittedFactKeys,
         },
         standaloneRead(characterId, input.revision, input.extraRevisions),
       ),
@@ -680,8 +673,9 @@ export function chatLookShadowMeta(input: ChatLookShadowInput): Record<string, u
           attributes: visual.attributes,
           exposure: visual.exposure,
           realizedBody: visual.realizedBody,
-          suppressions: assembly.suppressions,
-          missingRequired: assembly.missingRequired,
+          // Present whenever the mint realized a cut; `?? null` keeps the
+          // unmeasured degradation for a hostile or pre-ledger assembly value.
+          emittedFactKeys: assembly.emittedFactKeys ?? null,
         },
         { kind: "committed_cut", token: input.cutId },
         referenceFacts("chat_look", characterId, input.references),

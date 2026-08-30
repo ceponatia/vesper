@@ -302,6 +302,14 @@ export interface ChatLookSegmentAssembly {
   readonly missingRequired: readonly string[];
   /** Every fact a policy or the resolver excluded, and why. */
   readonly suppressions: readonly VisualStateSuppression[];
+  /**
+   * The digest fact keys this build ACTUALLY emitted as segment text — the
+   * builder's emission ledger, recorded fact by fact as each clause landed
+   * (owner correction 2026-08-29 #3); the shadow's legacy fact coverage reads
+   * this, never digest-minus-suppressions. Present exactly when `visual` is:
+   * the route-only mint emitted no digest fact and has no ledger to state.
+   */
+  readonly emittedFactKeys?: readonly string[];
   /** The realized cut behind the segments, for the shadow; absent with no cut. */
   readonly visual?: ChatLookVisualBuild;
   /** Non-null refuses the mint BEFORE a row is reserved (this lane's refusal shape). */
@@ -413,6 +421,7 @@ export function buildChatLookSegments(input: ChatLookSegmentInput): ChatLookSegm
     digestMeta: realized.meta,
     missingRequired: subject.missingRequired,
     suppressions: subject.suppressions,
+    emittedFactKeys: subject.emitted.map((emission) => emission.key),
     visual: { digest: realized.digest, attributes, realizedBody, exposure },
     refusal: null,
   };
