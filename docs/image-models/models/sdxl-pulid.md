@@ -64,6 +64,30 @@ reasonable resolution order would have found it.
 
 Vesper never sends `depth_image`.
 
+## Negative-prompt behavior
+
+The field is live and unselective (fruit-bowl suppression canary, 2026-08-29,
+against the pinned version above): with a high OFF-arm base rate, negating
+`apple, apples, red apple` removed apples from every ON render at `cfg` 3 and
+`cfg` 7 — and removed the subject concept with them. Every ON render lost the
+fruit bowl itself (soup, porridge, purée) while OFF bowls stayed intact (8/10
+at cfg 3, 6/6 at cfg 7): negating a concept on this wrapper bleeds into
+everything semantically adjacent. No reviewed control or production lane
+sends the field; per-block negative trials are permitted on this endpoint —
+the channel is not inert — but must grade collateral damage as a first-class
+metric, and no lane adopts the field until a block trial proves a wording
+selective enough to trust.
+
+Two more measurements from the same canary:
+
+- `cfg` 7 markedly improves prompt adherence over the provider default of 3:
+  OFF-arm fruit bowls were 6/6 coherent at cfg 7 against 8/10 with degenerate
+  renders at the default — relevant to this model's adapter execution hints.
+- The endpoint does not reliably serve identical repeat requests: the
+  determinism control's second render failed three consecutive times
+  ("replicate returned no image") while its identical twin succeeded, so seed
+  reproducibility is unverified.
+
 ## Shape and method are pinned
 
 The provider defaults `width`/`height` to 512×512 — both off-shape for a 3:4
