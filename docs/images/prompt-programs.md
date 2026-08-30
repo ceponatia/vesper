@@ -230,6 +230,19 @@ Positive and negative packs are separate products with separate versions,
 evidence and promotion history. A **binding** pins one profile to one dialect and
 one compatible pack pair, so a render never observes half an activation.
 
+A binding's status is the lane's rollout state (owner ruling 2026-08-29). An
+`active` row means the lane is cut over: production resolution
+(`activeImagePromptBinding`) sees only active rows, and null is its ordinary
+staged-rollout answer — the lane keeps its existing prompt builder. A
+`candidate` row is a real binding under shadow measurement: the character-lane
+shadow resolves it through `imagePromptBindingForShadow`, which accepts
+candidate and active rows alike so a promotion never changes the shadow's
+answer, while production resolution never sees it. Cutover is the
+candidate → active promotion of the row. A binding exists only for a profile
+that actually renders on the bound model — a profile riding another endpoint
+gets no row, never a reserved name. Pack **versions** carry their own status
+independently: it records the data's promotion state, not any lane's rollout.
+
 A pack manifest says which named blocks are enabled, their order and priority,
 which reviewed wording variant to use, and which evidence backs each choice. It
 may **not** contain executable code, a condition expression or a whole-prompt
