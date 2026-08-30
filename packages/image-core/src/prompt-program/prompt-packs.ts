@@ -293,6 +293,44 @@ export function activeImagePromptBinding(query: {
   return pinned ?? candidates.find((binding) => binding.versionId === null) ?? null;
 }
 
+/**
+ * The binding a SHADOW compile resolves: `candidate` rows included.
+ *
+ * `activeImagePromptBinding` returning null IS the staged-rollout contract —
+ * "this lane has not been cut over" — so a lane that is only being measured
+ * must not register `active` rows: that would overload the state model and
+ * leave cutover with no transition to represent. A shadow-phase lane registers
+ * its rows as `candidate`, this resolver finds them, and production resolution
+ * never sees them. It resolves `active` rows too, so the day a row is promoted
+ * the shadow keeps measuring the same binding the lane now runs — cutover
+ * changes production's answer, never the shadow's.
+ *
+ * Selection within the widened status set is otherwise identical to the active
+ * resolver: a version-pinned row wins over a floating one, and `profileKey`
+ * narrows strictly. One (slug, task, profileKey) pair should carry one
+ * non-retired row; when both a candidate and an active row exist for a pair
+ * mid-promotion, registration order decides, exactly as it does for the active
+ * resolver's duplicate rows.
+ */
+export function imagePromptBindingForShadow(query: {
+  readonly modelSlug: string;
+  readonly task: string;
+  readonly versionId?: string | null;
+  readonly profileKey?: string;
+}): ImagePromptProfileBinding | null {
+  const candidates = bindings.filter(
+    (binding) =>
+      (binding.status === "candidate" || binding.status === "active") &&
+      binding.modelSlug === query.modelSlug &&
+      binding.task === query.task &&
+      (query.profileKey === undefined || binding.profileKey === query.profileKey),
+  );
+  const pinned = query.versionId
+    ? candidates.find((binding) => binding.versionId === query.versionId)
+    : undefined;
+  return pinned ?? candidates.find((binding) => binding.versionId === null) ?? null;
+}
+
 /** Every registered binding, for admin surfaces and coverage tests. */
 export function registeredImagePromptBindings(): readonly ImagePromptProfileBinding[] {
   return [...bindings];

@@ -157,11 +157,20 @@ export const qwenImageEdit2511NegativePack: ImageNegativePackVersion = {
 // ---------------------------------------------------------------------------
 
 /**
- * The three tranche-1 edit lanes, each pinning the same pack pair. `active`
- * is safe in Round 1 because resolution is the only consumer and nothing
- * resolves these tasks in production yet; it is also what lets the shadow
- * compile run through the same `activeImagePromptBinding` path the cutover
- * will use, instead of a shadow-only resolution nobody ships.
+ * The three tranche-1 edit lanes, each pinning the same pack pair —
+ * registered as `candidate` (owner correction 2026-08-29 #2). These lanes are
+ * NOT cut over: `activeImagePromptBinding` returning null is the staged-
+ * rollout contract itself, so an `active` row here would overload the state
+ * model and leave cutover with no transition to represent. The shadow
+ * resolves them through `imagePromptBindingForShadow`, production resolution
+ * never sees them, and cutover is the candidate → active promotion.
+ *
+ * The pack VERSIONS stay `active`, deliberately: a pack's status is the
+ * promotion state of its DATA, not the rollout state of any lane, and the
+ * module contract above ("a code-owned pack IS its own known active version
+ * until a table exists to promote a different one") is what makes the
+ * byte-identical code-fallback rule checkable. The binding's status alone
+ * says whether a lane runs this pair.
  */
 const EDIT_LANES = [
   ["binding-qwen-2511-variant-v1", "variant-standard", "variant"],
@@ -181,7 +190,7 @@ export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task])
   promptDialectId: DIALECT_ID,
   positivePackVersionId: qwenImageEdit2511PositivePack.id,
   negativePackVersionId: qwenImageEdit2511NegativePack.id,
-  status: "active" as const,
+  status: "candidate" as const,
 }));
 
 registerImagePositivePack(qwenImageEdit2511PositivePack);

@@ -1,10 +1,10 @@
 import {
-  activeImagePromptBinding,
   compileImagePromptProgram,
   buildImageWorldDigest,
   IMAGE_TARGET_ASPECT,
   imageNegativePack,
   imagePositivePack,
+  imagePromptBindingForShadow,
   imagePromptBudgetFromBinding,
   type ImageConceptId,
   type ImageDialectReference,
@@ -78,9 +78,10 @@ import "./packs-qwen-2512-portrait";
  *    lanes expose it for exactly this (`StandaloneSubjectVisual.digest`,
  *    `ChatLookSegmentAssembly.visual`, `SceneSubjectVisualSlice`).
  * 2. Resolve the lane's binding on the lane's OWN resolved model
- *    (`activeImagePromptBinding`; the portrait lane resolves per profile key).
- *    A model with no binding is a recorded refusal, not an error — null is the
- *    ordinary answer during a staged rollout.
+ *    (`imagePromptBindingForShadow`, which sees the shadow phase's `candidate`
+ *    rows; the portrait lane resolves per profile key). A model with no
+ *    binding is a recorded refusal, not an error — null is the ordinary
+ *    answer during a staged rollout.
  * 3. Compile the prompt program (`compileImagePromptProgram`,
  *    `refuseOnMissingRequired: false` so a degraded assembly still produces a
  *    comparable prompt and the loss is recorded as `mandatory_lost`).
@@ -111,7 +112,7 @@ import "./packs-qwen-2512-portrait";
 // Refusal and bookkeeping codes
 // ---------------------------------------------------------------------------
 
-/** No active binding for this model slug and task — the lane is not cut over here. */
+/** No candidate or active binding for this model slug and task — nothing to shadow here. */
 export const IMAGE_SHADOW_BINDING_MISSING = "image_shadow.binding_missing";
 /** A bound pack version is not registered — a configuration gap, recorded, never thrown. */
 export const IMAGE_SHADOW_PACK_MISSING = "image_shadow.pack_missing";
@@ -346,7 +347,11 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
     );
 
   // --- 1. The binding, on the lane's own resolved model ---------------------
-  const binding = activeImagePromptBinding({
+  // The SHADOW resolver: it sees the `candidate` rows this phase registers
+  // (and would keep seeing them across their promotion to `active`), while
+  // production's `activeImagePromptBinding` stays honestly null for every lane
+  // that is not cut over.
+  const binding = imagePromptBindingForShadow({
     modelSlug: profile.model.slug,
     task: input.task,
     ...(input.bindingProfileKey === undefined ? {} : { profileKey: input.bindingProfileKey }),

@@ -216,6 +216,7 @@ export {
   imagePositiveProtections,
   imagePostMergeCollisions,
   imageProjectionDispositions,
+  imagePromptBindingForShadow,
   imagePromptDialect,
   imagePromptDialectForBinding,
   imagePromptDialectIds,

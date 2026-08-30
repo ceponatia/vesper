@@ -85,6 +85,17 @@ export const qwenImage2512PortraitNegativePack: ImageNegativePackVersion = {
 // Bindings — every 2512 portrait profile key, one pack pair
 // ---------------------------------------------------------------------------
 
+/*
+ * `candidate`, not `active` (owner correction 2026-08-29 #2): the avatar lane
+ * is in shadow, not cut over, and `activeImagePromptBinding` returning null IS
+ * the not-cut-over contract. The shadow resolves these rows through
+ * `imagePromptBindingForShadow`; promotion to `active` is the cutover act. The
+ * pack versions above stay `active` because a pack's status is its data's
+ * promotion state, not a lane's rollout state — these manifests are
+ * byte-identical to the endpoint's shipping pair, which is the hash law's own
+ * definition of a known active version.
+ */
+
 const PORTRAIT_PROFILE_KEYS = [
   ["binding-qwen-2512-portrait-standard-v1", "portrait-standard"],
   ["binding-qwen-2512-portrait-fast-v1", "portrait-fast"],
@@ -103,7 +114,7 @@ export const qwenImage2512PortraitBindings = PORTRAIT_PROFILE_KEYS.map(([id, pro
   promptDialectId: DIALECT_ID,
   positivePackVersionId: qwenImage2512PortraitPositivePack.id,
   negativePackVersionId: qwenImage2512PortraitNegativePack.id,
-  status: "active" as const,
+  status: "candidate" as const,
 }));
 
 registerImagePositivePack(qwenImage2512PortraitPositivePack);
