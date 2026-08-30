@@ -18,8 +18,8 @@ and prompt packs — see [../prompt-programs.md](../prompt-programs.md).
 
 The projection makes the shot decisions as **facts**:
 
-- an item's `kind` chooses its presentation — clothing on a ghost mannequin, objects and
-  containers isolated on a seamless surface;
+- an item's `kind` chooses its presentation — clothing hangs in its own shape and the clause
+  names no support, objects and containers are isolated on a seamless surface;
 - a location's `scale` chooses its view — `open` or `expanse` gives an outdoor landscape,
   otherwise an architectural interior; and
 - both operations assert **zero subjects**, which is what puts "no people" in the prompt and
