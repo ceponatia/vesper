@@ -393,8 +393,11 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
           // The shadow verdict, beside the visual provenance it was measured
-          // over. Reserve-time like the rest: the verdict describes the primary
-          // rung's request, which no fallback or failure changes.
+          // over. Written at reserve time against the PRIMARY rung's request;
+          // unlike the camera and the visual provenance it IS rung-specific,
+          // so a fallback rung winning replaces it in the correction pass
+          // below (`sceneFallbackShadowMeta`) — the stored record always
+          // describes the rung the row's prompt and model describe.
           ...(shadowMeta ?? {}),
         },
       },
