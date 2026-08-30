@@ -88,6 +88,17 @@ Negative terms are an opt-in curation instead:
 block, chosen with the profile rather than imposed at the seam. The default
 path remains byte-identical there.
 
+The field is measured ineffective for content suppression (fruit-bowl
+suppression canary, 2026-08-29, against the pinned version above): with a
+high OFF-arm base rate (90% at `cfg` 5, 83% at `cfg` 9), `apple, apples,
+red apple` in `negative_prompt` suppressed nothing at either guidance level
+(ON incidence 100% and 83%), and the endpoint does not reproduce at a held
+seed. Owner ruling (2026-08-29): the model stays; no functionality populates
+`negative_prompt` automatically — adapters treat the field as carrying no
+useful negative transport, and it stays exposed for manual and opt-in use
+only. The stylized profile's curated cleanup block rides this same measured
+ineffective field.
+
 ## Inputs
 
 - `prompt` — string, required.
