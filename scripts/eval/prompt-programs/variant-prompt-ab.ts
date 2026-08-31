@@ -13,7 +13,15 @@ import {
 import type { PreparedReferenceBytes } from "@vesper/image-replicate";
 import type { AttributeValue } from "@/contracts/attributes";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
+import {
+  trialCharacterProfile,
+  trialWardrobe,
+  FIXTURE_NAME,
+  FIXTURE_READ_TOKEN,
+  FIXTURE_SUBJECT_ID,
+  OUT_BASE,
+  REFERENCE_DEFAULT,
+} from "./variant-ab-fixture";
 import { fnv1aHex } from "@/lib/hash";
 import { hasReplicate } from "@/server/ai";
 import {
@@ -151,7 +159,6 @@ const PROFILE_KEY = "variant-standard";
  */
 const DOCUMENTED_VERSION = "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729";
 
-const OUT_BASE = process.env["AB_OUT"] ?? "eval-images/variant-prompt-ab";
 const SEED_BASE = Number(process.env["AB_SEED_BASE"] ?? 20_260_831);
 
 /** Paired seeds per kind. `AB_SEEDS` overrides it (the harness reads that env). */
@@ -161,15 +168,6 @@ const SEEDS_PER_KIND = 3;
 const TRIAL_REVISION = "trial";
 
 const FIXTURE_ID = "nyx";
-
-/** The fixture's name — one place, since it appears in name-bound prompt sentences. */
-const FIXTURE_NAME = "Nyx";
-
-/** The fixture's subject id — the one id the assembly, the digest and the cut all name. */
-const FIXTURE_SUBJECT_ID = "variant-ab-subject";
-
-/** The standalone read token the assembly fingerprints — this trial's committed-cut stand-in. */
-const FIXTURE_READ_TOKEN = "variant-ab-token";
 
 /** Vesper's portrait target (`IMAGE_TARGET_ASPECT`, 3/4) spelled as this model's aspect-enum entry. */
 const TARGET_ASPECT = "3:4";
@@ -226,75 +224,6 @@ class UsageError extends Error {}
 // ---------------------------------------------------------------------------
 // The fixture — owned by this script, for the reason in the header
 // ---------------------------------------------------------------------------
-
-function baseAttribute(id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue {
-  return { id, value, source: "base" };
-}
-
-/**
- * The character both arms describe: a succubus, so species morphology
- * (horns / wings / tail) is LIVE rather than a human's empty set, with intimate
- * regions present so the exposure gate has something to gate.
- *
- * The three morphology values are the load-bearing ones — they are the named
- * cutover delta, and a grader compares the two arms on whether the compiled
- * program's newly stated horns, wings and tail improve or damage the picture.
- * The rest is ordinary identity detail chosen to be distinctive enough that a
- * lost fact is visible by eye: deep violet hair against amber eyes on bronze
- * skin does not survive being quietly dropped.
- *
- * `voice.timbre` is authored deliberately and must NEVER reach a prompt: it is
- * `kind: "sensory"`, so an arm that renders "gravelly" has grown a leak. Grade
- * that under `no_other_regression`.
- */
-function trialCharacterProfile(): CharacterProfile {
-  return {
-    ...emptyCharacterProfile(),
-    bio: "A daemonkin broker who deals in favors.",
-    personality: "Unhurried, amused, entirely unbothered.",
-    age: "134",
-    speciesId: "succubus",
-    intimateRegions: ["breasts", "vulva"],
-    attributes: [
-      baseAttribute("identity.apparent_age", "late_twenties"),
-      baseAttribute("identity.gender", "female"),
-      baseAttribute("identity.heritage", "Latina"),
-      baseAttribute("hair.color", "deep_violet"),
-      baseAttribute("eyes.color", "amber"),
-      baseAttribute("skin.tone", "bronze"),
-      baseAttribute("horns.shape", "spiraled"),
-      baseAttribute("wings.type", "membranous"),
-      baseAttribute("tail.type", "spaded"),
-      baseAttribute("legs.build", "athletic"),
-      baseAttribute("feet.nails", "painted"),
-      baseAttribute("breasts.size", "ample"),
-      baseAttribute("breasts.nipples", "puffy"),
-      baseAttribute("voice.timbre", "gravelly"),
-    ],
-  };
-}
-
-/**
- * The character's default outfit.
- *
- * The variant lane states no garment names — the reference image shows the
- * clothes — but coverage still drives the camera's perception and the exposure
- * the intimate gate reads, so a DRESSED fixture is what production runs. A bare
- * body here would exercise a selection production never reaches.
- */
-function trialWardrobe(): AvatarWardrobeItem[] {
-  return [
-    {
-      name: "silk kimono",
-      description: "a floor-length wine-red silk kimono",
-      appearance: "embroidered with pale cranes",
-      coverage: ["chest", "groin", "hips", "buttocks", "thighs"],
-      layer: 1,
-      opacity: "opaque",
-    },
-    { name: "slippers", description: "flat black slippers", coverage: ["feet"], layer: 1, opacity: "opaque" },
-  ];
-}
 
 /**
  * The variant lane's PRODUCTION assembly over this fixture — the exact call
@@ -373,7 +302,7 @@ function readArgs(): Args {
     versionIsDefault: version === null,
     // Any clear synthetic front-facing portrait works; keep the same file
     // across every arm and every run of one comparison.
-    referencePath: flagValue("--reference") ?? `${OUT_BASE}/reference-face.webp`,
+    referencePath: flagValue("--reference") ?? REFERENCE_DEFAULT,
     outRoot,
     render: process.argv.includes("--render"),
     report: process.argv.includes("--report"),
