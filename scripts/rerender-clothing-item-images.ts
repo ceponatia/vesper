@@ -106,12 +106,30 @@ interface Preview {
   readonly droppedAuthoredClaims: readonly string[];
 }
 
-/** A `--flag value` pair; null when absent or followed by another flag. */
+/**
+ * A `--flag value` pair, or null when the flag is ABSENT.
+ *
+ * A flag that is present but carries no usable value — nothing after it, another
+ * flag after it, or an empty string from an unset shell variable — exits rather
+ * than reading as absent. The two are opposite intentions and this script spends
+ * money on the difference: `--render --limit` would otherwise render every
+ * candidate instead of the slice that was asked for, and `--render --owner
+ * "$UNSET"` would silently widen a single-library spot check to every library.
+ */
 function flagValue(flag: string): string | null {
   const at = process.argv.indexOf(flag);
   if (at < 0) return null;
   const next = process.argv[at + 1];
-  return next === undefined || next.startsWith("--") ? null : next;
+  if (next === undefined || next.startsWith("--") || next.trim().length === 0) {
+    console.error(`${flag} was given without a value. Pass one, or omit the flag entirely.`);
+    process.exit(1);
+  }
+  return next;
+}
+
+/** How far a claim about "no image carries the wording" actually reaches. */
+function scopeSuffix(ownerId: string | null): string {
+  return ownerId === null ? "" : ` for owner ${ownerId} (no other library was examined)`;
 }
 
 /**
@@ -234,8 +252,10 @@ async function main(): Promise<void> {
       (limit === null ? "." : `; --limit ${limit} scopes this run to ${scoped.length}.`),
   );
   if (stale.length === 0) {
-    // The completion criterion, stated as a fact rather than as silence.
-    console.log("Nothing to re-render — no library clothing image was rendered with a named support form.");
+    // The completion criterion, stated as a fact rather than as silence — and
+    // never wider than the query that produced it. An owner-scoped run proves
+    // nothing about the libraries it did not read.
+    console.log(`Nothing to re-render — no clothing image${scopeSuffix(ownerId)} was rendered with a named support form.`);
   }
   if (review.length > 0) {
     console.log(`\n${review.length} clothing image(s) name a support some OTHER way — review by hand, never rendered here:`);
@@ -296,7 +316,7 @@ async function main(): Promise<void> {
   const remaining = (await supportNamingClothing(ownerId)).filter(carriesRetiredClause);
   console.log(
     remaining.length === 0
-      ? "No library clothing image carries the retired wording any more."
+      ? `No clothing image${scopeSuffix(ownerId)} carries the retired wording any more.`
       : `${remaining.length} item(s) still carry it — re-run to retry, or inspect the failed image rows.`,
   );
 }
