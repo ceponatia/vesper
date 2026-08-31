@@ -78,10 +78,26 @@ describe("withReviewedImageQuality", () => {
     expect(prepared.extraInput).toMatchObject({ width: 832, height: 1216, negative_prompt: "" });
   });
 
-  it("pins PuLID to fidelity and off its 512-square default", () => {
+  it("pins PuLID to fidelity, full identity strength, and off its 512-square default", () => {
+    // Every field here is one a stale probe default could carry on the row, and
+    // the two identity settings are the ones a wrapper default silently decided
+    // for every likeness observation this model has: the overlay merging last is
+    // what makes the reviewed answer the one that ships.
     const prepared = withReviewedImageQuality(
-      model("nsfw-api/sdxl-pulid:version", { width: 512, height: 512, method: "style" }),
+      model("nsfw-api/sdxl-pulid:version", {
+        width: 512,
+        height: 512,
+        method: "style",
+        face_weight: 0.8,
+        cfg: 3,
+      }),
     );
-    expect(prepared.extraInput).toMatchObject({ width: 832, height: 1216, method: "fidelity" });
+    expect(prepared.extraInput).toMatchObject({
+      width: 832,
+      height: 1216,
+      method: "fidelity",
+      face_weight: 1,
+      cfg: 7,
+    });
   });
 });
