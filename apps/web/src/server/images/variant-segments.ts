@@ -8,6 +8,7 @@ import {
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { intimateAnatomySummary } from "./prompts-appearance";
 import { toWornInputs, type AvatarWardrobeItem } from "./prompts-avatar";
+import { characterIdentityAnchorLedgerKey } from "@/contracts/images/character-digest";
 import { NSFW_TEST_VARIANT_KIND, PORTRAIT_IDENTITY_LOCK, type VariantKind } from "./prompts-variant";
 import { buildStandaloneSubjectVisual, type StandaloneSubjectVisual } from "./standalone-subject-visual";
 
@@ -273,7 +274,16 @@ export function buildVariantSegments(input: VariantSegmentAssemblyInput): Varian
     digestMeta: visual.digestMeta,
     missingRequired: visual.subject.missingRequired,
     suppressions: visual.subject.suppressions,
-    emittedFactKeys: visual.subject.emitted.map((emission) => emission.key),
+    // The ledger records what this build EMITTED, and two of the sentences
+    // above are route-owned rather than digest-derived: the identity lock and,
+    // when the sheet resolved one, the age anchor. Both state a fact the
+    // compiled program synthesizes too, so a ledger that omitted them would
+    // report the compiled side leaking facts this prompt plainly states.
+    emittedFactKeys: [
+      characterIdentityAnchorLedgerKey(input.characterId),
+      ...(visual.ageAnchor ? [`${input.characterId}/apparent_age`] : []),
+      ...visual.subject.emitted.map((emission) => emission.key),
+    ],
     visual,
   };
 }

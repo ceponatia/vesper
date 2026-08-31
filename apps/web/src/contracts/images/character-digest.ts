@@ -16,6 +16,7 @@ import type {
   ImageWorldRead,
   ImageWorldRelation,
 } from "@vesper/image-core";
+import { AFFORDANCE_UNIT_ONE } from "../affordances/core/fixed-point";
 import { projectCharacterWorldSlices, type CharacterSubjectSources } from "./character-adapter";
 import { entityReadToken } from "./entity-digest";
 import { projectCameraFacts, standaloneCharacterSourceRevision } from "./subject-digest";
@@ -316,6 +317,88 @@ function characterWorldRead(input: CharacterWorldDigestAssemblyInput): {
  * "retry this exact composition" answerable for character renders exactly as it
  * is for items and locations.
  */
+/** The concept a reference-anchored subject's identity fact carries. */
+export const CHARACTER_IDENTITY_ANCHOR_CONCEPT: ImageConceptId = "subject.identity";
+
+/** The projection owner of the identity anchor — this module, not a world owner. */
+export const CHARACTER_IDENTITY_ANCHOR_OWNER = "image.character.identity_anchor";
+
+/** The anchor's fact-key suffix, and the canonical name its shadow ledger row reduces to. */
+export const CHARACTER_IDENTITY_ANCHOR_MEMBER = "identity_anchor";
+
+/**
+ * The emission-ledger key a legacy builder records when it ships its own
+ * identity-lock sentence.
+ *
+ * The ledger is evidence of what a builder actually EMITTED, and the shadow
+ * compares it against the compiled program's kept claims under one canonical
+ * name. A lane that ships an identity lock but ledgers nothing for it makes the
+ * compiled side's anchor look like a leak — a divergence reported against a
+ * prompt that states the very thing — so the row is recorded wherever the
+ * sentence is. Spelled `<subjectId>/<member>` so `shadowFactName` reduces it to
+ * the same name `subject.<subjectId>.<member>` reduces to.
+ */
+export function characterIdentityAnchorLedgerKey(subjectId: string): string {
+  return `${subjectId}/${CHARACTER_IDENTITY_ANCHOR_MEMBER}`;
+}
+
+/**
+ * The identity anchor a subject carries when this render is built FROM a
+ * reference image of them.
+ *
+ * An edit lane's digest deliberately states no identity descriptors — the
+ * reference image shows the face, and describing it back would invite the model
+ * to repaint what it should be copying. But "say nothing about the face" and
+ * "let the face change" are opposite instructions, and without a claim in this
+ * concept a compiled program has no identity protection at all: the endpoint
+ * dialects emit their identity lock FROM `subject.identity`, so a digest that
+ * never states it produces a prompt that never locks anything.
+ *
+ * The legacy builders solved this with a route-owned sentence carrying one
+ * endpoint's lock wording. That is the right answer for a legacy string and the
+ * wrong one for a world digest: the digest states what is TRUE — this subject is
+ * the person in reference image N — and each dialect decides how its endpoint
+ * says so. The value here is a model-neutral descriptor for exactly that reason;
+ * the byte-exact lock wording lives in the dialect that owns the endpoint.
+ *
+ * Required, so no budget squeeze can drop a person's likeness, and synthesized
+ * only for a subject some REQUIRED identity reference actually names — an
+ * anchor without an anchor point would be a claim the payload cannot support.
+ * A subject whose projection already states identity keeps its own facts and
+ * gains nothing here, so a describe-the-face lane cannot end up locking twice.
+ */
+function identityAnchoredSubjects(
+  subjects: readonly ImageSubjectDigest[],
+  references: readonly ImageReferenceFact[],
+): readonly ImageSubjectDigest[] {
+  const anchored = new Set(
+    references
+      .filter((reference) => reference.role === "identity" && reference.required && reference.subjectRef !== undefined)
+      .map((reference) => reference.subjectRef),
+  );
+  if (anchored.size === 0) return subjects;
+  return subjects.map((subject) => {
+    if (!anchored.has(subject.ref)) return subject;
+    if (subject.facts.some((fact) => fact.concept === CHARACTER_IDENTITY_ANCHOR_CONCEPT)) return subject;
+    const anchor: ImageWorldFact = {
+      key: `${subject.ref}.${CHARACTER_IDENTITY_ANCHOR_MEMBER}`,
+      concept: CHARACTER_IDENTITY_ANCHOR_CONCEPT,
+      value: "the same person shown in the reference image",
+      subjectRef: subject.ref,
+      semanticTags: ["identity.reference_anchor"],
+      disposition: "required_visual",
+      priority: AFFORDANCE_UNIT_ONE,
+      source: {
+        owner: CHARACTER_IDENTITY_ANCHOR_OWNER,
+        key: CHARACTER_IDENTITY_ANCHOR_MEMBER,
+        entityId: subject.entityId,
+      },
+      truthFingerprint: "identity:reference_anchor",
+    };
+    return { ...subject, facts: [anchor, ...subject.facts] };
+  });
+}
+
 export function assembleCharacterWorldDigest(
   input: CharacterWorldDigestAssemblyInput,
 ): CharacterWorldDigestAssembly {
@@ -327,7 +410,7 @@ export function assembleCharacterWorldDigest(
   const { read, sourceRevisions, camera } = characterWorldRead(input);
   const digestInput: ImageWorldDigestInput = {
     read,
-    subjects: slices.subjects,
+    subjects: identityAnchoredSubjects(slices.subjects, input.references ?? []),
     ...(input.location === undefined ? {} : { location: input.location }),
     ...(input.items === undefined ? {} : { items: input.items }),
     ...(input.relations === undefined ? {} : { relations: input.relations }),

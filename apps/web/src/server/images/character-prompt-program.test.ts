@@ -11,10 +11,15 @@ import {
   type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
+import {
+  QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
+} from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { expectDiagnostic } from "@/test/diagnostics";
 import { LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID, laneProbeVariantSegments } from "@/server/test-support";
+import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 import {
   buildCharacterPromptProgram,
   isCharacterPromptCompiled,
@@ -434,5 +439,87 @@ describe("variantPromptTransport", () => {
   /** The degraded lane: no assembly means no segments, and none are invented. */
   it("emits no segments for a legacy render that assembled none", () => {
     expect(variantPromptTransport(LEGACY, undefined, null)).toEqual({ prompt: LEGACY });
+  });
+});
+
+
+/**
+ * THE TWO PROVIDER-FACING LAWS OF A CUT-OVER CHARACTER RENDER, taken end to end
+ * from the real variant assembly rather than from a hand-built digest — because
+ * both defects these kill were invisible to every fixture that started from one.
+ */
+describe("what a cut-over variant render would actually send", () => {
+  const program = (): CharacterPromptProgram => compiled(buildCharacterPromptProgram(programInput()));
+
+  /**
+   * The identity lock must come from the WORLD, not from the legacy string.
+   *
+   * The digest of an edit lane states no identity descriptors — the reference
+   * image shows the face — and the endpoint dialects emit their lock from a
+   * `subject.identity` claim. Before the anchor existed, that claim never
+   * appeared for this lane, so a compiled variant carried no identity
+   * protection at all while the legacy prompt carried a route-owned lock
+   * sentence. Nothing reported it: the route segment is outside the emission
+   * ledger on both sides, and transport parity never compares prompt text. A
+   * compiled render that leaned on the legacy segment would have shipped an
+   * identity-critical edit with nothing telling the model to keep the face.
+   *
+   * Byte-exact, because "means the same" is the defect: the render kernel's
+   * Qwen quirk rewrites the legacy lock into these bytes today, so a compiled
+   * program is comparable to the shipping edit path only if it reproduces them.
+   */
+  it("emits the byte-identical Qwen lock from the digest's own identity claim", () => {
+    const result = program();
+
+    // The claim is the digest's, and it is REQUIRED — no budget squeeze may
+    // trade a person's likeness away for optional detail.
+    const anchors = result.subjects
+      .flatMap((subject) => subject.facts)
+      .filter((fact) => fact.concept === "subject.identity");
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]?.disposition).toBe("required_visual");
+    expect(result.keptClaimIds).toContain(anchors[0]?.key);
+
+    // No model-specific wording reached the world digest: the digest states a
+    // neutral truth and the dialect owns the endpoint's sentence.
+    expect(anchors[0]?.value).not.toContain("Preserve the exact face");
+    expect(JSON.stringify(result.subjects)).not.toContain(PORTRAIT_IDENTITY_LOCK);
+
+    // …and the dialect turns it into the endpoint's own bytes, once.
+    expect(result.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(result.prompt.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK)).toBe(
+      result.prompt.lastIndexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
+    );
+    expect(result.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+  });
+
+  /**
+   * No internal handle may reach provider prose.
+   *
+   * The preserve set identifies its facts structurally — `<subjectId>/horns/
+   * species.feature_group` — and the dialect used to render that list verbatim,
+   * so a production render would have sent a character's database id, a
+   * projection source key and a registry kind id to the provider as the text a
+   * model is asked to act on. Unusable as instruction, and a private identifier
+   * leaving the system as a side effect of drawing a picture.
+   *
+   * The subject id in this fixture is a literal, so a regression is not
+   * theoretical: it would put THIS string in the payload.
+   */
+  it("names no database id, source key or fingerprint in the prompt", () => {
+    const result = program();
+
+    expect(result.prompt).not.toContain(LANE_PROBE_SUBJECT_ID);
+    expect(result.prompt).not.toContain("species.feature_group");
+    expect(result.prompt).not.toContain("subject.");
+    // A fact key's separator. The prompt is sentences; a slash in it means a key
+    // got through by some route this test did not anticipate.
+    expect(result.prompt).not.toContain("/");
+
+    // The preserve instruction still SAYS something — the guard is not "emit
+    // nothing", it is "emit the meaning". These are the facts an outfit change
+    // must not touch, named as the things they are.
+    expect(result.prompt).toContain("unchanged from the source");
+    expect(result.prompt).toContain("the horns");
   });
 });

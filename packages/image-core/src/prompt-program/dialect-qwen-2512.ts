@@ -11,6 +11,8 @@ import {
   label,
   lightingSentence,
   listOf,
+  listWords,
+  preservedMeanings,
   mediumSentence,
   prefixed,
   relationSentence,
@@ -101,11 +103,15 @@ function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput
     // --- Operation ------------------------------------------------------------
     case "operation.change":
       return say(`Edit the supplied image: ${describeChange(claim.value)}.`);
-    case "operation.preserve":
+    case "operation.preserve": {
       // Named facts, never "preserve everything" — the research traces Qwen's
       // squashed-figure geometry failure to exactly that blanket wording fighting
-      // a requested pose change.
-      return say(`Everything else stays as it is in the source, including ${listOf(claim.value)}.`);
+      // a requested pose change. Named by MEANING, never by fact key: see
+      // `preservedMeanings`.
+      const preserved = preservedMeanings(input, claim.value);
+      if (preserved.length === 0) return null;
+      return say(`Everything else stays as it is in the source, including ${listWords(preserved)}.`);
+    }
     case "operation.geometry":
       return say(
         value === "canvas_may_expand"

@@ -295,7 +295,50 @@ Every refusal happens before provider spend, and each has its own code:
 | `image_prompt_program.post_merge_collision`             | a replacement claim contradicts a surviving exclusion |
 
 Softer degradation is reported and carries on: a narrowed or dropped optional
-constraint, a trimmed optional claim, a version with no negative field.
+constraint, a trimmed optional claim, a version with no negative field, and a
+preserve entry naming a fact this program does not state
+(`image_prompt_program.preserve_unworded`).
+
+## What may reach a provider
+
+The compiled text is prose a model is asked to act on, and nothing else may
+travel in it.
+
+- **No internal handle reaches provider prose.** Not a database id, a projection
+  source key, a registry kind id, a fact key or a fingerprint. Claims and
+  contracts identify facts structurally because that is what makes a set
+  derivable and checkable; turning an identifier into language is the dialect's
+  job, and a dialect that cannot word an entry drops it and reports rather than
+  emitting the identifier.
+- **The preserve set is structural; its wording is not.** A change contract
+  names the facts an edit must not touch by key. The dialect resolves each key
+  against the program's own claims and renders what the fact names — its locus,
+  or its concept's noun — never the key. An entry the program does not state is
+  dropped, and the sentence disappears entirely rather than shrinking to a list
+  of handles; a mandatory preserve claim that renders nothing is a dropped
+  mandatory claim, which refuses before provider spend.
+
+## Identity on a reference-anchored render
+
+An edit lane's digest states no identity descriptors — the reference image
+carries the face, and describing it back invites the model to repaint what it
+should be copying. But saying nothing about a face and letting it change are
+opposite instructions, and a dialect emits its identity lock from a
+`subject.identity` claim. So a subject named by a REQUIRED identity reference
+carries an identity anchor in the digest: a model-neutral fact stating that this
+subject is the person in the reference.
+
+The anchor is required, so no budget squeeze can trade a likeness for optional
+detail, and it is synthesized only where a required identity reference actually
+names the subject — an anchor with no anchor point would be a claim the payload
+cannot support. A subject whose projection already states identity keeps its own
+facts and gains nothing, so a describe-the-face lane cannot lock twice.
+
+**The lock wording belongs to the dialect, never to the digest.** The digest
+states what is true; each endpoint decides how it says so, and the Qwen edit
+dialects emit their lock byte-identically to the wording the render kernel's
+family quirk writes for the legacy path — which is what makes a compiled program
+comparable to the shipping edit path at all.
 
 ## Provenance
 

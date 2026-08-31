@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DiagnosticCollector } from "@vesper/contracts";
 // Through the barrel, exactly as a consumer reaches this layer. Dialects and packs
 // register themselves at import time, so a test that reached for
 // `./compile-program` directly would compile against an empty registry and refuse
@@ -724,7 +725,11 @@ describe("the Qwen 2511 delta-edit dialect", () => {
         concept: "subject.pose",
         value: "raise her left hand to shoulder height",
         replacements: [],
-        preserve: ["outfit", "hair"],
+        // Fact KEYS, which is what a preserve entry is: the set identifies the
+        // facts structurally and the dialect renders what each one names. Bare
+        // words used to render as themselves, which is exactly how a character
+        // id reached provider prose.
+        preserve: ["s1.identity", "s1.exposure"],
         geometry: "locked",
       },
     });
@@ -804,7 +809,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     // "preserve everything" fighting a requested pose change.
     const assignment = text.indexOf("Image 1 shows Wren.");
     const change = text.indexOf("Make exactly this change: raise her left hand to shoulder height.");
-    const preserve = text.indexOf("Keep hair and outfit unchanged from the source.");
+    const preserve = text.indexOf("Keep the exposure and the identity unchanged from the source.");
     expect(assignment).toBeGreaterThanOrEqual(0);
     expect(change).toBeGreaterThan(assignment);
     expect(preserve).toBeGreaterThan(change);
@@ -822,6 +827,45 @@ describe("the Qwen 2511 delta-edit dialect", () => {
    * chosen by reference count, exactly as the kernel quirk chooses — emitted
    * once for the whole render.
    */
+  /**
+   * A preserve entry names a fact STRUCTURALLY, and the wording happens in the
+   * dialect. The defect this kills shipped: the renderer printed the entries
+   * verbatim, so a production render sent `<characterId>/horns/species.
+   * feature_group` to the provider as the text a model was asked to act on — a
+   * database id and two internal handles in a payload, and an instruction no
+   * model can follow.
+   *
+   * The unresolvable half is the part only this layer can reach: an entry the
+   * program does not state must be DROPPED and reported, never degraded back to
+   * its key, because "we could not word it" must not become "we sent the id".
+   */
+  it("words the preserve set by meaning and drops what it cannot word", () => {
+    const digest = editWorld({
+      operation: {
+        ...editOperation(),
+        change: {
+          concept: "subject.pose",
+          value: "raise her left hand to shoulder height",
+          replacements: [],
+          // One real fact key, one naming nothing this program states.
+          preserve: ["s1.exposure", "s1.nothing_states_this"],
+          geometry: "locked",
+        },
+      },
+    });
+    const sink = new DiagnosticCollector();
+    const result = compile2511(digest, { sink });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+
+    // The resolvable entry became what it MEANS.
+    expect(result.compiled.positiveText).toContain("Keep the exposure unchanged from the source.");
+    // Neither entry reached the payload as a key, and the unworded one is
+    // reported rather than lost in silence.
+    expect(result.compiled.positiveText).not.toContain("s1.exposure");
+    expect(result.compiled.positiveText).not.toContain("nothing_states_this");
+    expect(sink.items.some((entry) => entry.code === "image_prompt_program.preserve_unworded")).toBe(true);
+  });
+
   it("chooses the multi-reference lock and numbers references by send order", () => {
     const digest = editWorld({
       location: {
@@ -882,7 +926,11 @@ describe("the Qwen 2511 delta-edit dialect", () => {
           concept: "subject.pose",
           value: "raise her left hand to shoulder height",
           replacements: [],
-          preserve: ["outfit", "hair"],
+          // Fact KEYS, which is what a preserve entry is: the set identifies the
+        // facts structurally and the dialect renders what each one names. Bare
+        // words used to render as themselves, which is exactly how a character
+        // id reached provider prose.
+        preserve: ["s1.identity", "s1.exposure"],
           geometry: "canvas_may_expand",
         },
       }),
@@ -917,7 +965,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     // change, then the preserve set, then the geometry permission.
     const secondAssignment = text.indexOf("Image 2 shows the place, the tea shop.");
     const change = text.indexOf("Make exactly this change: raise her left hand to shoulder height.");
-    const preserve = text.indexOf("Keep hair and outfit unchanged from the source.");
+    const preserve = text.indexOf("Keep the exposure and the identity unchanged from the source.");
     const geometry = text.indexOf(
       "You may extend the canvas and paint in the newly required space rather than compressing the subject to fit.",
     );
