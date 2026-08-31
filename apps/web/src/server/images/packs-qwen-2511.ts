@@ -171,14 +171,21 @@ export const qwenImageEdit2511NegativePack: ImageNegativePackVersion = {
  * until a table exists to promote a different one") is what makes the
  * byte-identical code-fallback rule checkable. The binding's status alone
  * says whether a lane runs this pair.
+ *
+ * Each row carries its OWN status rather than inheriting one from the loop.
+ * These three lanes share a model, a dialect and a pack pair and differ only by
+ * task, so a single status applied across the list would make cutting over one
+ * lane and cutting over all three the same edit — and the rollout's whole rule
+ * is one endpoint/task lane at a time, each behind its own accumulated evidence.
+ * Promotion is changing one literal on one row.
  */
 const EDIT_LANES = [
-  ["binding-qwen-2511-variant-v1", "variant-standard", "variant"],
-  ["binding-qwen-2511-scene-v1", "scene-standard", "scene"],
-  ["binding-qwen-2511-chat-look-v1", "chat-look-standard", "chat_look"],
+  ["binding-qwen-2511-variant-v1", "variant-standard", "variant", "candidate"],
+  ["binding-qwen-2511-scene-v1", "scene-standard", "scene", "candidate"],
+  ["binding-qwen-2511-chat-look-v1", "chat-look-standard", "chat_look", "candidate"],
 ] as const;
 
-export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task]) => ({
+export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task, status]) => ({
   id,
   profileKey,
   profileId: null,
@@ -190,7 +197,7 @@ export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task])
   promptDialectId: DIALECT_ID,
   positivePackVersionId: qwenImageEdit2511PositivePack.id,
   negativePackVersionId: qwenImageEdit2511NegativePack.id,
-  status: "candidate" as const,
+  status,
 }));
 
 registerImagePositivePack(qwenImageEdit2511PositivePack);
