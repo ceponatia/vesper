@@ -19,7 +19,7 @@ const SPEC_EFFECTIVE_VALUES: Record<string, Record<string, unknown>> = {
   "qwen/qwen-image-edit-2511": { go_fast: false },
   "aisha-ai-official/nsfw-flux-dev": { width: 832, height: 1216 },
   "aisha-ai-official/likereality-pony-v1": { width: 832, height: 1216, negative_prompt: "" },
-  "nsfw-api/sdxl-pulid": { width: 832, height: 1216, method: "fidelity" },
+  "nsfw-api/sdxl-pulid": { width: 832, height: 1216, method: "fidelity", cfg: 7, face_weight: 1 },
 };
 
 /**
@@ -110,7 +110,13 @@ describe("the reviewed policy in both vocabularies", () => {
   it("puts a setting with no normalized control in provider overrides", () => {
     // The two that genuinely have no word in the control vocabulary.
     expect(reviewedImageProfileControls("qwen/qwen-image-edit-2511")?.providerOverrides).toEqual({ go_fast: false });
-    expect(reviewedImageProfileControls("nsfw-api/sdxl-pulid")?.providerOverrides).toEqual({ method: "fidelity" });
+    // `face_weight` joins `method` here for the same reason: the control
+    // vocabulary has no word for the strength of an identity adapter, and
+    // inventing one for a single model would be a type change to say a number.
+    expect(reviewedImageProfileControls("nsfw-api/sdxl-pulid")?.providerOverrides).toEqual({
+      method: "fidelity",
+      face_weight: 1,
+    });
   });
 
   it("prefers a normalized control wherever the vocabulary has one", () => {
