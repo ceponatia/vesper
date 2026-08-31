@@ -1,42 +1,30 @@
 import {
-  compileImagePromptProgram,
-  buildImageWorldDigest,
   IMAGE_TARGET_ASPECT,
-  imageNegativePack,
-  imagePositivePack,
-  imagePromptBindingForShadow,
-  imagePromptBudgetFromBinding,
-  type ImageConceptId,
-  type ImageDialectReference,
   type ImageOperationContract,
   type ImageProfileOperation,
   type ImagePromptSegment,
-  type ImageReferenceFact,
   type ImageRenderReference,
   type ImageSourceRevision,
   type ImageSubjectDigest,
   type ResolvedImageProfile,
   type SceneAttemptId,
 } from "@vesper/image-core";
-import {
-  VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID,
-  type AttributeValue,
-  type RealizedBody,
-  type RegionExposure,
-  type VisualImageDigest,
-} from "@/contracts";
+import { VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
-  assembleCharacterWorldDigest,
   characterChangeContract,
   characterChatLookImageOperation,
   characterPortraitImageOperation,
   characterSceneImageOperation,
-  characterVariantImageOperation,
-  type CharacterWorldDigestAssemblyInput,
   type CharacterWorldReadInput,
 } from "@/contracts/images/character-digest";
 import type { AvatarSegmentAssembly } from "./avatar-segments";
+import {
+  buildCharacterPromptProgram,
+  variantChangeOperation,
+  IMAGE_CHARACTER_PROMPT_PACK_MISSING,
+  type CharacterPromptSubjectCut,
+} from "./character-prompt-program";
 import type { ChatLookSegmentAssembly } from "./chat-look-segments";
 import { imageRenderRuntimeFacts } from "./model-adapters";
 import type { VariantKind } from "./prompts-variant";
@@ -50,11 +38,6 @@ import {
   type ShadowCoverageAllowlist,
 } from "./shadow-comparison";
 import type { VariantSegmentAssembly } from "./variant-segments";
-// The character pack seeds register their packs and bindings at import time;
-// the shadow is Round 2's consumer of that registration (packs-qwen-2511.ts
-// §App-side), so the wiring module is where the imports live.
-import "./packs-qwen-2511";
-import "./packs-qwen-2512-portrait";
 
 /**
  * THE CHARACTER-LANE SHADOW WIRING (issue #256, Round 2) — one module that
@@ -72,26 +55,26 @@ import "./packs-qwen-2512-portrait";
  *
  * ## What one shadow run does
  *
- * 1. Assemble the character world digest (`assembleCharacterWorldDigest`) from
- *    the SAME realized visual cut the lane's segments were built from — the
- *    lanes expose it for exactly this (`StandaloneSubjectVisual.digest`,
- *    `ChatLookSegmentAssembly.visual`, `SceneSubjectVisualSlice`).
- * 2. Resolve the lane's binding on the lane's OWN resolved model
- *    (`imagePromptBindingForShadow`, which sees the shadow phase's `candidate`
- *    rows; the portrait lane resolves per profile key). A model with no
- *    binding is a recorded refusal, not an error — null is the ordinary
- *    answer during a staged rollout.
- * 3. Compile the prompt program (`compileImagePromptProgram`,
- *    `refuseOnMissingRequired: false` so a degraded assembly still produces a
- *    comparable prompt and the loss is recorded as `mandatory_lost`).
- * 4. Capture both transports (`captureRenderIntent`) over the same profile,
+ * 1. Build the prompt program through `buildCharacterPromptProgram` — the
+ *    SHARED seam (`character-prompt-program.ts`), which owns the assembly, the
+ *    operation contract, the binding, the packs, reference planning, the budget
+ *    and the compile. This module owns none of that any more, deliberately: the
+ *    prompt a cutover ships must come from the same path the shadow measured,
+ *    and two implementations would let this verdict describe a prompt nobody
+ *    sends. The shadow's only two arguments to that seam are its own:
+ *    `resolver: "shadow"`, which widens resolution to the `candidate` rows
+ *    production cannot see, and `refuseOnMissingRequired: false`, because the
+ *    shadow's job is to MEASURE a lost anchor (as `mandatory_lost`), not to
+ *    refuse over it. `unbound` is a recorded refusal, not an error — null is
+ *    the ordinary answer during a staged rollout.
+ * 2. Capture both transports (`captureRenderIntent`) over the same profile,
  *    references and target — only the prompt differs, which is the migration.
  *    The compiled side's intent additionally carries the program's compiled
  *    NEGATIVE through the intent's controls seam when the dialect produced
  *    one (owner correction 2026-08-29 #5), so `negativeHash` compares the
  *    program's negative rather than the legacy profile's resolution; on the
  *    Qwen endpoints the program compiles none and the seam is inert.
- * 5. Compare (`compareShadowRender`) with STRUCTURAL fact lists: the legacy
+ * 3. Compare (`compareShadowRender`) with STRUCTURAL fact lists: the legacy
  *    side is the segment build's EMISSION LEDGER — the fact keys recorded at
  *    the moment each clause landed in a sent segment (owner correction
  *    2026-08-29 #3), never digest-minus-suppressions, which would count a
@@ -245,14 +228,11 @@ function liveShadowAllowlist(
 // One subject's cut, adapted for the core
 // ---------------------------------------------------------------------------
 
-/** The realized cut every lane hands over, in one vocabulary. */
-interface SubjectShadowCut {
-  readonly subjectId: string;
-  readonly name?: string;
-  readonly digest: VisualImageDigest;
-  readonly attributes: readonly AttributeValue[];
-  readonly exposure: RegionExposure;
-  readonly realizedBody: RealizedBody;
+/**
+ * The realized cut every lane hands over: the shared seam's production-neutral
+ * cut, plus the one field only a comparison has any use for.
+ */
+interface SubjectShadowCut extends CharacterPromptSubjectCut {
   /**
    * The lane's emission ledger, or null for an input that genuinely lacks one
    * — coverage then reads unmeasured rather than being derived.
@@ -260,28 +240,22 @@ interface SubjectShadowCut {
   readonly emittedFactKeys: readonly string[] | null;
 }
 
-/** The cut's two derived halves: the structural legacy fact list and the assembly input. */
+/**
+ * The cut's two halves, split at the line the shared seam draws: the structural
+ * legacy fact list stays here, and the cut itself goes to the program builder
+ * with the ledger stripped off. Reference FACTS are no longer built here at all
+ * — the seam derives them from the PLANNED send list, so the facts and the
+ * prompt's slot numbers describe the same payload.
+ */
 function cutShadowInputs(
   cut: SubjectShadowCut,
   read: CharacterWorldReadInput,
-  references?: readonly ImageReferenceFact[],
-): Pick<CharacterShadowCoreInput, "legacyFactNames" | "assembly"> {
+): Pick<CharacterShadowCoreInput, "legacyFactNames" | "cut" | "read"> {
+  const { emittedFactKeys, ...promptCut } = cut;
   return {
-    legacyFactNames:
-      cut.emittedFactKeys === null ? null : ledgerShadowFactNames(cut.emittedFactKeys, cut.subjectId),
-    assembly: {
-      digest: cut.digest,
-      ...(cut.name === undefined ? {} : { labels: { [cut.subjectId]: cut.name } }),
-      sources: {
-        [cut.subjectId]: {
-          attributes: cut.attributes,
-          exposure: cut.exposure,
-          realizedBody: cut.realizedBody,
-        },
-      },
-      read,
-      ...(references === undefined ? {} : { references }),
-    },
+    legacyFactNames: emittedFactKeys === null ? null : ledgerShadowFactNames(emittedFactKeys, cut.subjectId),
+    cut: promptCut,
+    read,
   };
 }
 
@@ -312,37 +286,13 @@ interface CharacterShadowCoreInput {
   readonly digestMeta?: Record<string, unknown>;
   /** Structural legacy fact names, or null → coverage reads unmeasured. */
   readonly legacyFactNames: readonly string[] | null;
-  readonly assembly: Omit<CharacterWorldDigestAssemblyInput, "operation">;
+  /** The realized cut the shared seam compiles from, ledger stripped. */
+  readonly cut: CharacterPromptSubjectCut;
+  readonly read: CharacterWorldReadInput;
   /** Built over the assembled subjects so a change contract can derive its preserve set. */
   readonly operation: (subjects: readonly ImageSubjectDigest[]) => ImageOperationContract;
   readonly allowlist: ShadowCoverageAllowlist;
   readonly sink?: DiagnosticSink;
-}
-
-/** The identity/location reference FACTS the digest assembly records for the send list. */
-function referenceFacts(
-  lane: string,
-  subjectId: string,
-  references: readonly ImageRenderReference[],
-): ImageReferenceFact[] {
-  return references.map((reference, index) => ({
-    role: reference.role,
-    ...(reference.role === "identity" ? { subjectRef: `subject.${subjectId}` } : {}),
-    required: reference.role === "identity",
-    source: { owner: PATH, key: `${lane}.reference.${index}` },
-  }));
-}
-
-/** The dialect's numbered reference slots, in the lane's own send order. */
-function dialectReferences(
-  subjectId: string,
-  references: readonly ImageRenderReference[],
-): ImageDialectReference[] {
-  return references.map((reference, index) => ({
-    position: index + 1,
-    role: reference.role,
-    ...(reference.role === "identity" ? { subjectRef: `subject.${subjectId}` } : {}),
-  }));
 }
 
 function characterShadowCore(input: CharacterShadowCoreInput): Record<string, unknown> {
@@ -359,71 +309,40 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
       }),
     );
 
-  // --- 1. The binding, on the lane's own resolved model ---------------------
-  // The SHADOW resolver: it sees the `candidate` rows this phase registers
-  // (and would keep seeing them across their promotion to `active`), while
-  // production's `activeImagePromptBinding` stays honestly null for every lane
-  // that is not cut over.
-  const binding = imagePromptBindingForShadow({
-    modelSlug: profile.model.slug,
+  // --- 1. Build the program through the SHARED seam -------------------------
+  // Same path production compiles, with the shadow's two arguments: the widened
+  // resolver, and tolerance of a lost anchor so the loss can be MEASURED rather
+  // than ending the comparison. Every outcome the seam distinguishes maps onto
+  // this lane's own recorded refusal codes; none of them fails a render.
+  const program = buildCharacterPromptProgram({
+    lane,
     task: input.task,
-    ...(input.bindingProfileKey === undefined ? {} : { profileKey: input.bindingProfileKey }),
-  });
-  if (binding === null) {
-    return unmeasured(IMAGE_SHADOW_BINDING_MISSING, "no prompt program is bound to this model for this lane", {
-      slug: profile.model.slug,
-      task: input.task,
-      ...(input.bindingProfileKey === undefined ? {} : { profileKey: input.bindingProfileKey }),
-    });
-  }
-  const positivePack = imagePositivePack(binding.positivePackVersionId);
-  const negativePack = imageNegativePack(binding.negativePackVersionId);
-  if (positivePack === null || negativePack === null) {
-    return unmeasured(IMAGE_SHADOW_PACK_MISSING, "a bound prompt pack version is not registered", {
-      binding: binding.id,
-      positive: binding.positivePackVersionId,
-      negative: binding.negativePackVersionId,
-    });
-  }
-
-  // --- 2. Assemble the world digest over the lane's own cut -----------------
-  // Assembled once with a placeholder operation (the slices do not depend on
-  // it), so a change contract can derive its preserve set from the REAL
-  // subjects, then the final operation replaces the placeholder wholesale.
-  const preview = assembleCharacterWorldDigest({ ...input.assembly, operation: characterPortraitImageOperation() });
-  const subjects = preview.input.subjects ?? [];
-  const operation = input.operation(subjects);
-  const built = buildImageWorldDigest({ ...preview.input, operation });
-  for (const issue of built.issues) {
-    sink?.push(
-      diag("info", issue.code, "the shadow's world digest dropped a fact it could not carry", {
-        path: PATH,
-        context: { lane, detail: issue.detail },
-      }),
-    );
-  }
-
-  // --- 3. Compile the prompt program ----------------------------------------
-  const compiled = compileImagePromptProgram({
-    digest: built.digest,
-    binding,
-    positivePack,
-    negativePack,
-    references: dialectReferences(input.subjectId, input.references),
-    budget: imagePromptBudgetFromBinding(profile.model.advancedCapabilities.prompt),
-    negativeFieldAvailable: profile.model.advancedCapabilities.controls.negativePrompt !== undefined,
-    // The shadow's job is to MEASURE the loss, not to refuse over it: a missing
-    // anchor still compiles, and rides the verdict as `mandatory_lost`.
+    profile,
+    ...(input.bindingProfileKey === undefined ? {} : { bindingProfileKey: input.bindingProfileKey }),
+    resolver: "shadow",
+    cut: input.cut,
+    read: input.read,
+    references: input.references,
+    operation: input.operation,
     refuseOnMissingRequired: false,
     ...(sink === undefined ? {} : { sink }),
   });
-  if (!compiled.ok) {
-    return unmeasured(IMAGE_SHADOW_COMPILE_REFUSED, "the shadow's prompt program refused to compile", {
-      refusal: compiled.refusal.code,
-      message: compiled.refusal.message,
+  if (program.kind === "unbound") {
+    return unmeasured(IMAGE_SHADOW_BINDING_MISSING, "no prompt program is bound to this model for this lane", {
+      slug: program.modelSlug,
+      task: program.task,
+      ...(program.profileKey === null ? {} : { profileKey: program.profileKey }),
     });
   }
-  const compiledText = compiled.compiled.positiveText;
+  if (program.kind === "refused") {
+    return program.code === IMAGE_CHARACTER_PROMPT_PACK_MISSING
+      ? unmeasured(IMAGE_SHADOW_PACK_MISSING, "a bound prompt pack version is not registered", program.context)
+      : unmeasured(IMAGE_SHADOW_COMPILE_REFUSED, "the shadow's prompt program refused to compile", {
+          refusal: program.code,
+          message: program.refusal,
+        });
+  }
+  const compiledText = program.prompt;
 
   // --- 4. Capture both transports -------------------------------------------
   const runtime = imageRenderRuntimeFacts(profile.model);
@@ -472,11 +391,11 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
     return null;
   };
   const legacyCapture = capture("legacy", input.legacyPrompt, { segments: input.legacySegments });
-  const compiledCapture = capture("compiled", compiledText, { negative: compiled.compiled.negativeText });
+  const compiledCapture = capture("compiled", compiledText, { negative: program.negativePrompt });
 
   // --- 5. Structural fact lists and the live allowlist ----------------------
-  const keptIds = new Set(compiled.compiled.promptProgramProvenance.positiveClaimIds);
-  const compiledFactNames = subjects
+  const keptIds = new Set(program.keptClaimIds);
+  const compiledFactNames = program.subjects
     .flatMap((subject) => subject.facts)
     .filter((fact) => keptIds.has(fact.key))
     .map((fact) => shadowFactName(fact.key, input.subjectId));
@@ -489,7 +408,7 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
   const verdict = compareShadowRender({
     lane,
     legacy: { prompt: input.legacyPrompt, capture: legacyCapture },
-    compiled: { prompt: compiledText, capture: compiledCapture, missingRequired: preview.missingRequired },
+    compiled: { prompt: compiledText, capture: compiledCapture, missingRequired: program.missingRequired },
     facts,
     allowlist,
     ...(sink === undefined ? {} : { sink }),
@@ -539,20 +458,6 @@ function standaloneRead(
   };
 }
 
-/**
- * The variant kinds' change concepts, for the shadow's operation contract
- * only — production has no change contract yet, and the lane that binds one at
- * cutover owns the final mapping (recorded as an open question on #256). The
- * bench kind restages the whole shot, which is a pose-space change.
- */
-const VARIANT_CHANGE_CONCEPTS: Record<VariantKind, ImageConceptId> = {
-  pose: "subject.pose",
-  outfit: "subject.wardrobe",
-  expression: "subject.expression",
-  setting: "location.identity",
-  nsfw_test: "subject.pose",
-};
-
 export interface VariantShadowInput {
   readonly characterId: string;
   readonly characterName: string;
@@ -595,15 +500,11 @@ export function variantShadowMeta(input: VariantShadowInput): Record<string, unk
           emittedFactKeys: assembly.emittedFactKeys,
         },
         standaloneRead(characterId, input.revision, input.extraRevisions),
-        referenceFacts("variant", characterId, input.references),
       ),
-      operation: (subjects) =>
-        characterVariantImageOperation({
-          change: characterChangeContract(
-            { concept: VARIANT_CHANGE_CONCEPTS[input.kind], value: input.instruction.trim() },
-            subjects,
-          ),
-        }),
+      // The SHARED operation builder — production compiles the same change
+      // contract from the same concept mapping, so the verdict this run records
+      // describes the program a cutover would actually ship.
+      operation: variantChangeOperation(input.kind, input.instruction),
       allowlist: VARIANT_SHADOW_DELTA,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
     });
@@ -712,7 +613,6 @@ export function chatLookShadowMeta(input: ChatLookShadowInput): Record<string, u
           emittedFactKeys: assembly.emittedFactKeys ?? null,
         },
         { kind: "committed_cut", token: input.cutId },
-        referenceFacts("chat_look", characterId, input.references),
       ),
       operation: (subjects) =>
         characterChatLookImageOperation({
@@ -810,11 +710,7 @@ export function sceneShadowMeta(input: SceneShadowInput): Record<string, unknown
       legacyPrompt: input.legacyPrompt,
       references: input.references,
       ...(input.digestMeta === undefined ? {} : { digestMeta: input.digestMeta }),
-      ...cutShadowInputs(
-        slice,
-        { kind: "committed_cut", token: slice.cutId },
-        referenceFacts("scene", slice.subjectId, input.references),
-      ),
+      ...cutShadowInputs(slice, { kind: "committed_cut", token: slice.cutId }),
       operation: () => characterSceneImageOperation({ subjectCount: 1, kind }),
       allowlist: kind === "generate" ? SCENE_T2I_DRESSED_SHADOW_DELTA : SCENE_REFERENCE_SHADOW_DELTA,
       ...(sink === undefined ? {} : { sink }),
