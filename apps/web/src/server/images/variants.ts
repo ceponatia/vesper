@@ -3,6 +3,7 @@ import { characterProfileSchema, emptyCharacterProfile, outfitItems } from "@/co
 import {
   IMAGE_TARGET_ASPECT,
   type ImageLoraRenderBinding,
+  type ImagePromptSegment,
   type ImageSourceRevision,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
@@ -123,6 +124,47 @@ function buildVariantDigest(
   return { assembly, refusal: "the variant's visual digest is missing required facts" };
 }
 
+/** The prompt channels one variant render sets on its intent. */
+export interface VariantPromptTransport {
+  readonly prompt: string;
+  /** The semantic segments, on a LEGACY render only. */
+  readonly promptSegments?: readonly ImagePromptSegment[];
+  /** The compiled exclusions, normalized — absent when the program compiled none. */
+  readonly controls?: { readonly negativePrompt: string };
+}
+
+/**
+ * The prompt channels a variant render sends, decided in ONE place because they
+ * must move together.
+ *
+ * `resolveIntentPrompt` prefers `promptSegments` over `prompt` whenever the list
+ * is non-empty, so a compiled render that still carried the legacy segments
+ * would send the legacy prose while its row stored the compiled program — a
+ * provider seeing one prompt and an operator reading another, with nothing
+ * anywhere reporting a disagreement. Deciding the three channels separately at
+ * the call site is exactly how that ships; deciding them here makes the coupling
+ * structural.
+ *
+ * The compiled exclusions ride the normalized control so they reach a provider
+ * only through the version's own probed `negative_prompt` binding and are
+ * recorded as a dropped control otherwise. Null or empty means this version
+ * exposes no field — every Qwen edit endpoint today — and no key is invented.
+ */
+export function variantPromptTransport(
+  legacyPrompt: string,
+  segments: readonly ImagePromptSegment[] | undefined,
+  compiled: { readonly prompt: string; readonly negativePrompt: string | null } | null,
+): VariantPromptTransport {
+  if (compiled === null) {
+    return { prompt: legacyPrompt, ...(segments === undefined ? {} : { promptSegments: segments }) };
+  }
+  const negative = compiled.negativePrompt;
+  return {
+    prompt: compiled.prompt,
+    ...(negative === null || negative.length === 0 ? {} : { controls: { negativePrompt: negative } }),
+  };
+}
+
 /** Everything the active-program decision needs, in the order the lane learns it. */
 interface VariantProgramInputs {
   readonly character: { readonly name: string; readonly updatedAt: Date } | undefined;
@@ -221,10 +263,16 @@ function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProg
  * image. Runs on the shared reserve → generate → save-or-fail → log shell
  * (`runImagePipeline`); failures mark the row failed and return its id.
  *
- * The prompt is the Stage 4 cutover's semantic segments (`variant-segments.ts`)
- * — the operation contract plus the standalone visual digest — set on BOTH
- * `prompt` and `intent.promptSegments`, with `meta.visualState` provenance
- * attached at reserve time so the visual moment survives a failed render.
+ * The prompt has two possible sources, decided per render by whether an ACTIVE
+ * prompt-program binding exists for the FINAL resolved model and this task
+ * (`activeVariantProgram`). With none — every variant model but the cut-over
+ * one — it is the semantic segments (`variant-segments.ts`), the operation
+ * contract plus the standalone visual digest, set on both `prompt` and
+ * `intent.promptSegments`. With one, it is the compiled program's positive text
+ * and no segments at all (`variantPromptTransport`). `meta.visualState`
+ * provenance is attached at reserve time either way, so the visual moment
+ * survives a failed render, and a compiled render adds the program's own
+ * `meta.promptProgram` and `meta.worldState` beside it.
  *
  * The render seam reports an edit failure as `ok: false` rather than throwing, so this
  * lane's generation failure is a RETURNED failure and pushes its own
@@ -346,7 +394,8 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   // like the entity lane's, so no provider is called and no generation
   // diagnostic fires: a render that never ran did not fail to generate.
   const programRefusal = program?.kind === "refused" ? program.refusal : null;
-  const prompt = compiled?.prompt ?? legacyPrompt;
+  // The three prompt channels, decided together (`variantPromptTransport`).
+  const transport = variantPromptTransport(legacyPrompt, digest.assembly?.segments, compiled);
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -354,7 +403,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       kind: "portrait_variant",
       entityKind: "character",
       entityId: input.characterId,
-      prompt,
+      prompt: transport.prompt,
       sourceImageId: packSelection?.references[0]?.reference.sourceImageId,
       meta: {
         variantKind: input.kind,
@@ -405,30 +454,14 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       const edit = await renderImageIntent(
         {
           profile: resolved,
-          prompt,
-          // The semantic segments are authoritative; `prompt` is the same
-          // segments compiled, stored on the row and carried as the intent's
-          // string form. Safe to send both here because this lane's profiles
-          // run `instruction_edit`, which passes the base prompt through
-          // unchanged — the two spellings cannot diverge.
-          //
-          // A COMPILED render sends no segments at all. `resolveIntentPrompt`
-          // prefers `promptSegments` over `prompt` whenever the list is
-          // non-empty, so leaving the legacy segments attached would send the
-          // legacy prose while the row stored the compiled program — the exact
-          // divergence between what a row claims and what a provider saw that
-          // this cutover exists to close.
-          ...(digest.assembly && compiled === null ? { promptSegments: digest.assembly.segments } : {}),
-          // The compiled exclusions ride the normalized control, so they reach
-          // the provider only through the version's own probed
-          // `negative_prompt` binding and are recorded as a dropped control
-          // otherwise. Null means this version exposes no field, and no key is
-          // invented for it — which is every Qwen edit endpoint today, so this
-          // seam is inert here and armed for the first endpoint whose field
-          // works.
-          ...(compiled?.negativePrompt === null || compiled?.negativePrompt === undefined || compiled.negativePrompt.length === 0
-            ? {}
-            : { controls: { negativePrompt: compiled.negativePrompt } }),
+          // Prompt, segments and the normalized negative in one decision. On a
+          // legacy render the semantic segments stay authoritative and `prompt`
+          // is the same segments compiled — safe to send both, because this
+          // lane's profiles run `instruction_edit`, which passes the base
+          // prompt through unchanged. On a compiled render the segments are
+          // absent, or they would outrank the program and ship the prose it
+          // replaced.
+          ...transport,
           // The identity the variant instruction modifies, which this lane
           // always re-rolls from rather than chaining edits: the pack's
           // candidate references for the resolved profile.

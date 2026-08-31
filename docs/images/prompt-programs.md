@@ -16,6 +16,17 @@ resolved model and task have an **active binding**; today that is library item a
 location renders on `qwen/qwen-image-2512`. Every other lane keeps its existing
 prompt builder.
 
+Character-bearing lanes reach the layer through one shared seam,
+`apps/web/src/server/images/character-prompt-program.ts`. It owns the whole
+semantic path — the world-digest assembly, the operation contract, binding and
+pack resolution, reference planning, the prompt budget and the compile — and
+both the shadow that measures a cutover and the production render that performs
+one call it. That sharing is a requirement, not a convenience: a lane's
+accumulated shadow evidence describes the prompt production will send only if
+the same code built both. The two callers differ in exactly two arguments —
+which binding statuses resolution may see, and whether a lost required anchor
+refuses or is tolerated so it can be measured.
+
 ## The pipeline
 
 ```text
@@ -240,7 +251,15 @@ candidate and active rows alike so a promotion never changes the shadow's
 answer, while production resolution never sees it. Cutover is the
 candidate → active promotion of the row. A binding exists only for a profile
 that actually renders on the bound model — a profile riding another endpoint
-gets no row, never a reserved name. Pack **versions** carry their own status
+gets no row, never a reserved name.
+
+A binding is keyed on the profile key, the model slug and the task, and
+resolution runs on a lane's **final** resolved profile — after any model swap,
+such as the variant lane's bench kind pairing its profile with a LoRA wrapper
+model. The slug is load-bearing: several profiles share one key across different
+models, so a key without the slug would cut over every one of them at once.
+Resolving from a pre-swap profile would bind a program to a model the render
+does not run on. Pack **versions** carry their own status
 independently: it records the data's promotion state, not any lane's rollout.
 
 A pack manifest says which named blocks are enabled, their order and priority,
@@ -285,6 +304,13 @@ Two sibling keys on the image row's `meta`, beside the existing `render` and
 
 - **`meta.worldState`** — read kind and token, world fingerprint, entity refs,
   selected fact keys, source revisions, suppressions.
+- **`meta.shadowComparison`** — on a character lane under shadow measurement, a
+  compact verdict (`parity`, `divergence`, `unmeasured` or `error`) over fact
+  coverage, transport parity, mandatory survival and both payload lengths, with
+  the diagnostic codes that produced it. Every stored list is capped, and the
+  full detail is log-only. It keeps being recorded after a lane is cut over,
+  because the shadow resolver sees a row across its promotion and an observation
+  is most worth having at the moment the lane starts relying on it.
 - **`meta.promptProgram`** — program fingerprint, binding and both pack versions,
   dialect, strategy, task, model slug, surviving and dropped claim ids, every
   constraint's transport outcome with the keys it kept and lost and the claim that

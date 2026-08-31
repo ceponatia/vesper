@@ -38,9 +38,11 @@ import type { VisualImageDigest } from "./visual-digest";
  * which is what lets a lane compiled with `refuseOnMissingRequired` refuse
  * before provider spend rather than render an unjoined subject.
  *
- * **Not bound to any production lane.** Round 1 (issue #256) builds the glue and
- * its shadow instrumentation; every character-bearing lane keeps its legacy
- * prompt path until its own Round 2 cutover behind a shadow comparison.
+ * **Reached through one seam.** `character-prompt-program.ts` is the single
+ * caller that turns a lane's realized cut into a compiled program, for the
+ * shadow that measures a cutover and the production render that performs one
+ * alike. A character-bearing lane keeps its legacy prompt path until its own
+ * binding is promoted from candidate to active.
  *
  * Pure by construction: everything arrives as plain values. The server lane that
  * reads the owners in one transaction owns the read and supplies the revisions.
