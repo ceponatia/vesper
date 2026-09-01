@@ -32,8 +32,16 @@ import {
 } from "@vesper/image-core";
 import type { SceneGenState } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
-import { sceneFallbackShadowMeta, sceneShadowMeta, type CharacterSceneShadow } from "./character-shadow";
+import {
+  buildCharacterPromptProgram,
+  characterPromptTransport,
+  type CharacterPromptProgram,
+  type CharacterPromptReference,
+  type CharacterPromptTransport,
+} from "./character-prompt-program";
+import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { monogramSvg } from "./monogram";
+import type { SceneSubjectVisualSlice } from "./scene-subject-visual";
 import {
   buildSceneComposerPrompt,
   type SceneComposerContext,
@@ -203,13 +211,20 @@ export interface RenderResolvedSceneInput {
    */
   visualStateMeta?: Record<string, unknown>;
   /**
-   * The Round 2 shadow bundle (issue #256): the single realized cut this render
-   * draws, or the multi-subject marker. Present only for the chat scene caller
-   * with committed cuts; absent leaves the render byte-identical to before the
-   * field existed. The shadow runs HERE because the legacy side must be the
-   * exact prompt and reference set the reserve-time row records.
+   * Every person this render draws, as their own realized cut, in cast order
+   * (issue #256).
+   *
+   * The prompt-program cutover's input. Present for the chat scene caller, which
+   * commits one cut per present cast member; absent — the lab, the staged
+   * lanes, any caller with no committed cuts — leaves the render on the legacy
+   * scene prose exactly as before this field existed.
+   *
+   * The WHOLE cast, not the focal alone: a two-person scene compiles a program
+   * that states both people, binds each identity reference to its own subject
+   * and asserts a subject count of two. Handing over one cut would compile a
+   * prompt describing one woman for a payload carrying two faces.
    */
-  shadow?: CharacterSceneShadow;
+  cast?: readonly SceneSubjectVisualSlice[];
   /**
    * Non-null refuses the render before generation: the row is reserved and
    * failed with this text, no provider is called. The flag-on identity-pack
@@ -246,17 +261,26 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // on, which is what lets the render intent report a dropped location instead
   // of "reference 2".
   const imageRefs = references.filter((reference) => Boolean(reference.imageId));
+  // Which cast member each identity image shows, recorded as the render
+  // references are built rather than re-derived by index afterwards: a reference
+  // whose bytes never loaded is dropped here, so the two lists do not stay
+  // aligned. The scene reference carries the library entity id, so this is a
+  // read rather than a guess — and on an ensemble render a guess is the claim
+  // that both photographs show the same woman.
+  const subjectByReference = new Map<ImageRenderReference, string>();
   const orderedReferences = imageRefs.flatMap((reference): ImageRenderReference[] => {
     const buffer = reference.imageId ? input.referenceBuffers.get(reference.imageId) : undefined;
     if (!buffer) return [];
-    return [
-      {
-        role: sceneReferenceRole(reference.kind),
-        buffer,
-        ...(reference.imageId ? { sourceImageId: reference.imageId } : {}),
-        ...(reference.name ? { name: reference.name } : {}),
-      },
-    ];
+    const rendered: ImageRenderReference = {
+      role: sceneReferenceRole(reference.kind),
+      buffer,
+      ...(reference.imageId ? { sourceImageId: reference.imageId } : {}),
+      ...(reference.name ? { name: reference.name } : {}),
+    };
+    if (reference.kind === "character" && reference.entityId !== undefined) {
+      subjectByReference.set(rendered, reference.entityId);
+    }
+    return [rendered];
   });
   const primaryReference = orderedReferences[0] ?? null;
   // The model's own capacity, not a literal 3: a two-character cast plus a place
@@ -289,22 +313,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         })
       : editPrompt;
 
-  const promptFor = (id: SceneAttemptId): string =>
+  const legacyPromptFor = (id: SceneAttemptId): string =>
     id === "multi_edit" ? multiPrompt : id === "edit" ? editPrompt : textPrompt;
   /** Stored on the image row for provider/model auditability. */
   const modelFor = (id: SceneAttemptId): string => (id === "demo" || !model ? "demo" : `replicate/${model.slug}`);
-
-  // An empty chain means the resolved model cannot serve this render at all
-  // (edit-only, no usable reference). Reserve nothing and fail the row with a
-  // message naming the model, rather than silently rendering something else.
-  const primary = chain[0];
-  if (!primary) {
-    sink.push(
-      diag("error", "images.scene_render.no_attempt", "the selected image model cannot render this scene", {
-        context: { model: model?.slug ?? null, references: references.length },
-      }),
-    );
-  }
 
   // The reference set one attempt sends — the same selection runSceneProvider
   // makes, restated here because provenance must describe the send, not the plan.
@@ -313,6 +325,116 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     if (id === "edit" && primaryReference) return [primaryReference];
     return [];
   };
+
+  // -------------------------------------------------------------------------
+  // The prompt-program cutover (issue #256), compiled PER RUNG
+  // -------------------------------------------------------------------------
+  //
+  // Per rung because the rungs are genuinely different renders of one scene: the
+  // multi-reference rung composes N faces, the single-reference rung edits one,
+  // and the bare rung describes everybody from text with no reference at all.
+  // Each states its own reference claims, its own identity-lock spelling (the
+  // dialects pick it by reference COUNT) and its own operation kind — and the
+  // kind carries the strategy with it, which is why each shape resolves its own
+  // binding row.
+  //
+  // Pure and cheap, so every rung in the chain is compiled up front, before
+  // anything is reserved. That is what lets a rung whose program REFUSES be
+  // dropped from the chain rather than failing the whole render: a refusal
+  // means this rung cannot be described honestly (a renumbered numbered-slot
+  // prompt, a lost anchor, an unregistered pack), and the ladder's whole
+  // purpose is that a rung which cannot run hands off to the next one. The
+  // render fails only when no rung survives.
+  const cast = input.cast ?? [];
+  const castCuts = cast.map((slice) => ({
+    subjectId: slice.subjectId,
+    name: slice.name,
+    digest: slice.digest,
+    attributes: slice.attributes,
+    exposure: slice.exposure,
+    realizedBody: slice.realizedBody,
+  }));
+  // The committed cut this render was asked over — the staleness check's whole
+  // meaning. One id for the whole cast by construction: the scene queue mints a
+  // job-local cut id per render and hands every member the same one, and the
+  // cast merge refuses a cast whose members disagree about it.
+  const castReadToken = cast[0]?.cutId ?? "";
+  const programFor = (id: SceneAttemptId): CharacterPromptProgram | "refused" | null => {
+    if (castCuts.length === 0 || profile === null || id === "demo") return null;
+    // The intimate route swapped this render onto the LoRA wrapper before the
+    // profile arrived here, so `profile.model.slug` is already the model the
+    // provider will be called with and resolution needs no special case: the
+    // wrapper carries its own binding and its own delta-edit dialect.
+    const kind = id === "generate" ? "generate" : "edit";
+    const sent = sentReferencesFor(id);
+    const program = buildCharacterPromptProgram({
+      lane: "scene",
+      task: "scene",
+      profile,
+      bindingProfileKey: profile.profile.key,
+      bindingStrategy: kind === "edit" ? "instruction_edit" : "text_to_image_description",
+      resolver: "active",
+      cuts: castCuts,
+      read: { kind: "committed_cut", token: castReadToken },
+      references: sent.map((reference): CharacterPromptReference => {
+        const subjectId = subjectByReference.get(reference);
+        return { reference, ...(subjectId === undefined ? {} : { subjectId }) };
+      }),
+      // The cast size the render ASSERTS — what arms the single-subject
+      // integrity guard on a solo shot and tells the anatomy guards how many
+      // bodies to defend on an ensemble one.
+      operation: () => characterSceneImageOperation({ subjectCount: castCuts.length, kind }),
+      // A scene of named people with a lost identity or morphology anchor draws
+      // strangers. The cast seam already refuses on its own missing-required set
+      // before this render was reserved, so this is the join-level check the
+      // adapter performs rather than a second policy.
+      refuseOnMissingRequired: true,
+      sink,
+    });
+    if (program.kind === "compiled") return program;
+    if (program.kind === "refused") {
+      sink.push(
+        diag("warn", "images.scene_render.program_refused", `the ${id} rung's prompt program refused: ${program.refusal}`, {
+          context: { attempt: id, code: program.code, ...program.context },
+        }),
+      );
+      return "refused";
+    }
+    // `unbound` — no active row for this model, task and job shape. The rung
+    // keeps the legacy scene prose; it is not a fault.
+    return null;
+  };
+
+  const programs = new Map<SceneAttemptId, CharacterPromptProgram | "refused" | null>(
+    chain.map((id) => [id, programFor(id)]),
+  );
+  const compiledFor = (id: SceneAttemptId): CharacterPromptProgram | null => {
+    const program = programs.get(id);
+    return program === undefined || program === "refused" ? null : program;
+  };
+  const transportFor = (id: SceneAttemptId): CharacterPromptTransport =>
+    characterPromptTransport(legacyPromptFor(id), undefined, compiledFor(id));
+  const runnableChain = chain.filter((id) => programs.get(id) !== "refused");
+  if (runnableChain.length < chain.length) {
+    sink.push(
+      diag("warn", "images.scene_render.rungs_dropped", "a rung was dropped because its prompt program refused", {
+        context: { dropped: chain.filter((id) => programs.get(id) === "refused") },
+      }),
+    );
+  }
+
+  // An empty chain means the resolved model cannot serve this render at all
+  // (edit-only, no usable reference), or every rung's program refused. Reserve
+  // nothing and fail the row with a message naming the model, rather than
+  // silently rendering something else.
+  const primary = runnableChain[0];
+  if (!primary) {
+    sink.push(
+      diag("error", "images.scene_render.no_attempt", "the selected image model cannot render this scene", {
+        context: { model: model?.slug ?? null, references: references.length, routed: chain.length },
+      }),
+    );
+  }
   // `meta.identityReferences` holds provenance ONLY for identity references that
   // reached the provider: nothing on a refused render (the row is failed before
   // any send), and only the surviving attempt's subset when the chain fell back
@@ -326,26 +448,13 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   };
   const reservedProvenance = provenanceFor(primary);
 
-  // The Round 2 shadow (issue #256): compiled beside the PRIMARY rung's exact
-  // prompt and reference set — the render the reserve-time row describes.
-  // Observation only; any shadow failure degrades to a recorded verdict
-  // (character-shadow.ts), and a caller that passes no bundle is untouched.
-  const shadowMeta =
-    input.shadow === undefined
-      ? undefined
-      : sceneShadowMeta({
-          shadow: input.shadow,
-          profile,
-          loraRoute: input.resolvedLora !== undefined,
-          primaryAttempt: primary,
-          legacyPrompt: primary ? promptFor(primary) : textPrompt,
-          references: primary ? sentReferencesFor(primary) : [],
-          ...(input.visualStateMeta === undefined ? {} : { digestMeta: input.visualStateMeta }),
-          sink,
-        });
+  // The PRIMARY rung's compiled program — the render the reserve-time row
+  // describes. Rung-specific, so a fallback rung winning replaces it in the
+  // correction pass below.
+  const reservedProgram = primary ? compiledFor(primary) : null;
 
   const ctx: SceneAttemptContext = {
-    promptFor,
+    transportFor,
     primaryReference,
     multiReferences,
     focalName: plan.focal?.name ?? "Scene",
@@ -364,7 +473,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         entityId: linkage.entityId,
         chatId: linkage.chatId,
         anchorMessageId: linkage.anchorMessageId,
-        prompt: primary ? promptFor(primary) : textPrompt,
+        prompt: primary ? transportFor(primary).prompt : textPrompt,
         sourceImageId: anchorRef?.imageId,
         meta: {
           demo,
@@ -392,58 +501,46 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           ...(input.resolvedLora ? { lora: input.resolvedLora.id } : {}),
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
-          // The shadow verdict, beside the visual provenance it was measured
-          // over. Written at reserve time against the PRIMARY rung's request;
-          // unlike the camera and the visual provenance it IS rung-specific,
-          // so a fallback rung winning replaces it in the correction pass
-          // below (`sceneFallbackShadowMeta`) — the stored record always
-          // describes the rung the row's prompt and model describe.
-          ...(shadowMeta ?? {}),
+          // The compiled program's own provenance, beside the visual provenance
+          // it was compiled from. Written at reserve time against the PRIMARY
+          // rung; unlike the camera and the visual provenance it IS
+          // rung-specific — each rung states its own references and operation
+          // kind — so a fallback rung winning replaces it in the correction pass
+          // below. The stored record always describes the rung the row's prompt
+          // and model describe. Absent on a caller with no committed cuts, which
+          // is how a row says which prompt system built it.
+          ...(reservedProgram?.meta ?? {}),
         },
       },
       failedPrecondition: input.failedPrecondition ?? null,
       afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
       produce: async (asset) => {
-        const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
+        const outcome = await executeSceneChain(runnableChain, (id) => runSceneProvider(id, ctx), sink);
         if (!outcome) {
           // The whole chain exhausted. The failed row still records the LAST
           // rung's attempt — the failure its error text describes — so a failed
           // scene keeps its prediction id and provenance. Walked from the deep
           // end because later rungs overwrite nothing: each rung keys its own
           // attempt, and the deepest one recorded is the last that ran.
-          const lastAttempt = [...chain]
+          const lastAttempt = [...runnableChain]
             .reverse()
             .map((id) => ctx.attempts.get(id))
             .find((attempt) => attempt !== undefined);
           return { ok: false, error: sceneFailureMessage(collected.items), ...renderAttemptMeta(lastAttempt) };
         }
         if (outcome.attemptId !== primary) {
-          // The reserve-time shadow record compared the PRIMARY rung's request,
-          // and this correction is about to make the row describe the winning
-          // rung — so the shadow is recomputed over the winning rung's own
-          // prompt, references and operation kind (all in scope here), and the
-          // corrected row never pairs one rung's provenance with another
-          // rung's verdict. Only a row that recorded a shadow at reserve time
-          // gets one corrected; a caller that passed no bundle stays untouched.
-          const correctedShadow =
-            input.shadow !== undefined && shadowMeta !== undefined
-              ? sceneFallbackShadowMeta({
-                  shadow: input.shadow,
-                  profile,
-                  loraRoute: input.resolvedLora !== undefined,
-                  primaryAttempt: outcome.attemptId,
-                  legacyPrompt: promptFor(outcome.attemptId),
-                  references: sentReferencesFor(outcome.attemptId),
-                  ...(input.visualStateMeta === undefined ? {} : { digestMeta: input.visualStateMeta }),
-                  sink,
-                })
-              : undefined;
+          // The reserve-time program described the PRIMARY rung's request, and
+          // this correction is about to make the row describe the winning rung
+          // — so the winning rung's own program provenance replaces it, and the
+          // corrected row never pairs one rung's prompt with another rung's
+          // world state and program fingerprint. Already compiled: every rung's
+          // program was built before the row was reserved.
           await correctProviderMeta(
             asset.id,
-            promptFor(outcome.attemptId),
+            transportFor(outcome.attemptId).prompt,
             modelFor(outcome.attemptId),
             provenanceFor(outcome.attemptId),
-            correctedShadow,
+            compiledFor(outcome.attemptId)?.meta,
           );
         }
         // The WINNING rung's provenance — the render the stored image came from,
@@ -464,7 +561,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
 }
 
 interface SceneAttemptContext {
-  promptFor: (id: SceneAttemptId) => string;
+  transportFor: (id: SceneAttemptId) => CharacterPromptTransport;
   primaryReference: ImageRenderReference | null;
   multiReferences: ImageRenderReference[];
   focalName: string;
@@ -587,7 +684,11 @@ async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): P
   const result = await renderImageIntent(
     {
       profile: ctx.profile,
-      prompt: ctx.promptFor(id),
+      // Prompt and any compiled negative in one decision. This lane never sets
+      // `promptSegments` — the scene builders produce prose, not segments — so
+      // the transport carries the compiled program's positive text when the rung
+      // compiled one and the legacy rung prose when it did not.
+      ...ctx.transportFor(id),
       references,
       target: { aspectRatio: IMAGE_TARGET_ASPECT },
       // Every rung carries it: the chain is one model's degradation ladder, so a
@@ -635,21 +736,21 @@ async function recordImageReferences(
  * Re-stamp the row after a fallback rung won: the prompt and model that actually
  * rendered, and the identity provenance for the references that rung actually
  * sent — an empty set REMOVES `identityReferences`, because the reserve-time
- * value described the primary attempt's send, not this one's. The shadow
- * fragment follows the same rule: when the reserve recorded one, the winning
- * rung's recomputed fragment replaces it wholesale (its key overwrites the
- * stale record), so the row never carries the primary rung's verdict beside
- * this rung's prompt and model.
+ * value described the primary attempt's send, not this one's. The prompt-program
+ * provenance follows the same rule: when the reserve recorded one, the winning
+ * rung's own fragment replaces it wholesale (its keys overwrite the stale
+ * record), so the row never carries the primary rung's world state and program
+ * fingerprint beside this rung's prompt and model.
  */
 async function correctProviderMeta(
   assetId: string,
   prompt: string,
   model: string,
   identityReferences: IdentityReferenceProvenance[],
-  shadow?: Record<string, unknown>,
+  program?: Record<string, unknown>,
 ): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
-  const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model, ...(shadow ?? {}) };
+  const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model, ...(program ?? {}) };
   if (identityReferences.length > 0) meta.identityReferences = identityReferences;
   else delete meta.identityReferences;
   await db().update(images).set({ prompt, meta }).where(eq(images.id, assetId));

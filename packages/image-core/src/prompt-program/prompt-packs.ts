@@ -1,6 +1,10 @@
 import { fnv1aHex } from "@vesper/contracts";
 import { z } from "zod";
-import { imageProfileTaskSchema, imagePromptStrategySchema } from "../models/image-model-profiles";
+import {
+  imageProfileTaskSchema,
+  imagePromptStrategySchema,
+  type ImagePromptStrategy,
+} from "../models/image-model-profiles";
 import { stableJson } from "../render-kernel/stable-json";
 import { imageConceptIds, type ImageConceptId } from "./concepts";
 import { imagePromptDialectIds } from "./dialects";
@@ -273,19 +277,29 @@ export function imageNegativePack(id: string): ImageNegativePackVersion | null {
  * active row carries resolves null rather than falling back to a sibling
  * profile's row, because "this profile's binding" answered with another
  * profile's would be the silent substitution the per-key rows exist to prevent.
+ *
+ * `promptStrategy` narrows the same way, and exists because one profile can be
+ * asked for two JOB SHAPES. The scene chain is the case: its rungs degrade from
+ * a multi-reference edit to a single-reference edit to a bare text-to-image
+ * render, and the third states `text_to_image_description` where the first two
+ * state `instruction_edit`. A binding pins one strategy and the compile refuses
+ * a mismatched pair outright, so the generate rung needs its own row — and
+ * finding it means asking for it. Omitted, resolution is unchanged.
  */
 export function activeImagePromptBinding(query: {
   readonly modelSlug: string;
   readonly task: string;
   readonly versionId?: string | null;
   readonly profileKey?: string;
+  readonly promptStrategy?: ImagePromptStrategy;
 }): ImagePromptProfileBinding | null {
   const candidates = bindings.filter(
     (binding) =>
       binding.status === "active" &&
       binding.modelSlug === query.modelSlug &&
       binding.task === query.task &&
-      (query.profileKey === undefined || binding.profileKey === query.profileKey),
+      (query.profileKey === undefined || binding.profileKey === query.profileKey) &&
+      (query.promptStrategy === undefined || binding.promptStrategy === query.promptStrategy),
   );
   const pinned = query.versionId
     ? candidates.find((binding) => binding.versionId === query.versionId)
@@ -310,20 +324,23 @@ export function activeImagePromptBinding(query: {
  * narrows strictly. One (slug, task, profileKey) pair should carry one
  * non-retired row; when both a candidate and an active row exist for a pair
  * mid-promotion, registration order decides, exactly as it does for the active
- * resolver's duplicate rows.
+ * resolver's duplicate rows. `promptStrategy` narrows here too, for the same
+ * reason it does there.
  */
 export function imagePromptBindingForShadow(query: {
   readonly modelSlug: string;
   readonly task: string;
   readonly versionId?: string | null;
   readonly profileKey?: string;
+  readonly promptStrategy?: ImagePromptStrategy;
 }): ImagePromptProfileBinding | null {
   const candidates = bindings.filter(
     (binding) =>
       (binding.status === "candidate" || binding.status === "active") &&
       binding.modelSlug === query.modelSlug &&
       binding.task === query.task &&
-      (query.profileKey === undefined || binding.profileKey === query.profileKey),
+      (query.profileKey === undefined || binding.profileKey === query.profileKey) &&
+      (query.promptStrategy === undefined || binding.promptStrategy === query.promptStrategy),
   );
   const pinned = query.versionId
     ? candidates.find((binding) => binding.versionId === query.versionId)

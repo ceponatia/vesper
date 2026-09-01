@@ -1,6 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { characterProfileSchema, emptyCharacterProfile, outfitItems } from "@/contracts";
-import { IMAGE_TARGET_ASPECT, type ImageLoraRenderBinding, type ResolvedImageProfile } from "@vesper/image-core";
+import {
+  IMAGE_TARGET_ASPECT,
+  type ImageLoraRenderBinding,
+  type ImageSourceRevision,
+  type ResolvedImageProfile,
+} from "@vesper/image-core";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
 import { isDemoMode } from "../ai";
@@ -14,7 +19,12 @@ import { HIDDEN_IMAGE_KINDS, runImagePipeline, type ImageKind } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
-import { variantShadowMeta } from "./character-shadow";
+import {
+  buildCharacterPromptProgram,
+  characterPromptTransport,
+  variantChangeOperation,
+  type CharacterPromptProgramResult,
+} from "./character-prompt-program";
 import { monogramSvg } from "./monogram";
 import { pairProfileWithNsfwLora } from "./nsfw-lora";
 import { NSFW_TEST_VARIANT_KIND, type VariantKind } from "./prompts-variant";
@@ -113,6 +123,103 @@ function buildVariantDigest(
   return { assembly, refusal: "the variant's visual digest is missing required facts" };
 }
 
+/** Everything the active-program decision needs, in the order the lane learns it. */
+interface VariantProgramInputs {
+  readonly character: { readonly name: string; readonly updatedAt: Date } | undefined;
+  /** The FINAL resolved profile — the LoRA wrapper when the bench route swapped it. */
+  readonly resolved: ResolvedImageProfile | null;
+  readonly assembly: VariantSegmentAssembly | null;
+  /** True when the digest already refused this render; nothing is compiled for a doomed row. */
+  readonly refused: boolean;
+  readonly nsfwRoute: NsfwTestRoute | null;
+  /** The SUCCESSFUL pack evaluation only — a refusal carries no references to number. */
+  readonly packSelection: Extract<IdentityPackRenderReferencesResult, { ok: true }> | null;
+  readonly input: GenerateVariantInput;
+  readonly revisions: readonly ImageSourceRevision[];
+}
+
+/**
+ * The variant lane's ACTIVE prompt program, or null when this render keeps the
+ * legacy prompt path.
+ *
+ * Null is the ordinary answer for a render that has nothing to compile, not a
+ * failure: demo mode, a lane with no resolved model, a render that already
+ * refused, a render whose final references are not known.
+ *
+ * It no longer covers "this model is not cut over". Every variant profile the
+ * picker offers is bound (#256) — Qwen Edit 2511, Seedream 4.5, Seedream 5
+ * Lite, Wan 2.7, SDXL PuLID, and the LoRA wrapper the bench kind swaps onto —
+ * and each resolves its own model's dialect. They all share the profile key
+ * `variant-standard`, which is exactly why resolution is keyed on the MODEL SLUG
+ * as well: a binding keyed on the profile alone would hand one endpoint's packs
+ * to the other four.
+ *
+ * ## The bench kind
+ *
+ * `nsfw_test` pairs the picked profile with a LoRA WRAPPER model, and binding
+ * resolution runs on the FINAL resolved profile — so a successful bench route
+ * resolves `qwen/qwen-image-edit-plus-lora`, which now has a binding of its own
+ * (`packs-character-endpoints.ts`) and compiles through the wrapper's
+ * own delta-edit dialect rather than borrowing 2511's row.
+ *
+ * A FAILED bench route is the case worth guarding explicitly. `resolved` then
+ * falls back to the picked 2511 profile, which the ordinary variant binding
+ * does match — but that profile is not the model this render would have run on,
+ * the row is already doomed to refuse in `produce`, and compiling would store a
+ * program describing a render nobody made. So it is skipped, and the row keeps
+ * the legacy prompt it has always recorded for that failure.
+ */
+function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProgramResult | null {
+  const { character, resolved, assembly, packSelection, input } = inputs;
+  if (!character || resolved === null || assembly === null || inputs.refused) return null;
+  // The bench route's own failure — see above.
+  if (inputs.nsfwRoute !== null && !inputs.nsfwRoute.ok) return null;
+  // The compiled prompt describes its references and picks its identity-lock
+  // wording by their count, so it cannot be built before the final send list is
+  // known. Without a pack the render refuses in `produce` anyway.
+  if (packSelection === null) return null;
+  const visual = assembly.visual;
+  return buildCharacterPromptProgram({
+    lane: "variant",
+    task: "variant",
+    profile: resolved,
+    // Strict on the lane's own profile key. It narrows to exactly the row this
+    // profile was bound for, so a second `variant` profile added on this model
+    // later cannot inherit a cutover nobody wired it into.
+    bindingProfileKey: resolved.profile.key,
+    resolver: "active",
+    // A cast of one: a portrait variant is always one person.
+    cuts: [
+      {
+        subjectId: input.characterId,
+        name: character.name,
+        digest: visual.digest,
+        attributes: visual.resolved,
+        exposure: visual.exposure,
+        realizedBody: visual.realizedBody,
+      },
+    ],
+    read: {
+      kind: "standalone_character",
+      characters: [{ characterId: input.characterId, revision: character.updatedAt.toISOString() }],
+      extraRevisions: [...inputs.revisions],
+    },
+    // Every reference this lane sends is the subject's own identity pack, so
+    // each one names the one person the variant is of.
+    references: packSelection.references.map((entry) => ({
+      reference: entry.reference,
+      subjectId: input.characterId,
+    })),
+    operation: variantChangeOperation(input.kind, input.instruction),
+    // An identity-critical lane refuses on a lost anchor rather than rendering a
+    // stranger. The segment assembly already refuses on its own missing-required
+    // set; this is the join-level check the adapter performs, and it fails the
+    // row before provider spend exactly as that one does.
+    refuseOnMissingRequired: true,
+    ...(input.sink === undefined ? {} : { sink: input.sink }),
+  });
+}
+
 /**
  * Portrait-variant pipeline (docs/images/pipelines/portrait-variants.md):
  * single-reference registry edit of
@@ -126,10 +233,20 @@ function buildVariantDigest(
  * image. Runs on the shared reserve → generate → save-or-fail → log shell
  * (`runImagePipeline`); failures mark the row failed and return its id.
  *
- * The prompt is the Stage 4 cutover's semantic segments (`variant-segments.ts`)
- * — the operation contract plus the standalone visual digest — set on BOTH
- * `prompt` and `intent.promptSegments`, with `meta.visualState` provenance
- * attached at reserve time so the visual moment survives a failed render.
+ * The prompt is the compiled prompt program (#256): the active binding for the
+ * FINAL resolved model and this task, the character world digest, and the
+ * program's positive text with no segments at all
+ * (`characterPromptTransport`). Every variant profile the picker offers is
+ * bound, so this is the path every real render takes.
+ *
+ * The legacy segment assembly (`variant-segments.ts`) is still built and still
+ * shipped when `activeVariantProgram` returns null — a render with nothing to
+ * compile, never a model that was left behind. #251 deletes it once every
+ * character lane is off it.
+ *
+ * `meta.visualState` provenance is attached at reserve time either way, so the
+ * visual moment survives a failed render, and a compiled render adds the
+ * program's own `meta.promptProgram` and `meta.worldState` beside it.
  *
  * The render seam reports an edit failure as `ok: false` rather than throwing, so this
  * lane's generation failure is a RETURNED failure and pushes its own
@@ -194,7 +311,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         input.sink,
       )
     : { assembly: null, refusal: null };
-  const prompt = digest.assembly?.prompt ?? "";
+  const legacyPrompt = digest.assembly?.prompt ?? "";
   const packIdentity: IdentityPackRenderReferencesResult | null =
     !demo && character && resolved
       ? await identityPackRenderReferences({
@@ -206,26 +323,31 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       : null;
   const packSelection = packIdentity?.ok ? packIdentity : null;
 
-  // The Round 2 shadow (issue #256): the compiled prompt program is built
-  // BESIDE this exact request and its verdict recorded on the row's meta.
-  // Observation only — nothing the render sends reads it, and any shadow
-  // failure degrades to a recorded verdict (character-shadow.ts), never a
-  // failed or altered render.
-  const shadowMeta =
-    character && resolved && digest.assembly
-      ? variantShadowMeta({
-          characterId: input.characterId,
-          characterName: character.name,
-          revision: character.updatedAt.toISOString(),
-          extraRevisions: load.revisions,
-          kind: input.kind,
-          instruction: input.instruction,
-          assembly: digest.assembly,
-          profile: resolved,
-          references: packSelection?.references.map((entry) => entry.reference) ?? [],
-          ...(input.sink === undefined ? {} : { sink: input.sink }),
-        })
-      : {};
+  // The cutover (issue #256): the prompt this render sends is the compiled
+  // program rather than the legacy segment assembly. Everything else about the
+  // render — profile, references, target, LoRA decisions, controls — is
+  // unchanged, because the migration is the prompt and nothing else.
+  const program = activeVariantProgram({
+    character,
+    resolved,
+    assembly: digest.assembly,
+    refused: digest.refusal !== null,
+    nsfwRoute,
+    packSelection,
+    input,
+    revisions: load.revisions,
+  });
+  const compiled = program?.kind === "compiled" ? program : null;
+  // A refusal is NOT a fallback to the legacy paragraph. A binding resolved and
+  // then could not compile — a missing pack, an unregistered dialect, a lost
+  // required anchor — is a configuration or data fault on a lane that HAS been
+  // cut over, and rendering something reasonable instead would hide it behind
+  // an acceptable-looking picture. It fails the row through `failedPrecondition`
+  // like the entity lane's, so no provider is called and no generation
+  // diagnostic fires: a render that never ran did not fail to generate.
+  const programRefusal = program?.kind === "refused" ? program.refusal : null;
+  // The three prompt channels, decided together (`characterPromptTransport`).
+  const transport = characterPromptTransport(legacyPrompt, digest.assembly?.segments, compiled);
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -233,7 +355,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       kind: "portrait_variant",
       entityKind: "character",
       entityId: input.characterId,
-      prompt,
+      prompt: transport.prompt,
       sourceImageId: packSelection?.references[0]?.reference.sourceImageId,
       meta: {
         variantKind: input.kind,
@@ -247,14 +369,20 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         // beside the model decisions: a thrown or refused produce carries no
         // meta, and the provenance must survive a failed render.
         ...(digest.assembly?.digestMeta ?? {}),
-        // The shadow verdict, beside the provenance it was measured over.
-        ...shadowMeta,
+        // The compiled program's own provenance, exactly as the entity lane
+        // records it. Absent on a legacy render, which is how a row says which
+        // prompt system built it.
+        ...(compiled?.meta ?? {}),
       },
     },
     // The row is on record for a missing character too — failed, unlogged. An
     // ineligible digest refuses HERE rather than in `produce`, so the row fails
-    // before provider spend and no generation diagnostic fires.
-    failedPrecondition: character ? digest.refusal : `character ${input.characterId} not found`,
+    // before provider spend and no generation diagnostic fires. The digest
+    // refusal is checked FIRST because it is the older and more specific
+    // failure: a cut that could not be assembled never had a program to compile.
+    failedPrecondition: character
+      ? (digest.refusal ?? programRefusal)
+      : `character ${input.characterId} not found`,
     produce: async (asset) => {
       // Only reached once the character loaded, so the name fallback never fires.
       if (demo) return { ok: true, image: monogramSvg(`${character?.name ?? ""} ${input.kind}`) };
@@ -273,13 +401,14 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       const edit = await renderImageIntent(
         {
           profile: resolved,
-          prompt,
-          // The semantic segments are authoritative; `prompt` is the same
-          // segments compiled, stored on the row and carried as the intent's
-          // string form. Safe to send both here because this lane's profiles
-          // run `instruction_edit`, which passes the base prompt through
-          // unchanged — the two spellings cannot diverge.
-          ...(digest.assembly ? { promptSegments: digest.assembly.segments } : {}),
+          // Prompt, segments and the normalized negative in one decision. On a
+          // legacy render the semantic segments stay authoritative and `prompt`
+          // is the same segments compiled — safe to send both, because this
+          // lane's profiles run `instruction_edit`, which passes the base
+          // prompt through unchanged. On a compiled render the segments are
+          // absent, or they would outrank the program and ship the prose it
+          // replaced.
+          ...transport,
           // The identity the variant instruction modifies, which this lane
           // always re-rolls from rather than chaining edits: the pack's
           // candidate references for the resolved profile.

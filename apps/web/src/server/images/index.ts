@@ -262,6 +262,25 @@ export {
 // entity lane resolves bindings today, and it asks for item/location alone.
 export * from "./packs-qwen-2511";
 export * from "./packs-qwen-2512-portrait";
+// The one semantic path a character lane's prompt program is built on, for the
+// shadow that measures a cutover and the production render that performs one.
+export {
+  buildCharacterPromptProgram,
+  isCharacterPromptCompiled,
+  isCharacterPromptRefusal,
+  isCharacterPromptUnbound,
+  variantChangeOperation,
+  IMAGE_CHARACTER_PROMPT_PACK_MISSING,
+  VARIANT_CHANGE_CONCEPTS,
+  type CharacterPromptLane,
+  type CharacterPromptProgram,
+  type CharacterPromptProgramInput,
+  type CharacterPromptProgramRefusal,
+  type CharacterPromptProgramResult,
+  type CharacterPromptProgramUnbound,
+  type CharacterPromptSubjectCut,
+  type CharacterPromptTask,
+} from "./character-prompt-program";
 // The Round 2 shadow wiring: lane entries, seeded deltas, canonical fact names.
 export * from "./character-shadow";
 export * from "./avatar";

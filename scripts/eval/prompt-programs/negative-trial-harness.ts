@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import type { ImageModel } from "@vesper/image-core";
+import type { PreparedReferenceBytes } from "@vesper/image-replicate";
 import { replicateClient } from "@/server/ai";
 import {
   negativeBlockDelta,
@@ -31,6 +32,12 @@ import {
  * CSVs never overwritten, `executedVersionId` recorded per render — and on a
  * resumed `--render` run, a skipped render keeps the provenance its prior
  * manifest recorded rather than being rewritten as null.
+ *
+ * An endpoint may declare a reference SUPPLIER
+ * ({@link NegativeTrialEndpoint.references}) for a workflow that cannot run
+ * from a bare prompt — an edit-only model such as Qwen Image Edit 2511. The
+ * same one-variable rule governs it: the references are resolved once per run
+ * and every arm sends exactly those bytes.
  */
 
 export interface TrialArm {
@@ -130,6 +137,23 @@ export interface NegativeTrialEndpoint {
    */
   readonly baseControls?: Readonly<Record<string, unknown>>;
   /**
+   * The reference images every render of this endpoint sends, for endpoints
+   * whose workflow cannot run without one (Qwen Image Edit 2511 is edit-only;
+   * PuLID's workflow refuses bare prompts). Absent — every endpoint that
+   * existed before this field — sends no `references` key at all, so those
+   * requests are byte-identical to what they were.
+   *
+   * A SUPPLIER rather than a value, for two reasons this directory has already
+   * paid for. It is invoked only on a `--render` run, so a report or another
+   * endpoint's run never demands the file (`negative-field-canary.ts`'s
+   * `CANARY_FACE` gate); and {@link endpointReferences} resolves it exactly
+   * ONCE per run and reuses the result for every arm, seed and trial, so "the
+   * reference is held constant" is a property of the harness rather than of a
+   * supplier remembering to be pure. A reference that varied between arms would
+   * be a second variable in a one-variable comparison.
+   */
+  readonly references?: () => Promise<readonly PreparedReferenceBytes[]>;
+  /**
    * False for models with no aspect input (free width/height integers): the
    * aspect key is omitted and shape travels in `baseControls` instead. Sending
    * `aspect_ratio` to a model whose schema lacks it would be rejected —
@@ -184,6 +208,27 @@ function describeNegative(endpoint: NegativeTrialEndpoint, negative: string | nu
 // Rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * One endpoint's references, resolved once per process and reused everywhere.
+ *
+ * Keyed on the endpoint object rather than its `key` so two programs over the
+ * same endpoint description cannot collide, and weak so nothing is retained
+ * past the run. The cache IS the constancy guarantee described on
+ * {@link NegativeTrialEndpoint.references}.
+ */
+const RESOLVED_ENDPOINT_REFERENCES = new WeakMap<NegativeTrialEndpoint, readonly PreparedReferenceBytes[]>();
+
+async function endpointReferences(
+  endpoint: NegativeTrialEndpoint,
+): Promise<readonly PreparedReferenceBytes[] | undefined> {
+  if (endpoint.references === undefined) return undefined;
+  const cached = RESOLVED_ENDPOINT_REFERENCES.get(endpoint);
+  if (cached !== undefined) return cached;
+  const resolved = await endpoint.references();
+  RESOLVED_ENDPOINT_REFERENCES.set(endpoint, resolved);
+  return resolved;
+}
+
 async function renderOne(
   endpoint: NegativeTrialEndpoint,
   positive: string,
@@ -191,11 +236,15 @@ async function renderOne(
   aspect: string,
   seed: number,
   providerControls?: Readonly<Record<string, unknown>>,
+  references?: readonly PreparedReferenceBytes[],
 ): Promise<{ image: Buffer; executedVersionId: string | null; predictionId: string | null } | null> {
   const sent = sentNegative(endpoint, negative);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const result = await replicateClient().runRegistryImageModel(endpoint.model(), {
       prompt: positive,
+      // Copied rather than passed through: the request type owns a mutable
+      // array, and the resolved set is shared by every render of the run.
+      ...(references === undefined ? {} : { references: [...references] }),
       aspect: endpoint.sendAspect ? aspect : null,
       // controlInput merges LAST over the model literal's extraInput, and inside
       // it the layers are: seed, the endpoint's reviewed production constants,
@@ -368,6 +417,14 @@ export async function runTrial(program: NegativeTrialProgram, trial: NegativeBlo
     ? parseManifestProvenance(await readIfExists(manifestFile))
     : new Map();
 
+  // Resolved before the loop and only on a paid run: a supplier that cannot
+  // find its file must fail here, once, rather than mid-matrix with renders
+  // already bought — and a free run must never demand it at all.
+  const references = shouldRender ? await endpointReferences(endpoint) : undefined;
+  if (references !== undefined) {
+    console.log(`    references: ${String(references.length)} (${references.map((entry) => entry.role ?? "reference").join(", ")}), held constant across every arm`);
+  }
+
   const records: RenderRecord[] = [];
   for (const fixture of trial.fixtures) {
     console.log(`  fixture ${fixture.id} (${endpoint.sendAspect ? fixture.aspect : "shape from controls"})`);
@@ -394,7 +451,15 @@ export async function runTrial(program: NegativeTrialProgram, trial: NegativeBlo
           continue;
         }
         await fs.mkdir(path.dirname(file), { recursive: true });
-        const rendered = await renderOne(endpoint, armPositive(fixture, arm), negative, fixture.aspect, seed, trial.providerControls);
+        const rendered = await renderOne(
+          endpoint,
+          armPositive(fixture, arm),
+          negative,
+          fixture.aspect,
+          seed,
+          trial.providerControls,
+          references,
+        );
         if (rendered === null) {
           console.log(`    FAILED   ${file}`);
           continue;

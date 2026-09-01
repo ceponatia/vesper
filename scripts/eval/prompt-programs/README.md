@@ -7,12 +7,21 @@ question here is answered by looking at a picture.
 The endpoint-neutral machinery — trial/arm/fixture contracts, the paired-seed
 render loop, contact sheets, scoring templates, the rates report, and the
 determinism comparison — lives in `negative-trial-harness.ts` and is shared by
-the per-block trials and the canary program below. Each script owns only its
-endpoint description (the seeded row's shape plus the probed negative field),
-its trial definitions, and its CLI. `negative-block-report.ts` is the pure
-half — CSV parsing, rate arithmetic, and the manifest-provenance merge that
-lets a resumed `--render` run keep skipped renders' recorded
-`executedVersionId`/`predictionId` — covered by `pnpm test`.
+the per-block trials and the canary program. Each script owns only its endpoint
+description (the seeded row's shape plus the probed negative field), its trial
+definitions, and its CLI.
+`negative-block-report.ts` is the pure half — CSV parsing, rate arithmetic, and
+the manifest-provenance merge that lets a resumed `--render` run keep skipped
+renders' recorded `executedVersionId`/`predictionId` — covered by `pnpm test`.
+
+An endpoint may declare a reference SUPPLIER
+(`NegativeTrialEndpoint.references`) for a workflow that cannot run from a bare
+prompt — an edit-only model such as Qwen Image Edit 2511. The harness resolves
+it **once per run** and sends exactly those bytes on every arm, seed and trial,
+so "the reference is held constant" is a property of the harness rather than of
+a supplier remembering to be pure; it is invoked only on a `--render` run, so a
+free run and a report never demand the file. Endpoints that declare none send no
+`references` key at all and are byte-identical to what they were.
 
 ## `negative-field-canary.ts` — is an endpoint's negative field even alive
 

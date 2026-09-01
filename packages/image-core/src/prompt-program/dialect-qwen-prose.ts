@@ -1,7 +1,9 @@
+import { diag } from "@vesper/contracts";
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
 import type { ImageAngleBand, ImageDistanceBand, ImageFramingBand, ImageLightingBand } from "./camera-bands";
 import type { ImageStyleMedium } from "./conflict-keys";
 import type { ImageDialectPositiveInput } from "./dialects";
+import type { ImagePositiveClaim } from "./positive-claims";
 
 /**
  * Wording helpers shared by the Qwen-family dialects.
@@ -55,6 +57,90 @@ export function describeChange(value: unknown): string {
 /** A claim value that is a list of fact keys, as a readable phrase. */
 export function listOf(value: unknown): string {
   return Array.isArray(value) ? listWords(value.map((entry) => describe(entry))) : describe(value);
+}
+
+/**
+ * The preserve set's fact keys, as the visual things they name.
+ *
+ * A preserve entry identifies a fact STRUCTURALLY — `<subject>/horns/species.
+ * feature_group`, `subject.<id>.apparent_age` — because that is what makes the
+ * set derivable, fingerprintable and checkable against the digest. None of it is
+ * language. Rendering those strings would put a character's database id, a
+ * projection source key and a registry kind id into prose a provider receives
+ * and a model is asked to act on: unusable as instruction, and a private
+ * identifier leaving the system as a side effect of a prompt.
+ *
+ * So the structural half stays in the contract and the wording happens here. The
+ * key is resolved against the program's own claims — every preserved fact is
+ * itself a claim, since only required facts are preserved — and rendered as the
+ * thing it names: its locus ("horns", "hair"), or the concept's own noun when a
+ * fact carries no locus. The fact's VALUE is deliberately not repeated; its own
+ * claim states it elsewhere in the same prompt, and "keep the horns" plus "the
+ * horns are spiraled" says everything "keep the spiraled horns" would.
+ *
+ * An entry nothing in this program can word is DROPPED rather than degraded back
+ * to its key, and reported: a preserved anchor that quietly stopped reaching the
+ * prompt is the silent loss `docs/resilience.md` exists to prevent. A caller
+ * left with nothing at all gets an empty list and must decide what that means —
+ * for a mandatory preserve claim that is a dropped claim, which the compile
+ * already refuses over before any provider spend.
+ *
+ * An entry goes unresolved when the preserve set names a fact this program does
+ * not state: a concept the bound pack suppresses, a fact the digest could not
+ * carry, or a contract naming something the digest never had.
+ */
+export function preservedMeanings(
+  input: ImageDialectPositiveInput,
+  value: unknown,
+): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  const byId = new Map(input.claims.map((claim) => [claim.id, claim]));
+  const words: string[] = [];
+  const unworded: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const claim = byId.get(entry);
+    const noun = claim === undefined ? null : preservedNoun(claim);
+    if (noun === null) {
+      unworded.push(entry);
+      continue;
+    }
+    if (!words.includes(noun)) words.push(noun);
+  }
+  if (unworded.length > 0) {
+    input.sink?.push(
+      diag("warn", IMAGE_PROMPT_PRESERVE_UNWORDED, "a preserved fact could not be named in the prompt", {
+        path: "image.prompt_program.preserve",
+        context: { keys: unworded },
+      }),
+    );
+  }
+  return words;
+}
+
+/** A preserve entry the program cannot state, dropped from the sentence rather than keyed into it. */
+export const IMAGE_PROMPT_PRESERVE_UNWORDED = "image_prompt_program.preserve_unworded";
+
+/**
+ * One preserved claim as a noun phrase.
+ *
+ * `locus` first: it is the projection's own word for the body part or slot the
+ * fact describes, which is exactly the noun a preserve instruction wants. A fact
+ * with none falls back to the last segment of its concept id — `subject.
+ * apparent_age` becomes "apparent age" — which is registry vocabulary rather
+ * than an internal handle: no id, no source key, no fingerprint.
+ */
+function preservedNoun(claim: ImagePositiveClaim): string | null {
+  const locus = typeof claim.locus === "string" ? humanize(claim.locus) : "";
+  if (locus.length > 0) return `the ${locus}`;
+  const member = claim.concept.split(".").slice(1).join(" ");
+  const noun = humanize(member);
+  return noun.length === 0 ? null : `the ${noun}`;
+}
+
+/** Registry vocabulary as words: separators become spaces, nothing else changes. */
+function humanize(token: string): string {
+  return token.replace(/[_\-.]+/g, " ").trim();
 }
 
 /** `a`, `a and b`, `a, b and c`. */

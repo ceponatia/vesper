@@ -26,6 +26,7 @@ import {
   visualStateImageDigestOfShadow,
   type VisualStateShadowInput,
 } from "@/server/visual-state";
+import { characterIdentityAnchorLedgerKey } from "@/contracts/images/character-digest";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 import { visualFactClauseResolver } from "./visual-fact-clauses";
 
@@ -421,7 +422,12 @@ export function buildChatLookSegments(input: ChatLookSegmentInput): ChatLookSegm
     digestMeta: realized.meta,
     missingRequired: subject.missingRequired,
     suppressions: subject.suppressions,
-    emittedFactKeys: subject.emitted.map((emission) => emission.key),
+    // The route-owned identity lock is a sentence this mint really ships, so it
+    // is ledgered like any other emission — see `characterIdentityAnchorLedgerKey`.
+    emittedFactKeys: [
+      characterIdentityAnchorLedgerKey(shadow.subjectId),
+      ...subject.emitted.map((emission) => emission.key),
+    ],
     visual: { digest: realized.digest, attributes, realizedBody, exposure },
     refusal: null,
   };

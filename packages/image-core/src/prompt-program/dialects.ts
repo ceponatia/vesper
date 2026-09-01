@@ -46,6 +46,12 @@ import type { ImageOperationContract } from "./world-digest";
 export const imagePromptDialectIds = [
   "qwen_2512_description",
   "qwen_2511_delta_edit",
+  // The LoRA-capable Qwen edit wrapper the intimate-scene and NSFW-bench routes
+  // swap onto after profile resolution. Its own id, delegating to the 2511
+  // implementation: same instruction-edit family and same numbered-slot
+  // convention, but a separate endpoint whose trial verdicts and pack bindings
+  // must be able to move without touching 2511's.
+  "qwen_edit_plus_lora_delta_edit",
   "seedream_45_prose",
   "seedream_5_lite_prose",
   "wan_27_prose",
@@ -179,10 +185,10 @@ export function registerImagePromptDialect(definition: ImagePromptDialectDefinit
 /**
  * The dialect for an id, or null when nothing implements it yet.
  *
- * Null is the refusal path, and it is the correct answer during a staged
- * cutover: nine of the ten ids are declared and unimplemented today, so a profile
- * that names one gets a recorded refusal instead of a generic prompt wearing that
- * endpoint's name.
+ * Null is the refusal path. Every declared id has a registered compiler as of
+ * the #256 cutover, so null now means a caller named an id outside the closed
+ * list — but the path stays, because the list is where a new endpoint is
+ * declared before its compiler is written.
  */
 export function imagePromptDialect(id: string): ImagePromptDialectDefinition | null {
   return registry.get(id as ImagePromptDialectId) ?? null;

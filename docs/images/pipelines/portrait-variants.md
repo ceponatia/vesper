@@ -16,14 +16,36 @@ selection pass bound to this lane's fixed full-figure viewpoint, one digest real
 selection) under the variant policy: **age stated, full-figure frame, intimate never, exposure
 omitted**.
 
-The lane sets BOTH `prompt` and `intent.promptSegments`, which is safe here and only here
-because the variant profiles run `instruction_edit`, the strategy that passes a base prompt
-through unchanged. The lane also **derives its own age anchor** from the sheet rather than
+On a legacy render the lane sets BOTH `prompt` and `intent.promptSegments`, which is safe
+here and only here because the variant profiles run `instruction_edit`, the strategy that
+passes a base prompt through unchanged. The lane also **derives its own age anchor** from the sheet rather than
 being handed one, and **loads the character's default wardrobe** — not to name garments (the
 reference image shows them) but because coverage drives the camera's per-location perception
 and the exposure gate. A failed or unreadable coverage load degrades to fully covered, never to
 a bare body. A digest the lane cannot build **refuses before provider spend** rather than
 falling back to the legacy prose builder.
+
+## The render sends a compiled program
+
+Once the final resolved profile and the final identity references are known, the lane asks
+the shared character prompt-program seam for the **active** program for that model and task
+([character-prompts.md](../character-prompts.md)). Every variant profile the picker offers is
+bound, and so is the LoRA wrapper the bench kind swaps onto, so this is the path every real
+render takes: the compiled positive text becomes both the row's stored prompt and the intent's,
+the segments above are **omitted entirely** — they outrank `prompt` and would ship the prose the
+program replaced — and the compiled exclusions ride the normalized `controls.negativePrompt` so
+they reach a provider only through the version's own probed field. Profile, references, target,
+LoRA decisions and every other control are identical either way: the migration is the prompt.
+
+A render with nothing to compile — demo mode, no resolved model, a render already refused, a
+failed bench route — keeps the segments above unchanged. That is a render with no world to
+compile, never a model left behind.
+
+A compiled render records `meta.promptProgram` and `meta.worldState` beside the visual-state
+provenance it already carried. A program that resolves a binding and then cannot compile
+**fails the row before provider spend** and never falls back to the segments: a bound lane
+that quietly rendered something else would hide a configuration fault behind an
+acceptable-looking picture.
 
 ## What the digest adds is deliberately narrow
 

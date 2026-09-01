@@ -11,10 +11,15 @@ owns projection — turning a Vesper item, location or character into digest fac
 because only it knows what a garment or an ambient blob is. `@vesper/image-core`
 owns everything after that.
 
-Not every lane uses it yet. A lane is on the prompt-program path when its
-resolved model and task have an **active binding**; today that is library item and
-location renders on `qwen/qwen-image-2512`. Every other lane keeps its existing
-prompt builder.
+A lane is on the prompt-program path when its resolved model and task have an
+**active binding**. Library item and location renders are, and so is every
+character-image profile the catalog offers — portrait, variant, scene and
+chat-look, on every model each is offered for. `chat_place` is deliberately
+unbound: it is the one identity-free chat lane and it keeps its own builder.
+
+Character-bearing lanes reach the layer through one shared seam, which owns the
+character projection, the cast, reference planning and the identity anchor:
+[character-prompts.md](character-prompts.md).
 
 ## The pipeline
 
@@ -74,50 +79,6 @@ to reach a prompt. **A field with no classification is an oversight by
 definition** — `world-projection-coverage.test.ts` derives the field list from the
 table columns and the definition schemas and fails when one is unclassified.
 `nonvisual` and `restricted` are good answers; silence is not.
-
-### The character projection
-
-Character subjects reach the digest through a two-module seam in
-`apps/web/src/contracts/images/`, and the split is an ownership boundary, not a
-convenience:
-
-| Layer                          | Owns                                              |
-| ------------------------------ | ------------------------------------------------- |
-| visual state                   | which facts apply, and required vs camera-visible |
-| canonical character owners     | the semantic value of each selected fact          |
-| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth          |
-| `character-adapter.ts`         | joining selection to values as complete claims    |
-
-`projectSubjectDigests` translates the visual digest's classification into
-concepts and dispositions, verbatim. `projectCharacterWorldSlices` consumes it
-and states what translation alone cannot:
-
-- **A truth fingerprint is provenance, never prompt semantics.** Appearance
-  facts arrive carrying their fingerprint as `value`; the adapter answers them
-  from the canonical owners — the attribute registry, the located-fact rows, the
-  anatomy rows — and never decodes or guesses from a fingerprint. A fact no
-  owner can value is suppressed, and a required one lands in `missingRequired`
-  so a lane compiled with `refuseOnMissingRequired` fails closed.
-- **Apparent age** is stated from the `identity.apparent_age` attribute through
-  the image age vocabulary (`imageAgeBandPhrases`), whose floor is an explicit
-  adult (owner ruling 2026-07-29): a minor band the registry recognizes states
-  nothing — a designed suppression, never a missing anchor — while an absent
-  value, or one outside the registry's vocabulary, fails the mandatory age
-  segment closed.
-- **Exposure** is the adapter's own authoritative `subject.exposure` claims over
-  the garment coverage readout, worded by `visual-segments.ts`'s one canonical
-  table — in its predicate-fragment inflection, since dialects wrap exposure
-  values as `<subject> is <value>` — and gated to the regions the digest's
-  framing band can show. Covered regions are silent — silence is the covered
-  statement — and a subject with no joined coverage readout fails the mandatory
-  exposure closed.
-- **An authored absence** re-files its anatomy fact as `subject.absence` — the
-  same `morphology` segment kind, a different protection — which takes the
-  missing-part exclusions off the negative channel's table; a prosthetic
-  additionally tags `morphology.synthetic_surface`.
-- **Every emitted value is prompt-ready.** Record-shaped values resolve to their
-  readable members with ids stripped; a record with nothing readable left is
-  suppressed rather than flattened into a payload.
 
 ## Concepts
 
@@ -224,24 +185,66 @@ that steers, and exclusions that matter have to become affirmative claims.
 A binding naming a dialect with no registered compiler **refuses**. Falling back
 to a generic prompt would silently drop every guarantee this layer provides.
 
+### Families
+
+Every declared dialect id has a registered compiler, and several ids share an
+implementation. That is deliberate and bounded: each id keeps its own registry
+entry, its own pack pair and its own binding, so promoting a wording finding for
+one endpoint moves nothing on the others, and an endpoint that earns wording of
+its own forks out without disturbing its former siblings.
+
+| Family     | Positive syntax  | References   | Endpoints                                                        |
+| ---------- | ---------------- | ------------ | ---------------------------------------------------------------- |
+| Qwen 2512  | natural language | none         | the description generator                                        |
+| Qwen edit  | natural language | numbered     | the delta editor, and the LoRA-capable wrapper                   |
+| Prose      | natural language | role labels  | Seedream, Wan, SD 3.5 Large, FLUX Dev, P-Image                   |
+| Tag        | comma tags       | none         | LikeReality Pony (Compel weights), SDXL PuLID                    |
+
+**Numbered slots are a Qwen-family convention** (owner ruling 2026-08-24), not a
+property of taking a reference array. Seedream and Wan accept ordered arrays and
+document no numbering convention, so the prose family names each reference by
+its role and the person or place it shows, and asserts no slot number. A prompt
+that never says "Image 2" cannot say it about the wrong image.
+
 ## Packs and bindings
 
 Positive and negative packs are separate products with separate versions,
 evidence and promotion history. A **binding** pins one profile to one dialect and
 one compatible pack pair, so a render never observes half an activation.
 
-A binding's status is the lane's rollout state (owner ruling 2026-08-29). An
-`active` row means the lane is cut over: production resolution
-(`activeImagePromptBinding`) sees only active rows, and null is its ordinary
-staged-rollout answer — the lane keeps its existing prompt builder. A
-`candidate` row is a real binding under shadow measurement: the character-lane
-shadow resolves it through `imagePromptBindingForShadow`, which accepts
-candidate and active rows alike so a promotion never changes the shadow's
-answer, while production resolution never sees it. Cutover is the
-candidate → active promotion of the row. A binding exists only for a profile
-that actually renders on the bound model — a profile riding another endpoint
-gets no row, never a reserved name. Pack **versions** carry their own status
-independently: it records the data's promotion state, not any lane's rollout.
+A binding's status says which pack pair production runs. Production resolution
+(`activeImagePromptBinding`) sees only `active` rows, and null is an ordinary
+answer rather than a fault — the lane keeps its existing prompt builder.
+A binding exists only for a profile that actually renders on the bound model — a
+profile riding another endpoint gets no row, never a reserved name. Pack
+**versions** carry their own status independently: it records the data's
+promotion state, not any lane's rollout.
+
+A binding is keyed on the profile key, the model slug and the task, with the
+prompt strategy narrowing further where one profile is asked for two job shapes.
+Every dimension is load-bearing:
+
+- **The model slug**, because several profiles share one key across models — five
+  variant profiles are all `variant-standard`, and a key without the slug would
+  hand all five one endpoint's dialect and packs. Resolution takes the **base**
+  slug: a community checkpoint's row carries a `:version` pin, and a binding
+  names an endpoint while `versionId` separately pins a provider version.
+- **The profile key**, because a profile added on a bound model later must not
+  inherit a binding nobody wired it into.
+- **The prompt strategy**, because a scene profile is asked for two shapes. Its
+  chain degrades multi-reference edit → single-reference edit → bare
+  text-to-image, and the last states `text_to_image_description` where the others
+  state `instruction_edit`. A binding pins one strategy and the compile refuses a
+  mismatched pair, so each scene profile carries two rows sharing one pack pair;
+  without the second, a scene would refuse the moment its references became
+  unusable, turning a designed degradation into a failed render.
+
+Resolution runs on a lane's **final** resolved profile, after any model swap. The
+variant bench kind and the intimate scene route both pair their picked profile
+with a LoRA wrapper model, so the wrapper carries bindings of its own — resolving
+from the pre-swap profile would bind a program to a model the render does not run
+on, and leaving the wrapper unbound would be a legacy exception no binding table
+shows.
 
 A pack manifest says which named blocks are enabled, their order and priority,
 which reviewed wording variant to use, and which evidence backs each choice. It
@@ -276,7 +279,29 @@ Every refusal happens before provider spend, and each has its own code:
 | `image_prompt_program.post_merge_collision`             | a replacement claim contradicts a surviving exclusion |
 
 Softer degradation is reported and carries on: a narrowed or dropped optional
-constraint, a trimmed optional claim, a version with no negative field.
+constraint, a trimmed optional claim, a version with no negative field, and a
+preserve entry naming a fact this program does not state
+(`image_prompt_program.preserve_unworded`). The character seam adds three
+refusals of its own — [character-prompts.md](character-prompts.md).
+
+## What may reach a provider
+
+The compiled text is prose a model is asked to act on, and nothing else may
+travel in it.
+
+- **No internal handle reaches provider prose.** Not a database id, a projection
+  source key, a registry kind id, a fact key or a fingerprint. Claims and
+  contracts identify facts structurally because that is what makes a set
+  derivable and checkable; turning an identifier into language is the dialect's
+  job, and a dialect that cannot word an entry drops it and reports rather than
+  emitting the identifier.
+- **The preserve set is structural; its wording is not.** A change contract
+  names the facts an edit must not touch by key. The dialect resolves each key
+  against the program's own claims and renders what the fact names — its locus,
+  or its concept's noun — never the key. An entry the program does not state is
+  dropped, and the sentence disappears entirely rather than shrinking to a list
+  of handles; a mandatory preserve claim that renders nothing is a dropped
+  mandatory claim, which refuses before provider spend.
 
 ## Provenance
 
