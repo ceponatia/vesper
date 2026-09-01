@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SceneCaptureMode } from "@vesper/image-core";
 import type { AttributeValue } from "@/contracts/attributes";
 import { sceneCameraHeights, sceneShotDistances, sceneSubjectOrientationIds } from "@/contracts/images/scene-camera";
 import { describeCommittedFacts, type CommittedSceneFacts } from "@/contracts/images/scene-committed";
@@ -198,6 +199,16 @@ export interface SceneComposerContext {
    * so the session prompt is byte-identical.
    */
   embodiedViewer?: boolean;
+  /**
+   * Who holds the camera on this render — a ROUTE decision, not the composer's.
+   *
+   * The composer never sees it: a selfie is chosen before the plan is composed
+   * (`flavor: "selfie"`), and asking a model to re-derive it would let a
+   * confused answer un-selfie a render the player asked for. It rides the
+   * context because the plan is what carries the decision downstream, and absent
+   * means FIRST PERSON — this lane has never asserted a third-person camera.
+   */
+  captureMode?: SceneCaptureMode;
   /**
    * The PLAYER's coverage, computed from their worn items (persona-library slice 8). Rides
    * through to the plan, where it gates whether the viewer's anatomy may render. The

@@ -53,15 +53,16 @@ export const sceneCaptureModeSchema = z.enum(sceneCaptureModes);
 
 export type SceneCaptureMode = (typeof sceneCaptureModes)[number];
 
-/**
- * The mode a scene has when nothing established another.
+/*
+ * There is deliberately NO default capture mode here.
  *
- * Stated once here so a consumer that finds no capture decision falls back the same way
- * every other consumer does. `third_person` is the safe default precisely because it is the
- * member that asserts nothing: an unowned camera cannot contradict the fiction, while a
- * wrongly assumed POV puts a body in frame the story never placed.
+ * A default in the shared vocabulary reads as "the mode a scene has when nothing established
+ * another", and every lane would then fall back the same way. The lanes do not agree: a chat
+ * scene with no explicit capture decision is first-person through the player's own eyes and
+ * has been since before the prompt-program cutover, so a shared `third_person` fallback would
+ * invert that lane rather than leave it unasserted. Which mode an absent decision means is a
+ * fact about the lane that lowers it, and it is stated there.
  */
-export const DEFAULT_SCENE_CAPTURE_MODE: SceneCaptureMode = "third_person";
 
 // ---------------------------------------------------------------------------
 // The camera triple

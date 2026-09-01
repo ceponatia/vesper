@@ -54,6 +54,7 @@ import {
   type VisualStateScopeRef,
   type VisualStateSnapshot,
   type VisualStateSuppression,
+  type VisualSceneLightingBand,
   type VisualViewingConditions,
 } from "@/contracts";
 
@@ -443,13 +444,31 @@ export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): Vi
  * A committed scene camera, bound into the ONE image selection pass. The id
  * names the
  * viewpoint the selection runs under; the distance, angle and
- * framing reads come from `visualCameraReadsOfSceneCamera`. Lighting and motion
- * deliberately stay lane-derived — the scene camera proves where the frame is,
- * not what the light does.
+ * framing reads come from `visualCameraReadsOfSceneCamera`.
+ *
+ * Lighting is separate from the spec and stays that way: the scene camera proves
+ * where the frame is, not what the light does. What the SCENE knows is a
+ * different thing, and it belongs here rather than nowhere — see
+ * {@link VisualStateCameraBinding.lighting}. Motion has no owner at all yet and
+ * stays lane-derived.
  */
 export interface VisualStateCameraBinding {
   readonly cameraId: string;
   readonly spec: SceneCameraSpec;
+  /**
+   * The light the SCENE resolved, when its own words say enough to name a band.
+   *
+   * Without this the lane's declared `bright` — a release placeholder standing in
+   * for a lighting owner nobody has built — decides the detail tier of every
+   * render, so a night scene is selected as though it were lit. A placeholder
+   * is the right answer only where nothing better exists, and here something
+   * does.
+   *
+   * `silhouette` is excluded by the type: it says where the viewpoint stands
+   * relative to a light source, which is a camera decision, and a scene owner may
+   * not assert one.
+   */
+  readonly lighting?: VisualSceneLightingBand;
 }
 
 export interface VisualStateSelectionsInput {
@@ -592,18 +611,26 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
 
   // The image camera. A route that holds a committed scene camera binds it
   // here — the real viewpoint id, plus the camera's own distance, angle and
-  // framing reads over the lane's lighting and motion — so the camera enters
+  // framing reads over the lane's motion — so the camera enters
   // the ONE selection pass and the digest fingerprints the camera the facts
   // were actually selected under. Without a binding, the shadow placeholder
   // takes the lane reads unchanged: leaving them unknown would keep slice 6's
   // image measurement at a permanent zero, which measures the placeholder
   // rather than the projection.
+  //
+  // Lighting joins the override on its own terms: it is not read off the camera
+  // spec, it is what the SCENE resolved, and it applies only when the scene
+  // named a band. A scene that named none leaves the lane's declared value
+  // standing, which is the honest degraded answer rather than a darkness nobody
+  // established.
   const cameraReads = input.camera === undefined ? undefined : visualCameraReadsOfSceneCamera(input.camera.spec);
+  const sceneLighting = input.camera?.lighting;
   const imageContext: VisualAttentionContext = {
     viewpoint: { kind: "camera", cameraId: input.camera?.cameraId ?? "visual_state_shadow" },
     perception: input.perception,
     perceptionBySubject,
     ...components,
+    ...(sceneLighting === undefined ? {} : { lighting: visualComponentKnown(sceneLighting) }),
     ...(cameraReads === undefined
       ? {}
       : { distance: cameraReads.distance, angle: cameraReads.angle, framing: cameraReads.framing }),

@@ -7,7 +7,7 @@ import type { CommittedSceneFacts } from "@/contracts/images/scene-committed";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import type { IdentityReferenceProvenance, SceneReferenceSource } from "@vesper/image-core";
+import type { IdentityReferenceProvenance, SceneCaptureMode, SceneReferenceSource } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag, DiagnosticCollector, teeSink } from "@/contracts/diagnostics";
 import { logDiagnostics } from "@/server/log";
@@ -187,9 +187,12 @@ export function buildCharacterSceneContext(input: {
   playerExposure?: RegionExposure;
   playerAttributes?: ReadonlyArray<AttributeValue>;
   playerProfile?: CharacterProfile;
+  /** Who holds the camera — the route's decision, carried on the plan it resolves. */
+  captureMode?: SceneCaptureMode;
 }): SceneComposerContext {
   return {
     present: input.cast.map(presentCharacter),
+    ...(input.captureMode === undefined ? {} : { captureMode: input.captureMode }),
     locationName: "the room",
     locationDescription: input.room,
     timeOfDay: input.timeOfDay?.trim() || "day",
@@ -256,6 +259,10 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   const context = buildCharacterSceneContext({
     cast,
     room,
+    // Only a selfie states a mode. Everything else stays what this lane has
+    // always been — the player's own eyes — and the plan's default says so
+    // rather than an `?? third_person` here inverting every chat scene.
+    ...(selfie ? { captureMode: "selfie" as const } : {}),
     timeOfDay: input.timeOfDay,
     recentChat: (input.recentChat ?? []).filter((text) => text.trim()),
     recentPlayerChat: (input.recentPlayerChat ?? []).filter((text) => text.trim()),
@@ -430,7 +437,6 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // LoRA-free render is unchanged down to the reference.
       profile: lora?.profile ?? imageProfile,
       ...(lora ? { resolvedLora: lora.binding } : {}),
-      framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,
       // No provenance travels with a refusal: an earlier cast member's pack may
       // have answered before a later member's refusal stopped the scene, and

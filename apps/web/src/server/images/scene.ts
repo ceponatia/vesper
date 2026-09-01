@@ -51,6 +51,7 @@ import {
 } from "./prompts-scene-composer";
 import { heuristicFocalName, resolveScenePlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import { buildSceneRenderPrompt } from "./prompts-scene-render";
+import { lowerScenePlan } from "./scene-lowering";
 
 export type SceneComposeInput = SceneComposerContext & {
   sink?: DiagnosticSink;
@@ -188,7 +189,6 @@ export interface RenderResolvedSceneInput {
    * byte-identical to what it was before this field existed.
    */
   resolvedLora?: ImageLoraRenderBinding;
-  framing?: "pov" | "selfie";
   flavor?: string;
   /**
    * Identity-pack provenance for the anchors the caller PLANNED to send,
@@ -296,7 +296,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     .filter((reference) => reference.kind === "character")
     .every((reference) => reference.allowForIntimate);
 
-  const framing = input.framing;
+  // Who holds the camera has ONE source: the plan. The retired prose builder's
+  // own option is derived from it rather than passed beside it, so a selfie can
+  // never compile as a POV shot while the fallback prose calls it a selfie.
+  const framing = plan.captureMode === "selfie" ? ("selfie" as const) : undefined;
   const textPrompt = buildSceneRenderPrompt(plan, { framing });
   const editPrompt = anchorRef
     ? buildSceneRenderPrompt(plan, { referenceName: anchorRef.name, allowIntimate, framing })
@@ -359,8 +362,23 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // job-local cut id per render and hands every member the same one, and the
   // cast merge refuses a cast whose members disagree about it.
   const castReadToken = cast[0]?.cutId ?? "";
+  // The intimate permission each rung actually renders under — the same three
+  // answers its prompt is built with. The scene lowering needs it because a
+  // staged arrangement may only travel a route that allows it, exactly as the
+  // retired builder gated the staged sentence per prompt rather than per plan.
+  const allowIntimateFor = (id: SceneAttemptId): boolean =>
+    id === "multi_edit" ? multiAllowIntimate : id === "edit" ? allowIntimate : false;
   const programFor = (id: SceneAttemptId): CharacterPromptProgram | "refused" | null => {
     if (castCuts.length === 0 || profile === null || id === "demo") return null;
+    // The scene itself: the setting, the light, the mood, the capture mode, the
+    // staged arrangement and what each person is doing, lowered into the typed
+    // inputs the program compiles. Per rung, because the staging gate is.
+    const scene = lowerScenePlan({
+      plan,
+      cast: cast.map((slice) => ({ subjectId: slice.subjectId, name: slice.name })),
+      allowIntimate: allowIntimateFor(id),
+      sink,
+    });
     // The intimate route swapped this render onto the LoRA wrapper before the
     // profile arrived here, so `profile.model.slug` is already the model the
     // provider will be called with and resolution needs no special case: the
@@ -375,6 +393,9 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       bindingStrategy: kind === "edit" ? "instruction_edit" : "text_to_image_description",
       resolver: "active",
       cuts: castCuts,
+      scene: scene.scene,
+      location: scene.location,
+      camera: scene.camera,
       read: { kind: "committed_cut", token: castReadToken },
       references: sent.map((reference): CharacterPromptReference => {
         const subjectId = subjectByReference.get(reference);

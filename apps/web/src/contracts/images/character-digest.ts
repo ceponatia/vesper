@@ -244,6 +244,32 @@ export type CharacterWorldReadInput =
       readonly extraRevisions?: readonly ImageSourceRevision[];
     };
 
+/**
+ * What a LANE states about the camera, layered over the committed cut's own
+ * viewing context.
+ *
+ * The context answers where the frame is from the visibility model's reads —
+ * distance, angle, framing, motion, light. Two things it cannot answer, and both
+ * are here rather than in that model:
+ *
+ * - **A component the render deliberately asserts nothing about.** Silence is an
+ *   instruction: a scene whose camera never moved must not carry a framing
+ *   sentence the fiction never asked for, and the only layer that knows a
+ *   component is at its default is the one that resolved the shot.
+ * - **A fact the visibility model has no read for.** Camera height is the case:
+ *   how high the lens sits changes nothing about what an observer can make out,
+ *   so weighting it would mean inventing detail tables for a fact that is not a
+ *   visibility fact — and it would move `visualImageCameraFingerprint` for every
+ *   lane at once.
+ *
+ * A lane fact WINS over the context's fact for the same component: the lane
+ * resolved the camera and the context derived its reads from that resolution.
+ */
+export interface CharacterCameraAssemblyInput {
+  readonly facts?: readonly ImageCameraFact[];
+  readonly silent?: readonly ImageCameraFact["component"][];
+}
+
 export interface CharacterWorldDigestAssemblyInput {
   readonly digest: VisualImageDigest;
   /** Display names by subject id — the one field a compiled sentence may name somebody by. */
@@ -255,6 +281,16 @@ export interface CharacterWorldDigestAssemblyInput {
   readonly location?: ImageLocationDigest | null;
   readonly items?: readonly ImageItemDigest[];
   readonly relations?: readonly ImageWorldRelation[];
+  /**
+   * Facts about the SHOT rather than about the committed cut — the mood, whose
+   * eyes it is through, the staged arrangement, what each person is doing.
+   *
+   * Passed through untouched: a scene is planned above this layer and this
+   * assembly re-decides no value it is handed.
+   */
+  readonly scene?: readonly ImageWorldFact[];
+  /** The lane's own camera statement — see {@link CharacterCameraAssemblyInput}. */
+  readonly camera?: CharacterCameraAssemblyInput;
   /** Passed through untouched — reference planning stays the lane's own job. */
   readonly references?: readonly ImageReferenceFact[];
   /** Revisions recorded beside a committed cut, or added to a standalone token. */
@@ -273,12 +309,33 @@ export interface CharacterWorldDigestAssembly {
   readonly missingRequired: readonly string[];
 }
 
+/**
+ * The context's camera facts, with the lane's silence and its own facts applied.
+ *
+ * Order is the whole of it: silence first, then the lane's facts, so a lane can
+ * state a component it also silenced from the context without the two fighting.
+ * A component named in neither list passes through exactly as the committed cut
+ * asserted it.
+ */
+function layeredCameraFacts(
+  context: readonly ImageCameraFact[],
+  lane: CharacterCameraAssemblyInput | undefined,
+): readonly ImageCameraFact[] {
+  if (lane === undefined) return context;
+  const silent = new Set<string>(lane.silent ?? []);
+  const stated = new Set<string>((lane.facts ?? []).map((fact) => fact.component));
+  return [
+    ...context.filter((fact) => !silent.has(fact.component) && !stated.has(fact.component)),
+    ...(lane.facts ?? []),
+  ];
+}
+
 function characterWorldRead(input: CharacterWorldDigestAssemblyInput): {
   read: ImageWorldRead;
   sourceRevisions: readonly ImageSourceRevision[];
   camera: readonly ImageCameraFact[];
 } {
-  const camera = projectCameraFacts(input.digest);
+  const camera = layeredCameraFacts(projectCameraFacts(input.digest), input.camera);
   if (input.read.kind === "committed_cut") {
     return {
       read: { kind: "committed_cut", token: input.read.token, atMinutes: input.digest.atMinutes },
@@ -410,6 +467,7 @@ export function assembleCharacterWorldDigest(
   const { read, sourceRevisions, camera } = characterWorldRead(input);
   const digestInput: ImageWorldDigestInput = {
     read,
+    ...(input.scene === undefined ? {} : { scene: input.scene }),
     subjects: identityAnchoredSubjects(slices.subjects, input.references ?? []),
     ...(input.location === undefined ? {} : { location: input.location }),
     ...(input.items === undefined ? {} : { items: input.items }),

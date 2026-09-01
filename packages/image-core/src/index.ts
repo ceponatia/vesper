@@ -677,7 +677,6 @@ export type {
   SceneRenderRequest,
 } from "./provider-interface";
 export {
-  DEFAULT_SCENE_CAPTURE_MODE,
   adoptSceneStagingSurfaceForm,
   createSceneStagingSurfaceForms,
   findSceneStagingSurfaceDigestMismatches,
