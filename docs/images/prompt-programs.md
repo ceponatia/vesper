@@ -383,6 +383,13 @@ Two sibling keys on the image row's `meta`, beside the existing `render` and
   displaced each, the endpoint's hidden prompt sources, hashes of the compiled
   positive and negative text, and the final reference bindings.
 
+A staging claim that reached the prompt also records what became of the registry's
+measured sentence: the arrangement, its revision and digest, whether the dialect
+adopted or replaced the wording, and which dialect decided. That record is what
+stops a reader concluding from a revision alone that the measured words were sent.
+A claim that did not survive fitting carries no such record and appears among the
+dropped ids instead, so the two can never describe one claim differently.
+
 The program fingerprint covers **which exclusions were delivered**, not only
 which were selected — two renders whose packs, linter and world are identical
 still fingerprint apart when one carried its exclusions and the other dropped
