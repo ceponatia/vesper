@@ -3,12 +3,19 @@ import {
   imageModelProfileSchema,
   imageModelSchema,
   imageReferencePolicySchema,
+  parseImagePromptProgramProvenance,
+  IMAGE_PROMPT_PROGRAM_META_KEY,
   type ResolvedImageAttempt,
   type ResolvedImageProfile,
   type SceneVisualReference,
 } from "@vesper/image-core";
-import { identityProvenanceFixture as record } from "@/server/test-support";
-import { IMAGE_PROMPT_PROGRAM_META_KEY, parseImagePromptProgramProvenance } from "@vesper/image-core";
+import {
+  identityProvenanceFixture as record,
+  LANE_PROBE_SECOND_SUBJECT_ID,
+  LANE_PROBE_SUBJECT_ID,
+  laneProbeCastScenePlan,
+  laneProbeCastSubjects,
+} from "@/server/test-support";
 
 /**
  * `meta.identityReferences` honesty (identity packs 5B, codex review): the row
@@ -46,12 +53,6 @@ import { renderImageIntent } from "./render-intent";
 import { emptySceneRenderPlan } from "./prompts-scene-plan";
 import { renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
 import { applySceneCastVisual } from "./scene-subject-visual";
-import {
-  LANE_PROBE_SECOND_SUBJECT_ID,
-  LANE_PROBE_SUBJECT_ID,
-  laneProbeCastScenePlan,
-  laneProbeCastSubjects,
-} from "@/server/test-support";
 
 const mockPipeline = vi.mocked(runImagePipeline);
 const mockIntent = vi.mocked(renderImageIntent);
