@@ -27,6 +27,22 @@ export type ImageDistanceBand = (typeof imageDistanceBands)[number];
 export const imageAngleBands = ["toward", "side_on", "away"] as const;
 export type ImageAngleBand = (typeof imageAngleBands)[number];
 
+/**
+ * Where the lens sits relative to the subject's eye line.
+ *
+ * A claim about where two bodies are rather than a taste preference: `high` says
+ * one of them is kneeling, sitting, lying or bent while the other is not.
+ *
+ * Member-for-member the same set as `sceneCameraHeightId` in `scene-ir`, which
+ * coarsens nothing — and it is still declared here rather than imported, because
+ * what this vocabulary buys is that `ImageCameraFact` speaks ONE language.
+ * A union whose other five arms are bands and whose sixth was a scene id would
+ * force every non-scene lane — an item shot, a location plate, a portrait — to
+ * reach into the scene IR to say where its camera stands.
+ */
+export const imageCameraHeightBands = ["eye_level", "high", "low"] as const;
+export type ImageCameraHeightBand = (typeof imageCameraHeightBands)[number];
+
 /** Whole-subject motion relative to the camera — the source of intended blur. */
 export const imageMotionBands = ["still", "slow", "fast"] as const;
 export type ImageMotionBand = (typeof imageMotionBands)[number];

@@ -1,4 +1,4 @@
-import type { DiagnosticSink } from "@vesper/contracts";
+import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import {
   fitImagePromptSegments,
@@ -10,6 +10,7 @@ import {
 } from "../render-intent/prompt-segments";
 import type { ImageNegativeBlockId, ImageNegativeConstraint, ImageNegativeGuard } from "./negative-constraints";
 import { isMandatoryImagePositiveClaim, type ImagePositiveClaim } from "./positive-claims";
+import type { SceneStagingSurfaceDecision, SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 import type { ImageOperationContract } from "./world-digest";
 
 /**
@@ -135,6 +136,16 @@ export interface ImageCompiledPositivePrompt {
   readonly segments: readonly ImagePromptSegment[];
   /** Claim ids that did not survive the budget. */
   readonly droppedClaimIds: readonly string[];
+  /**
+   * What this endpoint did with each registry-worded arrangement that REACHED the prompt.
+   *
+   * Restricted to survivors, and that restriction is the accounting rule rather than a
+   * convenience: a claim that did not survive is named by {@link droppedClaimIds}, and a
+   * disposition beside it would say the render both did and did not carry the arrangement's
+   * wording. The two lists are filled from one pass in {@link compileDialectClaims}, so
+   * neither can be maintained into disagreement with the other.
+   */
+  readonly stagingSurfaces: readonly SceneStagingSurfaceDecision[];
 }
 
 /** Everything a negative compile may read. Again, no digest. */
@@ -217,10 +228,24 @@ export function implementedImagePromptDialectIds(): readonly ImagePromptDialectI
  * A claim a dialect cannot render is REPORTED rather than silently skipped. That
  * is the honest failure for a new concept meeting an old dialect, and the
  * compile step turns a dropped MANDATORY claim into a refusal.
+ *
+ * It is also where the two halves of the wording record are reconciled. The
+ * dialect writes its staging decisions into `surfaces` as it renders; this
+ * function knows which claims then survived, and publishes only those. Splitting
+ * that across two layers is what would let a render report a disposition for a
+ * sentence a budget squeeze had already removed.
  */
 export function compileDialectClaims(input: {
   readonly claims: readonly ImagePositiveClaim[];
   readonly render: (claim: ImagePositiveClaim) => ImagePromptSegment | null;
+  /**
+   * The staging decisions this compile's `render` recorded.
+   *
+   * Required rather than optional, so a new dialect answers for the measured wording by
+   * being unable to compile until it holds a log. An endpoint that never words a staging
+   * simply hands back an empty one.
+   */
+  readonly surfaces: SceneStagingSurfaceLog;
   readonly budget: ImagePromptBudget;
   readonly sink?: DiagnosticSink;
 }): ImageCompiledPositivePrompt {
@@ -232,6 +257,23 @@ export function compileDialectClaims(input: {
     // as dropped. Silently skipping would make a new concept meeting an old
     // dialect look like a render that simply chose not to mention it.
     if (segment === null) droppedClaimIds.push(claim.id);
+    // A staging sentence whose dialect did not say where the wording came from is
+    // UNRENDERABLE, not merely unrecorded. The surface-form channel exists to make
+    // the measurement provenance trustworthy, and a rendered arrangement with no
+    // disposition beside it is indistinguishable from one whose measured bytes were
+    // sent — so admitting the segment would publish exactly the misreading the
+    // channel prevents. Dropping it instead hands the decision to the machinery that
+    // already exists: staging is `required_visual`, so the compile refuses rather
+    // than shipping a scene that quietly lost its arrangement.
+    else if (claim.concept === "scene.staging" && !input.surfaces.decided(claim.id)) {
+      droppedClaimIds.push(claim.id);
+      input.sink?.push(
+        diag("warn", "image_prompt_program.staging_surface_unrecorded", "a staging rendered without a wording decision", {
+          path: "image_prompt_program",
+          context: { claim: claim.id },
+        }),
+      );
+    }
     // The claim id rides `source`, which is diagnostic-only and never reaches a
     // provider. It is also the most precise provenance available: the claim
     // already carries the owner's own source ref, so naming the claim names the
@@ -249,9 +291,17 @@ export function compileDialectClaims(input: {
   for (const removed of fitted.removed) {
     if (removed.source !== undefined) droppedClaimIds.push(removed.source);
   }
+  const dropped = new Set(droppedClaimIds);
+  const decisions = input.surfaces.decisions();
+  // The accounting, in one pass and therefore incapable of disagreeing with itself: a
+  // dropped claim publishes no decision, and a surviving staging cannot have reached
+  // here without one, because a staging that rendered without a decision was dropped
+  // above. So a successful compile satisfies "surviving staging => exactly one
+  // adopted|replaced record" structurally rather than by assertion.
   return {
     text: joinImagePromptSegments(fitted.segments),
     segments: fitted.segments,
     droppedClaimIds: [...new Set(droppedClaimIds)].sort(),
+    stagingSurfaces: decisions.filter((decision) => !dropped.has(decision.claimId)),
   };
 }

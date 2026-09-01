@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { findSceneStagingSurfaceDigestMismatches } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
 import { FULLY_COVERED } from "../items/visibility";
 import {
@@ -9,6 +11,9 @@ import {
   sceneStagingById,
   sceneStagingContactEvidence,
   sceneStagingIds,
+  sceneStagingList,
+  sceneStagingOrder,
+  sceneStagingSurfaceFormTable,
   sceneStagings,
   stagingEvidenceFromContacts,
   type SceneContactPairRead,
@@ -41,9 +46,14 @@ const bind = (template: string): string => template.replaceAll("{name}", "Mira")
 const EXPOSURE_KEYS = Object.keys(FULLY_COVERED);
 
 describe("the staging registry", () => {
-  it("has one entry per id, in order, and no id twice", () => {
-    expect(sceneStagings.map((entry) => entry.id)).toEqual([...sceneStagingIds]);
-    expect(new Set(sceneStagingIds).size).toBe(sceneStagingIds.length);
+  // The record itself is total by type — it satisfies the shared table, so a missing or
+  // invented arrangement does not compile. What no compiler checks is the ORDER list the
+  // composer's menu is walked in: an arrangement absent from it is simply never offered,
+  // which looks exactly like a model declining to use it.
+  it("orders every arrangement exactly once, and the list view follows that order", () => {
+    expect([...sceneStagingOrder].sort()).toEqual([...sceneStagingIds].sort());
+    expect(new Set(sceneStagingOrder).size).toBe(sceneStagingOrder.length);
+    expect(sceneStagingList.map((entry) => entry.id)).toEqual([...sceneStagingOrder]);
   });
 
   it("resolves every id and nothing the composer invented", () => {
@@ -53,13 +63,13 @@ describe("the staging registry", () => {
   });
 
   it("every entry carries a selection hint, and no two are the same sentence", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(entry.hint.trim().length, entry.id).toBeGreaterThan(0);
       // The hint is read by a planner choosing an id, not rendered into a prompt, so it
       // carries no `{name}` placeholder — a stray one would reach a model as literal braces.
       expect(entry.hint, entry.id).not.toContain("{name}");
     }
-    const hints = sceneStagings.map((entry) => entry.hint);
+    const hints = sceneStagingList.map((entry) => entry.hint);
     expect(new Set(hints).size).toBe(hints.length);
   });
 
@@ -85,7 +95,7 @@ describe("the staging registry", () => {
   });
 
   it("every template is a non-empty {name} template", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(entry.template.trim().length, entry.id).toBeGreaterThan(0);
       expect(entry.template, entry.id).toContain("{name}");
     }
@@ -95,7 +105,7 @@ describe("the staging registry", () => {
   // leave the composer's own camera standing, and an unknown viewer part would be dropped
   // by resolveViewerParts with no trace of what the staging meant to show.
   it("names only cameras the camera registry knows", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(sceneSubjectOrientationById(entry.camera.orientation), entry.id).toBeDefined();
       expect(sceneShotDistanceById(entry.camera.distance), entry.id).toBeDefined();
       expect(sceneCameraHeightById(entry.camera.height), entry.id).toBeDefined();
@@ -103,13 +113,13 @@ describe("the staging registry", () => {
   });
 
   it("names only viewer parts the viewer-body registry knows", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       for (const part of entry.viewerParts) expect(viewerBodyPartById(part), `${entry.id}/${part}`).toBeDefined();
     }
   });
 
   it("names only real exposure regions in requiresBare", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       for (const region of entry.requiresBare) expect(EXPOSURE_KEYS, entry.id).toContain(region);
     }
   });
@@ -119,7 +129,7 @@ describe("the template phrasing rules", () => {
   // THE phantom-limb pin. An unowned limb in a first-person prompt reads as the viewer's
   // own foreground limb — or, worse, as a third person standing in the room.
   it("leaves no unbound limb once {name} is substituted", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(matches(BARE_LIMB, bind(entry.template)), entry.id).toBe(false);
       expect(matches(BOTH_LIMBS, bind(entry.template)), entry.id).toBe(false);
     }
@@ -129,7 +139,7 @@ describe("the template phrasing rules", () => {
   // possessive naming its owner, so no phrasing the pattern happens not to cover can slip
   // a free-floating limb into a prompt.
   it("possessively binds every limb noun to the subject or to the viewer", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       const bound = bind(entry.template);
       for (const match of bound.matchAll(LIMB_NOUN)) {
         const before = bound.slice(0, match.index);
@@ -139,7 +149,7 @@ describe("the template phrasing rules", () => {
   });
 
   it("uses no gendered pronoun and no negation", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(entry.template, entry.id).not.toMatch(GENDERED_PRONOUN);
       expect(entry.template, entry.id).not.toMatch(NEGATION);
     }
@@ -150,7 +160,7 @@ describe("the gates each entry carries", () => {
   // The rule, stated as a test: a template that names an explicit act or intimate anatomy
   // is intimate, and rides only the uncensored route. A clothed-capable hold is not.
   it("marks exactly the explicit entries intimate", () => {
-    const intimate = sceneStagings.filter((entry) => entry.intimate).map((entry) => entry.id);
+    const intimate = sceneStagingList.filter((entry) => entry.intimate).map((entry) => entry.id);
     expect(intimate).toEqual([
       "held_from_behind_bare",
       "kneeling_before_viewer",
@@ -180,7 +190,7 @@ describe("the gates each entry carries", () => {
   });
 
   it("requires a bare pelvis for every penetrative staging", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       if (!entry.template.includes("penetration") && !entry.template.includes("bare hips")) continue;
       expect(entry.requiresBare, entry.id).toContain("pelvis");
     }
@@ -190,13 +200,13 @@ describe("the gates each entry carries", () => {
   // subject and the viewer, so a second present NPC would make the sentence a lie about
   // who is where. The gate itself runs in resolveScenePlan.
   it("is solo-cast throughout in v1", () => {
-    for (const entry of sceneStagings) expect(entry.cast, entry.id).toBe("solo");
+    for (const entry of sceneStagingList) expect(entry.cast, entry.id).toBe("solo");
   });
 
   // Away means fully away (owner ruling 2026-08-10): a staging never claims the glance,
   // which is a separate physical claim needing its own narration evidence.
   it("never claims the glance back", () => {
-    for (const entry of sceneStagings) expect(entry.camera.orientation).not.toBe("away_glance_back");
+    for (const entry of sceneStagingList) expect(entry.camera.orientation).not.toBe("away_glance_back");
   });
 });
 
@@ -301,5 +311,94 @@ describe("contact as staging evidence", () => {
     expect(stagingEvidenceFromContacts([handOnHerBack], "spooned_from_behind")).toBe(false);
     expect(stagingEvidenceFromContacts([], "on_all_fours")).toBe(false);
     expect(stagingEvidenceFromContacts([handOnHerBack], "not_a_staging")).toBe(false);
+  });
+});
+
+/**
+ * The one place in the application that runs SHA-256, and the defect it kills.
+ *
+ * The tuning comments in this registry are measurement records, not opinions: replacing
+ * `kneeling_before_viewer_guided`'s contact verb took the viewer's anatomy from present in
+ * three renders of three to absent in three of three, and `on_all_fours` lost the viewer's
+ * hands twice before the frame-corner clause held them. Every one of those results is a fact
+ * about a specific string, cited as `on_all_fours@1`.
+ *
+ * So a wording edit that leaves the revision alone is not a small thing: the name silently
+ * comes to mean different bytes, and every measurement filed under it becomes a claim about a
+ * sentence that no longer exists. The digest is what makes that loud — the hash is handed in
+ * from here because `@vesper/image-core` is browser-portable and may not evaluate
+ * `node:crypto`, and this is where the rule is executed rather than described: SHA-256 over
+ * the UTF-8 bytes of the template, `{name}` intact, and nothing else.
+ */
+/**
+ * The revision ledger: what each human revision has ALWAYS meant, in bytes.
+ *
+ * APPEND-ONLY. A row here is a historical claim, not a mirror of the current table — editing
+ * one rewrites what a past measurement was measured against, which is the single thing this
+ * file exists to prevent.
+ *
+ * The digest check alone cannot enforce a revision bump, because the digest lives beside the
+ * text it hashes: changing the wording and the digest together leaves the recomputed hash
+ * agreeing with the stored one, and `@1` silently comes to mean new bytes with CI green. This
+ * ledger is the independent half. Its entry for `@1` was written when `@1` was, so a wording
+ * edit that keeps the revision now contradicts a line the edit did not touch.
+ *
+ * The edit path for changing measured wording is therefore: change the template, recompute the
+ * digest, bump the revision, and APPEND the new revision here. Three of those four are in one
+ * file and this one is not, which is the point.
+ */
+const SURFACE_REVISION_LEDGER: Readonly<Record<string, string>> = {
+  "held_from_behind@1": "e954404cfcce2cdeaa0737c50fb487d4a2c996b78307da51257b2818edc46ceb",
+  "held_from_behind_bare@1": "6a868ee7d30b77e60aca6c5c0dafb5df132a5420e6c4dc8b33e0b7344ba76068",
+  "kneeling_before_viewer@1": "dcb0c21e9826606b704745f856bffeec173c377b93ac5724e0eb36d1887f53ff",
+  "kneeling_before_viewer_guided@1": "723e8a49e7356c5360db8182c624a35f6067530d44d575073ccf1c12176aec95",
+  "astride_viewer_facing@1": "06a751ad09ad50233be551fa045163b6b9b773ca80ff5ec869a5f82815628899",
+  "astride_viewer_away@1": "c236e982ec293a6965b6d9d79651833462013ea43f8875e9ffe67500cbe0b1b3",
+  "bent_over_surface@1": "33feef7aeb628765cc1fdeb9085e46a128baf26c762ba6d390c8ed0170c6a762",
+  "on_all_fours@1": "d3f2f60b7d66a587a6f270dbbec9c4167a058d703b1b1fe6a069f03cb2d167e4",
+  "lying_beneath_viewer@1": "8144f5704ff8538e805fe46e7ded68bce88721bacdc097284adb799e079bebe8",
+  "lying_face_down@1": "be6218c3fdb15f453825d9027c5162df4542d61edffbdbb2f23b41b74af78a74",
+  "spooned_from_behind@1": "3178a4755a7e3f2f71783deca9fe0e21c18a2584b7e4ae4777cbe841f4d192b2",
+  "pressed_to_wall_facing@1": "18d42a732433811a0bdaec2eee54ea9d2a93c3531b1bede30a37fccfaff7466a",
+  "pressed_to_wall_away@1": "f7514817593a4601186328b37082cec452d5dbc7ba409ef8b8de95b8743aca6f",
+};
+
+describe("the staging surface forms", () => {
+  it("digests the wording in use, so a text edit cannot pass unnoticed", () => {
+    const sha256Hex = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
+
+    // A digest over a COPY of a template would prove only that the copy had not moved. The
+    // artifact and the registry's sentence have to be the same string for any of this to bind.
+    for (const id of sceneStagingOrder) {
+      expect(sceneStagingSurfaceFormTable[id].text, id).toBe(sceneStagings[id].template);
+    }
+
+    expect(findSceneStagingSurfaceDigestMismatches(sceneStagingSurfaceFormTable, sha256Hex)).toEqual([]);
+  });
+
+  /**
+   * Falsified against the edit the digest check lets through: change a template's text and its
+   * digest together, leave `revision: 1`, and the check above stays green while every
+   * measurement filed under `@1` becomes a claim about a sentence that no longer exists. This
+   * fails on exactly that edit, because the ledger's `@1` still holds the bytes `@1` meant.
+   */
+  it("pins every revision to the bytes it has always named", () => {
+    for (const id of sceneStagingOrder) {
+      const row = sceneStagingSurfaceFormTable[id];
+      const revision = `${id}@${String(row.revision)}`;
+      const pinned = SURFACE_REVISION_LEDGER[revision];
+      expect(pinned, `${revision} has no ledger entry — a new revision must be appended, never repointed`).toBeDefined();
+      expect(row.digest, revision).toBe(pinned);
+    }
+  });
+
+  /**
+   * The ledger may only grow. A revision that leaves it takes its measurement's meaning with
+   * it, so a shrinking ledger is a rewritten history rather than a tidy-up.
+   */
+  it("keeps a ledger entry for every arrangement", () => {
+    for (const id of sceneStagingOrder) {
+      expect(Object.keys(SURFACE_REVISION_LEDGER).some((key) => key.startsWith(`${id}@`)), id).toBe(true);
+    }
   });
 });

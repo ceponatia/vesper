@@ -12,7 +12,7 @@ import {
   imageLabVerdictOptions,
   imageLabVerdicts,
 } from "@vesper/image-core";
-import { sceneStagings } from "@/contracts/images/scene-staging";
+import { sceneStagingList } from "@/contracts/images/scene-staging";
 import {
   imageLabDropReasonExplanation,
   imageLabExperimentKindDescription,
@@ -57,7 +57,7 @@ describe("experiment kind copy", () => {
  * because the id is what the created row records and what a ruling cites.
  */
 describe("staging copy", () => {
-  const intimate = sceneStagings.filter((staging) => staging.intimate);
+  const intimate = sceneStagingList.filter((staging) => staging.intimate);
 
   it("has intimate stagings to offer at all", () => {
     expect(intimate.length).toBeGreaterThan(0);

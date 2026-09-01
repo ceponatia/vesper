@@ -132,6 +132,16 @@ export const visualLightingBands = ["bright", "dim", "dark", "silhouette"] as co
 export type VisualLightingBand = (typeof visualLightingBands)[number];
 
 /**
+ * The light a SCENE owner may assert.
+ *
+ * `silhouette` is absent by construction rather than by convention: it describes
+ * where a viewpoint stands relative to a light source, which is a shot decision,
+ * and a scene states how a place is lit. Narrowing the type is what stops a
+ * lighting phrase from ever classifying into a claim about the camera.
+ */
+export type VisualSceneLightingBand = Exclude<VisualLightingBand, "silhouette">;
+
+/**
  * Distance rides the scene owner's proximity vocabulary rather than a second
  * ladder of bands: an observer's distance to the subject IS a proximity fact,
  * and the audit records camera distance as derived from the same bands. A

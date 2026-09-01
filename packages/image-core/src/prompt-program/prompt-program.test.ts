@@ -8,12 +8,20 @@ import { DiagnosticCollector } from "@vesper/contracts";
 import {
   buildImageWorldDigest,
   compileImagePromptProgram,
+  imageConcept,
+  imageConceptChannelRank,
+  imageConceptChannels,
+  imageConceptIds,
   imageNegativeGuardOf,
   imagePositiveProtections,
+  imagePromptDialect,
   lintImagePromptCollisions,
+  parseImagePromptProgramProvenance,
   qwenImage2512Bindings,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
+  createSceneStagingSurfaceLog,
+  compileDialectClaims,
   selectImageNegativeConstraints,
   selectImagePositiveClaims,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
@@ -31,6 +39,15 @@ import {
   type ImageWorldFact,
   type ImageWorldRelation,
 } from "./index";
+// The scene IR is a sibling of the compiler, not part of it: `prompt-program/index.ts`
+// deliberately re-exports no scene-ir name, so these come from the protocol directly.
+import {
+  createSceneStagingSurfaceForms,
+  sceneStagingIds,
+  type SceneStagingId,
+  type SceneStagingSurfaceFormEntry,
+  type SceneStagingSurfaceFormTable,
+} from "../scene-ir";
 
 /**
  * The prompt-program layer.
@@ -55,6 +72,9 @@ import {
  *    2026-08-29), references are numbered from the final send order, an
  *    identity claim with nothing to reference refuses, and every exclusion
  *    drops with the endpoint's own recorded reason.
+ * 5. **Dropped claims and staging wording form ONE accounting system.** A render
+ *    may not report that it sent an arrangement's measured wording and that the
+ *    claim carrying it never reached the prompt.
  *
  * Deliberately NOT tested: each of the ~55 concepts' Qwen wording, each block's
  * guard in isolation, and the seeded pack contents. The first two are covered
@@ -366,6 +386,30 @@ describe("the negative channel never forbids what the world requires", () => {
 // ---------------------------------------------------------------------------
 
 describe("world digest construction", () => {
+  /**
+   * The concept channel is declared in three closed consts — the vocabulary, the
+   * selector's walk order, and the digest's own fact ranking — and NONE of the
+   * three checks the others. Falsified against a channel added to the vocabulary
+   * and forgotten in either order: `indexOf` answers -1 rather than failing, so
+   * the new channel's facts silently sort ahead of the operation contract and the
+   * prompt leads with whatever it happens to say.
+   *
+   * Registry-derived rather than a typed-out list, so it asks about agreement and
+   * never about contents.
+   */
+  it("gives every declared concept channel a position in both selection orders", () => {
+    const perChannel = imageConceptChannels.map((channel) => {
+      const concept = imageConceptIds.find((id) => imageConcept(id)?.channel === channel);
+      if (concept === undefined) throw new Error(`no concept declares the channel ${channel}`);
+      return concept;
+    });
+    expect(imageConceptChannels.filter((channel) => imageConceptChannelRank(channel) < 0)).toEqual([]);
+    const built = world({
+      subjects: [entity("subject", "s1", perChannel.map((concept) => fact({ concept })))],
+    });
+    expect(built.subjects[0]?.facts.map((entry) => entry.concept)).toEqual(perChannel);
+  });
+
   /**
    * Falsified against a builder that trusted its input: a `restricted` field
    * arriving as a fact is a projection bug with a privacy edge, and downgrading
@@ -1031,5 +1075,168 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     // Still recorded in provenance, so an operator can see what this render
     // WOULD have excluded on an endpoint with a channel for it.
     expect(result.compiled.promptProgramProvenance.negativeOutcomes.length).toBe(result.compiled.transports.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Staging wording and the drop record — one accounting system
+// ---------------------------------------------------------------------------
+
+/**
+ * What a render says it did with a staging's measured wording.
+ *
+ * The vocabulary is deliberately two-valued — `adopted` or `replaced` — with no `dropped`
+ * member, because a claim that never reached the prompt is already named by
+ * `droppedClaimIds`. That is only safe while the two structures cannot disagree, and nothing
+ * in the type system stops provenance from listing claim `scene.staging` as dropped while
+ * also reporting that its wording was adopted. A reader would believe it: the digest and
+ * revision look authoritative, and the measurements behind `on_all_fours@3` would be credited
+ * to an image whose prompt never carried the arrangement at all.
+ *
+ * Falsified against the obvious implementation, which publishes every decision the dialect
+ * recorded — correct until a budget squeeze removes the segment after the wording was taken,
+ * which no care at the call site can anticipate.
+ */
+describe("a render's staging wording and its dropped claims", () => {
+  /** Stands in for SHA-256, which this package may not compute — identity is what matters. */
+  const stagingFormEntry = (id: SceneStagingId): SceneStagingSurfaceFormEntry => ({
+    text: `{name} in the measured wording for ${id}`,
+    revision: 3,
+    digest: id.length.toString(16).padStart(64, "0"),
+  });
+
+  /** A registry's table stands in for the application's: total over the vocabulary, wording arbitrary. */
+  const stagingForms = createSceneStagingSurfaceForms(
+    Object.fromEntries(
+      sceneStagingIds.map((id): [SceneStagingId, SceneStagingSurfaceFormEntry] => [id, stagingFormEntry(id)]),
+    ) as SceneStagingSurfaceFormTable,
+  );
+
+  const stagedWorld = (): ImageWorldDigest =>
+    world({
+      scene: [
+        fact({
+          key: "scene.staging",
+          concept: "scene.staging",
+          value: stagingForms.formFor("on_all_fours"),
+          subjectRef: "nyx",
+        }),
+      ],
+      subjects: [
+        entity("subject", "nyx", [
+          fact({ key: "nyx.identity", concept: "subject.identity", value: "a woman with dark hair", disposition: "required_visual", priority: 1 }),
+        ]),
+      ],
+    });
+
+  it("reports the measured wording as adopted, in a record storage keeps", () => {
+    const result = compileImagePromptProgram(compileInput(stagedWorld()));
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const provenance = result.compiled.promptProgramProvenance;
+
+    // The disposition is only worth anything if it describes the bytes that
+    // travelled, so the prompt is checked alongside the claim about it.
+    expect(result.compiled.positiveText).toContain("in the measured wording for on_all_fours");
+    expect(provenance.positiveClaimIds).toContain("scene.staging");
+    expect(provenance.droppedClaimIds).not.toContain("scene.staging");
+    expect(provenance.sceneStagingSurfaces).toEqual([
+      {
+        claimId: "scene.staging",
+        stagingId: "on_all_fours",
+        revision: "on_all_fours@3",
+        digest: stagingForms.digestFor("on_all_fours"),
+        disposition: "adopted",
+        dialectId: "qwen_2512_description",
+      },
+    ]);
+    // `images.meta.promptProgram` is read back through this parser, and its object
+    // schema STRIPS what it does not declare. A field the compiler writes and the
+    // schema forgot is lost in silence rather than at a boundary.
+    expect(parseImagePromptProgramProvenance(provenance)?.sceneStagingSurfaces).toEqual(
+      provenance.sceneStagingSurfaces,
+    );
+  });
+
+  it("reports no wording at all for a staging the budget removed", () => {
+    const result = compileImagePromptProgram(compileInput(stagedWorld(), { budget: { recommendedCharacters: 40 } }));
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const provenance = result.compiled.promptProgramProvenance;
+
+    expect(result.compiled.positiveText).not.toContain("measured wording");
+    expect(provenance.droppedClaimIds).toContain("scene.staging");
+    expect(provenance.positiveClaimIds).not.toContain("scene.staging");
+    expect(provenance.sceneStagingSurfaces).toEqual([]);
+  });
+
+  /**
+   * The other half of the vocabulary, and the reason it exists. This family words every
+   * arrangement itself, so its renders never contain the measured bytes — a provenance record
+   * that stayed silent about that would leave `on_all_fours@3` as the only wording fact on
+   * file, and the next tuning round would read these renders as evidence for it.
+   */
+  it("reports a tag endpoint's own wording as a replacement", () => {
+    const dialect = imagePromptDialect("pony_compel_tags");
+    if (dialect === null) throw new Error("the tag family is not registered");
+    const compiled = dialect.compilePositive({
+      claims: selectImagePositiveClaims(stagedWorld()),
+      operation: operation(),
+      references: [],
+      entityLabels: { nyx: "Nyx" },
+      budget: {},
+    });
+
+    expect(compiled.text).not.toContain("measured wording");
+    expect(compiled.text).toContain("on all fours");
+    expect(compiled.stagingSurfaces).toEqual([
+      { claimId: "scene.staging", form: stagingForms.formFor("on_all_fours"), disposition: "replaced" },
+    ]);
+  });
+
+  /**
+   * Falsified against the warning-only shape this replaced.
+   *
+   * A dialect that words an arrangement without saying where the wording came from used to
+   * warn and publish anyway, so provenance carried a rendered staging with no disposition
+   * beside it — which reads as "this render had no staging", not as "nobody said". The record
+   * is the whole point of the channel, so an unrecorded staging is now UNRENDERABLE: the
+   * segment is refused, and because staging is `required_visual` the compile refuses with it
+   * rather than shipping a scene that quietly lost its arrangement.
+   */
+  it("refuses a staging whose dialect recorded no wording decision", () => {
+    const claims = selectImagePositiveClaims(stagedWorld());
+    const compiled = compileDialectClaims({
+      claims,
+      // A renderer that words the arrangement and never touches the log — the mistake a new
+      // dialect makes, and the one no type checks.
+      render: (claim) =>
+        claim.concept === "scene.staging"
+          ? { kind: "pose", text: "an arrangement worded with no decision recorded.", mandatory: true, priority: 1 }
+          : null,
+      surfaces: createSceneStagingSurfaceLog(),
+      budget: {},
+    });
+
+    expect(compiled.text).not.toContain("an arrangement worded with no decision recorded.");
+    expect(compiled.droppedClaimIds).toContain("scene.staging");
+    expect(compiled.stagingSurfaces).toEqual([]);
+  });
+
+  /**
+   * The structural rule the two lists have to keep between them: a claim is either dropped or
+   * carries exactly one disposition, never both and never neither. Cutting `dropped` from the
+   * disposition vocabulary is safe only while that holds.
+   */
+  it("never reports a claim as both dropped and decided", () => {
+    const result = compileImagePromptProgram(compileInput(stagedWorld()));
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const { droppedClaimIds, sceneStagingSurfaces, positiveClaimIds } = result.compiled.promptProgramProvenance;
+
+    for (const record of sceneStagingSurfaces) {
+      expect(droppedClaimIds).not.toContain(record.claimId);
+      expect(positiveClaimIds).toContain(record.claimId);
+    }
+    for (const claimId of positiveClaimIds.filter((id) => id === "scene.staging")) {
+      expect(sceneStagingSurfaces.filter((record) => record.claimId === claimId)).toHaveLength(1);
+    }
   });
 });

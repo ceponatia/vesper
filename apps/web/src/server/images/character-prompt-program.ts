@@ -17,9 +17,11 @@ import {
   type ImagePromptProfileBinding,
   type ImagePromptSegment,
   type ImagePromptStrategy,
+  type ImageLocationDigest,
   type ImageReferenceFact,
   type ImageRenderReference,
   type ImageSubjectDigest,
+  type ImageWorldFact,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import type { AttributeValue, RealizedBody, RegionExposure, VisualImageDigest } from "@/contracts";
@@ -34,6 +36,7 @@ import {
   characterChangeContract,
   characterPortraitImageOperation,
   characterVariantImageOperation,
+  type CharacterCameraAssemblyInput,
   type CharacterWorldDigestAssemblyInput,
   type CharacterWorldReadInput,
 } from "@/contracts/images/character-digest";
@@ -182,6 +185,19 @@ export interface CharacterPromptProgramInput {
    * with no character is not a degraded render, it is a bug upstream.
    */
   readonly cuts: readonly CharacterPromptSubjectCut[];
+  /**
+   * What this render says about the SHOT — the mood, whose eyes it is through,
+   * the staged arrangement, what each person is doing.
+   *
+   * The scene lane lowers them from its resolved plan; every other lane states
+   * none, and an absent list leaves the program byte-identical to what it
+   * compiled before the field existed.
+   */
+  readonly scene?: readonly ImageWorldFact[];
+  /** The place this render is set in, when the lane has one to state. */
+  readonly location?: ImageLocationDigest | null;
+  /** The lane's own camera statement, layered over the committed cut's viewing reads. */
+  readonly camera?: CharacterCameraAssemblyInput;
   readonly read: CharacterWorldReadInput;
   /**
    * The references the lane would hand `renderImageIntent`, in the lane's own
@@ -360,6 +376,7 @@ function dialectReferences(
 function castAssembly(
   cuts: readonly CharacterPromptSubjectCut[],
   read: CharacterWorldReadInput,
+  world: Pick<CharacterWorldDigestAssemblyInput, "scene" | "location" | "camera">,
 ): Omit<CharacterWorldDigestAssemblyInput, "operation" | "references"> | VisualImageCastMergeRefusal {
   const merged = mergeVisualImageCastDigests(cuts.map((cut) => cut.digest));
   if (!merged.ok) return merged.refusal;
@@ -378,6 +395,12 @@ function castAssembly(
     ...(Object.keys(labels).length === 0 ? {} : { labels }),
     sources,
     read,
+    // The lane's scene statement rides through untouched. Spread conditionally so
+    // a lane that states none assembles exactly the input it did before the
+    // scene reached this seam.
+    ...(world.scene === undefined ? {} : { scene: world.scene }),
+    ...(world.location === undefined ? {} : { location: world.location }),
+    ...(world.camera === undefined ? {} : { camera: world.camera }),
   };
 }
 
@@ -471,7 +494,11 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   }
 
   // --- 3. Assemble the world digest over the lane's own cast ----------------
-  const cast = castAssembly(input.cuts, input.read);
+  const cast = castAssembly(input.cuts, input.read, {
+    ...(input.scene === undefined ? {} : { scene: input.scene }),
+    ...(input.location === undefined ? {} : { location: input.location }),
+    ...(input.camera === undefined ? {} : { camera: input.camera }),
+  });
   if ("code" in cast) {
     sink?.push(
       diag("warn", cast.code, "a character cast could not be folded into one digest", {

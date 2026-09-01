@@ -8,6 +8,8 @@
  * `negative-constraints` (the two channels), `collision` (the reconciliation),
  * `dialects` (the per-endpoint seam), `prompt-packs` (the versioned data),
  * `compile-program` (the pipeline), `provenance` (what a render stores).
+ * `scene-facts` sits beside `world-digest`: it is what a scene fact's untyped
+ * value is allowed to be, narrowed once so no dialect has to guess.
  *
  * The two `dialect-*` / `packs-*` modules are imported for their SIDE EFFECT —
  * each registers itself — so importing this barrel is what makes an endpoint
@@ -30,4 +32,6 @@ export * from "./packs-qwen-2512";
 export * from "./positive-claims";
 export * from "./prompt-packs";
 export * from "./provenance";
+export * from "./scene-facts";
+export * from "./scene-staging-surfaces";
 export * from "./world-digest";

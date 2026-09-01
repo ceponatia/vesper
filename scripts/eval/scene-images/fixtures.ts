@@ -73,6 +73,7 @@ function plan(over: Partial<SceneRenderPlan> & Pick<SceneRenderPlan, "focal">): 
     lighting: "soft natural light",
     mood: "calm",
     camera: { ...DEFAULT_SCENE_CAMERA },
+    captureMode: "first_person_disembodied",
     viewerBody: [],
     ...over,
   };

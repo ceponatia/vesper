@@ -31,12 +31,21 @@ import type { ImageConflictKey } from "./conflict-keys";
  * Which side of the world a concept describes.
  *
  * Read by the positive selector, which walks the channels in the canonical fact
- * selection order (operation, then subjects, then camera, then relations, then
- * items, then location, then style) rather than trusting whatever order an
- * adapter happened to build its facts in.
+ * selection order (operation, then the scene, then subjects, then camera, then
+ * relations, then items, then location, then style) rather than trusting
+ * whatever order an adapter happened to build its facts in.
+ *
+ * `scene` is the odd one to read: it describes the SHOT rather than anybody or
+ * anything in it — what the moment feels like, whose eyes it is through, how two
+ * bodies are arranged. It sits second because a scene fact frames every subject
+ * standing in it, so when a scene claim and a subject claim land in the same
+ * prompt segment the frame is stated first. Channel is not segment kind: nothing
+ * in this channel emits into a "scene" segment, because there is none — mood
+ * lands in `atmosphere`, capture mode in `framing`, staging in `pose`.
  */
 export const imageConceptChannels = [
   "operation",
+  "scene",
   "subject",
   "camera",
   "relation",
@@ -72,12 +81,13 @@ export interface ImageConceptDefinition {
  * is also the order `orderImagePositiveClaims` emits them in when two claims
  * share a segment kind.
  *
- * Two entries carry no static protection where a reader might expect one, and
- * both are deliberate. `subject.morphology` protects nothing on its own: an
+ * Three entries carry no static protection where a reader might expect one, and
+ * all three are deliberate. `subject.morphology` protects nothing on its own: an
  * ordinary pair of arms must not switch off the duplicated-anatomy exclusion, so
  * protection comes from the fact's own tags instead — a tail protects appendages,
- * a human shoulder protects nothing. `style.medium` likewise protects nothing
- * here because which key it defends depends entirely on which medium it names.
+ * a human shoulder protects nothing. `style.medium` and `scene.capture_mode`
+ * likewise protect nothing here, because which key either defends depends
+ * entirely on which medium or which capture mode it names.
  *
  * ## Why optional detail never lands in a mandatory segment kind
  *
@@ -94,6 +104,12 @@ export interface ImageConceptDefinition {
  * sit in `identity`, because an item render's subject is the item and a location
  * render's subject is the place. Each of those carries exactly one required fact
  * (the name); every optional detail about them is a different concept.
+ *
+ * The rule binds the whole `scene` channel absolutely (owner ruling
+ * 2026-09-01): no scene concept may be filed into a mandatory kind, because a
+ * scene is the layer that should give way under a squeeze before a character
+ * stops being recognizable — and a scene concept that could never be dropped
+ * would make the fitter compress the identity anchor instead.
  */
 const CONCEPT_TABLE = [
   // --- Operation and change contract ------------------------------------------
@@ -114,6 +130,37 @@ const CONCEPT_TABLE = [
   },
   { id: "operation.reference_role", channel: "operation", segmentKind: "operation", protects: [] },
 
+  // --- Scene ------------------------------------------------------------------
+  // What the SHOT is, as distinct from who is in it. Every one of these emits
+  // into an existing segment kind, and none may use a mandatory one: `identity`,
+  // `morphology`, `age`, `wardrobe` and `exposure` are unfittable BY KIND, so a
+  // scene concept routed into one would be a sentence no budget squeeze could
+  // ever drop — and a scene is exactly the layer that should give way before a
+  // character stops being recognizable (owner ruling 2026-09-01).
+  //
+  // A required scene fact is still expressible: the projection marks it
+  // `required_visual` and the claim carries the mandatory flag itself, which is
+  // the lever that belongs to the owner of the fact rather than to the segment.
+  { id: "scene.mood", channel: "scene", segmentKind: "atmosphere", protects: [] },
+  // Third-person, first-person POV or a selfie — one closed choice, because they
+  // are three arrangements of the same two bodies rather than flags on one.
+  // Protects nothing HERE for the reason `style.medium` does not: which key a
+  // capture mode puts beyond reach depends entirely on which mode it names, and
+  // a table that cannot see the value cannot express "a selfie is a requested
+  // arm's-length crop".
+  { id: "scene.capture_mode", channel: "scene", segmentKind: "framing", protects: [] },
+  // The abstract possession clause of the POV composite. `pose` because it is a
+  // statement about the bodies in frame, and it protects NOTHING on purpose: the
+  // clause asserts that every visible limb has a named owner, which agrees with
+  // the anatomy exclusions rather than contradicting them.
+  { id: "scene.possession", channel: "scene", segmentKind: "pose", protects: [] },
+  // A staged two-body arrangement. It protects `multiple_people` whatever it
+  // says, because every arrangement in the vocabulary puts the viewer's own body
+  // in frame alongside the subject's — the single-subject exclusion would be the
+  // prompt arguing with the geometry the story described. The same call
+  // `location.occupancy` makes for a crowded market.
+  { id: "scene.staging", channel: "scene", segmentKind: "pose", protects: ["multiple_people"] },
+
   // --- Subject ----------------------------------------------------------------
   { id: "subject.identity", channel: "subject", segmentKind: "identity", protects: [] },
   { id: "subject.apparent_age", channel: "subject", segmentKind: "age", protects: [] },
@@ -128,6 +175,17 @@ const CONCEPT_TABLE = [
   },
   { id: "subject.appearance", channel: "subject", segmentKind: "current_state", protects: [] },
   { id: "subject.pose", channel: "subject", segmentKind: "pose", protects: [] },
+  // What the person is DOING, which is not how they are held. "Sitting
+  // cross-legged" is a pose and "pouring coffee" is an activity, and a composer
+  // produces the two as separate fields — collapsing them into `subject.pose`
+  // would make the distinction unrecoverable and leave the acting half of a
+  // scene with no concept of its own. Same segment kind, because both are things
+  // the pose sentence of a prompt says.
+  //
+  // Not a relation: `relation.acts_on` needs an object ref naming an entity the
+  // digest actually carries, and a dangling one is dropped — so "pouring coffee"
+  // has no coffee to point at until item projection populates `digest.items`.
+  { id: "subject.activity", channel: "subject", segmentKind: "pose", protects: [] },
   { id: "subject.expression", channel: "subject", segmentKind: "current_state", protects: [] },
   // `pose`, not `current_state`: how a body is HELD is what the pose segment
   // says, and the application's visual digest already classifies its
@@ -146,6 +204,11 @@ const CONCEPT_TABLE = [
   { id: "camera.framing", channel: "camera", segmentKind: "framing", protects: [] },
   { id: "camera.distance", channel: "camera", segmentKind: "framing", protects: [] },
   { id: "camera.angle", channel: "camera", segmentKind: "framing", protects: [] },
+  // A row `positive-claims` cannot do without: it assembles camera concepts as
+  // `camera.${fact.component}` through a cast, so a component with no entry here
+  // raises no compile error and falls back to the MANDATORY `operation` kind,
+  // where the claim becomes unfittable. The row is what makes the claim correct.
+  { id: "camera.height", channel: "camera", segmentKind: "framing", protects: [] },
   { id: "camera.motion", channel: "camera", segmentKind: "pose", protects: [] },
   { id: "camera.lighting", channel: "camera", segmentKind: "lighting", protects: [] },
 
@@ -261,6 +324,7 @@ export function isImageConceptId(id: string): id is ImageConceptId {
  */
 export const imageConceptChannelOrder: readonly ImageConceptChannel[] = [
   "operation",
+  "scene",
   "subject",
   "camera",
   "relation",

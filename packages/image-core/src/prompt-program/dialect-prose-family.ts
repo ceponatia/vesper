@@ -1,23 +1,34 @@
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { ImageAngleBand, ImageDistanceBand, ImageFramingBand, ImageLightingBand } from "./camera-bands";
+import type {
+  ImageAngleBand,
+  ImageCameraHeightBand,
+  ImageDistanceBand,
+  ImageFramingBand,
+  ImageLightingBand,
+} from "./camera-bands";
 import type { ImageStyleMedium } from "./conflict-keys";
 import {
   angleSentence,
   capitalize,
+  captureModeSentence,
   describe,
   describeChange,
   distanceSentence,
   framingSentence,
+  heightSentence,
   label,
   lightingSentence,
   listWords,
   mediumSentence,
+  possessionOwners,
+  possessionSentence,
   preservedMeanings,
   prefixed,
   relationSentence,
   sentence,
   spatialWord,
+  stagingSentence,
   subjectCountSentence,
 } from "./dialect-qwen-prose";
 import {
@@ -32,6 +43,8 @@ import {
   type ImagePromptDialectId,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
+import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
  * THE PROSE FAMILY — one natural-language implementation, registered under the
@@ -225,6 +238,7 @@ function renderClaim(
   input: ImageDialectPositiveInput,
   state: RenderState,
   spec: ProseDialectSpec,
+  surfaces: SceneStagingSurfaceLog,
 ): ImagePromptSegment | null {
   const say = (text: string, priority: number = claim.priority): ImagePromptSegment => ({
     kind: claim.segmentKind,
@@ -232,6 +246,8 @@ function renderClaim(
     mandatory: claim.required,
     priority,
   });
+  /** A sentence a helper may decline to write — null in, null out, never an empty segment. */
+  const sayOrNull = (text: string | null): ImagePromptSegment | null => (text === null ? null : say(text));
   const value = describe(claim.value);
   const subject = label(input, claim.subjectRef);
   const object = label(input, claim.objectRef);
@@ -278,6 +294,38 @@ function renderClaim(
       return introduction === null ? null : say(introduction, PROSE_PRIORITY.reference);
     }
 
+    // --- Scene ----------------------------------------------------------------
+    case "scene.mood":
+      // Bare of scaffolding beyond the copula: a mood arrives as the composer's
+      // own phrase for how the moment feels, and it describes the SHOT rather
+      // than the room — the same bedroom is cheerful in one render and
+      // threatening in the next.
+      return say(`The mood is ${value}.`);
+    case "scene.capture_mode": {
+      const mode = imageSceneCaptureMode(claim.value);
+      return mode === null ? null : say(captureModeSentence(mode, subject));
+    }
+    case "scene.possession":
+      return sayOrNull(possessionSentence(possessionOwners(input, claim.value)));
+    case "scene.staging": {
+      const form = imageSceneStagingForm(claim.value);
+      if (form === null) return null;
+      // ADOPTS the registry's wording. The templates are measured artifacts
+      // rather than opinions — one rewrite that replaced a contact verb took the
+      // viewer's anatomy from present in three renders of three to absent in
+      // three of three, and naming a forearm and the frame's lower corners held
+      // the viewer's hands where a plainer phrasing lost them — and that residue
+      // is model behavior no typed semantics could regenerate.
+      //
+      // The measurements were taken through the retired prose BUILDER, against
+      // the Qwen edit endpoint the intimate route runs on, so their evidence
+      // reaches this family through the shared natural-language register rather
+      // than from these endpoints directly. Adopting is still the call: this is
+      // the register the templates are written in, and a rival sentence authored
+      // here would throw the evidence away and buy nothing measured back.
+      return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
+    }
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
       // With references in the payload the identity travels in the IMAGE, and
@@ -314,6 +362,15 @@ function renderClaim(
       return say(prefixed(subject, `has ${value}`));
     case "subject.pose":
       return say(prefixed(subject, `is ${value}`));
+    case "subject.activity":
+      // The same clause shape as a pose, and that is the honest answer rather
+      // than a missing distinction: "is sitting cross-legged" and "is pouring
+      // coffee" are both what an English sentence does with the value it was
+      // given. What separates the two is upstream — different composer fields,
+      // different provenance, different scrubbing — and inventing a lexical
+      // difference here would be this dialect asserting something the value
+      // does not carry.
+      return say(prefixed(subject, `is ${value}`));
     case "subject.expression":
       return say(prefixed(subject, `wears a ${value} expression`));
     case "subject.body_language":
@@ -331,6 +388,8 @@ function renderClaim(
       return say(distanceSentence(claim.value as ImageDistanceBand));
     case "camera.angle":
       return say(angleSentence(claim.value as ImageAngleBand, subject));
+    case "camera.height":
+      return say(heightSentence(claim.value as ImageCameraHeightBand));
     case "camera.motion":
       return value === "still" ? null : say(`Motion blur from ${value} movement.`);
     case "camera.lighting":
@@ -443,9 +502,11 @@ function compilePositiveFor(spec: ProseDialectSpec) {
     // per-render facts, and state leaking across compiles would make the second
     // compile of one digest differ from the first, which determinism forbids.
     const state: RenderState = { lockEmitted: false, takenSlots: new Set<number>() };
+    const surfaces = createSceneStagingSurfaceLog();
     return compileDialectClaims({
       claims: input.claims,
-      render: (claim) => renderClaim(claim, input, state, spec),
+      render: (claim) => renderClaim(claim, input, state, spec, surfaces),
+      surfaces,
       budget: input.budget,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
     });

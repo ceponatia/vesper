@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ImageLabStaging } from "@vesper/image-core";
-import { sceneStagingById, sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
+import { sceneStagingById, sceneStagingList, type SceneStaging } from "@/contracts/images/scene-staging";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
 import {
   LANE_PROBE_NAME,
@@ -165,7 +165,7 @@ function parityWords(entry: SceneStaging): ReturnType<typeof stagedSceneWords> {
   return stagedSceneWords(SUBJECT, entry, { ...SCENE, id: entry.id }, benchFacts(entry));
 }
 
-const EVERY_STAGING = sceneStagings.map((entry) => [entry.id, entry] as const);
+const EVERY_STAGING = sceneStagingList.map((entry) => [entry.id, entry] as const);
 
 describe("staged scene words", () => {
   it.each(EVERY_STAGING)(

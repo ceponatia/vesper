@@ -104,6 +104,7 @@ Read in this order — each layer consumes the one above it.
 | `lab/`                | Advanced Image Lab contracts, recipes, instruction text |
 | `geometry/`           | Crop math                                               |
 | `provider-interface/` | Attempt routing, failure vocabulary, execution policy   |
+| `scene-ir/`           | The app-to-compiler scene protocol, kept extractable    |
 
 Each folder may have an internal `index.ts` for reading/navigation, and those may
 use `export *` — they are reading aids, not publication. The package has one

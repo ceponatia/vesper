@@ -42,12 +42,12 @@ different moment than the positive prompt describes.
 
 ## The world digest
 
-`ImageWorldDigest` is what one render knows, read once. It carries subjects,
-a location, items, typed relations between them, camera bands, the operation
-contract, reference facts, suppressions, and the source revisions everything was
-read at. It is deep-frozen at construction and fingerprinted over its ordered
-contents, so two compiles of the same world are byte-equal and a moved source
-row produces a different fingerprint.
+`ImageWorldDigest` is what one render knows, read once. It carries scene facts,
+subjects, a location, items, typed relations between them, camera bands, the
+operation contract, reference facts, suppressions, and the source revisions
+everything was read at. It is deep-frozen at construction and fingerprinted over
+its ordered contents, so two compiles of the same world are byte-equal and a
+moved source row produces a different fingerprint.
 
 `read` says which moment this is. A chat or scene render uses a
 `committed_cut` token; a standalone item, location or portrait render uses a
@@ -84,12 +84,19 @@ table columns and the definition schemas and fails when one is unclassified.
 
 A concept is what a fact MEANS, in a closed registry no model owns
 (`concepts.ts`). "Auburn hair" is `subject.appearance` — not the sentence and not
-the tag. Each concept declares two things:
+the tag. Each concept declares three things:
 
+- **the channel it belongs to** — operation, scene, subject, camera, relation,
+  item, location or style — which is what kind of world fact it is, and which
+  fixes the order the selector walks and the order a duplicated fact key is
+  resolved in;
 - **the prompt-segment kind its prose belongs to**, so the existing canonical
   order and mandatory floor apply to claims for free;
 - **the conflict keys asserting it protects**, which is the whole safety property
   of the negative channel.
+
+**A channel is not a segment kind, and neither implies the other.** The channel
+answers what kind of fact this is; the segment kind answers where its words land.
 
 A concept's segment kind therefore decides whether its claims can be trimmed. The
 segment vocabulary protects `identity`, `morphology`, `age`, `wardrobe` and
@@ -97,12 +104,72 @@ segment vocabulary protects `identity`, `morphology`, `age`, `wardrobe` and
 into one — an item's authored description filed under `identity` would be a
 paragraph no budget squeeze could ever remove.
 
+## Scene semantics
+
+A chat scene is planned in the application and compiled here, so the two need a
+vocabulary belonging to neither a registry nor a dialect.
+`packages/image-core/src/scene-ir/` is it: the closed staging, capture-mode,
+camera, viewer-part and exposure-region vocabularies, the provider-neutral
+staging semantics, and the carrier for the registry's measured wording.
+
+| Layer                 | Owns                                                                            |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `apps/web`            | the registries, scene planning, evidence gating, measured wording, the lowering |
+| `image-core/scene-ir` | the compiler-input vocabulary: ids, staging semantics, the surface-form carrier |
+| `image-core`          | compilation, the concept program, dialect wording, its own coarsened bands      |
+
+The application does not own an id merely because it owns the registry that
+decides when the id applies: the compiler owns the opcode, the application owns
+the logic that emits it. Drift is a compile error rather than a parity test — the
+staging registry is a keyed record written `satisfies SceneStagingTable<…>`, so
+extending the id union fails the registry until it answers for the new id.
+`scene-ir` is a **package boundary drawn inside a package**: it may depend on
+`@vesper/contracts` and Zod and on nothing else — never a dialect, a provider
+config, any other compiler internal — so a later extraction is a file move plus an
+import rewrite. Its names reach consumers through the package's single `.` entry.
+
+Six concepts describe the SHOT rather than anybody in it: `scene.mood`,
+`scene.capture_mode`, `scene.possession` and `scene.staging`, plus
+`subject.activity` — what a person is DOING, which is not how they are held — and
+`camera.height`. Scene facts ride a flat list on the digest rather than an entity
+slice, because a scene has no ref a relation could point at. There is no "scene"
+prompt segment: mood emits in `atmosphere`, capture mode in `framing`, and
+staging, possession and activity in `pose`. **No scene concept may be filed into
+`identity`, `morphology`, `age`, `wardrobe` or `exposure`** (owner ruling
+2026-09-01), which are unfittable by kind — a scene is the layer that gives way
+under a budget squeeze before a character stops being recognizable. A scene fact
+that must survive says so on the fact, through a `required_visual` disposition.
+
+### Measured wording is a versioned artifact
+
+Wording belongs to a dialect, and staging is the one exception, on evidence: a
+minority of each tuned template's characters carries nearly all of its measured
+delta, and what those characters encode is model behaviour rather than scene
+meaning, so no dialect can re-derive them from typed semantics. A `scene.staging`
+claim therefore carries a **surface form** — the arrangement, a readable revision
+(`on_all_fours@3`), and a SHA-256 digest of the bytes that revision means.
+
+It is not a prose escape hatch, structurally: a caller cannot supply a string,
+because a form is reachable only by closing a table total over the staging
+vocabulary; the text sits behind a module-private symbol with one named read, so
+**every dialect explicitly adopts or replaces the sentence** and neither is a
+silent default (the prose and Qwen families adopt, the tag family replaces); and
+the claim keeps its concept, channel, segment kind, conflict keys and priority,
+so it stays ordered, protected, fitted and traceable.
+
+Any change to the registry's exact string bumps the revision, even when the
+phrasings are believed equivalent; re-running a measurement against a different
+model does not, because that is a new measurement of the same artifact. The
+digest is authored data verified by one app-side test — the only place SHA-256
+runs, since this package is browser-portable and may not import `node:crypto`.
+
 ## Positive claims
 
 `selectImagePositiveClaims` turns a digest into ordered claims, walking the
-operation contract first, then subjects, camera, relations, items, the location,
-and style. Nothing is invented: every claim traces to a fact, a relation, a camera
-band or an operation member the digest already carried.
+operation contract first, then the scene, then subjects, camera, relations,
+items, the location, and style. Nothing is invented: every claim traces to a
+fact, a relation, a camera band or an operation member the digest already
+carried.
 
 Emission order is the prompt-segment vocabulary's canonical order, with mandatory
 claims ahead of optional ones inside each kind. A dialect may reorder within its
@@ -315,6 +382,13 @@ Two sibling keys on the image row's `meta`, beside the existing `render` and
   constraint's transport outcome with the keys it kept and lost and the claim that
   displaced each, the endpoint's hidden prompt sources, hashes of the compiled
   positive and negative text, and the final reference bindings.
+
+A staging claim that reached the prompt also records what became of the registry's
+measured sentence: the arrangement, its revision and digest, whether the dialect
+adopted or replaced the wording, and which dialect decided. That record is what
+stops a reader concluding from a revision alone that the measured words were sent.
+A claim that did not survive fitting carries no such record and appears among the
+dropped ids instead, so the two can never describe one claim differently.
 
 The program fingerprint covers **which exclusions were delivered**, not only
 which were selected — two renders whose packs, linter and world are identical

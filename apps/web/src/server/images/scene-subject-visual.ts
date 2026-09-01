@@ -14,7 +14,6 @@ import {
   type DiagnosticSink,
   type RegionExposure,
   type RealizedBody,
-  type SceneCameraSpec,
   type VisualImageDigest,
   type VisualImageProvenance,
   type VisualStateSuppression,
@@ -25,6 +24,7 @@ import { fnv1aHex } from "@/lib/hash";
 import {
   safeBuildVisualStateShadow,
   visualStateImageDigestOfShadow,
+  type VisualStateCameraBinding,
   type VisualStateShadowInput,
 } from "@/server/visual-state";
 import { identityAnchorSummary, sceneRevealAppearance } from "./prompts-appearance";
@@ -35,6 +35,7 @@ import {
   isNonVisualAttribute,
   realizedBodyForProfile,
 } from "./prompts-format";
+import { sceneLightingBand } from "./scene-lowering";
 import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./prompts-scene-plan";
 import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./visual-fact-clauses";
 
@@ -97,12 +98,23 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  * merged provenance takes its identifying fields from the head record, and a
  * refusal names the focal's failure before a bystander's.
  *
- * ## Transport is untouched (orchestrator scope ruling, Stage 3 WP-C)
+ * ## What this seam owns, and what carries the scene
  *
- * `buildSceneRenderPrompt`, the 1,500-char budgeter, the identity-lock
- * `replaceAll` adaptation, POV/framing/staging wording, LoRA routing and the
- * attempt chains all stay: this seam changes only WHERE the per-character field
- * strings come from. The transport emits `appearance` for textual subjects and
+ * This seam changes only WHERE the per-character field strings come from. The
+ * scene's own decisions — the setting, the light, the mood, the capture mode,
+ * the staged arrangement, what each person is doing — no longer travel as prose
+ * at all: `scene-lowering.ts` turns the resolved plan into typed prompt-program
+ * inputs, and the endpoint's dialect words them (#388). The Stage 3 WP-C ruling
+ * that the prose builder kept POV, framing and staging wording described the
+ * pre-cutover lane and no longer does; `buildSceneRenderPrompt` survives only
+ * for a rung whose model has no active binding.
+ *
+ * The one thing the plan still owes this module is its LIGHT: the composer's
+ * phrase names a band ({@link sceneLightingBand}), and that band enters the
+ * selection so a night scene is not selected as though the room were lit.
+ *
+ * LoRA routing and the attempt chains are untouched. The transport emits
+ * `appearance` for textual subjects and
  * `identityAnchors` for referenced ones — mutually exclusive per subject-mode —
  * so both fields may carry the digest's identity/morphology clauses without a
  * fact ever being stated twice in one prompt. The builder's own `exposure`
@@ -388,8 +400,9 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
   const provenanceRecords: VisualImageProvenance[] = [];
   const suppressions: VisualStateSuppression[] = [];
   const visuals: SceneSubjectVisualSlice[] = [];
+  const viewpoint = sceneViewpoint(plan);
   for (const subject of ordered) {
-    const produced = produceSubjectVisual(plan.camera, subject, sink);
+    const produced = produceSubjectVisual(viewpoint, subject, sink);
     suppressions.push(...produced.suppressions);
     if (!produced.ok) {
       // Refuse, never fall back to a stale prose summary for the rest of the
@@ -490,8 +503,25 @@ type SceneSubjectVisualProduction =
  * reference-count ruling held in code rather than in a comment: `others` has no
  * appearance algorithm of its own to drift.
  */
+/**
+ * The viewpoint every subject in this scene is selected under: the plan's
+ * committed camera, plus the light the plan's own words name.
+ *
+ * Built once per plan rather than per subject — two people in one shot stand in
+ * one room under one lamp, and a per-subject derivation is how two members of
+ * the same cast end up selected at different detail tiers.
+ */
+function sceneViewpoint(plan: SceneRenderPlan): VisualStateCameraBinding {
+  const lighting = sceneLightingBand(plan.lighting);
+  return {
+    cameraId: SCENE_VISUAL_CAMERA_ID,
+    spec: plan.camera,
+    ...(lighting === null ? {} : { lighting }),
+  };
+}
+
 function produceSubjectVisual(
-  camera: SceneCameraSpec,
+  camera: VisualStateCameraBinding,
   subject: SceneCastVisualSubject,
   sink?: DiagnosticSink,
 ): SceneSubjectVisualProduction {
@@ -511,7 +541,7 @@ function produceSubjectVisual(
   const build = safeBuildVisualStateShadow(
     {
       ...shadow,
-      camera: { cameraId: SCENE_VISUAL_CAMERA_ID, spec: camera },
+      camera,
       ...(sink === undefined ? {} : { sink }),
     },
     sink,

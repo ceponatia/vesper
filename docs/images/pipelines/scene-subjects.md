@@ -16,12 +16,16 @@ group in one batched query. A selfie's cast is trimmed to the sender. A member w
 participant row, or a cut naming a different character, degrades to the legacy field production
 **for that member alone**, with a warn rather than a refusal.
 
-After the composer's plan resolves, `applySceneSubjectVisual` binds the plan's **committed
-camera** into the digest's ONE selection pass — never a re-select — and replaces the focal
-spec's preformatted appearance, identity-anchor and reveal fields with digest-sourced clauses,
-through the same segments builder and clause table the avatar lane uses, under the scene
-policy: **age never stated, full-figure frame, intimate skin only where the region reads
-bare**.
+After the composer's plan resolves, `applySceneSubjectVisual` binds the plan's **viewpoint** —
+its committed camera, plus the band the composer's own lighting phrase names — into the
+digest's ONE selection pass, never a re-select, and replaces the focal spec's preformatted
+appearance, identity-anchor and reveal fields with digest-sourced clauses, through the same
+segments builder and clause table the avatar lane uses, under the scene policy: **age never
+stated, full-figure frame, intimate skin only where the region reads bare**. The viewpoint is
+built once per plan: two people in one shot stand in one room under one lamp, and a per-subject
+derivation is how two members of one cast end up selected at different detail tiers. A scene
+that named no light leaves the lane's declared band standing rather than asserting a darkness
+nobody established ([scene-framing.md](scene-framing.md) §The camera).
 
 Two output consequences ride this sourcing:
 
@@ -43,10 +47,13 @@ The transport emits `appearance` for textual subjects and `identityAnchors` for 
 builder's own exposure segment is deliberately not consumed: the transport already states
 coverage once, from the queue's canonical readout.
 
-**Scene transport is otherwise unchanged** by this sourcing: `buildSceneRenderPrompt`, the
-1,500-char budgeter, the identity lock and its adaptation, staging, and the LoRA routing all
-stand. A digest that cannot be built, or a required fact with no resolvable clause, **fails the
-row before provider spend** (`images.scene_render.visual_digest_unavailable` /
+**What this sourcing changes is where the per-character field strings come from, and nothing
+else.** The scene's own decisions — the setting, the light, the mood, the capture mode, the
+staged arrangement, what each person is doing — do not travel as prose at all: the lane lowers
+its resolved plan into typed prompt-program inputs, and the endpoint's dialect words them
+([scene-framing.md](scene-framing.md)). LoRA routing and the attempt chains are untouched. A
+digest that cannot be built, or a required fact with no resolvable clause, **fails the row
+before provider spend** (`images.scene_render.visual_digest_unavailable` /
 `images.scene_render.visual_required_missing`), and the digest's `meta.visualState` provenance
 is written at reserve time so it survives a failed render.
 
@@ -164,8 +171,8 @@ Two leak paths are closed: `visualStateNote` is the deterministic one, and the *
 is the LLM one, since the narrator's own arousal threshold hint says "flushed skin"
 (`contracts/meters/registry.ts`) and the composer reads it in the recent narration and hands it
 back in `pose` or `mood`. `SCENE_COMPOSER_SYSTEM` rules against colour words *and* `scrubBlush`
-(`images/prompts-scene-plan.ts`, applied to `action` in `characterSpec` and to `mood` in
-`resolveScenePlan`) drops any surviving clause whole — the rule alone is not trustworthy, the
+(`images/prompts-scene-plan.ts`, applied to each action field in `characterSpec` and to `mood`
+in `resolveScenePlan`) drops any surviving clause whole — the rule alone is not trustworthy, the
 same belt-and-braces as `scrubPlayerFromAction`. Deliberately **not** scrubbed:
 `skin.undertone: rosy` is an authored identity attribute (the registry is the author's intent,
 not the composer's slip), and the narrator's hint itself stays, because narration isn't
@@ -197,5 +204,13 @@ A deterministic backstop, `scrubPlayerFromAction` (applied in `characterSpec`, s
 and the posture/activity fallback both pass through it), rewrites gaze-type player references
 to the viewer and drops any clause still naming the player. Pronoun references are deliberately
 left to the composer rule, because in a multi-character scene a pronoun may be another
-character. `resolveScenePlan` also strips trailing periods before the pose + activity join, so
-no `…smile.; Leading…` stitches survive.
+character.
+
+**Pose and activity stay two fields all the way down.** How a body is HELD and what it is
+DOING are different beats and they lower to different concepts, so every scrub — the player
+scrub, the blush scrub, and the `bindLimbsToOwner` backstop — runs on each field on its own,
+trailing period stripped first. Losing `bindLimbsToOwner` on either half reopens a recorded
+phantom-limb failure ([scene-framing.md](scene-framing.md) §Whose eyes the shot is through).
+The roster fallback fires only when the composer wrote neither field: a pose with an empty
+activity is an answer, and backfilling state over it would state a stale activity beside a
+fresh pose.

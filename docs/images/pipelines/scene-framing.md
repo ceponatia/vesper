@@ -1,51 +1,73 @@
 # Scene framing
 
-How a chat scene decides where the camera is, what of the viewer may appear, and how an
-intimate act is depicted. The lane itself — cast, composer, attempt ladder — is
+How a chat scene decides where the camera is, whose eyes the shot is through, what of the
+viewer may appear, and how an intimate act is depicted — and how each of those decisions
+reaches the prompt a provider receives. The lane itself — cast, composer, attempt ladder — is
 [scene-images.md](scene-images.md); what each person looks like is
 [scene-subjects.md](scene-subjects.md).
 
-## Player POV
+## Owns / does not own
 
-Every scene image is composed from the player's eyes: first-person POV, and the player is
-never visible.
+- **Owns:** the composer's capture-mode, camera, viewer-body and staging decisions, the
+  evidence gates that admit them, and the **lowering** that turns a resolved plan into the
+  typed scene inputs a prompt program compiles (`server/images/scene-lowering.ts`).
+- **Does not own:** the vocabulary those inputs are written in, or the `scene` channel they
+  travel on ([../prompt-programs.md](../prompt-programs.md) §Scene semantics); the final
+  wording, which is the endpoint dialect's; how each person is described
+  ([scene-subjects.md](scene-subjects.md)).
+
+The lowering runs **per rung**, not per plan: the ladder's rungs disagree about
+`allowIntimate`, and the plan commits its decisions once.
+
+## Whose eyes the shot is through
+
+Every chat scene image is composed from the player's eyes unless the route says otherwise.
+**An absent capture decision means first-person POV; this lane never asserts a third-person
+camera.** The decision belongs to the route rather than the composer — a selfie is chosen
+before the plan is composed, and asking a model to re-derive it would let a confused answer
+un-selfie a render the player asked for — and the shared vocabulary deliberately carries no
+default capture mode, so no lowering can spell `framing ?? default` and invert every chat
+scene into an observing camera.
 
 **The framing names no limb, in any polarity.** "The player is the camera" made image models
 paint hands gripping a camera; its replacement "no hands or held objects in frame" summoned
 disembodied foreground hands whenever the pose text mentioned the character's hands or feet;
 and an enumerated possession line — "every hand, arm, leg and foot belongs to Kristin" — still
-painted a phantom viewer hand when A/B'd live
-(the phantom-limb A/B; its probe script is retired to git history). A limb noun summons a limb even when
-possessively bound.
+painted a phantom viewer hand when A/B'd live (the phantom-limb A/B; its probe script is
+retired to git history). A limb noun summons a limb even when possessively bound.
 
-What ships, clean 3/3, is three parts together:
+What ships, clean 3/3, is a composite of four parts across three layers, no one of which is a
+single POV sentence:
 
-- `SCENE_POV_RULE` — "…the player is never visible in the image";
-- the **person-count assertion** — "Exactly one person is fully in frame: Kristin. Nobody else
-  appears."; and
-- an **abstract possession clause** — "Every visible body part belongs to Kristin."
+- the **capture-mode claim** (`scene.capture_mode`), marked required so no budget squeeze can
+  drop it and leave the other three arguing about a frame nobody described;
+- the **person-count assertion** — "Exactly one person is in frame." — carried by the operation
+  contract's subject count rather than by a scene claim;
+- an **abstract possession clause** (`scene.possession`) — "Every visible body part belongs to
+  Kristin." Its value is a list of entity refs the dialect resolves to names, so there is no
+  place in the fact for a limb noun. It is emitted for first person only: a selfie has the
+  subject's own arm on the lens, and an observing camera has no viewer in the room to bind
+  limbs against;
+- **`bindLimbsToOwner`**, the deterministic backstop ("one hand holding a cup" → "Kristin's
+  hand holding a cup"), which stays upstream in the application and is not a claim. It runs on
+  the pose and the activity separately, because the composer produces them as two fields.
 
-The pose text's own limbs are bound to the character by composer rule and by the deterministic
-`bindLimbsToOwner` backstop ("one hand holding a cup" → "Kristin's hand holding a cup"), so a
-limb appears in the prompt only where the shot wants one, and never without an owner.
+So a limb appears in the prompt only where the shot wants one, and never without an owner.
 
-## Embodied POV — chat lane only
+## The embodied viewer — chat lane only
 
 The player's absolute absence is a useful lie: the fiction constantly puts their hands on
 someone and a strictly disembodied shot cannot show it. The chat lane therefore lets the
-viewer's own body enter the foreground.
-
-`sceneFramingRule({parts, subjects})` returns the disembodied count/possession rule with no
-parts and the embodied variant with them. `SceneComposerContext.embodiedViewer` is the opt-in,
-and **only `buildCharacterSceneContext` sets it**, so the non-embodied variant stays the
-default (`sceneComposerSystem(false) === SCENE_COMPOSER_SYSTEM`, pinned).
+viewer's own body enter the foreground. `SceneComposerContext.embodiedViewer` is the opt-in,
+and **only `buildCharacterSceneContext` sets it**, so the non-embodied composer system stays
+the default (`sceneComposerSystem(false) === SCENE_COMPOSER_SYSTEM`, pinned).
 
 What stops a limb becoming a third person is never a negative — "no man in frame" anchors on
 *man*, as "no camera" once did. It is **possessive binding** ("the viewer's own"), **frame
 geometry** (cropped by the edge, strongly foreshortened — a limb the frame cuts through can't
-be composed as someone standing there), and a **positive person-count assertion** derived from
-the featured list, the realistic-model analogue of booru `solo focus`. The vocabulary is a
-closed registry (`contracts/images/viewer-body.ts`), because the phrasing IS the feature.
+be composed as someone standing there), and the **positive person-count assertion** above, the
+realistic-model analogue of booru `solo focus`. The vocabulary is a closed registry
+(`contracts/images/viewer-body.ts`), because the phrasing IS the feature.
 
 **The anti-eagerness evidence gate.** An LLM given an optional field uses it far more often
 than the fiction warrants, so every proposed part must carry a `viewerBodyEvidence` entry — a
@@ -60,18 +82,23 @@ model its seam picks, since exposure gating is code's job however bold the compo
 **intimate anatomy never touches it**, exactly as `sceneRevealAppearance` never has.
 
 `resolveViewerParts` is the gate: unknown id → route → coverage, with **missing coverage
-counting as covered** (default-shut). It runs **per-prompt** inside `buildSceneRenderPrompt`,
-since the ladder's rungs disagree about `allowIntimate`. Only anatomy is gated — a *clothed*
-torso in frame is a fine POV element. The player's coverage is computed from their persona's
-worn items ([../../character-chat/wardrobe.md](../../character-chat/wardrobe.md) §The player's
-wardrobe), never a manual flag, which is why that wardrobe has no `exposed` toggle at all.
+counting as covered** (default-shut). Only anatomy is gated — a *clothed* torso in frame is a
+fine POV element. The player's coverage is computed from their persona's worn items
+([../../character-chat/wardrobe.md](../../character-chat/wardrobe.md) §The player's wardrobe),
+never a manual flag, which is why that wardrobe has no `exposed` toggle at all.
+
+**A viewer part reaches the compiled prompt only inside a staged sentence.** The scene
+vocabulary carries the part ids so a claim can name them, and a staging template speaks the
+viewer-limb geometry for the parts it names, because a template owns the phrasing for its own
+parts. There is no generic per-part framing carrier: an accepted part that no staged
+arrangement names is a gate input and nothing else.
 
 ## The camera
 
 The composer proposes a **camera**: orientation (`toward_viewer` / `three_quarter` / `profile`
 / `away_glance_back` / `away`), distance (`close` / `medium` / `full_figure` / `wide`), and
 height (`eye_level` / `high` / `low`) — a closed registry in
-`contracts/images/scene-camera.ts`.
+`contracts/images/scene-camera.ts` over the shared vocabulary.
 
 Any non-default orientation or height must carry a **verbatim quote** from the recent
 narration or the player's own words, the same anti-eagerness gate as `viewerBodyEvidence`;
@@ -82,27 +109,63 @@ the player's sentence, never the narrator's. **Away means fully away** (owner ru
 `away_glance_back` needs a quote containing the glance itself (`GLANCE_WORDS`), else it
 degrades to `away`.
 
-`buildSceneRenderPrompt` emits a `Shot: …` line (focal-name-bound, non-default components
-only; the all-default camera emits nothing, keeping evidence-less prompts byte-identical) and
-**adapts the identity lock** when the shot hides the face — an appended sentence ("…face is
-not visible in this shot; preserve the hair…, build and skin tone exactly from the reference —
-do not rotate…"), never an edit of `PORTRAIT_IDENTITY_LOCK` itself, so the Qwen exact-string
-lock rewrite still matches.
+**Only the components that moved are lowered.** `toward_viewer` + `medium` + `eye_level` is
+what "no evidence moved the camera" resolves to, so a shot that resolved it asserts nothing
+about where the lens is; distance and framing fall silent together, because both are read off
+one shot distance and keeping the crop while dropping the reach leaves half a camera standing.
+The suppression lives in the lowering and only there — **the compiler may never synthesize a
+camera from that absence**, because a compiler-side default would assert a front-on waist-up
+frame on every scene the fiction never framed.
+
+Height is the one component nothing upstream can supply: the visibility model weights detail by
+distance, angle and light, and how high the lens sits changes none of that. It enters the
+digest as a `camera.height` fact through the assembly input rather than as a visibility read.
+
+**A scene that names its own light overrides the placeholder.** The visual lane declares
+`lighting: bright`, and a declared read is a known read, so the placeholder was reaching the
+prompt and telling every night scene it was brightly lit. The composer's lighting phrase now
+names a band (dark / dim / bright, checked darkest first — a phrase naming both ends, "a single
+candle against the dark", is the darker one) and that band enters the one selection pass
+through the same door distance, angle and framing already use, while the phrase itself travels
+as a `location.lighting` claim. The camera's own lighting fact is always silent, so a
+three-band restatement can neither agree redundantly nor contradict the scene's words. A phrase
+that classifies as nothing leaves the band unstated rather than inventing one, and `silhouette`
+stays camera-only — backlighting says where the camera stands, not how a place is lit.
+
+**A shot that hides the face carries no lock adaptation.** Face visibility is in the
+vocabulary — the orientation registry answers it and a staged arrangement may override it, a
+shot down onto the crown of a head being the case the override exists for — but nothing lowers
+it, so a compiled prompt states the same identity lock whatever the shot shows of the face. The
+lock itself is the dialect's, emitted from the digest's identity anchor
+([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored render).
 
 ## Intimate staging
 
 Intimate acts are staged from a closed catalog (`contracts/images/scene-staging.ts`, 13
-entries). The composer picks an id plus a quote, and the registry owns every explicit word: a
-template with per-entry camera, viewer parts, `requiresBare` subject regions, and an `intimate`
-flag.
+entries). The composer picks an id plus a quote; the **registry** owns selection, the camera
+override, the viewer parts, `requiresBare`, the `intimate` flag, face visibility, cast and every
+explicit word, while the ids and what each one means in facts are shared with the compiler
+([../prompt-programs.md](../prompt-programs.md) §Scene semantics). The registry is a keyed
+record satisfying the shared table, so adding an id fails the registry until it answers for it,
+and the order a menu or a composer prompt enumerates the catalog in is an explicit list rather
+than object key order.
 
 The gates are in code — lane, registry, **cast** (a `"solo"` entry needs exactly one present
-NPC; every entry is solo today), committed-fact consistency, evidence, and subject coverage —
-then a per-prompt route check and an **all-or-nothing viewer-part gate**: every part the
-template names must survive `resolveViewerParts` on this prompt, or the sentence stays out.
+NPC; every entry is solo today), committed-fact consistency, evidence, and subject coverage.
+The lowering then re-runs the per-render ones on **each rung**:
 
-A surviving staging overwrites the camera and its template leads the pose, and its named parts
-drop out of the generic foreground-geometry line so the same hands are never placed twice.
+- a **selfie** has no viewer standing anywhere for a two-body geometry;
+- an **intimate** arrangement travels only a route that permits it;
+- every viewer part the template names must survive `resolveViewerParts` on that rung, **all or
+  nothing**. This one is the leak-proofing: a template speaks the viewer's anatomy in its own
+  words, so an arrangement emitting while the coverage gate dropped a covered player's part
+  would smuggle past the very rule the phrasing is checked by.
+
+A committed arrangement the lowering does not state is recorded with its reason
+(`images.scene_lowering.staging_unsent`, info). One that survives is a **required** scene
+claim — a scene that silently lost it renders as an ordinary portrait of an intimate beat — and
+its camera replaced the proposed one when the plan resolved, because the geometry is entailed
+by the act.
 
 **Committed scene facts beat inference.** The chat's scene state (`character_chats.scene` —
 facing, postures, proximity, pair contacts, via `contracts/images/scene-committed.ts`) reaches
@@ -110,8 +173,8 @@ the composer as authoritative context lines and clamps its camera
 (`images.scene_render.camera_from_state`); a staging whose geometry contradicts a committed
 fact drops (`staging_contradicted`); absent facts change nothing.
 
-The resolved `{camera, staging}` ids land on `images.meta` for the lightbox and probe grading.
-Selfies skip the shot line, staging, and lock adaptation entirely, and the selfie sanitize
+The resolved `{camera, staging}` ids land on `images.meta` for the lightbox and probe grading. A
+selfie drops both the staged arrangement and the possession clause, and the selfie sanitize
 retry strips `staging` alongside the exposure fields.
 
 ## Staging changes the model

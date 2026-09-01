@@ -16,6 +16,7 @@ import { cameraFromCommittedFacts, type CommittedSceneFacts } from "@/contracts/
 import { sceneStagingById, stagingEvidenceFromContacts, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { ScenePosture } from "@/contracts/affordances/scene/vocabulary";
 import { viewerBodyPartById, type ViewerBodyPartId } from "@/contracts/images/viewer-body";
+import type { SceneCaptureMode } from "@vesper/image-core";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import {
   formatExposure,
@@ -36,7 +37,18 @@ export interface SceneCharacterSpec {
   name: string;
   /** Species phrase (label + any authored lore) for non-human casts; "" for human. */
   species?: string;
-  /** What they are doing in frame. */
+  /**
+   * How the body is HELD — the composer's `pose` field, scrubbed.
+   *
+   * Kept apart from {@link SceneCharacterSpec.activity} because the composer
+   * produces two fields and the two lower to two concepts: a body-language claim
+   * and an activity claim. Joining them before the lowering is what left the
+   * acting half of every scene with no concept of its own.
+   */
+  pose?: string;
+  /** What they are DOING — the composer's `activity` field (an `others` action), scrubbed. */
+  activity?: string;
+  /** {@link SceneCharacterSpec.pose} and {@link SceneCharacterSpec.activity} as one phrase. */
   action: string;
   /** Deterministic occlusion-filtered outfit phrase, forced from wardrobe state. */
   outfitSummary: string;
@@ -69,6 +81,16 @@ export interface SceneRenderPlan {
    * The render layer emits no shot line for the default, keeping today's prompts unchanged.
    */
   camera: SceneCameraSpec;
+  /**
+   * Who is holding the camera.
+   *
+   * **Absence is FIRST PERSON in this lane, never third.** The render option
+   * behind it is only ever `selfie` or unset, and unset has meant the player's
+   * own eyes since long before the prompt-program cutover — so the field is
+   * required rather than optional, and `scene-ir` carries no shared default that
+   * a `?? default` could quietly flip to an observing camera.
+   */
+  captureMode: SceneCaptureMode;
   /** The staged intimate configuration — present only once every gate (evidence, exposure) has passed. */
   staging?: SceneStaging;
   /**
@@ -103,6 +125,7 @@ export function emptySceneRenderPlan(): SceneRenderPlan {
     lighting: "soft natural light",
     mood: "calm",
     camera: { ...DEFAULT_SCENE_CAMERA },
+    captureMode: "first_person_disembodied",
     viewerBody: [],
   };
 }
@@ -260,17 +283,11 @@ export function resolveScenePlan(
   const resolvedViewerBody = staging
     ? [...viewerBody, ...staging.viewerParts.filter((part) => !viewerBody.includes(part))]
     : viewerBody;
-  // Trailing periods stripped before the join — "…teasing smile.; Leading…" read as two
-  // stitched sentences in the render prompt instead of one pose phrase.
-  const focalAction = [spec.pose, spec.activity]
-    .map((part) => part.trim().replace(/\.+$/, ""))
-    .filter(Boolean)
-    .join("; ");
   // The scrub only rewrites (rather than drops) player references when the viewer actually
   // has a body in frame — otherwise "her hand on the viewer's arm" would ask for an arm the
   // shot doesn't contain.
   const embodied = Boolean(context.embodiedViewer) && resolvedViewerBody.length > 0;
-  const focal = focalEntry ? characterSpec(focalEntry, focalAction, embodied) : null;
+  const focal = focalEntry ? characterSpec(focalEntry, spec.pose, spec.activity, embodied) : null;
   const seen = new Set(focalEntry ? [normalizeName(focalEntry.name)] : []);
   const others: SceneCharacterSpec[] = [];
   for (const other of spec.others) {
@@ -287,7 +304,12 @@ export function resolveScenePlan(
     }
     if (seen.has(normalizeName(entry.name))) continue;
     seen.add(normalizeName(entry.name));
-    others.push(characterSpec(entry, other.action, embodied));
+    // A featured bystander gets ONE field from the composer, and it answers "what
+    // are they doing in frame" — so it lowers as an activity. Both halves compile
+    // into the same prompt segment, so nothing about the sentence changes; what
+    // would change is the provenance, if a single action were filed as a posture
+    // the composer never claimed.
+    others.push(characterSpec(entry, "", other.action, embodied));
   }
 
   // MEMBERSHIP IS THE ROSTER'S, NOT THE COMPOSER'S. The caller has already
@@ -302,7 +324,7 @@ export function resolveScenePlan(
   for (const entry of roster) {
     if (seen.has(normalizeName(entry.name))) continue;
     seen.add(normalizeName(entry.name));
-    others.push(characterSpec(entry, "", embodied));
+    others.push(characterSpec(entry, "", "", embodied));
     sink?.push(
       diag("info", "images.scene_composer.present_character_added", "composer omitted a present character — added from the roster", {
         context: { added: entry.name, roster: roster.map((c) => c.name) },
@@ -314,6 +336,10 @@ export function resolveScenePlan(
     focal,
     others,
     camera: resolvedCamera,
+    // Absent means the player's own eyes, not an observing camera: only a selfie
+    // route ever states a mode, and every other chat scene has been first-person
+    // since before the plan carried the field.
+    captureMode: context.captureMode ?? "first_person_disembodied",
     ...(staging ? { staging } : {}),
     viewerBody: resolvedViewerBody,
     ...(context.playerExposure ? { playerExposure: context.playerExposure } : {}),
@@ -681,21 +707,48 @@ function normalizeEvidence(text: string): string {
     .trim();
 }
 
-function characterSpec(entry: ScenePresentCharacter, action: string, embodied = false): SceneCharacterSpec {
+/**
+ * The three scrubs, run over ONE field.
+ *
+ * The player scrub covers the composer's text and the posture/activity fallback
+ * alike (session state can carry player-referencing activity phrases too); the
+ * blush scrub strips skin-colour words out of whatever survived; and the limb
+ * binder then possessively binds any bare "a hand"/"one foot" to this character
+ * so the image model cannot compose it as the viewer's foreground limb.
+ *
+ * Per field rather than over the joined phrase, now that pose and activity lower
+ * to two concepts. `bindLimbsToOwner` is the load-bearing one: it is the fourth
+ * part of the measured phantom-limb composite, and a half that reached a prompt
+ * unbound would reopen a recorded failure.
+ */
+function scrubActionField(text: string, owner: string, embodied: boolean): string {
+  const trimmed = text.trim().replace(/\.+$/, "");
+  if (trimmed.length === 0) return "";
+  return bindLimbsToOwner(scrubBlush(scrubPlayerFromAction(trimmed, { embodied })), owner);
+}
+
+function characterSpec(
+  entry: ScenePresentCharacter,
+  pose: string,
+  activity: string,
+  embodied = false,
+): SceneCharacterSpec {
+  // The roster fallback fires only when the composer wrote NEITHER field, which
+  // is what "the composer said nothing about this person" means — a pose with an
+  // empty activity is an answer, and backfilling state over it would state a
+  // stale activity beside a fresh pose.
+  const composed = pose.trim().length > 0 || activity.trim().length > 0;
+  const scrubbedPose = scrubActionField(composed ? pose : (entry.posture ?? ""), entry.name, embodied);
+  const scrubbedActivity = scrubActionField(composed ? activity : (entry.activity ?? ""), entry.name, embodied);
   return {
     name: entry.name,
     ...(entry.species ? { species: entry.species } : {}),
-    // The player scrub covers the composer's text AND the posture/activity fallback
-    // (session state can carry player-referencing activity phrases too); the blush
-    // scrub strips skin-colour words out of whatever survived, and the limb binder
-    // then possessively binds any bare "a hand"/"one foot" to this character so the
-    // image model can't compose it as the viewer's foreground limb.
-    action: bindLimbsToOwner(
-      scrubBlush(
-        scrubPlayerFromAction(action.trim() || [entry.posture, entry.activity].filter(Boolean).join("; "), { embodied }),
-      ),
-      entry.name,
-    ),
+    pose: scrubbedPose,
+    activity: scrubbedActivity,
+    // The single phrase the retired prose builder's one action sentence reads.
+    // Trailing periods were stripped per field before the join — "…teasing
+    // smile.; Leading…" reads as two stitched sentences rather than one phrase.
+    action: [scrubbedPose, scrubbedActivity].filter(Boolean).join("; "),
     // Forced from occlusion-filtered state regardless of anything the model said; a free-text
     // override (character chat — no equippable wardrobe) wins when present.
     outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),

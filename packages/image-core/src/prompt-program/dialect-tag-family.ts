@@ -1,7 +1,14 @@
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { ImageAngleBand, ImageDistanceBand, ImageFramingBand, ImageLightingBand } from "./camera-bands";
+import type { SceneCaptureMode, SceneStagingId } from "../scene-ir";
+import type {
+  ImageAngleBand,
+  ImageCameraHeightBand,
+  ImageDistanceBand,
+  ImageFramingBand,
+  ImageLightingBand,
+} from "./camera-bands";
 import type { ImageConflictKey, ImageStyleMedium } from "./conflict-keys";
-import { describe, describeChange, label, listWords, preservedMeanings } from "./dialect-qwen-prose";
+import { describe, describeChange, label, listWords, possessionOwners, preservedMeanings } from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
   registerImagePromptDialect,
@@ -15,6 +22,8 @@ import {
   type ImagePromptDialectId,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
+import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
  * THE TAG FAMILY — one comma-tag implementation, registered under the two
@@ -99,6 +108,7 @@ function renderClaim(
   input: ImageDialectPositiveInput,
   state: RenderState,
   spec: TagDialectSpec,
+  surfaces: SceneStagingSurfaceLog,
 ): ImagePromptSegment | null {
   const say = (text: string, priority: number = claim.priority): ImagePromptSegment | null => {
     const phrase = tag(text);
@@ -144,6 +154,33 @@ function renderClaim(
       // lock below is the whole of what a reference means here.
       return null;
 
+    // --- Scene ----------------------------------------------------------------
+    case "scene.mood":
+      return say(`${value} mood`);
+    case "scene.capture_mode": {
+      const mode = imageSceneCaptureMode(claim.value);
+      return mode === null ? null : say(captureModeTag(mode, subject));
+    }
+    case "scene.possession": {
+      // The abstract binding, in tag space. It names NO limb on purpose: an
+      // enumerated version ("every hand, arm, leg and foot belongs to Mira")
+      // measured worse and painted a phantom viewer hand anyway, because a limb
+      // noun summons a limb even when it is possessively bound. `or`, because
+      // each part belongs to exactly one of them. No owners, no tag — a
+      // possession phrase that binds nothing is the shape that was falsified.
+      const owners = possessionOwners(input, claim.value);
+      return owners.length === 0 ? null : say(`every visible body part belongs to ${listWords(owners, "or")}`);
+    }
+    case "scene.staging": {
+      const form = imageSceneStagingForm(claim.value);
+      // REPLACES the registry's wording, and says so. The measured templates are
+      // prose, and prose in a comma-tag payload is the thing this family exists
+      // to avoid — but declining is a decision a render has to record, or a
+      // reader finds `on_all_fours@3` in this endpoint's provenance and credits
+      // the measurements behind it to an image that never contained those words.
+      return form === null ? null : say(stagingTag(surfaces.replace(claim.id, form), subject ?? "the subject"));
+    }
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
       if (spec.referenceIsIdentityAdapter && input.references.length > 0) {
@@ -169,8 +206,13 @@ function renderClaim(
     case "subject.absence":
       return say(of(`${value}, anatomically correct`));
     case "subject.pose":
+    case "subject.activity":
     case "subject.body_language":
     case "subject.current_state":
+      // Activity shares the pose arm: in tag space both are the same
+      // `<subject> <phrase>` shape, and the distinction between being held one
+      // way and doing one thing is upstream in the world rather than in these
+      // words.
       return say(of(value));
     case "subject.expression":
       return say(of(`${value} expression`));
@@ -186,6 +228,8 @@ function renderClaim(
       return say(distanceTag(claim.value as ImageDistanceBand));
     case "camera.angle":
       return say(angleTag(claim.value as ImageAngleBand));
+    case "camera.height":
+      return say(heightTag(claim.value as ImageCameraHeightBand));
     case "camera.motion":
       return value === "still" ? null : say(`motion blur, ${value} movement`);
     case "camera.lighting":
@@ -324,6 +368,96 @@ function angleTag(band: ImageAngleBand): string {
       return "profile view";
     case "away":
       return "from behind, back turned";
+  }
+}
+
+function heightTag(band: ImageCameraHeightBand): string {
+  switch (band) {
+    case "eye_level":
+      return "eye-level shot";
+    case "high":
+      return "high angle, camera above the eye line looking down";
+    case "low":
+      return "low angle, camera below the eye line looking up";
+  }
+}
+
+/**
+ * Who holds the camera, as tags.
+ *
+ * Positive phrasings only. A tag endpoint responds to what a phrase NAMES, and
+ * the scar behind the app's own POV rule is exactly that: "the player is the
+ * camera" had models painting hands gripping one, and "no hands in frame"
+ * summoned foreground hands. So the POV tag states whose eyes the shot is
+ * through and stops, and the selfie tag states the arrangement rather than
+ * denying the alternative.
+ */
+function captureModeTag(mode: SceneCaptureMode, subject: string | null): string {
+  const who = subject ?? "the subject";
+  switch (mode) {
+    case "third_person":
+      return "third-person camera, observed from outside the scene";
+    case "first_person_disembodied":
+      return "first-person pov, the shot seen through the viewer's own eyes, the viewer not visible";
+    case "first_person_embodied":
+      return "first-person pov, the shot seen through the viewer's own eyes, the viewer's own body cropped into frame, their face and head out of frame";
+    case "selfie":
+      return `phone selfie taken by ${who}, camera at arm's length or in a mirror, ${who} looking into the lens`;
+  }
+}
+
+/**
+ * One staged arrangement, in this family's own words.
+ *
+ * **REPLACES the registry's surface form rather than adopting it**, and the
+ * decision is a wording one rather than a doubt about the measurements. Those
+ * templates are long possessive-bound English clauses tuned against prose
+ * endpoints; these are SDXL checkpoints trained on tag corpora, where a paragraph
+ * sits as badly as it does for the identity lock this family already rewrote.
+ *
+ * The phrases are deliberately SHORT, and stay short. What makes the registry's
+ * wording worth preserving is a residue of measured anchors — a named forearm,
+ * the frame's lower corners, a foreshortening clause — that carries nearly all of
+ * its behavioral delta on the endpoints it was measured on. Reproducing those
+ * here would be adopting the wording without the call site that records the
+ * adoption, and provenance would then read `replaced` over bytes that were not.
+ * So this states the geometry and nothing else, and earns anchors of its own only
+ * from a trial on these endpoints.
+ *
+ * Every limb noun is bound to an owner — to the subject or to "the viewer's
+ * own" — because an unowned limb in a two-body prompt is the phantom-limb scar,
+ * and it is no less true in tag space than in prose. Exhaustive over the
+ * arrangement vocabulary: a new staging is a compile error here rather than a
+ * shot these endpoints silently render as an ordinary portrait.
+ */
+function stagingTag(id: SceneStagingId, who: string): string {
+  switch (id) {
+    case "held_from_behind":
+      return `${who} standing, ${who}'s back against the viewer's chest, the viewer's own arms closed around ${who} from behind`;
+    case "held_from_behind_bare":
+      return `${who} standing bare-skinned, ${who}'s back against the viewer's chest, the viewer's own hands on ${who}'s bare breasts`;
+    case "kneeling_before_viewer":
+      return `${who} kneeling below the camera, ${who}'s face tilted up, ${who}'s mouth on the viewer's own genitals`;
+    case "kneeling_before_viewer_guided":
+      return `${who} kneeling with ${who}'s head bowed, ${who}'s mouth on the viewer's own genitals, the viewer's own hand flat on top of ${who}'s head`;
+    case "astride_viewer_facing":
+      return `${who} astride the viewer facing the camera, penetration at ${who}'s bare pelvis, the viewer's own hands on ${who}'s waist`;
+    case "astride_viewer_away":
+      return `${who} astride the viewer facing away, ${who}'s back to the camera, penetration at ${who}'s bare pelvis, the viewer's own hands on ${who}'s hips`;
+    case "bent_over_surface":
+      return `${who} bent forward over a waist-high surface, ${who}'s back to the camera, penetration from behind at ${who}'s bare pelvis, the viewer's own hands on ${who}'s hips`;
+    case "on_all_fours":
+      return `${who} on all fours, ${who}'s back to the camera and ${who}'s bare hips raised toward the viewer, the viewer's own hands on ${who}'s waist`;
+    case "lying_beneath_viewer":
+      return `${who} on ${who}'s back beneath the viewer, ${who}'s face turned up to the camera, penetration at ${who}'s bare pelvis, the viewer's own hands on ${who}'s legs`;
+    case "lying_face_down":
+      return `${who} lying face down, ${who}'s back to the camera and ${who}'s head turned to the side, the viewer's own hands on ${who}'s shoulders`;
+    case "spooned_from_behind":
+      return `${who} lying on ${who}'s side, ${who}'s back curled against the viewer's chest, the viewer's own arm draped over ${who}'s waist`;
+    case "pressed_to_wall_facing":
+      return `${who} standing with ${who}'s back to the wall facing the camera, the viewer's own hands braced on the wall either side of ${who}`;
+    case "pressed_to_wall_away":
+      return `${who} standing facing the wall, ${who}'s back to the camera, the viewer's own hands on ${who}'s shoulders`;
   }
 }
 
@@ -488,9 +622,11 @@ function joinTags(segments: readonly ImagePromptSegment[]): string {
 function compilePositiveFor(spec: TagDialectSpec) {
   return (input: ImageDialectPositiveInput): ImageCompiledPositivePrompt => {
     const state: RenderState = { lockEmitted: false };
+    const surfaces = createSceneStagingSurfaceLog();
     const compiled = compileDialectClaims({
       claims: input.claims,
-      render: (claim) => renderClaim(claim, input, state, spec),
+      render: (claim) => renderClaim(claim, input, state, spec, surfaces),
+      surfaces,
       budget: input.budget,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
     });

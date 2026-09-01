@@ -104,12 +104,11 @@ The prompt asserts coverage state both ways — listed garments **and** bare reg
 with "depict only the clothing described … add no garment that is not listed", so the edit model
 can't re-paint a shed garment back onto the fully-dressed reference avatar.
 
-**The edit prompt is budgeted to 1500 chars** (`EDIT_RENDER_PROMPT_LIMIT`, a self-imposed
-quality bound well inside every model's own limit). Untruncated garment descriptions blow that
-easily, so on **both** edit paths (single and multi) `buildSceneRenderPrompt` progressively
-excerpts the outfit and setting text until it fits, with a word-boundary hard clamp as a final
-net. Identity lock, POV rule, pose, and bare-region phrasing are never dropped. The bare-prompt
-rung is unbudgeted.
+**The prompt budget belongs to the compile, and comes from the model.** Each rung compiles its
+own prompt program, budgeted from the resolved model's declared prompt binding rather than a
+fixed ceiling, and the fitter protects the mandatory floor: a squeeze trims optional detail, and
+a rung that cannot express a required fact refuses before provider spend rather than sending a
+prompt Vesper already knows is incomplete ([../prompt-programs.md](../prompt-programs.md)).
 
 Two or more character references add the **cast clause** — "Render each person exactly once,
 matched to their own reference image; never merge, swap, or duplicate them" — because the count
@@ -141,9 +140,12 @@ An **edit-only model with no reference yields an empty chain** and a visible ref
 to the single-edit rung when fewer than two references are available, or the model only takes
 one.
 
-Each rung gets its **own** prompt (single-edit, multi-edit, and text-to-image are distinct
-builders), so an anchor-less render never carries the identity-lock block. `allowIntimate` rides
-the image refs' `allowForIntimate`; for multi, every featured character ref must clear it.
+Each rung compiles its **own** prompt program — the multi-reference rung composes N faces, the
+single-reference rung edits one, and the bare rung describes everybody from text — so an
+anchor-less render never carries the identity lock. A rung whose program refuses is dropped
+from the chain rather than failing the render; the render fails only when no rung survives.
+`allowIntimate` rides the image refs' `allowForIntimate`; for multi, every featured character
+ref must clear it.
 
 The executor walks the chain with a **reason-keyed retry** over `classifyImageFailure`
 ([README.md](README.md) §Failure classification): a transient failure retries once on the same

@@ -4,6 +4,7 @@ import type { ImageProfileOperation, ImageProfileTask, ImagePromptStrategy } fro
 import { stableJson } from "../render-kernel/stable-json";
 import type {
   ImageAngleBand,
+  ImageCameraHeightBand,
   ImageDistanceBand,
   ImageFramingBand,
   ImageLightingBand,
@@ -333,6 +334,7 @@ export type ImageCameraFact =
   | { readonly component: "framing"; readonly band: ImageFramingBand; readonly source: ImageSourceRef }
   | { readonly component: "distance"; readonly band: ImageDistanceBand; readonly source: ImageSourceRef }
   | { readonly component: "angle"; readonly band: ImageAngleBand; readonly source: ImageSourceRef }
+  | { readonly component: "height"; readonly band: ImageCameraHeightBand; readonly source: ImageSourceRef }
   | { readonly component: "motion"; readonly band: ImageMotionBand; readonly source: ImageSourceRef }
   | { readonly component: "lighting"; readonly band: ImageLightingBand; readonly source: ImageSourceRef };
 
@@ -408,6 +410,16 @@ export interface ImageWorldDigest {
   readonly read: ImageWorldRead;
   /** Deterministic over the ordered facts, relations, camera, operation and revisions. */
   readonly fingerprint: string;
+  /**
+   * Facts about the SHOT rather than about anything in it — the mood, whose eyes
+   * it is through, how two bodies are staged.
+   *
+   * A flat list rather than an entity slice, because a scene is not an entity: it
+   * has no ref for a relation to point at, no label a sentence could call it by,
+   * and no morphology. What it has is a channel, and the ordinary fact ordering,
+   * validation and fingerprinting apply to it exactly as they do to a subject's.
+   */
+  readonly scene: readonly ImageWorldFact[];
   readonly subjects: readonly ImageSubjectDigest[];
   readonly location: ImageLocationDigest | null;
   readonly items: readonly ImageItemDigest[];
@@ -422,6 +434,7 @@ export interface ImageWorldDigest {
 /** Everything a digest needs, before ordering, validation and fingerprinting. */
 export interface ImageWorldDigestInput {
   readonly read: ImageWorldRead;
+  readonly scene?: readonly ImageWorldFact[];
   readonly subjects?: readonly ImageSubjectDigest[];
   readonly location?: ImageLocationDigest | null;
   readonly items?: readonly ImageItemDigest[];
@@ -503,6 +516,11 @@ export function buildImageWorldDigest(input: ImageWorldDigestInput): ImageWorldD
     };
   };
 
+  // Scene facts first, in the channel's own position: they share the one fact-key
+  // namespace with every entity's facts, so whichever list is walked first is the
+  // one that keeps a duplicated key. A scene decision losing to a character fact
+  // it collided with would be the silent loss this digest exists to prevent.
+  const scene = orderFacts((input.scene ?? []).filter((fact) => keepFact(fact, seenFactKeys, issues)));
   const subjects = compact((input.subjects ?? []).map(takeEntity)).sort(byRef);
   const location = input.location ? takeEntity(input.location) : null;
   const items = compact((input.items ?? []).map(takeEntity)).sort(byRef);
@@ -534,6 +552,7 @@ export function buildImageWorldDigest(input: ImageWorldDigestInput): ImageWorldD
     version: 1,
     read: input.read,
     fingerprint: "",
+    scene,
     subjects,
     location,
     items,
@@ -562,6 +581,7 @@ export function imageWorldDigestFingerprint(digest: Omit<ImageWorldDigest, "fing
     stableJson({
       version: digest.version,
       read: { kind: digest.read.kind, token: digest.read.token, atMinutes: digest.read.atMinutes },
+      scene: digest.scene.map(factFingerprintInput),
       subjects: digest.subjects.map(entityFingerprintInput),
       location: digest.location ? entityFingerprintInput(digest.location) : null,
       items: digest.items.map(entityFingerprintInput),
@@ -613,6 +633,13 @@ function entityFingerprintInput(entity: ImageEntityDigest): unknown {
  * make two owners' unrelated facts collide if they ever chose the same hash
  * scheme, and a value alone would miss an owner-side change to a field this
  * projection does not carry.
+ *
+ * A value that hides a member behind a symbol contributes everything but that
+ * member, because `stableJson` walks string keys. The staging surface form is the
+ * case: what reaches the fingerprint is its arrangement, revision and content
+ * digest rather than its measured wording — which is precisely the identity a
+ * re-measurement is keyed to, and a stronger one than the bytes, since a revision
+ * whose text moved is a different digest.
  */
 function factFingerprintInput(fact: ImageWorldFact): unknown {
   return {
@@ -676,6 +703,7 @@ function channelRankOf(fact: ImageWorldFact): number {
 
 const CHANNEL_RANK: readonly ImageConceptChannel[] = [
   "operation",
+  "scene",
   "subject",
   "camera",
   "relation",
@@ -738,6 +766,7 @@ function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
 /** Every fact in the digest, in entity then camera-free order — the selector's input. */
 export function imageWorldDigestFacts(digest: ImageWorldDigest): readonly ImageWorldFact[] {
   return [
+    ...digest.scene,
     ...digest.subjects.flatMap((subject) => subject.facts),
     ...digest.items.flatMap((item) => item.facts),
     ...(digest.location?.facts ?? []),
