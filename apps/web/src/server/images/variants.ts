@@ -3,7 +3,6 @@ import { characterProfileSchema, emptyCharacterProfile, outfitItems } from "@/co
 import {
   IMAGE_TARGET_ASPECT,
   type ImageLoraRenderBinding,
-  type ImagePromptSegment,
   type ImageSourceRevision,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
@@ -22,10 +21,10 @@ import { identityPackRenderReferences, type IdentityPackRenderReferencesResult }
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import {
   buildCharacterPromptProgram,
+  characterPromptTransport,
   variantChangeOperation,
   type CharacterPromptProgramResult,
 } from "./character-prompt-program";
-import { variantShadowMeta } from "./character-shadow";
 import { monogramSvg } from "./monogram";
 import { pairProfileWithNsfwLora } from "./nsfw-lora";
 import { NSFW_TEST_VARIANT_KIND, type VariantKind } from "./prompts-variant";
@@ -124,47 +123,6 @@ function buildVariantDigest(
   return { assembly, refusal: "the variant's visual digest is missing required facts" };
 }
 
-/** The prompt channels one variant render sets on its intent. */
-export interface VariantPromptTransport {
-  readonly prompt: string;
-  /** The semantic segments, on a LEGACY render only. */
-  readonly promptSegments?: readonly ImagePromptSegment[];
-  /** The compiled exclusions, normalized — absent when the program compiled none. */
-  readonly controls?: { readonly negativePrompt: string };
-}
-
-/**
- * The prompt channels a variant render sends, decided in ONE place because they
- * must move together.
- *
- * `resolveIntentPrompt` prefers `promptSegments` over `prompt` whenever the list
- * is non-empty, so a compiled render that still carried the legacy segments
- * would send the legacy prose while its row stored the compiled program — a
- * provider seeing one prompt and an operator reading another, with nothing
- * anywhere reporting a disagreement. Deciding the three channels separately at
- * the call site is exactly how that ships; deciding them here makes the coupling
- * structural.
- *
- * The compiled exclusions ride the normalized control so they reach a provider
- * only through the version's own probed `negative_prompt` binding and are
- * recorded as a dropped control otherwise. Null or empty means this version
- * exposes no field — every Qwen edit endpoint today — and no key is invented.
- */
-export function variantPromptTransport(
-  legacyPrompt: string,
-  segments: readonly ImagePromptSegment[] | undefined,
-  compiled: { readonly prompt: string; readonly negativePrompt: string | null } | null,
-): VariantPromptTransport {
-  if (compiled === null) {
-    return { prompt: legacyPrompt, ...(segments === undefined ? {} : { promptSegments: segments }) };
-  }
-  const negative = compiled.negativePrompt;
-  return {
-    prompt: compiled.prompt,
-    ...(negative === null || negative.length === 0 ? {} : { controls: { negativePrompt: negative } }),
-  };
-}
-
 /** Everything the active-program decision needs, in the order the lane learns it. */
 interface VariantProgramInputs {
   readonly character: { readonly name: string; readonly updatedAt: Date } | undefined;
@@ -184,21 +142,25 @@ interface VariantProgramInputs {
  * The variant lane's ACTIVE prompt program, or null when this render keeps the
  * legacy prompt path.
  *
- * Null is the ordinary answer, not a failure. It covers demo mode, a lane with
- * no resolved model, a render that already refused, a render whose final
- * references are not known — and, through the shared seam's `unbound` result,
- * every variant model with no active binding: Seedream 4.5, Seedream 5 Lite,
- * Wan 2.7 and SDXL PuLID all carry the profile key `variant-standard` and would
- * be captured by a binding keyed on the profile alone. The model slug is what
- * keeps them on the prompt they have always sent.
+ * Null is the ordinary answer for a render that has nothing to compile, not a
+ * failure: demo mode, a lane with no resolved model, a render that already
+ * refused, a render whose final references are not known.
+ *
+ * It no longer covers "this model is not cut over". Every variant profile the
+ * picker offers is bound (#256) — Qwen Edit 2511, Seedream 4.5, Seedream 5
+ * Lite, Wan 2.7, SDXL PuLID, and the LoRA wrapper the bench kind swaps onto —
+ * and each resolves its own model's dialect. They all share the profile key
+ * `variant-standard`, which is exactly why resolution is keyed on the MODEL SLUG
+ * as well: a binding keyed on the profile alone would hand one endpoint's packs
+ * to the other four.
  *
  * ## The bench kind
  *
  * `nsfw_test` pairs the picked profile with a LoRA WRAPPER model, and binding
- * resolution runs on the final resolved profile, so a successful bench route
- * resolves the wrapper's slug — which carries no binding — and stays legacy.
- * That is the correct answer and it stays correct if the wrapper is ever bound
- * on its own terms.
+ * resolution runs on the FINAL resolved profile — so a successful bench route
+ * resolves `qwen/qwen-image-edit-plus-lora`, which now has a binding of its own
+ * (`packs-character-endpoints.ts`) and compiles through the wrapper's
+ * own delta-edit dialect rather than borrowing 2511's row.
  *
  * A FAILED bench route is the case worth guarding explicitly. `resolved` then
  * falls back to the picked 2511 profile, which the ordinary variant binding
@@ -212,7 +174,7 @@ function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProg
   if (!character || resolved === null || assembly === null || inputs.refused) return null;
   // The bench route's own failure — see above.
   if (inputs.nsfwRoute !== null && !inputs.nsfwRoute.ok) return null;
-  // The compiled prompt NUMBERS its references and picks its identity-lock
+  // The compiled prompt describes its references and picks its identity-lock
   // wording by their count, so it cannot be built before the final send list is
   // known. Without a pack the render refuses in `produce` anyway.
   if (packSelection === null) return null;
@@ -221,25 +183,33 @@ function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProg
     lane: "variant",
     task: "variant",
     profile: resolved,
-    // Strict on the lane's own profile key. It narrows to exactly the row the
-    // evidence was gathered for, so a second `variant` profile added on this
-    // model later cannot inherit a cutover nobody measured for it.
+    // Strict on the lane's own profile key. It narrows to exactly the row this
+    // profile was bound for, so a second `variant` profile added on this model
+    // later cannot inherit a cutover nobody wired it into.
     bindingProfileKey: resolved.profile.key,
     resolver: "active",
-    cut: {
-      subjectId: input.characterId,
-      name: character.name,
-      digest: visual.digest,
-      attributes: visual.resolved,
-      exposure: visual.exposure,
-      realizedBody: visual.realizedBody,
-    },
+    // A cast of one: a portrait variant is always one person.
+    cuts: [
+      {
+        subjectId: input.characterId,
+        name: character.name,
+        digest: visual.digest,
+        attributes: visual.resolved,
+        exposure: visual.exposure,
+        realizedBody: visual.realizedBody,
+      },
+    ],
     read: {
       kind: "standalone_character",
       characters: [{ characterId: input.characterId, revision: character.updatedAt.toISOString() }],
       extraRevisions: [...inputs.revisions],
     },
-    references: packSelection.references.map((entry) => entry.reference),
+    // Every reference this lane sends is the subject's own identity pack, so
+    // each one names the one person the variant is of.
+    references: packSelection.references.map((entry) => ({
+      reference: entry.reference,
+      subjectId: input.characterId,
+    })),
     operation: variantChangeOperation(input.kind, input.instruction),
     // An identity-critical lane refuses on a lost anchor rather than rendering a
     // stranger. The segment assembly already refuses on its own missing-required
@@ -263,16 +233,20 @@ function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProg
  * image. Runs on the shared reserve → generate → save-or-fail → log shell
  * (`runImagePipeline`); failures mark the row failed and return its id.
  *
- * The prompt has two possible sources, decided per render by whether an ACTIVE
- * prompt-program binding exists for the FINAL resolved model and this task
- * (`activeVariantProgram`). With none — every variant model but the cut-over
- * one — it is the semantic segments (`variant-segments.ts`), the operation
- * contract plus the standalone visual digest, set on both `prompt` and
- * `intent.promptSegments`. With one, it is the compiled program's positive text
- * and no segments at all (`variantPromptTransport`). `meta.visualState`
- * provenance is attached at reserve time either way, so the visual moment
- * survives a failed render, and a compiled render adds the program's own
- * `meta.promptProgram` and `meta.worldState` beside it.
+ * The prompt is the compiled prompt program (#256): the active binding for the
+ * FINAL resolved model and this task, the character world digest, and the
+ * program's positive text with no segments at all
+ * (`characterPromptTransport`). Every variant profile the picker offers is
+ * bound, so this is the path every real render takes.
+ *
+ * The legacy segment assembly (`variant-segments.ts`) is still built and still
+ * shipped when `activeVariantProgram` returns null — a render with nothing to
+ * compile, never a model that was left behind. #251 deletes it once every
+ * character lane is off it.
+ *
+ * `meta.visualState` provenance is attached at reserve time either way, so the
+ * visual moment survives a failed render, and a compiled render adds the
+ * program's own `meta.promptProgram` and `meta.worldState` beside it.
  *
  * The render seam reports an edit failure as `ok: false` rather than throwing, so this
  * lane's generation failure is a RETURNED failure and pushes its own
@@ -349,32 +323,10 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       : null;
   const packSelection = packIdentity?.ok ? packIdentity : null;
 
-  // The Round 2 shadow (issue #256): the compiled prompt program is built
-  // BESIDE this exact request and its verdict recorded on the row's meta.
-  // Observation only — nothing the render sends reads it, and any shadow
-  // failure degrades to a recorded verdict (character-shadow.ts), never a
-  // failed or altered render.
-  const shadowMeta =
-    character && resolved && digest.assembly
-      ? variantShadowMeta({
-          characterId: input.characterId,
-          characterName: character.name,
-          revision: character.updatedAt.toISOString(),
-          extraRevisions: load.revisions,
-          kind: input.kind,
-          instruction: input.instruction,
-          assembly: digest.assembly,
-          profile: resolved,
-          references: packSelection?.references.map((entry) => entry.reference) ?? [],
-          ...(input.sink === undefined ? {} : { sink: input.sink }),
-        })
-      : {};
-
-  // The Stage 4 cutover (issue #256): when an ACTIVE binding exists for the
-  // FINAL resolved model and this task, the prompt this render sends is the
-  // compiled program rather than the legacy segment assembly. Everything else
-  // about the render — profile, references, target, LoRA decisions, controls —
-  // is unchanged, because the migration is the prompt and nothing else.
+  // The cutover (issue #256): the prompt this render sends is the compiled
+  // program rather than the legacy segment assembly. Everything else about the
+  // render — profile, references, target, LoRA decisions, controls — is
+  // unchanged, because the migration is the prompt and nothing else.
   const program = activeVariantProgram({
     character,
     resolved,
@@ -394,8 +346,8 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   // like the entity lane's, so no provider is called and no generation
   // diagnostic fires: a render that never ran did not fail to generate.
   const programRefusal = program?.kind === "refused" ? program.refusal : null;
-  // The three prompt channels, decided together (`variantPromptTransport`).
-  const transport = variantPromptTransport(legacyPrompt, digest.assembly?.segments, compiled);
+  // The three prompt channels, decided together (`characterPromptTransport`).
+  const transport = characterPromptTransport(legacyPrompt, digest.assembly?.segments, compiled);
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -417,11 +369,6 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         // beside the model decisions: a thrown or refused produce carries no
         // meta, and the provenance must survive a failed render.
         ...(digest.assembly?.digestMeta ?? {}),
-        // The shadow verdict, beside the provenance it was measured over. It
-        // keeps being recorded AFTER cutover: the shadow resolver sees the row
-        // across its promotion to `active`, so candidate→active does not make
-        // the observation disappear at the exact moment it is most worth having.
-        ...shadowMeta,
         // The compiled program's own provenance, exactly as the entity lane
         // records it. Absent on a legacy render, which is how a row says which
         // prompt system built it.

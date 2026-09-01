@@ -58,14 +58,15 @@ other — application code is the bridge that reads simulated state and emits an
 
 ## Reading order
 
-| Doc                                      | What it covers                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| [providers/](providers/README.md)        | Replicate: model rows, probing, task profiles, render intents, transport |
-| [asset-registry.md](asset-registry.md)   | `images` rows and files: row-before-file, serving gate, deletes, sweep   |
-| [pipelines/](pipelines/README.md)        | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art  |
-| [prompt-programs.md](prompt-programs.md) | World digests, positive claims, guarded negatives, endpoint dialects     |
-| [identity-packs.md](identity-packs.md)   | Derived face crops: derivation, lifecycle, surfaces, trial harness       |
-| [vision.md](vision.md)                   | Models reading stored images: portrait→attributes, chat photo reads      |
+| Doc                                          | What it covers                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| [providers/](providers/README.md)            | Replicate: model rows, probing, task profiles, render intents, transport |
+| [asset-registry.md](asset-registry.md)       | `images` rows and files: row-before-file, serving gate, deletes, sweep    |
+| [pipelines/](pipelines/README.md)            | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art   |
+| [prompt-programs.md](prompt-programs.md)     | World digests, positive claims, guarded negatives, endpoint dialects      |
+| [character-prompts.md](character-prompts.md) | The character seam: projection, cast, references, identity anchor         |
+| [identity-packs.md](identity-packs.md)       | Derived face crops: derivation, lifecycle, surfaces, trial harness        |
+| [vision.md](vision.md)                       | Models reading stored images: portrait→attributes, chat photo reads       |
 
 ## Demo mode
 

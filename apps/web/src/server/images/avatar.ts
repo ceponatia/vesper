@@ -6,7 +6,7 @@ import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
 import { outfitItems } from "@/contracts";
-import { IMAGE_TARGET_ASPECT, type ImageSourceRevision } from "@vesper/image-core";
+import { IMAGE_TARGET_ASPECT, type ImageSourceRevision, type ResolvedImageProfile } from "@vesper/image-core";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
@@ -17,7 +17,12 @@ import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { runImagePipeline } from "./assets";
 import { buildAvatarSegments, type AvatarSegmentAssembly, type AvatarSegmentAssemblyInput } from "./avatar-segments";
-import { avatarShadowMeta } from "./character-shadow";
+import {
+  buildCharacterPromptProgram,
+  characterPromptTransport,
+  type CharacterPromptProgramResult,
+} from "./character-prompt-program";
+import { characterPortraitImageOperation } from "@/contracts/images/character-digest";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
 import {
@@ -93,9 +98,87 @@ function avatarDigestRefusal(
 }
 
 /**
- * Avatar pipeline: the standalone visual digest's semantic segments → the
- * picked registry model's text-to-image (3:4), or monogram in demo mode,
- * through the shared reserve/save/fail lifecycle.
+ * The avatar lane's ACTIVE prompt program, or null when this render has nothing
+ * to compile (issue #256).
+ *
+ * Null covers demo mode, a lane with no resolved model, and a character row
+ * that never loaded — renders with no world to compile, not models that were
+ * left behind. Every portrait profile the picker offers is bound: the three
+ * Qwen Image 2512 rows, Seedream 4.5, Seedream 5 Lite, both Stable Diffusion
+ * 3.5 Large rows, Wan 2.7, NSFW FLUX Dev, LikeReality Pony and P-Image.
+ *
+ * Resolution is strict on the profile KEY, because this lane's models bind per
+ * profile: 2512 carries three portrait rows (`portrait-standard`,
+ * `portrait-fast`, `portrait-quality`) whose packs must stay separately
+ * promotable, and SD 3.5 Large carries two. A key with no row resolves null
+ * rather than borrowing a sibling profile's pack pins.
+ *
+ * No references: every portrait profile's reference policy allows no roles, so
+ * a portrait is text-to-image and its identity travels entirely in the digest's
+ * own descriptors rather than in an image.
+ *
+ * The operation states the honest default style — a photographic medium and no
+ * descriptors — and the avatar's `realistic`/`anime` toggle does NOT become
+ * style descriptors here. The toggle already reaches the prompt through the
+ * segment assembly's own camera and policy inputs, and turning it into a second
+ * style claim would state the medium twice, once in a channel the collision
+ * linter cannot reconcile with the pack's rendering intent.
+ */
+function activeAvatarProgram(inputs: {
+  readonly characterId: string;
+  readonly characterName: string;
+  readonly revision: string;
+  readonly extraRevisions: readonly ImageSourceRevision[];
+  readonly assembly: AvatarSegmentAssembly | null;
+  readonly profile: ResolvedImageProfile | null;
+  readonly sink?: DiagnosticSink;
+}): CharacterPromptProgramResult | null {
+  const { assembly, profile } = inputs;
+  if (assembly === null || profile === null) return null;
+  const visual = assembly.visual;
+  return buildCharacterPromptProgram({
+    lane: "avatar",
+    task: "portrait",
+    profile,
+    bindingProfileKey: profile.profile.key,
+    resolver: "active",
+    cuts: [
+      {
+        subjectId: inputs.characterId,
+        name: inputs.characterName,
+        digest: visual.digest,
+        attributes: visual.resolved,
+        exposure: visual.exposure,
+        realizedBody: visual.realizedBody,
+      },
+    ],
+    read: {
+      kind: "standalone_character",
+      characters: [{ characterId: inputs.characterId, revision: inputs.revision }],
+      extraRevisions: [...inputs.extraRevisions],
+    },
+    references: [],
+    operation: () => characterPortraitImageOperation(),
+    // A portrait of a specific character with a lost identity or morphology
+    // anchor is a picture of somebody else. The segment assembly already
+    // refuses on its own missing-required set (`avatarDigestRefusal`); this is
+    // the join-level check the adapter performs, and it fails the row before
+    // provider spend in exactly the same place.
+    refuseOnMissingRequired: true,
+    ...(inputs.sink === undefined ? {} : { sink: inputs.sink }),
+  });
+}
+
+/**
+ * Avatar pipeline: the standalone visual digest compiled through the picked
+ * profile's prompt program → that model's text-to-image (3:4), or monogram in
+ * demo mode, through the shared reserve/save/fail lifecycle.
+ *
+ * The prompt is the compiled program (#256, `activeAvatarProgram`); the legacy
+ * segment assembly is still built — it owns the digest refusal, the
+ * `meta.visualState` provenance and the realized cut the program compiles from
+ * — and its prose ships only on a render that compiled no program at all. #251
+ * deletes that half.
  *
  * The profile is resolved BEFORE the pipeline reserves a row so the row's meta
  * can record which model produced it. A pick that is no longer offered degrades
@@ -143,15 +226,16 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       )
     : null;
   const digestRefusal = character ? avatarDigestRefusal(assembly, input.characterId, input.sink) : null;
-  const prompt = assembly?.prompt ?? "";
+  const legacyPrompt = assembly?.prompt ?? "";
 
-  // The Round 2 shadow (issue #256): the compiled prompt program is built
-  // BESIDE this exact request and its verdict recorded on the row's meta.
-  // Observation only — nothing the render sends reads it, and any shadow
-  // failure degrades to a recorded verdict (character-shadow.ts).
-  const shadowMeta =
-    character && resolved && assembly
-      ? avatarShadowMeta({
+  // The cutover (issue #256): the prompt this render sends is the compiled
+  // prompt program. Everything else about the render — profile, target,
+  // controls — is unchanged, because the migration is the prompt and nothing
+  // else. A render that already refused compiles nothing: a cut that could not
+  // be assembled never had a program to build.
+  const program =
+    character && digestRefusal === null
+      ? activeAvatarProgram({
           characterId: input.characterId,
           characterName: character.name,
           revision: character.updatedAt.toISOString(),
@@ -160,7 +244,20 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
           profile: resolved,
           ...(input.sink === undefined ? {} : { sink: input.sink }),
         })
-      : {};
+      : null;
+  const compiled = program?.kind === "compiled" ? program : null;
+  // A refusal is NOT a fallback to the legacy prose. A binding resolved and then
+  // could not compile — a missing pack, an unregistered dialect, a lost required
+  // anchor — is a configuration or data fault on a lane that IS bound, and
+  // rendering something reasonable instead would hide it behind an
+  // acceptable-looking portrait. It fails the row through `failedPrecondition`,
+  // so no provider is called and no generation diagnostic fires: a render that
+  // never ran did not fail to generate.
+  const programRefusal = program?.kind === "refused" ? program.refusal : null;
+  // Prompt, segments and any compiled negative in ONE decision — a compiled
+  // render must not still carry the legacy segments, which `resolveIntentPrompt`
+  // would prefer over the compiled string.
+  const transport = characterPromptTransport(legacyPrompt, assembly?.segments, compiled);
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -168,24 +265,28 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       kind: "avatar",
       entityKind: "character",
       entityId: input.characterId,
-      prompt,
+      prompt: transport.prompt,
       meta: {
         style,
         model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
         demo,
         ...(assembly?.digestMeta ?? {}),
-        // The shadow verdict, beside the provenance it was measured over.
-        ...shadowMeta,
+        // The compiled program's own provenance, exactly as the entity lane
+        // records it. Absent on a render that compiled none, which is how a row
+        // says which prompt system built it.
+        ...(compiled?.meta ?? {}),
       },
     },
+    // The digest refusal is checked FIRST because it is the older and more
+    // specific failure, and a program refusal cannot even arise beside one — the
+    // program is not built for a render the digest already doomed.
     failedPrecondition: character
       ? (digestRefusal ??
+        programRefusal ??
         (demo || model ? null : "no image model is registered for portraits"))
       : `character ${input.characterId} not found`,
     // Text-to-image at Vesper's 3:4, with no references — the simplest intent
-    // there is. The semantic segments are authoritative; `prompt` is the same
-    // segments compiled, stored on the row and carried as the intent's string
-    // form. A failure still THROWS (this lane's ruled failure shape: the
+    // there is. A failure still THROWS (this lane's ruled failure shape: the
     // shell's warn diagnostic plus the error-carrying event line), which is why
     // render provenance is recorded only on success — a thrown produce has no
     // meta channel. The digest provenance already landed at reserve time.
@@ -194,8 +295,10 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       const result = await renderImageIntent(
         {
           profile: resolved,
-          prompt,
-          ...(assembly ? { promptSegments: assembly.segments } : {}),
+          // Prompt, segments and the normalized negative in one decision. On a
+          // compiled render the segments are absent, or they would outrank the
+          // program and ship the prose it replaced.
+          ...transport,
           references: [],
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
         },

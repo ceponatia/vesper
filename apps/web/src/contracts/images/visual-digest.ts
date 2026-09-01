@@ -818,3 +818,163 @@ export function parseVisualImageProvenance(
 ): VisualImageProvenance | null {
   return parseOrNull(visualImageProvenanceSchema, raw, sink, path);
 }
+
+// ---------------------------------------------------------------------------
+// The cast merge
+// ---------------------------------------------------------------------------
+
+/** A cast merge that could not produce one honest digest, and why. */
+export interface VisualImageCastMergeRefusal {
+  readonly code: string;
+  readonly detail: string;
+}
+
+export type VisualImageCastMerge =
+  | { readonly ok: true; readonly digest: VisualImageDigest }
+  | { readonly ok: false; readonly refusal: VisualImageCastMergeRefusal };
+
+/** Two cuts in the merge name different committed moments — not one scene. */
+export const VISUAL_DIGEST_CAST_CUT_MISMATCH = "visual_state.digest.cast_cut_mismatch";
+
+/** Two cuts were selected under different cameras — the shot is not one shot. */
+export const VISUAL_DIGEST_CAST_CAMERA_MISMATCH = "visual_state.digest.cast_camera_mismatch";
+
+/** The merge was asked for a cast of nobody. */
+export const VISUAL_DIGEST_CAST_EMPTY = "visual_state.digest.cast_empty";
+
+/** Two cuts in the merge claim the same subject. */
+export const VISUAL_DIGEST_CAST_DUPLICATE_SUBJECT = "visual_state.digest.cast_duplicate_subject";
+
+/**
+ * Fold one cut PER PERSON into the single multi-subject digest a scene's world
+ * digest is assembled from (#256).
+ *
+ * The scene lane realizes each cast member from their OWN committed cut — one
+ * person, one snapshot, one selection — because that is what visual state
+ * commits and what the field production consumes. The prompt program's assembly
+ * takes one digest carrying N subjects, so somewhere the N have to become one.
+ * Here, once, rather than in the seam: this is a statement about what a digest
+ * IS, and the seam should not be in the business of inventing digests.
+ *
+ * ## What it refuses
+ *
+ * Three preconditions, each of which would otherwise produce a digest that
+ * quietly describes a render nobody asked for:
+ *
+ * - **One committed moment.** The scene queue mints ONE cut id for the whole
+ *   cast, so two different ids mean two different scenes' visual truth, and
+ *   folding them would let one moment's committed state reach another moment's
+ *   render.
+ * - **One camera.** The cast seam binds `plan.camera` into every selection pass,
+ *   so agreement is the normal case — but the camera facts are what the compiled
+ *   prompt says about framing, distance, angle and light, and merging cuts
+ *   selected under two cameras would pick one of two contradictory shots with
+ *   nothing recording that the other existed.
+ * - **One entry per person.** A duplicated subject would give the cast an extra
+ *   body and let a later fold silently keep whichever copy sorted first.
+ *
+ * SCOPE is deliberately NOT checked, and the reason is worth stating: a chat
+ * scopes a memory group PER PARTICIPANT, so two people in one render never share
+ * one and equality here would refuse every ensemble scene in the product. The
+ * merged digest carries the focal's scope, which travels nowhere — a committed
+ * read names its cut, not its scope — and each member's own scope is already
+ * recorded in the per-member `meta.visualState` provenance the lane writes
+ * beside this.
+ *
+ * ## What it keeps
+ *
+ * Every fact, every subject slice and every suppression, in cast order, with no
+ * re-ranking and nothing dropped: the per-cut selection already applied the
+ * camera, the policy and the budget, and re-deciding here would make the merged
+ * digest disagree with the provenance each cut recorded. The prompt budget is
+ * applied later, by the dialect compile, which is the layer that knows the
+ * endpoint's ceiling.
+ *
+ * `atMinutes` is the LATEST of the cuts, not the first: it is the moment the
+ * render depicts, and a cast assembled from cuts committed seconds apart is at
+ * the later one.
+ *
+ * Each of the three fingerprints keeps its OWN meaning. `snapshotFingerprint`
+ * ("is this the same visual moment?") and `selectionFingerprint` ("is this the
+ * same composition?") are deterministic folds of the members' own — the merge
+ * never sees the snapshot features or the selection candidates those were taken
+ * over, and recomputing either from the merged FACT lists would silently
+ * redefine it as a third thing. Folding is exact instead: two casts fold alike
+ * exactly when every member's cut was the same. `cameraFingerprint` is the
+ * head's, which the check above proved is every member's.
+ *
+ * `cutId` is the cast's shared committed cut, which the checks above proved is
+ * every member's — so the merged digest names the same moment its parts do.
+ */
+export function mergeVisualImageCastDigests(
+  digests: readonly VisualImageDigest[],
+): VisualImageCastMerge {
+  const head = digests[0];
+  if (head === undefined) {
+    return { ok: false, refusal: { code: VISUAL_DIGEST_CAST_EMPTY, detail: "no cut to merge" } };
+  }
+  // A cast of one is the identity, deliberately: the single-subject scene path
+  // must compile the byte-identical digest it compiled before this function
+  // existed, so a merge cannot become a second answer to "what is one cut".
+  if (digests.length === 1) return { ok: true, digest: head };
+
+  const seen = new Set<string>();
+  for (const digest of digests) {
+    if (digest.cutId !== head.cutId) {
+      return {
+        ok: false,
+        refusal: {
+          code: VISUAL_DIGEST_CAST_CUT_MISMATCH,
+          detail: `cut ${digest.cutId} is not the cast's committed cut ${head.cutId}`,
+        },
+      };
+    }
+    if (digest.cameraFingerprint !== head.cameraFingerprint) {
+      return {
+        ok: false,
+        refusal: {
+          code: VISUAL_DIGEST_CAST_CAMERA_MISMATCH,
+          detail: `cut ${digest.cutId} was selected under a different camera`,
+        },
+      };
+    }
+    for (const subject of digest.subjects) {
+      if (seen.has(subject.subjectId)) {
+        return {
+          ok: false,
+          refusal: {
+            code: VISUAL_DIGEST_CAST_DUPLICATE_SUBJECT,
+            detail: `subject ${subject.subjectId} appears in two cuts`,
+          },
+        };
+      }
+      seen.add(subject.subjectId);
+    }
+  }
+
+  const subjects = digests.flatMap((digest) => digest.subjects);
+  const mandatoryFacts = digests.flatMap((digest) => digest.mandatoryFacts);
+  const optionalFacts = digests.flatMap((digest) => digest.optionalFacts);
+  return {
+    ok: true,
+    digest: {
+      version: 1,
+      scope: head.scope,
+      cutId: head.cutId,
+      atMinutes: Math.max(...digests.map((digest) => digest.atMinutes)),
+      snapshotVersion: 1,
+      snapshotFingerprint: visualStateFingerprint(digests.map((digest) => digest.snapshotFingerprint)),
+      selectionFingerprint: visualStateFingerprint(digests.map((digest) => digest.selectionFingerprint)),
+      // Identical across every member by the check above, so the head's are the
+      // cast's: the shot is one shot.
+      cameraFingerprint: head.cameraFingerprint,
+      subjects,
+      subjectCount: subjects.length,
+      mandatoryFacts,
+      optionalFacts,
+      intendedMorphology: digests.flatMap((digest) => digest.intendedMorphology),
+      cameraFacts: head.cameraFacts,
+      suppressions: digests.flatMap((digest) => digest.suppressions),
+    },
+  };
+}

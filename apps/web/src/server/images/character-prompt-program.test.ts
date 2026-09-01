@@ -22,45 +22,49 @@ import { LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID, laneProbeVariantSegments } from
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 import {
   buildCharacterPromptProgram,
+  characterPromptTransport,
   isCharacterPromptCompiled,
   variantChangeOperation,
   IMAGE_CHARACTER_PROMPT_PACK_MISSING,
+  IMAGE_CHARACTER_PROMPT_REFERENCES_RENUMBERED,
   type CharacterPromptProgram,
   type CharacterPromptProgramInput,
+  type CharacterPromptReference,
   type CharacterPromptProgramResult,
 } from "./character-prompt-program";
 import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./packs-qwen-2511";
-import { variantPromptTransport } from "./variants";
 
 /**
  * THE PRODUCTION HALF of the character prompt-program seam
  * (`character-prompt-program.ts`, issue #256) and the variant lane's prompt
  * transport (`variants.ts`).
  *
- * The extraction itself is behavior-preserving and `character-shadow.test.ts`
- * already proves it end to end, so nothing here re-tests the shadow, the
- * compile, the packs or the prompt's wording. What is genuinely NEW is that
- * production now asks the same seam a question the shadow never asks — "is this
- * lane cut over?" — and acts on three different answers. These are the defects
- * that answer can carry, none of which any other gate sees:
+ * Nothing here re-tests the compile, the packs or the prompt's wording — those
+ * have their own owners. What this file owns is the question production asks the
+ * seam and cannot ask anywhere else: WHICH row this render resolves, and what
+ * the three possible answers do. These are the defects that question can carry,
+ * none of which any other gate sees:
  *
- * - **`unbound` degraded into `refused`.** Five seeded profiles (Seedream 4.5,
- *   Seedream 5 Lite, Wan 2.7, SDXL PuLID, Qwen 2511) carry the profile key
- *   `variant-standard`, and the 2511 binding is still a `candidate`. A seam that
- *   treated a null binding as a fault would fail every variant render in the
- *   product. `packs-character.test.ts` owns the resolver-level half of this
- *   (candidate rows invisible to `activeImagePromptBinding`); only the seam's
- *   own three-way answer is pinned here.
- * - **A binding key that loses a dimension.** Keyed on the profile alone it
- *   captures all five models at once; keyed without the profile key it lets a
- *   second `variant` profile inherit a cutover nobody measured; and the
- *   `nsfw_test` bench route swaps the MODEL while keeping the key, so a slugless
- *   key hands the bench render the ordinary 2511 program.
+ * - **A binding key that loses a dimension.** Five seeded profiles (Qwen Edit
+ *   2511, Seedream 4.5, Seedream 5 Lite, Wan 2.7, SDXL PuLID) carry the profile
+ *   key `variant-standard`, and since the #256 cutover every one of them is
+ *   bound — so a key without the model slug now hands all five the 2511 program:
+ *   the wrong dialect, the wrong packs, and a Qwen-numbered identity lock on
+ *   endpoints that number nothing. A key without the PROFILE key lets a second
+ *   `variant` profile inherit a cutover nobody wired it into. And the `nsfw_test`
+ *   bench route swaps the MODEL while keeping the key, onto a wrapper whose
+ *   registry slug carries a `:version` pin — so resolution that failed to strip
+ *   it would leave that route, and the three version-pinned community
+ *   checkpoints, silently on their legacy prompts.
+ * - **`unbound` degraded into `refused`.** A refusal FAILS the render; `unbound`
+ *   leaves it on the prompt path it already had. The distinction still carries a
+ *   fully-bound catalog: a profile added later, an operator-added model.
  * - **Prompt numbering taken from the caller's list.** The seam plans the
  *   references itself; a program numbered before planning says "Image 2" for the
  *   image the payload sends first, and hands the dialect the wrong reference
- *   count to pick its identity lock from. This was live in the shadow before the
- *   extraction.
+ *   count to pick its identity lock from. When planning genuinely renumbers, a
+ *   numbering dialect REFUSES rather than shipping a prompt that names the wrong
+ *   slot (until #250 moves numbering downstream).
  * - **A compiled render that still carries the legacy segments.**
  *   `resolveIntentPrompt` prefers `promptSegments` over `prompt` whenever the
  *   list is non-empty, so such a render sends the legacy prose while its row
@@ -119,18 +123,25 @@ function programProfile(over: { slug: string; key?: string; policy?: unknown }):
   return { model, profile };
 }
 
-function reference(role: "identity" | "location"): ImageRenderReference {
-  return {
+/**
+ * One reference as the seam takes it: the transport shape, plus WHO an identity
+ * image shows. The subject is what lets an ensemble render bind each face to its
+ * own person, so a fixture that omitted it would exercise a different seam.
+ */
+function reference(role: "identity" | "location"): CharacterPromptReference {
+  const rendered: ImageRenderReference = {
     role,
     buffer: Buffer.from(`${role}-bytes`),
     name: role === "identity" ? LANE_PROBE_NAME : "the study",
   };
+  return { reference: rendered, ...(role === "identity" ? { subjectId: LANE_PROBE_SUBJECT_ID } : {}) };
 }
 
 /**
- * The variant lane's own call, over the probe fixture — `resolver: "shadow"` by
- * default so the seeded `candidate` row resolves and a narrowing case's
- * `unbound` means the KEY missed, not that the lane is simply not cut over.
+ * The variant lane's own call, over the probe fixture. `resolver: "shadow"` by
+ * default: it is the widest status set, so a case that answers `unbound` under
+ * it can only mean the KEY missed. Cases about production's own answer pass
+ * `resolver: "active"` explicitly.
  */
 function programInput(over: Partial<CharacterPromptProgramInput> = {}): CharacterPromptProgramInput {
   const visual = VARIANT_ASSEMBLY.visual;
@@ -140,14 +151,16 @@ function programInput(over: Partial<CharacterPromptProgramInput> = {}): Characte
     profile: programProfile({ slug: QWEN_2511_SLUG }),
     bindingProfileKey: VARIANT_KEY,
     resolver: "shadow",
-    cut: {
-      subjectId: LANE_PROBE_SUBJECT_ID,
-      name: LANE_PROBE_NAME,
-      digest: visual.digest,
-      attributes: visual.resolved,
-      exposure: visual.exposure,
-      realizedBody: visual.realizedBody,
-    },
+    cuts: [
+      {
+        subjectId: LANE_PROBE_SUBJECT_ID,
+        name: LANE_PROBE_NAME,
+        digest: visual.digest,
+        attributes: visual.resolved,
+        exposure: visual.exposure,
+        realizedBody: visual.realizedBody,
+      },
+    ],
     read: {
       kind: "standalone_character",
       characters: [{ characterId: LANE_PROBE_SUBJECT_ID, revision: REVISION }],
@@ -206,45 +219,53 @@ beforeAll(() => {
 
 describe("binding resolution through the seam", () => {
   /**
-   * The staged-rollout contract at the SEAM: the shadow compiles the seeded
-   * `candidate` row, production sees nothing, and production's nothing is
-   * `unbound` — never `refused`. Kills the seam that reports a missing binding
-   * as a fault, which would fail every Seedream/Wan/PuLID variant render, and
-   * the seam that lets production resolve a row whose trial has not finished.
-   * Promoting `binding-qwen-2511-variant-v1` to `active` must update this pin.
+   * The binding key is (model slug, task, profile key), and every dimension
+   * carries a real render. Since the #256 cutover every variant profile the
+   * picker offers is bound, so the model dimension is testable POSITIVELY: five
+   * profiles share the key `variant-standard`, and each must resolve its own
+   * endpoint's row. A key that lost the slug would hand all five the 2511
+   * program — the wrong dialect, the wrong packs, and a Qwen-numbered identity
+   * lock on endpoints that number nothing.
    */
-  it("compiles a candidate row for the shadow and answers production unbound, not refused", () => {
-    expect(compiled(buildCharacterPromptProgram(programInput())).binding.id).toBe(QWEN_2511_VARIANT_BINDING);
-    expect(buildCharacterPromptProgram(programInput({ resolver: "active" }))).toEqual({
-      kind: "unbound",
-      modelSlug: QWEN_2511_SLUG,
-      task: "variant",
-      profileKey: VARIANT_KEY,
-    });
+  it.each([
+    { name: "the default editor", slug: QWEN_2511_SLUG, binding: QWEN_2511_VARIANT_BINDING },
+    {
+      name: "another variant model on the same profile key",
+      slug: "bytedance/seedream-4.5",
+      binding: "binding-seedream-45-variant-variant-standard-instruction_edit-v1",
+    },
+    {
+      // The `nsfw_test` bench route swaps the MODEL and keeps the profile key,
+      // and the wrapper's registry row carries a `:version` pin — resolution
+      // strips it, because a binding names an ENDPOINT and pinning a provider
+      // version is `versionId`'s separate job. Without the strip this endpoint
+      // and the three version-pinned community checkpoints would all answer
+      // `unbound` and silently keep their legacy prompts.
+      name: "the bench route's version-pinned LoRA wrapper",
+      slug: `${INTIMATE_SCENE_LORA_WRAPPER_SLUG}:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`,
+      binding: "binding-qwen-edit-plus-lora-variant-variant-standard-instruction_edit-v1",
+    },
+  ])("resolves $name to its own endpoint's row", ({ slug, binding }) => {
+    const input = programInput({ profile: programProfile({ slug }), resolver: "active" });
+    expect(compiled(buildCharacterPromptProgram(input)).binding.id).toBe(binding);
   });
 
   /**
-   * The binding key is (model slug, task, profile key), and every dimension
-   * carries a real render. Read through the SHADOW resolver deliberately: the
-   * seeded row is visible there, so `unbound` can only mean the key missed —
-   * under the active resolver every row below would answer `unbound` today
-   * whether or not the key still had all three dimensions.
+   * `unbound` is a THIRD answer, never a refusal — and a refusal is what would
+   * fail the render rather than leaving it on the prompt path it already had.
+   * It stays reachable now that the catalog is fully bound: a second `variant`
+   * profile added on a bound model later must not inherit a cutover nobody wired
+   * it into, and an operator-added model has no dialect at all.
    */
   it.each([
-    // Four more seeded profiles carry `variant-standard`; a key without the slug
-    // would capture all of them the moment 2511 is promoted.
-    { name: "another variant model on the same profile key", slug: "bytedance/seedream-4.5", key: VARIANT_KEY },
-    // The `nsfw_test` bench route swaps the MODEL and keeps the profile key.
-    {
-      name: "the bench route's version-pinned LoRA wrapper",
-      slug: `${INTIMATE_SCENE_LORA_WRAPPER_SLUG}:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`,
-      key: VARIANT_KEY,
-    },
-    // A second `variant` profile added on the bound model later must not inherit
-    // a cutover measured for another profile.
     { name: "a profile key no row carries on the bound model", slug: QWEN_2511_SLUG, key: "variant-experimental" },
-  ])("resolves unbound for $name", ({ slug, key }) => {
-    const input = programInput({ profile: programProfile({ slug, key }), bindingProfileKey: key });
+    { name: "a model with no binding at all", slug: "test-only/character-prompt-seam-absent", key: VARIANT_KEY },
+  ])("resolves unbound, not refused, for $name", ({ slug, key }) => {
+    const input = programInput({
+      profile: programProfile({ slug, key }),
+      bindingProfileKey: key,
+      resolver: "active",
+    });
     expect(buildCharacterPromptProgram(input)).toEqual({
       kind: "unbound",
       modelSlug: slug,
@@ -297,67 +318,110 @@ describe("compiling a bound lane", () => {
    */
   it("refuses a lost mandatory anchor for production and compiles through it for the shadow", () => {
     const visual = VARIANT_ASSEMBLY.visual;
-    const cut = {
-      ...programInput().cut,
-      digest: {
-        ...visual.digest,
-        subjects: visual.digest.subjects.map((subject) => ({
-          ...subject,
-          missingMandatory: ["lost.identity.anchor"],
-        })),
+    const [intact] = programInput().cuts;
+    if (intact === undefined) throw new Error("the probe fixture compiles no cut");
+    const cuts = [
+      {
+        ...intact,
+        digest: {
+          ...visual.digest,
+          subjects: visual.digest.subjects.map((subject) => ({
+            ...subject,
+            missingMandatory: ["lost.identity.anchor"],
+          })),
+        },
       },
-    };
+    ];
     const sink = new DiagnosticCollector();
-    const tolerant = compiled(buildCharacterPromptProgram(programInput({ cut, sink })));
+    const tolerant = compiled(buildCharacterPromptProgram(programInput({ cuts, sink })));
     expect(tolerant.missingRequired).toContain("lost.identity.anchor");
     expectDiagnostic(sink, "image_prompt_program.missing_required_fact");
 
-    const strict = buildCharacterPromptProgram(programInput({ cut, refuseOnMissingRequired: true }));
+    const strict = buildCharacterPromptProgram(programInput({ cuts, refuseOnMissingRequired: true }));
     // The compile's own refusal code (image-core `compile-program.ts`).
     expect(strict).toMatchObject({ kind: "refused", code: "image_prompt_program.missing_required_fact" });
   });
 
   /**
    * The prompt describes the PLANNED payload, never the caller's list. The seam
-   * runs `planIntentReferences` itself and compiles the dialect's numbered slots
-   * against its output, so a policy that reranks the roles renumbers the
-   * assignments and a policy that disallows one shortens the numbered list.
+   * runs `planIntentReferences` itself and compiles the dialect's slots against
+   * its output, so a policy that disallows a role shortens the numbered list and
+   * nothing in the prompt names an image the payload does not carry.
    *
    * Falsified against the pre-extraction shadow, which numbered from the
-   * caller's array: with the location image handed in first it wrote
-   * "Image 1 shows the place" for the slot the payload fills with the person.
-   * The dialect's own single- versus multi-reference identity lock reads
-   * `input.references.length` off the SAME list, so proving the planned list is
-   * what reaches the dialect is what makes the count right; the lock's wording
-   * rule is `dialect-qwen-2511.ts`'s to own.
+   * caller's array. The dialect's own single- versus multi-reference identity
+   * lock reads `input.references.length` off the SAME list, so proving the
+   * planned list is what reaches the dialect is what makes the count right; the
+   * lock's wording rule is `dialect-qwen-2511.ts`'s to own.
+   *
+   * The REORDERING half of this behavior is asserted by the renumbering test
+   * above, which is where a numbering dialect now refuses instead.
    */
   it("numbers references from the planned send order, not the caller's list", () => {
-    const callerOrder = [reference("location"), reference("identity")];
-    const plannedWith = (policy: unknown): CharacterPromptProgram =>
-      compiled(
-        buildCharacterPromptProgram(
-          programInput({ profile: programProfile({ slug: QWEN_2511_SLUG, policy }), references: callerOrder }),
-        ),
-      );
-
-    // The profile ranks identity ahead of location, so the identity image the
-    // caller listed second is sent — and numbered — first.
-    const reordered = plannedWith({
-      allowedRoles: ["identity", "location"],
-      roleOrder: ["identity", "location"],
-    });
-    expect(reordered.numberedReferences.map((entry) => entry.role)).toEqual(["identity", "location"]);
-    expect(reordered.prompt).toContain(`Image 1 shows ${LANE_PROBE_NAME}.`);
-    expect(reordered.prompt).toContain("Image 2 shows the place.");
-
-    // The policy disallows the location role: one image is sent, so exactly one
-    // slot is numbered and nothing in the prompt names an image the payload
-    // does not carry.
-    const trimmed = plannedWith({ allowedRoles: ["identity"] });
+    const trimmed = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          // The policy disallows the location role, and the caller lists the
+          // identity image first — so one image is sent, from position zero, and
+          // exactly one slot is numbered.
+          profile: programProfile({ slug: QWEN_2511_SLUG, policy: { allowedRoles: ["identity"] } }),
+          references: [reference("identity"), reference("location")],
+        }),
+      ),
+    );
     expect(trimmed.numberedReferences.map((entry) => entry.role)).toEqual(["identity"]);
     expect(trimmed.sentReferences).toHaveLength(1);
     expect(trimmed.prompt).toContain(`Image 1 shows ${LANE_PROBE_NAME}.`);
     expect(trimmed.prompt).not.toContain("Image 2");
+  });
+
+  /**
+   * #256: on a dialect that NUMBERS its slots, reference planning moving a
+   * sent reference out of the slot the caller's own order gave it is a CUTOVER
+   * FAILURE, not the planner's warning.
+   *
+   * The failure is invisible in the output — the render succeeds and returns a
+   * plausible image of the wrong composition — and it is invisible in the row
+   * too, because the prompt and the payload are each internally consistent.
+   * This module compiles its numbering from the planned list, so the prompt it
+   * produces is right on its own; `renumbered` is the signal that the caller's
+   * order and the policy's order genuinely disagree, which is the state where
+   * the second plan `renderImageIntent` runs over the same list could put the
+   * room in the slot the prompt calls the person. #250 moves final numbering
+   * downstream and retires the guard.
+   *
+   * Scoped to numbering dialects: the prose family names references by role and
+   * the tag family names none, so the same reordering compiles cleanly there —
+   * a dialect cannot misname a slot it never asserts. Both halves are asserted,
+   * because a guard that fired on every dialect would refuse every Seedream and
+   * Wan scene the picker offers.
+   */
+  it("refuses a renumbered plan on a numbering dialect and compiles it on a naming one", () => {
+    // The caller lists the location first; the policy ranks identity ahead of
+    // it, so the identity image is SENT first and the caller's slot 1 moves.
+    const callerOrder = [reference("location"), reference("identity")];
+    const policy = { allowedRoles: ["identity", "location"], roleOrder: ["identity", "location"] };
+    const sink = new DiagnosticCollector();
+
+    const numbering = buildCharacterPromptProgram(
+      programInput({
+        profile: programProfile({ slug: QWEN_2511_SLUG, policy }),
+        references: callerOrder,
+        sink,
+      }),
+    );
+    expect(numbering).toMatchObject({ kind: "refused", code: IMAGE_CHARACTER_PROMPT_REFERENCES_RENUMBERED });
+    expectDiagnostic(sink, IMAGE_CHARACTER_PROMPT_REFERENCES_RENUMBERED);
+
+    // Same plan, same reordering, a dialect that speaks role labels: nothing to
+    // misname, so the render proceeds.
+    const naming = compiled(
+      buildCharacterPromptProgram(
+        programInput({ profile: programProfile({ slug: "bytedance/seedream-4.5", policy }), references: callerOrder }),
+      ),
+    );
+    expect(naming.numberedReferences.map((entry) => entry.role)).toEqual(["identity", "location"]);
+    expect(naming.prompt).not.toContain("Image 1");
   });
 
   /**
@@ -382,8 +446,10 @@ describe("compiling a bound lane", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * `variantPromptTransport` (`variants.ts`) decides the three prompt channels
- * together. It is pinned here rather than in an integration suite because the
+ * `characterPromptTransport` (`character-prompt-program.ts`) decides the three
+ * prompt channels together, for every cut-over character lane at once — the
+ * avatar, the variant, the chat-look mint and each scene rung. It is pinned here
+ * rather than in an integration suite because the
  * failure is silent and the function is pure: `resolveIntentPrompt` prefers
  * `promptSegments` over `prompt` whenever the list is non-empty, so a compiled
  * render that kept the legacy segments would send the legacy prose while its row
@@ -392,7 +458,7 @@ describe("compiling a bound lane", () => {
  * kills an invented `negativePrompt: ""` on the Qwen endpoints, which expose no
  * negative field at all.
  */
-describe("variantPromptTransport", () => {
+describe("characterPromptTransport", () => {
   const SEGMENTS: readonly ImagePromptSegment[] = [
     { kind: "identity", text: "The legacy paragraph.", mandatory: true, priority: 100 },
   ];
@@ -428,7 +494,7 @@ describe("variantPromptTransport", () => {
       negative: "no watermark",
     },
   ])("$name", ({ program, keys, prompt, negative }) => {
-    const transport = variantPromptTransport(LEGACY, SEGMENTS, program);
+    const transport = characterPromptTransport(LEGACY, SEGMENTS, program);
     // The KEY set, not just the values: the whole defect is an inhabited
     // `promptSegments` (or an invented `controls`) beside the compiled prompt.
     expect(Object.keys(transport).sort()).toEqual(keys);
@@ -438,7 +504,7 @@ describe("variantPromptTransport", () => {
 
   /** The degraded lane: no assembly means no segments, and none are invented. */
   it("emits no segments for a legacy render that assembled none", () => {
-    expect(variantPromptTransport(LEGACY, undefined, null)).toEqual({ prompt: LEGACY });
+    expect(characterPromptTransport(LEGACY, undefined, null)).toEqual({ prompt: LEGACY });
   });
 });
 

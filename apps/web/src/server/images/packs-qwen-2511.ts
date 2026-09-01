@@ -12,20 +12,19 @@ import {
 
 /**
  * The seeded packs and bindings for `qwen/qwen-image-edit-2511` — version 1 of
- * each channel, and the bindings for the tranche-1 character edit lanes:
- * variant, scene and chat-look (issue #256, Round 1).
+ * each channel, and the bindings for its three character edit lanes: variant,
+ * scene and chat-look (issue #256).
  *
  * CODE-owned exactly like the `packs-qwen-2512` seed in `@vesper/image-core`:
  * a pack that lives in code is its own known active version, its content hash
  * is computed the same way a stored row's would be, and moving it into a table
  * later is a migration that must reproduce the same hash.
  *
- * App-side rather than in the package because these seeds exist for the
- * character cutover's SHADOW phase, which is application instrumentation: no
- * production lane resolves a binding for these tasks yet (the entity lane asks
- * only for `item`/`location`), the legacy strings still ship untouched (owner
- * ruling 2026-08-29 #3), and registration happens where this module is imported
- * — the shadow compile and its tests in Round 1, the lane wiring in Round 2.
+ * App-side rather than in the package because these are Vesper's own character
+ * lanes rather than endpoint-level behavior: registration happens where this
+ * module is imported, which is the shared prompt-program seam
+ * (`character-prompt-program.ts`) that both the production compile and the
+ * shadow resolve through.
  *
  * `chat-place` is DELIBERATELY absent: it is the one identity-free lane in the
  * chat set, it keeps its legacy prompt path, and binding it is deferred until
@@ -157,35 +156,45 @@ export const qwenImageEdit2511NegativePack: ImageNegativePackVersion = {
 // ---------------------------------------------------------------------------
 
 /**
- * The three tranche-1 edit lanes, each pinning the same pack pair —
- * registered as `candidate` (owner correction 2026-08-29 #2). These lanes are
- * NOT cut over: `activeImagePromptBinding` returning null is the staged-
- * rollout contract itself, so an `active` row here would overload the state
- * model and leave cutover with no transition to represent. The shadow
- * resolves them through `imagePromptBindingForShadow`, production resolution
- * never sees them, and cutover is the candidate → active promotion.
+ * The three character edit lanes, each pinning the same pack pair — all
+ * `active` since the #256 cutover (owner ruling 2026-09-01).
  *
- * The pack VERSIONS stay `active`, deliberately: a pack's status is the
- * promotion state of its DATA, not the rollout state of any lane, and the
- * module contract above ("a code-owned pack IS its own known active version
- * until a table exists to promote a different one") is what makes the
- * byte-identical code-fallback rule checkable. The binding's status alone
- * says whether a lane runs this pair.
+ * They were registered as `candidate` while the rollout was staged behind
+ * accumulated shadow evidence. That sequence is retired: shadowing is optional
+ * debugging help rather than a release gate, so a lane is cut over by being
+ * WIRED — the route resolves the active binding, compiles the digest and sends
+ * the compiled prompt — and the status simply says which pack pair production
+ * runs. A promotion by itself was never the cutover, and now there is no
+ * promotion step left to mistake for one.
  *
- * Each row carries its OWN status rather than inheriting one from the loop.
- * These three lanes share a model, a dialect and a pack pair and differ only by
- * task, so a single status applied across the list would make cutting over one
- * lane and cutting over all three the same edit — and the rollout's whole rule
- * is one endpoint/task lane at a time, each behind its own accumulated evidence.
- * Promotion is changing one literal on one row.
+ * The pack VERSIONS were already `active`, and the reason is unchanged: a
+ * pack's status is the promotion state of its DATA, not the rollout state of
+ * any lane. The module contract above ("a code-owned pack IS its own known
+ * active version until a table exists to promote a different one") is what
+ * makes the byte-identical code-fallback rule checkable.
+ *
+ * Each row still carries its OWN status rather than inheriting one from the
+ * loop. These lanes share a model, a dialect and a pack pair and differ only by
+ * task and job shape, so a single status applied across the list would make
+ * rolling ONE lane back and rolling all of them back the same edit — and
+ * rollback is the transition this state model still has to represent.
  */
 const EDIT_LANES = [
-  ["binding-qwen-2511-variant-v1", "variant-standard", "variant", "candidate"],
-  ["binding-qwen-2511-scene-v1", "scene-standard", "scene", "candidate"],
-  ["binding-qwen-2511-chat-look-v1", "chat-look-standard", "chat_look", "candidate"],
+  ["binding-qwen-2511-variant-v1", "variant-standard", "variant", "instruction_edit", "active"],
+  ["binding-qwen-2511-scene-v1", "scene-standard", "scene", "instruction_edit", "active"],
+  // The scene chain's bare-prompt rung. It is the same scene on the same
+  // profile, described rather than edited, and it states
+  // `text_to_image_description` where the two reference rungs state
+  // `instruction_edit` — a binding pins one strategy and the compile refuses a
+  // mismatched pair, so without this row a scene whose references became
+  // unusable would REFUSE instead of degrading, turning a designed fallback into
+  // a failed render. Same pack pair deliberately: a scene's look must not change
+  // with which rung happened to win.
+  ["binding-qwen-2511-scene-t2i-v1", "scene-standard", "scene", "text_to_image_description", "active"],
+  ["binding-qwen-2511-chat-look-v1", "chat-look-standard", "chat_look", "instruction_edit", "active"],
 ] as const;
 
-export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task, status]) => ({
+export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task, promptStrategy, status]) => ({
   id,
   profileKey,
   profileId: null,
@@ -193,7 +202,7 @@ export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task, 
   modelSlug: MODEL_SLUG,
   versionId: null,
   task,
-  promptStrategy: "instruction_edit" as const,
+  promptStrategy,
   promptDialectId: DIALECT_ID,
   positivePackVersionId: qwenImageEdit2511PositivePack.id,
   negativePackVersionId: qwenImageEdit2511NegativePack.id,

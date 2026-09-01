@@ -320,9 +320,12 @@ function characterShadowCore(input: CharacterShadowCoreInput): Record<string, un
     profile,
     ...(input.bindingProfileKey === undefined ? {} : { bindingProfileKey: input.bindingProfileKey }),
     resolver: "shadow",
-    cut: input.cut,
+    // A cast of one: every lane this module observes renders a single subject,
+    // and the multi-subject scene records its own designed `unmeasured` verdict
+    // before reaching here.
+    cuts: [input.cut],
     read: input.read,
-    references: input.references,
+    references: input.references.map((reference) => ({ reference, subjectId: input.subjectId })),
     operation: input.operation,
     refuseOnMissingRequired: false,
     ...(sink === undefined ? {} : { sink }),

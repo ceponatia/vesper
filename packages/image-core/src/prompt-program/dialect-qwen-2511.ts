@@ -523,3 +523,31 @@ export const qwenImageEdit2511Dialect: ImagePromptDialectDefinition = {
 };
 
 registerImagePromptDialect(qwenImageEdit2511Dialect);
+
+/**
+ * `qwen/qwen-image-edit-plus-lora` — the LoRA-capable Qwen edit wrapper the
+ * intimate-scene route and the NSFW variant bench swap onto AFTER profile
+ * resolution.
+ *
+ * A separate registry entry delegating to this module's compilers, which is the
+ * registry's own sanctioned shape ("two entries may delegate to one
+ * implementation without becoming permanently coupled"). It earns its own id
+ * rather than reusing 2511's for the reason that rule exists: the two are
+ * different endpoints on different generations, so a wording finding promoted
+ * for 2511 must not silently change what the LoRA route sends, and vice versa.
+ *
+ * Everything the definition states is true of BOTH: the wrapper is the same
+ * instruction-edit family, takes the same numbered `image` array (capped at 3
+ * rather than 2511's own cap — a transport fact the reference planner already
+ * enforces, not a prompt one), and publishes no negative input.
+ *
+ * It exists because #256 forbids a hidden legacy-prompt exception: an active
+ * production route that swaps models after resolution must either bind the model
+ * it ACTUALLY runs on or be retired, or #251 cannot delete the old builders.
+ */
+export const qwenImageEditPlusLoraDialect: ImagePromptDialectDefinition = {
+  ...qwenImageEdit2511Dialect,
+  id: "qwen_edit_plus_lora_delta_edit",
+};
+
+registerImagePromptDialect(qwenImageEditPlusLoraDialect);

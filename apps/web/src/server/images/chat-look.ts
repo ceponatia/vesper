@@ -13,8 +13,16 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
-import { buildChatLookSegments, type ChatLookVisualCut } from "./chat-look-segments";
-import { chatLookShadowMeta } from "./character-shadow";
+import { buildChatLookSegments, type ChatLookSegmentAssembly, type ChatLookVisualCut } from "./chat-look-segments";
+import {
+  buildCharacterPromptProgram,
+  characterPromptTransport,
+  type CharacterPromptProgramResult,
+} from "./character-prompt-program";
+import {
+  characterChangeContract,
+  characterChatLookImageOperation,
+} from "@/contracts/images/character-digest";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
@@ -31,11 +39,11 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
  *   stop arguing the edit model out of repainting the reference's clothes. Only
  *   the LATEST look is kept (ruled); the cache pointer is the images table
  *   itself (`meta.lookKey` on the newest ready row) — no state column, so a
- *   regenerate rollback can never desync pointer from asset. Since Stage 4 of
- *   image-lane-consolidation its prompt is assembled by
- *   `buildChatLookSegments` — the committed visual digest's morphology and
- *   distinctive marks, plus this lane's three route-owned sentences — rather
- *   than by `buildChatLookPrompt`.
+ *   regenerate rollback can never desync pointer from asset. Its prompt is the
+ *   compiled prompt program (#256, `activeChatLookProgram`) over the committed
+ *   chat cut; a mint whose caller could not load a participant row has no cut to
+ *   compile and falls back to `buildChatLookSegments`, the route-owned
+ *   assembly that also owns this lane's refusal and its `meta.visualState`.
  * - **`chat_place`**: a text-to-image establishing shot of the current
  *   scene-memory place, minted lazily from its agent-written sketch on the
  *   first render there; feeds the chat lane's multi-edit rung as the second
@@ -218,6 +226,80 @@ async function chatLookIdentity(
 }
 
 /**
+ * The chat-look mint's ACTIVE prompt program, or null when this mint has
+ * nothing to compile (issue #256).
+ *
+ * Null is the route-only degraded mint: the caller could not load a
+ * `chat_participants` row for this subject, so the assembly realized no cut and
+ * there is no committed visual moment to compile a program over. That mint
+ * keeps the route-owned segments, which is the degradation this lane has always
+ * promised rather than refusing a wardrobe anchor over a continuity id.
+ *
+ * `chat-look-standard` on Qwen Image Edit 2511 is the only chat-look profile the
+ * catalog offers, and it is bound; the profile key still narrows resolution, so
+ * a second chat-look profile added later cannot inherit this one's packs.
+ *
+ * The change contract states the delta this mint IS — the outfit the
+ * conversation just settled on — and derives its preserve set from the assembled
+ * subject slices, so the identity, morphology and age anchors the change does
+ * not name survive the edit by derivation rather than by a blanket "preserve
+ * everything".
+ */
+function activeChatLookProgram(
+  input: RenderChatLookInput,
+  assembly: ChatLookSegmentAssembly,
+  resolved: ResolvedImageProfile,
+  references: readonly ImageRenderReference[],
+  sink: DiagnosticSink,
+): CharacterPromptProgramResult | null {
+  const visual = assembly.visual;
+  const cut = input.visual;
+  if (visual === undefined || cut === undefined) return null;
+  const outfit = input.outfit.trim();
+  return buildCharacterPromptProgram({
+    lane: "chat_look",
+    task: "chat_look",
+    profile: resolved,
+    bindingProfileKey: resolved.profile.key,
+    resolver: "active",
+    cuts: [
+      {
+        subjectId: input.characterId,
+        digest: visual.digest,
+        attributes: visual.attributes,
+        exposure: visual.exposure,
+        realizedBody: visual.realizedBody,
+      },
+    ],
+    // The committed cut names itself: the cut id IS the staleness check, and a
+    // minted token would throw that away.
+    read: { kind: "committed_cut", token: cut.cutId },
+    // Every reference this mint sends is the subject's own identity pack.
+    references: references.map((reference) => ({ reference, subjectId: input.characterId })),
+    operation: (subjects) =>
+      characterChatLookImageOperation({
+        change: characterChangeContract(
+          {
+            concept: "subject.wardrobe",
+            // An empty outfit is a real instruction, not a missing one: the
+            // conversation either undressed this character or settled on
+            // nothing in particular, and the segment build already words both.
+            // The concept is what the preserve derivation excludes either way.
+            value: outfit.length > 0 ? outfit : input.outfitExposed ? "nothing" : "a simple, casual outfit",
+          },
+          subjects,
+        ),
+      }),
+    // The anchor is the face every later scene in this conversation composes
+    // from, so a lost identity or morphology anchor is worth more than a
+    // wardrobe refresh. It refuses, and this lane's refusal shape applies: no
+    // row, no mint, retry on the next outfit or appearance change.
+    refuseOnMissingRequired: true,
+    sink,
+  });
+}
+
+/**
  * Mint (or refresh) the chat's current-look reference: one identity-locked edit
  * from the avatar wearing the tracked outfit, on the shared reserve → generate →
  * save-or-fail → log shell (`runImagePipeline`). On success every OTHER
@@ -263,26 +345,22 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     const identity = await chatLookIdentity(input, resolved, sink);
     if (!identity) return null;
     const model = resolved.model;
-    const prompt = assembly.prompt;
-    // The Round 2 shadow (issue #256): the compiled prompt program is built
-    // BESIDE this exact mint and its verdict recorded on the row's meta.
-    // Observation only — nothing the mint sends reads it, and any shadow
-    // failure degrades to a recorded verdict (character-shadow.ts). The
-    // route-only degraded mint (no cut) records none — there is no digest to
-    // compile a program over.
-    const shadowMeta =
-      input.visual === undefined
-        ? undefined
-        : chatLookShadowMeta({
-            characterId: input.characterId,
-            cutId: input.visual.cutId,
-            outfit: input.outfit,
-            outfitExposed: input.outfitExposed,
-            assembly,
-            profile: resolved,
-            references: identity.references,
-            sink,
-          });
+    // The cutover (issue #256): the prompt this mint sends is the compiled
+    // prompt program. A refusal takes this lane's own refusal shape rather than
+    // failing a row — no row, no mint, retry on the next outfit or appearance
+    // change — because this job re-fires on every change and a reserving refusal
+    // would accumulate one failed row per change for every ineligible chat,
+    // forever. It is NOT a fallback to the legacy prose: a bound lane that could
+    // not compile is a fault to surface, and minting a plausible anchor from the
+    // string the program replaced would hide it behind an acceptable-looking
+    // face that every later scene then composes from.
+    const program = activeChatLookProgram(input, assembly, resolved, identity.references, sink);
+    if (program?.kind === "refused") return null;
+    const compiled = program?.kind === "compiled" ? program : null;
+    // Prompt, segments and any compiled negative in ONE decision — a compiled
+    // mint must not still carry the legacy segments, which `resolveIntentPrompt`
+    // would prefer over the compiled string.
+    const transport = characterPromptTransport(assembly.prompt, assembly.segments, compiled);
     const { imageId, status } = await runImagePipeline({
       asset: {
         ownerId: input.userId,
@@ -290,7 +368,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
         entityKind: "character",
         entityId: input.characterId,
         chatId: input.chatId,
-        prompt,
+        prompt: transport.prompt,
         meta: {
           lookKey: input.lookKey,
           model: `replicate/${model.slug}`,
@@ -299,20 +377,22 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
           // visual moment that shaped the prompt survives a failed render — the
           // avatar and scene lanes record it the same way.
           ...(assembly.digestMeta ?? {}),
-          // The shadow verdict, beside the provenance it was measured over.
-          ...(shadowMeta ?? {}),
+          // The compiled program's own provenance. Absent on the route-only
+          // degraded mint, which is how a row says which prompt system built it.
+          ...(compiled?.meta ?? {}),
         },
       },
       produce: async () => {
         const edit = await renderImageIntent(
           {
             profile: resolved,
-            // `instruction_edit` passes the base prompt through unchanged and
-            // `resolveIntentPrompt` makes segments authoritative, so the
-            // segments ARE the payload here; `prompt` is the same segments
-            // compiled, stored on the row and carried as the string form.
-            prompt,
-            promptSegments: assembly.segments,
+            // Prompt, segments and the normalized negative in one decision. On
+            // the route-only degraded mint the semantic segments stay
+            // authoritative and `prompt` is the same segments compiled — safe to
+            // send both, because this lane's profile runs `instruction_edit`,
+            // which passes the base prompt through unchanged. On a compiled mint
+            // the segments are absent, or they would outrank the program.
+            ...transport,
             references: identity.references,
             target: { aspectRatio: IMAGE_TARGET_ASPECT },
           },

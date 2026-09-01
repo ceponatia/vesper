@@ -32,15 +32,14 @@ import {
  * on this endpoint that is not even a deferral: the portrait profiles allow no
  * reference roles at all, so there is no identity input to hold.
  *
- * `stylized-portrait-high-guidance` is DELIBERATELY UNBOUND (owner correction
- * 2026-08-29 #1). A binding is a real (profile, model, dialect, packs)
- * combination, not a namespace reservation for profile names — and that
+ * `stylized-portrait-high-guidance` has NO ROW HERE, deliberately (owner
+ * correction 2026-08-29 #1). A binding is a real (profile, model, dialect,
+ * packs) combination, not a namespace reservation for profile names — and that
  * profile's database row rides SD 3.5 Large, so a row here would have bound it
  * to qwen/qwen-image-2512, an endpoint it never renders on. Its real binding
- * arrives with the (unimplemented) `sd35_large_prose` dialect and that
- * endpoint's own pack pair; until then the profile-keyed resolution answers
- * null for the key, which is the staged-rollout contract's honest "not cut
- * over here". The pin lives in `packs-character.test.ts`.
+ * now exists on that endpoint, under the `sd35_large_prose` dialect and its own
+ * pack pair (`packs-character-endpoints.ts`). The pin lives in
+ * `packs-character.test.ts`.
  */
 
 const MODEL_SLUG = "qwen/qwen-image-2512";
@@ -86,12 +85,14 @@ export const qwenImage2512PortraitNegativePack: ImageNegativePackVersion = {
 // ---------------------------------------------------------------------------
 
 /*
- * `candidate`, not `active` (owner correction 2026-08-29 #2): the avatar lane
- * is in shadow, not cut over, and `activeImagePromptBinding` returning null IS
- * the not-cut-over contract. The shadow resolves these rows through
- * `imagePromptBindingForShadow`; promotion to `active` is the cutover act. The
- * pack versions above stay `active` because a pack's status is its data's
- * promotion state, not a lane's rollout state — these manifests are
+ * `active` since the #256 cutover (owner ruling 2026-09-01): the avatar lane
+ * resolves these rows, compiles the character world digest and sends the
+ * compiled portrait prompt. They were `candidate` while the rollout waited on
+ * accumulated shadow evidence, which is retired — a lane is cut over by being
+ * wired, and the status now says only which pack pair production runs.
+ *
+ * The pack versions above were already `active` because a pack's status is its
+ * data's promotion state, not a lane's rollout state — these manifests are
  * byte-identical to the endpoint's shipping pair, which is the hash law's own
  * definition of a known active version.
  */
@@ -114,7 +115,7 @@ export const qwenImage2512PortraitBindings = PORTRAIT_PROFILE_KEYS.map(([id, pro
   promptDialectId: DIALECT_ID,
   positivePackVersionId: qwenImage2512PortraitPositivePack.id,
   negativePackVersionId: qwenImage2512PortraitNegativePack.id,
-  status: "candidate" as const,
+  status: "active" as const,
 }));
 
 registerImagePositivePack(qwenImage2512PortraitPositivePack);

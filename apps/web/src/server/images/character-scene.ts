@@ -24,7 +24,6 @@ import {
 } from "./prompts-appearance";
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
-import type { CharacterSceneShadow } from "./character-shadow";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
 import {
@@ -303,21 +302,6 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
     appliedVisuals = applied.visuals;
   }
 
-  // The Round 2 shadow bundle (issue #256): a single-subject scene with a
-  // realized cut carries it for comparison; a cast of two or more records the
-  // designed multi-subject refusal instead (no frozen comparison row exists for
-  // it). A render with no cuts at all — pre-digest callers, the lab — records
-  // nothing. The shadow itself runs inside `renderResolvedScene`, where the
-  // reserve-time prompt and reference set are decided.
-  const sceneShadow: CharacterSceneShadow | undefined =
-    castVisuals.length === 0
-      ? undefined
-      : cast.length >= 2
-        ? { kind: "multi_subject", subjectIds: cast.map((member) => member.characterId) }
-        : appliedVisuals[0] !== undefined
-          ? { kind: "single", slice: appliedVisuals[0] }
-          : undefined;
-
   // The chat's stored scene-model pick, resolved against the profile registry. A
   // pick that no longer exists degrades to the scene task's default (owner ruling
   // 5) — the legacy Venice keys on pre-registry rows land here and are simply
@@ -459,12 +443,12 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // survives failures — which visual moment fed this render, whatever the
       // provider then did with it.
       ...(visualStateMeta === undefined ? {} : { visualStateMeta }),
-      // The shadow bundle rides only past the refusals: a render that fails its
-      // precondition records the refusal, not a comparison of a request that
-      // never went.
-      ...(sceneShadow === undefined || identityRefusal !== null || visualRefusal !== null
+      // The realized cast rides only past the refusals: a render that fails its
+      // precondition never reaches a provider, so compiling a prompt program for
+      // it would store a program describing a render nobody made.
+      ...(appliedVisuals.length === 0 || identityRefusal !== null || visualRefusal !== null
         ? {}
-        : { shadow: sceneShadow }),
+        : { cast: appliedVisuals }),
       failedPrecondition: identityRefusal ?? visualRefusal,
       linkage: {
         ownerId: input.userId,

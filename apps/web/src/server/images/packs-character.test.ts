@@ -2,20 +2,13 @@ import {
   activeImagePromptBinding,
   imageNegativePack,
   imagePositivePack,
-  imagePromptBindingForShadow,
+  imagePromptDialectForBinding,
   imagePromptPackContentHash,
   parseImageNegativePackManifest,
   parseImagePositivePackManifest,
   registeredImagePromptBindings,
-  type ImageOperationContract,
 } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
-import {
-  characterChatLookImageOperation,
-  characterPortraitImageOperation,
-  characterSceneImageOperation,
-  characterVariantImageOperation,
-} from "@/contracts/images/character-digest";
 import {
   qwenImageEdit2511Bindings,
   qwenImageEdit2511NegativePack,
@@ -26,160 +19,266 @@ import {
   qwenImage2512PortraitNegativePack,
   qwenImage2512PortraitPositivePack,
 } from "./packs-qwen-2512-portrait";
+import { characterEndpointPacks } from "./packs-character-endpoints";
 
 /**
- * The tranche-1 character pack seeds: every lane in Round 1's scope resolves a
- * coherent CANDIDATE binding through the shadow resolver while staying
- * invisible to production's active resolver (owner correction 2026-08-29 #2),
- * the three 2512 portrait rows share one pack (owner ruling 2026-08-29 #2)
- * with the SD 3.5 key deliberately unbound (correction #1), and the
- * deliberate absences stay absent. Pack CONTENT is deliberately untested
- * here, per the spec's own test-ownership ruling — the hash law and the
- * resolution seams are what a migration or a wiring mistake would break.
+ * THE CHARACTER PACK SURFACE (owner ruling 2026-09-01: keep every
+ * profile the picker offers and give each one a real compiler).
+ *
+ * The acceptance criterion this file owns is a COVERAGE one, and it is the only
+ * place anything checks it: every (model, task, profile key) the profile catalog
+ * offers for character work resolves an ACTIVE binding whose dialect has a
+ * registered compiler and whose packs exist. Nothing else in the tree would
+ * notice a profile left behind — the seam answers `unbound`, the lane keeps its
+ * legacy prompt, the render succeeds, and the only symptom is that #251 can
+ * never delete the old builders.
+ *
+ * Pack CONTENT stays untested here, per the spec's own test-ownership ruling.
+ * What a migration or a wiring mistake breaks is the hash law and the resolution
+ * seams, and those are what this file pins.
  */
 
-const EDIT_SLUG = "qwen/qwen-image-edit-2511";
-const GENERATE_SLUG = "qwen/qwen-image-2512";
-
-const LANES: readonly { slug: string; operation: ImageOperationContract }[] = [
-  { slug: EDIT_SLUG, operation: characterVariantImageOperation() },
-  { slug: EDIT_SLUG, operation: characterSceneImageOperation({ subjectCount: 1 }) },
-  { slug: EDIT_SLUG, operation: characterChatLookImageOperation() },
-  { slug: GENERATE_SLUG, operation: characterPortraitImageOperation() },
+/**
+ * The character-image surface as the seeded profile rows actually define it
+ * (drizzle `0100_daffy_mystique`, `0104_add-adult-and-identity-image-models`,
+ * `0107_curated-model-profiles`).
+ *
+ * Written out rather than read from the database because this is a PURE suite
+ * and because the list is the claim: a profile added to a migration without a
+ * binding is exactly the regression, and a copy that silently grew with the
+ * migration would not catch it. `model-profiles.int.test.ts` owns the other
+ * direction — that these rows are really what the database offers.
+ *
+ * Slugs are the BASE slugs. Three of these rows are community checkpoints whose
+ * registry slug carries a `:version` pin, and binding resolution deliberately
+ * strips it (`baseImageModelSlug` in `character-prompt-program.ts`) — a binding
+ * says which ENDPOINT it is about; pinning a provider version is `versionId`'s
+ * separate job.
+ */
+const CHARACTER_SURFACE: readonly {
+  readonly slug: string;
+  readonly task: "portrait" | "variant" | "scene" | "chat_look";
+  readonly profileKey: string;
+}[] = [
+  // Qwen Image 2512 — the portrait generator, three tiers.
+  { slug: "qwen/qwen-image-2512", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "qwen/qwen-image-2512", task: "portrait", profileKey: "portrait-fast" },
+  { slug: "qwen/qwen-image-2512", task: "portrait", profileKey: "portrait-quality" },
+  // Qwen Image Edit 2511 — the default editor for all three edit lanes.
+  { slug: "qwen/qwen-image-edit-2511", task: "variant", profileKey: "variant-standard" },
+  { slug: "qwen/qwen-image-edit-2511", task: "scene", profileKey: "scene-standard" },
+  { slug: "qwen/qwen-image-edit-2511", task: "chat_look", profileKey: "chat-look-standard" },
+  // Seedream 4.5.
+  { slug: "bytedance/seedream-4.5", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "bytedance/seedream-4.5", task: "variant", profileKey: "variant-standard" },
+  { slug: "bytedance/seedream-4.5", task: "scene", profileKey: "scene-standard" },
+  { slug: "bytedance/seedream-4.5", task: "scene", profileKey: "ensemble-scene-2k" },
+  // Seedream 5 Lite.
+  { slug: "bytedance/seedream-5-lite", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "bytedance/seedream-5-lite", task: "variant", profileKey: "variant-standard" },
+  { slug: "bytedance/seedream-5-lite", task: "scene", profileKey: "scene-standard" },
+  { slug: "bytedance/seedream-5-lite", task: "scene", profileKey: "quality-scene-3k" },
+  // Wan 2.7 Image Pro.
+  { slug: "wan-video/wan-2.7-image-pro", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "wan-video/wan-2.7-image-pro", task: "variant", profileKey: "variant-standard" },
+  { slug: "wan-video/wan-2.7-image-pro", task: "scene", profileKey: "scene-standard" },
+  { slug: "wan-video/wan-2.7-image-pro", task: "scene", profileKey: "multi-reference-edit-2k" },
+  // Stable Diffusion 3.5 Large — portrait only, on both its rows.
+  { slug: "stability-ai/stable-diffusion-3.5-large", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "stability-ai/stable-diffusion-3.5-large", task: "portrait", profileKey: "stylized-portrait-high-guidance" },
+  // The three version-pinned community rows, plus P-Image.
+  { slug: "aisha-ai-official/nsfw-flux-dev", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "aisha-ai-official/likereality-pony-v1", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "prunaai/p-image", task: "portrait", profileKey: "portrait-standard" },
+  { slug: "nsfw-api/sdxl-pulid", task: "variant", profileKey: "variant-standard" },
+  { slug: "nsfw-api/sdxl-pulid", task: "scene", profileKey: "scene-standard" },
 ];
 
-describe("tranche-1 pack resolution", () => {
+/** The strategy a task's seeded profile rows carry. */
+const STRATEGY_FOR_TASK = {
+  portrait: "text_to_image_description",
+  variant: "instruction_edit",
+  scene: "instruction_edit",
+  chat_look: "instruction_edit",
+} as const;
+
+describe("character prompt-pack coverage", () => {
   /**
-   * The seam the shadow compile crosses: for each lane, the operation
-   * contract's task and strategy resolve a coherent CANDIDATE binding through
-   * the shadow resolver, and both bound pack versions are registered and
-   * parse under their channel's manifest schema. Kills a binding whose
-   * strategy drifted from the lane's operation (a program no binding matches),
-   * an unregistered pack id, and a manifest that fails its own contract.
+   * THE §3 ACCEPTANCE CRITERION. Every character-image profile the catalog
+   * offers resolves an ACTIVE binding for its own model, task and profile key,
+   * and that binding is coherent end to end: a strategy matching the profile
+   * row's, a dialect with a REGISTERED COMPILER, and two pack versions that
+   * exist and parse under their channel's schema.
+   *
+   * Kills the whole class of "left behind" defects: a profile whose model never
+   * got a binding (its lane silently keeps the legacy prompt), a binding naming
+   * a declared-but-unimplemented dialect (every render on it refuses before
+   * spend), a mistyped pack id, and a strategy that drifted from the profile row
+   * (a program no binding matches). Every one of those is invisible in a render.
    */
-  it("resolves a coherent candidate binding for every tranche-1 lane via the shadow resolver", () => {
-    for (const lane of LANES) {
-      const binding = imagePromptBindingForShadow({ modelSlug: lane.slug, task: lane.operation.task });
-      expect(binding, `${lane.slug} ${lane.operation.task}`).not.toBeNull();
-      expect(binding?.status).toBe("candidate");
-      expect(binding?.promptStrategy).toBe(lane.operation.strategy);
-      const positive = imagePositivePack(binding?.positivePackVersionId ?? "");
-      const negative = imageNegativePack(binding?.negativePackVersionId ?? "");
-      expect(positive).not.toBeNull();
-      expect(negative).not.toBeNull();
-      expect(parseImagePositivePackManifest(positive?.manifest)).not.toBeNull();
-      expect(parseImageNegativePackManifest(negative?.manifest)).not.toBeNull();
-    }
+  it.each(CHARACTER_SURFACE)("binds $slug $task/$profileKey to a coherent active row", (lane) => {
+    const binding = activeImagePromptBinding({
+      modelSlug: lane.slug,
+      task: lane.task,
+      profileKey: lane.profileKey,
+      promptStrategy: STRATEGY_FOR_TASK[lane.task],
+    });
+    if (binding === null) throw new Error(`no active binding for ${lane.slug} ${lane.task}/${lane.profileKey}`);
+    expect(binding.status).toBe("active");
+    expect(imagePromptDialectForBinding(binding)).not.toBeNull();
+    const positive = imagePositivePack(binding.positivePackVersionId);
+    const negative = imageNegativePack(binding.negativePackVersionId);
+    expect(parseImagePositivePackManifest(positive?.manifest)).not.toBeNull();
+    expect(parseImageNegativePackManifest(negative?.manifest)).not.toBeNull();
   });
 
   /**
-   * THE POINT of the candidate status (owner correction 2026-08-29 #2):
-   * `activeImagePromptBinding` returning null IS the staged-rollout contract —
-   * "this lane has not been cut over" — so the shadow phase's rows must be
-   * invisible to it. Kills a registration that quietly armed production
-   * resolution for a lane whose shadow trial has not run, and a shadow
-   * resolver edit that stops seeing its own rows. Cutover flips a row to
-   * `active` and must update this pin.
+   * The scene chain's SECOND job shape. Its rungs degrade multi-reference edit →
+   * single-reference edit → bare text-to-image, and the last states
+   * `text_to_image_description` where the first two state `instruction_edit`. A
+   * binding pins one strategy and the compile refuses a mismatched pair, so a
+   * scene profile with only its edit row would REFUSE the moment its references
+   * became unusable — turning a designed degradation into a failed render, on
+   * exactly the renders that had already lost their reference.
+   *
+   * Both rows must share a pack pair: a scene's look must not change with which
+   * rung happened to win.
    */
-  it("keeps every candidate row invisible to the active resolver", () => {
-    for (const lane of LANES) {
-      expect(
-        activeImagePromptBinding({ modelSlug: lane.slug, task: lane.operation.task }),
-        `${lane.slug} ${lane.operation.task}`,
-      ).toBeNull();
-    }
-    // The entity lanes ARE cut over: their rows stay active, production keeps
-    // resolving them, and the shadow resolver sees them too (candidate OR
-    // active), so a promotion never changes the shadow's answer.
-    for (const task of ["item", "location"] as const) {
-      expect(activeImagePromptBinding({ modelSlug: GENERATE_SLUG, task })).not.toBeNull();
-      expect(imagePromptBindingForShadow({ modelSlug: GENERATE_SLUG, task })).not.toBeNull();
-    }
+  it.each(CHARACTER_SURFACE.filter((lane) => lane.task === "scene"))(
+    "gives $slug $profileKey a text-to-image row sharing the edit row's packs",
+    (lane) => {
+      const query = { modelSlug: lane.slug, task: "scene" as const, profileKey: lane.profileKey };
+      const edit = activeImagePromptBinding({ ...query, promptStrategy: "instruction_edit" });
+      const generate = activeImagePromptBinding({ ...query, promptStrategy: "text_to_image_description" });
+      expect(generate).not.toBeNull();
+      expect(generate?.id).not.toBe(edit?.id);
+      expect(generate?.positivePackVersionId).toBe(edit?.positivePackVersionId);
+      expect(generate?.negativePackVersionId).toBe(edit?.negativePackVersionId);
+    },
+  );
+
+  /**
+   * The LoRA wrapper the intimate-scene route and the NSFW variant bench swap
+   * onto AFTER profile resolution. It is not in the profile catalog — no picker
+   * offers it — so the coverage list above cannot see it, and it is precisely the
+   * hidden legacy exception #256 forbids: a route that resolves a profile, swaps
+   * the model, and finds no binding for the model it is about to call would stay
+   * on the legacy prompt forever with nothing in the binding table showing it.
+   *
+   * The pairing keeps the PICKED profile and replaces only its model, so every
+   * variant and scene key a swapped render can arrive with needs a row.
+   */
+  it.each([
+    { task: "variant" as const, profileKey: "variant-standard", strategy: "instruction_edit" as const },
+    { task: "scene" as const, profileKey: "scene-standard", strategy: "instruction_edit" as const },
+    { task: "scene" as const, profileKey: "ensemble-scene-2k", strategy: "instruction_edit" as const },
+    { task: "scene" as const, profileKey: "quality-scene-3k", strategy: "instruction_edit" as const },
+    { task: "scene" as const, profileKey: "multi-reference-edit-2k", strategy: "instruction_edit" as const },
+  ])("binds the LoRA wrapper for $task/$profileKey", ({ task, profileKey, strategy }) => {
+    expect(
+      activeImagePromptBinding({
+        modelSlug: "qwen/qwen-image-edit-plus-lora",
+        task,
+        profileKey,
+        promptStrategy: strategy,
+      }),
+    ).not.toBeNull();
   });
 
   /**
    * The hash law a future migration must reproduce: a seeded version's content
    * hash is exactly the hash of its manifest. Kills a seed whose hash was
-   * copied, drifted, or computed over the wrong shape — the property that
-   * makes "byte-identical to a known active version" checkable.
+   * copied, drifted, or computed over the wrong shape — the property that makes
+   * "byte-identical to a known active version" checkable.
    */
   it("computes every seeded content hash from its own manifest", () => {
-    for (const pack of [
+    const packs = [
       qwenImageEdit2511PositivePack,
       qwenImageEdit2511NegativePack,
       qwenImage2512PortraitPositivePack,
       qwenImage2512PortraitNegativePack,
-    ]) {
+      ...characterEndpointPacks.flatMap((endpoint) => [endpoint.positive, endpoint.negative]),
+    ];
+    for (const pack of packs) {
       expect(pack.contentHash, pack.id).toBe(imagePromptPackContentHash(pack.manifest));
     }
   });
 
   /**
-   * Ruling 2 plus correction 1 as one assertion: binding rows exist for exactly
-   * the THREE portrait profile keys that run on this endpoint, every one pins
-   * the SAME pack pair, and `stylized-portrait-high-guidance` is DELIBERATELY
-   * UNBOUND — its database profile rides SD 3.5 Large, and a binding is a real
-   * (profile, model, dialect, packs) combination, never a namespace
-   * reservation for a profile name (owner correction 2026-08-29 #1). Kills a
-   * per-profile pack fork, a 2512 portrait key quietly left unbound, and a row
-   * that re-binds the SD profile to an endpoint it never renders on. Binding
-   * the stylized key later requires the `sd35_large_prose` dialect and must
-   * update this pin.
+   * One pack pair per endpoint, however many lanes it serves. Kills a per-lane
+   * pack fork, which would make promoting an endpoint's wording an N-row edit
+   * that a later lane silently misses.
+   *
+   * Stated over the 2512 portrait rows and the 2511 edit rows because those two
+   * seeds build their bindings by hand; the shared factory in
+   * `packs-character-endpoints.ts` cannot fork a pair by construction.
    */
-  it("binds the three 2512 portrait keys to one pack pair and leaves the SD 3.5 key unbound", () => {
-    const rows = registeredImagePromptBindings().filter(
-      (binding) => binding.modelSlug === GENERATE_SLUG && binding.task === "portrait",
-    );
-    expect(new Set(rows.map((binding) => binding.profileKey))).toEqual(
+  it("pins one pack pair per endpoint across its lanes", () => {
+    for (const rows of [qwenImage2512PortraitBindings, qwenImageEdit2511Bindings]) {
+      expect(new Set(rows.map((binding) => binding.positivePackVersionId)).size).toBe(1);
+      expect(new Set(rows.map((binding) => binding.negativePackVersionId)).size).toBe(1);
+    }
+    expect(new Set(qwenImage2512PortraitBindings.map((binding) => binding.profileKey))).toEqual(
       new Set(["portrait-standard", "portrait-fast", "portrait-quality"]),
     );
-    expect(new Set(rows.map((binding) => binding.positivePackVersionId))).toEqual(
-      new Set([qwenImage2512PortraitPositivePack.id]),
-    );
-    expect(new Set(rows.map((binding) => binding.negativePackVersionId))).toEqual(
-      new Set([qwenImage2512PortraitNegativePack.id]),
-    );
-    expect(
-      registeredImagePromptBindings().some((binding) => binding.profileKey === "stylized-portrait-high-guidance"),
-    ).toBe(false);
-    // The 2511 side shares its own pair the same way — one pack pair per endpoint.
-    expect(new Set(qwenImageEdit2511Bindings.map((binding) => binding.positivePackVersionId)).size).toBe(1);
   });
 
   /**
-   * The profile-keyed resolution the shadow wiring uses (Round 2): asked WITH a
-   * profile key, `imagePromptBindingForShadow` returns exactly that key's own
-   * row — never a sibling portrait profile's — and a key no row carries
-   * resolves null instead of falling back across profiles. Kills a resolver
-   * that ignores the key (any of the three rows would satisfy the keyless
-   * assertion above) and a fallback that would silently hand one profile
-   * another profile's pack pins. The deliberately-unbound SD 3.5 key
-   * (correction 1) resolves null through the same strictness.
+   * Binding ids are unique. Two rows with one id are one row with a silently
+   * lost twin, and the scene lanes made this reachable: a scene profile carries
+   * two rows differing only by strategy, so an id built without it would collide
+   * on every scene key in the catalog.
+   */
+  it("registers no duplicate binding id", () => {
+    const ids = registeredImagePromptBindings().map((binding) => binding.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  /**
+   * Profile-keyed resolution stays STRICT. Asked with a key, resolution returns
+   * that key's own row and never a sibling profile's; a key no row carries
+   * resolves null rather than falling back across profiles. Kills a resolver
+   * edit that ignores the key — under which any of the three 2512 portrait rows
+   * would satisfy the coverage assertion above — and a fallback that would hand
+   * one profile another profile's pack pins.
    */
   it("resolves the portrait binding per profile key, and only per profile key", () => {
     for (const binding of qwenImage2512PortraitBindings) {
       expect(
-        imagePromptBindingForShadow({ modelSlug: GENERATE_SLUG, task: "portrait", profileKey: binding.profileKey })?.id,
+        activeImagePromptBinding({
+          modelSlug: "qwen/qwen-image-2512",
+          task: "portrait",
+          profileKey: binding.profileKey,
+        })?.id,
       ).toBe(binding.id);
     }
-    for (const unbound of ["portrait-nonexistent", "stylized-portrait-high-guidance"]) {
-      expect(
-        imagePromptBindingForShadow({ modelSlug: GENERATE_SLUG, task: "portrait", profileKey: unbound }),
-        unbound,
-      ).toBeNull();
-    }
+    expect(
+      activeImagePromptBinding({
+        modelSlug: "qwen/qwen-image-2512",
+        task: "portrait",
+        profileKey: "portrait-nonexistent",
+      }),
+    ).toBeNull();
+    // The stylized key binds to SD 3.5 Large, the model its database row rides —
+    // never to 2512, which it never renders on (owner correction 2026-08-29 #1).
+    expect(
+      activeImagePromptBinding({
+        modelSlug: "qwen/qwen-image-2512",
+        task: "portrait",
+        profileKey: "stylized-portrait-high-guidance",
+      }),
+    ).toBeNull();
   });
 
   /**
-   * The deliberate absence stays deliberate: chat-place is identity-free and
-   * keeps its legacy prompt path, so no binding may resolve for it — through
-   * EITHER resolver, because a candidate row would already put the lane in
-   * shadow. Binding it later must be a conscious act that updates this pin.
+   * The deliberate absence stays deliberate: `chat_place` is the one
+   * identity-free lane in the chat set, it keeps its legacy prompt path, and no
+   * binding may resolve for it on either endpoint. Binding it later must be a
+   * conscious act that updates this pin.
    */
   it("leaves chat-place unbound", () => {
-    for (const slug of [GENERATE_SLUG, EDIT_SLUG]) {
+    for (const slug of ["qwen/qwen-image-2512", "qwen/qwen-image-edit-2511"]) {
       expect(activeImagePromptBinding({ modelSlug: slug, task: "chat_place" })).toBeNull();
-      expect(imagePromptBindingForShadow({ modelSlug: slug, task: "chat_place" })).toBeNull();
     }
   });
 });

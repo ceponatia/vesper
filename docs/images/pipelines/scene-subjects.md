@@ -50,6 +50,35 @@ row before provider spend** (`images.scene_render.visual_digest_unavailable` /
 `images.scene_render.visual_required_missing`), and the digest's `meta.visualState` provenance
 is written at reserve time so it survives a failed render.
 
+## One digest describes the whole cast
+
+Each member is realized from their own committed cut, so a render that compiles a
+[prompt program](../prompt-programs.md) folds those cuts into the single
+multi-subject digest the assembly takes.
+
+The fold keeps every fact, every subject slice and every suppression in cast
+order, re-ranks nothing and drops nothing: the per-cut selection already applied
+the camera, the policy and the budget, and re-deciding would make the merged
+digest disagree with the provenance each cut recorded. Prompt budget stays the
+dialect compile's job, which is the layer that knows the endpoint's ceiling. The
+snapshot and selection fingerprints are folds of the members' own, so two casts
+fold alike exactly when every member's cut was the same.
+
+Three preconditions refuse before provider spend:
+
+- **One committed moment.** The queue mints one cut id for the whole cast, so two
+  ids mean two scenes' visual truth.
+- **One camera.** Merging cuts selected under two cameras would pick one of two
+  contradictory shots with nothing recording that the other existed.
+- **One entry per person.** A duplicated subject gives the cast an extra body.
+
+Scope is deliberately **not** a precondition: a chat scopes a memory group per
+participant, so two people in one render never share one, and equality would
+refuse every ensemble scene. The merged digest carries the focal's scope, which
+travels nowhere — a committed read names its cut, not its scope — and each
+member's own scope is already recorded in the per-member `meta.visualState`
+provenance the row carries.
+
 ## One field production describes everybody
 
 `applySceneCastVisual` runs one shadow assembly, one camera-bound selection and one digest

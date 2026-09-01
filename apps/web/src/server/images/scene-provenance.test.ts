@@ -8,6 +8,7 @@ import {
   type SceneVisualReference,
 } from "@vesper/image-core";
 import { identityProvenanceFixture as record } from "@/server/test-support";
+import { IMAGE_PROMPT_PROGRAM_META_KEY, parseImagePromptProgramProvenance } from "@vesper/image-core";
 
 /**
  * `meta.identityReferences` honesty (identity packs 5B, codex review): the row
@@ -42,10 +43,15 @@ import { classifyImageFailure, isDemoMode } from "../ai";
 import { db } from "../db";
 import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult, type ImageRow } from "./assets";
 import { renderImageIntent } from "./render-intent";
-import { IMAGE_SHADOW_MULTI_SUBJECT } from "./character-shadow";
 import { emptySceneRenderPlan } from "./prompts-scene-plan";
 import { renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
-import { IMAGE_SHADOW_COMPARISON_META_KEY, parseImageShadowComparison } from "./shadow-comparison";
+import { applySceneCastVisual } from "./scene-subject-visual";
+import {
+  LANE_PROBE_SECOND_SUBJECT_ID,
+  LANE_PROBE_SUBJECT_ID,
+  laneProbeCastScenePlan,
+  laneProbeCastSubjects,
+} from "@/server/test-support";
 
 const mockPipeline = vi.mocked(runImagePipeline);
 const mockIntent = vi.mocked(renderImageIntent);
@@ -80,6 +86,34 @@ const profile: ResolvedImageProfile = {
     referencePolicy: imageReferencePolicySchema.parse({ requiredRoles: ["identity"] }),
   }),
 };
+
+/**
+ * The same shape on a BOUND endpoint, so the prompt-program cutover actually
+ * compiles. `vendor/model` above is deliberately unbound: every other case in
+ * this file is about identity provenance, which the cutover does not touch, and
+ * leaving them unbound keeps them exercising the legacy path they were written
+ * for.
+ */
+const boundProfile: ResolvedImageProfile = {
+  model: imageModelSchema.parse({
+    id: "mdl-2511",
+    slug: "qwen/qwen-image-edit-2511",
+    label: "Qwen Image Edit 2511",
+    canGenerate: false,
+    canEdit: true,
+    editKind: "instruction_edit",
+    identityPreservation: "strong",
+    referenceArity: "array",
+    maxReferences: 2,
+  }),
+  profile: profile.profile,
+};
+
+/** The two-person cast, realized from their own committed cuts — #256. */
+const castVisuals = applySceneCastVisual({
+  plan: laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member)),
+  members: laneProbeCastSubjects(),
+}).visuals;
 
 const characterRef = (name: string, imageId: string): SceneVisualReference => ({
   kind: "character",
@@ -241,14 +275,23 @@ describe("renderResolvedScene identity provenance", () => {
   });
 
   /**
-   * Codex P1 (PR #381): the reserve-time shadow record compares the PRIMARY
-   * rung's request, and the fallback correction rewrites the row to the
-   * winning rung — so it must replace the shadow record too. Pinned as: the
-   * corrected row's record measures the corrected prompt (the winning rung's),
-   * and the stale reserve-time fragment is gone; a row never pairs one rung's
-   * prompt and model with another rung's verdict.
+   * Codex P1 (PR #381), carried over to the cutover: the reserve-time row
+   * records the PRIMARY rung's compiled program, and the fallback correction
+   * rewrites the row to the winning rung — so it must replace that provenance
+   * too. A row that kept the primary's `meta.promptProgram` beside the winning
+   * rung's prompt would claim a world state and a program fingerprint that
+   * describe a different render, which is exactly what provenance exists to
+   * prevent. Pinned as: the corrected prompt differs from the reserved one, the
+   * corrected row carries parseable program provenance, and the stale fragment
+   * that was on the row did not survive the merge.
+   *
+   * It is also this file's one end-to-end multi-subject scene (#256): a cast
+   * of two, each realized from their own committed cut, folded into one digest
+   * and compiled into one prompt. A seam that could only carry the focal would
+   * fail here rather than silently describing one woman for a payload carrying
+   * two faces.
    */
-  it("a fallback correction replaces the reserve-time shadow record with the winning rung's", async () => {
+  it("a fallback correction replaces the reserve-time program provenance with the winning rung's", async () => {
     mockIntent
       .mockResolvedValueOnce({ ok: false, error: "multi boom" })
       .mockResolvedValueOnce({ ok: true, image: Buffer.from("rendered") });
@@ -256,44 +299,45 @@ describe("renderResolvedScene identity provenance", () => {
       {
         meta: {
           model: "replicate/vendor/model",
-          [IMAGE_SHADOW_COMPARISON_META_KEY]: { stale: true },
+          [IMAGE_PROMPT_PROGRAM_META_KEY]: { stale: true },
         },
       },
     ]);
 
     await renderResolvedScene(
       baseInput({
-        references: [characterRef("Mira", "imgA"), characterRef("Nadia", "imgB")],
+        profile: boundProfile,
+        references: [
+          { ...characterRef("Nyx", "imgA"), entityId: LANE_PROBE_SUBJECT_ID },
+          { ...characterRef("Ilsa", "imgB"), entityId: LANE_PROBE_SECOND_SUBJECT_ID },
+        ],
         referenceBuffers: new Map([
           ["imgA", Buffer.from("a")],
           ["imgB", Buffer.from("b")],
         ]),
-        // The multi-subject marker: a deterministic recorded refusal whose
-        // payload still measures the rung's own prompt — which is exactly what
-        // distinguishes the primary's record from the winning rung's.
-        shadow: { kind: "multi_subject", subjectIds: ["chr-a", "chr-b"] },
+        cast: castVisuals,
       }),
     );
 
-    // Reserved beside the primary (multi_edit) rung's prompt.
+    // Reserved beside the primary (multi_edit) rung's compiled prompt.
     const reservedPrompt = pipelineCalls[0]?.asset.prompt as string;
-    const reserved = parseImageShadowComparison(
-      pipelineCalls[0]?.asset.meta?.[IMAGE_SHADOW_COMPARISON_META_KEY],
-    );
-    expect(reserved?.codes).toEqual([IMAGE_SHADOW_MULTI_SUBJECT]);
-    expect(reserved?.payload.legacyChars).toBe(reservedPrompt.length);
+    expect(
+      parseImagePromptProgramProvenance(pipelineCalls[0]?.asset.meta?.[IMAGE_PROMPT_PROGRAM_META_KEY]),
+    ).not.toBeNull();
+    // Both people are in the one prompt — the whole cast compiled, not the focal.
+    expect(reservedPrompt).toContain("Nyx");
+    expect(reservedPrompt).toContain("Ilsa");
 
-    // The corrected row describes the WINNING rung: its shadow record measures
-    // the corrected prompt, and the stale fragment did not survive the merge.
+    // The corrected row describes the WINNING rung: a different compiled prompt,
+    // its own parseable provenance, and no trace of the stale fragment.
     const corrected = updateCalls[0];
     expect(corrected).toBeDefined();
     const correctedPrompt = corrected?.prompt as string;
     expect(correctedPrompt).not.toBe(reservedPrompt);
     const correctedMeta = corrected?.meta as Record<string, unknown>;
-    const record = parseImageShadowComparison(correctedMeta[IMAGE_SHADOW_COMPARISON_META_KEY]);
-    expect(record).not.toBeNull();
-    expect(record?.codes).toEqual([IMAGE_SHADOW_MULTI_SUBJECT]);
-    expect(record?.payload.legacyChars).toBe(correctedPrompt.length);
+    const provenance = parseImagePromptProgramProvenance(correctedMeta[IMAGE_PROMPT_PROGRAM_META_KEY]);
+    expect(provenance).not.toBeNull();
+    expect(correctedMeta[IMAGE_PROMPT_PROGRAM_META_KEY]).not.toMatchObject({ stale: true });
   });
 
   it("a pack-sourced PRIMARY anchor keeps its provenance across the same fallback", async () => {
