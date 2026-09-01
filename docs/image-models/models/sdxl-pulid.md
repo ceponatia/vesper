@@ -7,10 +7,22 @@
 **Quality ruling:** experimental identity-specialist candidate
 
 The model page carries no description text. Its schema exposes a PuLID
-identity-adapter pipeline over an SDXL checkpoint: a face reference plus a
-prompt, with a depth-guided ControlNet as a second, distinct image role.
-Lifetime run count on Replicate is 283 — barely exercised on the platform, and
-by far the least-exercised model in this batch.
+identity-adapter pipeline: a face reference plus a prompt, with a depth-guided
+ControlNet as a second, distinct image role. Lifetime run count on Replicate is
+283 — barely exercised on the platform, and by far the least-exercised model in
+this batch.
+
+## The checkpoint is Pony Realism, not stock SDXL
+
+The workflow loads `pony_realism_23.safetensors` (observed in prediction logs
+2026-08-31 against the pinned version above), while the adapter it applies is
+`ip-adapter_pulid_sdxl_fp16`, which is trained against stock SDXL. Pony-family
+fine-tunes shift the UNet far enough that an SDXL-trained identity adapter
+transfers weakly and the checkpoint's own facial prior competes with the
+reference; the person bias measured on
+[LikeReality Pony v1](likereality-pony-v1.md) is the same family effect. Any
+likeness expectation for this row is bounded by that pairing, not by PuLID's
+published behavior on stock SDXL.
 
 ## Community model — pinned by version
 
@@ -64,6 +76,36 @@ reasonable resolution order would have found it.
 
 Vesper never sends `depth_image`.
 
+## A changed reference reaches only a cold container
+
+The wrapper writes every supplied `reference_image` to the fixed path
+`/tmp/inputs/reference.png`, and ComfyUI keys its `LoadImage` node on that
+filename rather than on file content. On a warm container the reference load is
+therefore served from the execution cache, and so is the whole PuLID chain
+downstream of it — the InsightFace embedding and the patched model that
+`ApplyPulid` produces. The sampler runs against the face from the container's
+previous prediction, and the newly supplied reference is fetched, written to
+disk, and never read.
+
+Measured 2026-08-31 against the pinned version above, from three consecutive
+predictions each carrying its own reference. The cold prediction executed
+`LoadImage → PulidInsightFaceLoader → PulidEvaClipLoader → PulidModelLoader →
+ApplyPulid → KSampler` in 44.6s of predict time. The two warm ones executed
+`CLIPTextEncode → KSampler → VAEDecode → SaveImage` and nothing else, in 4.9s —
+which is 30 sampler steps at the observed 7.5 it/s with no room for face
+detection or an EVA-CLIP encode.
+
+Nothing in the declared input schema can invalidate that cache, so this is a
+property of the endpoint rather than a payload mistake. The consequences are
+load-bearing for anything that grades this model:
+
+- Back-to-back renders carrying different references grade one cached face.
+  Every arm of a comparison needs its own cold container.
+- Public models serve many accounts from the same warm container, so a cached
+  face is not necessarily one this account supplied.
+- A render that silently reused a stale embedding still reports `succeeded`,
+  with a payload naming the reference it ignored.
+
 ## Negative-prompt behavior
 
 The field is live and unselective (fruit-bowl suppression canary, 2026-08-29,
@@ -88,26 +130,40 @@ Two more measurements from the same canary:
   ("replicate returned no image") while its identical twin succeeded, so seed
   reproducibility is unverified.
 
-## Shape and method are pinned
+## Shape, method and identity strength are pinned
 
-The provider defaults `width`/`height` to 512×512 — both off-shape for a 3:4
-crop and far below Vesper's 768×1024 canonical portrait. `method` defaults to
-`fidelity`, which is already the setting Vesper wants, but pinning it
-explicitly means a provider-side default change cannot silently move this
-model from identity preservation to style transfer.
-The reviewed policy (`packages/image-core/src/models/reviewed-profile-controls.ts`) sends:
+The reviewed policy (`packages/image-core/src/models/reviewed-profile-controls.ts`)
+sends:
 
 ```json
 {
   "width": 832,
   "height": 1216,
-  "method": "fidelity"
+  "method": "fidelity",
+  "face_weight": 1,
+  "cfg": 7
 }
 ```
 
-Vesper uses this model for identity preservation, not style transfer, so
-`method` is never left to inherit whatever the provider ships as its default
-tomorrow.
+Each one corrects a wrapper default that is wrong for how Vesper uses this row:
+
+- `width`/`height` default to 512×512 — both off-shape for a 3:4 crop and far
+  below Vesper's 768×1024 canonical portrait.
+- `method` defaults to `fidelity`, which is already the setting Vesper wants.
+  Pinning it explicitly means a provider-side default change cannot silently
+  move this model from identity preservation to style transfer.
+- `face_weight` defaults to 0.8 on a row registered for identity preservation.
+  Vesper sends the field's 1.0 ceiling: there is no reading of that purpose on
+  which the adapter belongs at four-fifths strength, and the field offers no
+  headroom past it.
+- `cfg` defaults to 3, which the canary below measured as the weak arm on this
+  endpoint — 6/6 coherent renders at 7 against 8/10 with degenerate output at
+  the default.
+
+`face_weight` travels as a raw provider override, as `method` does: the
+normalized control vocabulary has no word for the strength of an identity
+adapter. `cfg` travels as the `guidance` control, which is exactly the word for
+it.
 
 ## Reviewed capability
 
@@ -133,12 +189,10 @@ Both ratings are `unknown`, and each for a different reason:
 
 ## Not offered for portraits
 
-`for_portrait` is false even though the model can generate from a bare
-prompt. That is a choice, not a capability gap: with no reference supplied,
-PuLID is an ordinary SDXL generator with nothing to recommend it over the
-models already offered on the portrait surface. Its purpose in this registry
-is identity-guided variants and scenes, which is what `for_variant` and
-`for_scene` are for.
+`for_portrait` is false. Its purpose in this registry is identity-guided
+variants and scenes, which is what `for_variant` and `for_scene` are for, and
+the workflow refuses bare prompts anyway — see Capabilities above, which owns
+that measurement.
 
 ## Seeded profiles
 
@@ -195,7 +249,9 @@ takes the first result.
   "reference_image": "<single identity url>",
   "width": 832,
   "height": 1216,
-  "method": "fidelity"
+  "method": "fidelity",
+  "face_weight": 1,
+  "cfg": 7
 }
 ```
 
@@ -205,9 +261,11 @@ takes the first result.
 
 No Vesper trial has been run — `identity_preservation` stays `unknown` until
 one grades identity improvement and full-frame drift against a held
-reference face, not merely whether an output looks plausible. Reliability is
-itself part of what a trial has to answer: at 283 lifetime runs this is the
-least-exercised model in the batch, and it is also the only reference-capable
-model among the four seeded here. The model also requires a recorded review
+reference face, not merely whether an output looks plausible. Every arm of such
+a trial runs on its own cold container, for the reason recorded above: a warm
+container grades a cached face rather than the reference the arm supplied.
+Reliability is itself part of what a trial has to answer: at 283 lifetime runs
+this is the least-exercised model in the batch, and it is also the only
+reference-capable model among the four seeded here. The model also requires a recorded review
 of its checkpoint/wrapper license and intended hosted product use before it
 becomes a production default or a paid feature path.

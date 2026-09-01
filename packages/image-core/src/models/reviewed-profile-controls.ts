@@ -29,11 +29,11 @@ import type { ImageControlDefaults } from "./image-model-profiles";
  * which keeps a policy from claiming a control (`seed`, `lora`) that the
  * reviewed judgment has nothing to say about.
  *
- * `steps` and `guidance` are currently expressible but unused: the sampler
- * corrections that needed them belonged to models the 2026-08-16 ruling dropped.
- * They stay in the vocabulary because the remaining trial questions are exactly
- * about steps and guidance on the seeded catalog, and a reviewed answer should
- * be a one-line table edit rather than a type change.
+ * `guidance` is what that headroom was for: SDXL PuLID's reviewed `cfg` is a
+ * one-line table edit here rather than a type change, which is exactly the claim
+ * this vocabulary was kept wide for. `steps` remains expressible and unused —
+ * the sampler corrections that needed it belonged to models the 2026-08-16
+ * ruling dropped, and it stays for the same reason `guidance` paid off.
  */
 export type ReviewedImageControlDefaults = Pick<
   ImageControlDefaults,
@@ -114,9 +114,21 @@ const REVIEWED_IMAGE_QUALITY: Readonly<Record<string, ReviewedImageQualityPolicy
     // 768×1024 canonical portrait. `method` is pinned because Vesper runs this
     // model for identity preservation and never for style transfer, so a changed
     // provider default must not be able to move it off `fidelity`.
-    controlDefaults: { resolution: "custom", width: 832, height: 1216 },
-    providerOverrides: { method: "fidelity" },
-    controlFields: { width: "width", height: "height" },
+    //
+    // The two identity settings, both of which ran on wrapper defaults through
+    // every likeness observation this row has: `face_weight` governs how hard the
+    // PuLID adapter pulls toward the reference and defaulted to 0.8, and this
+    // model is registered FOR identity preservation — there is no reading of that
+    // purpose on which Vesper wants the adapter at four-fifths strength. 1.0 is
+    // its ceiling, so this arm has no headroom past it. `cfg` defaulted to 3,
+    // which the negative-field canary measured as the weak arm on this exact
+    // endpoint (2026-08-29: 6/6 coherent renders at 7 against 8/10 with
+    // degenerate output at the default). `face_weight` has no normalized control
+    // — same reason `method` has none — while `cfg` is precisely what `guidance`
+    // is the word for.
+    controlDefaults: { guidance: 7, resolution: "custom", width: 832, height: 1216 },
+    providerOverrides: { method: "fidelity", face_weight: 1 },
+    controlFields: { guidance: "cfg", width: "width", height: "height" },
   },
 };
 
