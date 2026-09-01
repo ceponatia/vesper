@@ -8,14 +8,20 @@ look and place reference anchors, and the player's uploaded photos. This page ow
 ## Selfies
 
 `meta.flavor: "selfie"` on kind `scene`: the chat scene pipeline
-([scene-images.md](scene-images.md)) with `SELFIE_FRAMING` swapped in for `SCENE_POV_RULE` — the
-exact inverse of the POV rule, the subject's own phone camera, arm's-length or mirror, aware of
-the lens — via the `framing` option on `buildSceneRenderPrompt` / `renderResolvedScene`. A
-selfie's cast is trimmed to the sender, and its framing ends "No one else in frame".
+([scene-images.md](scene-images.md)) with the shot's **capture mode** set to `selfie` — the
+subject's own phone camera, arm's length or a mirror, aware of the lens. It is a member of the
+closed capture-mode choice rather than a flag on the first-person rule, because a selfie is as
+far from POV as it is from an observing camera: the subject's own arm is holding the lens. The
+route decides it before the plan is composed and the plan carries it, so the composer never
+sees it and a confused answer cannot un-selfie a render the player asked for
+([scene-framing.md](scene-framing.md) §Whose eyes the shot is through). A selfie's cast is
+trimmed to the sender, so the shot's person-count assertion says one.
 
 Selfies are **always the identity-locked reference route** (owner ruling): the per-chat
-`scene_model` text-to-image pick is ignored. They skip the shot line, staging, and identity-lock
-adaptation entirely ([scene-framing.md](scene-framing.md)).
+`scene_model` text-to-image pick is ignored. The staged arrangement and the possession clause
+both drop out with the mode — a selfie has the subject's own arm on the lens, so neither a
+two-body geometry nor a viewer-limb binding is true of it
+([scene-framing.md](scene-framing.md) §Intimate staging).
 
 A **retry-once failure policy** replaces the ladder's silent degrade: classify the first failure
 (`classifyImageFailure`), retry once — a content rejection with a sanitized plan, exposure and

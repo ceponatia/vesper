@@ -16,6 +16,7 @@ It can include:
 - item facts;
 - relationships such as “Mira holds the umbrella”;
 - camera and framing facts;
+- facts about the shot itself rather than about anyone in it — its mood, whose eyes it is seen through, and how two bodies are arranged;
 - the requested image operation;
 - the references that will be available;
 - source revisions or other provenance that identifies the moment being rendered.
@@ -251,6 +252,12 @@ It must not read the character sheet, wardrobe, scene memory, or database direct
 It must not invent omitted facts.
 
 It must not change the requested operation because another task happens to look visually similar.
+
+### The one exception to “wording last”
+
+A small closed set of intimate staging arrangements carries wording that was measured rather than chosen — a handful of words in each sentence accounts for almost the whole difference between a usable render and a broken one, and that residue describes how models behave rather than what the scene means. So the reviewed sentence travels with the fact, under a version number and a content check that says which exact words the version meant.
+
+This is not a general prose channel. A caller cannot supply a sentence; only the registry that authored and measured it can. And each dialect has to decide **explicitly** whether it is using the reviewed wording or writing its own, because a later reader needs to know whether the measurements behind that version describe the image in front of them.
 
 ---
 

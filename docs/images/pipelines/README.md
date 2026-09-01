@@ -13,7 +13,7 @@ The generation lanes. Every lane resolves its task's profile
 | [avatar-upload.md](avatar-upload.md)         | The user-supplied portrait: crop dialog, backdrop, synchronous promotion          |
 | [portrait-variants.md](portrait-variants.md) | Reference edits of the canonical avatar, promotion, the `nsfw test` anatomy bench |
 | [scene-images.md](scene-images.md)           | The chat scene lane: cast, composer, attempt ladder, chat keying, the Gallery     |
-| [scene-framing.md](scene-framing.md)         | Player POV, the embodied viewer, the camera, intimate staging                     |
+| [scene-framing.md](scene-framing.md)         | Capture mode and POV, the embodied viewer, the camera, intimate staging           |
 | [scene-subjects.md](scene-subjects.md)       | How every present character's facts are produced: digest, coverage, reveal, state |
 | [chat-images.md](chat-images.md)             | Selfies, the look/place reference anchors, and player photo uploads               |
 | [entity-images.md](entity-images.md)         | Item and location art, compiled from a world digest rather than written           |

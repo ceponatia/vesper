@@ -192,6 +192,8 @@ The dialect is allowed to change the **form** of the request. It is not allowed 
 
 This gives Vesper a clean way to become better at using a particular model without rewriting the game systems that own the facts.
 
+There is one narrow exception, and it exists because of measurement rather than convenience. A small closed set of intimate staging arrangements has wording that was tuned against real renders, where a handful of words in each sentence carries almost the whole difference between a good result and a broken one. That wording travels with the fact under a version number, and each model dialect has to say explicitly whether it is using the reviewed sentence or writing its own. It is never a way for a caller to hand the model an arbitrary paragraph.
+
 ## Prompt packs are tunable behavior, not world truth
 
 A prompt pack is the versioned set of prompt-behavior choices for a model/task combination.
@@ -319,7 +321,7 @@ Those systems can feed information into prompt programs or consume their output,
 | --- | --- |
 | Visual state | Which character facts are visually true and relevant to this render |
 | Wardrobe / coverage | Current clothing and what body regions it covers |
-| Scene composition | Cast, action, setting, camera, framing, staging |
+| Scene composition | Cast, action, setting, lighting, mood, camera, framing, whose eyes the shot is through, staging |
 | Items / locations | Their visual identity, state, relationships, and authored text |
 | Identity packs | Eligible character reference images |
 | Model profiles / capabilities | Which model is doing the job and what that endpoint can really accept |
