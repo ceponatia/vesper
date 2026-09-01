@@ -397,8 +397,10 @@ function captureModeTag(mode: SceneCaptureMode, subject: string | null): string 
   switch (mode) {
     case "third_person":
       return "third-person camera, observed from outside the scene";
-    case "first_person_pov":
-      return "first-person pov, the shot seen through the viewer's own eyes";
+    case "first_person_disembodied":
+      return "first-person pov, the shot seen through the viewer's own eyes, the viewer not visible";
+    case "first_person_embodied":
+      return "first-person pov, the shot seen through the viewer's own eyes, the viewer's own body cropped into frame, their face and head out of frame";
     case "selfie":
       return `phone selfie taken by ${who}, camera at arm's length or in a mirror, ${who} looking into the lens`;
   }

@@ -10,7 +10,7 @@ import type { CharacterCameraAssemblyInput } from "@/contracts/images/character-
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { DEFAULT_SCENE_CAMERA } from "@/contracts/images/scene-camera";
 import { sceneStagingSurfaceForms } from "@/contracts/images/scene-staging";
-import { resolveViewerParts } from "@/contracts/images/viewer-body";
+import { resolveViewerParts, type ViewerBodyPart } from "@/contracts/images/viewer-body";
 import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./prompts-scene-plan";
 
 /**
@@ -152,9 +152,15 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
   const featured: readonly SceneCharacterSpec[] = [...(plan.focal ? [plan.focal] : []), ...plan.others];
   const focalRef = plan.focal === null ? undefined : refByName.get(normalizeName(plan.focal.name));
 
+  // Embodiment is decided ONCE, here, and both the framing sentence and the
+  // possession clause read the same answer. Deciding them separately is exactly
+  // how a prompt comes to say the viewer is never visible and then describe the
+  // viewer's own hands on somebody.
+  const captureMode = resolveCaptureMode(plan, viewerPartsInFrame(input));
+
   const facts: ImageWorldFact[] = [
-    captureModeFact(plan.captureMode, focalRef),
-    ...possessionFact(plan.captureMode, featured, refByName),
+    captureModeFact(captureMode, focalRef),
+    ...possessionFact(captureMode, featured, refByName),
     ...moodFact(plan.mood),
     ...stagingFact(input, focalRef),
     ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)))),
@@ -216,7 +222,7 @@ function possessionFact(
   featured: readonly SceneCharacterSpec[],
   refByName: ReadonlyMap<string, string>,
 ): readonly ImageWorldFact[] {
-  if (mode !== "first_person_pov") return [];
+  if (mode !== "first_person_disembodied") return [];
   const owners = featured
     .filter((spec) => spec.name.trim().length > 0)
     .map((spec) => refByName.get(normalizeName(spec.name)))
@@ -316,15 +322,45 @@ function stagingFact(input: SceneLoweringInput, focalRef: string | undefined): r
   ];
 }
 
-/** Whether every viewer part the arrangement names survives this route's coverage gate. */
-function stagedPartsInFrame(input: SceneLoweringInput): boolean {
-  const staging = input.plan.staging;
-  if (staging === undefined) return false;
-  const inFrame = resolveViewerParts({
+/**
+ * Every viewer part that survives THIS rung's route and coverage gates.
+ *
+ * Per rung rather than per render: `allowIntimate` differs between the uncensored
+ * edit rung and its moderated fallback, so a part in frame on one is not in frame
+ * on the other, and a shot's embodiment follows it.
+ */
+function viewerPartsInFrame(input: SceneLoweringInput): readonly ViewerBodyPart[] {
+  return resolveViewerParts({
     proposed: input.plan.viewerBody,
     ...(input.plan.playerExposure ? { exposure: input.plan.playerExposure } : {}),
     allowIntimate: input.allowIntimate,
   });
+}
+
+/**
+ * Which first-person shot this is — the distinction the framing contract turns on.
+ *
+ * A surviving viewer part makes the shot EMBODIED, and a part whose geometry a
+ * staging sentence owns counts exactly as much as one the generic carrier would
+ * have worded. The arrangement still says "the viewer's own hands on her
+ * shoulders" whether or not anything else describes those hands, so a frame that
+ * asserted the viewer's absence beside it would contradict itself in the same
+ * prompt.
+ *
+ * The plan carries the ROUTE decision — a selfie is a selfie on every rung — and
+ * this refines the first-person case per rung, because coverage and the intimate
+ * route decide which parts are in frame and those differ down the chain.
+ */
+function resolveCaptureMode(plan: SceneRenderPlan, inFrame: readonly ViewerBodyPart[]): SceneCaptureMode {
+  if (plan.captureMode === "selfie" || plan.captureMode === "third_person") return plan.captureMode;
+  return inFrame.length > 0 ? "first_person_embodied" : "first_person_disembodied";
+}
+
+/** Whether every viewer part the arrangement names survives this route's coverage gate. */
+function stagedPartsInFrame(input: SceneLoweringInput): boolean {
+  const staging = input.plan.staging;
+  if (staging === undefined) return false;
+  const inFrame = viewerPartsInFrame(input);
   return staging.viewerParts.every((id) => inFrame.some((part) => part.id === id));
 }
 

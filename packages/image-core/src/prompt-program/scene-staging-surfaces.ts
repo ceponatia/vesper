@@ -79,6 +79,14 @@ export interface SceneStagingSurfaceLog {
   replace(claimId: string, form: SceneStagingSurfaceForm): SceneStagingId;
   /** Every decision taken, in the order the claims were rendered. */
   decisions(): readonly SceneStagingSurfaceDecision[];
+  /**
+   * Whether this claim's dialect said where its wording came from.
+   *
+   * The compile asks before admitting a staging segment: a rendered arrangement with no
+   * disposition beside it is indistinguishable in provenance from one whose measured bytes
+   * were sent, so it is dropped rather than published.
+   */
+  decided(claimId: string): boolean;
 }
 
 export function createSceneStagingSurfaceLog(): SceneStagingSurfaceLog {
@@ -101,6 +109,9 @@ export function createSceneStagingSurfaceLog(): SceneStagingSurfaceLog {
     },
     decisions() {
       return [...byClaim.values()];
+    },
+    decided(claimId) {
+      return byClaim.has(claimId);
     },
   };
 }

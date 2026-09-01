@@ -308,8 +308,10 @@ export function captureModeSentence(mode: SceneCaptureMode, subject: string | nu
   switch (mode) {
     case "third_person":
       return "The shot is taken by an observing camera, from outside the scene.";
-    case "first_person_pov":
+    case "first_person_disembodied":
       return "First-person POV through the viewer's own eyes; the viewer is never visible in the image.";
+    case "first_person_embodied":
+      return "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame, though the viewer's own body may be cropped into the frame.";
     case "selfie":
       return `A phone selfie ${who} is taking: the camera held at arm's length or shot in a mirror, ${who} aware of the lens and composing the frame, in the close-quarters perspective of a phone camera.`;
   }

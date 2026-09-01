@@ -330,8 +330,41 @@ describe("contact as staging evidence", () => {
  * `node:crypto`, and this is where the rule is executed rather than described: SHA-256 over
  * the UTF-8 bytes of the template, `{name}` intact, and nothing else.
  */
+/**
+ * The revision ledger: what each human revision has ALWAYS meant, in bytes.
+ *
+ * APPEND-ONLY. A row here is a historical claim, not a mirror of the current table — editing
+ * one rewrites what a past measurement was measured against, which is the single thing this
+ * file exists to prevent.
+ *
+ * The digest check alone cannot enforce a revision bump, because the digest lives beside the
+ * text it hashes: changing the wording and the digest together leaves the recomputed hash
+ * agreeing with the stored one, and `@1` silently comes to mean new bytes with CI green. This
+ * ledger is the independent half. Its entry for `@1` was written when `@1` was, so a wording
+ * edit that keeps the revision now contradicts a line the edit did not touch.
+ *
+ * The edit path for changing measured wording is therefore: change the template, recompute the
+ * digest, bump the revision, and APPEND the new revision here. Three of those four are in one
+ * file and this one is not, which is the point.
+ */
+const SURFACE_REVISION_LEDGER: Readonly<Record<string, string>> = {
+  "held_from_behind@1": "e954404cfcce2cdeaa0737c50fb487d4a2c996b78307da51257b2818edc46ceb",
+  "held_from_behind_bare@1": "6a868ee7d30b77e60aca6c5c0dafb5df132a5420e6c4dc8b33e0b7344ba76068",
+  "kneeling_before_viewer@1": "dcb0c21e9826606b704745f856bffeec173c377b93ac5724e0eb36d1887f53ff",
+  "kneeling_before_viewer_guided@1": "723e8a49e7356c5360db8182c624a35f6067530d44d575073ccf1c12176aec95",
+  "astride_viewer_facing@1": "06a751ad09ad50233be551fa045163b6b9b773ca80ff5ec869a5f82815628899",
+  "astride_viewer_away@1": "c236e982ec293a6965b6d9d79651833462013ea43f8875e9ffe67500cbe0b1b3",
+  "bent_over_surface@1": "33feef7aeb628765cc1fdeb9085e46a128baf26c762ba6d390c8ed0170c6a762",
+  "on_all_fours@1": "d3f2f60b7d66a587a6f270dbbec9c4167a058d703b1b1fe6a069f03cb2d167e4",
+  "lying_beneath_viewer@1": "8144f5704ff8538e805fe46e7ded68bce88721bacdc097284adb799e079bebe8",
+  "lying_face_down@1": "be6218c3fdb15f453825d9027c5162df4542d61edffbdbb2f23b41b74af78a74",
+  "spooned_from_behind@1": "3178a4755a7e3f2f71783deca9fe0e21c18a2584b7e4ae4777cbe841f4d192b2",
+  "pressed_to_wall_facing@1": "18d42a732433811a0bdaec2eee54ea9d2a93c3531b1bede30a37fccfaff7466a",
+  "pressed_to_wall_away@1": "f7514817593a4601186328b37082cec452d5dbc7ba409ef8b8de95b8743aca6f",
+};
+
 describe("the staging surface forms", () => {
-  it("digests the wording in use, so an unrevised edit cannot pass", () => {
+  it("digests the wording in use, so a text edit cannot pass unnoticed", () => {
     const sha256Hex = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
 
     // A digest over a COPY of a template would prove only that the copy had not moved. The
@@ -341,5 +374,31 @@ describe("the staging surface forms", () => {
     }
 
     expect(findSceneStagingSurfaceDigestMismatches(sceneStagingSurfaceFormTable, sha256Hex)).toEqual([]);
+  });
+
+  /**
+   * Falsified against the edit the digest check lets through: change a template's text and its
+   * digest together, leave `revision: 1`, and the check above stays green while every
+   * measurement filed under `@1` becomes a claim about a sentence that no longer exists. This
+   * fails on exactly that edit, because the ledger's `@1` still holds the bytes `@1` meant.
+   */
+  it("pins every revision to the bytes it has always named", () => {
+    for (const id of sceneStagingOrder) {
+      const row = sceneStagingSurfaceFormTable[id];
+      const revision = `${id}@${String(row.revision)}`;
+      const pinned = SURFACE_REVISION_LEDGER[revision];
+      expect(pinned, `${revision} has no ledger entry — a new revision must be appended, never repointed`).toBeDefined();
+      expect(row.digest, revision).toBe(pinned);
+    }
+  });
+
+  /**
+   * The ledger may only grow. A revision that leaves it takes its measurement's meaning with
+   * it, so a shrinking ledger is a rewritten history rather than a tidy-up.
+   */
+  it("keeps a ledger entry for every arrangement", () => {
+    for (const id of sceneStagingOrder) {
+      expect(Object.keys(SURFACE_REVISION_LEDGER).some((key) => key.startsWith(`${id}@`)), id).toBe(true);
+    }
   });
 });

@@ -113,7 +113,7 @@ function populatedScenePlan(over: Partial<SceneRenderPlan> = {}): SceneRenderPla
     lighting: "dim lamplight",
     mood: "quiet and unhurried",
     camera: sceneStagings.lying_face_down.camera,
-    captureMode: "first_person_pov",
+    captureMode: "first_person_disembodied",
     viewerBody: [...sceneStagings.lying_face_down.viewerParts],
     staging: sceneStagings.lying_face_down,
     focal: { ...focal, pose: "lying still along the bed", activity: "listening to the rain" },
@@ -199,11 +199,10 @@ describe("the compiled scene prompt over a populated plan", () => {
     const { program } = compileScene(populatedScenePlan());
 
     expectSections(program.prompt, [
-      // Whose eyes this is — the anchor of the measured POV composite.
-      "First-person POV through the viewer's own eyes; the viewer is never visible in the image.",
-      // The possession binding, ABSTRACT and name-bound. An enumerated form was
-      // measured worse and painted a phantom viewer hand.
-      "Every visible body part belongs to Nyx or Ilsa.",
+      // Whose eyes this is, and whose body may be in the frame. The arrangement
+      // below places the viewer's own hands on Nyx, so this shot is EMBODIED and
+      // must not assert the viewer's absence.
+      "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame, though the viewer's own body may be cropped into the frame.",
       // The registry's measured wording, adopted verbatim with `{name}` bound.
       "Nyx lying face down along the bed with Nyx's back to the camera and Nyx's head turned to the side against the pillow, the viewer's own hands resting on Nyx's shoulders.",
       // Pose and activity as two claims — the split the plan used to destroy.
@@ -221,6 +220,13 @@ describe("the compiled scene prompt over a populated plan", () => {
 
     // The scene's own light, never the release's declared `bright` placeholder.
     expect(program.prompt).not.toContain("Bright, even light.");
+
+    // The three statements have to be mutually consistent. The arrangement says
+    // the viewer's own hands are on Nyx's shoulders, so the frame may not also
+    // say the viewer is invisible, and the cast may not be given every visible
+    // body part — that clause would hand the viewer's hands to an NPC.
+    expect(program.prompt).not.toContain("the viewer is never visible in the image");
+    expect(program.prompt).not.toContain("Every visible body part belongs to");
 
     // Canonical segment order: the frame is stated before the bodies standing in
     // it, and the place and its mood follow both.
@@ -268,12 +274,55 @@ describe("an absent capture decision", () => {
     // Straight through `resolveScenePlan` with no capture decision in the
     // context — the production path for every chat scene that is not a selfie.
     const plan = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
-    expect(plan.captureMode).toBe("first_person_pov");
+    expect(plan.captureMode).toBe("first_person_disembodied");
 
     const { program } = compileScene(plan);
     expect(program.prompt).toContain(
       "First-person POV through the viewer's own eyes; the viewer is never visible in the image.",
     );
     expect(program.prompt).not.toContain("The shot is taken by an observing camera, from outside the scene.");
+  });
+
+  /**
+   * The measured composite, intact on the shot it was measured on.
+   *
+   * A frame with no viewer part in it is the disembodied case, and there the
+   * possession clause is doing its job: nothing else in the prompt owns a limb,
+   * so binding every visible one to the cast is what stops a phantom viewer hand
+   * appearing. Dropping it here would be over-applying the embodied fix.
+   */
+  it("keeps the cast possession binding when no viewer part is in frame", () => {
+    const plan = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
+    expect(plan.viewerBody).toEqual([]);
+    expect(plan.staging).toBeUndefined();
+
+    const { program, lowered } = compileScene(plan);
+    expect(lowered.scene.some((fact) => fact.concept === "scene.possession")).toBe(true);
+    expect(program.prompt).toContain("Every visible body part belongs to Nyx or Ilsa.");
+  });
+});
+
+/**
+ * The contradiction this repair exists to end.
+ *
+ * A staging sentence names the viewer's own hands, so the frame around it cannot
+ * assert the viewer's absence and the cast cannot be handed every visible body
+ * part. That a staging owns the geometry changes nothing: the arrangement still
+ * puts the viewer in the picture, and the surrounding contract has to know it.
+ */
+describe("a staging that places the viewer", () => {
+  it("makes the shot embodied and withdraws the cast-only possession clause", () => {
+    const plan = populatedScenePlan();
+    expect(plan.staging?.viewerParts.length).toBeGreaterThan(0);
+
+    const { program, lowered } = compileScene(plan);
+
+    const captureMode = lowered.scene.find((fact) => fact.concept === "scene.capture_mode");
+    expect(captureMode?.value).toBe("first_person_embodied");
+    expect(lowered.scene.some((fact) => fact.concept === "scene.possession")).toBe(false);
+
+    // The arrangement is still stated — embodiment withdraws the possession
+    // clause, never the staging it was contradicting.
+    expect(program.prompt).toContain("the viewer's own hands resting on Nyx's shoulders.");
   });
 });

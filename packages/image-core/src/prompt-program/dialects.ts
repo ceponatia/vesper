@@ -257,6 +257,23 @@ export function compileDialectClaims(input: {
     // as dropped. Silently skipping would make a new concept meeting an old
     // dialect look like a render that simply chose not to mention it.
     if (segment === null) droppedClaimIds.push(claim.id);
+    // A staging sentence whose dialect did not say where the wording came from is
+    // UNRENDERABLE, not merely unrecorded. The surface-form channel exists to make
+    // the measurement provenance trustworthy, and a rendered arrangement with no
+    // disposition beside it is indistinguishable from one whose measured bytes were
+    // sent — so admitting the segment would publish exactly the misreading the
+    // channel prevents. Dropping it instead hands the decision to the machinery that
+    // already exists: staging is `required_visual`, so the compile refuses rather
+    // than shipping a scene that quietly lost its arrangement.
+    else if (claim.concept === "scene.staging" && !input.surfaces.decided(claim.id)) {
+      droppedClaimIds.push(claim.id);
+      input.sink?.push(
+        diag("warn", "image_prompt_program.staging_surface_unrecorded", "a staging rendered without a wording decision", {
+          path: "image_prompt_program",
+          context: { claim: claim.id },
+        }),
+      );
+    }
     // The claim id rides `source`, which is diagnostic-only and never reaches a
     // provider. It is also the most precise provenance available: the claim
     // already carries the owner's own source ref, so naming the claim names the
@@ -276,23 +293,11 @@ export function compileDialectClaims(input: {
   }
   const dropped = new Set(droppedClaimIds);
   const decisions = input.surfaces.decisions();
-  const decided = new Set(decisions.map((decision) => decision.claimId));
-  // A staging sentence that reached the payload without its dialect saying where the wording
-  // came from. Reported rather than thrown or dropped: the prompt is correct, and it is the
-  // RECORD that degraded (docs/resilience.md §2). Left unreported it is the exact misreading
-  // the surface-form channel exists to prevent — provenance with no disposition beside a
-  // rendered arrangement reads as "this render had no staging", not as "nobody said".
-  const unrecorded = input.claims.filter(
-    (claim) => claim.concept === "scene.staging" && !dropped.has(claim.id) && !decided.has(claim.id),
-  );
-  if (unrecorded.length > 0) {
-    input.sink?.push(
-      diag("warn", "image_prompt_program.staging_surface_unrecorded", "a staging reached the prompt without a wording decision", {
-        path: "image_prompt_program",
-        context: { claims: unrecorded.map((claim) => claim.id) },
-      }),
-    );
-  }
+  // The accounting, in one pass and therefore incapable of disagreeing with itself: a
+  // dropped claim publishes no decision, and a surviving staging cannot have reached
+  // here without one, because a staging that rendered without a decision was dropped
+  // above. So a successful compile satisfies "surviving staging => exactly one
+  // adopted|replaced record" structurally rather than by assertion.
   return {
     text: joinImagePromptSegments(fitted.segments),
     segments: fitted.segments,

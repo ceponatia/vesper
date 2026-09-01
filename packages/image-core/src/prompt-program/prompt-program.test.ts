@@ -20,8 +20,8 @@ import {
   qwenImage2512Bindings,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
-  createSceneStagingSurfaceForms,
-  sceneStagingIds,
+  createSceneStagingSurfaceLog,
+  compileDialectClaims,
   selectImageNegativeConstraints,
   selectImagePositiveClaims,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
@@ -38,10 +38,16 @@ import {
   type ImageWorldDigestInput,
   type ImageWorldFact,
   type ImageWorldRelation,
+} from "./index";
+// The scene IR is a sibling of the compiler, not part of it: `prompt-program/index.ts`
+// deliberately re-exports no scene-ir name, so these come from the protocol directly.
+import {
+  createSceneStagingSurfaceForms,
+  sceneStagingIds,
   type SceneStagingId,
   type SceneStagingSurfaceFormEntry,
   type SceneStagingSurfaceFormTable,
-} from "./index";
+} from "../scene-ir";
 
 /**
  * The prompt-program layer.
@@ -1184,5 +1190,53 @@ describe("a render's staging wording and its dropped claims", () => {
     expect(compiled.stagingSurfaces).toEqual([
       { claimId: "scene.staging", form: stagingForms.formFor("on_all_fours"), disposition: "replaced" },
     ]);
+  });
+
+  /**
+   * Falsified against the warning-only shape this replaced.
+   *
+   * A dialect that words an arrangement without saying where the wording came from used to
+   * warn and publish anyway, so provenance carried a rendered staging with no disposition
+   * beside it — which reads as "this render had no staging", not as "nobody said". The record
+   * is the whole point of the channel, so an unrecorded staging is now UNRENDERABLE: the
+   * segment is refused, and because staging is `required_visual` the compile refuses with it
+   * rather than shipping a scene that quietly lost its arrangement.
+   */
+  it("refuses a staging whose dialect recorded no wording decision", () => {
+    const claims = selectImagePositiveClaims(stagedWorld());
+    const compiled = compileDialectClaims({
+      claims,
+      // A renderer that words the arrangement and never touches the log — the mistake a new
+      // dialect makes, and the one no type checks.
+      render: (claim) =>
+        claim.concept === "scene.staging"
+          ? { kind: "pose", text: "an arrangement worded with no decision recorded.", mandatory: true, priority: 1 }
+          : null,
+      surfaces: createSceneStagingSurfaceLog(),
+      budget: {},
+    });
+
+    expect(compiled.text).not.toContain("an arrangement worded with no decision recorded.");
+    expect(compiled.droppedClaimIds).toContain("scene.staging");
+    expect(compiled.stagingSurfaces).toEqual([]);
+  });
+
+  /**
+   * The structural rule the two lists have to keep between them: a claim is either dropped or
+   * carries exactly one disposition, never both and never neither. Cutting `dropped` from the
+   * disposition vocabulary is safe only while that holds.
+   */
+  it("never reports a claim as both dropped and decided", () => {
+    const result = compileImagePromptProgram(compileInput(stagedWorld()));
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const { droppedClaimIds, sceneStagingSurfaces, positiveClaimIds } = result.compiled.promptProgramProvenance;
+
+    for (const record of sceneStagingSurfaces) {
+      expect(droppedClaimIds).not.toContain(record.claimId);
+      expect(positiveClaimIds).toContain(record.claimId);
+    }
+    for (const claimId of positiveClaimIds.filter((id) => id === "scene.staging")) {
+      expect(sceneStagingSurfaces.filter((record) => record.claimId === claimId)).toHaveLength(1);
+    }
   });
 });

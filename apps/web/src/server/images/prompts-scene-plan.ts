@@ -125,7 +125,7 @@ export function emptySceneRenderPlan(): SceneRenderPlan {
     lighting: "soft natural light",
     mood: "calm",
     camera: { ...DEFAULT_SCENE_CAMERA },
-    captureMode: "first_person_pov",
+    captureMode: "first_person_disembodied",
     viewerBody: [],
   };
 }
@@ -339,7 +339,7 @@ export function resolveScenePlan(
     // Absent means the player's own eyes, not an observing camera: only a selfie
     // route ever states a mode, and every other chat scene has been first-person
     // since before the plan carried the field.
-    captureMode: context.captureMode ?? "first_person_pov",
+    captureMode: context.captureMode ?? "first_person_disembodied",
     ...(staging ? { staging } : {}),
     viewerBody: resolvedViewerBody,
     ...(context.playerExposure ? { playerExposure: context.playerExposure } : {}),

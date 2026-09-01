@@ -39,15 +39,29 @@ import { z } from "zod";
  *
  * - `third_person` — an unowned observing camera. The default, and the only member that
  *   makes no claim about anybody's position.
- * - `first_person_pov` — the shot is through the viewer's eyes. A claim about the viewer's
- *   body, which is why the surrounding composite (the person count, the possession clause,
- *   the limb binding) exists at all: a POV frame that reads as a third body in the room is
- *   the failure this member is here to prevent.
+ * - `first_person_disembodied` — the shot is through the viewer's eyes and the viewer is not
+ *   visible at all. A claim about the viewer's body, which is why the surrounding composite
+ *   (the person count, the possession clause, the limb binding) exists: a POV frame that
+ *   reads as a third body in the room is the failure this member prevents.
+ * - `first_person_embodied` — the shot is through the viewer's eyes and the viewer's own body
+ *   may be cropped into frame, though their face and head never are. The possession clause
+ *   MUST NOT run here: binding every visible body part to the cast would hand the viewer's
+ *   own hands to somebody else.
  * - `selfie` — the subject holds the camera. Both a camera position and a composition, and
- *   the reason this is a mode rather than a boolean: it is as far from `first_person_pov` as
- *   it is from `third_person`.
+ *   the reason this is a mode rather than a boolean: it is as far from either first-person
+ *   member as it is from `third_person`.
+ *
+ * The two first-person members are separate rather than one member plus a flag because they
+ * are the point at which a prompt can contradict itself. Whether the viewer is in frame
+ * decides the framing sentence AND whether the possession clause may run, so a consumer that
+ * receives "first person" without receiving which one cannot compile either correctly.
  */
-export const sceneCaptureModes = ["third_person", "first_person_pov", "selfie"] as const;
+export const sceneCaptureModes = [
+  "third_person",
+  "first_person_disembodied",
+  "first_person_embodied",
+  "selfie",
+] as const;
 
 export const sceneCaptureModeSchema = z.enum(sceneCaptureModes);
 
