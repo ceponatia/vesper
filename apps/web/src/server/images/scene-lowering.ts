@@ -118,8 +118,15 @@ export interface SceneProgramInputs {
  * No match is a real answer, not a gap: an unclassifiable phrase leaves the band
  * unstated, the phrase itself still reaches the prompt, and nothing invents a
  * claim about visibility from prose it could not read.
+ *
+ * The bare word `dark` is in the darkest band rather than only its compounds.
+ * "a dark room" is the plainest way a composer says this, and leaving it
+ * unclassified is not a neutral outcome: an unstated band leaves the release's
+ * declared `bright` placeholder standing, so the digest would select detail at
+ * the bright tier for a scene that said the opposite. This field is a lighting
+ * phrase, so `dark` here is never a hair or a fabric.
  */
-const DARK_LIGHTING = /\b(pitch[-\s]?(?:black|dark)|unlit|darkness|blacked[-\s]?out|starless|lightless)\b/i;
+const DARK_LIGHTING = /\b(dark\w*|pitch[-\s]?black|unlit|blacked[-\s]?out|starless|lightless)\b/i;
 const DIM_LIGHTING =
   /\b(dim\w*|low[-\s]light|dusk|twilight|gloom\w*|murk\w*|candle\w*|firelit|firelight|lamplight|lamplit|lantern\w*|moonlit|moonlight|shadow\w*|overcast|night|nighttime|night-time|evening)\b/i;
 const BRIGHT_LIGHTING =

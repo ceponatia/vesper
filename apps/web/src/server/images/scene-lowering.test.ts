@@ -22,7 +22,7 @@ import {
   type CharacterPromptReference,
 } from "./character-prompt-program";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
-import { lowerScenePlan, type SceneProgramInputs } from "./scene-lowering";
+import { lowerScenePlan, sceneLightingBand, type SceneProgramInputs } from "./scene-lowering";
 import { applySceneCastVisual } from "./scene-subject-visual";
 
 /**
@@ -310,6 +310,30 @@ describe("an absent capture decision", () => {
  * part. That a staging owns the geometry changes nothing: the arrangement still
  * puts the viewer in the picture, and the surrounding contract has to know it.
  */
+/**
+ * Falsified against the classifier that accepted only compounds.
+ *
+ * `dark room` matched neither the dark band (which wanted `pitch dark` or `darkness`) nor the
+ * dim one, so the band went unstated — and an unstated band is not neutral, it leaves the
+ * release's declared `bright` placeholder standing. A scene that says it is dark then selected
+ * character detail at the bright tier and was told it was brightly lit, which is the exact
+ * regression this lowering exists to end, in the plainest phrasing a composer uses.
+ */
+describe("a scene that says it is dark", () => {
+  it.each(["a dark room", "dark ambient light", "darkened hallway", "pitch dark"])(
+    "classifies %j as dark rather than leaving the bright placeholder standing",
+    (lighting) => {
+      expect(sceneLightingBand(lighting)).toBe("dark");
+    },
+  );
+
+  it("never lets a dark scene keep the declared bright placeholder", () => {
+    const { program } = compileScene(populatedScenePlan({ lighting: "a dark room" }));
+    expect(program.prompt).not.toContain("Bright, even light.");
+    expect(program.prompt).toContain("Lit by a dark room.");
+  });
+});
+
 describe("a staging that places the viewer", () => {
   it("makes the shot embodied and withdraws the cast-only possession clause", () => {
     const plan = populatedScenePlan();
