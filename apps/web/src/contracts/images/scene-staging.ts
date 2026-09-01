@@ -1,6 +1,13 @@
-import type { RegionExposure } from "../items/visibility";
-import type { ViewerBodyPartId } from "./viewer-body";
-import type { SceneCameraSpec } from "./scene-camera";
+import {
+  createSceneStagingSurfaceForms,
+  isSceneStagingId,
+  sceneStagingIds,
+  type SceneStagingId,
+  type SceneStagingSemantics,
+  type SceneStagingSurfaceFormTable,
+  type SceneStagingSurfaceForms,
+  type SceneStagingTable,
+} from "@vesper/image-core";
 
 /**
  * The **staging catalog** — one entry per stageable intimate configuration.
@@ -35,43 +42,43 @@ import type { SceneCameraSpec } from "./scene-camera";
  * coverage gates still decide whether they render at all.
  *
  * PURE. A new configuration is one entry; a phrasing fix is a data edit.
+ *
+ * ## What this file no longer declares
+ *
+ * The id union and the facts behind each id — the camera, the viewer parts, the bare regions,
+ * the intimate flag, the face override, the cast — are `@vesper/image-core`'s
+ * {@link SceneStagingSemantics}, because both sides of the render seam reason over them and a
+ * second declaration here would let them drift while both kept compiling. The table below
+ * satisfies the shared shape rather than restating it, so a new arrangement in the shared
+ * vocabulary is a compile error here until this registry says what it means. Selection, the
+ * evidence gates, the sentence and the composer's hint stay app-side: none of them is
+ * decidable without reading English, and none of them belongs to a compiler.
  */
 
-export const sceneStagingIds = [
-  "held_from_behind",
-  "held_from_behind_bare",
-  "kneeling_before_viewer",
-  "kneeling_before_viewer_guided",
-  "astride_viewer_facing",
-  "astride_viewer_away",
-  "bent_over_surface",
-  "on_all_fours",
-  "lying_beneath_viewer",
-  "lying_face_down",
-  "spooned_from_behind",
-  "pressed_to_wall_facing",
-  "pressed_to_wall_away",
-] as const;
-export type SceneStagingId = (typeof sceneStagingIds)[number];
+export { sceneStagingIds };
+export type { SceneStagingId };
 
-export interface SceneStaging {
-  id: SceneStagingId;
-  /**
-   * The camera the configuration implies. **Overrides the composer's camera proposal**
-   * outright rather than being merged with it: the geometry is entailed by the act, so a
-   * staging that survived its own evidence gate has already earned its shot.
-   *
-   * Away-facing entries carry orientation `away`, never `away_glance_back` — the glance is a
-   * separate physical claim needing its own narration evidence (owner ruling 2026-08-10).
-   * Glance-back variants would be their own entries, and there are none in v1.
-   */
-  camera: SceneCameraSpec;
-  /** Viewer parts the configuration puts in frame — the gate list, resolved through the existing `resolveViewerParts`. */
-  viewerParts: readonly ViewerBodyPartId[];
-  /** Regions of the SUBJECT that must read bare/sheer for the template to be truthful; `[]` ⇒ clothed-capable staging. */
-  requiresBare: readonly (keyof RegionExposure)[];
-  /** True ⇒ emitted only when the route's `allowIntimate` is set, exactly like `intimateAppearance`. */
-  intimate: boolean;
+/**
+ * One arrangement: what it means, plus the two things only this side has.
+ *
+ * The semantics are shared. The **template** is the sentence a render is built from, and the
+ * **hint** is how a composer recognises the arrangement — two audiences, two fields, so a
+ * template tuned for render quality cannot silently retrain selection.
+ *
+ * Three app-side rules the shared semantics do not state, because they are rulings about this
+ * catalog rather than properties of the vocabulary:
+ *
+ * - **An away-facing entry carries orientation `away`, never `away_glance_back`** (owner
+ *   ruling 2026-08-10). The glance is a separate physical claim needing its own narration
+ *   evidence; a glance-back variant would be its own entry, and there are none in v1.
+ * - **Every entry is `solo` in v1** — each describes a two-body geometry between the subject
+ *   and the viewer, so a second character in the room makes the sentence a lie about who is
+ *   where. The roster gate runs in `resolveScenePlan`, which is the only side that knows who
+ *   is present.
+ * - **A template owns the viewer-limb phrasing for the parts it names**, so `viewerParts`
+ *   stays a gate list resolved through `resolveViewerParts` rather than a phrasing source.
+ */
+export type SceneStaging = SceneStagingSemantics & {
   /** The staging sentence. `{name}` is the subject. Written once, here, never by a model. */
   template: string;
   /**
@@ -80,44 +87,22 @@ export interface SceneStaging {
    *
    * It exists because the composer was shown bare ids and nothing else, and an id is not a
    * definition: `kneeling_before_viewer_guided` differs from `kneeling_before_viewer` by one
-   * adjective whose whole meaning lives in {@link template}, so no model could infer it. In
-   * the 2026-08-15 composer A/B that cost the guided entry every run — 0/16 across eight
-   * models, all of them answering the plain sibling.
+   * adjective whose whole meaning lives in {@link SceneStaging.template}, so no model could
+   * infer it. In the 2026-08-15 composer A/B that cost the guided entry every run — 0/16
+   * across eight models, all of them answering the plain sibling.
    *
    * **Not the template, and never rendered into an image prompt.** The template is explicit
    * because a render needs explicit words; a hint is a recognition cue for a planner that is
-   * choosing between thirteen options, and it stays plain. Keeping them separate is also what
-   * lets the templates be tuned for render quality without silently retraining selection.
+   * choosing between thirteen options, and it stays plain.
    *
    * Write it to answer "how do I tell this from its neighbours?" — the distinguishing fact
    * first, in the vocabulary a narrator would use.
    */
   hint: string;
-  /**
-   * Overrides the camera orientation's derived `faceVisibility` for the identity-lock
-   * adaptation: a face can hide by head angle alone — a crown-of-the-head shot on a subject
-   * who faces the viewer squarely. Absent ⇒ the orientation entry's value.
-   */
-  faceVisibility?: "full" | "partial" | "hidden";
-  /**
-   * How many present NPCs the entry can honestly stage (owner ruling, 2026-08-14).
-   *
-   * - `"solo"` — eligible only when EXACTLY ONE NPC is in the scene.
-   * - `"multi"` — the entry explicitly supports more than one present NPC.
-   *
-   * Every initial entry is `"solo"`, and that is a statement about the templates rather than
-   * a placeholder: each one describes a two-body geometry between the subject and the
-   * viewer, and a second character standing in the room makes the sentence a lie about who
-   * is where — the same class of self-contradiction the person-count assertion exists to
-   * prevent. A multi-NPC staging is a new entry with its own wording, not a relaxed flag on
-   * one of these. **The gate itself runs in `resolveScenePlan`**, where the present roster is
-   * known; this field is the datum it reads.
-   */
-  cast: "solo" | "multi";
-}
+};
 
-export const sceneStagings: readonly SceneStaging[] = [
-  {
+export const sceneStagings = {
+  held_from_behind: {
     id: "held_from_behind",
     camera: { orientation: "away", distance: "medium", height: "eye_level" },
     viewerParts: ["hands", "forearms"],
@@ -128,7 +113,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "standing, held from behind — the viewer's arms around her from behind, both still dressed.",
     cast: "solo",
   },
-  {
+  held_from_behind_bare: {
     // The same hold, bare. Split into its own entry rather than made conditional, because a
     // clothed embrace and a bare one are different sentences, not one sentence with a flag.
     id: "held_from_behind_bare",
@@ -141,7 +126,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "the same hold from behind, but she is bare from the waist up and the viewer's hands are on her bare breasts.",
     cast: "solo",
   },
-  {
+  kneeling_before_viewer: {
     // Acceptance scene "Oral", composition A (owner-specified 2026-08-10): her face visible,
     // looking up, mid-act. `requiresBare` is empty on purpose — the bare anatomy this shot
     // needs is the VIEWER's, and that is gated by `viewerParts` against the player's own
@@ -159,7 +144,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she kneels facing the viewer with her mouth on them and her face tilted up, visible — the viewer's hands are NOT on her.",
     cast: "solo",
   },
-  {
+  kneeling_before_viewer_guided: {
     // Composition B of the same acceptance scene: the shot looks down on the crown of her
     // head. `faceVisibility: "hidden"` is the whole reason the override field exists — the
     // orientation is `toward_viewer`, and the face is hidden by head angle alone, so the
@@ -226,7 +211,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "the same kneeling act, but the viewer's own hand rests on top of her head, guiding — the story must say the hand is on her head.",
     cast: "solo",
   },
-  {
+  astride_viewer_facing: {
     id: "astride_viewer_facing",
     camera: { orientation: "toward_viewer", distance: "close", height: "low" },
     viewerParts: ["hands", "genitals"],
@@ -237,7 +222,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she straddles the viewer facing them, chest to chest, penetration, the viewer's hands on her waist.",
     cast: "solo",
   },
-  {
+  astride_viewer_away: {
     // Facing away, so the camera says `away` and the face is hidden. The subject's back is
     // NOT described as bare: over-claiming a region in the template would make `requiresBare`
     // demand a bare torso for a shot that only needs a bare pelvis.
@@ -251,7 +236,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she straddles the viewer facing AWAY, her back to them, penetration, the viewer's hands on her hips.",
     cast: "solo",
   },
-  {
+  bent_over_surface: {
     id: "bent_over_surface",
     camera: { orientation: "away", distance: "medium", height: "high" },
     viewerParts: ["hands", "genitals"],
@@ -262,7 +247,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she is bent forward over a waist-high surface, back to the viewer, entered from behind while standing.",
     cast: "solo",
   },
-  {
+  on_all_fours: {
     // Acceptance scene "Doggy style" (owner-specified 2026-08-10). Graded on three visible
     // elements: on all fours, back to the camera with the face away from the lens, and the
     // viewer's own hands on her waist or hips. `viewerParts` carries hands and forearms —
@@ -300,7 +285,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she is on hands and knees on a low surface, back to the viewer, entered from behind — the viewer's hands on her waist or hips.",
     cast: "solo",
   },
-  {
+  lying_beneath_viewer: {
     // Acceptance scene "Missionary" (owner-specified 2026-08-10). Graded on: on her back
     // facing up at the camera, penetration visible at the bottom frame edge, and the
     // viewer's hands on her legs OR her waist — the template names both, since either hand
@@ -315,7 +300,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she lies on her back beneath the viewer, facing up, penetration from above.",
     cast: "solo",
   },
-  {
+  lying_face_down: {
     id: "lying_face_down",
     camera: { orientation: "away", distance: "medium", height: "high" },
     viewerParts: ["hands"],
@@ -326,7 +311,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she lies face down and still, the viewer's hand on her back — resting or being touched, not an act.",
     cast: "solo",
   },
-  {
+  spooned_from_behind: {
     id: "spooned_from_behind",
     camera: { orientation: "away", distance: "close", height: "eye_level" },
     viewerParts: ["hands", "forearms"],
@@ -337,7 +322,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "both lying on their sides, her back against the viewer's front, the viewer's arm draped over her — dressed, at rest.",
     cast: "solo",
   },
-  {
+  pressed_to_wall_facing: {
     id: "pressed_to_wall_facing",
     camera: { orientation: "toward_viewer", distance: "close", height: "eye_level" },
     viewerParts: ["hands", "forearms"],
@@ -348,7 +333,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she is against a wall FACING the viewer, who is close in front of her.",
     cast: "solo",
   },
-  {
+  pressed_to_wall_away: {
     id: "pressed_to_wall_away",
     camera: { orientation: "away", distance: "close", height: "eye_level" },
     viewerParts: ["hands"],
@@ -359,11 +344,140 @@ export const sceneStagings: readonly SceneStaging[] = [
     hint: "she is against a wall facing INTO it, her back to the viewer, who is close behind her.",
     cast: "solo",
   },
-];
+} satisfies SceneStagingTable<SceneStaging>;
+
+/**
+ * The order the catalog is READ in — stated, never inherited.
+ *
+ * The composer's menu is built by walking this list, so the order is prompt content: it is
+ * what a small model reads top to bottom when it picks between thirteen arrangements. Taking
+ * that order from the table's key order would make a silent, invisible dependency out of how
+ * an object literal happens to be written, and reordering two rows for readability would
+ * change what the model sees with nothing to notice it.
+ *
+ * Totality is pinned by a test rather than by the compiler — an arrangement missing from here
+ * is never offered, which is a failure that looks exactly like a model declining to use it.
+ */
+export const sceneStagingOrder = [
+  "held_from_behind",
+  "held_from_behind_bare",
+  "kneeling_before_viewer",
+  "kneeling_before_viewer_guided",
+  "astride_viewer_facing",
+  "astride_viewer_away",
+  "bent_over_surface",
+  "on_all_fours",
+  "lying_beneath_viewer",
+  "lying_face_down",
+  "spooned_from_behind",
+  "pressed_to_wall_facing",
+  "pressed_to_wall_away",
+] as const satisfies readonly SceneStagingId[];
+
+/** The catalog as a list, in {@link sceneStagingOrder} — what a menu, a form or a census iterates. */
+export const sceneStagingList: readonly SceneStaging[] = sceneStagingOrder.map((id) => sceneStagings[id]);
 
 export function sceneStagingById(id: string): SceneStaging | undefined {
-  return sceneStagings.find((entry) => entry.id === id);
+  return isSceneStagingId(id) ? sceneStagings[id] : undefined;
 }
+
+// ---------------------------------------------------------------------------
+// The measured wording, as an artifact
+// ---------------------------------------------------------------------------
+
+/**
+ * Each arrangement's sentence, with the provenance that makes a measurement citable.
+ *
+ * The `text` is the entry's own `template` rather than a copy of it, and that is the whole
+ * mechanism: a digest over a copy would prove only that the copy had not moved, leaving a
+ * wording edit to the template it was copied from completely unguarded. One artifact, one
+ * hash, so `held_from_behind@1` names bytes that are actually in use.
+ *
+ * `{name}` is left INTACT. The template is the artifact; substituting the subject's name is a
+ * separate step at the emission site, and hashing a substituted string would produce a
+ * different digest for every character in the cast.
+ *
+ * The digests are authored here and verified by `scene-staging.test.ts`, which is the one
+ * place in the application that runs SHA-256 — a wording edit that forgets to bump the
+ * revision fails there rather than quietly redefining what the old revision meant.
+ */
+export const sceneStagingSurfaceFormTable = {
+  held_from_behind: {
+    text: sceneStagings.held_from_behind.template,
+    revision: 1,
+    digest: "e954404cfcce2cdeaa0737c50fb487d4a2c996b78307da51257b2818edc46ceb",
+  },
+  held_from_behind_bare: {
+    text: sceneStagings.held_from_behind_bare.template,
+    revision: 1,
+    digest: "6a868ee7d30b77e60aca6c5c0dafb5df132a5420e6c4dc8b33e0b7344ba76068",
+  },
+  kneeling_before_viewer: {
+    text: sceneStagings.kneeling_before_viewer.template,
+    revision: 1,
+    digest: "dcb0c21e9826606b704745f856bffeec173c377b93ac5724e0eb36d1887f53ff",
+  },
+  kneeling_before_viewer_guided: {
+    text: sceneStagings.kneeling_before_viewer_guided.template,
+    revision: 1,
+    digest: "723e8a49e7356c5360db8182c624a35f6067530d44d575073ccf1c12176aec95",
+  },
+  astride_viewer_facing: {
+    text: sceneStagings.astride_viewer_facing.template,
+    revision: 1,
+    digest: "06a751ad09ad50233be551fa045163b6b9b773ca80ff5ec869a5f82815628899",
+  },
+  astride_viewer_away: {
+    text: sceneStagings.astride_viewer_away.template,
+    revision: 1,
+    digest: "c236e982ec293a6965b6d9d79651833462013ea43f8875e9ffe67500cbe0b1b3",
+  },
+  bent_over_surface: {
+    text: sceneStagings.bent_over_surface.template,
+    revision: 1,
+    digest: "33feef7aeb628765cc1fdeb9085e46a128baf26c762ba6d390c8ed0170c6a762",
+  },
+  on_all_fours: {
+    text: sceneStagings.on_all_fours.template,
+    revision: 1,
+    digest: "d3f2f60b7d66a587a6f270dbbec9c4167a058d703b1b1fe6a069f03cb2d167e4",
+  },
+  lying_beneath_viewer: {
+    text: sceneStagings.lying_beneath_viewer.template,
+    revision: 1,
+    digest: "8144f5704ff8538e805fe46e7ded68bce88721bacdc097284adb799e079bebe8",
+  },
+  lying_face_down: {
+    text: sceneStagings.lying_face_down.template,
+    revision: 1,
+    digest: "be6218c3fdb15f453825d9027c5162df4542d61edffbdbb2f23b41b74af78a74",
+  },
+  spooned_from_behind: {
+    text: sceneStagings.spooned_from_behind.template,
+    revision: 1,
+    digest: "3178a4755a7e3f2f71783deca9fe0e21c18a2584b7e4ae4777cbe841f4d192b2",
+  },
+  pressed_to_wall_facing: {
+    text: sceneStagings.pressed_to_wall_facing.template,
+    revision: 1,
+    digest: "18d42a732433811a0bdaec2eee54ea9d2a93c3531b1bede30a37fccfaff7466a",
+  },
+  pressed_to_wall_away: {
+    text: sceneStagings.pressed_to_wall_away.template,
+    revision: 1,
+    digest: "f7514817593a4601186328b37082cec452d5dbc7ba409ef8b8de95b8743aca6f",
+  },
+} satisfies SceneStagingSurfaceFormTable;
+
+/**
+ * The one way a dialect reaches this registry's wording.
+ *
+ * Closing the table is what makes the text unreadable everywhere else: past this line the
+ * sentence has no public name, so a dialect either adopts it at a visible call site or words
+ * the arrangement itself, and which one it did is answerable by looking.
+ */
+export const sceneStagingSurfaceForms: SceneStagingSurfaceForms =
+  createSceneStagingSurfaceForms(sceneStagingSurfaceFormTable);
 
 // ---------------------------------------------------------------------------
 // Contact as staging evidence

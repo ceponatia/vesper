@@ -1,24 +1,36 @@
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import { joinImagePromptSegments, type ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { ImageAngleBand, ImageDistanceBand, ImageFramingBand, ImageLightingBand } from "./camera-bands";
+import { adoptSceneStagingSurfaceForm } from "../scene-ir";
+import type {
+  ImageAngleBand,
+  ImageCameraHeightBand,
+  ImageDistanceBand,
+  ImageFramingBand,
+  ImageLightingBand,
+} from "./camera-bands";
 import type { ImageStyleMedium } from "./conflict-keys";
 import {
   angleSentence,
   capitalize,
+  captureModeSentence,
   describe,
   describeChange,
   distanceSentence,
   framingSentence,
+  heightSentence,
   label,
   lightingSentence,
   listOf,
   listWords,
+  possessionOwners,
+  possessionSentence,
   preservedMeanings,
   mediumSentence,
   prefixed,
   relationSentence,
   sentence,
   spatialWord,
+  stagingSentence,
   subjectCountSentence,
 } from "./dialect-qwen-prose";
 import {
@@ -32,6 +44,7 @@ import {
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
+import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
 
 /**
  * `qwen/qwen-image-edit-2511` — the delta-first instruction-edit dialect.
@@ -242,6 +255,8 @@ function renderClaim(
     mandatory: claim.required,
     priority,
   });
+  /** A sentence a helper may decline to write — null in, null out, never an empty segment. */
+  const sayOrNull = (text: string | null): ImagePromptSegment | null => (text === null ? null : say(text));
   const value = describe(claim.value);
   const subject = label(input, claim.subjectRef);
   const object = label(input, claim.objectRef);
@@ -291,6 +306,32 @@ function renderClaim(
       return assignment === null ? null : say(assignment, DELTA_PRIORITY.reference);
     }
 
+    // --- Scene ----------------------------------------------------------------
+    case "scene.mood":
+      return say(`The mood is ${value}.`);
+    case "scene.capture_mode": {
+      const mode = imageSceneCaptureMode(claim.value);
+      return mode === null ? null : say(captureModeSentence(mode, subject));
+    }
+    case "scene.possession":
+      return sayOrNull(possessionSentence(possessionOwners(input, claim.value)));
+    case "scene.staging": {
+      const form = imageSceneStagingForm(claim.value);
+      if (form === null) return null;
+      // ADOPTS the registry's wording, and this is the endpoint with the strongest
+      // claim on it: the intimate scene route runs on the LoRA-capable wrapper
+      // that shares this implementation, and the templates were tuned against
+      // exactly those renders — one of them is written to sit nine characters
+      // under the edit lane's own ceiling. The measured residue is model behavior
+      // rather than scene meaning, so no typed semantics could regenerate it and
+      // a rival sentence here would throw away the only evidence there is.
+      //
+      // The budget it was tuned against is gone: a program budgets from the model
+      // binding rather than from the legacy 1500-character clamp, so a
+      // re-measurement is owed whether the wording is adopted or replaced.
+      return sayOrNull(stagingSentence(adoptSceneStagingSurfaceForm(form), subject));
+    }
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
       // The identity travels in the reference, so the identity claim compiles to
@@ -320,6 +361,12 @@ function renderClaim(
       return say(prefixed(subject, `has ${value}`));
     case "subject.pose":
       return say(prefixed(subject, `is ${value}`));
+    case "subject.activity":
+      // Same clause shape as a pose. The pose/activity split is a distinction in
+      // the world rather than in English — different composer fields, different
+      // provenance — and a dialect that invented a lexical difference would be
+      // asserting something the value does not carry.
+      return say(prefixed(subject, `is ${value}`));
     case "subject.expression":
       return say(prefixed(subject, `wears a ${value} expression`));
     case "subject.body_language":
@@ -337,6 +384,8 @@ function renderClaim(
       return say(distanceSentence(claim.value as ImageDistanceBand));
     case "camera.angle":
       return say(angleSentence(claim.value as ImageAngleBand, subject));
+    case "camera.height":
+      return say(heightSentence(claim.value as ImageCameraHeightBand));
     case "camera.motion":
       // A still camera has nothing to say; saying it anyway spends budget on a
       // sentence that describes the absence of an effect.

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { findSceneStagingSurfaceDigestMismatches } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
 import { FULLY_COVERED } from "../items/visibility";
 import {
@@ -9,6 +11,9 @@ import {
   sceneStagingById,
   sceneStagingContactEvidence,
   sceneStagingIds,
+  sceneStagingList,
+  sceneStagingOrder,
+  sceneStagingSurfaceFormTable,
   sceneStagings,
   stagingEvidenceFromContacts,
   type SceneContactPairRead,
@@ -41,9 +46,14 @@ const bind = (template: string): string => template.replaceAll("{name}", "Mira")
 const EXPOSURE_KEYS = Object.keys(FULLY_COVERED);
 
 describe("the staging registry", () => {
-  it("has one entry per id, in order, and no id twice", () => {
-    expect(sceneStagings.map((entry) => entry.id)).toEqual([...sceneStagingIds]);
-    expect(new Set(sceneStagingIds).size).toBe(sceneStagingIds.length);
+  // The record itself is total by type — it satisfies the shared table, so a missing or
+  // invented arrangement does not compile. What no compiler checks is the ORDER list the
+  // composer's menu is walked in: an arrangement absent from it is simply never offered,
+  // which looks exactly like a model declining to use it.
+  it("orders every arrangement exactly once, and the list view follows that order", () => {
+    expect([...sceneStagingOrder].sort()).toEqual([...sceneStagingIds].sort());
+    expect(new Set(sceneStagingOrder).size).toBe(sceneStagingOrder.length);
+    expect(sceneStagingList.map((entry) => entry.id)).toEqual([...sceneStagingOrder]);
   });
 
   it("resolves every id and nothing the composer invented", () => {
@@ -53,13 +63,13 @@ describe("the staging registry", () => {
   });
 
   it("every entry carries a selection hint, and no two are the same sentence", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(entry.hint.trim().length, entry.id).toBeGreaterThan(0);
       // The hint is read by a planner choosing an id, not rendered into a prompt, so it
       // carries no `{name}` placeholder — a stray one would reach a model as literal braces.
       expect(entry.hint, entry.id).not.toContain("{name}");
     }
-    const hints = sceneStagings.map((entry) => entry.hint);
+    const hints = sceneStagingList.map((entry) => entry.hint);
     expect(new Set(hints).size).toBe(hints.length);
   });
 
@@ -85,7 +95,7 @@ describe("the staging registry", () => {
   });
 
   it("every template is a non-empty {name} template", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(entry.template.trim().length, entry.id).toBeGreaterThan(0);
       expect(entry.template, entry.id).toContain("{name}");
     }
@@ -95,7 +105,7 @@ describe("the staging registry", () => {
   // leave the composer's own camera standing, and an unknown viewer part would be dropped
   // by resolveViewerParts with no trace of what the staging meant to show.
   it("names only cameras the camera registry knows", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(sceneSubjectOrientationById(entry.camera.orientation), entry.id).toBeDefined();
       expect(sceneShotDistanceById(entry.camera.distance), entry.id).toBeDefined();
       expect(sceneCameraHeightById(entry.camera.height), entry.id).toBeDefined();
@@ -103,13 +113,13 @@ describe("the staging registry", () => {
   });
 
   it("names only viewer parts the viewer-body registry knows", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       for (const part of entry.viewerParts) expect(viewerBodyPartById(part), `${entry.id}/${part}`).toBeDefined();
     }
   });
 
   it("names only real exposure regions in requiresBare", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       for (const region of entry.requiresBare) expect(EXPOSURE_KEYS, entry.id).toContain(region);
     }
   });
@@ -119,7 +129,7 @@ describe("the template phrasing rules", () => {
   // THE phantom-limb pin. An unowned limb in a first-person prompt reads as the viewer's
   // own foreground limb — or, worse, as a third person standing in the room.
   it("leaves no unbound limb once {name} is substituted", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(matches(BARE_LIMB, bind(entry.template)), entry.id).toBe(false);
       expect(matches(BOTH_LIMBS, bind(entry.template)), entry.id).toBe(false);
     }
@@ -129,7 +139,7 @@ describe("the template phrasing rules", () => {
   // possessive naming its owner, so no phrasing the pattern happens not to cover can slip
   // a free-floating limb into a prompt.
   it("possessively binds every limb noun to the subject or to the viewer", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       const bound = bind(entry.template);
       for (const match of bound.matchAll(LIMB_NOUN)) {
         const before = bound.slice(0, match.index);
@@ -139,7 +149,7 @@ describe("the template phrasing rules", () => {
   });
 
   it("uses no gendered pronoun and no negation", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(entry.template, entry.id).not.toMatch(GENDERED_PRONOUN);
       expect(entry.template, entry.id).not.toMatch(NEGATION);
     }
@@ -150,7 +160,7 @@ describe("the gates each entry carries", () => {
   // The rule, stated as a test: a template that names an explicit act or intimate anatomy
   // is intimate, and rides only the uncensored route. A clothed-capable hold is not.
   it("marks exactly the explicit entries intimate", () => {
-    const intimate = sceneStagings.filter((entry) => entry.intimate).map((entry) => entry.id);
+    const intimate = sceneStagingList.filter((entry) => entry.intimate).map((entry) => entry.id);
     expect(intimate).toEqual([
       "held_from_behind_bare",
       "kneeling_before_viewer",
@@ -180,7 +190,7 @@ describe("the gates each entry carries", () => {
   });
 
   it("requires a bare pelvis for every penetrative staging", () => {
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       if (!entry.template.includes("penetration") && !entry.template.includes("bare hips")) continue;
       expect(entry.requiresBare, entry.id).toContain("pelvis");
     }
@@ -190,13 +200,13 @@ describe("the gates each entry carries", () => {
   // subject and the viewer, so a second present NPC would make the sentence a lie about
   // who is where. The gate itself runs in resolveScenePlan.
   it("is solo-cast throughout in v1", () => {
-    for (const entry of sceneStagings) expect(entry.cast, entry.id).toBe("solo");
+    for (const entry of sceneStagingList) expect(entry.cast, entry.id).toBe("solo");
   });
 
   // Away means fully away (owner ruling 2026-08-10): a staging never claims the glance,
   // which is a separate physical claim needing its own narration evidence.
   it("never claims the glance back", () => {
-    for (const entry of sceneStagings) expect(entry.camera.orientation).not.toBe("away_glance_back");
+    for (const entry of sceneStagingList) expect(entry.camera.orientation).not.toBe("away_glance_back");
   });
 });
 
@@ -301,5 +311,35 @@ describe("contact as staging evidence", () => {
     expect(stagingEvidenceFromContacts([handOnHerBack], "spooned_from_behind")).toBe(false);
     expect(stagingEvidenceFromContacts([], "on_all_fours")).toBe(false);
     expect(stagingEvidenceFromContacts([handOnHerBack], "not_a_staging")).toBe(false);
+  });
+});
+
+/**
+ * The one place in the application that runs SHA-256, and the defect it kills.
+ *
+ * The tuning comments in this registry are measurement records, not opinions: replacing
+ * `kneeling_before_viewer_guided`'s contact verb took the viewer's anatomy from present in
+ * three renders of three to absent in three of three, and `on_all_fours` lost the viewer's
+ * hands twice before the frame-corner clause held them. Every one of those results is a fact
+ * about a specific string, cited as `on_all_fours@1`.
+ *
+ * So a wording edit that leaves the revision alone is not a small thing: the name silently
+ * comes to mean different bytes, and every measurement filed under it becomes a claim about a
+ * sentence that no longer exists. The digest is what makes that loud — the hash is handed in
+ * from here because `@vesper/image-core` is browser-portable and may not evaluate
+ * `node:crypto`, and this is where the rule is executed rather than described: SHA-256 over
+ * the UTF-8 bytes of the template, `{name}` intact, and nothing else.
+ */
+describe("the staging surface forms", () => {
+  it("digests the wording in use, so an unrevised edit cannot pass", () => {
+    const sha256Hex = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
+
+    // A digest over a COPY of a template would prove only that the copy had not moved. The
+    // artifact and the registry's sentence have to be the same string for any of this to bind.
+    for (const id of sceneStagingOrder) {
+      expect(sceneStagingSurfaceFormTable[id].text, id).toBe(sceneStagings[id].template);
+    }
+
+    expect(findSceneStagingSurfaceDigestMismatches(sceneStagingSurfaceFormTable, sha256Hex)).toEqual([]);
   });
 });

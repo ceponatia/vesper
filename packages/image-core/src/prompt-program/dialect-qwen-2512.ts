@@ -1,23 +1,34 @@
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { ImageAngleBand, ImageDistanceBand, ImageFramingBand, ImageLightingBand } from "./camera-bands";
+import { adoptSceneStagingSurfaceForm } from "../scene-ir";
+import type {
+  ImageAngleBand,
+  ImageCameraHeightBand,
+  ImageDistanceBand,
+  ImageFramingBand,
+  ImageLightingBand,
+} from "./camera-bands";
 import type { ImageConflictKey, ImageStyleMedium } from "./conflict-keys";
 import {
   angleSentence,
   capitalize,
+  captureModeSentence,
   describe,
   describeChange,
   distanceSentence,
   framingSentence,
+  heightSentence,
   label,
   lightingSentence,
-  listOf,
   listWords,
+  possessionOwners,
+  possessionSentence,
   preservedMeanings,
   mediumSentence,
   prefixed,
   relationSentence,
   sentence,
   spatialWord,
+  stagingSentence,
   subjectCountSentence,
 } from "./dialect-qwen-prose";
 import {
@@ -30,6 +41,7 @@ import {
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
+import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
 
 /**
  * `qwen/qwen-image-2512` — the first implemented dialect.
@@ -95,6 +107,8 @@ function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput
     mandatory: claim.required,
     priority: claim.priority,
   });
+  /** A sentence a helper may decline to write — null in, null out, never an empty segment. */
+  const sayOrNull = (text: string | null): ImagePromptSegment | null => (text === null ? null : say(text));
   const value = describe(claim.value);
   const subject = label(input, claim.subjectRef);
   const object = label(input, claim.objectRef);
@@ -135,6 +149,28 @@ function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput
       // asserting a transport this endpoint does not have.
       return value === "before" || value === "product" ? say("The supplied image is this render's starting point.") : null;
 
+    // --- Scene ----------------------------------------------------------------
+    case "scene.mood":
+      return say(`The mood is ${value}.`);
+    case "scene.capture_mode": {
+      const mode = imageSceneCaptureMode(claim.value);
+      return mode === null ? null : say(captureModeSentence(mode, subject));
+    }
+    case "scene.possession":
+      return sayOrNull(possessionSentence(possessionOwners(input, claim.value)));
+    case "scene.staging": {
+      const form = imageSceneStagingForm(claim.value);
+      if (form === null) return null;
+      // ADOPTS the registry's wording. The evidence is one generation over — the
+      // templates were tuned on the edit sibling, not here — and adopting anyway
+      // is the deliberate call: this endpoint wants exactly the long concrete
+      // prose those templates are written in, the measured residue is model
+      // behavior that no typed semantics can regenerate, and a rival sentence
+      // authored here would make the two Qwen endpoints incomparable the moment
+      // the owed re-measurement runs.
+      return sayOrNull(stagingSentence(adoptSceneStagingSurfaceForm(form), subject));
+    }
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity":
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
@@ -147,6 +183,12 @@ function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput
     case "subject.appearance":
       return say(prefixed(subject, `has ${value}`));
     case "subject.pose":
+      return say(prefixed(subject, `is ${value}`));
+    case "subject.activity":
+      // Same clause shape as a pose. The split is a distinction in the world
+      // rather than in English — different composer fields, different provenance
+      // — and inventing a lexical difference would assert something the value
+      // does not carry.
       return say(prefixed(subject, `is ${value}`));
     case "subject.expression":
       return say(prefixed(subject, `wears a ${value} expression`));
@@ -165,6 +207,8 @@ function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput
       return say(distanceSentence(claim.value as ImageDistanceBand));
     case "camera.angle":
       return say(angleSentence(claim.value as ImageAngleBand, subject));
+    case "camera.height":
+      return say(heightSentence(claim.value as ImageCameraHeightBand));
     case "camera.motion":
       // A still camera has nothing to say; saying it anyway spends budget on a
       // sentence that describes the absence of an effect.

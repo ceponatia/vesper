@@ -66,9 +66,9 @@ const OPERATION_SOURCE: ImageSourceRef = { owner: "image.operation", key: "opera
  * Turn one immutable world digest into the ordered positive claims a dialect
  * compiles.
  *
- * Selection follows the canonical order — operation first, then subjects, camera,
- * relations, items, location, style — but that order is about which claim is
- * BUILT first, not which sentence comes first. Emission order is the prompt
+ * Selection follows the canonical order — operation first, then the scene,
+ * subjects, camera, relations, items, location, style — but that order is about
+ * which claim is BUILT first, not which sentence comes first. Emission order is the prompt
  * segment vocabulary's canonical order, applied by
  * {@link orderImagePositiveClaims}, so a dialect that wants its medium up front
  * can still reorder within its own compile.
@@ -117,6 +117,14 @@ export function selectImagePositiveClaims(digest: ImageWorldDigest): readonly Im
       source: reference.source,
     });
   }
+
+  // The scene. Facts about the SHOT rather than about anybody in it — the mood,
+  // whose eyes it is through, how two bodies are staged. Selected before the
+  // subjects because the frame is what they are standing in, and taken exactly as
+  // the projection classified them: a scene decision the composer marked
+  // `required_visual` is on the mandatory lane, and one it marked optional gives
+  // way to an identity anchor under a squeeze.
+  for (const fact of digest.scene) claims.push(factClaim(fact));
 
   // 2–4, 7. Subjects: identity, morphology, age, wardrobe and exposure all arrive
   // as facts already classified by their concept, so the projection's own
@@ -224,10 +232,16 @@ function operationClaim(
  *
  * The fallback is unreachable through the digest builder, which drops facts with
  * unknown concepts — but `camera.<component>` is assembled as a template string
- * here, and a sixth camera component added to the digest without a matching
- * concept would otherwise land in `undefined`. Falling back to a MANDATORY kind
- * is the safe direction: the claim survives fitting and shows up in provenance
- * rather than vanishing.
+ * here, so a camera component added to the digest without a matching concept
+ * raises no compile error and would otherwise land in `undefined`. Falling back
+ * to a MANDATORY kind is the safe direction for a claim that has already been
+ * built: it survives fitting and shows up in provenance rather than vanishing.
+ *
+ * It is not a substitute for the registry row, and the difference matters enough
+ * to state. `operation` is unfittable BY KIND, so a component reaching this
+ * fallback becomes a sentence no budget squeeze can ever drop — the fitter then
+ * compresses load-bearing prose to make room for a camera hint. Every component
+ * gets its own row in `concepts.ts`; this only decides how the mistake fails.
  */
 function segmentKindOf(concept: ImageConceptId): ImagePromptSegmentKind {
   return imageConcept(concept)?.segmentKind ?? "operation";

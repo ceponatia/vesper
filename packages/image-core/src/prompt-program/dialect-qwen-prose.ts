@@ -1,12 +1,21 @@
 import { diag } from "@vesper/contracts";
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { ImageAngleBand, ImageDistanceBand, ImageFramingBand, ImageLightingBand } from "./camera-bands";
+import type { SceneCaptureMode } from "../scene-ir";
+import type {
+  ImageAngleBand,
+  ImageCameraHeightBand,
+  ImageDistanceBand,
+  ImageFramingBand,
+  ImageLightingBand,
+} from "./camera-bands";
 import type { ImageStyleMedium } from "./conflict-keys";
 import type { ImageDialectPositiveInput } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
+import { imageScenePossessionOwners } from "./scene-facts";
 
 /**
- * Wording helpers shared by the Qwen-family dialects.
+ * Wording helpers shared by the Qwen-family dialects — and, for the
+ * value-reading plumbing rather than the sentences, by every other family too.
  *
  * Extracted verbatim from `dialect-qwen-2512.ts` when the 2511 delta-edit
  * dialect arrived, because both endpoints speak the same natural-language
@@ -143,11 +152,15 @@ function humanize(token: string): string {
   return token.replace(/[_\-.]+/g, " ").trim();
 }
 
-/** `a`, `a and b`, `a, b and c`. */
-export function listWords(parts: readonly string[]): string {
+/**
+ * `a`, `a and b`, `a, b and c` — or the same with `or`, which is a different
+ * claim rather than a stylistic choice: "belongs to Mira or Wren" says each part
+ * has exactly one owner, where "and" would read as shared ownership.
+ */
+export function listWords(parts: readonly string[], conjunction: "and" | "or" = "and"): string {
   const clean = parts.filter((part) => part.length > 0);
   if (clean.length <= 1) return clean[0] ?? "";
-  return `${clean.slice(0, -1).join(", ")} and ${clean[clean.length - 1]}`;
+  return `${clean.slice(0, -1).join(", ")} ${conjunction} ${clean[clean.length - 1]}`;
 }
 
 /** The label for an entity ref, or null when the ref is absent or unlabelled. */
@@ -240,6 +253,126 @@ export function angleSentence(band: ImageAngleBand, subject: string | null): str
     case "away":
       return `${capitalize(who)} is seen from behind.`;
   }
+}
+
+/**
+ * Where the lens stands relative to the eye line.
+ *
+ * Subject-free, like the framing and distance sentences and unlike the angle one:
+ * a height is a fact about the camera, and naming the subject in it would invite
+ * the model to read it as something they are doing.
+ *
+ * `eye_level` still says so rather than falling silent the way a `still` motion
+ * band does. A level lens is a real compositional statement, not the absence of
+ * an effect — and suppressing a DEFAULT camera is upstream work: the application
+ * simply does not lower a component that matched the registry default, so a
+ * height that reaches a dialect was asserted on purpose.
+ */
+export function heightSentence(band: ImageCameraHeightBand): string {
+  switch (band) {
+    case "eye_level":
+      return "The camera sits at eye level.";
+    case "high":
+      return "The camera sits above the eye line, angled down.";
+    case "low":
+      return "The camera sits below the eye line, angled up.";
+  }
+}
+
+/**
+ * Who is holding the camera, and therefore where the frame is standing.
+ *
+ * The POV wording mirrors the app's own measured scene rule
+ * (`SCENE_POV_RULE`), read one layer down: `player` becomes `viewer`, because a
+ * provider-neutral dialect has no players. Everything else about it is load
+ * bearing and measured. It names NO limb in any polarity — "the player is the
+ * camera" had models painting hands gripping one, "no hands in frame" summoned
+ * disembodied foreground hands, and even a possessively-bound enumeration
+ * summoned what it named. What held up 3/3 is this shape.
+ *
+ * It is the DISEMBODIED rule, which is the only shot Vesper can compile today:
+ * the viewer's own visible body is a deliberate follow-up (owner ruling
+ * 2026-09-01), and until a concept carries it, "the viewer is never visible" is
+ * true of every POV render this vocabulary can describe. An embodied shot needs
+ * the measured embodied variant, which belongs with the concept that puts a limb
+ * in frame.
+ *
+ * The selfie is worded here rather than copied from the app's `SELFIE_FRAMING`,
+ * whose sentence says "of herself" — a dialect may not assert a gender the world
+ * digest did not state. What is kept is what that framing was built out of: the
+ * subject's own camera, arm's length or a mirror, awareness of the lens, and the
+ * close-quarters perspective of a phone.
+ */
+export function captureModeSentence(mode: SceneCaptureMode, subject: string | null): string {
+  const who = subject ?? "the subject";
+  switch (mode) {
+    case "third_person":
+      return "The shot is taken by an observing camera, from outside the scene.";
+    case "first_person_pov":
+      return "First-person POV through the viewer's own eyes; the viewer is never visible in the image.";
+    case "selfie":
+      return `A phone selfie ${who} is taking: the camera held at arm's length or shot in a mirror, ${who} aware of the lens and composing the frame, in the close-quarters perspective of a phone camera.`;
+  }
+}
+
+/** The labels a possession claim's refs name, in the order the projection listed them. */
+export function possessionOwners(input: ImageDialectPositiveInput, value: unknown): readonly string[] {
+  const names: string[] = [];
+  for (const ref of imageScenePossessionOwners(value)) {
+    const name = label(input, ref);
+    if (name !== null && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * "Every visible body part belongs to Mira." — the total-possession binding.
+ *
+ * **Deliberately ABSTRACT, and it must stay that way.** The first draft of this
+ * clause enumerated the limbs — "every hand, arm, leg and foot belongs to
+ * Mira" — and the A/B run painted a phantom viewer hand anyway: a limb noun
+ * summons a limb even when it is possessively bound. The abstraction is the half
+ * doing the work, and "improving" this into something specific reopens a measured
+ * failure. Binding a NAMED limb is the pose text's job, where the limb is in the
+ * shot on purpose.
+ *
+ * The names are the other half. An anonymous form ("belongs to one of them")
+ * keeps the abstraction and drops the binding, which is what was proven. So no
+ * names means no clause at all — silence beats a possession sentence that binds
+ * nothing.
+ */
+export function possessionSentence(owners: readonly string[]): string | null {
+  if (owners.length === 0) return null;
+  return `Every visible body part belongs to ${listWords(owners, "or")}.`;
+}
+
+/** `{name}`, the one substitution a staging template carries. */
+const STAGING_SUBJECT_PLACEHOLDER = /\{name\}/gu;
+
+/**
+ * One adopted staging template, bound to the subject it describes.
+ *
+ * The template arrives verbatim, `{name}` intact, because a content digest is only
+ * meaningful over a stable artifact — substituting before the form was created
+ * would give every render different bytes and make the revision mechanism
+ * meaningless. Binding is therefore an explicit step at the adoption call site,
+ * and this is that step.
+ *
+ * "The subject" when nothing names them, never a pronoun, for the same reason
+ * {@link prefixed} refuses one: a guessed pronoun asserts a gender the world
+ * digest did not state, into text that renders a person. The retired prose
+ * builder refused the arrangement outright when it had no name, and this does
+ * not: an unlabelled subject is a projection bug rather than a fact about the
+ * scene, and dropping the claim would render an intimate scene as an ordinary
+ * portrait — which is the failure class this whole vocabulary exists to end. The
+ * possessive binding survives either way, and that is the half that was measured.
+ *
+ * A template that binds to nothing at all yields null rather than an empty
+ * sentence, because the arrangement is the whole content of the claim.
+ */
+export function stagingSentence(template: string, subject: string | null): string | null {
+  const bound = template.replace(STAGING_SUBJECT_PLACEHOLDER, subject ?? "the subject").trim();
+  return bound.length === 0 ? null : capitalize(bound);
 }
 
 export function lightingSentence(band: ImageLightingBand): string {

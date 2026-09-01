@@ -1,3 +1,4 @@
+import type { SceneExposureRegionId, SceneViewerBodyPartId } from "@vesper/image-core";
 import type { RegionExposure } from "../items/visibility";
 
 /**
@@ -24,8 +25,20 @@ import type { RegionExposure } from "../items/visibility";
  * PURE. Tuning a phrase is a data edit here; adding a part is one entry.
  */
 
-export const viewerBodyPartIds = ["hands", "forearms", "lap_thighs", "legs_feet", "torso", "genitals"] as const;
-export type ViewerBodyPartId = (typeof viewerBodyPartIds)[number];
+/**
+ * The closed part vocabulary, **shared with the image compiler rather than declared twice**.
+ *
+ * Which parts exist is protocol: this registry plans with them and `@vesper/image-core`
+ * reasons over them, so a second declaration here would let the two sides drift while both
+ * kept compiling. The local names are kept so every call site still reads in the app's own
+ * vocabulary — what moved is where the union is defined, not what it means.
+ *
+ * Everything below stays: a phrase, an intimate flag and an attribute list are wording and
+ * planning, which no compiler has any business owning.
+ */
+export { sceneViewerBodyPartIds as viewerBodyPartIds } from "@vesper/image-core";
+
+export type ViewerBodyPartId = SceneViewerBodyPartId;
 
 export interface ViewerBodyPart {
   id: ViewerBodyPartId;
@@ -37,11 +50,15 @@ export interface ViewerBodyPart {
   /** Intimate ⇒ rides only an uncensored route, exactly like `sceneRevealAppearance`. */
   intimate: boolean;
   /**
-   * The `RegionExposure` key that must read bare/sheer for this part to be renderable at
-   * all; `null` ⇒ ungated. Only anatomy is gated — a **clothed** torso or lap in frame is a
+   * The exposure region that must read bare/sheer for this part to be renderable at all;
+   * `null` ⇒ ungated. Only anatomy is gated — a **clothed** torso or lap in frame is a
    * perfectly good POV element, so those are ungated and simply render whatever they have on.
+   *
+   * Typed as the shared region vocabulary, which names the same four regions `RegionExposure`
+   * is keyed by: a scene fact may cross the render seam naming one, and the coverage values
+   * it takes stay here.
    */
-  requiresBare: keyof RegionExposure | null;
+  requiresBare: SceneExposureRegionId | null;
   /**
    * The persona attributes that describe THIS part (slice 4) — so a shot with only the
    * viewer's hands in frame doesn't state their leg hair. Registry ids; unknown ones are

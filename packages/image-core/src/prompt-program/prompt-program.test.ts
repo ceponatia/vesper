@@ -8,6 +8,10 @@ import { DiagnosticCollector } from "@vesper/contracts";
 import {
   buildImageWorldDigest,
   compileImagePromptProgram,
+  imageConcept,
+  imageConceptChannelRank,
+  imageConceptChannels,
+  imageConceptIds,
   imageNegativeGuardOf,
   imagePositiveProtections,
   lintImagePromptCollisions,
@@ -366,6 +370,30 @@ describe("the negative channel never forbids what the world requires", () => {
 // ---------------------------------------------------------------------------
 
 describe("world digest construction", () => {
+  /**
+   * The concept channel is declared in three closed consts — the vocabulary, the
+   * selector's walk order, and the digest's own fact ranking — and NONE of the
+   * three checks the others. Falsified against a channel added to the vocabulary
+   * and forgotten in either order: `indexOf` answers -1 rather than failing, so
+   * the new channel's facts silently sort ahead of the operation contract and the
+   * prompt leads with whatever it happens to say.
+   *
+   * Registry-derived rather than a typed-out list, so it asks about agreement and
+   * never about contents.
+   */
+  it("gives every declared concept channel a position in both selection orders", () => {
+    const perChannel = imageConceptChannels.map((channel) => {
+      const concept = imageConceptIds.find((id) => imageConcept(id)?.channel === channel);
+      if (concept === undefined) throw new Error(`no concept declares the channel ${channel}`);
+      return concept;
+    });
+    expect(imageConceptChannels.filter((channel) => imageConceptChannelRank(channel) < 0)).toEqual([]);
+    const built = world({
+      subjects: [entity("subject", "s1", perChannel.map((concept) => fact({ concept })))],
+    });
+    expect(built.subjects[0]?.facts.map((entry) => entry.concept)).toEqual(perChannel);
+  });
+
   /**
    * Falsified against a builder that trusted its input: a `restricted` field
    * arriving as a fact is a projection bug with a privacy edge, and downgrading

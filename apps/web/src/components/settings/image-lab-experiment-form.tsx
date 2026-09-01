@@ -24,7 +24,7 @@ import {
   pinnedImageModelVersion,
 } from "@vesper/image-core";
 import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
-import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
+import { sceneStagingList, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { DaylightBand } from "@/lib/clock";
 import {
   adminImageModelsApi,
@@ -258,7 +258,7 @@ function extraRoleHint(role: ExtraReferenceRole): string {
  * renders perfectly well on the stock model, and benching one would spend a paid
  * render measuring a LoRA on a picture that never needed it.
  */
-const INTIMATE_STAGINGS: readonly SceneStaging[] = sceneStagings.filter((staging) => staging.intimate);
+const INTIMATE_STAGINGS: readonly SceneStaging[] = sceneStagingList.filter((staging) => staging.intimate);
 
 /**
  * The chat lane's own time-of-day shorthand, which is what an absent lighting

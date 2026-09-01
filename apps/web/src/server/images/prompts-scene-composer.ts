@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AttributeValue } from "@/contracts/attributes";
 import { sceneCameraHeights, sceneShotDistances, sceneSubjectOrientationIds } from "@/contracts/images/scene-camera";
 import { describeCommittedFacts, type CommittedSceneFacts } from "@/contracts/images/scene-committed";
-import { sceneStagings } from "@/contracts/images/scene-staging";
+import { sceneStagingList } from "@/contracts/images/scene-staging";
 import type { RegionExposure } from "@/contracts/items/visibility";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { excerpt, formatGarment } from "./prompts-format";
@@ -294,10 +294,14 @@ const COMPOSER_CAMERA_RULE =
  * registry owns every word that reaches the image model. That is a grounding decision before
  * it is a moderation one — a bold composer cannot invent an act the story never described,
  * and a cautious one cannot water down an act it did.
+ *
+ * The menu is walked in `sceneStagingOrder` — the registry's own stated order — because this
+ * is prompt content: what a model reads top to bottom is a fact about the prompt, not about
+ * how an object literal happens to be written.
  */
 const COMPOSER_STAGING_RULE =
   "- staging: the physical configuration the story has just put the character and the viewer in, as ONE id from exactly this list:\n" +
-  sceneStagings.map((entry) => `    ${entry.id} — ${entry.hint}`).join("\n") +
+  sceneStagingList.map((entry) => `    ${entry.id} — ${entry.hint}`).join("\n") +
   "\n  Set staging.id ONLY when the recent story EXPLICITLY describes that configuration between the focal character and the viewer, and set staging.evidence to a short phrase copied EXACTLY, word for word, from that history. Leave both empty whenever you are in any doubt — which is most of the time; an unquoted or merely-implied staging is dropped in code. " +
   "Several entries describe the SAME act and differ by one detail — whose hands are where, whether she is bare, which way she faces. When you pick one of those, your quote must be the phrase that establishes THAT detail, not the phrase establishing the act they share: for a kneeling act with the viewer's hand on her head, quote the hand on her head. If the story does not state the distinguishing detail, pick the plainer entry. " +
   "You never write the configuration out in words: the wording is composed in code from the id you pick, so your entire job here is the id and the quote.";

@@ -16,7 +16,7 @@ import {
   sceneShotDistanceIds,
   sceneShotDistances,
 } from "@/contracts/images/scene-camera";
-import { sceneStagings } from "@/contracts/images/scene-staging";
+import { sceneStagingList } from "@/contracts/images/scene-staging";
 import { attr, makeProfile } from "@/server/test-support";
 import {
   apparentAgeAnchor,
@@ -619,14 +619,14 @@ describe("the composer's camera and staging rules (scene-composition slices 1–
 
   it("describes every staging id rather than listing bare ids", () => {
     const embodied = sceneComposerSystem(true);
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(embodied, entry.id).toContain(`${entry.id} — ${entry.hint}`);
     }
   });
 
   it("never shows the composer a render template — the registry owns those words, not the model", () => {
     const embodied = sceneComposerSystem(true);
-    for (const entry of sceneStagings) {
+    for (const entry of sceneStagingList) {
       expect(embodied, entry.id).not.toContain(entry.template);
     }
   });

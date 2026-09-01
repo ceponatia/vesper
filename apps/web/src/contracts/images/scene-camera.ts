@@ -1,3 +1,14 @@
+import {
+  sceneCameraHeightIds,
+  sceneShotDistanceIds,
+  sceneSubjectOrientationIds,
+  type SceneCameraHeightId,
+  type SceneCameraSpec,
+  type SceneFaceVisibility,
+  type SceneShotDistanceId,
+  type SceneSubjectOrientationId,
+} from "@vesper/image-core";
+
 /**
  * The **camera vocabulary** for scene images.
  *
@@ -30,27 +41,30 @@
  * invent one.
  *
  * PURE. Tuning a phrase is a data edit here; adding a member is one entry.
+ *
+ * ## What this file no longer declares
+ *
+ * The three id unions and the shot triple they compose are `@vesper/image-core`'s, and they
+ * are re-exported below under the names every call site already uses. A camera id is protocol
+ * — the registry names a shot and the compiler reasons over it — so declaring it twice would
+ * let the two sides disagree while both kept compiling. Everything a phrase, a hint or an
+ * evidence gate says is app-side and stays here, because none of it is decidable without
+ * reading English.
  */
+
+export { sceneCameraHeightIds, sceneShotDistanceIds, sceneSubjectOrientationIds };
+export type { SceneCameraHeightId, SceneCameraSpec, SceneShotDistanceId, SceneSubjectOrientationId };
 
 // ---------------------------------------------------------------------------
 // Subject orientation
 // ---------------------------------------------------------------------------
-
-export const sceneSubjectOrientationIds = [
-  "toward_viewer",
-  "three_quarter",
-  "profile",
-  "away_glance_back",
-  "away",
-] as const;
-export type SceneSubjectOrientationId = (typeof sceneSubjectOrientationIds)[number];
 
 export interface SceneSubjectOrientation {
   id: SceneSubjectOrientationId;
   /** The shot-line fragment. A `{name}` template — substituted with the subject's name at emission. */
   phrase: string;
   /** How much of the face the shot can show — drives the identity-lock adaptation at render assembly. */
-  faceVisibility: "full" | "partial" | "hidden";
+  faceVisibility: SceneFaceVisibility;
   /**
    * Non-default orientations require a verbatim narration quote (the anti-eagerness gate,
    * the same shape as `viewerBodyEvidence`). A camera that wanders on a whim contradicts
@@ -107,9 +121,6 @@ export function sceneSubjectOrientationById(id: string): SceneSubjectOrientation
 // Shot distance
 // ---------------------------------------------------------------------------
 
-export const sceneShotDistanceIds = ["close", "medium", "full_figure", "wide"] as const;
-export type SceneShotDistanceId = (typeof sceneShotDistanceIds)[number];
-
 /**
  * How much of the subject the frame holds.
  *
@@ -165,9 +176,6 @@ export function sceneShotDistanceById(id: string): SceneShotDistance | undefined
 // ---------------------------------------------------------------------------
 // Camera height
 // ---------------------------------------------------------------------------
-
-export const sceneCameraHeightIds = ["eye_level", "high", "low"] as const;
-export type SceneCameraHeightId = (typeof sceneCameraHeightIds)[number];
 
 export interface SceneCameraHeight {
   id: SceneCameraHeightId;
@@ -238,13 +246,6 @@ export function sceneCameraHeightById(id: string): SceneCameraHeight | undefined
 // ---------------------------------------------------------------------------
 // The camera as one fact
 // ---------------------------------------------------------------------------
-
-/** The three shot facts, resolved to registry ids. Evidence has already been spent by the time one exists. */
-export interface SceneCameraSpec {
-  orientation: SceneSubjectOrientationId;
-  distance: SceneShotDistanceId;
-  height: SceneCameraHeightId;
-}
 
 /**
  * Today's shot, named.

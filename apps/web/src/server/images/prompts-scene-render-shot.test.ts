@@ -9,7 +9,7 @@ import {
   sceneSubjectOrientationIds,
   type SceneCameraSpec,
 } from "@/contracts/images/scene-camera";
-import { sceneStagingById, sceneStagings, type SceneStagingId } from "@/contracts/images/scene-staging";
+import { sceneStagingById, sceneStagingList, type SceneStagingId } from "@/contracts/images/scene-staging";
 import { viewerBodyPartById } from "@/contracts/images/viewer-body";
 import { emptySceneRenderPlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import {
@@ -412,7 +412,7 @@ describe("the shot survives the budget, and no template leaks a placeholder", ()
         }
       }
     }
-    for (const staging of sceneStagings) {
+    for (const staging of sceneStagingList) {
       const plan = stagedPlan(staging.id);
       prompts.push(buildSceneRenderPrompt(plan, { referenceName: "Mira", allowIntimate: true }));
       prompts.push(buildSceneRenderPrompt(plan, { allowIntimate: true }));
