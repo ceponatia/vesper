@@ -1,5 +1,4 @@
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import { adoptSceneStagingSurfaceForm } from "../scene-ir";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -42,6 +41,7 @@ import {
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
 import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
  * `qwen/qwen-image-2512` — the first implemented dialect.
@@ -100,7 +100,11 @@ const HIDDEN_SOURCES = [
  * that", and the shared compile step records it as a dropped claim — a refusal if
  * the claim was mandatory.
  */
-function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput): ImagePromptSegment | null {
+function renderClaim(
+  claim: ImagePositiveClaim,
+  input: ImageDialectPositiveInput,
+  surfaces: SceneStagingSurfaceLog,
+): ImagePromptSegment | null {
   const say = (text: string): ImagePromptSegment => ({
     kind: claim.segmentKind,
     text: sentence(text),
@@ -168,7 +172,7 @@ function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput
       // behavior that no typed semantics can regenerate, and a rival sentence
       // authored here would make the two Qwen endpoints incomparable the moment
       // the owed re-measurement runs.
-      return sayOrNull(stagingSentence(adoptSceneStagingSurfaceForm(form), subject));
+      return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
 
     // --- Subject --------------------------------------------------------------
@@ -303,9 +307,13 @@ function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput
 }
 
 function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositivePrompt {
+  // Fresh per compile, like every other per-render record: a log shared across
+  // compiles would attribute one render's wording decision to the next.
+  const surfaces = createSceneStagingSurfaceLog();
   return compileDialectClaims({
     claims: input.claims,
-    render: (claim) => renderClaim(claim, input),
+    render: (claim) => renderClaim(claim, input, surfaces),
+    surfaces,
     budget: input.budget,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });

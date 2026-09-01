@@ -1,6 +1,7 @@
 import { diag, fnv1aHex, type DiagnosticSink } from "@vesper/contracts";
 import type { ImagePromptBudget } from "../render-intent/prompt-segments";
 import { stableJson } from "../render-kernel/stable-json";
+import { sceneStagingSurfaceProvenance } from "../scene-ir";
 import {
   imagePositiveProtections,
   imagePostMergeCollisions,
@@ -409,6 +410,18 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
         pinnedVersionId: binding.versionId,
         positiveClaimIds: keptClaims.map((claim) => claim.id),
         droppedClaimIds: [...positiveCompiled.droppedClaimIds],
+        // The dialect id is stamped HERE rather than taken from the dialect's own
+        // report: the compile knows which endpoint it resolved, and a record that
+        // named itself could name the wrong one. What the dialect supplies is the
+        // one thing only it knows — whether it kept the measured wording.
+        sceneStagingSurfaces: positiveCompiled.stagingSurfaces.map((decision) =>
+          sceneStagingSurfaceProvenance({
+            claimId: decision.claimId,
+            form: decision.form,
+            disposition: decision.disposition,
+            dialectId: dialect.id,
+          }),
+        ),
         negativeOutcomes: transports.map((outcome) => {
           const decision = linted.decisions.find((entry) => entry.constraintId === outcome.constraintId);
           return {

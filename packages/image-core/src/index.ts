@@ -186,6 +186,7 @@ export {
   buildImageWorldDigest,
   compileDialectClaims,
   compileImagePromptProgram,
+  createSceneStagingSurfaceLog,
   imageClaimsForSubject,
   imageConcept,
   imageConceptChannelOrder,
@@ -348,6 +349,8 @@ export type {
   ImageWorldStateProvenance,
   ImageWorldSuppression,
   ResolvedNegativeTransport,
+  SceneStagingSurfaceDecision,
+  SceneStagingSurfaceLog,
 } from "./prompt-program";
 export {
   compileImagePromptSegments,
@@ -677,7 +680,6 @@ export type {
   SceneRenderRequest,
 } from "./provider-interface";
 export {
-  adoptSceneStagingSurfaceForm,
   createSceneStagingSurfaceForms,
   findSceneStagingSurfaceDigestMismatches,
   isSceneStagingId,

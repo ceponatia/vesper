@@ -1,4 +1,4 @@
-import type { DiagnosticSink } from "@vesper/contracts";
+import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import {
   fitImagePromptSegments,
@@ -10,6 +10,7 @@ import {
 } from "../render-intent/prompt-segments";
 import type { ImageNegativeBlockId, ImageNegativeConstraint, ImageNegativeGuard } from "./negative-constraints";
 import { isMandatoryImagePositiveClaim, type ImagePositiveClaim } from "./positive-claims";
+import type { SceneStagingSurfaceDecision, SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 import type { ImageOperationContract } from "./world-digest";
 
 /**
@@ -135,6 +136,16 @@ export interface ImageCompiledPositivePrompt {
   readonly segments: readonly ImagePromptSegment[];
   /** Claim ids that did not survive the budget. */
   readonly droppedClaimIds: readonly string[];
+  /**
+   * What this endpoint did with each registry-worded arrangement that REACHED the prompt.
+   *
+   * Restricted to survivors, and that restriction is the accounting rule rather than a
+   * convenience: a claim that did not survive is named by {@link droppedClaimIds}, and a
+   * disposition beside it would say the render both did and did not carry the arrangement's
+   * wording. The two lists are filled from one pass in {@link compileDialectClaims}, so
+   * neither can be maintained into disagreement with the other.
+   */
+  readonly stagingSurfaces: readonly SceneStagingSurfaceDecision[];
 }
 
 /** Everything a negative compile may read. Again, no digest. */
@@ -217,10 +228,24 @@ export function implementedImagePromptDialectIds(): readonly ImagePromptDialectI
  * A claim a dialect cannot render is REPORTED rather than silently skipped. That
  * is the honest failure for a new concept meeting an old dialect, and the
  * compile step turns a dropped MANDATORY claim into a refusal.
+ *
+ * It is also where the two halves of the wording record are reconciled. The
+ * dialect writes its staging decisions into `surfaces` as it renders; this
+ * function knows which claims then survived, and publishes only those. Splitting
+ * that across two layers is what would let a render report a disposition for a
+ * sentence a budget squeeze had already removed.
  */
 export function compileDialectClaims(input: {
   readonly claims: readonly ImagePositiveClaim[];
   readonly render: (claim: ImagePositiveClaim) => ImagePromptSegment | null;
+  /**
+   * The staging decisions this compile's `render` recorded.
+   *
+   * Required rather than optional, so a new dialect answers for the measured wording by
+   * being unable to compile until it holds a log. An endpoint that never words a staging
+   * simply hands back an empty one.
+   */
+  readonly surfaces: SceneStagingSurfaceLog;
   readonly budget: ImagePromptBudget;
   readonly sink?: DiagnosticSink;
 }): ImageCompiledPositivePrompt {
@@ -249,9 +274,29 @@ export function compileDialectClaims(input: {
   for (const removed of fitted.removed) {
     if (removed.source !== undefined) droppedClaimIds.push(removed.source);
   }
+  const dropped = new Set(droppedClaimIds);
+  const decisions = input.surfaces.decisions();
+  const decided = new Set(decisions.map((decision) => decision.claimId));
+  // A staging sentence that reached the payload without its dialect saying where the wording
+  // came from. Reported rather than thrown or dropped: the prompt is correct, and it is the
+  // RECORD that degraded (docs/resilience.md §2). Left unreported it is the exact misreading
+  // the surface-form channel exists to prevent — provenance with no disposition beside a
+  // rendered arrangement reads as "this render had no staging", not as "nobody said".
+  const unrecorded = input.claims.filter(
+    (claim) => claim.concept === "scene.staging" && !dropped.has(claim.id) && !decided.has(claim.id),
+  );
+  if (unrecorded.length > 0) {
+    input.sink?.push(
+      diag("warn", "image_prompt_program.staging_surface_unrecorded", "a staging reached the prompt without a wording decision", {
+        path: "image_prompt_program",
+        context: { claims: unrecorded.map((claim) => claim.id) },
+      }),
+    );
+  }
   return {
     text: joinImagePromptSegments(fitted.segments),
     segments: fitted.segments,
     droppedClaimIds: [...new Set(droppedClaimIds)].sort(),
+    stagingSurfaces: decisions.filter((decision) => !dropped.has(decision.claimId)),
   };
 }

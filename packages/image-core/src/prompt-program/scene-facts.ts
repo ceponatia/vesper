@@ -65,8 +65,9 @@ export function imageScenePossessionOwners(value: unknown): readonly string[] {
  * revision the measurements apply to, and the digest proving which bytes that
  * revision meant. Nothing is duplicated alongside it, because the form already
  * answers every question a compiler has — and the wording itself has no name
- * outside `scene-ir`, so a dialect that wants the measured sentence has to say so
- * by calling `adoptSceneStagingSurfaceForm`.
+ * outside `scene-ir`, so a dialect that wants the measured sentence has to ask
+ * for it through the recorder in `./scene-staging-surfaces`, which is what puts
+ * the decision in the render's provenance.
  *
  * The check is over the three public identity fields. A form is reachable only
  * through `createSceneStagingSurfaceForms`, whose input is a table total over the

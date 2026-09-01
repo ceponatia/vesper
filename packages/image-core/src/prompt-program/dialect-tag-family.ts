@@ -1,6 +1,4 @@
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-// No `adoptSceneStagingSurfaceForm` import, and that absence is the record: this
-// family words every arrangement itself — see `stagingTag`.
 import type { SceneCaptureMode, SceneStagingId } from "../scene-ir";
 import type {
   ImageAngleBand,
@@ -25,6 +23,7 @@ import {
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
 import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
  * THE TAG FAMILY — one comma-tag implementation, registered under the two
@@ -109,6 +108,7 @@ function renderClaim(
   input: ImageDialectPositiveInput,
   state: RenderState,
   spec: TagDialectSpec,
+  surfaces: SceneStagingSurfaceLog,
 ): ImagePromptSegment | null {
   const say = (text: string, priority: number = claim.priority): ImagePromptSegment | null => {
     const phrase = tag(text);
@@ -173,7 +173,12 @@ function renderClaim(
     }
     case "scene.staging": {
       const form = imageSceneStagingForm(claim.value);
-      return form === null ? null : say(stagingTag(form.stagingId, subject ?? "the subject"));
+      // REPLACES the registry's wording, and says so. The measured templates are
+      // prose, and prose in a comma-tag payload is the thing this family exists
+      // to avoid — but declining is a decision a render has to record, or a
+      // reader finds `on_all_fours@3` in this endpoint's provenance and credits
+      // the measurements behind it to an image that never contained those words.
+      return form === null ? null : say(stagingTag(surfaces.replace(claim.id, form), subject ?? "the subject"));
     }
 
     // --- Subject --------------------------------------------------------------
@@ -615,9 +620,11 @@ function joinTags(segments: readonly ImagePromptSegment[]): string {
 function compilePositiveFor(spec: TagDialectSpec) {
   return (input: ImageDialectPositiveInput): ImageCompiledPositivePrompt => {
     const state: RenderState = { lockEmitted: false };
+    const surfaces = createSceneStagingSurfaceLog();
     const compiled = compileDialectClaims({
       claims: input.claims,
-      render: (claim) => renderClaim(claim, input, state, spec),
+      render: (claim) => renderClaim(claim, input, state, spec, surfaces),
+      surfaces,
       budget: input.budget,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
     });

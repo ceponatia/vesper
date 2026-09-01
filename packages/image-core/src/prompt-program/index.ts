@@ -33,4 +33,5 @@ export * from "./positive-claims";
 export * from "./prompt-packs";
 export * from "./provenance";
 export * from "./scene-facts";
+export * from "./scene-staging-surfaces";
 export * from "./world-digest";

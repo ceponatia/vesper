@@ -14,11 +14,12 @@ import {
  * The measurements attached to `@3` then get credited to an image that never contained them,
  * and the next tuning round is reasoning from a phantom.
  *
- * So the record carries three separable facts: which wording was offered (revision), which
- * bytes that revision meant (digest), and what the dialect did with it (disposition). All
- * three are needed. Revision and disposition together say what happened; the digest is what
- * survives the registry moving on, because a revision is a name and a name can be made to
- * point somewhere else.
+ * So the record carries four separable facts: which wording was offered (revision), which
+ * bytes that revision meant (digest), what the dialect did with it (disposition), and which
+ * claim carried it (claim id). Revision and disposition together say what happened; the
+ * digest is what survives the registry moving on, because a revision is a name and a name
+ * can be made to point somewhere else; and the claim id is what lets a reader check this
+ * record against the surviving and dropped claims it sits beside.
  *
  * PURE data and types. Nothing here reads the wording — the text has no name outside its own
  * module, which is why provenance can be assembled without a door into it.
@@ -35,7 +36,10 @@ import {
  *
  * There is deliberately no `dropped` member. A claim that does not survive fitting produces
  * no wording and so no record here at all, and the program's own `droppedClaimIds` already
- * names it — a second vocabulary for one fact is how the two drift apart.
+ * names it — a second vocabulary for one fact is how the two drift apart. That is a promise
+ * the compiler keeps rather than a convention: the surviving set and the dropped set are
+ * computed in one pass, in `compileDialectClaims`, so a record cannot be published for a
+ * claim the same function is about to call dropped.
  */
 export const sceneStagingSurfaceDispositions = ["adopted", "replaced"] as const;
 
@@ -55,12 +59,23 @@ const STORED_REVISION_PATTERN = /^[a-z_]+@\d+$/;
 /**
  * One arrangement's wording, as a render records it.
  *
- * The dialect is a plain string on purpose: dialect ids belong to the compiler, and this
- * module stays clear of compiler internals so the scene vocabulary remains extractable.
- * Nothing is lost — a stored dialect id is resolved by whoever is reading the record.
+ * The claim and the dialect are plain strings on purpose: both ids belong to the compiler,
+ * and this module stays clear of compiler internals so the scene vocabulary remains
+ * extractable. Nothing is lost — a stored id is resolved by whoever is reading the record.
  */
 export const sceneStagingSurfaceProvenanceSchema = z
   .object({
+    /**
+     * The claim whose segment carried this wording.
+     *
+     * Present so the record can be READ against the rest of the program's provenance rather
+     * than beside it. A disposition names an arrangement; the surrounding record names claims
+     * — `positiveClaimIds` and `droppedClaimIds` — so without the claim id a reader cannot
+     * tell whether the sentence this disposition describes actually survived. That check is
+     * the whole reason `dropped` is not a disposition: the two structures are one accounting
+     * system, and an id is what lets anyone verify they agree.
+     */
+    claimId: z.string().min(1),
     stagingId: sceneStagingIdSchema,
     /** `on_all_fours@3` — the wording the registry offered for this arrangement. */
     revision: z.string().regex(STORED_REVISION_PATTERN),
@@ -83,21 +98,24 @@ export type SceneStagingSurfaceProvenance = z.infer<typeof sceneStagingSurfacePr
 /**
  * Record what a dialect did with an arrangement's wording.
  *
- * The revision and digest are taken from the form rather than from the caller, so a record
- * cannot claim a revision the form did not carry — the disposition and the dialect are the
- * only things a call site decides.
+ * The arrangement, the revision and the digest are taken from the form rather than from the
+ * caller, so a record cannot claim a revision the form did not carry — which claim it rode,
+ * what became of the wording and which dialect decided are the only things a call site
+ * supplies.
  */
-export function sceneStagingSurfaceProvenance(
-  form: SceneStagingSurfaceForm,
-  disposition: SceneStagingSurfaceDisposition,
-  dialectId: string,
-): SceneStagingSurfaceProvenance {
+export function sceneStagingSurfaceProvenance(input: {
+  readonly claimId: string;
+  readonly form: SceneStagingSurfaceForm;
+  readonly disposition: SceneStagingSurfaceDisposition;
+  readonly dialectId: string;
+}): SceneStagingSurfaceProvenance {
   return {
-    stagingId: form.stagingId,
-    revision: form.revision,
-    digest: form.digest,
-    disposition,
-    dialectId,
+    claimId: input.claimId,
+    stagingId: input.form.stagingId,
+    revision: input.form.revision,
+    digest: input.form.digest,
+    disposition: input.disposition,
+    dialectId: input.dialectId,
   };
 }
 

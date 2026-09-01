@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sceneStagingSurfaceProvenanceSchema, type SceneStagingSurfaceProvenance } from "../scene-ir";
 import { imageNegativeBlockIds } from "./negative-constraints";
 
 /**
@@ -90,6 +91,21 @@ export const imagePromptProgramProvenanceSchema = z.object({
   positiveClaimIds: z.array(z.string()).default((): string[] => []),
   /** Claims a budget squeeze or an unrenderable concept removed. */
   droppedClaimIds: z.array(z.string()).default((): string[] => []),
+  /**
+   * Which endpoint kept the registry's measured staging wording, and which wrote its own.
+   *
+   * A staging revision names a sentence that was tuned on renders, so the measurements
+   * behind `on_all_fours@3` are facts about images that contained those exact bytes. Half
+   * the endpoints do not send them. Without this list every render looks like it used the
+   * measured wording, and the next tuning round reasons from images that never had it.
+   *
+   * One entry per SURVIVING staging claim: a claim named in {@link droppedClaimIds} carries
+   * no entry here, because it produced no wording to have a disposition about. The compile
+   * fills both lists from one pass so they cannot disagree.
+   */
+  sceneStagingSurfaces: z
+    .array(sceneStagingSurfaceProvenanceSchema)
+    .default((): SceneStagingSurfaceProvenance[] => []),
   negativeOutcomes: z.array(imageNegativeOutcomeRecordSchema).default((): ImageNegativeOutcomeRecord[] => []),
   /** Provider-contributed prompt channels, declared by the dialect. */
   hiddenPromptSources: z

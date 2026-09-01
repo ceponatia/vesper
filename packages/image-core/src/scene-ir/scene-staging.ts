@@ -233,8 +233,9 @@ const SURFACE_TEXT: unique symbol = Symbol("vesper.scene.staging.surface_text");
  *   not passing an argument, and it can neither omit an arrangement nor invent one.
  * - **The text has no public name.** It sits behind a module-private symbol, so the only way
  *   to read it is {@link adoptSceneStagingSurfaceForm} — which means every dialect that uses
- *   the registry's wording says so at a call site, and every dialect that replaces it is
- *   equally visible by having no such call. Neither is a silent default.
+ *   the registry's wording says so at a call site. The compiler makes the opposite choice
+ *   equally explicit, so that a render records which one was made; neither is a silent
+ *   default.
  * - **There is no schema for this type, deliberately.** A parser would be a second door,
  *   and one that opens on untrusted JSON. For the same reason the text does not survive
  *   `JSON.stringify` — what a persisted claim or a program fingerprint records is the
@@ -328,10 +329,12 @@ export function createSceneStagingSurfaceForms(table: SceneStagingSurfaceFormTab
 /**
  * Take the registry's wording for this arrangement.
  *
- * The only read of the measured text there is, and calling it IS a dialect's decision to
- * adopt rather than author. A dialect that words the arrangement itself simply never calls
- * this, so which endpoints kept the measured phrasing is answerable by looking, not by
- * asking. Whichever it does, it records the choice — see `SceneStagingSurfaceDisposition`.
+ * The only read of the measured text there is, and calling it IS a decision to adopt rather
+ * than author. A dialect does not call it directly: the compiler wraps this in a recorder,
+ * so that reading the measured bytes and saying so are one act and a render can never carry
+ * the wording without provenance naming it — see `SceneStagingSurfaceDisposition`. Nothing
+ * here enforces that, because a `scene-ir` that knew about dialects would stop being
+ * extractable; what this side guarantees is that there is exactly one door to wrap.
  */
 export function adoptSceneStagingSurfaceForm(form: SceneStagingSurfaceForm): string {
   return form[SURFACE_TEXT];

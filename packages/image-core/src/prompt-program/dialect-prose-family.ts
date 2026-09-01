@@ -1,6 +1,5 @@
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import { adoptSceneStagingSurfaceForm } from "../scene-ir";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -45,6 +44,7 @@ import {
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
 import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
  * THE PROSE FAMILY — one natural-language implementation, registered under the
@@ -238,6 +238,7 @@ function renderClaim(
   input: ImageDialectPositiveInput,
   state: RenderState,
   spec: ProseDialectSpec,
+  surfaces: SceneStagingSurfaceLog,
 ): ImagePromptSegment | null {
   const say = (text: string, priority: number = claim.priority): ImagePromptSegment => ({
     kind: claim.segmentKind,
@@ -322,7 +323,7 @@ function renderClaim(
       // than from these endpoints directly. Adopting is still the call: this is
       // the register the templates are written in, and a rival sentence authored
       // here would throw the evidence away and buy nothing measured back.
-      return sayOrNull(stagingSentence(adoptSceneStagingSurfaceForm(form), subject));
+      return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
 
     // --- Subject --------------------------------------------------------------
@@ -501,9 +502,11 @@ function compilePositiveFor(spec: ProseDialectSpec) {
     // per-render facts, and state leaking across compiles would make the second
     // compile of one digest differ from the first, which determinism forbids.
     const state: RenderState = { lockEmitted: false, takenSlots: new Set<number>() };
+    const surfaces = createSceneStagingSurfaceLog();
     return compileDialectClaims({
       claims: input.claims,
-      render: (claim) => renderClaim(claim, input, state, spec),
+      render: (claim) => renderClaim(claim, input, state, spec, surfaces),
+      surfaces,
       budget: input.budget,
       ...(input.sink === undefined ? {} : { sink: input.sink }),
     });

@@ -1,6 +1,5 @@
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import { joinImagePromptSegments, type ImagePromptSegment } from "../render-intent/prompt-segments";
-import { adoptSceneStagingSurfaceForm } from "../scene-ir";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -45,6 +44,7 @@ import {
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
 import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
  * `qwen/qwen-image-edit-2511` — the delta-first instruction-edit dialect.
@@ -248,6 +248,7 @@ function renderClaim(
   claim: ImagePositiveClaim,
   input: ImageDialectPositiveInput,
   state: RenderState,
+  surfaces: SceneStagingSurfaceLog,
 ): ImagePromptSegment | null {
   const say = (text: string, priority: number = claim.priority): ImagePromptSegment => ({
     kind: claim.segmentKind,
@@ -329,7 +330,7 @@ function renderClaim(
       // The budget it was tuned against is gone: a program budgets from the model
       // binding rather than from the legacy 1500-character clamp, so a
       // re-measurement is owed whether the wording is adopted or replaced.
-      return sayOrNull(stagingSentence(adoptSceneStagingSurfaceForm(form), subject));
+      return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
 
     // --- Subject --------------------------------------------------------------
@@ -485,9 +486,11 @@ function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositiv
   // compile of one digest differ from the first, which the determinism
   // guarantee forbids.
   const state: RenderState = { lockEmitted: false, lockClaimId: null, takenSlots: new Set<number>() };
+  const surfaces = createSceneStagingSurfaceLog();
   const compiled = compileDialectClaims({
     claims: input.claims,
-    render: (claim) => renderClaim(claim, input, state),
+    render: (claim) => renderClaim(claim, input, state, surfaces),
+    surfaces,
     budget: input.budget,
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
