@@ -47,6 +47,11 @@ import {
 import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
 import { fenceUntrusted } from "./untrusted";
 import {
+  visualStateConstraintBlock,
+  visualStateCueBlock,
+  VISUAL_STATE_CUE_BLOCK_HEADING,
+} from "./visual-state-block";
+import {
   attributionTagNode,
   cameraViewpointNode,
   contentFramingNode,
@@ -810,15 +815,6 @@ function feelingPhrase(feeling: ChatFeelingState | undefined): string {
 export const AFFORDANCE_CUE_BLOCK_HEADING = "Physical detail worth noticing this turn";
 
 /**
- * The visual-state block headings, declared HERE beside the affordance one
- * rather than imported from `chat-visual-state-cues.ts`: the prompt builder is
- * the thing that writes them, and importing upward from `prompts/` into the
- * engine root would close an import cycle. The renderer re-exports these.
- */
-export const VISUAL_STATE_CONSTRAINT_BLOCK_HEADING = "True right now — do not contradict";
-export const VISUAL_STATE_CUE_BLOCK_HEADING = "Visible detail worth noticing this turn";
-
-/**
  * The sensory-allowance carve-out sentence (owner ruling 2026-07-28: "cues
  * win"). Appended to the `none` allowance line only when the prompt actually
  * carries cue lines, so the two instructions never contradict. A pure function
@@ -925,24 +921,15 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
   // is the only block in this section that is not an attention cue, and giving
   // it one would turn a wardrobe inventory into something the narrator feels
   // obliged to recite — the exact failure the affordance-cue trial found.
-  const visualConstraints = (state.visualConstraints ?? []).map((line) => line.trim()).filter(Boolean);
-  if (visualConstraints.length) {
-    blocks.push(
-      `${VISUAL_STATE_CONSTRAINT_BLOCK_HEADING} (facts already committed — say nothing that conflicts with them; there is no obligation to mention any of them):\n${visualConstraints
-        .map((line) => `- ${line}`)
-        .join("\n")}`,
-    );
-  }
-  const visualCues = (state.visualCues ?? []).map((cue) => cue.trim()).filter(Boolean);
-  if (visualCues.length) {
-    // The heading is shared with `chatSensoryAllowanceLine`'s carve-out on the
-    // same one-constant rule the affordance block follows.
-    blocks.push(
-      `${VISUAL_STATE_CUE_BLOCK_HEADING} (weave at most one into the beat, in action — never an inventory, never restated once said; the clause after the dash is why it is live, not something to say):\n${visualCues
-        .map((cue) => `- ${cue}`)
-        .join("\n")}`,
-    );
-  }
+  //
+  // Both blocks are written by `visual-state-block.ts`, which the successor
+  // narrator also calls: one projection may not be described two ways, and the
+  // cue block's heading is the same constant `chatSensoryAllowanceLine`'s
+  // carve-out names.
+  const visualConstraints = visualStateConstraintBlock(state.visualConstraints ?? []);
+  if (visualConstraints.length) blocks.push(visualConstraints);
+  const visualCues = visualStateCueBlock(state.visualCues ?? []);
+  if (visualCues.length) blocks.push(visualCues);
   return blocks.join("\n\n");
 }
 

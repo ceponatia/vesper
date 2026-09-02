@@ -1,8 +1,3 @@
-import {
-  VISUAL_STATE_CONSTRAINT_BLOCK_HEADING,
-  VISUAL_STATE_CUE_BLOCK_HEADING,
-} from "./character-chat";
-
 /**
  * THE VISUAL-STATE PROMPT BLOCKS, in one wording for every narrator lane.
  *
@@ -26,11 +21,22 @@ import {
  * The constraint block comes first so the offer reads against a fence that is
  * already standing.
  *
- * Pure: the headings come from `character-chat.ts` (which also writes these two
- * blocks inline for the chat lane and owns the heading constants, because the
- * sensory-allowance carve-out names the cue block by heading), and this module
- * adds no state, no flag read and no IO. A caller decides whether to call it.
+ * This module owns the HEADINGS as well as the sentences, and for the same
+ * reason the affordance block's heading is a constant: the chat lane's
+ * sensory-allowance carve-out (`chatVisualStateCueCarveOut`) names the cue block
+ * by heading, and a heading that drifted between the block and the carve-out
+ * would leave the allowance exempting a block the prompt no longer calls that.
+ * One constant, one owner, imported by everyone who names it.
+ *
+ * Pure — no state, no flag read, no IO — and it imports nothing from the lane
+ * builders that call it, so the direction is one-way: `character-chat.ts` and
+ * `sim-render.ts` → here.
  */
+
+/** The must-not-contradict fence's heading. */
+export const VISUAL_STATE_CONSTRAINT_BLOCK_HEADING = "True right now — do not contradict";
+/** The optional-detail offer's heading — also named by the sensory-allowance carve-out. */
+export const VISUAL_STATE_CUE_BLOCK_HEADING = "Visible detail worth noticing this turn";
 
 export interface VisualStatePromptLines {
   /** Must-not-contradict clauses, in the digest's own order. */
