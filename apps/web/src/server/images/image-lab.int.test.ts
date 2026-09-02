@@ -10,10 +10,11 @@ import {
   imageLabDiagnosticCode,
   type ImageLabInput,
   type ImageLabStaging,
+  registerImagePromptBinding,
   REPLICATE_VERSION_UNDISCLOSED,
 } from "@vesper/image-core";
 import { sceneStagingById, type SceneStaging } from "@/contracts/images/scene-staging";
-import { emptyCharacterProfile } from "@/contracts/world/profile";
+import type { CharacterProfile } from "@/contracts/world/profile";
 import {
   imageRenderRejection,
   laneHealth,
@@ -25,6 +26,7 @@ import {
 import {
   apiRequest,
   endTestPool,
+  laneProbeProfile,
   probeIntegrationDb,
   purgeOwnerRows,
   seedTestUser,
@@ -33,11 +35,22 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { characterChats, characters, db, imageLabExperiments, imageLoras, imageModels, images, jobs } from "../db";
+import {
+  characterChats,
+  characters,
+  db,
+  imageLabExperiments,
+  imageLoras,
+  imageModelProfiles,
+  imageModels,
+  images,
+  jobs,
+} from "../db";
 import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
 import { createImageLabExperiment } from "./image-lab-create";
 import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
 import { runImageLabExperiment } from "./image-lab-run";
+import { STAGED_PROGRAM_UNBOUND } from "./image-lab-staged";
 import {
   deleteImageLabExperiment,
   getImageLabExperimentDetail,
@@ -54,6 +67,9 @@ import {
   setImageLabPreprocessorForTesting,
   uploadImageLabControl,
 } from "./image-lab-controls";
+import { loadImageModelProfilesForTask } from "./model-profiles";
+import { qwenEditPlusLoraCharacterPacks } from "./packs-character-endpoints";
+import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./packs-qwen-2511";
 
 /**
  * The Advanced Image Lab's services end to end against DATABASE_URL and a
@@ -103,6 +119,15 @@ const THREE_REF_SLUG = "vesper-test/image-lab-three-reference";
 const LORA_SLUG = "vesper-test/image-lab-lora";
 const PINNED_VERSION = "imagelabversionaaaaaaaaa";
 
+/**
+ * The pinned fixture's OWN scene profile — a row of the shape the picker offers
+ * a real scene model, so the staged bench binds its program on this key rather
+ * than the deployment default's (`stagedSceneBindingProfileKey`). Registry
+ * rows, like the models, so planted by id.
+ */
+const PINNED_SCENE_PROFILE_ID = "imgprfimagelabpinnedscne";
+const PINNED_SCENE_PROFILE_KEY = "image-lab-scene";
+
 /** The curated library row the LoRA-only arm measures — global, like the registry. */
 const FIXTURE_LORA_ID = "imgloraimagelabfixtureaa";
 const FIXTURE_LORA_SCALE = 1;
@@ -141,6 +166,10 @@ beforeAll(async () => {
         canEdit: true,
         maxReferences: 4,
         probedVersionId: PINNED_VERSION,
+        // On the scene surface, so the scene profile planted below is OFFERED
+        // (`imageProfileOffered` reads the legacy toggle) and the staged bench
+        // binds on it.
+        forScene: true,
       },
       {
         // No probed version and no version in the slug: nothing can say what this
@@ -249,6 +278,66 @@ beforeAll(async () => {
         enabled: true,
       },
     ]);
+
+  // The staged bench compiles a prompt PROGRAM, and a program binds on the
+  // pinned model's SLUG: `stagedSceneBindingProfileKey` picks the model's own
+  // offered scene profile, else the scene task's default, and
+  // `activeImagePromptBinding` then wants an active row for (slug, scene, key).
+  // The fixture slugs are this suite's own, so no seed binds them; both branches
+  // of the key rule are bound here, on the fixture slugs alone, and every other
+  // fixture is deliberately left unbound for the refusal case. The registry is
+  // process-global and never reset, which the fixture slugs make harmless: no
+  // production profile resolves a `vesper-test/…` model.
+  //
+  // The pinned fixture sits on the scene picker with a profile of its own, so
+  // its program binds on THAT key: a row registered under the fixture key alone
+  // is what proves the own-profile branch ran rather than the default's. Deleted
+  // with its model — the profile table cascades.
+  await db().insert(imageModelProfiles).values({
+    id: PINNED_SCENE_PROFILE_ID,
+    imageModelId: PINNED_MODEL_ID,
+    key: PINNED_SCENE_PROFILE_KEY,
+    label: "Image Lab Pinned Scene",
+    task: "scene",
+    operation: "edit",
+    promptStrategy: "instruction_edit",
+  });
+  registerImagePromptBinding({
+    id: "binding-vesper-test-image-lab-pinned-scene-instruction_edit-v1",
+    profileKey: PINNED_SCENE_PROFILE_KEY,
+    profileId: null,
+    modelId: null,
+    modelSlug: PINNED_SLUG,
+    versionId: null,
+    task: "scene",
+    promptStrategy: "instruction_edit",
+    promptDialectId: "qwen_2511_delta_edit",
+    positivePackVersionId: qwenImageEdit2511PositivePack.id,
+    negativePackVersionId: qwenImageEdit2511NegativePack.id,
+    status: "active",
+  });
+  // The LoRA fixture sits on no picker, like the live wrapper it is shaped
+  // after, so its program binds on the key the deployment's scene default
+  // carries — read from the seeded registry rather than restated here, so the
+  // suite follows the seed (drizzle 0100) instead of pinning a copy of it.
+  const sceneDefault = (await loadImageModelProfilesForTask("scene")).find((offered) => offered.profile.isDefault);
+  if (!sceneDefault) {
+    throw new Error("the image lab suite binds its LoRA fixture on the seeded scene default profile, and none is offered");
+  }
+  registerImagePromptBinding({
+    id: "binding-vesper-test-image-lab-lora-scene-instruction_edit-v1",
+    profileKey: sceneDefault.profile.key,
+    profileId: null,
+    modelId: null,
+    modelSlug: LORA_SLUG,
+    versionId: null,
+    task: "scene",
+    promptStrategy: "instruction_edit",
+    promptDialectId: "qwen_edit_plus_lora_delta_edit",
+    positivePackVersionId: qwenEditPlusLoraCharacterPacks.positive.id,
+    negativePackVersionId: qwenEditPlusLoraCharacterPacks.negative.id,
+    status: "active",
+  });
 });
 
 afterAll(async () => {
@@ -376,8 +465,17 @@ async function createRunnableProbe(
  * names into its prompt, and two characters sharing one name would let a runner
  * that bound the wrong face to the wrong slot pass every assertion.
  */
-async function seedOwnedCharacter(name = "Lab Subject"): Promise<string> {
-  const [row] = await db().insert(characters).values({ ownerId, name }).returning({ id: characters.id });
+/**
+ * A character this owner has. Most lab kinds take the admin's own words and only
+ * need the row to exist, so the sheet defaults to empty; a kind that compiles a
+ * prompt PROGRAM over the sheet (the staged bench) hands one in, because the
+ * compile refuses a subject missing an anchor it marks mandatory.
+ */
+async function seedOwnedCharacter(name = "Lab Subject", profile?: CharacterProfile): Promise<string> {
+  const [row] = await db()
+    .insert(characters)
+    .values({ ownerId, name, ...(profile === undefined ? {} : { profile }) })
+    .returning({ id: characters.id });
   if (!row) throw new Error("failed to seed a character for the lab suite");
   return row.id;
 }
@@ -547,7 +645,13 @@ async function createStagedScene(
   opts: StagedSceneOptions = {},
 ): Promise<{ id: string; sink: DiagnosticCollector; characterId: string; faceId: string }> {
   const sink = new DiagnosticCollector();
-  const characterId = await seedOwnedCharacter(STAGED_SUBJECT);
+  // The shared lane-probe sheet, under this suite's own name: the program is
+  // compiled with `refuseOnMissingRequired`, and the adapter files a subject
+  // with no apparent-age band under `missingRequired`, so a bare row would
+  // settle as `image_prompt_program.missing_required_fact` before the bench
+  // ever reached the provider. The parity pin (`image-lab-staged.test.ts`)
+  // compiles this same sheet for every staging in the catalog.
+  const characterId = await seedOwnedCharacter(STAGED_SUBJECT, laneProbeProfile());
   const faceId = await seedCharacterFace(opts.faceOf ?? characterId);
   const control = opts.extraControl ? await seedControlFixture("pose") : null;
   const inputs: ImageLabInput[] = opts.inputs ?? [
@@ -1845,6 +1949,26 @@ describe.skipIf(!ready)("image lab staged scenes", () => {
     expect(experiment?.status).toBe("failed");
     expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
     expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a pinned endpoint with no active scene binding, before any spend", async () => {
+    stubSuccessfulRenderer();
+    // The binding table is where a scene's words are authorized. This fixture
+    // passes every gate ahead of the program — pinned, edits, takes the one
+    // reference — and sits on no scene profile of its own, so its program asks
+    // for the default key, which no active row on this slug carries. There is no
+    // second description to fall back to: the row settles in the program's own
+    // vocabulary, naming the endpoint an operator has to bind.
+    const { id, sink } = await createStagedScene({ modelSlug: THREE_REF_SLUG });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(STAGED_PROGRAM_UNBOUND);
+    expect(codes(sink)).toContain(STAGED_PROGRAM_UNBOUND);
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
   });
 
   it("sends the selected LoRA through the shared library seam at its curated scale", async () => {
