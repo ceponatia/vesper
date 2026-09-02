@@ -934,9 +934,17 @@ export const chatVisualMemory = pgTable(
  * second sees an `applied_message_id` the first already stamped.
  *
  * The key and the retake law are otherwise identical to
- * `chat_visual_memory` — memory group, observer, subject; `cues` is the state as
+ * `chat_visual_memory` — continuity, observer, subject; `cues` is the state as
  * of the last applied exchange, `cues_before` the state it advanced from, and
  * `applied_message_id` the exchange guard that decides which one a load returns.
+ *
+ * `memory_group_id` names the CONTINUITY, not only a chat memory group: both
+ * narrator lanes store here, and `visualCueScopeKey` (`engine/visual-cue-store.ts`)
+ * is the one owner of the mapping — a chat files under its raw memory-group id, a
+ * successor turn under `world_branch:<branchId>`. The prefix is what makes the two
+ * key spaces disjoint, so a branch can never inherit a conversation's mention
+ * history, or another branch's. `applied_message_id` is the exchange guard in the
+ * chat lane and the committed cut id in the successor lane.
  *
  * Both jsonb columns hold `VisualCueState` and cross the trust boundary through
  * `parseOr` in `visual-cue-store.ts`; a corrupt blob heals to "nothing has been

@@ -71,6 +71,7 @@ import {
   characterChats,
   characterChatMessages,
   chatParticipants,
+  chatVisualCues,
   chatVisualMemory,
   db,
   images,
@@ -135,7 +136,7 @@ import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
 import { buildChatRecognitionRead, type ChatRecognitionRead } from "./chat-recognition-adapter";
 import { loadChatVisualMemory, saveChatVisualMemory } from "./visual-memory-store";
-import { loadChatVisualCues, saveChatVisualCues } from "./visual-cue-store";
+import { loadChatVisualCues, saveChatVisualCues, visualCueScopeKey } from "./visual-cue-store";
 import { chatVisualStateNarrationOn } from "./chat-visual-state-flag";
 import {
   renderChatVisualStateLines,
@@ -4556,6 +4557,18 @@ export async function deleteChat(chatId: string, ownerId: string): Promise<void>
         // recognition if the group id were ever minted again.
         await tx.delete(chatVisualMemory).where(eq(chatVisualMemory.memoryGroupId, p.memoryGroupId));
       }
+    }
+    // The successor lane's narrator cue state is BRANCH-scoped, not
+    // memory-group-scoped, so it is not reached by the participant loop above.
+    // The world dies with the chat that owned it (the `sim_worlds` delete just
+    // above), and `chat_visual_cues` carries no FK — memory groups and branches
+    // are not this table's foreign keys — so nothing would cascade these rows and
+    // an orphan would silently hand a re-minted branch id someone else's mention
+    // history.
+    if (chat.simBranchId !== null) {
+      await tx
+        .delete(chatVisualCues)
+        .where(eq(chatVisualCues.memoryGroupId, visualCueScopeKey({ kind: "world_branch", branchId: chat.simBranchId })));
     }
   });
 }
