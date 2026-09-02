@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ImageProfileTask, ResolvedImageProfile } from "@vesper/image-core";
+import { FULLY_COVERED } from "@/contracts";
+import { DiagnosticCollector, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
-  imageModelProfileSchema,
-  imageModelSchema,
-  imageReferencePolicySchema,
-  type ImageProfileTask,
-  type ResolvedImageProfile,
-} from "@vesper/image-core";
-import {
+  attr,
   identityCandidateFixture as candidate,
   identityProvenanceFixture as record,
+  laneProbeShadowInput,
   makeProfile,
+  resolvedImageProfileFixture,
 } from "@/server/test-support";
+import { expectDiagnostic } from "@/test/diagnostics";
 
 /**
  * Lane wiring for the three identity-critical lanes (identity packs 5B,
@@ -67,9 +67,9 @@ import { identityPackRenderReferences, type IdentityPackRenderReferencesResult }
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
 import { composeSceneSpec, renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
-import { latestChatLook, renderChatLookImage } from "./chat-look";
+import { CHAT_LOOK_VISUAL_CUT_MISSING, latestChatLook, renderChatLookImage, type ChatLookVisualCut } from "./chat-look";
 import { emptySceneRenderPlan } from "./prompts-scene-plan";
-import { generateVariant } from "./variants";
+import { generateVariant, VARIANT_PROGRAM_UNBOUND } from "./variants";
 import { renderCharacterSceneImage } from "./character-scene";
 
 const mockConsume = vi.mocked(identityPackRenderReferences);
@@ -84,27 +84,19 @@ const rowQueue: unknown[][] = [];
 /** Every pipeline reservation, in call order — meta assertions read these. */
 const pipelineCalls: ImagePipelineOptions[] = [];
 
-const resolved = (task: ImageProfileTask): ResolvedImageProfile => ({
-  model: imageModelSchema.parse({
-    id: "mdl",
-    slug: "vendor/model",
-    label: "Model",
-    canGenerate: false,
-    canEdit: true,
-    editKind: "instruction_edit",
-    identityPreservation: "strong",
-  }),
-  profile: imageModelProfileSchema.parse({
-    id: "prf",
-    imageModelId: "mdl",
-    key: `${task}-standard`,
-    label: task,
+/**
+ * The bound Qwen 2511 profile for a task. Every character edit lane compiles
+ * its prompt program on (slug, task, key) and fails the row when no row
+ * exists, so an unbound slug would refuse before the identity seam these cases
+ * are about is ever reached.
+ */
+const resolved = (task: ImageProfileTask): ResolvedImageProfile =>
+  resolvedImageProfileFixture({
+    slug: "qwen/qwen-image-edit-2511",
     task,
-    operation: "edit",
-    promptStrategy: "instruction_edit",
-    referencePolicy: imageReferencePolicySchema.parse({ requiredRoles: ["identity"] }),
-  }),
-});
+    key: task === "chat_look" ? "chat-look-standard" : `${task}-standard`,
+    referencePolicy: { requiredRoles: ["identity"] },
+  });
 
 const packBuffer = Buffer.from("pack-bytes");
 
@@ -156,20 +148,28 @@ beforeEach(() => {
   vi.mocked(composeSceneSpec).mockResolvedValue(emptySceneRenderPlan());
 });
 
-// `updatedAt` is load-bearing since the Stage 4 variant cutover: the lane folds
-// the character row's revision into the standalone read token that names the
-// visual cut its prompt was assembled from.
+// `updatedAt` is load-bearing: the lane folds the character row's revision into
+// the standalone read token that names the visual cut its prompt was compiled
+// from. The adult apparent-age band is too — the program's age anchor is
+// mandatory and fails closed without one, and these cases are about the
+// identity seam, not the anchor.
 const characterRow = {
   id: "charaaaaaaaaaaaaaaaaaaaa",
   name: "Mira",
-  profile: {},
+  profile: makeProfile({ attributes: [attr("identity.apparent_age", "late_twenties", "base")] }),
   avatarImageId: "imgavatar",
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 };
 
 describe("variant lane", () => {
-  const run = () =>
-    generateVariant({ characterId: "charaaaaaaaaaaaaaaaaaaaa", userId: "user1", kind: "pose", instruction: "arms crossed" });
+  const run = (sink?: DiagnosticSink) =>
+    generateVariant({
+      characterId: "charaaaaaaaaaaaaaaaaaaaa",
+      userId: "user1",
+      kind: "pose",
+      instruction: "arms crossed",
+      ...(sink === undefined ? {} : { sink }),
+    });
 
   it("sends the pack's candidates and records their provenance on the row", async () => {
     mockResolve.mockResolvedValue(resolved("variant"));
@@ -199,17 +199,42 @@ describe("variant lane", () => {
     expect(pipelineCalls).toHaveLength(1); // the refusal is on record as this lane's failed row
     expect(pipelineCalls[0]?.asset.meta && "identityReferences" in pipelineCalls[0].asset.meta).toBe(false);
   });
+
+  /**
+   * The compiled program is this lane's only prompt (#251): a model with no
+   * active binding fails the row before provider spend, naming the row to add,
+   * and stores no prompt — never a prose stand-in.
+   */
+  it("an unbound model fails the row before provider spend, naming the row to add", async () => {
+    mockResolve.mockResolvedValue(
+      resolvedImageProfileFixture({ slug: "test-only/unbound-variant", task: "variant", key: "variant-standard" }),
+    );
+    rowQueue.push([characterRow]);
+    mockConsume.mockResolvedValue(packOk());
+    const sink = new DiagnosticCollector();
+
+    await run(sink);
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(pipelineCalls[0]?.failedPrecondition).toContain("test-only/unbound-variant");
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    expectDiagnostic(sink, VARIANT_PROGRAM_UNBOUND);
+  });
 });
 
 describe("chat_look lane", () => {
-  const run = () =>
+  /** The subject's committed cut, as the look job hands it over. */
+  const lookCut = (): ChatLookVisualCut => ({ ...laneProbeShadowInput(), subjectId: characterRow.id });
+  /** `null` mints with no committed cut — the corrupt-membership path. */
+  const run = (visual: ChatLookVisualCut | null = lookCut()) =>
     renderChatLookImage({
       chatId: "chat1",
       userId: "user1",
-      characterId: "charaaaaaaaaaaaaaaaaaaaa",
+      characterId: characterRow.id,
       lookKey: "key1",
       outfit: "a linen sundress",
       outfitExposed: false,
+      exposure: FULLY_COVERED,
+      ...(visual === null ? {} : { visual }),
     });
 
   it("the pack's references feed the edit, provenance rides the meta — no direct row reads", async () => {
@@ -232,6 +257,25 @@ describe("chat_look lane", () => {
     expect(await run()).toBeNull();
     expect(mockPipeline).not.toHaveBeenCalled();
     expect(mockIntent).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A mint with no committed cut has nothing to compile and no second prompt
+   * system to fall back on (#251): it refuses before the pack's owned byte
+   * reads and before any row is reserved, and the drained diagnostic says why.
+   */
+  it("a mint with no committed cut refuses before the pack is read or a row is reserved", async () => {
+    mockResolve.mockResolvedValue(resolved("chat_look"));
+    mockConsume.mockResolvedValue(packOk());
+
+    expect(await run(null)).toBeNull();
+    expect(mockConsume).not.toHaveBeenCalled();
+    expect(mockPipeline).not.toHaveBeenCalled();
+    expect(vi.mocked(logDiagnostics)).toHaveBeenCalledWith(
+      "images.chat_look",
+      expect.arrayContaining([expect.objectContaining({ code: CHAT_LOOK_VISUAL_CUT_MISSING })]),
+      expect.objectContaining({ chatId: "chat1" }),
+    );
   });
 
   it("a refusal's diagnostics drain into the process log — the detached job has no other record", async () => {

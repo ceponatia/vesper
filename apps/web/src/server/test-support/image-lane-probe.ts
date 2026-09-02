@@ -5,22 +5,23 @@ import type { CharacterProfile } from "@/contracts/world/profile";
 import type { SceneVisualReference } from "@vesper/image-core";
 import {
   applySceneCastVisual,
-  type AvatarSegmentAssembly,
-  type AvatarStyle,
   type AvatarWardrobeItem,
-  buildAvatarSegments,
+  buildAvatarCut,
+  buildAvatarProgram,
   buildCharacterSceneContext,
-  buildVariantSegments,
+  buildVariantCut,
+  type CharacterPromptProgramResult,
   resolveScenePlan,
   type SceneCastMember,
   type SceneRenderPlan,
   sceneSpecSchema,
   type SceneSubjectVisualSlice,
+  type StandaloneLaneCutInput,
+  type StandaloneSubjectCut,
   toWornInputs,
-  type VariantKind,
-  type VariantSegmentAssembly,
 } from "@/server/images";
 import type { VisualStateShadowInput } from "@/server/visual-state";
+import { resolvedImageProfileFixture } from "./image-profile-fixture";
 import { attr, makeProfile } from "./profile-fixtures";
 
 /**
@@ -127,14 +128,12 @@ const VISUAL_FACT_PROBE_TABLE: readonly VisualFactProbeSpec[] = [
   { key: "eyeColor", bucket: "identity", mandatory: true, tokens: ["amber"], secondTokens: ["emerald"] },
   { key: "skinTone", bucket: "identity", mandatory: true, tokens: ["bronze"], secondTokens: ["ashen"] },
   /**
-   * A recognition-catalog DISTINCTIVE mark (`nose.shape: "crooked"`), authored
-   * only by {@link laneProbeMarkedProfile} — the base fixture leaves it unset, so
-   * every pre-existing frozen matrix is untouched. It exists to catch the
-   * duplication seam the digest cutover opened: a cataloged distinctive value
-   * can reach a lane through BOTH the digest's mark clause and the route-owned
-   * residual attribute sheet, and only one of them may phrase it. The second
-   * fixture carries no mark: the seam is a property of the projection road, not
-   * of the cast size, and one marked subject already exercises it.
+   * A recognition-catalog DISTINCTIVE mark (`nose.shape: "crooked"`). The base
+   * fixture leaves it unset — a test that needs the mark authors it onto the
+   * profile itself. It exists to catch a duplication seam: a cataloged
+   * distinctive value can reach a prompt through more than one road, and only
+   * one of them may phrase it. The second fixture carries no mark: the seam is
+   * a property of the projection road, not of the cast size.
    */
   { key: "noseShape", bucket: "identity", mandatory: false, tokens: ["crooked"], secondTokens: null },
   { key: "horns", bucket: "morphology", mandatory: true, tokens: ["spiraled"], secondTokens: ["antlered"] },
@@ -322,17 +321,6 @@ export function laneProbeSecondCastMember(over: Partial<SceneCastMember> = {}): 
 }
 
 /**
- * The base fixture plus one recognition-catalog distinctive mark
- * (`nose.shape: "crooked"`, the catalog's canonical attribute example). Used by
- * the duplication pin: the mark can reach a prompt through the digest AND the
- * residual sheet, and the `noseShape` probe counts how many of them spoke.
- */
-export function laneProbeMarkedProfile(): CharacterProfile {
-  const base = laneProbeProfile();
-  return { ...base, attributes: [...base.attributes, attr("nose.shape", "crooked", "base")] };
-}
-
-/**
  * The dressed wardrobe: fully clothed, chest through feet, so every
  * `imageReveal: "skin"` probe is exposure-suppressed and a lane that describes
  * one anyway has grown a leak. The kimono's description carries the `garment`
@@ -375,50 +363,72 @@ export function laneProbeBareExposure(): RegionExposure {
   return exposedRegions([]);
 }
 
+/** The degradation flags a standalone cut takes beside its wardrobe. */
+export type LaneProbeCutDegrade = Pick<StandaloneLaneCutInput, "wardrobeUnavailable" | "coverageUnreliable">;
+
 /**
- * The avatar lane's PRODUCTION Stage 3 assembly over the probe fixture — the
- * exact call `generateAvatar` makes, minus the database around it. One builder,
- * consumed by both the lane characterization freeze and the legacy-vs-digest
- * cutover comparison, so the two suites can never quietly assemble the "same"
- * avatar differently.
+ * The avatar lane's PRODUCTION cut over the probe fixture — the exact call
+ * `generateAvatar` makes, minus the database around it, so a test can never
+ * quietly assemble a different avatar than production does.
  */
-export function laneProbeAvatarSegments(
+export function laneProbeAvatarCut(
   wardrobe: ReadonlyArray<AvatarWardrobeItem>,
-  style: AvatarStyle = "realistic",
   profile: CharacterProfile = laneProbeProfile(),
-): AvatarSegmentAssembly {
-  return buildAvatarSegments({
+  degrade: LaneProbeCutDegrade = {},
+): StandaloneSubjectCut {
+  return buildAvatarCut({
     characterId: LANE_PROBE_SUBJECT_ID,
-    name: LANE_PROBE_NAME,
     profile,
-    style,
+    wardrobe,
+    readToken: "lane-probe-token",
+    ...degrade,
+  });
+}
+
+/**
+ * The variant/edit lane's PRODUCTION cut over the same fixture — the exact
+ * call `generateVariant` makes, minus the database around it. It takes the
+ * DRESSED wardrobe by default because the lane loads one: no garment name
+ * reaches the prompt (the reference image shows the clothes), but coverage
+ * drives the camera's perception, so a probe built on a bare body would
+ * exercise a selection production never runs.
+ */
+export function laneProbeVariantCut(
+  wardrobe: ReadonlyArray<AvatarWardrobeItem> = laneProbeWardrobe(),
+  profile: CharacterProfile = laneProbeProfile(),
+): StandaloneSubjectCut {
+  return buildVariantCut({
+    characterId: LANE_PROBE_SUBJECT_ID,
+    profile,
     wardrobe,
     readToken: "lane-probe-token",
   });
 }
 
+/** The bound 2512 portrait row every avatar probe compiles through. */
+export const LANE_PROBE_PORTRAIT_PROFILE = {
+  slug: "qwen/qwen-image-2512",
+  task: "portrait",
+  key: "portrait-standard",
+} as const;
+
 /**
- * The variant/edit lane's PRODUCTION Stage 4 assembly over the same fixture —
- * the exact call `generateVariant` makes, minus the database around it. It
- * takes the DRESSED wardrobe by default because the lane now loads one: no
- * garment name reaches the prompt (the reference image shows the clothes), but
- * coverage drives the camera's perception, so a probe built on a bare body
- * would exercise a selection production never runs.
+ * The avatar lane's PRODUCTION prompt program over the probe fixture — the
+ * cut above compiled through the exact call `generateAvatar` makes, minus the
+ * database and the model picker around it. The one way a test reads what a
+ * portrait would actually send.
  */
-export function laneProbeVariantSegments(
-  kind: VariantKind,
-  instruction: string,
-  wardrobe: ReadonlyArray<AvatarWardrobeItem> = laneProbeWardrobe(),
-  profile: CharacterProfile = laneProbeProfile(),
-): VariantSegmentAssembly {
-  return buildVariantSegments({
+export function laneProbeAvatarProgram(
+  options: { readonly profile?: CharacterProfile; readonly wardrobe?: ReadonlyArray<AvatarWardrobeItem> } & LaneProbeCutDegrade = {},
+): CharacterPromptProgramResult {
+  const { profile = laneProbeProfile(), wardrobe = [], ...degrade } = options;
+  return buildAvatarProgram({
     characterId: LANE_PROBE_SUBJECT_ID,
-    name: LANE_PROBE_NAME,
-    profile,
-    kind,
-    instruction,
-    wardrobe,
-    readToken: "lane-probe-token",
+    characterName: LANE_PROBE_NAME,
+    revision: "2026-08-30T00:00:00.000Z",
+    extraRevisions: [],
+    cut: laneProbeAvatarCut(wardrobe, profile, degrade),
+    profile: resolvedImageProfileFixture(LANE_PROBE_PORTRAIT_PROFILE),
   });
 }
 

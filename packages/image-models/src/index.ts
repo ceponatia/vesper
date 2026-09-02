@@ -56,10 +56,7 @@ export {
 export type { ImageFeature, ImageModelRequestFacts } from "./features";
 export {
   QWEN_IMAGE_FAMILY,
-  QWEN_MULTI_REFERENCE_IDENTITY_LOCK,
-  QWEN_SINGLE_REFERENCE_IDENTITY_LOCK,
   qwenEditFeatures,
-  qwenEditPromptDialect,
   qwenImage2512,
   qwenImageEdit2511,
   qwenImageEditPlusLora,

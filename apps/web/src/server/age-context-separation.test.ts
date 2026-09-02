@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { attr, makeProfile } from "@/server/test-support";
+import { attr, laneProbeAvatarProgram, laneProbeProfile, makeProfile } from "@/server/test-support";
 import { buildCanonBlock, buildCharacterChatSystemPrompt } from "@/server/engine";
-import { buildAvatarPrompt, buildAvatarSegments } from "@/server/images";
 
 /**
  * Age has two intentionally different owners:
@@ -47,24 +46,16 @@ describe("age context separation", () => {
   });
 
   it("portrait generation gets apparent age and never chronological age", () => {
-    // Both the production Stage 3 segment assembly and the legacy builder it
-    // will replace at Stage 6 — the invariant must hold across the cutover.
-    const prompts = [
-      buildAvatarSegments({
-        characterId: "chr-mira",
-        name: "Mira",
-        profile,
-        style: "realistic",
-        wardrobe: [],
-        readToken: "age-probe",
-      }).prompt,
-      buildAvatarPrompt("Mira", profile, "realistic"),
-    ];
-    for (const prompt of prompts) {
-      expect(prompt).toContain("forties");
-      expect(prompt).not.toContain("25 years old");
-      expect(prompt).not.toMatch(/\bchronological\b/i);
-    }
+    // The compiled avatar program is the portrait's only prompt path; the age
+    // it states is the sheet's apparent-age band through the image vocabulary
+    // (`imageAgeBandPhrases`), never the chronological field. Over the lane
+    // probe's species, because the program states a person only once the
+    // standalone digest projects a subject for them.
+    const program = laneProbeAvatarProgram({ profile: laneProbeProfile({ age: profile.age, attributes: profile.attributes }) });
+    if (program.kind !== "compiled") throw new Error(`the avatar program did not compile: ${program.kind}`);
+    expect(program.prompt).toContain("forties");
+    expect(program.prompt).not.toContain("25 years old");
+    expect(program.prompt).not.toMatch(/\bchronological\b/i);
   });
 
   it("keeps production scene-image assembly disconnected from both age fields", () => {

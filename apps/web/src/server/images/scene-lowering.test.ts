@@ -151,7 +151,6 @@ function compileScene(plan: SceneRenderPlan, allowIntimate = false): CompiledSce
     profile: sceneProfile(),
     bindingProfileKey: "scene-standard",
     bindingStrategy: "instruction_edit",
-    resolver: "active",
     cuts: cast.map((slice) => ({
       subjectId: slice.subjectId,
       name: slice.name,

@@ -1,6 +1,6 @@
 import { defineImageModel, type ImageModelAdapter, type ImageModelQuirk } from "../../composer";
 import { loraFeature } from "../../features";
-import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./shared";
+import { QWEN_IMAGE_FAMILY, qwenEditFeatures } from "./shared";
 
 /**
  * The startup budget for this endpoint: eight minutes from creation to first
@@ -64,12 +64,13 @@ function qwenEditPlusLoraColdStart(): ImageModelQuirk {
  *   off. Comparison arms on this model should therefore be compared with each
  *   other first, not against 2511 renders.
  *
- * The family dialect applies here too. Both endpoints are Qwen instruction
- * editors that address references by number, so the numbered-reference lock is
- * a family convention rather than a property of one slug.
+ * Both endpoints are Qwen instruction editors that address references by
+ * number, so the numbered-reference lock is a family convention rather than a
+ * property of one slug — and it is compiled by the family's prompt dialect in
+ * `@vesper/image-core`, never rewritten here.
  */
 export const qwenImageEditPlusLora: ImageModelAdapter = defineImageModel({
   family: QWEN_IMAGE_FAMILY,
   features: [...qwenEditFeatures(), loraFeature()],
-  quirks: [qwenEditPromptDialect(), qwenEditPlusLoraColdStart()],
+  quirks: [qwenEditPlusLoraColdStart()],
 });
