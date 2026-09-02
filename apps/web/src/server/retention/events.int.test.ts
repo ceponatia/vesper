@@ -5,7 +5,7 @@ import { deleteChat } from "@/server/engine";
 import { logEvent } from "@/server/events";
 import { characterChats, db, events } from "@/server/db";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
-import { EVENT_RETENTION_DAYS, eventsRetentionPass } from "./events";
+import { EVENT_RETENTION_DAYS, eventsExpired } from "./events";
 
 /**
  * The two halves of the telemetry lifecycle that only a real Postgres can prove
@@ -83,7 +83,7 @@ describe.skipIf(!ready)("the retention pass", () => {
         { id: nonChatId, type: "image.avatar", payload: {}, chatId: null, createdAt: freshAt },
       ]);
 
-    const deleted = await eventsRetentionPass.run(now);
+    const deleted = await eventsExpired.run(now);
     expect(deleted).toBe(1);
 
     const survivors = await db()

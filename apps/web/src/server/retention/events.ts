@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { inArray, lt } from "drizzle-orm";
 import { db, events } from "@/server/db";
 import { RETENTION_BATCH_SIZE, type RetentionPass } from "./pass";
 
@@ -26,14 +26,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * so deleting a conversation takes its telemetry immediately. This pass is what
  * clears the rest — the rows with no conversation to be deleted along with.
  */
-export const eventsRetentionPass: RetentionPass = {
+export const eventsExpired: RetentionPass = {
   name: "eventsExpired",
   async run(now: Date): Promise<number> {
     const cutoff = new Date(now.getTime() - EVENT_RETENTION_DAYS * DAY_MS);
-    const expired = sql`select ${events.id} from ${events} where ${events.createdAt} < ${cutoff} limit ${RETENTION_BATCH_SIZE}`;
     const deleted = await db()
       .delete(events)
-      .where(sql`${events.id} in (${expired})`)
+      .where(
+        inArray(
+          events.id,
+          db()
+            .select({ id: events.id })
+            .from(events)
+            .where(lt(events.createdAt, cutoff))
+            .limit(RETENTION_BATCH_SIZE),
+        ),
+      )
       .returning({ id: events.id });
     return deleted.length;
   },
