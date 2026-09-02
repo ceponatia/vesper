@@ -59,6 +59,7 @@ const ITEM_FIELDS: readonly ImageFieldProjection[] = [
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.opacity", disposition: "optional_visual", concept: "item.material", note: "sheer against opaque is a visible material fact" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.coverage", disposition: "relational", note: "which body locations it covers — a fact about wearing, not about the object alone" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.layer", disposition: "relational", note: "layering order only means something on a wearer" },
+  { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.hairOcclusion", disposition: "relational", note: "how much of a WEARER's hair the headwear hides — resolved onto the subject's cut, never a fact about the object alone" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.wearer", disposition: "nonvisual", note: "a wardrobe filter target, not an appearance" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.category", disposition: "nonvisual", note: "authoring template id; the item contract forbids serializing it into prompts" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.sensory.scent", disposition: "nonvisual", note: "a picture cannot show a smell" },

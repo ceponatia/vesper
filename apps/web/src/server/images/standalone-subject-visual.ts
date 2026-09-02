@@ -3,6 +3,7 @@ import {
   bodyLocationRegistry,
   exposedRegions,
   FULLY_COVERED,
+  resolveHairOcclusion,
   resolveVisualViewingConditions,
   selectVisualImageFacts,
   visualCameraReadsOfSceneCamera,
@@ -10,6 +11,7 @@ import {
   type AffordancePerceptionView,
   type AttributeValue,
   type DiagnosticSink,
+  type HairOcclusion,
   type RealizedBody,
   type RegionExposure,
   type SceneCameraSpec,
@@ -204,6 +206,8 @@ export interface StandaloneSubjectCut {
   readonly realizedBody: RealizedBody;
   /** The canonical garment-coverage readout, computed once over the FULL wardrobe. */
   readonly exposure: RegionExposure;
+  /** How much hair the worn headwear hides — resolved once over the same rows as `exposure`. */
+  readonly hairOcclusion: HairOcclusion;
 }
 
 /**
@@ -242,6 +246,9 @@ export function buildStandaloneSubjectCut(input: StandaloneSubjectCutInput): Sta
   // cannot disagree about what the camera may see.
   const coverageUnreadable = input.wardrobeUnavailable === true || input.coverageUnreliable === true;
   const exposure = coverageUnreadable ? FULLY_COVERED : exposedRegions(input.worn);
+  // Independent of coverage: a row whose coverage column is unreadable still
+  // names its headwear band, and an unavailable wardrobe has no rows (⇒ none).
+  const hairOcclusion = resolveHairOcclusion(input.worn.map((row) => ({ worn: true, hairOcclusion: row.hairOcclusion })));
 
   const assembly = assembleVisualStateSnapshot({
     scope: { kind: "standalone_character", characterId: input.characterId },
@@ -286,6 +293,7 @@ export function buildStandaloneSubjectCut(input: StandaloneSubjectCutInput): Sta
     resolved: assembly.stableResolved,
     realizedBody: assembly.realizedBody,
     exposure,
+    hairOcclusion,
   };
 }
 
@@ -325,6 +333,7 @@ export function standaloneSubjectPromptCut(
     digest: cut.digest,
     attributes: cut.resolved,
     exposure: cut.exposure,
+    hairOcclusion: cut.hairOcclusion,
     realizedBody: cut.realizedBody,
   };
 }

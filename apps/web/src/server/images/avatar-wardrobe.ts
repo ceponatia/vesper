@@ -1,3 +1,4 @@
+import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
 import type { WornGarmentPart, WornItemInput } from "@/contracts/items/visibility";
 import type { ClothingLayer } from "@/contracts/items/item";
 
@@ -27,6 +28,13 @@ export interface AvatarWardrobeItem {
   appearance?: string;
   /** Clothing subtype id (contracts/items/subtypes) — resolved to its label where a phrase is built. */
   subtype?: string | null;
+  /**
+   * The RESOLVED hair-occlusion band (`hairOcclusionForItem`: item override,
+   * else subtype default) — set by the loader, sparse when it resolves to
+   * `none`. Rides every worn row this item expands to, so the shared resolver
+   * (`resolveHairOcclusion`) answers over the same rows exposure reads.
+   */
+  hairOcclusion?: HairOcclusion;
   /**
    * `clothingCategories` id. NEVER prompt-bearing
    * (docs/character-chat/prompts.md §Style rules for prompt text) — it rides
@@ -81,9 +89,10 @@ export function toWornInputs(items: ReadonlyArray<AvatarWardrobeItem>): WornItem
     const garmentId = wardrobeGarmentKey(item, index);
     const layer = clampWornLayer(item.layer ?? 1);
     const opacity = item.opacity ?? "opaque";
+    const hairOcclusion = item.hairOcclusion === undefined ? {} : { hairOcclusion: item.hairOcclusion };
     const covering = (item.parts ?? []).filter((part) => part.coverage.length > 0);
     if (covering.length === 0) {
-      return [{ instanceId: garmentId, garmentId, name: item.name, coverage: item.coverage, layer, opacity }];
+      return [{ instanceId: garmentId, garmentId, name: item.name, coverage: item.coverage, layer, opacity, ...hairOcclusion }];
     }
     return covering.map((part) => ({
       instanceId: `${garmentId}:${part.partId}`,
@@ -92,6 +101,7 @@ export function toWornInputs(items: ReadonlyArray<AvatarWardrobeItem>): WornItem
       coverage: part.coverage,
       layer: clampWornLayer(layer + (part.layerOffset ?? 0)),
       opacity,
+      ...hairOcclusion,
     }));
   });
 }

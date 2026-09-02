@@ -3,6 +3,7 @@ import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/v
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
+import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
 import { deriveMoodDescriptor, meterStateCue, splitStateCues } from "@/contracts/meters/registry";
 import {
   currentScenePlace,
@@ -162,6 +163,13 @@ export interface CharacterChatPromptInput {
     outfit?: string;
     /** Whether the outfit reads more exposed than usual (tone hint only). */
     outfitExposed?: boolean;
+    /**
+     * How much of the character's hair their worn headwear hides — the
+     * wardrobe seam's resolved band (`ResolvedChatWardrobe.hairOcclusion`,
+     * docs/contracts/items/README.md §Hair occlusion). Carried beside `outfit`
+     * so the prompt reads one answer with the wardrobe; absent means `none`.
+     */
+    hairOcclusion?: HairOcclusion;
     /**
      * The AUTHORITATIVE wardrobe digest (behind `CHAT_GARMENT_CUES`): who is
      * wearing what, how each piece currently sits, and

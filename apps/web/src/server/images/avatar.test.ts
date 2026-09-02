@@ -320,6 +320,28 @@ describe("loadDefaultWardrobe degradation", () => {
     expect(sink.items).toEqual([]);
   });
 
+  it("resolves each row's hair-occlusion band at the load: item override, else subtype default, sparse at none", async () => {
+    // Every consumer (image cut, chat resolve, affordance read) takes the band
+    // off the loaded row. A loader that dropped the override, or wrote `none`
+    // explicitly, would put hair back into a prompt over a hijab.
+    const row = (id: string, definition: Record<string, unknown>) => ({ id, name: id, description: null, definition, updatedAt: new Date(0) });
+    primeItemRows([
+      row("scarf", { subtype: "headscarf", hairOcclusion: "partial" }),
+      row("hijab", { subtype: "hijab" }),
+      row("shirt", { coverage: ["chest"] }),
+    ]);
+    const load = await loadDefaultWardrobeWithRevisions("u-1", ["scarf", "hijab", "shirt"], new DiagnosticCollector());
+    expect(load.wardrobe.map((item) => item.hairOcclusion)).toEqual(["partial", "full", undefined]);
+  });
+
+  it("the standalone cut carries the worn headwear's band, independent of the coverage degrade", () => {
+    const hijab = { name: "hijab", coverage: ["hair"], layer: 2 as const, opacity: "opaque" as const, hairOcclusion: "full" as const };
+    expect(laneProbeAvatarCut([hijab]).hairOcclusion).toBe("full");
+    // An unreadable coverage column still names its headwear: the band is not a coverage read.
+    expect(laneProbeAvatarCut([hijab], laneProbeProfile(), { coverageUnreliable: true }).hairOcclusion).toBe("full");
+    expect(laneProbeAvatarCut([]).hairOcclusion).toBe("none");
+  });
+
   it("a failed wardrobe load never becomes exposure claims — a genuinely empty wardrobe still does", () => {
     // Kills the regression the Stage 3 review caught: a transient item-table
     // failure degraded to `[]`, which the cut then read as a confirmed

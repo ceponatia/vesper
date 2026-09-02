@@ -175,6 +175,7 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
       // The SAME coverage readout the key above hashed, so the anchor's
       // coverage reads and its cache key cannot disagree.
       exposure: wardrobe.exposure,
+      hairOcclusion: wardrobe.hairOcclusion,
       ...(visual === undefined ? {} : { visual }),
       // Visible age comes from the portrait reference itself. Scene-supporting
       // look renders never receive chronological or apparent-age fields.

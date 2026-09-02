@@ -143,6 +143,7 @@ function programInput(over: Partial<CharacterPromptProgramInput> = {}): Characte
         digest: VARIANT_CUT.digest,
         attributes: VARIANT_CUT.resolved,
         exposure: VARIANT_CUT.exposure,
+        hairOcclusion: VARIANT_CUT.hairOcclusion,
         realizedBody: VARIANT_CUT.realizedBody,
       },
     ],

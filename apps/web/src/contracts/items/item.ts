@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hairOcclusionSchema } from "./hair-occlusion";
 
 /** How an item draws or averts a wearer's/holder's attention (relocated from the
  *  deleted perception lane; the item wardrobe schema is its only consumer). */
@@ -60,6 +61,13 @@ export const itemDefinitionSchema = z.object({
     })
     .optional()
     .catch(undefined),
+  /**
+   * Headwear only: this item's HAIR OCCLUSION band — `none` · `partial` ·
+   * `full` (hair-occlusion.ts). Overrides the subtype's default when present
+   * (`hairOcclusionForItem`); absent keeps the default, and an unknown value
+   * is dropped rather than trusted. Optional so existing rows stay valid.
+   */
+  hairOcclusion: hairOcclusionSchema.optional().catch(undefined),
   layer: clothingLayerSchema.optional(),
   opacity: z.enum(["opaque", "sheer"]).default("opaque"),
   sensory: itemSensorySchema.default({}),

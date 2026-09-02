@@ -11,9 +11,11 @@ import {
   overlayGarmentReads,
   overlayWornInputs,
   resolveGarmentBlueprint,
+  resolveHairOcclusion,
   resolveOutfitPreset,
   resolveWardrobeVisibility,
   wornGarmentInstances,
+  HAIR_OCCLUSION_NONE,
   type ChatGarmentStore,
   type ChatPlayerState,
   type CharacterProfile,
@@ -21,6 +23,7 @@ import {
   type GarmentBlueprint,
   type GarmentDescriptor,
   type GarmentInstanceState,
+  type HairOcclusion,
   type PersonaProfile,
   type RegionCoverage,
   type RegionExposure,
@@ -214,6 +217,14 @@ export interface ResolvedChatWardrobe {
   exposure: RegionExposure;
   /** "Intimate areas bared" — the prompt tone-steer + legacy look-key flag (coverage-accurate). */
   exposed: boolean;
+  /**
+   * How much of this actor's hair their WORN headwear hides — the strongest
+   * band over the worn rows (`resolveHairOcclusion`, docs/contracts/items/README.md
+   * §Hair occlusion), resolved ONCE here so the image prompt, the narrator
+   * prompt and the hair-affordance read all carry one answer. `none` on the
+   * free-text path: an unread wardrobe hides nothing it can name.
+   */
+  hairOcclusion: HairOcclusion;
   /** The worn item ids (structured path) — the look-key fingerprint. */
   wornItemIds: string[];
   /** The free-text overlay/fallback carried alongside (look-key input). */
@@ -254,6 +265,11 @@ export interface ResolvedChatWardrobe {
    * skipping it would park the look forever.
    */
   unreliable?: boolean;
+}
+
+/** The resolved hair-occlusion band over the shared worn inputs — every row is worn by construction. */
+function hairOcclusionOf(worn: readonly WornItemInput[]): HairOcclusion {
+  return resolveHairOcclusion(worn.map((row) => ({ worn: true, hairOcclusion: row.hairOcclusion })));
 }
 
 /** Per-row occlusion from the shared worn inputs (one pass, reused by exposure). */
@@ -391,6 +407,8 @@ export async function resolveChatWardrobe(
       garments,
       exposure,
       exposed: intimateRegionsBare(exposure),
+      // Independent of coverage, so an unreliable coverage column still answers it.
+      hairOcclusion: hairOcclusionOf(worn),
       // Only the ids that actually resolved key the look (a deleted item drops out).
       wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
       overlay,
@@ -437,6 +455,7 @@ export async function resolveChatWardrobe(
     garments: healed,
     exposure,
     exposed,
+    hairOcclusion: HAIR_OCCLUSION_NONE,
     wornItemIds: [],
     overlay: healed,
     partVisibility: {},
@@ -473,6 +492,8 @@ export interface ResolvedPlayerWardrobe {
    * the overlay text names (there is no manual flag to fake it).
    */
   exposure: RegionExposure;
+  /** The character twin's band, same source and same law (see `ResolvedChatWardrobe.hairOcclusion`). */
+  hairOcclusion: HairOcclusion;
   /** The ids that actually resolved — a deleted item drops out. */
   wornItemIds: string[];
   overlay: string;
@@ -563,6 +584,7 @@ export async function resolvePlayerWardrobe(
       // Same precedence as the character's free-text path: stripped wins, then the
       // overlay's own garment nouns speak per region, then the covered default.
       exposure: strippedAfterSeeding ? exposedRegions([]) : (overlayExposure ?? FULLY_COVERED),
+      hairOcclusion: HAIR_OCCLUSION_NONE,
       wornItemIds: [],
       overlay,
       partVisibility: {},
@@ -589,6 +611,7 @@ export async function resolvePlayerWardrobe(
     // Overlay nouns add coverage here too — the persona twin of the character's
     // union, and the reason a described robe can no longer be seen through.
     exposure: coverageUnreliable ? FULLY_COVERED : exposedRegions([...worn, ...overlayWornInputs(overlay)]),
+    hairOcclusion: hairOcclusionOf(worn),
     wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
     overlay,
     partVisibility: partVisibilityOf(worn),

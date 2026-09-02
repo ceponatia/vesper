@@ -235,6 +235,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
             outfit: wardrobe.garments,
             outfitExposed: wardrobe.exposed,
             exposure: wardrobe.exposure,
+            hairOcclusion: wardrobe.hairOcclusion,
             garmentNotes,
             meters: state.meters,
             conditions: state.conditions,

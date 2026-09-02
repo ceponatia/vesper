@@ -1,3 +1,4 @@
+import { HAIR_OCCLUSION_NONE, hairOcclusionOf, type HairOcclusion } from "../hair-occlusion";
 import type { ClothingSubtype } from "./types";
 import { eyewearSubtypes } from "./eyewear";
 import { headwearSubtypes } from "./headwear";
@@ -35,4 +36,15 @@ export function clothingSubtypeById(id: string | null | undefined): ClothingSubt
 /** Prompt-facing label for a clothing item's subtype id; undefined when unknown/absent. */
 export function clothingSubtypeLabel(id: string | null | undefined): string | undefined {
   return clothingSubtypeById(id)?.label.toLowerCase();
+}
+
+/**
+ * ONE clothing item's hair-occlusion band (docs/contracts/items/README.md
+ * §Hair occlusion): the item's own `hairOcclusion` when it names a band, else
+ * its subtype's default, else `none`. The single rule the wardrobe loaders and
+ * the item editor share; an override that is not a band is ignored rather than
+ * trusted, and an unknown subtype hides nothing.
+ */
+export function hairOcclusionForItem(subtypeId: string | null | undefined, override?: unknown): HairOcclusion {
+  return hairOcclusionOf(override) ?? clothingSubtypeById(subtypeId)?.hairOcclusion ?? HAIR_OCCLUSION_NONE;
 }

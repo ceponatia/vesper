@@ -800,4 +800,15 @@ describe("the presentation-aware wardrobe read", () => {
   it("carries the worn definition id through, so the look key still resolves", () => {
     expect(itemsOf(dressed()).map((item) => item.id)).toEqual(["def_shirt", "def_tee"]);
   });
+
+  it("carries the definition's hair-occlusion band onto every per-part row of a worn instance", () => {
+    // The chat resolve reads the band off these rows; an instance read that
+    // lost the definition's band, or a per-part expansion that dropped it,
+    // would read a worn hijab as showing hair.
+    const HIJAB_DEF: AvatarWardrobeItem = { ...definition("def_hijab", "hijab", ["hair", "ears"], 2), hairOcclusion: "full" };
+    const blueprint = blueprintFor(HIJAB_DEF, "headwear");
+    const rows = toWornInputs([garmentWardrobeItem(instance("g_hijab", blueprint, "def_hijab"), blueprint, HIJAB_DEF)]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.hairOcclusion === "full")).toBe(true);
+  });
 });

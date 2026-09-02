@@ -199,6 +199,7 @@ function chatLaneProgram(entry: SceneStaging): CharacterPromptProgram {
         digest: slice.digest,
         attributes: slice.attributes,
         exposure: slice.exposure,
+        hairOcclusion: slice.hairOcclusion,
         realizedBody: slice.realizedBody,
       },
     ],

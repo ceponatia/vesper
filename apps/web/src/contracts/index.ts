@@ -23,6 +23,7 @@ export * from "./conditions/condition";
 export * from "./conditions/catalog";
 export * from "./conditions/overlays";
 export * from "./items/item";
+export * from "./items/hair-occlusion";
 export * from "./items/coverage";
 export * from "./items/clothing-categories";
 export * from "./items/colors";

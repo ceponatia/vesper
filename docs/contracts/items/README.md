@@ -28,6 +28,7 @@ type ItemDefinition = {
   color?: { family: string; shade?: string; accent?: string };  // color-family id + free-text shade
   layer?: 0 | 1 | 2 | 3;                        // 0 underwear … 3 outerwear
   opacity?: "opaque" | "sheer";
+  hairOcclusion?: "none" | "partial" | "full"; // clothing (headwear) — overrides the subtype default
   sensory?: { appearance?: string; scent?: string; tactile?: string };
   attentionHint?: "absorbing" | "faces_away" | "outward";
   fields?: Record<string, unknown>;            // kind-specific extras
@@ -46,6 +47,7 @@ type ItemDefinition = {
 | `color`                | Primary color: `family`/`accent` are color-family ids, `shade` is free text (see [Color](#color)). Any kind may carry one; clothing is the primary surface.                                                              |
 | `layer`                | `0` underwear → `3` outerwear.                                                                                                                                                                                           |
 | `opacity`              | `opaque` or `sheer`.                                                                                                                                                                                                     |
+| `hairOcclusion`        | Headwear only: how much hair the item hides — `none` / `partial` / `full`. Overrides the subtype default (see [Hair occlusion](#hair-occlusion)). Optional; absent keeps the default.                                    |
 | `sensory`              | Optional `appearance` / `scent` / `tactile` notes.                                                                                                                                                                       |
 | `attentionHint`        | `absorbing` / `faces_away` / `outward` — reserved perception hint; no lane reads it.                                                                                                                                     |
 | `fields`               | Kind-specific extras (capacity, wearable container, …).                                                                                                                                                                  |
@@ -86,7 +88,7 @@ Expanding the set is a one-file data edit.
 whenever the picked category has a vocabulary, and the classify backfill fills absent ones.
 
 > jewelry: earring · nose ring · nose stud · septum ring · lip ring · lip stud · eyebrow ring · necklace · choker · bracelet · ring · anklet · belly ring · brooch
-> headwear: hat · cap · beanie · hood · headband · hairpin · ribbon · tiara · crown · veil · headscarf · helmet
+> headwear: hat · cap · beanie · hood · bandana · headband · hairpin · ribbon · tiara · crown · veil · visor · headscarf · hijab · turban · wimple · snood · swim cap · helmet
 > eyewear: glasses · sunglasses · monocle · goggles · eyepatch · blindfold · masquerade mask
 
 Two deliberate differences from categories:
@@ -101,6 +103,42 @@ Two deliberate differences from categories:
 
 Extending a vocabulary is a one-line edit in that category's file; adding a vocabulary to another
 category is a new file plus one map entry in `subtypes/index.ts`.
+
+## Hair occlusion
+
+`items/hair-occlusion.ts` is the band that says how much of a wearer's hair their worn headwear
+hides: `none` (rests in or on the hair), `partial` (hides some; the hair attributes stay relevant),
+`full` (encloses it; no hair is visible). It is separate from coverage and layering — a cap and a
+hijab both cover `hair`, and only the band tells them apart — and it never changes what a garment
+covers, what it occludes, or how it layers.
+
+- **Defaults come from the headwear subtype** (`ClothingSubtype.hairOcclusion`):
+
+  | Band      | Headwear types                                            |
+  | --------- | --------------------------------------------------------- |
+  | `none`    | headband · hairpin · ribbon · tiara · crown · veil · visor |
+  | `partial` | hat · cap · beanie · hood · bandana · helmet              |
+  | `full`    | headscarf · hijab · turban · wimple · snood · swim cap    |
+
+- **An item overrides its default** through the optional `ItemDefinition.hairOcclusion` — a
+  headscarf worn with the fringe out is `partial`, a fully enclosing helmet is `full`.
+  `hairOcclusionForItem(subtypeId, override)` (`subtypes/index.ts`) is the one per-item rule: a
+  valid override wins, else the subtype default, else `none`; a value that is not a band is
+  ignored rather than trusted.
+- **The subject's band is resolved once over their worn rows** (`resolveHairOcclusion`): only
+  worn pieces count — held, stored and scene-placed items hide nothing — the strongest band wins
+  (`full` over `partial` over `none`), and a missing or unknown value is `none`. Bad data resolves
+  toward showing hair, never toward erasing it.
+- **Carried, never re-derived.** The wardrobe loader resolves each item's band onto the loaded row
+  (`AvatarWardrobeItem.hairOcclusion`, sparse at `none`) and onto every worn row it expands to
+  (`WornItemInput.hairOcclusion`). The chat resolve seam
+  ([../../character-chat/wardrobe.md](../../character-chat/wardrobe.md)) resolves the subject's
+  band beside its exposure (`ResolvedChatWardrobe.hairOcclusion`, `none` on the free-text path),
+  and the image subject cut (`CharacterPromptSubjectCut.hairOcclusion`), the narrator prompt state
+  (`state.hairOcclusion`) and the hair-affordance wardrobe input
+  (`ChatAffordanceWardrobe.hairOcclusion`) each carry that one value. No consumer reads item rows
+  or infers the band from a garment's name.
+- `partial` and `none` are distinct values even where a consumer treats them alike.
 
 ## Object subtypes
 

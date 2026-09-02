@@ -3,6 +3,7 @@ import { resolveAttributes, type AttributeValue } from "@/contracts/attributes";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { resolveImageProfileForTask } from "./model-profiles";
 import type { CommittedSceneFacts } from "@/contracts/images/scene-committed";
+import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
@@ -40,6 +41,8 @@ export interface SceneCastMember {
   outfit?: string;
   outfitExposed?: boolean;
   exposure?: RegionExposure;
+  /** The resolved wardrobe's hair-occlusion band (`ResolvedChatWardrobe.hairOcclusion`); absent reads `none`. */
+  hairOcclusion?: HairOcclusion;
   garmentNotes?: readonly string[];
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];

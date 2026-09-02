@@ -42,6 +42,7 @@ import {
   type HairCausalEvent,
   type HairEventKind,
   type HairLanePayload,
+  type HairOcclusion,
   type HairWetnessBand,
   type HairWettingEventKind,
   type RegisteredAffordanceDomain,
@@ -200,6 +201,13 @@ export interface ChatAffordanceWardrobe {
    * buried under whom.
    */
   readonly partVisibility?: Readonly<Record<string, WornVisibility>>;
+  /**
+   * The resolved wardrobe's `hairOcclusion` — how much hair the worn headwear
+   * hides, resolved at the wardrobe seam (`ResolvedChatWardrobe.hairOcclusion`)
+   * over the SAME rows as `worn`. Carried here so a perception read can tell a
+   * cap from a hijab without a second item load; absent means `none`.
+   */
+  readonly hairOcclusion?: HairOcclusion;
 }
 
 export interface ChatAffordanceReadInput {

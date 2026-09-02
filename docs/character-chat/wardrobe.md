@@ -18,7 +18,11 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
   becomes what downstream reads — a rendered garment phrase (via `wardrobeOutfitText`,
   occlusion-filtered + subtype-led) plus **coverage-computed exposure** (via the shared
   wardrobe classifier `exposedRegions`, [../contracts/items/visibility.md](../contracts/items/visibility.md)) — reusing the
-  shared renderers, never re-forking them. The narrator prompt (`promptStateSlice`), the scene
+  shared renderers, never re-forking them — plus the resolved **hair-occlusion band**
+  (`hairOcclusion`: the strongest band over the worn rows,
+  [../contracts/items/README.md](../contracts/items/README.md) §Hair occlusion; `none` on the
+  free-text path), carried to the narrator prompt state, the scene and look image cuts, and the
+  hair-affordance read so all three answer from one resolve. The narrator prompt (`promptStateSlice`), the scene
   image (`queueChatScene` → `renderCharacterSceneImage`'s `exposure` override), and the
   `chat_look` key all read it. When `worn_item_ids` is empty the seam falls back to the
   free-text path (`outfit` + the manual `outfit_exposed`), self-healing the moment a preset
