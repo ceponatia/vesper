@@ -153,9 +153,18 @@ async function updateRecord(
     .where(and(eq(simProvisioningRequests.ownerId, ownerId), eq(simProvisioningRequests.requestId, requestId)));
 }
 
+/** A `ready` record re-read together with proof its world is still there. */
+interface LiveReadyRecord {
+  worldId: string | null;
+  branchId: string | null;
+  chatId: string | null;
+  response: unknown;
+  httpStatus: number | null;
+}
+
 /**
- * Does the world this record recorded still exist, whole, and still belong to
- * this owner? The replay guard's question (#197).
+ * Re-read this key's `ready` record and its whole world graph in ONE statement,
+ * and hand back the replay material only if both are still there (#197).
  *
  * A `ready` record stores the ids it built, but nothing in the schema keeps
  * those ids honest: `worldId` / `branchId` / `chatId` are SOFT pointers on
@@ -165,30 +174,58 @@ async function updateRecord(
  * replaying its stored 201 would hand the client ids for resources that are
  * gone.
  *
- * One join answers all of it: the chat must exist, be owned by this caller, and
- * still be routed at exactly the branch the record named, and that branch must
- * still hang off exactly the recorded world. Branch existence implies the world
- * exists (`sim_branches` cascades from `sim_worlds`), and the `world_id`
- * equality is what catches a re-pointed chat rather than a deleted one. Any null
- * id fails: a record that never recorded an id has nothing to prove alive.
+ * ONE statement, not a check followed by a read (Codex review, PR #437): a
+ * same-key POST can overlap a chat DELETE, and a separate liveness query could
+ * pass in the instant before the delete commits — leaving the request to replay
+ * a response it had already loaded, tombstone ids and all. `deleteChat` removes
+ * the chat, removes the world and retires the record in ONE transaction, so a
+ * single statement sees either all of that or none of it, and the row it
+ * returns is the row it validated. Extending the in-process
+ * `successor_provision:<ownerId>` lock into the chat lane would not do this: it
+ * would couple the two lanes and still not hold across a second instance.
+ *
+ * The joins carry the whole check: the record's `chat_id` must name a chat this
+ * owner still owns, that chat must still be routed at the record's `branch_id`,
+ * and that branch must still hang off the record's `world_id`. Branch existence
+ * implies the world exists (`sim_branches` cascades from `sim_worlds`), and the
+ * `world_id` equality is what catches a re-pointed chat rather than a deleted
+ * one. A null id joins to nothing, so a record that never recorded one fails by
+ * construction.
  */
-async function provisionedGraphAlive(record: ProvisioningRecord, ownerId: string): Promise<boolean> {
-  const { chatId, branchId, worldId } = record;
-  if (chatId === null || branchId === null || worldId === null) return false;
-  const [alive] = await db()
-    .select({ id: characterChats.id })
-    .from(characterChats)
-    .innerJoin(simBranches, eq(simBranches.id, characterChats.simBranchId))
+async function readLiveReadyRecord(ownerId: string, requestId: string): Promise<LiveReadyRecord | undefined> {
+  const [live] = await db()
+    .select({
+      worldId: simProvisioningRequests.worldId,
+      branchId: simProvisioningRequests.branchId,
+      chatId: simProvisioningRequests.chatId,
+      response: simProvisioningRequests.response,
+      httpStatus: simProvisioningRequests.httpStatus,
+    })
+    .from(simProvisioningRequests)
+    .innerJoin(
+      characterChats,
+      and(
+        eq(characterChats.id, simProvisioningRequests.chatId),
+        eq(characterChats.ownerId, simProvisioningRequests.ownerId),
+        eq(characterChats.simBranchId, simProvisioningRequests.branchId),
+      ),
+    )
+    .innerJoin(
+      simBranches,
+      and(
+        eq(simBranches.id, simProvisioningRequests.branchId),
+        eq(simBranches.worldId, simProvisioningRequests.worldId),
+      ),
+    )
     .where(
       and(
-        eq(characterChats.id, chatId),
-        eq(characterChats.ownerId, ownerId),
-        eq(characterChats.simBranchId, branchId),
-        eq(simBranches.worldId, worldId),
+        eq(simProvisioningRequests.ownerId, ownerId),
+        eq(simProvisioningRequests.requestId, requestId),
+        eq(simProvisioningRequests.state, "ready"),
       ),
     )
     .limit(1);
-  return alive !== undefined;
+  return live;
 }
 
 /**
@@ -209,6 +246,11 @@ async function provisionedGraphAlive(record: ProvisioningRecord, ownerId: string
  * rather than by guessing on the player's behalf. Nulling `chatId` here is also
  * what makes the refusal happen ONCE — see the stale-marked branch in
  * {@link runProvisioning}.
+ *
+ * The UPDATE is idempotent and unconditional on the current state, so it is
+ * equally correct when a concurrent `deleteChat` has already retired the row: it
+ * rewrites the same failed/stale shape, minus the ids that delete kept, and the
+ * caller still gets the one honest answer it owes.
  */
 async function retireStaleRecord(ownerId: string, requestId: string, record: ProvisioningRecord): Promise<Response> {
   await updateRecord(ownerId, requestId, {
@@ -334,41 +376,53 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
   if (record && record.payloadHash !== payloadHash) {
     return jsonError("idempotency_mismatch", "this request id was already used for a different world", 409);
   }
-  // #197 — the ids first, the response second. Both stale paths land here,
-  // ahead of the library lookup, so a deleted world answers the same way whether
-  // or not the character it was born from survived.
-  //
-  //  * A `ready` record is the only state that TRUSTS its stored ids without
-  //    rebuilding anything: the replay below returns them verbatim and the
-  //    `replayUnreadable` resume below resumes ON them, so both are wrong the
-  //    moment the chat and its world have been deleted. One check covers both.
-  //  * A `failed` record still CARRYING ids and marked
-  //    `PROVISIONING_STALE_AFTER_DELETE` is `deleteChat`'s belt: the delete
-  //    already retired the row, and the refusal it implies has not been reported
-  //    to this key's client yet. Retiring it nulls those ids, so the next POST
-  //    with the same key is an ordinary failed → retry and rebuilds.
-  if (record?.state === "ready" && !(await provisionedGraphAlive(record, ownerId))) {
-    return retireStaleRecord(ownerId, requestId, record);
-  }
+  // #197 — a `failed` record still CARRYING ids and marked
+  // `PROVISIONING_STALE_AFTER_DELETE` is `deleteChat`'s belt: the delete already
+  // retired the row, and the refusal it implies has not been reported to this
+  // key's client yet. Retiring it nulls those ids, so the next POST with the
+  // same key is an ordinary failed → retry and rebuilds. Ahead of the library
+  // lookup, like the replay below, so a deleted world answers the same way
+  // whether or not the character it was born from survived.
   if (record?.state === "failed" && record.error === PROVISIONING_STALE_AFTER_DELETE && record.chatId !== null) {
     return retireStaleRecord(ownerId, requestId, record);
   }
 
-  let replayUnreadable = false;
-  if (record?.state === "ready" && record.httpStatus !== null) {
-    // Verbatim replay: one world, one chat, one 201 — no matter how many taps.
-    // Ahead of the library lookup too: a finished world stays replayable even if
-    // the character it was born from has since been deleted.
-    const replayed = parseOr(provisionResponseSchema.nullable(), record.response, null, undefined, "sim_provisioning_requests.response");
-    if (replayed) return jsonOk(replayed, record.httpStatus);
-    // A `ready` row whose recorded body no longer parses cannot be replayed
-    // honestly; re-running is safe (every step is idempotent) so degrade to that.
-    log.warn("engine.sim.provisioning", "ready record carried an unreadable response; re-running the provision", {
-      code: "provisioning.replay_unreadable",
-      ownerId,
-      requestId,
-    });
-    replayUnreadable = true;
+  /**
+   * The `ready` row re-read together with proof of its live world graph — set
+   * only when that row cannot be replayed, and then the ONLY ids this request
+   * may finish the world from. The `record` loaded above is a stale snapshot
+   * from here on: `ready` is the one state that trusts its stored ids without
+   * rebuilding anything, so trusting that older read is precisely the race
+   * Codex found (see {@link readLiveReadyRecord}).
+   */
+  let resumeOnLive: LiveReadyRecord | null = null;
+  if (record?.state === "ready") {
+    const liveReady = await readLiveReadyRecord(ownerId, requestId);
+    if (!liveReady) {
+      // Either the world is gone or a concurrent delete already retired the
+      // record — from here those are the same fact and get the same answer.
+      // `retireStaleRecord`'s UPDATE is idempotent, so re-writing failed+stale
+      // over a row the delete just retired changes nothing.
+      return retireStaleRecord(ownerId, requestId, record);
+    }
+    if (liveReady.httpStatus !== null) {
+      // Verbatim replay: one world, one chat, one 201 — no matter how many taps.
+      // Ahead of the library lookup too: a finished world stays replayable even
+      // if the character it was born from has since been deleted.
+      const replayed = parseOr(provisionResponseSchema.nullable(), liveReady.response, null, undefined, "sim_provisioning_requests.response");
+      if (replayed) return jsonOk(replayed, liveReady.httpStatus);
+      // A `ready` row whose recorded body no longer parses cannot be replayed
+      // honestly; re-running is safe (every step is idempotent) so degrade to that.
+      log.warn("engine.sim.provisioning", "ready record carried an unreadable response; re-running the provision", {
+        code: "provisioning.replay_unreadable",
+        ownerId,
+        requestId,
+      });
+    }
+    // Nothing replayable — an unreadable body, or a `ready` row that never
+    // recorded a status. Either way the world itself was just proved alive, so
+    // finish it from THOSE ids rather than the older snapshot's.
+    resumeOnLive = liveReady;
   }
 
   const [character] = await db()
@@ -378,10 +432,13 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
   if (!character) return jsonError("not_found", "that character is not in your library", 404);
 
   if (record) {
-    if (replayUnreadable) {
+    if (resumeOnLive) {
+      // The ids come from the ATOMIC read, never the older snapshot: a resume
+      // that ran on tombstones would rebuild against a world that no longer
+      // exists just as surely as a replay would return one.
       resumeFrom = "relationships_seeded";
-      built.worldId = record.worldId;
-      built.chatId = record.chatId;
+      built.worldId = resumeOnLive.worldId;
+      built.chatId = resumeOnLive.chatId;
     } else if (record.state === "failed") {
       // Its cleanup already removed the graph, so the derived ids are free:
       // reset and build again from scratch under the SAME stamp.
