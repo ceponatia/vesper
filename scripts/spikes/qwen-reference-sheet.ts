@@ -3,7 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { evalEdit } from "../eval/scene-images/model";
-import { SCENE_POV_RULE } from "@/server/images";
+
+/**
+ * The measured first-person opening the scene prose builder used to emit (the
+ * builder is retired; the compiled scene dialects word the same rule from the
+ * capture-mode concept). Stated here so this throwaway probe keeps sending the
+ * sentence its recorded results were graded under.
+ */
+const SCENE_POV_RULE = "First-person POV through the player's own eyes; the player is never visible in the image.";
 
 /**
  * SPIKE (throwaway, manual): the direct test of

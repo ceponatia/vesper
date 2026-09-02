@@ -101,8 +101,8 @@ export const PROSE_FAMILY_IDENTITY_LOCK =
  * The cast-integrity clause, emitted only when two or more identity references
  * ride the same request.
  *
- * A byte-copy of the legacy multi-reference builder's own clause
- * (`assembleMulti` in `prompts-scene-render.ts`), for the reason above. The
+ * A byte-copy of the clause the application's retired scene prose builder
+ * emitted on its multi-reference path (git history), for the reason above. The
  * lock states what must be preserved about each person; this states what must
  * not happen to the SET, which is a different failure and is not prevented by
  * correct per-person wording.

@@ -14,8 +14,6 @@ import {
   imageLabSettingsSchema,
   type ImageLabStaging,
   imageLabStagingSchema,
-  type ImageLabSubjectFactsMode,
-  imageLabSubjectFactsModeSchema,
   isImageLabFinishableKind,
   isImageLabVerdictForKind,
   isImageLabVerdictKind,
@@ -185,7 +183,6 @@ export function toWireExperiment(row: ImageLabExperimentRow, sink?: DiagnosticSi
     sourceExperimentId: storedSourceExperimentId(row, sink),
     finishingVariant: storedFinishingVariant(row, sink),
     staging: storedStaging(row, sink),
-    subjectFacts: storedSubjectFacts(row, sink),
     status: row.status,
     failureCode: row.failureCode,
     verdict: row.verdict,
@@ -279,46 +276,6 @@ export function storedStaging(row: ImageLabExperimentRow, sink?: DiagnosticSink)
   const raw = imageMeta(row.meta)["staging"];
   if (raw === undefined || raw === null) return null;
   return parseOrNull(imageLabStagingSchema, raw, sink, "image_lab_experiments.meta.staging");
-}
-
-/**
- * Where a staged scene said its subject's facts come from, out of the same meta
- * bag — the wire field, reporting the RECORD rather than the runner's reading of
- * it.
- *
- * Null is a real state and is reported as one: every staged row written before
- * the mode existed predates the question, and stamping today's default onto
- * their display would claim they chose an arm nobody offered them. Rows written
- * since always carry a value, because the create path resolves the default and
- * writes it — see {@link stagedSubjectFactsMode} for what an absence therefore
- * means to the runner.
- */
-function storedSubjectFacts(row: ImageLabExperimentRow, sink?: DiagnosticSink): ImageLabSubjectFactsMode | null {
-  const raw = imageMeta(row.meta)["subjectFacts"];
-  if (raw === undefined || raw === null) return null;
-  return parseOrNull(imageLabSubjectFactsModeSchema, raw, sink, "image_lab_experiments.meta.subjectFacts");
-}
-
-/**
- * The subject-facts arm this staged run TAKES: the recorded one, or
- * `reference_only` when the row records none.
- *
- * `reference_only` rather than the create-time default, and the difference
- * matters: a row with no mode was written before the mode existed, and every one
- * of those ran the name-only prompt. Resolving it to `production_parity` would
- * quietly re-describe a queued pre-ruling run as something else — and would make
- * a settled row's display claim a prompt it never sent.
- *
- * An unreadable value degrades the same way rather than failing the run
- * (docs/resilience.md §1); `storedSubjectFacts` has already reported it to the
- * sink by the time the fallback applies, and the ablation is the honest
- * degraded arm because it is the one that asserts least about the subject.
- */
-export function stagedSubjectFactsMode(
-  row: ImageLabExperimentRow,
-  sink?: DiagnosticSink,
-): ImageLabSubjectFactsMode {
-  return storedSubjectFacts(row, sink) ?? "reference_only";
 }
 
 /**
@@ -576,11 +533,10 @@ export async function labCharacterNames(characterIds: readonly string[], ownerId
  * minted from.
  *
  * Separate from {@link labCharacterNames} rather than folded into it, because
- * the two answer different questions and one of them is optional. Every
- * character-bearing kind needs the NAME — a prompt binds faces to labels. Only a
- * staged scene running the production-parity arm needs the sheet, and the
- * ablation arm's whole claim is that it reads nothing but the name. Merging the
- * reads would make that claim untrue by construction.
+ * the two answer different questions. Every character-bearing kind needs the
+ * NAME — a prompt binds faces to labels. Only the staged scene needs the SHEET:
+ * it is the one kind that realizes its subject's visual cut itself, from
+ * committed state, and compiles a prompt program over it.
  *
  * Owner-scoped on the same terms as every other lab read: a character this owner
  * does not have is indistinguishable from one that does not exist.

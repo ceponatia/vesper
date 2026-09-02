@@ -1,50 +1,40 @@
-import type { ImagePromptSegment } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneStaging } from "@/contracts/images/scene-staging";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
+import type { VisualSegmentTaskPolicy } from "@/contracts/images/visual-segments";
 import { FULLY_COVERED, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { identityAnchorSummary, sceneRevealAppearance } from "./prompts-appearance";
-import { SCENE_SEGMENT_POLICY } from "./scene-subject-visual";
+import type { CharacterPromptSubjectCut } from "./character-prompt-program";
 import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
-import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
 
 /**
- * THE STAGED BENCH'S SUBJECT FACTS — the staged character render consumes the
- * same digest the chat look and selfie lanes do (owner ruling 2026-08-25).
+ * THE STAGED BENCH'S SUBJECT CUT — the staged character render compiles the
+ * same kind of committed visual cut the chat scene lane compiles (owner ruling
+ * 2026-08-25).
  *
- * The Image Lab's `staged_scene` kind exists to send the sentence production
- * sends. It was built name-only — the focal spec carried no appearance, no
- * identity anchors and no intimate anatomy, and that gap was recorded
- * deliberately as something the bench did not reproduce (2026-08-16). The chat
- * scene lane has since moved its
- * character fields onto the visual digest, which turned that recorded gap into a
- * parity BREAK: the bench's prompt is now strictly shorter than the one a chat
- * would have sent for the same staging, and a verdict on the shorter prompt is
- * not a verdict on production's. This module closes it for the default arm.
+ * The Image Lab's `staged_scene` kind exists to send the prompt production
+ * sends. Production describes a person from ONE source: their committed visual
+ * cut, folded into a world digest and worded by the endpoint's dialect
+ * (`buildCharacterPromptProgram`). So the bench's subject has to arrive as that
+ * same cut, and this module is where a bench — which has no chat to commit one
+ * — realizes it.
  *
  * ## The same cut every other chat-less character render takes
  *
  * A bench has no conversation, so it takes the STANDALONE assembly
  * (`buildStandaloneSubjectVisual`) — one snapshot, one camera-bound selection,
- * one digest, one segments pass — exactly as the avatar and variant lanes do.
- * Every knob is set to the CHAT SCENE lane's value rather than a bench-local
- * one, because parity with that lane is the entire claim:
+ * one digest — exactly as the avatar and variant lanes do. Every knob is set to
+ * the CHAT SCENE lane's value rather than a bench-local one, because parity with
+ * that lane is the entire claim:
  *
- * - `SCENE_SEGMENT_POLICY` is imported rather than restated. A staged bench that
- *   kept its own copy would keep rendering the old policy the day the scene lane
- *   moved, and the drift would be invisible — the prompts would simply stop
- *   matching, on a paid render, with nothing saying so.
- * - `RECOGNITION_RESIDUE_ATTRIBUTE_IDS` is the same omit set the scene lane's
- *   resolver runs with: a cataloged distinctive mark is phrased by
- *   `identityAnchorSummary` below, so the digest clause omits rather than saying
- *   it twice.
  * - `intimateAllowed: false`, matching the chat lane's own image context
  *   (`buildVisualStateSelections` hard-codes it). Intimate anatomy reaches a
- *   staged prompt through `sceneRevealAppearance` on the uncensored rung, which
- *   is where the per-route gate belongs; letting the digest carry a second copy
- *   would state the same anatomy twice on exactly the prompts that can least
- *   afford the characters.
+ *   staged prompt the way it reaches a chat's — as the ROUTE's typed reveal
+ *   over the cut's coverage (`intimateReveal` on the program), spent on the
+ *   uncensored rung — so the digest never carries a second copy of it.
+ * - the segment policy is the scene lane's, for the assembly's own segments
+ *   pass ({@link STAGED_SEGMENT_POLICY}); the bench reads the assembly's DIGEST
+ *   and never its segments, so the policy shapes nothing the render sends.
  *
  * ## The camera and the coverage are the STAGING's, not the character's
  *
@@ -58,19 +48,21 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
  * exposure from `entry.requiresBare`: bare exactly where the template describes
  * bare skin, covered everywhere else. It is a statement about the ACT, not about
  * the character's closet, and a real wardrobe read would switch several stagings
- * off — a dressed character would suppress the bare-region phrasing the template
- * is written around, and the bench would quietly pay for an ordinary portrait.
- * So the worn list handed to the standalone assembly is {@link stagedPremiseWorn},
- * which encodes that invented exposure as coverage: the digest's exposure
- * readout and the camera's per-location perception then both answer the premise,
- * and the two halves cannot disagree about what this shot shows.
+ * off — a dressed character would cover the regions the template is written
+ * around, and the bench would quietly pay for an ordinary portrait. So the worn
+ * list handed to the standalone assembly is {@link stagedPremiseWorn}, which
+ * encodes that invented exposure as coverage: the digest's exposure readout and
+ * the camera's per-location perception then both answer the premise, and the
+ * two halves cannot disagree about what this shot shows.
  *
  * ## Failure behavior
  *
- * A required digest fact with no clause refuses the run before provider spend.
- * It does NOT fall back to the name-only ablation: that is an arm the operator
- * did not choose, and silently running it would answer a different question than
- * the row asks. The caller settles the row with `visual_digest_unavailable`.
+ * An assembly that throws refuses the run before provider spend, and it does
+ * NOT fall back to a name-only render: a prompt production never sends would
+ * answer a different question than the row asks. The caller settles the row
+ * with `visual_digest_unavailable`. A cut that assembles but cannot be compiled
+ * — a lost required anchor, most likely — is the prompt program's own refusal,
+ * settled under its code by the runner.
  *
  * Pure: no IO, no env, no clock.
  */
@@ -89,8 +81,21 @@ export const STAGED_VISUAL_CAMERA_ID = "image_lab_staged_scene";
 
 /** The standalone assembly threw; the run refuses before any provider spend. */
 export const STAGED_VISUAL_DIGEST_UNAVAILABLE = "images.image_lab_staged.visual_digest_unavailable";
-/** A required digest fact resolved no clause; the run refuses before any spend. */
-export const STAGED_VISUAL_REQUIRED_MISSING = "images.image_lab_staged.visual_required_missing";
+
+/**
+ * The segment policy the standalone assembly runs its subject-segments pass
+ * under: the chat scene lane's own rules — never state age, full-figure frame,
+ * intimate skin only where the region reads bare, coverage stated. The bench
+ * compiles the assembly's digest, not its segments, so nothing the render sends
+ * turns on this; it is stated so the assembly runs under the rules of the lane
+ * this bench claims parity with rather than a portrait's.
+ */
+const STAGED_SEGMENT_POLICY: VisualSegmentTaskPolicy = {
+  age: "omit",
+  frame: "full_figure",
+  intimate: "when_bare",
+  exposure: "state",
+};
 
 // ---------------------------------------------------------------------------
 // The staging's premise, as coverage
@@ -103,11 +108,11 @@ export const STAGED_VISUAL_REQUIRED_MISSING = "images.image_lab_staged.visual_re
  * A bench row states its own exposure because there is no wardrobe state here to
  * derive one from, and it states the MINIMUM the template needs rather than
  * undressing the subject wholesale — `astride_viewer_away` needs a bare pelvis
- * and describes a clothed back, and a prompt that stripped her torso as well
- * would contradict the registry's own wording. An entry with no bare regions
- * (`requiresBare: []`) stays fully covered, and the prompt then falls through to
- * "Keep the same outfit as the reference image", which is the honest instruction
- * for a bench that said nothing about clothes.
+ * and describes a clothed back, and a cut that bared her torso as well would
+ * contradict the registry's own wording. An entry with no bare regions
+ * (`requiresBare: []`) stays fully covered, and the program then states no bare
+ * region at all, which is the honest claim for a bench that said nothing about
+ * clothes.
  */
 export function stagedSubjectExposure(entry: SceneStaging): RegionExposure {
   const exposure: RegionExposure = { ...FULLY_COVERED };
@@ -155,49 +160,15 @@ export function stagedPremiseWorn(exposure: RegionExposure): readonly WornItemIn
 }
 
 // ---------------------------------------------------------------------------
-// Field production
-// ---------------------------------------------------------------------------
-
-/**
- * The `ScenePresentCharacter` fields the digest produces for the staged subject
- * — the same four the chat scene lane's own field production emits, so a spec
- * built from these is a spec the transport cannot tell apart from a chat's.
- */
-export interface StagedSubjectFacts {
-  readonly appearance: string;
-  readonly identityAnchors: string;
-  readonly lowerBody: string;
-  readonly intimateAppearance: string;
-}
-
-/**
- * The `reference_only` ablation's facts: none at all.
- *
- * A named constant rather than four inline empty strings, because "this arm
- * states nothing about the subject" is the arm's whole definition and a reader
- * of the runner should meet it by name.
- */
-export const REFERENCE_ONLY_SUBJECT_FACTS: StagedSubjectFacts = {
-  appearance: "",
-  identityAnchors: "",
-  lowerBody: "",
-  intimateAppearance: "",
-};
-
-/** The clauses of the named segment kinds, folded as field prose (no trailing period). */
-function segmentText(segments: readonly ImagePromptSegment[], kinds: ReadonlySet<string>): string {
-  return segments
-    .filter((segment) => kinds.has(segment.kind))
-    .map((segment) => segment.text.replace(/\.$/, ""))
-    .join("; ");
-}
-
-const IDENTITY_SEGMENT_KINDS: ReadonlySet<string> = new Set(["identity", "morphology"]);
-const STATE_SEGMENT_KINDS: ReadonlySet<string> = new Set(["current_state", "pose"]);
-
-// ---------------------------------------------------------------------------
 // The assembly
 // ---------------------------------------------------------------------------
+
+/**
+ * The staged subject as the program takes them: the cut shape every character
+ * lane hands `buildCharacterPromptProgram`, with the name the staging template
+ * binds `{name}` to.
+ */
+export type StagedSubjectCut = CharacterPromptSubjectCut & { readonly name: string };
 
 export interface StagedSubjectVisualInput {
   readonly characterId: string;
@@ -214,7 +185,7 @@ export interface StagedSubjectVisualInput {
 export type StagedSubjectVisualBuild =
   | {
       readonly ok: true;
-      readonly facts: StagedSubjectFacts;
+      readonly cut: StagedSubjectCut;
       /**
        * The `meta.visualState` fragment a consuming lane records at reserve
        * time. The lab's shared runner has no per-kind asset-meta channel yet
@@ -228,7 +199,7 @@ export type StagedSubjectVisualBuild =
   | { readonly ok: false; readonly refusal: string };
 
 /**
- * Describe the staged subject from their own visual digest.
+ * Realize the staged subject's visual cut from their own committed state.
  *
  * The read token is the character row's revision alone. It names every owner
  * that fed this render and no more: the closet is deliberately not one of them
@@ -237,61 +208,31 @@ export type StagedSubjectVisualBuild =
  */
 export function buildStagedSubjectVisual(input: StagedSubjectVisualInput): StagedSubjectVisualBuild {
   const { entry, profile, sink } = input;
-  const exposure = stagedSubjectExposure(entry);
   const visual = buildStandaloneSubjectVisual({
     characterId: input.characterId,
     name: input.name,
     profile,
     readToken: standaloneCharacterReadToken({ characterId: input.characterId, revision: input.revision }),
-    worn: stagedPremiseWorn(exposure),
+    worn: stagedPremiseWorn(stagedSubjectExposure(entry)),
     camera: entry.camera,
     cameraId: STAGED_VISUAL_CAMERA_ID,
-    policy: SCENE_SEGMENT_POLICY,
-    omitAttributeIds: RECOGNITION_RESIDUE_ATTRIBUTE_IDS,
+    policy: STAGED_SEGMENT_POLICY,
     intimateAllowed: false,
     ...(sink === undefined ? {} : { sink }),
   });
-
-  if (visual.subject.missingRequired.length > 0) {
-    sink?.push(
-      diag("warn", STAGED_VISUAL_REQUIRED_MISSING, "required visual facts resolved no clause for this staged bench", {
-        path: "images.image_lab_staged",
-        context: { characterId: input.characterId, keys: [...visual.subject.missingRequired] },
-      }),
-    );
-    return {
-      ok: false,
-      refusal:
-        `the production-parity arm describes ${input.name} from their visual digest, and these required facts resolved no wording: ` +
-        `${visual.subject.missingRequired.join(", ")}; fix the character sheet, or run the reference-only ablation deliberately`,
-    };
-  }
-
-  const digestIdentity = segmentText(visual.subject.segments, IDENTITY_SEGMENT_KINDS);
-  const digestState = segmentText(visual.subject.segments, STATE_SEGMENT_KINDS);
   return {
     ok: true,
     digestMeta: visual.digestMeta,
-    facts: {
-      // The transport emits `appearance` only for a TEXTUAL subject, and this
-      // kind has none: it sends exactly one identity reference of its one
-      // character, so the focal is always the referenced subject and this field
-      // never reaches a prompt. It is produced anyway, from the digest, so the
-      // plan says what the digest resolved rather than nothing — and the chat
-      // lane's route-owned residual attribute sheet is deliberately NOT
-      // reproduced beside it: that sheet is the legacy summary Stage 6 deletes,
-      // a second copy of it here could only drift, and no staged prompt can
-      // carry it in any case.
-      appearance: [digestIdentity, digestState].filter(Boolean).join(". "),
-      // The one field the identity lock leans on, and the reason the omit set
-      // above exists: the whitelist phrase states the recognition catalog, the
-      // digest clause states everything else.
-      identityAnchors: [identityAnchorSummary(visual.resolved, profile), digestIdentity].filter(Boolean).join("; "),
-      // Both reveal lines read the STAGING's exposure, not the closet's — the
-      // shot is the premise, and a covered pelvis here would delete the anatomy
-      // the act is about.
-      lowerBody: sceneRevealAppearance(visual.resolved, exposure, profile, { intimate: false }),
-      intimateAppearance: sceneRevealAppearance(visual.resolved, exposure, profile, { intimate: true }),
+    cut: {
+      subjectId: input.characterId,
+      name: input.name,
+      digest: visual.digest,
+      attributes: visual.resolved,
+      // The assembly's own readout over the premise coverage — the same value
+      // the camera's perception was derived from, so the cut's exposure claims
+      // and its selected detail answer one shot.
+      exposure: visual.exposure,
+      realizedBody: visual.realizedBody,
     },
   };
 }
@@ -320,7 +261,7 @@ export function tryBuildStagedSubjectVisual(
     );
     return {
       ok: false,
-      refusal: `the production-parity arm could not assemble ${input.name}'s visual digest, so this bench has no way to describe the subject the chat lane's own way`,
+      refusal: `${input.name}'s visual digest could not be assembled, so this bench has no way to describe the subject the chat lane's own way`,
     };
   }
 }

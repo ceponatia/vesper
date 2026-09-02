@@ -9,7 +9,6 @@ import {
   imageLabFailureCodeFromDiagnostic,
   type ImageLabMode,
   type ImageLabOutcomeDrop,
-  type ImageLabSubjectFactsMode,
   type ImageLabVerdict,
   type ImageLoraRefusalCode,
   type ImageReferenceRole,
@@ -137,32 +136,6 @@ export function imageLabStagingViewerPartsSummary(staging: SceneStaging): string
 export function imageLabStagingOptionLabel(staging: SceneStaging): string {
   const bare = staging.requiresBare.length === 0 ? "no bare region" : `bare ${staging.requiresBare.join(" + ")}`;
   return `${staging.id} — ${imageLabStagingCameraSummary(staging.camera)} — ${bare}`;
-}
-
-/**
- * Where a staged scene gets its subject's facts — the select's option label.
- *
- * The ablation is labelled AS an ablation rather than as a second style. It is a
- * deliberately reduced run: it exists to isolate one variable, and an operator
- * choosing between two neutral-sounding options would reach for it by accident.
- */
-export function imageLabSubjectFactsLabel(mode: ImageLabSubjectFactsMode): string {
-  switch (mode) {
-    case "production_parity":
-      return "Production parity — describe the character";
-    case "reference_only":
-      return "Ablation — name only, no description";
-  }
-}
-
-/** What each arm actually sends, and why an operator would deliberately pick the ablation. */
-export function imageLabSubjectFactsHint(mode: ImageLabSubjectFactsMode): string {
-  switch (mode) {
-    case "production_parity":
-      return "The prompt carries this character's appearance, identity anchors, figure, and — on the uncensored route — their intimate anatomy, taken from the same visual state a chat render reads. This is what a real conversation would have sent for this staging, so a ruling here is a ruling on production's own prompt.";
-    case "reference_only":
-      return "The prompt names the character and says nothing else about them: the likeness has to come from the identity reference alone. A deliberately reduced run — pick it to ask whether the written description is helping the face or fighting the reference image, and read it only beside a parity run of the same staging.";
-  }
 }
 
 /** Lifecycle chip. `pending` has spent nothing yet; `running` is on the meter. */
@@ -429,7 +402,7 @@ function labFailureCopy(code: ImageLabFailureCode): string {
     case "source_invalid":
       return "The experiment this pass would refine is gone, is not a kind that can be finished, or never produced a result image. A finishing pass edits that render, so there was nothing to edit. Pick another source and run it again.";
     case "visual_digest_unavailable":
-      return "This staged run describes its character the way the chat lane does, and the character's visual state could not answer: the digest failed to assemble, or a fact the prompt must state resolved no wording. Refused before any spend, and deliberately NOT downgraded to the reference-only ablation — an arm you did not choose would answer a different question than this row asks. Fill in what the sheet is missing, or run the reference-only ablation on purpose.";
+      return "This staged run describes its character from the same visual state a chat render reads, and that state could not be assembled for them. Refused before any spend, and deliberately NOT downgraded to a name-only render — a prompt production never sends would answer a different question than this row asks. Check the character's sheet, then run it again.";
     case "subject_invalid":
       return "This scene cannot say which face is whose. Either both characters answer to one name (or to none), or an identity image is not a render of the character it is bound to. Refused before any spend — the render would have looked exactly like a model that swapped or duplicated a person. Rename one character, or pick that character's own portrait, then run it again.";
     case "identity_unavailable":

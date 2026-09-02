@@ -239,15 +239,6 @@ export {
   scrubBlush,
   scrubPlayerFromAction,
 } from "./prompts-scene-plan";
-export {
-  buildSceneRenderPrompt,
-  EDIT_RENDER_PROMPT_LIMIT,
-  SCENE_POV_RULE,
-  sceneFramingRule,
-  type SceneMultiReference,
-  type SceneRenderOptions,
-  SELFIE_FRAMING,
-} from "./prompts-scene-render";
 export { applySceneCastVisual, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 export {
   buildEntityPromptProgram,

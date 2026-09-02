@@ -1,12 +1,8 @@
-import type { ImagePromptSegment } from "@vesper/image-core";
 import {
-  attributeRegistry,
   conditionAttributeOverlays,
   diag,
   exposedRegions,
-  exposureRegionOf,
   FULLY_COVERED,
-  isFeatureAttributeCategory,
   resolveAttributes,
   VISUAL_IMAGE_PROVENANCE_META_KEY,
   type ActiveCondition,
@@ -16,9 +12,8 @@ import {
   type RealizedBody,
   type VisualImageDigest,
   type VisualImageProvenance,
-  type VisualStateSuppression,
 } from "@/contracts";
-import { buildVisualSubjectSegments, visualExposureReads } from "@/contracts/images/visual-segments";
+import { realizeBody } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { fnv1aHex } from "@/lib/hash";
 import {
@@ -27,23 +22,13 @@ import {
   type VisualStateCameraBinding,
   type VisualStateShadowInput,
 } from "@/server/visual-state";
-import { identityAnchorSummary, sceneRevealAppearance } from "./prompts-appearance";
-import {
-  excerpt,
-  formatAttribute,
-  isIntimateAttribute,
-  isNonVisualAttribute,
-  realizedBodyForProfile,
-} from "./prompts-format";
+import { normalizeName, type SceneRenderPlan } from "./prompts-scene-plan";
 import { sceneLightingBand } from "./scene-lowering";
-import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./prompts-scene-plan";
-import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
- * THE CHAT SCENE LANE'S VISUAL-DIGEST CUTOVER — the pure seam
- * that makes the visual image digest the character-fact source for EVERY person
- * a chat scene draws, with the plan's committed scene camera bound into the
- * selection.
+ * THE CHAT SCENE LANE'S CAST SEAM — one committed visual cut per person the
+ * scene draws, realized under the plan's committed camera, in the shape the
+ * prompt program compiles.
  *
  * `renderCharacterSceneImage` calls {@link applySceneCastVisual} AFTER
  * `composeSceneSpec` → `resolveScenePlan`, because the committed camera is
@@ -53,97 +38,48 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  * (`chatVisualStateShadowInput`), so the scene render and the admin inspector
  * assemble a committed cut the same way.
  *
- * ## What the digest owns here, and what the route still owns
+ * ## What comes out, and where it goes
  *
- * Exactly the avatar lane's split (`avatar-segments.ts`), applied to the scene
- * fields. The digest — through `buildVisualSubjectSegments` under the scene
- * policy and the SHARED clause resolver — owns what visual state projects
- * today: species feature groups and anatomy departures (the morphology anchors
- * an image model "corrects" away), cataloged distinctive marks, and the
- * current-state owners (active conditions, body-surface wetness). Everything
- * the projection does not yet carry stays ROUTE-OWNED with today's wording:
+ * One {@link SceneSubjectVisualSlice} per subject: the realized digest, the
+ * three-layer attribute resolve it was selected over, the realized body and the
+ * canonical coverage readout. That slice is the program's own cut shape
+ * (`CharacterPromptSubjectCut`, plus the cut id the render's staleness check
+ * reads), and it is the WHOLE of what the compiled prompt says about the
+ * person: `scene.ts` hands every slice to `buildCharacterPromptProgram`, which
+ * folds the cast into one world digest and lets the endpoint's dialect word it.
+ * Nothing here writes prose, and the plan is not touched — the scene's own
+ * decisions (the setting, the light, the mood, the capture mode, the staged
+ * arrangement, what each person is doing) reach the program through
+ * `scene-lowering.ts`, never through this seam.
  *
- * - the identity-anchor whitelist (`identityAnchorSummary`) and the residual
- *   attribute sheet — MINUS the feature-group categories the digest's
- *   morphology clauses now own, and MINUS covered `imageReveal: "skin"`
- *   attributes (the coverage-aware selection this cutover exists for: painted
- *   toenails under slippers no longer reach a text-to-image prompt);
- * - the reveal lines (`sceneRevealAppearance`) — shape reads through clothing
- *   and skin only when bare, per-route intimate gating unchanged;
- * - the outfit text and exposure readout, which stay the queue's canonical
- *   resolutions (`characterSpec` consumes them untouched).
+ * The one thing the plan owes this module is its LIGHT: the composer's phrase
+ * names a band ({@link sceneLightingBand}), and that band enters the selection
+ * so a night scene is not selected as though the room were lit.
  *
- * As the projection grows attribute owners, facts move from the residual sheet
- * into the digest — a deletion here, not a rewrite.
+ * ## A cast of N
  *
- * ## A cast of N (Stage 4)
- *
- * ONE field production describes everybody. {@link applySceneCastVisual} runs
- * one shadow assembly, ONE camera-bound selection and one digest realization
- * PER SUBJECT — each person's own committed cut, because one character's
- * clothing, conditions and body surface can never answer what another is
- * showing — and then feeds every one of them through the SAME
- * {@link produceSubjectVisual}. {@link applySceneSubjectVisual} is the
- * one-subject spelling of that call and nothing more.
- *
- * That is the plan's "Reference count does not change character wording" ruling
- * held structurally: a second appearance algorithm for `others` is the failure
- * mode, not the feature. Subjects are matched to their plan spec by
- * `normalizeName`, the same binding the rest of the scene code uses — the
- * composer's roster map, the dedupe, the prompt's reference set — so a subject
- * the plan has no spec for (a location-only shot) contributes no fields rather
- * than being filed against somebody else.
- *
- * Subjects are processed FOCAL FIRST, then in the caller's roster order: the
+ * ONE realization describes everybody. {@link applySceneCastVisual} runs one
+ * shadow assembly, ONE camera-bound selection and one digest realization PER
+ * SUBJECT — each person's own committed cut, because one character's clothing,
+ * conditions and body surface can never answer what another is showing.
+ * {@link applySceneSubjectVisual} is the one-subject spelling of that call and
+ * nothing more. Subjects are matched to their plan spec by `normalizeName`, the
+ * same binding the rest of the scene code uses, so a subject the plan has no
+ * spec for (a location-only shot) contributes no cut rather than being filed
+ * against somebody else. Focal first, then the caller's roster order: the
  * merged provenance takes its identifying fields from the head record, and a
  * refusal names the focal's failure before a bystander's.
  *
- * ## What this seam owns, and what carries the scene
- *
- * This seam changes only WHERE the per-character field strings come from. The
- * scene's own decisions — the setting, the light, the mood, the capture mode,
- * the staged arrangement, what each person is doing — no longer travel as prose
- * at all: `scene-lowering.ts` turns the resolved plan into typed prompt-program
- * inputs, and the endpoint's dialect words them (#388). The Stage 3 WP-C ruling
- * that the prose builder kept POV, framing and staging wording described the
- * pre-cutover lane and no longer does. `buildSceneRenderPrompt` serves no
- * production scene at all — a rung whose model has no active binding is dropped
- * from the chain rather than worded by it — and survives only for the Image
- * Lab's staged bench and the eval script.
- *
- * The one thing the plan still owes this module is its LIGHT: the composer's
- * phrase names a band ({@link sceneLightingBand}), and that band enters the
- * selection so a night scene is not selected as though the room were lit.
- *
- * LoRA routing and the attempt chains are untouched. The transport emits
- * `appearance` for textual subjects and
- * `identityAnchors` for referenced ones — mutually exclusive per subject-mode —
- * so both fields may carry the digest's identity/morphology clauses without a
- * fact ever being stated twice in one prompt. The builder's own `exposure`
- * segment is deliberately NOT consumed: the transport already states coverage
- * once, from the queue's canonical readout (`formatExposure`) — the same
- * `exposure` value this seam reads, over the same region table. That
- * transport-owned statement is why the slice's emission ledger still carries
- * the exposure region keys ({@link SceneSubjectVisualSlice.emittedFactKeys}):
- * the coverage the shadow compares genuinely reaches the sent prompt, just
- * through the transport's line rather than the builder's segment.
- *
  * ## Failure behavior
  *
- * A failed shadow assembly, or a REQUIRED digest fact with no resolvable
- * clause, refuses the WHOLE render before provider spend — for any subject, not
- * just the focal: a scene missing one person's anchors is the same wrong
- * picture as a scene missing the focal's. The refusal lands on the scene row
- * via `failedPrecondition` naming the subject that failed, exactly like an
- * identity-pack refusal. Optional-only unavailability continues with the
- * required facts and records the degradation as suppressions plus the
- * `meta.visualState` provenance.
- *
- * A member the caller supplies NO cut for keeps the legacy `presentCharacter`
- * production for that person (the queue's degradation precedent: a missing
- * participant row warns and falls back rather than refusing a render over a
- * continuity id, and every pre-digest caller — the tests, the lab baseline —
- * supplies no cuts at all).
+ * A shadow assembly that cannot be built refuses the WHOLE render before
+ * provider spend — for any subject, not just the focal: a scene missing one
+ * person's cut is the same wrong picture as a scene missing the focal's. The
+ * refusal lands on the scene row via `failedPrecondition` naming the subject
+ * that failed, exactly like an identity-pack refusal. A cut that assembles but
+ * loses a REQUIRED anchor on its way to the prompt is the compile's refusal,
+ * not this seam's: `scene.ts` compiles every rung with `refuseOnMissingRequired`
+ * and drops a rung that refuses, so one policy owns that decision.
  *
  * ## One render, N cuts, ONE `meta.visualState` record
  *
@@ -176,37 +112,27 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  */
 
 // ---------------------------------------------------------------------------
-// Lane policy and diagnostics
+// Lane constants and diagnostics
 // ---------------------------------------------------------------------------
-
-/**
- * The scene task's segment policy: never state age (the narrative/visual age
- * split — scene renders inherit visible age from the reference), full-figure
- * frame, and intimate anatomy only where the region actually reads bare. The
- * selection is made once per cut and every rung compiles the same cut; the
- * per-rung intimate gate is the staged arrangement's (`scene-lowering.ts`).
- */
-export const SCENE_SEGMENT_POLICY = {
-  age: "omit",
-  frame: "full_figure",
-  intimate: "when_bare",
-  exposure: "state",
-} as const;
 
 /** The viewpoint id the committed scene camera is selected under. */
 export const SCENE_VISUAL_CAMERA_ID = "chat_scene";
 
 /** The shadow assembly failed; the render refuses before provider spend. */
 export const SCENE_VISUAL_DIGEST_UNAVAILABLE = "images.scene_render.visual_digest_unavailable";
-/** A required digest fact resolved no clause; the render refuses before spend. */
-export const SCENE_VISUAL_REQUIRED_MISSING = "images.scene_render.visual_required_missing";
 
 // ---------------------------------------------------------------------------
-// Meter state note (moved from character-scene.ts with the WP-C cutover;
-// re-exported there for the legacy no-cut path)
+// Meter state note
 // ---------------------------------------------------------------------------
 
-/** A compact image-specific description of visible meter state. */
+/**
+ * A compact image-specific description of visible meter state.
+ *
+ * The one stated mapping from a meter level to the physiology a picture can
+ * show. Meters are not a visual-state owner, so no committed cut carries this
+ * and no compiled scene states it; lowering it as a scene fact is the way it
+ * would reach a prompt again.
+ */
 export function visualStateNote(meters: Record<string, number> = {}): string {
   const parts: string[] = [];
   const intoxication = meters.intoxication ?? 0;
@@ -224,71 +150,15 @@ export function visualStateNote(meters: Record<string, number> = {}): string {
 }
 
 // ---------------------------------------------------------------------------
-// Route-owned residue
-// ---------------------------------------------------------------------------
-
-/** Char cap on the residual sheet — the legacy appearance summary's own budget. */
-const SCENE_SHEET_CHARS = 200;
-
-/**
- * The residual attribute sheet for the textual description: every visual
- * attribute the digest does not yet carry, in the legacy summary's flat
- * "value; value; …" form (`characterAppearanceSummary`, which retires with the
- * no-cut path at Stage 6), with the two deltas the cutover earns:
- *
- * - feature-group categories are excluded — the digest's morphology clauses own
- *   them now, and stating them here too would read as emphasis and spend the
- *   budget twice;
- * - a covered `imageReveal: "skin"` attribute is silent — the coverage-aware
- *   selection, closing the recorded text-to-image covered-skin leak. Shape
- *   still reads through clothing; an unmapped region is unknown, and the
- *   answer to unknown is silence, never bare.
- */
-function residualSheet(
-  resolved: readonly AttributeValue[],
-  realizedBody: RealizedBody,
-  exposure: RegionExposure,
-): string {
-  const parts: string[] = [];
-  for (const value of resolved) {
-    if (value.id === "identity.apparent_age") continue; // scene renders never state age
-    const def = attributeRegistry.byId(value.id);
-    if (!def || def.excludeFromPrompts) continue;
-    if (!realizedBody.isAttributeApplicable(def)) continue;
-    if (isNonVisualAttribute(def) || isIntimateAttribute(def)) continue; // intimate rides the reveal line
-    if (isFeatureAttributeCategory(def.category)) continue; // the digest's morphology clauses own these
-    if (def.imageReveal === "skin") {
-      const region = def.bodyLocationId === undefined ? undefined : exposureRegionOf(def.bodyLocationId);
-      if (region === undefined || exposure[region] === "covered") continue;
-    }
-    const formatted = formatAttribute(def, value.value);
-    if (formatted) parts.push(formatted);
-  }
-  return excerpt(parts.join("; "), SCENE_SHEET_CHARS);
-}
-
-/** The clauses of the named segment kinds, folded as field prose (no trailing period). */
-function segmentText(segments: readonly ImagePromptSegment[], kinds: ReadonlySet<string>): string {
-  return segments
-    .filter((segment) => kinds.has(segment.kind))
-    .map((segment) => segment.text.replace(/\.$/, ""))
-    .join("; ");
-}
-
-const IDENTITY_SEGMENT_KINDS: ReadonlySet<string> = new Set(["identity", "morphology"]);
-const STATE_SEGMENT_KINDS: ReadonlySet<string> = new Set(["current_state", "pose"]);
-
-// ---------------------------------------------------------------------------
 // The seam
 // ---------------------------------------------------------------------------
 
-/** The per-member facts the field production reads (a `SceneCastMember` slice). */
+/** The per-member facts the realization reads (a `SceneCastMember` slice). */
 export interface SceneSubjectVisualMember {
   readonly name: string;
   readonly profile: CharacterProfile;
   readonly exposure?: RegionExposure;
   readonly outfitExposed?: boolean;
-  readonly meters?: Record<string, number>;
   readonly attributeOverlays?: readonly AttributeValue[];
   readonly conditions?: readonly ActiveCondition[];
 }
@@ -305,11 +175,12 @@ export interface SceneCastVisualSubject {
 }
 
 export interface SceneCastVisualInput {
-  /** The resolved plan; its committed `camera` binds into every selection pass. */
+  /** The resolved plan: its committed `camera` binds into every selection pass, and its specs say who is drawn. */
   readonly plan: SceneRenderPlan;
   /**
    * Every subject that HAS a committed cut, in roster order. A cast member with
-   * no cut is simply absent: their plan spec keeps the legacy field production.
+   * no cut is simply absent, and the program then describes nobody it has no
+   * cut for.
    */
   readonly members: readonly SceneCastVisualSubject[];
   readonly sink?: DiagnosticSink;
@@ -325,60 +196,35 @@ export interface SceneSubjectVisualInput {
 }
 
 /**
- * One subject's realized cut behind the produced fields — everything the Round 2
- * shadow instrumentation (`character-shadow.ts`) needs to assemble the
- * compiled-program side over the SAME selection. Nothing production sends reads
- * these; a member whose fields were not applied contributes none.
+ * One subject's realized cut — the program's own cut shape
+ * (`CharacterPromptSubjectCut`) plus the cut id the render's staleness check
+ * names. `scene.ts` compiles every rung of a scene from exactly these.
  */
 export interface SceneSubjectVisualSlice {
   readonly subjectId: string;
   readonly cutId: string;
   readonly name: string;
   readonly digest: VisualImageDigest;
-  /** The three-layer resolve the clause table ran under. */
+  /** The three-layer resolve the cut was selected over — the route's reveal reads it. */
   readonly attributes: readonly AttributeValue[];
   readonly realizedBody: RealizedBody;
   /** The canonical coverage readout the exposure claims are made over. */
   readonly exposure: RegionExposure;
-  /**
-   * The statement keys that ACTUALLY reach this subject's sent prompt — the
-   * builder's emission ledger, RESTRICTED to what the transport folds (owner
-   * correction 2026-08-29 #3). The restriction is the honest half: this lane's
-   * field strings consume only the identity/morphology and current-state/pose
-   * kinds, so a fact whose clause landed in any other kind was built and then
-   * never sent, and counting it "emitted" would be exactly the false parity
-   * the ledger exists to end. The one addition past the folded kinds is the
-   * exposure region keys — the transport states coverage itself, from the
-   * same readout, through `formatExposure` (`wardrobeTracked` is
-   * unconditionally true for a chat cast member) — cut to the region reads
-   * that line actually words: bare anywhere in its scope, sheer only at the
-   * torso and pelvis (it has no sheer wording for legs or feet). The shadow's
-   * legacy fact coverage reads this, never digest-minus-suppressions.
-   */
-  readonly emittedFactKeys: readonly string[];
-  /** This subject's own segment-pass exclusions and missing anchors. */
-  readonly suppressions: readonly VisualStateSuppression[];
-  readonly missingRequired: readonly string[];
 }
 
 export interface SceneSubjectVisualBuild {
-  /** The plan with every supplied subject's character fields produced from their digest. */
-  readonly plan: SceneRenderPlan;
   /** The merged `meta.visualState` fragment the scene row records at reserve time. */
   readonly digestMeta?: Record<string, unknown>;
   /** Non-null refuses the render before provider spend. */
   readonly refusal: string | null;
-  /** Every fact a policy or the resolver excluded, and why — the degradation record. */
-  readonly suppressions: readonly VisualStateSuppression[];
-  /** The realized cuts behind the applied fields, in the processed order — for the shadow. */
+  /** The realized cuts, focal first then roster order — what the scene's program compiles from. */
   readonly visuals: readonly SceneSubjectVisualSlice[];
 }
 
 /**
- * Produce EVERY supplied subject's character fields from their own committed
- * visual digest — one shadow assembly, one camera-bound selection, one digest
- * per subject, all through the one shared field production — and patch them
- * into the focal spec and the matching `others` entries. Pure over its inputs.
+ * Realize EVERY supplied subject's committed cut under the plan's camera — one
+ * shadow assembly, one camera-bound selection, one digest per subject — and
+ * hand back the slices the program compiles. Pure over its inputs.
  */
 export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectVisualBuild {
   const { plan, sink } = input;
@@ -398,64 +244,39 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
           ...input.members.filter((subject) => normalizeName(subject.member.name) !== focalKey),
         ];
 
-  const fieldsByName = new Map<string, SceneSubjectVisualFields>();
   const provenanceRecords: VisualImageProvenance[] = [];
-  const suppressions: VisualStateSuppression[] = [];
   const visuals: SceneSubjectVisualSlice[] = [];
   const viewpoint = sceneViewpoint(plan);
   for (const subject of ordered) {
-    const produced = produceSubjectVisual(viewpoint, subject, sink);
-    suppressions.push(...produced.suppressions);
-    if (!produced.ok) {
-      // Refuse, never fall back to a stale prose summary for the rest of the
-      // cast: the row is reserved and failed with this text before any provider
-      // is called. A digest that WAS built before the refusal still travels, so
-      // the failed row records the moment it was asked over.
-      if (produced.provenance !== undefined) provenanceRecords.push(produced.provenance);
-      return { plan, ...digestMetaOf(provenanceRecords), refusal: produced.refusal, suppressions, visuals: [] };
-    }
     if (!specKeys.has(normalizeName(subject.member.name))) {
-      // The plan has no spec to carry this subject's fields — a location-only
-      // shot, or a cut for somebody the resolved plan does not draw. The fields,
-      // and the provenance that would describe them, are dropped rather than
-      // filed against nobody.
+      // The plan draws nobody by this name — a location-only shot, or a cut for
+      // somebody the resolved plan does not feature. Nothing is realized for
+      // them: a cut the program never compiles would only add a person to the
+      // provenance who is not in the picture.
       sink?.push(
-        diag("info", SCENE_VISUAL_DIGEST_UNAVAILABLE, "no scene spec to carry the digest fields — plan unchanged for this subject", {
+        diag("info", SCENE_VISUAL_DIGEST_UNAVAILABLE, "no scene spec draws this subject — no cut realized for them", {
           context: { subjectId: subject.shadow.subjectId },
         }),
       );
       continue;
     }
+    const produced = produceSubjectVisual(viewpoint, subject, sink);
+    if (!produced.ok) {
+      // Refuse, never describe the rest of the cast from somewhere else: the row
+      // is reserved and failed with this text before any provider is called. The
+      // cuts that WERE realized before the refusal still travel, so the failed
+      // row records the moment it was asked over.
+      return { ...digestMetaOf(provenanceRecords), refusal: produced.refusal, visuals: [] };
+    }
     provenanceRecords.push(produced.provenance);
     visuals.push(produced.visual);
-    fieldsByName.set(normalizeName(subject.member.name), produced.fields);
   }
-  if (fieldsByName.size === 0) {
-    return { plan, ...digestMetaOf(provenanceRecords), refusal: null, suppressions, visuals: [] };
-  }
-
-  const focalFields = focalKey === null ? undefined : fieldsByName.get(focalKey);
-  return {
-    plan: {
-      ...plan,
-      focal:
-        plan.focal === null || focalFields === undefined ? plan.focal : withDigestFields(plan.focal, focalFields),
-      others: plan.others.map((spec) => {
-        const fields = fieldsByName.get(normalizeName(spec.name));
-        return fields === undefined ? spec : withDigestFields(spec, fields);
-      }),
-    },
-    ...digestMetaOf(provenanceRecords),
-    refusal: null,
-    suppressions,
-    visuals,
-  };
+  return { ...digestMetaOf(provenanceRecords), refusal: null, visuals };
 }
 
 /**
  * The one-subject spelling of {@link applySceneCastVisual}, kept because a cast
- * of one is the shape the characterization freeze and the legacy-vs-digest
- * comparison read the lane through.
+ * of one is the shape the single-subject suites read the lane through.
  */
 export function applySceneSubjectVisual(input: SceneSubjectVisualInput): SceneSubjectVisualBuild {
   return applySceneCastVisual({
@@ -466,45 +287,13 @@ export function applySceneSubjectVisual(input: SceneSubjectVisualInput): SceneSu
 }
 
 // ---------------------------------------------------------------------------
-// The one per-subject field production
+// The one per-subject realization
 // ---------------------------------------------------------------------------
 
-/** The `SceneCharacterSpec` fields the digest produces for one subject. */
-interface SceneSubjectVisualFields {
-  readonly appearance: string;
-  /** Empty removes the legacy key, mirroring `characterSpec`'s conditional shape. */
-  readonly identityAnchors: string;
-  /** Empty removes the legacy key, likewise. */
-  readonly lowerBody: string;
-  readonly intimateAppearance: string;
-}
-
 type SceneSubjectVisualProduction =
-  | {
-      readonly ok: false;
-      readonly refusal: string;
-      /** Present when the digest was built and the segments pass is what failed. */
-      readonly provenance?: VisualImageProvenance;
-      readonly suppressions: readonly VisualStateSuppression[];
-    }
-  | {
-      readonly ok: true;
-      readonly fields: SceneSubjectVisualFields;
-      readonly provenance: VisualImageProvenance;
-      readonly suppressions: readonly VisualStateSuppression[];
-      readonly visual: SceneSubjectVisualSlice;
-    };
+  | { readonly ok: false; readonly refusal: string }
+  | { readonly ok: true; readonly provenance: VisualImageProvenance; readonly visual: SceneSubjectVisualSlice };
 
-/**
- * ONE subject's committed cut → the field strings the untouched transport
- * consumes: one shadow assembly with the committed camera bound in, ONE
- * camera-bound selection, one digest realized from that exact selection, one
- * shared segments-and-clauses pass.
- *
- * Every subject in a scene goes through here, focal or not. That is the
- * reference-count ruling held in code rather than in a comment: `others` has no
- * appearance algorithm of its own to drift.
- */
 /**
  * The viewpoint every subject in this scene is selected under: the plan's
  * committed camera, plus the light the plan's own words name.
@@ -522,21 +311,39 @@ function sceneViewpoint(plan: SceneRenderPlan): VisualStateCameraBinding {
   };
 }
 
+/**
+ * ONE subject's committed cut → the slice the program compiles: one shadow
+ * assembly with the committed camera bound in, ONE camera-bound selection, one
+ * digest realized from that exact selection.
+ *
+ * Every subject in a scene goes through here, focal or not. That is the
+ * reference-count ruling held in code rather than in a comment: `others` has no
+ * realization of its own to drift.
+ */
 function produceSubjectVisual(
   camera: VisualStateCameraBinding,
   subject: SceneCastVisualSubject,
   sink?: DiagnosticSink,
 ): SceneSubjectVisualProduction {
   const { member, shadow } = subject;
-  // The same three-layer resolve the legacy production and the shadow assembly
-  // both take (base → persisted narrative overlays → condition overlays), so
-  // the route-owned residue can never disagree with the projection about a
-  // recorded haircut or dye.
+  // Authored base → persisted narrative overlays → this moment's condition
+  // overlays: the same three-layer resolve the narrator prompt takes
+  // (`character-chat.ts`'s `fullResolved`), the affordance read takes
+  // (`chat-affordances.ts`'s `resolveSubjectAttributes`) and the shadow
+  // assembly itself takes (`visual-state/assemble.ts`'s
+  // `resolveShadowAttributes`), so the route's own reveal can never disagree
+  // with the projection about a recorded haircut or dye.
   const resolved = resolveAttributes(member.profile.attributes, [
     ...(member.attributeOverlays ?? []),
     ...conditionAttributeOverlays([...(member.conditions ?? [])]),
   ]);
-  const realizedBody = realizedBodyForProfile(member.profile);
+  const realizedBody = realizeBody({
+    speciesId: member.profile.speciesId,
+    heritageId: member.profile.heritageId,
+    bodyPlanId: member.profile.bodyPlanId,
+    intimateRegions: member.profile.intimateRegions,
+    bodyFeatures: member.profile.bodyFeatures,
+  });
   const exposure: RegionExposure =
     member.exposure ?? (member.outfitExposed ? exposedRegions([]) : FULLY_COVERED);
 
@@ -554,7 +361,7 @@ function produceSubjectVisual(
         context: { subjectId: shadow.subjectId, cutId: shadow.cutId },
       }),
     );
-    return { ok: false, refusal: `visual digest unavailable for ${member.name}`, suppressions: [] };
+    return { ok: false, refusal: `visual digest unavailable for ${member.name}` };
   }
 
   // This job realizes the cut it just assembled — the inspector precedent — so
@@ -564,62 +371,9 @@ function produceSubjectVisual(
     forCutId: shadow.cutId,
     ...(sink === undefined ? {} : { sink }),
   });
-  const segments = buildVisualSubjectSegments({
-    digest: digestBuild.digest,
-    subjectId: shadow.subjectId,
-    exposure,
-    policy: SCENE_SEGMENT_POLICY,
-    clause: visualFactClauseResolverForScene(resolved, realizedBody),
-    ...(sink === undefined ? {} : { sink }),
-  });
-  if (segments.missingRequired.length > 0) {
-    sink?.push(
-      diag("error", SCENE_VISUAL_REQUIRED_MISSING, "required visual facts resolved no clause for this scene", {
-        context: { subjectId: shadow.subjectId, keys: [...segments.missingRequired] },
-      }),
-    );
-    return {
-      ok: false,
-      provenance: digestBuild.provenance,
-      refusal: `required visual facts unresolved for ${member.name}: ${segments.missingRequired.join(", ")}`,
-      suppressions: segments.suppressions,
-    };
-  }
-
-  // Field routing. `identityAnchors` (referenced subject) and `appearance`
-  // (textual subject) both carry the digest's identity/morphology clauses; the
-  // transport emits exactly one of the two per subject-mode, so no fact lands
-  // twice in one prompt. The reveal lines keep their exposure-aware machinery
-  // and per-route intimate gating byte-compatible.
-  const digestIdentity = segmentText(segments.segments, IDENTITY_SEGMENT_KINDS);
-  const digestState = segmentText(segments.segments, STATE_SEGMENT_KINDS);
-  // The slice's ledger is the builder's, cut to what the sent prompt actually
-  // states: the two folds above, plus the coverage statement the TRANSPORT
-  // makes on its own line (`formatExposure` over this same `exposure` value —
-  // see the module doc §Transport is untouched). A fact in any other kind
-  // never reached a field string, and the shadow must not be told it did.
-  // The exposure rows are kept only where formatExposure actually words the
-  // read: every bare region in its torso-through-feet scope, sheer only at
-  // the torso and pelvis — it has no sheer wording for legs or feet, and a
-  // ledger row for an unworded read would claim a statement the prompt does
-  // not make.
-  const statedExposureKeys = new Set(
-    visualExposureReads(exposure, ["torso", "pelvis", "legs", "feet"])
-      .filter((read) => read.coverage === "bare" || read.region === "torso" || read.region === "pelvis")
-      .map((read) => `${shadow.subjectId}/exposure.${read.region}`),
-  );
-  const emittedFactKeys = segments.emitted
-    .filter(
-      (emission) =>
-        IDENTITY_SEGMENT_KINDS.has(emission.segmentKind) ||
-        STATE_SEGMENT_KINDS.has(emission.segmentKind) ||
-        (emission.segmentKind === "exposure" && statedExposureKeys.has(emission.key)),
-    )
-    .map((emission) => emission.key);
   return {
     ok: true,
     provenance: digestBuild.provenance,
-    suppressions: segments.suppressions,
     visual: {
       subjectId: shadow.subjectId,
       cutId: shadow.cutId,
@@ -628,56 +382,8 @@ function produceSubjectVisual(
       attributes: resolved,
       realizedBody,
       exposure,
-      emittedFactKeys,
-      suppressions: segments.suppressions,
-      missingRequired: segments.missingRequired,
-    },
-    fields: {
-      appearance: [
-        digestIdentity,
-        residualSheet(resolved, realizedBody, exposure),
-        digestState,
-        visualStateNote(member.meters),
-      ]
-        .filter(Boolean)
-        .join(". "),
-      identityAnchors: [identityAnchorSummary(resolved, member.profile), digestIdentity].filter(Boolean).join("; "),
-      lowerBody: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: false }),
-      intimateAppearance: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: true }),
     },
   };
-}
-
-/** Patch one plan spec — focal or `others` — with the digest-produced fields. */
-function withDigestFields(spec: SceneCharacterSpec, fields: SceneSubjectVisualFields): SceneCharacterSpec {
-  // Rebuild rather than spread-over: an empty digest-era anchor or reveal line
-  // must REMOVE the legacy key, mirroring `characterSpec`'s conditional shape.
-  const { identityAnchors: legacyAnchors, lowerBody: legacyLowerBody, ...rest } = spec;
-  void legacyAnchors;
-  void legacyLowerBody;
-  return {
-    ...rest,
-    appearance: fields.appearance,
-    ...(fields.identityAnchors ? { identityAnchors: fields.identityAnchors } : {}),
-    ...(fields.lowerBody ? { lowerBody: fields.lowerBody } : {}),
-    // No age field, ever: scene renders inherit visible age from the reference,
-    // and the segments policy above omits the digest's age facts.
-    intimateAppearance: fields.intimateAppearance,
-  };
-}
-
-/**
- * The shared resolver under the scene lane's residue cut: the catalog-derived
- * set (`RECOGNITION_RESIDUE_ATTRIBUTE_IDS`) — a cataloged distinctive mark's
- * phrasing stays with the sheet and the anchor whitelist, so the digest clause
- * omits rather than stating the fact twice.
- */
-function visualFactClauseResolverForScene(resolved: readonly AttributeValue[], realizedBody: RealizedBody) {
-  return visualFactClauseResolver({
-    attributes: resolved,
-    realizedBody,
-    omitAttributeIds: RECOGNITION_RESIDUE_ATTRIBUTE_IDS,
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -689,7 +395,7 @@ function visualFactClauseResolverForScene(resolved: readonly AttributeValue[], r
  * fingerprint lists therefore cannot flatten to the same composite input. The
  * same separator discipline `visualStateFeaturesFingerprint` uses.
  */
-const CAST_FINGERPRINT_SEPARATOR = "\u001f";
+const CAST_FINGERPRINT_SEPARATOR = "";
 
 /** The cast-wide form of a per-cut fingerprint: same fixed width, order included. */
 function castFingerprint(parts: readonly string[]): string {
@@ -700,7 +406,7 @@ function castFingerprint(parts: readonly string[]): string {
  * Fold the per-subject provenance records into the ONE record the image row
  * files under `meta.visualState`. See the module doc §"One render, N cuts" for
  * why each field takes the value it does; a single record is returned untouched,
- * which is what keeps a cast of one byte-identical to the Stage 3 cutover.
+ * which is what keeps a cast of one byte-identical to a single-subject cut.
  */
 function mergeVisualImageProvenance(records: readonly VisualImageProvenance[]): VisualImageProvenance | undefined {
   const head = records[0];

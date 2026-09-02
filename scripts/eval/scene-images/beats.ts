@@ -27,19 +27,18 @@ import {
 const PLAYER_BARE: RegionExposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" };
 /** Her half of the same: bare below the waist, still wearing something above it. */
 const BARE_BELOW_WAIST: RegionExposure = { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" };
-/** The persona's exposure-gated anatomy, in the shape `sceneRevealAppearance` produces. */
-const PLAYER_INTIMATE = "circumcised, above average length, erect";
 
-/** The subject: the same Mira the phantom-limb probe uses, so the two A/Bs stay comparable. */
+/**
+ * The subject: the same Mira the phantom-limb probe uses, so the two A/Bs stay
+ * comparable. A composer entry carries what the SHOT PLANNER reads — name,
+ * outfit, coverage — and nothing about her looks: the render describes a person
+ * from their committed visual cut, which a text-only beat has no chat to commit.
+ */
 function subject(over: Partial<ScenePresentCharacter> = {}): ScenePresentCharacter {
   return {
     name: "Mira",
     wornVisible: [],
     outfitDescription: "a soft grey t-shirt and jeans",
-    appearance: "Hair color: auburn; Hair length: long; Eye color: green",
-    // The shipped age anchor (owner ruling 2026-07-29) — kept on BOTH variants, since this
-    // probe is about the camera and nothing else may differ between them.
-    ageAnchor: "Mira is in her late twenties; her skin, hands and legs read smooth and youthful.",
     ...over,
   };
 }
@@ -228,16 +227,10 @@ function doggyBeat(): Beat {
     "She crawls forward onto her hands and knees on the bed, arching her back, and your hands settle on her hips as she pushes back against you.";
   const context: SceneComposerContext = {
     present: [
-      // `intimateAppearance` rides along on BOTH variants, unchanged, because that is what the
-      // pipeline really emits — `sceneRevealAppearance` is derived from her sheet and knows
-      // nothing about which way she is facing. On this shot it is defensible (a high angle
-      // from behind on all fours can show her front); on a fully-away standing shot it would
-      // be a prompt contradicting itself, which is why the away FIXTURE rows omit it.
       subject({
         outfitDescription: "",
         exposure: BARE_BELOW_WAIST,
         wardrobeTracked: true,
-        intimateAppearance: "full breasts",
       }),
     ],
     locationName: "the bedroom",
@@ -247,7 +240,6 @@ function doggyBeat(): Beat {
     recentNarration: [narration],
     recentPlayerMessages: ["I take her hips in both hands."],
     playerExposure: PLAYER_BARE,
-    playerIntimateAppearance: PLAYER_INTIMATE,
   };
   return {
     summary: "she is on all fours, the viewer behind her",
@@ -313,7 +305,6 @@ function oralBeat(id: SceneStagingId, composition: string, opts: { guidingHand: 
     recentNarration: [narration],
     recentPlayerMessages: ["I stay standing and let her."],
     playerExposure: PLAYER_BARE,
-    playerIntimateAppearance: PLAYER_INTIMATE,
   };
   return {
     summary: `she kneels before the viewer — ${composition}`,
@@ -352,7 +343,6 @@ function missionaryBeat(): Beat {
         outfitDescription: "",
         exposure: { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" },
         wardrobeTracked: true,
-        intimateAppearance: "full breasts",
       }),
     ],
     locationName: "the bedroom",
@@ -362,7 +352,6 @@ function missionaryBeat(): Beat {
     recentNarration: [narration],
     recentPlayerMessages: ["I hold her legs and lean over her."],
     playerExposure: PLAYER_BARE,
-    playerIntimateAppearance: PLAYER_INTIMATE,
   };
   return {
     summary: "she is on her back beneath the viewer",

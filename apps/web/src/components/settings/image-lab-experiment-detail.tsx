@@ -31,7 +31,6 @@ import {
   imageLabModeLabel,
   imageLabRoleLabel,
   imageLabStatusChip,
-  imageLabSubjectFactsLabel,
   imageLabVerdictChip,
   imageLabVerdictHint,
   imageLabVerdictLabel,
@@ -541,16 +540,6 @@ export function ImageLabExperimentDetail({
               <Fact label="Setting">{staging.setting ?? "— (the lane's own empty backdrop)"}</Fact>
               <Fact label="Lighting">{staging.lighting ?? "— (derived from the time of day)"}</Fact>
               <Fact label="Time of day">{staging.timeOfDay ?? "— (none stated)"}</Fact>
-              {/* Which arm described the SUBJECT. A row that records none ran
-                  before the arms existed, and every one of those sent the
-                  name-only prompt — so the absence is reported as the ablation
-                  it was rather than as today's default, which would claim a
-                  description the render never carried. */}
-              <Fact label="Subject facts">
-                {experiment.subjectFacts === null
-                  ? `${imageLabSubjectFactsLabel("reference_only")} (recorded no arm — written before the choice existed)`
-                  : imageLabSubjectFactsLabel(experiment.subjectFacts)}
-              </Fact>
             </>
           ) : null}
           {loraSelection !== null ? (

@@ -1,7 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
+import type { AttributeValue } from "@/contracts/attributes/value";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
-import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { resolveImageProfileForTask } from "./model-profiles";
 import type { CommittedSceneFacts } from "@/contracts/images/scene-committed";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
@@ -17,25 +16,15 @@ import { logEvent } from "../events";
 import { deleteOwnedImage, imageMeta, readImageBytes } from "./assets";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { latestChatLook } from "./chat-look";
-import {
-  characterAppearanceSummary,
-  identityAnchorSummary,
-  sceneRevealAppearance,
-} from "./prompts-appearance";
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
-import {
-  applySceneCastVisual,
-  visualStateNote,
-  type SceneCastVisualSubject,
-  type SceneSubjectVisualSlice,
-} from "./scene-subject-visual";
+import { applySceneCastVisual, type SceneCastVisualSubject, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 
-// The meter note moved to the cutover module with WP-C; the legacy no-cut path
-// below and existing consumers keep this import surface.
+// The meter note lives with the cast seam; existing consumers keep this import
+// surface.
 export { visualStateNote } from "./scene-subject-visual";
 
 export const DEFAULT_CHAT_ROOM =
@@ -92,9 +81,15 @@ export interface RenderCharacterSceneInput {
    * where present; an absent entry constrains nothing.
    */
   committedScene?: ReadonlyMap<string, CommittedSceneFacts>;
+  /**
+   * The PLAYER's coverage, computed from their worn items. The one fact about
+   * the viewer's own body the scene reads: it gates which viewer parts a staging
+   * may put in frame (`scene-lowering.ts`). The persona's attributes are not
+   * taken — no compiled scene states the viewer's own body facts yet (the
+   * embodied shot is the dialect's deliberate follow-up), so there is nothing
+   * to hand them to.
+   */
   playerExposure?: RegionExposure;
-  playerAttributes?: ReadonlyArray<AttributeValue>;
-  playerProfile?: CharacterProfile;
   chatId?: string;
   anchorMessageId?: string;
   flavor?: "selfie";
@@ -109,55 +104,30 @@ export interface RenderCharacterSceneInput {
   composerModel?: string;
   /**
    * Each drawn subject's committed chat cut as a camera-less shadow input, keyed
-   * by `characterId` (image-lane-consolidation Stage 4) — the queue builds one
-   * per present cast member through `chatVisualStateShadowInput`. For every
-   * member with an entry (whose cut names them), the visual image digest — with
-   * the plan's committed camera bound into that subject's one selection pass —
-   * becomes the character-fact source for their plan spec, focal or not, and a
-   * digest that cannot be built fails the row before provider spend. A member
-   * with no entry keeps the legacy `presentCharacter` production, which is also
-   * what every pre-digest caller (tests, the lab baseline) gets by passing
-   * nothing at all.
+   * by `characterId` — the queue builds one per present cast member through
+   * `chatVisualStateShadowInput`. Every member with an entry (whose cut names
+   * them) is realized under the plan's committed camera in one selection pass,
+   * and that cut is the WHOLE of what the prompt program says about them; a cut
+   * that cannot be assembled fails the row before provider spend. A member with
+   * no entry has no cut and is not compiled: a render with no cut for anyone
+   * drops every provider rung (`scene.ts`, `program_castless`), and a member
+   * missing a cut beside members who have one is omitted from the picture
+   * (issue #389) — nothing here describes them from anywhere else.
    */
   subjectVisuals?: ReadonlyMap<string, Omit<VisualStateShadowInput, "sink" | "camera">>;
   sink?: DiagnosticSink;
 }
 
 /**
- * One cast member's composer entry — everything the shot needs about that person.
- *
- * LEGACY field production (image-lane-consolidation Stage 4): for any member
- * with a supplied `subjectVisuals` cut, the appearance, identity-anchor and
- * reveal fields written here are replaced after the plan resolves by
- * `applySceneCastVisual` — the digest-sourced production with the committed
- * camera bound in, run once per subject. This path survives for the members a
- * caller supplies NO cut for: a corrupt participant row (the queue's documented
- * degradation), and every pre-digest caller — the tests and the lab baseline,
- * which have no chat to cut from. The composer prompt reads none of those
- * fields, so the pre-plan values never steer the shot either way.
+ * One cast member's composer entry — what the SHOT PLANNER needs to know about
+ * that person: their name, species, outfit and coverage. Nothing here reaches
+ * the image model as a description of them; the committed cut the program
+ * compiles is the only source for that, and it is realized after the plan
+ * resolves (`applySceneCastVisual`).
  */
 function presentCharacter(member: SceneCastMember): ScenePresentCharacter {
   const exposure: RegionExposure =
     member.exposure ?? (member.outfitExposed ? exposedRegions([]) : FULLY_COVERED);
-  // Authored base → persisted narrative overlays → this moment's condition
-  // overlays: the same three-layer resolve the narrator prompt takes
-  // (`character-chat.ts`'s `fullResolved`), the affordance read takes
-  // (`chat-affordances.ts`'s `resolveSubjectAttributes`) and the visual-state
-  // projection takes (`visual-state/assemble.ts`'s `resolveShadowAttributes`).
-  // Without the middle layer a recorded haircut or dye reached the narrator and
-  // the projection but not the picture — and hair colour/length/style are
-  // identity ANCHORS here, so the prompt actively re-asserted the old hair
-  // against the reference. `condition` outranks `narrative` in
-  // SOURCE_PRECEDENCE, so the order only settles same-source ties; it is kept
-  // identical to those three anyway so the layers can never quietly diverge.
-  const resolved = resolveAttributes(member.profile.attributes, [
-    ...(member.attributeOverlays ?? []),
-    ...conditionAttributeOverlays(member.conditions ?? []),
-  ]);
-  const stateNote = visualStateNote(member.meters);
-  const appearance = [characterAppearanceSummary(resolved, undefined, false, member.profile), stateNote]
-    .filter(Boolean)
-    .join(". ");
   return {
     name: member.name,
     species: speciesLabelPhrase(member.profile.speciesId, member.profile.heritageId),
@@ -167,13 +137,6 @@ function presentCharacter(member: SceneCastMember): ScenePresentCharacter {
       .join("; "),
     exposure,
     wardrobeTracked: true,
-    appearance,
-    identityAnchors: identityAnchorSummary(resolved, member.profile),
-    // Age is deliberately absent from scene-image text. `profile.age` belongs to
-    // narrators; `identity.apparent_age` belongs to portrait generation. Scene
-    // renders inherit visible age from the portrait/chat-look reference instead.
-    lowerBody: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: false }),
-    intimateAppearance: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: true }),
   };
 }
 
@@ -185,8 +148,6 @@ export function buildCharacterSceneContext(input: {
   recentPlayerChat?: string[];
   committedScene?: ReadonlyMap<string, CommittedSceneFacts>;
   playerExposure?: RegionExposure;
-  playerAttributes?: ReadonlyArray<AttributeValue>;
-  playerProfile?: CharacterProfile;
   /** Who holds the camera — the route's decision, carried on the plan it resolves. */
   captureMode?: SceneCaptureMode;
 }): SceneComposerContext {
@@ -205,18 +166,6 @@ export function buildCharacterSceneContext(input: {
     ...(input.committedScene && input.committedScene.size > 0 ? { committedScene: input.committedScene } : {}),
     embodiedViewer: true,
     ...(input.playerExposure ? { playerExposure: input.playerExposure } : {}),
-    ...(input.playerAttributes ? { playerAttributes: input.playerAttributes } : {}),
-    ...(input.playerProfile ? { playerProfile: input.playerProfile } : {}),
-    ...(input.playerProfile && input.playerExposure
-      ? {
-          playerIntimateAppearance: sceneRevealAppearance(
-            resolveAttributes(input.playerProfile.attributes, []),
-            input.playerExposure,
-            input.playerProfile,
-            { intimate: true },
-          ),
-        }
-      : {}),
   };
 }
 
@@ -268,22 +217,20 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
     recentPlayerChat: (input.recentPlayerChat ?? []).filter((text) => text.trim()),
     committedScene: input.committedScene,
     playerExposure: input.playerExposure,
-    playerAttributes: input.playerAttributes,
-    playerProfile: input.playerProfile,
   });
-  let plan = await composeSceneSpec({ ...context, sink, composerModel: input.composerModel });
+  const plan = await composeSceneSpec({ ...context, sink, composerModel: input.composerModel });
 
-  // The cast digest cutover (image-lane-consolidation Stage 4): applied AFTER
-  // the plan resolves because the committed scene camera is `plan.camera` and it
-  // must enter EACH subject's ONE selection pass. Every present member with a
-  // supplied cut goes through it — the focal and everyone else, through the one
-  // shared field production — and a selfie's forced single-subject cast is just
-  // the one-member case of the same loop. A refusal reaches the row as a failed
+  // The cast, realized AFTER the plan resolves because the committed scene
+  // camera is `plan.camera` and it must enter EACH subject's ONE selection pass.
+  // Every present member with a supplied cut goes through it — the focal and
+  // everyone else alike — and a selfie's forced single-subject cast is just the
+  // one-member case of the same loop. A refusal reaches the row as a failed
   // precondition: reserved, failed, never sent to a provider.
   //
-  // A member whose cut names somebody else is skipped rather than refused, and
-  // keeps the legacy fields: a mis-keyed cut is a caller bug about ONE person,
-  // and losing the whole picture over it would be the worse degradation.
+  // A member whose cut names somebody else is skipped rather than refused: a
+  // mis-keyed cut is a caller bug about ONE person, and failing the whole
+  // picture over it would be the worse degradation. That member is then simply
+  // not compiled — the program describes nobody it has no cut for.
   let visualRefusal: string | null = null;
   let visualStateMeta: Record<string, unknown> | undefined;
   let appliedVisuals: readonly SceneSubjectVisualSlice[] = [];
@@ -303,7 +250,6 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   }
   if (castVisuals.length > 0) {
     const applied = applySceneCastVisual({ plan, members: castVisuals, sink });
-    plan = applied.plan;
     visualRefusal = applied.refusal;
     visualStateMeta = applied.digestMeta;
     appliedVisuals = applied.visuals;
@@ -498,20 +444,16 @@ async function imageFailure(imageId: string): Promise<string | null> {
   return typeof error === "string" ? error : "";
 }
 
+/**
+ * The plan a content-rejected selfie retries with: the staging gone, everything
+ * else kept. A content rejection is the provider refusing what the prompt
+ * described, and the staged act is the most explicit sentence in it. The cast's
+ * exposed anatomy is not on the plan at all — it is the rung's own intimate
+ * permission, which the retry clears (`renderOnce(plan, false)`), so the
+ * program compiles the cut alone. The camera stays: where the shot is taken
+ * from is never what a moderator objected to, and dropping it would silently
+ * un-compose the scene.
+ */
 function sanitizeScenePlan(plan: SceneRenderPlan): SceneRenderPlan {
-  const scrub = <T extends { exposure?: string; intimateAppearance?: string }>(spec: T): T => ({
-    ...spec,
-    exposure: undefined,
-    intimateAppearance: undefined,
-  });
-  // The staging goes with them: a content
-  // rejection is the provider refusing what the prompt described, and the staged act is the
-  // most explicit sentence in it. The camera stays — where the shot is taken from is never
-  // what a moderator objected to, and dropping it would silently un-compose the scene.
-  return {
-    ...plan,
-    staging: undefined,
-    focal: plan.focal ? scrub(plan.focal) : null,
-    others: plan.others.map(scrub),
-  };
+  return { ...plan, staging: undefined };
 }

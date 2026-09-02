@@ -70,12 +70,6 @@ const APPROVED: Readonly<Record<string, number>> = {
   // together when Stage 6 deletes `buildVariantInstruction` and the tail moves
   // into a versioned negative pack under the model-aware plan.
   "apps/web/src/server/images/variant-segments.ts": 1,
-  // The POV rule's "never visible", the two cast-integrity lines, the
-  // turned-away adaptation's "not visible"/"do not rotate" pair, the
-  // clothing-authority sentence, the empty-scene "no people in frame", the
-  // shared "no text, no watermark" tail, and the multi-reference "never merge,
-  // swap, or duplicate".
-  "apps/web/src/server/images/prompts-scene-render.ts": 9,
   // The chat look edit's clothing authority, and the chat-place shot's "no
   // people anywhere in frame" — the same claim the item and location lanes now
   // make as an operation contract with `subjectCount: 0`.

@@ -38,8 +38,6 @@ import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type 
 import { createImageLabExperiment } from "./image-lab-create";
 import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
 import { runImageLabExperiment } from "./image-lab-run";
-import { stagedSceneWords } from "./image-lab-staged";
-import { buildStagedSubjectVisual } from "./image-lab-staged-visual";
 import {
   deleteImageLabExperiment,
   getImageLabExperimentDetail,
@@ -524,34 +522,6 @@ function stagedEntry(): SceneStaging {
   const entry = sceneStagingById(STAGED_ID);
   if (!entry) throw new Error(`unknown staging id "${STAGED_ID}" — scene-staging.ts and this suite have drifted`);
   return entry;
-}
-
-/**
- * What the lane compiles for that entry — the words the provider must be handed
- * unchanged.
- *
- * Built on the PRODUCTION-PARITY arm, because that is what a created row takes
- * when the request names no mode (owner ruling 2026-08-25) and this suite's rows
- * name none. The seeded character carries the `characters.profile` column
- * default, so `emptyCharacterProfile()` is the same sheet the runner reads;
- * `characterId` and `revision` reach only the digest's provenance, never a
- * clause, so the stand-ins here cannot move the prompt.
- */
-function stagedWords(): { prompt: string } {
-  const visual = buildStagedSubjectVisual({
-    characterId: "staged-int-subject",
-    name: STAGED_SUBJECT,
-    profile: emptyCharacterProfile(),
-    revision: "1970-01-01T00:00:00.000Z",
-    entry: stagedEntry(),
-  });
-  if (!visual.ok) throw new Error(`the parity arm refused an empty sheet: ${visual.refusal}`);
-  return stagedSceneWords(
-    STAGED_SUBJECT,
-    stagedEntry(),
-    { id: STAGED_ID, setting: STAGED_SETTING, timeOfDay: "night" },
-    visual.facts,
-  );
 }
 
 interface StagedSceneOptions {
@@ -1768,13 +1738,10 @@ describe.skipIf(!ready)("image lab staged scenes", () => {
     // lane started rewording one.
     const template = stagedEntry().template.replaceAll("{name}", STAGED_SUBJECT);
     expect(experiment?.finalPrompt).toContain(template);
-    // And the compiled prompt arrives WHOLE: the recipe's compose strategy only
-    // prefixes its numbered bindings, so the base prompt is the tail.
-    expect(experiment?.finalPrompt?.endsWith(stagedWords().prompt)).toBe(true);
-    // One identity reference and no subject on it: the subject-bearing wording
-    // says "one of the people this render depicts", which a solo bench is not.
-    expect(experiment?.finalPrompt).toContain("Image 1: the identity reference — the person this render depicts.");
-    expect(experiment?.finalPrompt).toContain(`Exactly one person is fully in frame: ${STAGED_SUBJECT}.`);
+    // And it arrives as the compiled program alone: the recipe's instruction
+    // strategy passes the program through untouched, so the recipe never
+    // prefixes a second numbering over the slot the program already numbers.
+    expect(experiment?.finalPrompt).not.toContain("Image 1: the identity reference");
 
     const request = captured[0];
     expect(request?.mode).toBe("intent");
