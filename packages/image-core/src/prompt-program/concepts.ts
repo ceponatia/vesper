@@ -218,12 +218,20 @@ const CONCEPT_TABLE = [
   // adaptation is a separate claim and never an edit to those bytes.
   //
   // `identity`, deliberately: the sentence corrects the lock, so it belongs in
-  // the lock's own segment kind — adjacent to it by priority, and unfittable by
-  // kind for the same reason the lock is. An adaptation a budget squeeze dropped
-  // while the lock survived would leave the render with exactly the failure this
-  // concept exists to end. That is also why it is a SUBJECT concept rather than
-  // a scene one: the scene channel's absolute ban on mandatory kinds is a
-  // statement about the layer that should give way, and this claim may not.
+  // the lock's own segment kind, and it is unfittable by kind for the same reason
+  // the lock is. An adaptation a budget squeeze dropped while the lock survived
+  // would leave the render with exactly the failure this concept exists to end.
+  // That is also why it is a SUBJECT concept rather than a scene one: the scene
+  // channel's absolute ban on mandatory kinds is a statement about the layer that
+  // should give way, and this claim may not.
+  //
+  // The dialects give it a priority strictly under the lock's, so it FOLLOWS the
+  // lock within the identity band and never precedes it. Adjacency is not
+  // promised and does not need to be: every other subject's identity claim sits
+  // at the lock's own priority, so on an ensemble one of those may land between
+  // them, and the retired builder's measured adjacency was between the lock and
+  // the identity ANCHOR — it placed this sentence third precisely so as not to
+  // split that pair.
   //
   // Protects nothing. It states what to preserve, which agrees with the
   // identity-drift exclusion rather than contradicting it, and a turned head

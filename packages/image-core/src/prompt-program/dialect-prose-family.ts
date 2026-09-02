@@ -15,6 +15,7 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilityAnchor,
   faceVisibilitySentence,
   framingSentence,
   heightSentence,
@@ -114,9 +115,12 @@ export const PROSE_FAMILY_CAST_INTEGRITY =
 const IDENTITY_LOCK_PRIORITY = 99;
 
 /**
- * The lock adaptation's priority: one step under the lock, so a turned-away
- * shot's "do not rotate" sentence follows the lock it corrects rather than
- * drifting behind every further subject's name.
+ * The lock adaptation's priority: strictly under the lock's, which is what makes
+ * a turned-away shot's "do not rotate" sentence FOLLOW the lock it corrects
+ * instead of preceding it. Ordering, not adjacency — further subjects' identity
+ * claims share the lock's priority and may land between the two — and ordering
+ * plus the identity band plus the mandatory kind is the whole guarantee the
+ * adaptation needs.
  */
 const FACE_VISIBILITY_PRIORITY = 98.9;
 
@@ -355,14 +359,16 @@ function renderClaim(
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
     }
     case "subject.face_visibility": {
-      // The lock's adaptation, one priority step under the lock so the two are
-      // read as a pair. Emitted on the text-to-image path too: there the
+      // The lock's adaptation, under the lock's priority so it follows the
+      // sentence it corrects. Emitted on the text-to-image path too: there the
       // descriptors carry the likeness and the same pull toward the lens applies,
-      // so what changes is only what the preservation is anchored to.
+      // so what changes is only what the preservation is anchored to — and that
+      // anchor is decided per SUBJECT, because this family's role labels can
+      // introduce one person's reference on a render whose focal has none.
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
       return say(
-        faceVisibilitySentence(visibility, subject, input.references.length > 0 ? "reference" : "nothing"),
+        faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)),
         FACE_VISIBILITY_PRIORITY,
       );
     }

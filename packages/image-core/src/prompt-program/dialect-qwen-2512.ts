@@ -14,6 +14,7 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilityAnchor,
   faceVisibilitySentence,
   framingSentence,
   heightSentence,
@@ -183,12 +184,13 @@ function renderClaim(
       // This endpoint speaks no identity lock — its identity claim is a
       // descriptor — but the adaptation is still earned: a described face is the
       // same pull toward the lens, and the sentence is what says the turn is not
-      // on the table. Reference-free unless the render actually carries an image,
-      // because 2512's `image` input is a strength-based starting point rather
-      // than a guaranteed slot.
+      // on the table. Reference-free unless an identity image OF THIS SUBJECT is
+      // being sent: 2512's single `image` input is a strength-based starting
+      // point rather than a guaranteed identity slot, so the count says nothing
+      // about whose face it holds.
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
-      return say(faceVisibilitySentence(visibility, subject, input.references.length > 0 ? "reference" : "nothing"));
+      return say(faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)));
     }
     case "subject.apparent_age":
       return say(prefixed(subject, `appears ${value}`));
