@@ -358,3 +358,66 @@ describe("narrator instruction source (successor lanes)", () => {
     expect(solo).not.toContain("Shaping each reply");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Visual state
+// ---------------------------------------------------------------------------
+
+/**
+ * The visual-state pair reaches the successor narrator only when the routed
+ * chat's own switch put it there, and it reaches BOTH lanes the same way.
+ *
+ * What these kill: a builder that emits an empty `sim_visual_state` unit (or any
+ * other byte) for a chat with the switch off — the switch is default-off and its
+ * whole promise is that a chat without it renders the prompt this lane rendered
+ * before the feature existed — and a builder that folds the fence and the offer
+ * into one block, which would hand the narrator a must-not-contradict list
+ * wearing a "weave one in" invitation.
+ */
+describe("visual state (successor lanes)", () => {
+  const LINES = {
+    constraints: ["Nora is wearing the apron", "Nora's crooked nose"],
+    cues: ["the apron's left cuff is rolled up — just became visible"],
+  };
+  const unitIds = (nodes: readonly NarratorPromptNode[]): string[] =>
+    narratorPromptUnits(nodes).map((unit) => unit.id);
+
+  it("emits no node and identical bytes when the chat's switch is off", () => {
+    expect(unitIds(buildSimRenderPromptNodes(richCut(), BASE_CONTEXT))).not.toContain("sim_visual_state");
+    expect(unitIds(buildSimSoloRenderPromptNodes(SOLO_CONTEXT))).not.toContain("sim_visual_state");
+    // A switched-ON turn whose projection resolved nothing is the same prompt: an
+    // empty pair is silence, never an empty heading.
+    const empty = { constraints: [], cues: [] };
+    expect(buildSimRenderPrompt(richCut(), { ...BASE_CONTEXT, visualState: empty })).toEqual(
+      buildSimRenderPrompt(richCut(), BASE_CONTEXT),
+    );
+    expect(buildSimSoloRenderPrompt({ ...SOLO_CONTEXT, visualState: empty })).toEqual(
+      buildSimSoloRenderPrompt(SOLO_CONTEXT),
+    );
+  });
+
+  it("renders the fence and the offer as two blocks, in that order, in both lanes", () => {
+    for (const prompt of [
+      buildSimRenderPrompt(richCut(), { ...BASE_CONTEXT, visualState: LINES }).prompt,
+      buildSimSoloRenderPrompt({ ...SOLO_CONTEXT, visualState: LINES }).prompt,
+    ]) {
+      const fence = prompt.indexOf("True right now — do not contradict");
+      const offer = prompt.indexOf("Visible detail worth noticing this turn");
+      expect(fence).toBeGreaterThan(-1);
+      // The offer reads against a fence that is already standing.
+      expect(offer).toBeGreaterThan(fence);
+      expect(prompt).toContain("- Nora's crooked nose");
+      expect(prompt).toContain("- the apron's left cuff is rolled up — just became visible");
+      // The fence carries no invitation; only the cue block does.
+      expect(prompt.slice(fence, offer)).toContain("there is no obligation to mention any of them");
+      expect(prompt.slice(fence, offer)).not.toContain("weave at most one");
+    }
+  });
+
+  it("is world truth, not craft: a test instruction source cannot replace it", () => {
+    const context: SimRenderContext = { ...BASE_CONTEXT, visualState: LINES, instructionSource: OVERRIDE };
+    const { prompt } = buildSimRenderPrompt(richCut(), context);
+    expectOnlyBehaviorReplaced(buildSimRenderPromptNodes(richCut(), context), prompt);
+    expect(prompt).toContain("- Nora's crooked nose");
+  });
+});

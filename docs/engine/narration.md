@@ -242,6 +242,41 @@ unknown-ID handling rather than being trusted. Player text, summaries, memory
 lines, and transcript tails are fenced as untrusted data (`prompts/untrusted.ts`)
 before they reach the prompt.
 
+### Visual state
+
+When the routed chat's own visual-state narration switch is on, the co-present
+prompt gains one more section between SIM PRESENTATION STATE and CONVERSATION:
+the must-not-contradict **fence** of visible committed facts, then the short
+**offer** of details worth noticing this turn. Both are rendered from the shared
+visual-state projection over the same committed cut the render is about to
+narrate, in the wording the chat lane uses for the same two blocks
+(`prompts/visual-state-block.ts`, and
+[visual-memory.md](../character-chat/visual-memory.md) for the record behind
+them) — one projection, one phrasing, two lanes. The switch is per chat and
+off by default; with it off, and when the projection resolves nothing, the
+prompt carries no such node at all.
+
+The successor hands the projection the owners it has: the primary character's
+authored profile (attributes and species realization) and the branch clock.
+Wardrobe as a garment store, body-surface state, conditions and scene relations
+have no successor producer, so each is recorded as an unavailable source and
+stays silent rather than being synthesized from sim data to fill the block. The
+observer is the player actor, and the perception view asserts sight and no
+exposure — exposure belongs to the wardrobe owner, and an unlisted body location
+reads unknown, which fails every body-surface read closed. A lane that declared
+bare skin visible because nothing answered would be inventing exactly the fact
+the projection exists to ground.
+
+Cue state is **branch-scoped**. It uses the same `chat_visual_cues` table and
+store the chat lane uses, keyed `world_branch:<branchId>` with the player actor
+as viewpoint and the primary as subject, and its prompting id is the committed
+cut id — so re-rendering one cut is a retake that recomputes from the generation
+before it, and another branch reads its own row and can never inherit later
+mention state. The row is written only once the exchange settles, and only while
+the switch is on; deleting the chat deletes the branch's rows with its world.
+The read-only inspector preview loads the same row, so its repetition and
+newly-visible counts are the live ones.
+
 ### The solo cut
 
 When a turn runs WITHOUT a co-present primary — the player walked off, or either

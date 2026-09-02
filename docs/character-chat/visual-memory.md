@@ -67,6 +67,14 @@ mention ledger all follow it and a single cue can never spend both.
 - **Read either way, written only when the chat's switch is on.** The visual-state shadow reads
   the stored state and ranks against it, so its repetition and newly-revealed counts are real;
   only a conversation with visual continuity turned on commits.
+- **Both narrator lanes store here, under disjoint keys.** `memory_group_id` names the
+  continuity rather than only a chat memory group: a chat files under its raw group id and a
+  successor turn under `world_branch:<branchId>`, and `visualCueScopeKey`
+  (`engine/visual-cue-store.ts`) is the one owner of that mapping. The prefix is the whole
+  isolation guarantee — a branch can never inherit a conversation's mention history, or another
+  branch's. The successor's viewpoint is the player actor, its subject the primary actor, and
+  its exchange guard the committed cut id; see
+  [engine/narration.md](../engine/narration.md) for what that lane can project.
 - **A just-said detail leaves the fence for one cut.** The fence otherwise never goes quiet — a
   fact stays contradictable — but a detail the narrator has only just used would otherwise be
   re-presented immediately, and the narrator reads a fence entry as something it may say. The

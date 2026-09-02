@@ -30,6 +30,7 @@ import {
   buildCanonNode,
   buildConversationNode,
   buildPresentationStateNode,
+  buildVisualStateNode,
   simBlock,
   worldClockLabel,
   type SimRenderContext,
@@ -237,6 +238,11 @@ export function buildSimSoloRenderPromptNodes(context: SimSoloRenderContext): re
   const profile = context.primary?.profile;
   const minor = profile ? (lifeStageForAge(profile.age)?.minor ?? false) : false;
   const dominance = profile ? effectiveTraitValue(profile.traits, "social.dominance") : 0;
+  // Same node, same place in the order as the co-present builder. The solo turn
+  // has no committed cut and no co-presence, so nothing populates it today; the
+  // field is inherited from `SimRenderContext` and renders symmetrically the day
+  // an away-glimpse owner does.
+  const visualStateNode = buildVisualStateNode(context.visualState);
 
   return [
     simBlock("solo_render_prompt", [
@@ -256,6 +262,7 @@ export function buildSimSoloRenderPromptNodes(context: SimSoloRenderContext): re
         outfitLine: context.outfitLine,
         relationship: context.relationship,
       }),
+      ...(visualStateNode === null ? [] : [visualStateNode]),
       buildConversationNode({ primaryName, playerName, context, soloAway: true }),
       buildSoloOutputNode({
         primaryName,

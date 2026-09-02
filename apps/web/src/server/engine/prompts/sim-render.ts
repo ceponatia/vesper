@@ -46,6 +46,7 @@ import {
   buildPreferencesSection,
   buildVoiceAnchorsSection,
 } from "./profile-sections";
+import { visualStatePromptBlock, type VisualStatePromptLines } from "./visual-state-block";
 
 /**
  * The successor (simulated-world) narrator's prompt builder. It replaces
@@ -119,6 +120,17 @@ export interface SimRenderContext {
   relationship?: SimRenderRelationship;
   /** Zone display names by zone id; a missing id is humanized from the id itself. */
   zoneNames?: Record<string, string>;
+  /**
+   * The visual-state projection's rendered pair for the primary — the
+   * must-not-contradict constraints and the ≤2 optional cues the attention
+   * selection chose from the committed cut this render is about to narrate.
+   *
+   * Present only when the routed chat's own visual-state narration switch is on
+   * AND the projection could resolve something for this observer. Absent ⇒ no
+   * node at all ⇒ a byte-identical prompt, which is what makes the switch a
+   * switch rather than a rewording. Inherited by `SimSoloRenderContext`.
+   */
+  visualState?: VisualStatePromptLines;
   /** Active narration shape; defaults to DEFAULT_NARRATION_SHAPE. */
   narrationShape?: NarrationShapeId;
   /**
@@ -604,6 +616,26 @@ export function buildConversationNode(args: Parameters<typeof buildConversationB
   return promptUnit("sim_conversation", "runtime_invariant", buildConversationBlock(args));
 }
 
+/**
+ * The visual-state pair as ZERO OR ONE node, shared by the co-present and solo
+ * builders.
+ *
+ * `runtime_context` on the same reading `committed_truth` takes: these are facts
+ * the world already committed, described to the narrator so it does not
+ * contradict them. Nothing in the block is craft or player-agency law, and a
+ * test instruction source may not replace it.
+ *
+ * `null` — not an empty unit — whenever the lane has nothing to say, so a turn
+ * with the switch off and a turn whose projection resolved nothing both produce
+ * the prompt this lane produced before the feature existed. An always-present
+ * empty unit would leave an id in the provenance tree that no reader can act on.
+ */
+export function buildVisualStateNode(lines: VisualStatePromptLines | undefined): NarratorPromptNode | null {
+  if (lines === undefined) return null;
+  const block = visualStatePromptBlock(lines);
+  return block.length === 0 ? null : promptUnit("sim_visual_state", "runtime_context", block);
+}
+
 /** The per-attempt CORRECTION block (attempt ≥2) — names exactly what the last audit rejected. */
 function buildCorrectionBlock(correction: SimRenderCorrection): string {
   const lines: string[] = ["CORRECTION — your previous attempt was rejected. Fix EXACTLY this, keep everything else:"];
@@ -675,6 +707,9 @@ export function buildSimRenderPromptNodes(
 
   const attempt = opts.attempt ?? 1;
   const correctionBlock = attempt >= 2 && opts.correction ? buildCorrectionBlock(opts.correction) : "";
+  // AFTER the presentation state: the outfit line is the nearer, coarser read,
+  // and the projection's per-locus facts land as the finer grain under it.
+  const visualStateNode = buildVisualStateNode(context.visualState);
 
   return [
     simBlock("sim_render_prompt", [
@@ -688,6 +723,7 @@ export function buildSimRenderPromptNodes(
         outfitLine: context.outfitLine,
         relationship: context.relationship,
       }),
+      ...(visualStateNode === null ? [] : [visualStateNode]),
       buildConversationNode({ primaryName, playerName, context }),
       buildOutputNode({ primaryName, playerName, shape, dominance, minor }),
       // The retry correction names what the audit rejected — a machine contract.

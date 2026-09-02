@@ -59,7 +59,7 @@ import {
   type SimSoloRenderContext,
 } from "./prompts/sim-solo-render";
 import { buildLiveDeliberation, renderCommittedCut, renderSoloNarration } from "./sim-narrator";
-import { runSimVisualStateShadow } from "./sim-visual-state";
+import { loadSimVisualStateNarration, runSimVisualStateShadow } from "./sim-visual-state";
 import {
   readSimChatOutfit,
   readSimChatRelationship,
@@ -1171,6 +1171,20 @@ async function runCoPresentTurn(input: {
     }),
     loadSimPresentationInputs({ chatId, userId: input.userId, branchId, primaryActorId, actorNames, playerName }),
   ]);
+  // Visual state, on the TURN'S OWN PATH when this chat's switch is on: the
+  // narrator must see the projection of the very cut it is about to render, and
+  // the cue state it advances must be captured with that cut. `null` ⇒ the switch
+  // is off and the prompt is byte-identical to today.
+  const visualState = await loadSimVisualStateNarration({
+    chatId,
+    branchId,
+    playerActorId,
+    primaryActorId,
+    primaryName: actorNames[primaryActorId] ?? "them",
+    cutId: turn.cut.id,
+    storySecond: clock?.storySecond ?? 0,
+    primary: presentation.primary,
+  });
   const rendered = await renderCommittedCut({
     branchId,
     engagementId: input.engagementId,
@@ -1194,6 +1208,7 @@ async function runCoPresentTurn(input: {
       ...(presentation.outfitLine ? { outfitLine: presentation.outfitLine } : {}),
       ...(presentation.relationship ? { relationship: presentation.relationship } : {}),
       ...(presentation.zoneNames ? { zoneNames: presentation.zoneNames } : {}),
+      ...(visualState?.lines ? { visualState: visualState.lines } : {}),
       narrationShape: presentation.narrationShape,
     },
   });
@@ -1225,19 +1240,26 @@ async function runCoPresentTurn(input: {
   });
   // Knowledge/memory: fold the conversation forward — self-dedupes below its trigger.
   void enqueueChatSummary({ chatId });
-  // Visual-state shadow (`CHAT_VISUAL_STATE_SHADOW`,
-  // default OFF): the lane-neutral projection built BESIDE the settled turn for
-  // measurement. Fire-and-forget and fenced whole inside — it writes nothing,
-  // feeds nothing, and can never cost the exchange.
-  void runSimVisualStateShadow({
-    chatId,
-    branchId,
-    playerActorId,
-    primaryActorId,
-    cutId: rendered.cutId,
-    storySecond: clock?.storySecond ?? 0,
-    primary: presentation.primary,
-  });
+  if (visualState === null) {
+    // Visual-state measurement shadow (`CHAT_VISUAL_STATE_SHADOW`, default OFF)
+    // for a chat whose narration switch is off: the lane-neutral projection built
+    // BESIDE the settled turn. Fire-and-forget and fenced whole inside — it
+    // writes nothing, feeds nothing, and can never cost the exchange.
+    void runSimVisualStateShadow({
+      chatId,
+      branchId,
+      playerActorId,
+      primaryActorId,
+      cutId: rendered.cutId,
+      storySecond: clock?.storySecond ?? 0,
+      primary: presentation.primary,
+    });
+  } else {
+    // The exchange SETTLED, so this cut's visibility and mentions are now true.
+    // Awaited rather than fired off: the next take reads this row, and a write
+    // still in flight would let it recompute from the wrong generation.
+    await visualState.commit();
+  }
   return {
     ok: true,
     messageId: assistantMessageId,
@@ -2080,6 +2102,19 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
     }),
     loadSimPresentationInputs({ chatId, userId: input.userId, branchId, primaryActorId, actorNames, playerName }),
   ]);
+  // The SAME cut id the first take used, which is exactly what makes this a
+  // retake to the cue store: it reads the pre-take generation and recomputes, so
+  // a second take can never advance visibility or a cooldown twice.
+  const visualState = await loadSimVisualStateNarration({
+    chatId,
+    branchId,
+    playerActorId,
+    primaryActorId,
+    primaryName: actorNames[primaryActorId] ?? "them",
+    cutId,
+    storySecond: clock?.storySecond ?? 0,
+    primary: presentation.primary,
+  });
 
   const rendered = await renderCommittedCut({
     branchId,
@@ -2103,6 +2138,7 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
       ...(presentation.outfitLine ? { outfitLine: presentation.outfitLine } : {}),
       ...(presentation.relationship ? { relationship: presentation.relationship } : {}),
       ...(presentation.zoneNames ? { zoneNames: presentation.zoneNames } : {}),
+      ...(visualState?.lines ? { visualState: visualState.lines } : {}),
       narrationShape: presentation.narrationShape,
     },
   });
@@ -2134,6 +2170,10 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
       },
     })
     .where(and(eq(characterChatMessages.id, target.id), eq(characterChatMessages.chatId, chatId)));
+
+  // Settled: the retake's own visibility and mentions replace the displaced
+  // take's, computed from the generation the first take preserved.
+  if (visualState !== null) await visualState.commit();
 
   return {
     ok: true,

@@ -3,8 +3,10 @@ import {
   diag,
   emptyVisualCueState,
   visualCueStateSchema,
+  visualStateScopeKey,
   type DiagnosticSink,
   type VisualCueState,
+  type VisualStateScopeRef,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { chatVisualCues, db } from "../db";
@@ -48,6 +50,25 @@ import { visualMemoryGenerationFor, type ChatVisualMemoryKey } from "./visual-me
 
 /** The stored blob was not even an object — nothing could be recovered from it. */
 export const CHAT_VISUAL_CUES_UNREADABLE = "chat.visual_cues.unreadable";
+
+/**
+ * The row's first key column, for any lane that owns cue state.
+ *
+ * `memory_group_id` is the column's name and the chat lane's own id, so a chat
+ * scope maps to the raw group id and every stored row keeps the key it already
+ * has. Every other continuity is namespaced by `visualStateScopeKey`, which
+ * prefixes the kind — a successor branch files under `world_branch:<branchId>`.
+ * That prefix is the whole guarantee: a branch key can never collide with a
+ * memory-group id, so a successor world starts from empty state and can never
+ * inherit a conversation's mention history (or another branch's, since the
+ * branch id is in the key).
+ *
+ * One function so the two lanes cannot disagree about what a row is keyed by,
+ * and pure so a test can assert the isolation without a database.
+ */
+export function visualCueScopeKey(scope: VisualStateScopeRef): string {
+  return scope.kind === "chat" ? scope.memoryGroupId : visualStateScopeKey(scope);
+}
 
 /** The boundary path both generations report under. */
 const VISUAL_CUES_PATH = "chat_visual_cues.cues";
