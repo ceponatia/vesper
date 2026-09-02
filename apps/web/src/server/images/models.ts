@@ -288,11 +288,11 @@ export interface RenderShapeOutcome {
  * The prompt crosses the model family's own dialect step here
  * (`prepareModelPrompt` → the `@vesper/image-models` adapter) even when the
  * caller already compiled it. That is safe because a preparer is contractually
- * IDEMPOTENT — the Qwen editors replace the legacy identity lock with their
- * numbered-reference one, and a prompt that no longer contains the legacy
- * sentence passes through untouched — so a pre-compiled prompt arrives at the
- * provider exactly as it was hashed. A model with no adapter is the ordinary
- * case and its prompt is returned unchanged.
+ * IDEMPOTENT, so a pre-compiled prompt arrives at the provider exactly as it
+ * was hashed. No seeded family declares a preparer today — the Qwen editors'
+ * legacy-lock rewrite retired with the lane prose it rewrote (#251) — so every
+ * prompt is returned unchanged; the step stays because an adapter may still
+ * declare one.
  *
  * Reference and control bytes cross `prepareRenderReferences` here, and here
  * only — this is the one choke point every render path shares, so preparing at

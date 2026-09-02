@@ -29,3 +29,4 @@ export * from "./sim-chat-fixtures";
 export * from "./authoring-fixtures";
 export * from "./ai-fixtures";
 export * from "./image-lane-probe";
+export * from "./image-profile-fixture";

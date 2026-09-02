@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
-import { buildChatLookPrompt, buildChatPlacePrompt, chatLookKey } from "./chat-look";
+import { buildChatPlacePrompt, chatLookKey } from "./chat-look";
 
 describe("chatLookKey (chat-wardrobe-parity — structured key)", () => {
   const bare: RegionExposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" };
@@ -104,24 +104,7 @@ describe("chatLookKey — golden determinism pins", () => {
   });
 });
 
-describe("look/place prompts", () => {
-  it("the look edit keeps identity, swaps the outfit, and forbids extra garments", () => {
-    const prompt = buildChatLookPrompt({ outfit: "a linen sundress", outfitExposed: false });
-    expect(prompt).toContain("exact same person");
-    expect(prompt).toContain("now wearing a linen sundress");
-    expect(prompt).toContain("remove anything the reference wears that is not listed");
-    expect(buildChatLookPrompt({ outfit: "", outfitExposed: true })).toContain("Remove the outfit");
-    expect(buildChatLookPrompt({ outfit: "", outfitExposed: false })).toContain("simple, casual outfit");
-  });
-
-  it("inherits visible age from the portrait reference without an explicit age value", () => {
-    const prompt = buildChatLookPrompt({ outfit: "a linen sundress", outfitExposed: false });
-    // The identity lock preserves what the portrait depicts, but no age field or
-    // age band is supplied to this scene-supporting image model.
-    expect(prompt).toContain("Preserve face, hair color and style, skin tone, body proportions, and apparent age.");
-    expect(prompt).not.toMatch(/\b(?:eighteen|twenties|thirties|forties|fifties|sixties|\d+\s+years old)\b/i);
-  });
-
+describe("place prompt", () => {
   it("the place shot is the sketch, empty of people", () => {
     const prompt = buildChatPlacePrompt({ placeName: "the kitchen", sketch: "Warm terracotta tiles; copper pans." });
     expect(prompt).toContain("establishing shot of the kitchen");

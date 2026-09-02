@@ -261,12 +261,12 @@ export function imageNegativePack(id: string): ImageNegativePackVersion | null {
 }
 
 /**
- * The active binding for one endpoint and task, or null when this lane has not
- * been cut over.
+ * The active binding for one endpoint and task, or null when no `active` row
+ * exists for it.
  *
- * Null is the ORDINARY answer during a staged rollout, not an error: a lane with
- * no binding keeps its existing prompt path, which is what lets a cutover of one
- * endpoint/task lane at a time happen without a flag. A version-
+ * Null is an ORDINARY answer, not an error: it is the honest "no row", and
+ * what a lane does with it is the lane's own law (every character lane
+ * refuses to render rather than sending an unauthorized prompt). A version-
  * pinned binding wins over a floating one for the same pair, because a pin exists
  * precisely to say "this version behaves differently".
  *
@@ -296,47 +296,6 @@ export function activeImagePromptBinding(query: {
   const candidates = bindings.filter(
     (binding) =>
       binding.status === "active" &&
-      binding.modelSlug === query.modelSlug &&
-      binding.task === query.task &&
-      (query.profileKey === undefined || binding.profileKey === query.profileKey) &&
-      (query.promptStrategy === undefined || binding.promptStrategy === query.promptStrategy),
-  );
-  const pinned = query.versionId
-    ? candidates.find((binding) => binding.versionId === query.versionId)
-    : undefined;
-  return pinned ?? candidates.find((binding) => binding.versionId === null) ?? null;
-}
-
-/**
- * The binding a SHADOW compile resolves: `candidate` rows included.
- *
- * `activeImagePromptBinding` returning null IS the staged-rollout contract —
- * "this lane has not been cut over" — so a lane that is only being measured
- * must not register `active` rows: that would overload the state model and
- * leave cutover with no transition to represent. A shadow-phase lane registers
- * its rows as `candidate`, this resolver finds them, and production resolution
- * never sees them. It resolves `active` rows too, so the day a row is promoted
- * the shadow keeps measuring the same binding the lane now runs — cutover
- * changes production's answer, never the shadow's.
- *
- * Selection within the widened status set is otherwise identical to the active
- * resolver: a version-pinned row wins over a floating one, and `profileKey`
- * narrows strictly. One (slug, task, profileKey) pair should carry one
- * non-retired row; when both a candidate and an active row exist for a pair
- * mid-promotion, registration order decides, exactly as it does for the active
- * resolver's duplicate rows. `promptStrategy` narrows here too, for the same
- * reason it does there.
- */
-export function imagePromptBindingForShadow(query: {
-  readonly modelSlug: string;
-  readonly task: string;
-  readonly versionId?: string | null;
-  readonly profileKey?: string;
-  readonly promptStrategy?: ImagePromptStrategy;
-}): ImagePromptProfileBinding | null {
-  const candidates = bindings.filter(
-    (binding) =>
-      (binding.status === "candidate" || binding.status === "active") &&
       binding.modelSlug === query.modelSlug &&
       binding.task === query.task &&
       (query.profileKey === undefined || binding.profileKey === query.profileKey) &&

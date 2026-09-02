@@ -1,6 +1,6 @@
 import { defineImageModel, type ImageModelAdapter } from "../../composer";
 import { loraFeature } from "../../features";
-import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./shared";
+import { QWEN_IMAGE_FAMILY, qwenEditFeatures } from "./shared";
 
 /**
  * `qwen/qwen-image-edit-2511` — the current Qwen instruction editor and Vesper's
@@ -31,5 +31,4 @@ import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./sh
 export const qwenImageEdit2511: ImageModelAdapter = defineImageModel({
   family: QWEN_IMAGE_FAMILY,
   features: [...qwenEditFeatures(), loraFeature()],
-  quirks: [qwenEditPromptDialect()],
 });

@@ -5,7 +5,7 @@ import { isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
-import { outfitItems } from "@/contracts";
+import { outfitItems, type SceneCameraSpec } from "@/contracts";
 import { IMAGE_TARGET_ASPECT, type ImageSourceRevision, type ResolvedImageProfile } from "@vesper/image-core";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
@@ -16,22 +16,23 @@ import { IMAGE_ITEM_PROJECTION_OWNER } from "@/contracts/images/world-projection
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { runImagePipeline } from "./assets";
-import { buildAvatarSegments, type AvatarSegmentAssembly, type AvatarSegmentAssemblyInput } from "./avatar-segments";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
+  characterPromptUnboundRefusal,
   type CharacterPromptProgramResult,
 } from "./character-prompt-program";
 import { characterPortraitImageOperation } from "@/contracts/images/character-digest";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
-import {
-  type AvatarStyle,
-  type AvatarWardrobeItem,
-  toWornInputs,
-  wardrobeGarmentKey,
-} from "./prompts-avatar";
+import { type AvatarStyle, type AvatarWardrobeItem, toWornInputs, wardrobeGarmentKey } from "./avatar-wardrobe";
 import { type SceneWornItem, wardrobeOutfitSummary } from "./prompts-scene-composer";
+import {
+  buildStandaloneLaneCut,
+  standaloneSubjectPromptCut,
+  type StandaloneLaneCutInput,
+  type StandaloneSubjectCut,
+} from "./standalone-subject-visual";
 
 export interface GenerateAvatarInput {
   characterId: string;
@@ -42,33 +43,63 @@ export interface GenerateAvatarInput {
   sink?: DiagnosticSink;
 }
 
-/**
- * A refused avatar render's diagnostic: the standalone visual digest could not
- * make the character render-eligible — a required fact resolved no clause, or
- * the assembly itself failed. The row is failed BEFORE any provider spend;
- * production never falls back to the legacy prose builder.
- */
-export const AVATAR_DIGEST_INELIGIBLE = "images.avatar.visual_digest_ineligible";
+// ---------------------------------------------------------------------------
+// The avatar's cut
+// ---------------------------------------------------------------------------
 
 /**
- * The pure segment assembly, run at the route boundary: a throw here is a
- * defect, but the resilient shape is a failed row carrying a diagnostic, not a
- * lost turn — so it degrades to `null` and the pipeline refuses pre-spend.
- *
- * Typed as the assembly's OWN input (minus the sink, threaded separately) so a
+ * The portrait studio's fixed viewpoint: facing the camera at medium distance,
+ * which `visualCameraReadsOfSceneCamera` maps to the `waist_up` framing band —
+ * the frame the selection cuts optional detail to and the adapter states
+ * exposure within.
+ */
+export const AVATAR_PORTRAIT_CAMERA: SceneCameraSpec = {
+  orientation: "toward_viewer",
+  distance: "medium",
+  height: "eye_level",
+};
+
+/** The camera id the selection fingerprints — a fixed studio viewpoint, not a committed scene camera. */
+export const AVATAR_PORTRAIT_CAMERA_ID = "portrait_studio";
+
+export type AvatarCutInput = StandaloneLaneCutInput;
+
+/**
+ * The avatar lane's cut of the character sheet — the standalone cut under the
+ * portrait studio's camera. The one call `generateAvatar` makes and the one the
+ * lane fixtures re-run without a database, so a test cannot quietly assemble
+ * a different avatar than production does. Pure.
+ */
+export function buildAvatarCut(input: AvatarCutInput): StandaloneSubjectCut {
+  return buildStandaloneLaneCut(input, { camera: AVATAR_PORTRAIT_CAMERA, cameraId: AVATAR_PORTRAIT_CAMERA_ID });
+}
+
+/**
+ * The cut could not be assembled at all — a thrown build. A throw here is a
+ * defect, but the resilient shape is a failed row carrying a diagnostic rather
+ * than a lost turn, so the row fails BEFORE any provider spend.
+ */
+export const AVATAR_CUT_FAILED = "images.avatar.visual_cut_failed";
+
+/**
+ * The picked model has no active prompt binding for the portrait task and this
+ * profile key. The row fails before provider spend naming the three
+ * coordinates; nothing else is ever sent in its place.
+ */
+export const AVATAR_PROGRAM_UNBOUND = "images.avatar.program_unbound";
+
+/**
+ * Typed as the cut's OWN input (minus the sink, threaded separately) so a
  * degradation flag like `wardrobeUnavailable` can never be silently dropped at
  * this seam — an inline retype here once omitted it, and a refactor could have
  * reverted the failed-load-renders-topless fix with no type error.
  */
-function tryBuildAvatarSegments(
-  input: Omit<AvatarSegmentAssemblyInput, "sink">,
-  sink?: DiagnosticSink,
-): AvatarSegmentAssembly | null {
+function tryBuildAvatarCut(input: Omit<AvatarCutInput, "sink">, sink?: DiagnosticSink): StandaloneSubjectCut | null {
   try {
-    return buildAvatarSegments({ ...input, ...(sink === undefined ? {} : { sink }) });
+    return buildAvatarCut({ ...input, ...(sink === undefined ? {} : { sink }) });
   } catch (err) {
     sink?.push(
-      diag("warn", AVATAR_DIGEST_INELIGIBLE, "avatar segment assembly failed", {
+      diag("warn", AVATAR_CUT_FAILED, "avatar visual cut failed to assemble", {
         path: "images.avatar",
         context: {
           characterId: input.characterId,
@@ -80,78 +111,56 @@ function tryBuildAvatarSegments(
   }
 }
 
-/** The refusal text for an ineligible digest, or null when the render may proceed. */
-function avatarDigestRefusal(
-  assembly: AvatarSegmentAssembly | null,
-  characterId: string,
-  sink?: DiagnosticSink,
-): string | null {
-  if (assembly === null) return "the avatar's visual digest could not be assembled";
-  if (assembly.missingRequired.length === 0) return null;
-  sink?.push(
-    diag("warn", AVATAR_DIGEST_INELIGIBLE, "a required visual fact resolved no prompt clause", {
-      path: "images.avatar",
-      context: { characterId, missingRequired: [...assembly.missingRequired] },
-    }),
-  );
-  return "the avatar's visual digest is missing required facts";
+// ---------------------------------------------------------------------------
+// The avatar's program
+// ---------------------------------------------------------------------------
+
+/** What the avatar's program is compiled from: the row, its cut, and the picked profile. */
+export interface AvatarProgramInput {
+  readonly characterId: string;
+  readonly characterName: string;
+  /** `characters.updatedAt` as an ISO string. */
+  readonly revision: string;
+  /** The wardrobe rows' revisions, folded into the read. */
+  readonly extraRevisions: readonly ImageSourceRevision[];
+  readonly cut: StandaloneSubjectCut;
+  readonly profile: ResolvedImageProfile;
+  readonly sink?: DiagnosticSink;
 }
 
 /**
- * The avatar lane's ACTIVE prompt program, or null when this render has nothing
- * to compile (issue #256).
+ * The avatar lane's prompt program over its cut (issue #256). Pure — the
+ * exact call `generateAvatar` makes, exported so the lane fixtures compile a
+ * portrait without a database.
  *
- * Null covers demo mode, a lane with no resolved model, and a character row
- * that never loaded — renders with no world to compile, not models that were
- * left behind. Every portrait profile the picker offers is bound: the three
- * Qwen Image 2512 rows, Seedream 4.5, Seedream 5 Lite, both Stable Diffusion
- * 3.5 Large rows, Wan 2.7, NSFW FLUX Dev, LikeReality Pony and P-Image.
+ * Every portrait profile the picker offers is bound: the three Qwen Image 2512
+ * rows, Seedream 4.5, Seedream 5 Lite, both Stable Diffusion 3.5 Large rows,
+ * Wan 2.7, NSFW FLUX Dev, LikeReality Pony and P-Image.
  *
  * Resolution is strict on the profile KEY, because this lane's models bind per
  * profile: 2512 carries three portrait rows (`portrait-standard`,
  * `portrait-fast`, `portrait-quality`) whose packs must stay separately
- * promotable, and SD 3.5 Large carries two. A key with no row resolves null
- * rather than borrowing a sibling profile's pack pins.
+ * promotable, and SD 3.5 Large carries two. A key with no row resolves
+ * `unbound` rather than borrowing a sibling profile's pack pins.
  *
  * No references: every portrait profile's reference policy allows no roles, so
  * a portrait is text-to-image and its identity travels entirely in the digest's
  * own descriptors rather than in an image.
  *
  * The operation states the honest default style — a photographic medium and no
- * descriptors — and the avatar's `realistic`/`anime` toggle does NOT become
- * style descriptors here. The toggle already reaches the prompt through the
- * segment assembly's own camera and policy inputs, and turning it into a second
- * style claim would state the medium twice, once in a channel the collision
- * linter cannot reconcile with the pack's rendering intent.
+ * descriptors — and the avatar's `realistic`/`stylized` toggle does NOT become
+ * style descriptors here: turning it into a style claim would state the medium
+ * twice, once in a channel the collision linter cannot reconcile with the
+ * pack's rendering intent. The toggle is recorded on the row's meta.
  */
-function activeAvatarProgram(inputs: {
-  readonly characterId: string;
-  readonly characterName: string;
-  readonly revision: string;
-  readonly extraRevisions: readonly ImageSourceRevision[];
-  readonly assembly: AvatarSegmentAssembly | null;
-  readonly profile: ResolvedImageProfile | null;
-  readonly sink?: DiagnosticSink;
-}): CharacterPromptProgramResult | null {
-  const { assembly, profile } = inputs;
-  if (assembly === null || profile === null) return null;
-  const visual = assembly.visual;
+export function buildAvatarProgram(inputs: AvatarProgramInput): CharacterPromptProgramResult {
+  const { cut, profile } = inputs;
   return buildCharacterPromptProgram({
     lane: "avatar",
     task: "portrait",
     profile,
     bindingProfileKey: profile.profile.key,
-    resolver: "active",
-    cuts: [
-      {
-        subjectId: inputs.characterId,
-        name: inputs.characterName,
-        digest: visual.digest,
-        attributes: visual.resolved,
-        exposure: visual.exposure,
-        realizedBody: visual.realizedBody,
-      },
-    ],
+    cuts: [standaloneSubjectPromptCut(cut, { subjectId: inputs.characterId, name: inputs.characterName })],
     read: {
       kind: "standalone_character",
       characters: [{ characterId: inputs.characterId, revision: inputs.revision }],
@@ -160,33 +169,56 @@ function activeAvatarProgram(inputs: {
     references: [],
     operation: () => characterPortraitImageOperation(),
     // A portrait of a specific character with a lost identity or morphology
-    // anchor is a picture of somebody else. The segment assembly already
-    // refuses on its own missing-required set (`avatarDigestRefusal`); this is
-    // the join-level check the adapter performs, and it fails the row before
-    // provider spend in exactly the same place.
+    // anchor is a picture of somebody else: the adapter's join-level check
+    // fails the row before provider spend.
     refuseOnMissingRequired: true,
     ...(inputs.sink === undefined ? {} : { sink: inputs.sink }),
   });
 }
 
 /**
- * Avatar pipeline: the standalone visual digest compiled through the picked
+ * The precondition text a program answer fails the row with, or null for a
+ * compiled program. A refusal already pushed its own diagnostic at the seam;
+ * `unbound` pushes the lane's here, because the seam records nothing for an
+ * ordinary "no row".
+ */
+function avatarProgramPrecondition(
+  program: CharacterPromptProgramResult,
+  characterId: string,
+  sink?: DiagnosticSink,
+): string | null {
+  if (program.kind === "compiled") return null;
+  if (program.kind === "refused") return program.refusal;
+  sink?.push(
+    diag("warn", AVATAR_PROGRAM_UNBOUND, "the picked model has no active prompt binding for the portrait task", {
+      path: "images.avatar",
+      context: { characterId, model: program.modelSlug, task: program.task, profileKey: program.profileKey },
+    }),
+  );
+  return characterPromptUnboundRefusal(program);
+}
+
+/**
+ * Avatar pipeline: the standalone visual cut compiled through the picked
  * profile's prompt program → that model's text-to-image (3:4), or monogram in
  * demo mode, through the shared reserve/save/fail lifecycle.
  *
- * The prompt is the compiled program (#256, `activeAvatarProgram`); the legacy
- * segment assembly is still built — it owns the digest refusal, the
- * `meta.visualState` provenance and the realized cut the program compiles from
- * — and its prose ships only on a render that compiled no program at all. #251
- * deletes that half.
+ * The compiled program is the ONLY prompt this lane has. A render that compiles
+ * none — a refused program, an unbound model, a cut that would not assemble —
+ * fails its row through `failedPrecondition`, so no provider is called and no
+ * generation diagnostic fires: a render that never ran did not fail to
+ * generate. Demo mode compiles nothing and draws the monogram; the row's
+ * `prompt` then carries the monogram's own label, so it describes the picture
+ * that was drawn rather than a request nobody made, and a failed row carries no
+ * prompt at all.
  *
  * The profile is resolved BEFORE the pipeline reserves a row so the row's meta
  * can record which model produced it. A pick that is no longer offered degrades
  * to the portrait task's default rather than failing (owner ruling 5).
  *
- * The digest's `meta.visualState` provenance is attached at RESERVE time,
- * beside `style`/`model`/`demo`: a thrown produce carries no meta, and the
- * visual moment that shaped the prompt must survive a failed render.
+ * The cut's `meta.visualState` provenance is attached at RESERVE time, beside
+ * `style`/`model`/`demo`: a thrown produce carries no meta, and the visual
+ * moment that shaped the prompt must survive a failed render.
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
@@ -204,13 +236,11 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
   const load = character
     ? await loadDefaultWardrobeWithRevisions(input.userId, outfitItems(profile), input.sink)
     : { wardrobe: [], revisions: [] };
-  const assembly = character
-    ? tryBuildAvatarSegments(
+  const cut = character
+    ? tryBuildAvatarCut(
         {
           characterId: input.characterId,
-          name: character.name,
           profile,
-          style,
           wardrobe: load.wardrobe,
           ...(load.failed === true ? { wardrobeUnavailable: true } : {}),
           ...((load.coverageUnreliableIds?.length ?? 0) > 0 ? { coverageUnreliable: true } : {}),
@@ -225,39 +255,26 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
         input.sink,
       )
     : null;
-  const digestRefusal = character ? avatarDigestRefusal(assembly, input.characterId, input.sink) : null;
-  const legacyPrompt = assembly?.prompt ?? "";
 
-  // The cutover (issue #256): the prompt this render sends is the compiled
-  // prompt program. Everything else about the render — profile, target,
-  // controls — is unchanged, because the migration is the prompt and nothing
-  // else. A render that already refused compiles nothing: a cut that could not
-  // be assembled never had a program to build.
+  // The program compiles only for a render that has a world to compile: a
+  // character row, a cut that assembled, and a resolved profile (demo mode and
+  // a task with no registered model have none).
   const program =
-    character && digestRefusal === null
-      ? activeAvatarProgram({
+    character && cut && resolved
+      ? buildAvatarProgram({
           characterId: input.characterId,
           characterName: character.name,
           revision: character.updatedAt.toISOString(),
           extraRevisions: load.revisions,
-          assembly,
+          cut,
           profile: resolved,
           ...(input.sink === undefined ? {} : { sink: input.sink }),
         })
       : null;
   const compiled = program?.kind === "compiled" ? program : null;
-  // A refusal is NOT a fallback to the legacy prose. A binding resolved and then
-  // could not compile — a missing pack, an unregistered dialect, a lost required
-  // anchor — is a configuration or data fault on a lane that IS bound, and
-  // rendering something reasonable instead would hide it behind an
-  // acceptable-looking portrait. It fails the row through `failedPrecondition`,
-  // so no provider is called and no generation diagnostic fires: a render that
-  // never ran did not fail to generate.
-  const programRefusal = program?.kind === "refused" ? program.refusal : null;
-  // Prompt, segments and any compiled negative in ONE decision — a compiled
-  // render must not still carry the legacy segments, which `resolveIntentPrompt`
-  // would prefer over the compiled string.
-  const transport = characterPromptTransport(legacyPrompt, assembly?.segments, compiled);
+  const programPrecondition = program === null ? null : avatarProgramPrecondition(program, input.characterId, input.sink);
+  const monogramLabel = character?.name ?? "";
+  const prompt = compiled?.prompt ?? (demo ? monogramLabel : "");
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -265,40 +282,38 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       kind: "avatar",
       entityKind: "character",
       entityId: input.characterId,
-      prompt: transport.prompt,
+      prompt,
       meta: {
         style,
         model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
         demo,
-        ...(assembly?.digestMeta ?? {}),
+        ...(cut?.digestMeta ?? {}),
         // The compiled program's own provenance, exactly as the entity lane
-        // records it. Absent on a render that compiled none, which is how a row
-        // says which prompt system built it.
+        // records it. Absent on a render that compiled none.
         ...(compiled?.meta ?? {}),
       },
     },
-    // The digest refusal is checked FIRST because it is the older and more
-    // specific failure, and a program refusal cannot even arise beside one — the
-    // program is not built for a render the digest already doomed.
+    // A cut that would not assemble is checked FIRST: a program is never built
+    // over a cut that does not exist, so the two answers cannot both arise.
     failedPrecondition: character
-      ? (digestRefusal ??
-        programRefusal ??
-        (demo || model ? null : "no image model is registered for portraits"))
+      ? cut === null
+        ? "the avatar's visual cut could not be assembled"
+        : (programPrecondition ?? (demo || model ? null : "no image model is registered for portraits"))
       : `character ${input.characterId} not found`,
     // Text-to-image at Vesper's 3:4, with no references — the simplest intent
     // there is. A failure still THROWS (this lane's ruled failure shape: the
     // shell's warn diagnostic plus the error-carrying event line), which is why
     // render provenance is recorded only on success — a thrown produce has no
-    // meta channel. The digest provenance already landed at reserve time.
+    // meta channel. The cut provenance already landed at reserve time.
     produce: async () => {
-      if (demo || !resolved) return { ok: true, image: monogramSvg(character?.name ?? "") };
+      if (demo || !resolved) return { ok: true, image: monogramSvg(monogramLabel) };
+      // Every other answer failed the row above, so a production render reaches
+      // the provider only with a compiled program.
+      if (compiled === null) throw new Error("avatar render reached the provider with no compiled prompt program");
       const result = await renderImageIntent(
         {
           profile: resolved,
-          // Prompt, segments and the normalized negative in one decision. On a
-          // compiled render the segments are absent, or they would outrank the
-          // program and ship the prose it replaced.
-          ...transport,
+          ...characterPromptTransport(compiled),
           references: [],
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
         },
@@ -366,8 +381,8 @@ export interface AvatarWardrobeLoad {
   revisions: ImageSourceRevision[];
   /**
    * The lookup THREW — the empty wardrobe above is unknown state, not a
-   * confirmed undressed character. The segment assembly must not turn it into
-   * exposure claims; it degrades to the attributes-only prompt instead.
+   * confirmed undressed character. The cut must not turn it into exposure
+   * claims; coverage degrades to fully covered instead.
    */
   failed?: boolean;
   /**
@@ -385,7 +400,7 @@ export interface AvatarWardrobeLoad {
  * Load the character's default outfit as raw coverage-bearing wardrobe items,
  * plus the item-row revisions the standalone read token folds in — so an edit
  * to a worn item mints a new token rather than reusing the old composition's
- * name. Degrades to an empty load (attributes-only prompt) with a diagnostic.
+ * name. Degrades to an empty load (coverage unknown) with a diagnostic.
  */
 export async function loadDefaultWardrobeWithRevisions(
   ownerId: string,
@@ -447,7 +462,7 @@ export async function loadDefaultWardrobeWithRevisions(
     return { wardrobe, revisions, ...(coverageUnreliableIds.length > 0 ? { coverageUnreliableIds } : {}) };
   } catch (err) {
     sink?.push(
-      diag("warn", "images.avatar.outfit_load_failed", "default outfit lookup failed — avatar prompt degrades to attributes only", {
+      diag("warn", "images.avatar.outfit_load_failed", "default outfit lookup failed — the cut's coverage degrades to unknown", {
         path: "items",
         context: {
           itemIds: [...itemIds],

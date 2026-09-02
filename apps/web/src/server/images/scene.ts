@@ -413,7 +413,6 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       profile,
       bindingProfileKey: profile.profile.key,
       bindingStrategy: kind === "edit" ? "instruction_edit" : "text_to_image_description",
-      resolver: "active",
       cuts: castCuts,
       scene: scene.scene,
       location: scene.location,
@@ -493,8 +492,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
    * is the monogram label, which is what makes the stored row describe the
    * picture that was drawn rather than a request nobody made.
    */
-  const transportFor = (id: SceneAttemptId): CharacterPromptTransport =>
-    characterPromptTransport(monogramLabel, undefined, compiledFor(id));
+  const transportFor = (id: SceneAttemptId): CharacterPromptTransport => {
+    const compiled = compiledFor(id);
+    return compiled === null ? { prompt: monogramLabel } : characterPromptTransport(compiled);
+  };
   const runnableChain = chain.filter((id) => programs.get(id) !== "dropped");
   if (runnableChain.length < chain.length) {
     sink.push(

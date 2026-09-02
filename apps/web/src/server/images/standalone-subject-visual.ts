@@ -24,49 +24,49 @@ import {
 } from "@/contracts/images/visual-segments";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { assembleVisualStateSnapshot, buildVisualStateImageDigest } from "@/server/visual-state";
-import { apparentAgeAnchor } from "./prompts-appearance";
+import { toWornInputs, type AvatarWardrobeItem } from "./avatar-wardrobe";
+import type { CharacterPromptSubjectCut } from "./character-prompt-program";
 import { visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
- * THE STANDALONE-CHARACTER DIGEST ASSEMBLY — one snapshot → one camera-bound
- * selection → one digest → one
- * subject's semantic segments, for every lane that renders a character with NO
- * chat behind it.
+ * THE STANDALONE-CHARACTER CUT — one snapshot → one camera-bound selection →
+ * one digest, for every lane that renders a character with NO chat behind it.
  *
  * A chat-backed render assembles its cut through the shadow factory
  * (`chatVisualStateShadowInput` → `applySceneSubjectVisual`), because a live
  * conversation owns garments, conditions, body surface and scene relations.
  * A standalone render has none of those owners: the character sheet, its
- * default wardrobe and a read token ARE the committed cut. That difference is
- * what this module exists to hold in one place — the avatar lane wrote it
- * inline first (Stage 3), the variant/edit lane needed exactly the same six
- * steps (Stage 4), and the Image Lab's staged bench is the third caller. Three
- * copies of a snapshot → perception → selection → digest → segments chain is
- * precisely the duplication the consolidation plan exists to end.
+ * default wardrobe and a read token ARE the committed cut. The avatar and
+ * variant lanes compile their prompt programs from exactly this cut
+ * (`character-prompt-program.ts`), and the Image Lab's staged bench reads the
+ * same fields off {@link StandaloneSubjectVisual}.
  *
  * ## What it decides, and what it does not
  *
- * It decides the CUT: which snapshot, which camera, which perception, which
- * exposure readout, and which clause resolver phrase the digest's facts. It
- * decides NOTHING about a lane's own prose — the subject line, the framing
- * sentence, the operation contract, the quality tail and the wardrobe line all
- * stay with the lane, which appends them beside {@link
- * StandaloneSubjectVisual.subject}'s segments.
+ * It decides the CUT: which snapshot, which camera, which perception, and which
+ * exposure readout. It decides NOTHING about a lane's operation contract, its
+ * references or its identity policy — those are the program's inputs, stated
+ * by the lane beside the cut. Every lane-specific knob is a parameter rather
+ * than a branch, so a second caller cannot quietly acquire the first caller's
+ * framing: the camera and its id, and whether the attention context may see
+ * intimate anatomy at all.
  *
- * Every lane-specific knob is a parameter rather than a branch, so a second
- * caller cannot quietly acquire the first caller's framing: the camera and its
- * id, the {@link VisualSegmentTaskPolicy}, the clause-resolver omit set, and
- * whether the attention context may see intimate anatomy at all.
+ * ## The retained segment pass
+ *
+ * {@link buildStandaloneSubjectVisual} layers the legacy clause build
+ * (`buildVisualSubjectSegments`) over the cut as `subject`. No character lane
+ * reads it any more — the prompt program refuses on the adapter's own
+ * missing-required set — but the Image Lab's staged bench
+ * (`image-lab-staged-visual.ts`) still phrases its production-parity arm from
+ * it, so the pass stays until that bench moves onto the program. It is a
+ * separate function precisely so the lanes pay nothing for it.
  *
  * ## Failure behavior
  *
- * Non-empty `subject.missingRequired` means a required digest fact resolved no
- * clause: the CALLER must refuse before provider spend rather than render a
- * character whose anchors quietly
- * vanished. Nothing here throws for a degraded owner.
+ * Nothing here throws for a degraded owner. A thrown build is a defect, and the
+ * CALLER degrades it to a failed row with a diagnostic before provider spend.
  *
- * Pure: no IO, no env, no clock — which is what lets the lane characterization
- * freeze re-run the production assembly without a database.
+ * Pure: no IO, no env, no clock.
  */
 
 // ---------------------------------------------------------------------------
@@ -108,8 +108,7 @@ const UNKNOWN_COVERAGE_WORN: readonly WornItemInput[] = [
  * when the wardrobe (or its coverage) could not be read, the camera reads
  * {@link UNKNOWN_COVERAGE_WORN} instead of the failed-empty list — every
  * location a fully-covering wardrobe hides answers `hidden`, never `visible`.
- * Exported so the degrade's per-location answers stay pinned by test, and
- * re-exported from `avatar-segments.ts` where that pin has always imported it.
+ * Exported so the degrade's per-location answers stay pinned by test.
  */
 export function portraitPerception(
   worn: readonly WornItemInput[],
@@ -161,10 +160,8 @@ function standaloneVisualContext(
 // Input and result
 // ---------------------------------------------------------------------------
 
-export interface StandaloneSubjectVisualInput {
+export interface StandaloneSubjectCutInput {
   readonly characterId: string;
-  /** The character's display name — the age anchor's grammatical subject. */
-  readonly name: string;
   readonly profile: CharacterProfile;
   /**
    * The standalone read token (`standaloneCharacterReadToken`) — the character
@@ -198,43 +195,62 @@ export interface StandaloneSubjectVisualInput {
   readonly camera: SceneCameraSpec;
   /** The camera id the selection fingerprints — a lane's studio viewpoint, not a committed scene camera. */
   readonly cameraId: string;
-  readonly policy: VisualSegmentTaskPolicy;
-  /** Attribute ids this lane's curated policy withholds from the DIGEST's clauses. */
-  readonly omitAttributeIds?: ReadonlySet<string>;
   /**
    * Whether the attention context may see intimate anatomy at all — the
-   * digest's own consent gate, upstream of `policy.intimate`. A lane that
-   * states intimate anatomy from its own route-owned sheet leaves this false,
-   * so the digest never carries a second copy of it.
+   * digest's own consent gate. A route that permits the reveal projects it
+   * beside the digest from the same cut (`intimateReveal` on the program), so
+   * the digest never carries a second copy of it.
    */
   readonly intimateAllowed: boolean;
   readonly sink?: DiagnosticSink;
 }
 
-export interface StandaloneSubjectVisual {
-  /** The digest's segments for this subject, plus its suppressions and missing anchors. */
-  readonly subject: VisualSubjectSegmentsBuild;
-  /**
-   * The realized visual image digest itself — the ONE cut both prompt roads
-   * describe. The Round 2 shadow instrumentation (`character-shadow.ts`) reads
-   * it to assemble the compiled-program side from the very selection the
-   * segments were built from, never a re-select.
-   */
+/**
+ * One standalone character's realized cut — the vocabulary the prompt program
+ * compiles a subject from (`CharacterPromptSubjectCut`).
+ */
+export interface StandaloneSubjectCut {
+  /** The realized visual image digest itself — the ONE cut every consumer describes. */
   readonly digest: VisualImageDigest;
   /** The `meta.visualState` fragment the row records at reserve time. */
   readonly digestMeta: Record<string, unknown>;
-  /** Base + persisted overlays — the canonical owner a lane's own prose phrases from. */
+  /** Base + persisted overlays — the canonical owner the program's adapter values facts from. */
   readonly resolved: readonly AttributeValue[];
-  /** The realized body, so a lane's residue can drop attributes this body does not have. */
+  /** The realized body, so a stale attribute cannot outlive the body it describes. */
   readonly realizedBody: RealizedBody;
   /** The canonical garment-coverage readout, computed once over the FULL wardrobe. */
   readonly exposure: RegionExposure;
+}
+
+/**
+ * The lane-facing spelling of {@link StandaloneSubjectCutInput}: the default
+ * outfit as loaded wardrobe rows, with the viewpoint supplied by the lane.
+ */
+export type StandaloneLaneCutInput = Omit<StandaloneSubjectCutInput, "worn" | "camera" | "cameraId" | "intimateAllowed"> & {
+  readonly wardrobe: ReadonlyArray<AvatarWardrobeItem>;
+};
+
+/** A lane's fixed studio viewpoint. */
+export interface StandaloneLaneViewpoint {
+  readonly camera: SceneCameraSpec;
+  readonly cameraId: string;
+}
+
+export interface StandaloneSubjectVisualInput extends StandaloneSubjectCutInput {
   /**
-   * `apparentAgeAnchor` over the resolved attributes — empty for the minor and
-   * unknown bands. Derived here rather than per lane so the two lanes that
-   * state age (avatar, variant) cannot word it differently.
+   * The character's display name. Unread since #251 retired the lane-side
+   * age-anchor sentence; the staged bench still supplies it, and it leaves
+   * with the retained segment pass.
    */
-  readonly ageAnchor: string;
+  readonly name: string;
+  readonly policy: VisualSegmentTaskPolicy;
+  /** Attribute ids this lane's curated policy withholds from the clause pass. */
+  readonly omitAttributeIds?: ReadonlySet<string>;
+}
+
+export interface StandaloneSubjectVisual extends StandaloneSubjectCut {
+  /** The retained clause pass over the cut — see the module header. */
+  readonly subject: VisualSubjectSegmentsBuild;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,20 +258,18 @@ export interface StandaloneSubjectVisual {
 // ---------------------------------------------------------------------------
 
 /**
- * Build one standalone character's visual cut and its subject segments.
+ * Build one standalone character's visual cut.
  *
  * ONE snapshot, ONE camera-bound selection pass, one digest realized from that
  * exact selection — never a re-select, which would fingerprint a camera nobody
  * selected under (`image-digest.ts` §Reuse the selection).
  */
-export function buildStandaloneSubjectVisual(input: StandaloneSubjectVisualInput): StandaloneSubjectVisual {
+export function buildStandaloneSubjectCut(input: StandaloneSubjectCutInput): StandaloneSubjectCut {
   const { profile, sink } = input;
-  // The canonical exposure readout, computed ONCE over the FULL wardrobe
-  // (before any lane's waist-up garment filter): a covering garment still hides
-  // its region even when it is dropped from the visible outfit. A FAILED
-  // wardrobe load — or one whose coverage columns could not be parsed — is
-  // unknown state, not a bare body: coverage degrades to fully covered so the
-  // prompt stays silent about exposure (silence IS covered in the builder's
+  // The canonical exposure readout, computed ONCE over the FULL wardrobe. A
+  // FAILED wardrobe load — or one whose coverage columns could not be parsed —
+  // is unknown state, not a bare body: coverage degrades to fully covered so
+  // the prompt stays silent about exposure (silence IS covered in the adapter's
   // contract) instead of asserting a nudity the saved outfit denies. ONE flag
   // drives the exposure readout AND the perception below, so the two halves
   // cannot disagree about what the camera may see.
@@ -299,27 +313,72 @@ export function buildStandaloneSubjectVisual(input: StandaloneSubjectVisualInput
     ...(sink === undefined ? {} : { sink }),
   });
 
-  const resolved = assembly.stableResolved;
-  const subject = buildVisualSubjectSegments({
-    digest: digestBuild.digest,
-    subjectId: input.characterId,
-    exposure,
-    policy: input.policy,
-    clause: visualFactClauseResolver({
-      attributes: resolved,
-      realizedBody: assembly.realizedBody,
-      ...(input.omitAttributeIds === undefined ? {} : { omitAttributeIds: input.omitAttributeIds }),
-    }),
-    ...(sink === undefined ? {} : { sink }),
-  });
-
   return {
-    subject,
     digest: digestBuild.digest,
     digestMeta: digestBuild.meta,
-    resolved,
+    resolved: assembly.stableResolved,
     realizedBody: assembly.realizedBody,
     exposure,
-    ageAnchor: apparentAgeAnchor(input.name, resolved),
   };
+}
+
+/**
+ * A standalone LANE's cut: the loaded wardrobe rows mapped to worn inputs, under
+ * the lane's own viewpoint. The digest never carries intimate anatomy for a
+ * standalone lane — the portrait studio is intimate-free by rule, and the
+ * variant lane edits from a reference that shows the body — so the consent
+ * gate is shut here for both.
+ */
+export function buildStandaloneLaneCut(
+  input: StandaloneLaneCutInput,
+  viewpoint: StandaloneLaneViewpoint,
+): StandaloneSubjectCut {
+  const { wardrobe, ...rest } = input;
+  return buildStandaloneSubjectCut({
+    ...rest,
+    worn: toWornInputs(wardrobe),
+    camera: viewpoint.camera,
+    cameraId: viewpoint.cameraId,
+    intimateAllowed: false,
+  });
+}
+
+/**
+ * The cut in the prompt program's subject vocabulary — the ONE mapping every
+ * standalone lane hands `buildCharacterPromptProgram`, so a lane cannot
+ * compile from a cut's exposure while stating another's attributes.
+ */
+export function standaloneSubjectPromptCut(
+  cut: StandaloneSubjectCut,
+  subject: { readonly subjectId: string; readonly name?: string },
+): CharacterPromptSubjectCut {
+  return {
+    subjectId: subject.subjectId,
+    ...(subject.name === undefined ? {} : { name: subject.name }),
+    digest: cut.digest,
+    attributes: cut.resolved,
+    exposure: cut.exposure,
+    realizedBody: cut.realizedBody,
+  };
+}
+
+/**
+ * The cut plus the retained clause pass — the staged bench's shape. Character
+ * lanes call {@link buildStandaloneSubjectCut} and never see `subject`.
+ */
+export function buildStandaloneSubjectVisual(input: StandaloneSubjectVisualInput): StandaloneSubjectVisual {
+  const cut = buildStandaloneSubjectCut(input);
+  const subject = buildVisualSubjectSegments({
+    digest: cut.digest,
+    subjectId: input.characterId,
+    exposure: cut.exposure,
+    policy: input.policy,
+    clause: visualFactClauseResolver({
+      attributes: cut.resolved,
+      realizedBody: cut.realizedBody,
+      ...(input.omitAttributeIds === undefined ? {} : { omitAttributeIds: input.omitAttributeIds }),
+    }),
+    ...(input.sink === undefined ? {} : { sink: input.sink }),
+  });
+  return { ...cut, subject };
 }
