@@ -23,6 +23,7 @@ import {
   type AttributeValue,
 } from "../attributes";
 import { bodyLocationRegistry } from "../body/locations";
+import type { HairOcclusion } from "../items/hair-occlusion";
 import type { RegionExposure } from "../items/visibility";
 import type { RealizedBody } from "../species";
 import {
@@ -34,6 +35,12 @@ import {
   type VisualFramingBand,
   type VisualStateWardrobeValue,
 } from "../visual-state";
+import {
+  hairConcealmentFact,
+  isHairConcealed,
+  isHairVisualFact,
+  IMAGE_CHARACTER_HAIR_CONCEALED,
+} from "./hair-concealment";
 import { projectSubjectDigests, IMAGE_SUBJECT_VALUE_UNRESOLVED } from "./subject-digest";
 import {
   VISUAL_IMAGE_AGE_ATTRIBUTE_ID,
@@ -52,8 +59,8 @@ import { visualExposureReads } from "./visual-segments";
  * untouched. What it deliberately cannot do is SAY anything — appearance facts
  * arrive carrying their truth fingerprint instead of a value, exposure is not a
  * projected fact at all, and an authored amputation is opaque to it. This module
- * closes those four named gaps and nothing else; it CONSUMES the scaffold, it
- * does not replace it:
+ * closes those four named gaps, plus a fifth the scaffold cannot see, and
+ * nothing else; it CONSUMES the scaffold, it does not replace it:
  *
  * 1. **Apparent age** gets its canonical semantic path: the subject's
  *    `identity.apparent_age` attribute value, rendered through the owner-ruled
@@ -85,6 +92,12 @@ import { visualExposureReads } from "./visual-segments";
  *    their semantic members with every id stripped, instead of relying on the
  *    dialect's record-flattening fallback. A record with nothing readable left is
  *    suppressed — a fact nobody can value never reaches a payload.
+ * 5. **Hair the worn headwear fully hides** is selected truth the render may not
+ *    say. Visual state selects hair facts by camera visibility and knows nothing
+ *    of the hair-occlusion band the wardrobe seam resolved, so at `full` this
+ *    adapter withholds every hair fact as a designed suppression and states one
+ *    required `subject.hair_concealment` fact in their place
+ *    (`hair-concealment.ts`). `partial` and `none` change nothing.
  *
  * The standing rule holds throughout: a truth fingerprint is provenance, never
  * prompt semantics. This adapter resolves values from the OWNERS (the attribute
@@ -191,6 +204,13 @@ export interface CharacterSubjectSources {
   readonly anatomy?: readonly AnatomyPartState[];
   /** The canonical garment coverage readout for this subject. */
   readonly exposure: RegionExposure;
+  /**
+   * How much of this subject's hair their worn headwear hides — resolved once
+   * at the lane's wardrobe seam and carried here beside `exposure`
+   * (docs/contracts/items/README.md §Hair occlusion). Absent reads `none`: bad
+   * or missing data shows hair rather than erasing it.
+   */
+  readonly hairOcclusion?: HairOcclusion;
   /** When present, body-inapplicable attributes resolve to nothing rather than stale words. */
   readonly realizedBody?: RealizedBody;
 }
@@ -507,6 +527,18 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     const sources = input.sources[slice.entityId];
     const digestSubject = digestSubjectById.get(slice.entityId);
 
+    // --- gap 5: hair the headwear fully hides is not visual truth ------------
+    // Decided from the resolved band the lane carried beside its coverage
+    // readout, never from a garment name: at `full` every selected hair fact is
+    // withheld as a designed suppression, and one required fact states the
+    // concealment in their place (`hair-concealment.ts`). A withheld hair fact
+    // is not a lost anchor either — it leaves `missingRequired` below.
+    const hairConcealed = sources !== undefined && isHairConcealed(sources.hairOcclusion ?? "none");
+    const concealedHair = (key: string): boolean => {
+      const source = sourceFactByKey.get(key);
+      return hairConcealed && source !== undefined && isHairVisualFact(source);
+    };
+
     // --- gaps 3 and 4: re-file authored absences, resolve prompt-ready values --
     const facts: ImageWorldFact[] = [];
     const unreadableRequired: string[] = [];
@@ -514,6 +546,10 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
       const source = sourceFactByKey.get(fact.key);
       if (source === undefined) {
         facts.push(fact);
+        continue;
+      }
+      if (concealedHair(fact.key)) {
+        suppressions.push({ key: fact.key, owner: fact.source.owner, reason: IMAGE_CHARACTER_HAIR_CONCEALED });
         continue;
       }
       let next = fact;
@@ -541,7 +577,8 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
       facts.push(ready.kind === "value" ? { ...next, value: ready.value } : next);
     }
 
-    let missingRequired = [...slice.missingRequired, ...unreadableRequired];
+    let missingRequired = [...slice.missingRequired, ...unreadableRequired].filter((key) => !concealedHair(key));
+    if (hairConcealed) facts.push(hairConcealmentFact(slice.ref, slice.entityId));
 
     // --- gap 1: the apparent-age anchor ---------------------------------------
     const ref = slice.ref;

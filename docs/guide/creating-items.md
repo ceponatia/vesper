@@ -6,7 +6,7 @@ The editor's **← Items** link takes you back to the library exactly as you lef
 
 ## ✦ Draft from description
 
-Write a name and/or description, press **✦ Draft from description** (editor header), and the model proposes the rest of the structured record: category, layer, wearer, color + shade, opacity, **coverage including carve-outs** (a peep-toe sandal comes back as the foot minus toes), and the three sensory lines (appearance / scent / tactile). It fills **empty fields only** — anything you set stays — and the result lands **unsaved** in the form, so the Save bar is the review step (same discipline as the character Forge). Proposals are grounded server-side against the registries: an unknown category or a bogus body location is dropped, never written. A **Duplicate** button next to Delete copies the item for near-variants ("same top in three colors").
+Write a name and/or description, press **✦ Draft from description** (editor header), and the model proposes the rest of the structured record: category, layer, wearer, color + shade, opacity, **coverage including carve-outs** (a peep-toe sandal comes back as the foot minus toes), a headwear **hair occlusion** override when the description clearly departs from the type's default (a headscarf "with the fringe out", a helmet "fully enclosing the hair"), and the three sensory lines (appearance / scent / tactile). It fills **empty fields only** — anything you set stays — and the result lands **unsaved** in the form, so the Save bar is the review step (same discipline as the character Forge). Proposals are grounded server-side against the registries: an unknown category or a bogus body location is dropped, never written. A **Duplicate** button next to Delete copies the item for near-variants ("same top in three colors").
 
 ## Clothing
 
@@ -19,6 +19,8 @@ Write a name and/or description, press **✦ Draft from description** (editor he
 ## Jewelry, headwear & eyewear
 
 Picking one of these categories reveals a **Type** select (nose ring, choker, tiara, blindfold, …). Set it — the type is what the portrait/scene image models and the narrator lead with ("nose ring: thin gold hoop"), which lands far more reliably than a bare item name. Picking a type also pre-fills coverage (a lip ring anchors to the new **lips** slot under Face, a nose stud to **nose**), and the **Organize** pass fills missing types on old accessories.
+
+Headwear adds a **Hair occlusion** select: how much of the wearer's hair the piece hides — **None** (hair fully visible), **Partial** (some hair hidden) or **Full** (no hair visible). Every type has a sensible default (a hat is partial, a hijab is full, a tiara is none) and **Use type default** shows which one applies; pick a band only when this particular piece differs — a headscarf worn with the fringe out is partial, a helmet that fully encloses the hair is full. Portraits, scene images and the narrator all read it; coverage is unaffected. The choice only applies to headwear and clears if you change the category.
 
 ## Objects
 

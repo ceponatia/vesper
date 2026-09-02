@@ -38,6 +38,13 @@ remains the whole match for garments outside the registry.
 Free text is wardrobe too: how prose resolves to coverage rows is
 [garment-nouns.md](garment-nouns.md).
 
+## Hair occlusion is not coverage
+
+How much hair worn headwear hides is a separate band (`none` · `partial` · `full`), resolved
+once per subject and carried with the wardrobe data rather than read from coverage — a cap and a
+hijab both cover `hair`. [README.md](README.md) §Hair occlusion owns it; nothing in the
+visibility rule or the effective-coverage read consults it.
+
 ## Effective coverage — the final read
 
 The visibility rule answers "which garment does the eye reach here". A second, finer question —

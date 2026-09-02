@@ -209,6 +209,8 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           ...(scenario
             ? { garmentKey: chatGarmentLookKey(scenario.garments, [actor], scenario.clockMinutes) }
             : {}),
+          // Must match the look-mint job's key term for term, or the two gates disagree.
+          hairOcclusion: wardrobe.hairOcclusion,
         });
         const garmentNotes =
           scenario && chatGarmentCuesEnabled()
@@ -235,6 +237,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
             outfit: wardrobe.garments,
             outfitExposed: wardrobe.exposed,
             exposure: wardrobe.exposure,
+            hairOcclusion: wardrobe.hairOcclusion,
             garmentNotes,
             meters: state.meters,
             conditions: state.conditions,

@@ -11,9 +11,11 @@ import {
   overlayGarmentReads,
   overlayWornInputs,
   resolveGarmentBlueprint,
+  resolveHairOcclusion,
   resolveOutfitPreset,
   resolveWardrobeVisibility,
   wornGarmentInstances,
+  HAIR_OCCLUSION_NONE,
   type ChatGarmentStore,
   type ChatPlayerState,
   type CharacterProfile,
@@ -21,6 +23,7 @@ import {
   type GarmentBlueprint,
   type GarmentDescriptor,
   type GarmentInstanceState,
+  type HairOcclusion,
   type PersonaProfile,
   type RegionCoverage,
   type RegionExposure,
@@ -127,8 +130,15 @@ export async function loadChatWardrobe(
  * has subtracted whatever a rolled sleeve or open placket takes away (OQ6) — and
  * the library DEFINITION owns phrasing plus the layer/opacity semantics the
  * occlusion pass has always used. A garment whose library row is gone still reads
- * (its name and blueprint were snapshotted at mint time), it simply drops out of
- * the definition-id look key.
+ * (its name, blueprint and hair-occlusion band were snapshotted at mint time), it
+ * simply drops out of the definition-id look key.
+ *
+ * The band is the one field with two sources, and the choice is by PRESENCE of
+ * the definition, never a `??` chain: a live definition's band is authoritative
+ * even when it is absent (= `none`), so an item-editor override that cleared a
+ * hijab's band cannot be undone by the instance's stale `full`; only an orphan
+ * reads its snapshot. An orphan minted before the snapshot existed carries none
+ * and reads `none` — unknown resolves toward showing hair.
  */
 export function garmentWardrobeItem(
   instance: GarmentInstanceState,
@@ -136,10 +146,12 @@ export function garmentWardrobeItem(
   definition: AvatarWardrobeItem | undefined,
 ): AvatarWardrobeItem {
   const effective = garmentEffectiveCoverage(instance, blueprint);
+  const hairOcclusion = definition !== undefined ? definition.hairOcclusion : instance.hairOcclusion;
   return {
     ...(definition ?? { name: instance.name, coverage: [] }),
     garmentId: instance.id,
     name: definition?.name ?? instance.name,
+    ...(hairOcclusion === undefined || hairOcclusion === HAIR_OCCLUSION_NONE ? {} : { hairOcclusion }),
     coverage: effective.covers,
     parts: effective.parts.map((part) => ({
       partId: part.partId,
@@ -214,6 +226,14 @@ export interface ResolvedChatWardrobe {
   exposure: RegionExposure;
   /** "Intimate areas bared" — the prompt tone-steer + legacy look-key flag (coverage-accurate). */
   exposed: boolean;
+  /**
+   * How much of this actor's hair their WORN headwear hides — the strongest
+   * band over the worn rows (`resolveHairOcclusion`, docs/contracts/items/README.md
+   * §Hair occlusion), resolved ONCE here so the image prompt, the narrator
+   * prompt and the hair-affordance read all carry one answer. `none` on the
+   * free-text path: an unread wardrobe hides nothing it can name.
+   */
+  hairOcclusion: HairOcclusion;
   /** The worn item ids (structured path) — the look-key fingerprint. */
   wornItemIds: string[];
   /** The free-text overlay/fallback carried alongside (look-key input). */
@@ -254,6 +274,11 @@ export interface ResolvedChatWardrobe {
    * skipping it would park the look forever.
    */
   unreliable?: boolean;
+}
+
+/** The resolved hair-occlusion band over the shared worn inputs — every row is worn by construction. */
+function hairOcclusionOf(worn: readonly WornItemInput[]): HairOcclusion {
+  return resolveHairOcclusion(worn.map((row) => ({ worn: true, hairOcclusion: row.hairOcclusion })));
 }
 
 /** Per-row occlusion from the shared worn inputs (one pass, reused by exposure). */
@@ -391,6 +416,8 @@ export async function resolveChatWardrobe(
       garments,
       exposure,
       exposed: intimateRegionsBare(exposure),
+      // Independent of coverage, so an unreliable coverage column still answers it.
+      hairOcclusion: hairOcclusionOf(worn),
       // Only the ids that actually resolved key the look (a deleted item drops out).
       wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
       overlay,
@@ -437,6 +464,7 @@ export async function resolveChatWardrobe(
     garments: healed,
     exposure,
     exposed,
+    hairOcclusion: HAIR_OCCLUSION_NONE,
     wornItemIds: [],
     overlay: healed,
     partVisibility: {},
@@ -473,6 +501,8 @@ export interface ResolvedPlayerWardrobe {
    * the overlay text names (there is no manual flag to fake it).
    */
   exposure: RegionExposure;
+  /** The character twin's band, same source and same law (see `ResolvedChatWardrobe.hairOcclusion`). */
+  hairOcclusion: HairOcclusion;
   /** The ids that actually resolved — a deleted item drops out. */
   wornItemIds: string[];
   overlay: string;
@@ -563,6 +593,7 @@ export async function resolvePlayerWardrobe(
       // Same precedence as the character's free-text path: stripped wins, then the
       // overlay's own garment nouns speak per region, then the covered default.
       exposure: strippedAfterSeeding ? exposedRegions([]) : (overlayExposure ?? FULLY_COVERED),
+      hairOcclusion: HAIR_OCCLUSION_NONE,
       wornItemIds: [],
       overlay,
       partVisibility: {},
@@ -589,6 +620,7 @@ export async function resolvePlayerWardrobe(
     // Overlay nouns add coverage here too — the persona twin of the character's
     // union, and the reason a described robe can no longer be seen through.
     exposure: coverageUnreliable ? FULLY_COVERED : exposedRegions([...worn, ...overlayWornInputs(overlay)]),
+    hairOcclusion: hairOcclusionOf(worn),
     wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
     overlay,
     partVisibility: partVisibilityOf(worn),

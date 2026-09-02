@@ -1529,7 +1529,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // Absent on the free-text wardrobe path — unknown coverage fails closed.
       ...(wardrobe.worn === undefined
         ? {}
-        : { wardrobe: { worn: wardrobe.worn, partVisibility: wardrobe.partVisibility } }),
+        : {
+            wardrobe: {
+              worn: wardrobe.worn,
+              partVisibility: wardrobe.partVisibility,
+              hairOcclusion: wardrobe.hairOcclusion,
+            },
+          }),
       // The garment domain (slice 6) reads the SAME store the wardrobe rows
       // and the garment cue block were resolved from — one cut, three
       // consumers — and is simply not run when this actor is unmodelled.
@@ -3711,6 +3717,8 @@ function promptStateSlice(
     surfacedCues: state.surfacedCues,
     outfit: wardrobe.garments,
     outfitExposed: wardrobe.exposed,
+    // The resolved hair-occlusion band, from the same resolve as the phrase.
+    hairOcclusion: wardrobe.hairOcclusion,
     activeSocialCards: scenario.activeSocialCards,
     attributeOverlays: state.attributeOverlays,
     // Persisted narrative trait overlays — resolved into the
@@ -3826,7 +3834,13 @@ function previewAffordanceRead(input: {
     conditions: cut.state.conditions,
     ...(cut.wardrobe?.worn === undefined
       ? {}
-      : { wardrobe: { worn: cut.wardrobe.worn, partVisibility: cut.wardrobe.partVisibility } }),
+      : {
+          wardrobe: {
+            worn: cut.wardrobe.worn,
+            partVisibility: cut.wardrobe.partVisibility,
+            hairOcclusion: cut.wardrobe.hairOcclusion,
+          },
+        }),
     garments: cut.scenario.garments,
     garmentActorId: garmentActorForCharacter(input.characterId),
     bodySurface: cut.state.bodySurface,

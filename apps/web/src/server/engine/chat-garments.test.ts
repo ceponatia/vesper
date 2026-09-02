@@ -300,6 +300,47 @@ describe("syncChatGarments over a degraded definition load", () => {
     expectDiagnostic(sink, "chat_garments.definition_load_failed");
   });
 
+  it("snapshots each definition's resolved hair-occlusion band onto the minted instance", async () => {
+    // The orphan read (`garmentWardrobeItem`) has only this snapshot once the
+    // library row is deleted; a seed built without it would mint a hijab that
+    // shows hair the moment its row goes. Subtype default and item override
+    // both land because the loader resolves `hairOcclusionForItem` first.
+    const headwear = (id: string, extras: Record<string, unknown>) => ({
+      id,
+      name: id,
+      description: null,
+      definition: { coverage: ["hair"], category: "headwear", ...extras },
+      updatedAt: new Date(0),
+    });
+    vi.mocked(db).mockImplementationOnce(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({
+              where: () =>
+                Promise.resolve([
+                  headwear("def_hijab", { subtype: "hijab" }),
+                  headwear("def_helmet", { subtype: "helmet", hairOcclusion: "full" }),
+                  headwear("def_band", { subtype: "headband" }),
+                ]),
+            }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+    const store = await syncChatGarments({
+      store: emptyChatGarmentStore(),
+      ownerId: "owner",
+      actors: [{ actorId: ACTOR, wornItemIds: ["def_hijab", "def_helmet", "def_band"] }],
+      atMinutes: 0,
+      sink: new DiagnosticCollector(),
+    });
+    expect(wornGarmentInstances(store, ACTOR).map((worn) => [worn.definitionId, worn.hairOcclusion])).toEqual([
+      ["def_hijab", "full"],
+      ["def_helmet", "full"],
+      ["def_band", undefined],
+    ]);
+  });
+
   it("still mints the unresolved instance for a genuinely deleted definition", async () => {
     vi.mocked(db).mockImplementationOnce(
       () =>

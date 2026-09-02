@@ -104,6 +104,17 @@ segment vocabulary protects `identity`, `morphology`, `age`, `wardrobe` and
 into one — an item's authored description filed under `identity` would be a
 paragraph no budget squeeze could ever remove.
 
+The converse also holds: a concept whose every claim is `required_visual` may be
+filed into a protected kind when that is where its words belong.
+`subject.hair_concealment` — the subject's hair is fully hidden by their worn
+headwear, stated in place of the authored hair facts the character projection
+withheld ([character-prompts.md](character-prompts.md) §Hair the headwear
+conceals) — is filed into `wardrobe`: it is a consequence of a worn garment, it
+lands beside the headwear that causes it rather than a band earlier among
+appearance detail, and it must be unfittable, because a squeeze that dropped it
+while the authored hair stayed withheld would leave the render free to paint any
+hair at all. It is not `identity`: hidden hair is not who the person is.
+
 ## Scene semantics
 
 A chat scene is planned in the application and compiled here, so the two need a

@@ -71,7 +71,9 @@ with `images.chat_look.program_unbound`, naming the row to add. What a successfu
 `characterPromptTransport(compiled)`: the compiled prompt plus the compiled exclusions on the
 normalized `controls.negativePrompt`.
 
-`chatLookKey` is outfit + exposed + appearance overlays, keep-latest **per character** — the
+`chatLookKey` is outfit + exposed + appearance overlays + the resolved hair-occlusion band (a
+`partial` or `full` band adds a term; `none` keys exactly as a chat with no band), keep-latest
+**per character** — the
 loader, the freshness check and the purge all scope on `entityId`, because a chat-wide read
 hands one roster member's look to another and a chat-wide purge makes two cast members evict
 each other's anchor on every mint. Scenes and selfies anchor on a fresh look instead of the

@@ -800,4 +800,32 @@ describe("the presentation-aware wardrobe read", () => {
   it("carries the worn definition id through, so the look key still resolves", () => {
     expect(itemsOf(dressed()).map((item) => item.id)).toEqual(["def_shirt", "def_tee"]);
   });
+
+  it("carries the definition's hair-occlusion band onto every per-part row of a worn instance", () => {
+    // The chat resolve reads the band off these rows; an instance read that
+    // lost the definition's band, or a per-part expansion that dropped it,
+    // would read a worn hijab as showing hair.
+    const HIJAB_DEF: AvatarWardrobeItem = { ...definition("def_hijab", "hijab", ["hair", "ears"], 2), hairOcclusion: "full" };
+    const blueprint = blueprintFor(HIJAB_DEF, "headwear");
+    const rows = toWornInputs([garmentWardrobeItem(instance("g_hijab", blueprint, "def_hijab"), blueprint, HIJAB_DEF)]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.hairOcclusion === "full")).toBe(true);
+  });
+
+  it("an orphaned instance reads its mint-time band, and a live definition's band beats it", () => {
+    // Falsified against the definition-less fallback `{ name, coverage: [] }`:
+    // a worn hijab whose library row was deleted kept its phrase and coverage
+    // but read `none`, showing hair to the narrator, the image and the
+    // affordance read. The other arm guards the item editor: a live definition
+    // whose band was cleared to `none` must not be overruled by the instance's
+    // stale `full` — presence of the definition decides, never a `??` chain.
+    const HIJAB_DEF = definition("def_hijab", "hijab", ["hair", "ears"], 2);
+    const blueprint = blueprintFor(HIJAB_DEF, "headwear");
+    const minted: GarmentInstanceState = { ...instance("g_hijab", blueprint, "def_hijab"), hairOcclusion: "full" };
+    const orphaned = toWornInputs([garmentWardrobeItem(minted, blueprint, undefined)]);
+    expect(orphaned.length).toBeGreaterThan(0);
+    expect(orphaned.every((row) => row.hairOcclusion === "full")).toBe(true);
+    const live = toWornInputs([garmentWardrobeItem(minted, blueprint, HIJAB_DEF)]);
+    expect(live.every((row) => row.hairOcclusion === undefined)).toBe(true);
+  });
 });

@@ -3,9 +3,11 @@ import {
   conditionAttributeOverlays,
   exposedRegions,
   FULLY_COVERED,
+  HAIR_OCCLUSION_NONE,
   realizeBody,
   resolveAttributes,
   type AttributeValue,
+  type HairOcclusion,
   type RealizedBody,
   type RegionExposure,
   type SceneCameraSpec,
@@ -70,7 +72,8 @@ import { renderAttemptMeta, renderImageIntent } from "./render-intent";
  * The look cache key (chat-wardrobe-parity — new key shape, ruled): sorted structured
  * worn item ids + the free-text overlay + a coverage-computed exposure fingerprint +
  * appearance-relevant narrative overlays (a haircut invalidates the look like a change
- * of clothes). Structured worn state replaces the old free-text `outfit` string; a
+ * of clothes) + the garment fingerprint and the hair-occlusion band, each appended only
+ * when it says something. Structured worn state replaces the old free-text `outfit` string; a
  * legacy/free-text chat (empty worn list) keys on the overlay alone, so its key stays
  * stable across the change. PURE and order-stable.
  *
@@ -94,6 +97,22 @@ export function chatLookKey(input: {
    * and no cached look invalidates on this change alone.
    */
   garmentKey?: string;
+  /**
+   * The wardrobe resolve's hair-occlusion band (`resolveChatWardrobe`), the same
+   * value the mint's cut renders from. The band is an item-level override, so
+   * a headwear edit from `none` to `full` moves the render input while the worn
+   * id list, the exposure fingerprint and the garment fingerprint all stay put —
+   * without this term `latestChatLook` reads the old visible-hair anchor as
+   * fresh and every later scene composes from it.
+   *
+   * Appended only for a covering band (`partial` or `full`): `none` and absent
+   * hash byte-identically to the key before the band existed, so no uncovered
+   * chat's cached look invalidates on this change alone, while a covered-hair
+   * chat's pre-band anchor (minted with hair showing) misses and re-mints. This
+   * is the key gate only — the enqueue is its own gate (`chat-state.ts`), and a
+   * band change that never fires the enqueue cannot be fixed here.
+   */
+  hairOcclusion?: HairOcclusion;
 }): string {
   const worn = [...input.wornItemIds].sort().join(",");
   const { torso, pelvis, legs, feet } = input.exposure;
@@ -103,7 +122,11 @@ export function chatLookKey(input: {
     .sort()
     .join(";");
   const garments = input.garmentKey?.trim() ? `|${input.garmentKey.trim()}` : "";
-  return fnv1aHex(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
+  const hair =
+    input.hairOcclusion === undefined || input.hairOcclusion === HAIR_OCCLUSION_NONE
+      ? ""
+      : `|hair=${input.hairOcclusion}`;
+  return fnv1aHex(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}${hair}`);
 }
 
 /** True when this conversation has ever rendered an image (the ruled mint gate). */
@@ -195,6 +218,8 @@ export interface ChatLookCut {
   readonly realizedBody: RealizedBody;
   /** The canonical coverage readout the exposure claims are made over. */
   readonly exposure: RegionExposure;
+  /** How much of the subject's hair their worn headwear hides (the wardrobe seam's resolved band). */
+  readonly hairOcclusion: HairOcclusion;
   /** The `meta.visualState` fragment the row records at reserve time. */
   readonly digestMeta: Record<string, unknown>;
 }
@@ -207,6 +232,8 @@ export interface ChatLookCutInput {
    * scene lane's own default for a member with no resolved readout.
    */
   readonly exposure?: RegionExposure;
+  /** The same resolve's hair-occlusion band; absent (no resolved wardrobe) reads `none`. */
+  readonly hairOcclusion?: HairOcclusion;
   /** True when the resolved wardrobe positively says the body is exposed. */
   readonly outfitExposed: boolean;
   readonly sink?: DiagnosticSink;
@@ -267,6 +294,7 @@ export function buildChatLookCut(input: ChatLookCutInput): ChatLookCut | null {
     attributes,
     realizedBody: realizeBody(cut.realize ?? {}),
     exposure: input.exposure ?? (input.outfitExposed ? exposedRegions([]) : FULLY_COVERED),
+    hairOcclusion: input.hairOcclusion ?? HAIR_OCCLUSION_NONE,
     digestMeta: realized.meta,
   };
 }
@@ -299,6 +327,8 @@ export interface RenderChatLookInput {
    * reads and its cache key can never disagree.
    */
   exposure?: RegionExposure;
+  /** The same resolve's hair-occlusion band, carried with `exposure`. */
+  hairOcclusion?: HairOcclusion;
   sink?: DiagnosticSink;
 }
 
@@ -366,6 +396,7 @@ function activeChatLookProgram(
         digest: cut.digest,
         attributes: cut.attributes,
         exposure: cut.exposure,
+        hairOcclusion: cut.hairOcclusion,
         realizedBody: cut.realizedBody,
       },
     ],
@@ -448,6 +479,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
       cut: input.visual,
       outfitExposed: input.outfitExposed,
       ...(input.exposure === undefined ? {} : { exposure: input.exposure }),
+      ...(input.hairOcclusion === undefined ? {} : { hairOcclusion: input.hairOcclusion }),
       sink,
     });
     if (cut === null) return null;

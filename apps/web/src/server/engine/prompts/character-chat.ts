@@ -1,8 +1,10 @@
+import { HAIR_LOCATION_ID } from "@/contracts/affordances";
 import { attributeRegistry, promptValueWithNoneElided, type AttributeDefinition } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
+import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
 import { deriveMoodDescriptor, meterStateCue, splitStateCues } from "@/contracts/meters/registry";
 import {
   currentScenePlace,
@@ -162,6 +164,13 @@ export interface CharacterChatPromptInput {
     outfit?: string;
     /** Whether the outfit reads more exposed than usual (tone hint only). */
     outfitExposed?: boolean;
+    /**
+     * How much of the character's hair their worn headwear hides — the
+     * wardrobe seam's resolved band (`ResolvedChatWardrobe.hairOcclusion`,
+     * docs/contracts/items/README.md §Hair occlusion). Carried beside `outfit`
+     * so the prompt reads one answer with the wardrobe; absent means `none`.
+     */
+    hairOcclusion?: HairOcclusion;
     /**
      * The AUTHORITATIVE wardrobe digest (behind `CHAT_GARMENT_CUES`): who is
      * wearing what, how each piece currently sits, and
@@ -1027,6 +1036,43 @@ function buildMemorySection(memory: NonNullable<CharacterChatPromptInput["memory
 const humanize = (value: string): string => value.replaceAll("_", " ").trim();
 
 /**
+ * The resolved attributes the narrator may be handed, after the wardrobe's hair-occlusion
+ * band (`state.hairOcclusion`, docs/contracts/items/README.md §Hair occlusion; absent ⇒
+ * `none`). At `full` every attribute the registry anchors at the `hair` body location is
+ * withheld — colour, length, texture, density, condition, arrangement, styling — because
+ * hair nobody can see is not material the narrator may describe. `partial` and `none`
+ * pass the list through untouched: some hair is still visible, so its attributes are
+ * still true of what the player sees.
+ *
+ * The withheld set is the registry's own anchoring (`bodyLocationId`), keyed on the same
+ * `HAIR_LOCATION_ID` the affordance perception view hides at `full` — one definition of
+ * "the hair" for both consumers, so a hair attribute that lives under another category
+ * still follows the location, and an attribute that merely mentions hair in its phrase
+ * does not. Never a phrase or id-prefix match.
+ *
+ * This runs on the list BEFORE any block is built from it — the Attributes lines, their
+ * phrasing guidance, the transient condition overrides, the sensory-focus join — so
+ * nothing downstream has to cancel a line that should never have rendered. The prefix
+ * re-rendering when the band crosses into or out of `full` is the intended cache cost.
+ */
+function withholdHairAttributes(values: readonly AttributeValue[], band: HairOcclusion | undefined): readonly AttributeValue[] {
+  if (band !== "full") return values;
+  return values.filter((value) => attributeRegistry.byId(value.id)?.bodyLocationId !== HAIR_LOCATION_ID);
+}
+
+/**
+ * The binding line that accompanies the withheld hair at `full`, "" otherwise. Withholding
+ * alone would read as an unauthored gap the model is free to fill; this names the gap as
+ * a covered head and says the missing fields are not licence to invent. `opening` is the
+ * lane's own sentence naming the character (second person for the 1-on-1 prompt, third
+ * for an ensemble sheet); the withholding clause is shared so the two can never drift.
+ */
+function hairOcclusionConstraint(band: HairOcclusion | undefined, opening: string): string {
+  if (band !== "full") return "";
+  return `Covered hair (binding): ${opening} Hair colour, length, texture, and style are withheld on purpose; that is not licence to invent them — while the headwear stays on, describe it, never the hair beneath it.`;
+}
+
+/**
  * One resolved attribute → a `label: value` phrase, or null for empty/false. When the
  * definition authors a `narratorGuidance` gloss for the resolved enum member, it renders
  * as an inline parenthetical — `foot scent: cheesy (dense fermented funk…)` — so the
@@ -1761,8 +1807,12 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
   // grooming/scent/hair while active) resolve separately and surface as a volatile
   // tail block, so a condition coming or going never busts the cached prefix. Both
   // overlay sources are pre-guarded against rewriting inherent attributes (eye
-  // colour, species) at their write sites.
-  const stableResolved = resolveAttributes(profile.attributes, [...(input.state?.attributeOverlays ?? [])]);
+  // colour, species) at their write sites. Fully covered hair is withheld HERE, at
+  // the source every attribute block reads from (`withholdHairAttributes`).
+  const stableResolved = withholdHairAttributes(
+    resolveAttributes(profile.attributes, [...(input.state?.attributeOverlays ?? [])]),
+    input.state?.hairOcclusion,
+  );
   const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
   // The life-stage band a bare numeric age maps to: a hint on the identity line,
   // register rules as a binding block, and the minor
@@ -1899,6 +1949,16 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
       attributeLines.length
         ? `Attributes (who you are, and what ${playerName ?? "the user"} sees of you — express and show these naturally, never list them):\n${attributeLines.join("\n")}`
         : "",
+    ),
+    // Beside the Attributes it explains, in the prefix: the block above is already
+    // keyed on the hair-occlusion band, so this line changes the prefix only when
+    // that block already has.
+    context(
+      "hair_occlusion_constraint",
+      hairOcclusionConstraint(
+        input.state?.hairOcclusion,
+        `${displayName}, your hair is completely covered by your headwear — none of it is visible to ${playerName ?? "the user"}.`,
+      ),
     ),
     context("phrasing_guidance", hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : ""),
     context("sensory_cues", buildSensorySection(cues, displayName)),
@@ -2159,10 +2219,12 @@ function buildTransientAppearanceSection(
 ): string {
   const conditionOverlays = conditionAttributeOverlays(input.state?.conditions ?? []);
   if (!conditionOverlays.length) return "";
-  const fullResolved = resolveAttributes(input.profile.attributes, [
-    ...(input.state?.attributeOverlays ?? []),
-    ...conditionOverlays,
-  ]);
+  // Same withholding as the prefix's stable resolve: a condition shifting covered hair
+  // has nothing visible to override.
+  const fullResolved = withholdHairAttributes(
+    resolveAttributes(input.profile.attributes, [...(input.state?.attributeOverlays ?? []), ...conditionOverlays]),
+    input.state?.hairOcclusion,
+  );
   const stableById = new Map(stableResolved.map((v) => [v.id, v]));
   const lines: string[] = [];
   for (const value of fullResolved) {
@@ -2631,6 +2693,12 @@ function ensembleMemberSheet(member: EnsembleMemberInput, player: string): strin
       : "",
     relationship,
     attributes.length ? `What ${player} sees of ${name} (express naturally, never list):\n${attributes.join("\n")}` : "",
+    // The ensemble builder renders no state section, so the covered-hair line lives
+    // in the sheet beside the attributes it explains.
+    hairOcclusionConstraint(
+      member.state?.hairOcclusion,
+      `${name}'s hair is completely covered by their headwear — none of it is visible.`,
+    ),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -2689,7 +2757,10 @@ function ensembleAttributeLines(member: EnsembleMemberInput): string[] {
     intimateRegions: profile.intimateRegions,
     bodyFeatures: profile.bodyFeatures,
   });
-  const resolved = resolveAttributes(profile.attributes, [...(member.state?.attributeOverlays ?? [])]);
+  const resolved = withholdHairAttributes(
+    resolveAttributes(profile.attributes, [...(member.state?.attributeOverlays ?? [])]),
+    member.state?.hairOcclusion,
+  );
   const lines: string[] = [];
   for (const value of resolved) {
     if (value.id === "identity.apparent_age") continue;
@@ -2751,10 +2822,10 @@ function ensembleMemberEnactment(member: EnsembleMemberInput): string {
       bodyFeatures: profile.bodyFeatures,
     });
     const stableResolved = resolveAttributes(profile.attributes, [...(member.state.attributeOverlays ?? [])]);
-    const fullResolved = resolveAttributes(profile.attributes, [
-      ...(member.state.attributeOverlays ?? []),
-      ...conditionOverlays,
-    ]);
+    const fullResolved = withholdHairAttributes(
+      resolveAttributes(profile.attributes, [...(member.state.attributeOverlays ?? []), ...conditionOverlays]),
+      member.state.hairOcclusion,
+    );
     const stableById = new Map(stableResolved.map((v) => [v.id, v]));
     const lines: string[] = [];
     for (const value of fullResolved) {

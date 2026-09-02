@@ -17,6 +17,9 @@ import {
   distanceSentence,
   faceVisibilityAnchor,
   faceVisibilitySentence,
+  hairConcealedForSubject,
+  hairConcealedInCast,
+  hairConcealmentSentence,
   framingSentence,
   heightSentence,
   label,
@@ -96,6 +99,17 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  */
 export const PROSE_FAMILY_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
+
+/**
+ * The same lock with the hair clause removed — the spelling a render takes
+ * when somebody in the cast wears headwear that fully hides their hair
+ * (`hairConcealedInCast`). "Preserve hair color and style" against a reference
+ * whose hair is visible is the instruction to paint that hair back over the
+ * hijab; every other cue stays exactly as the measured lock states it. One
+ * sentence for the whole cast, so one covered person drops the clause for all.
+ */
+export const PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED =
+  "Generate a new image of the exact same person shown in the reference image. Preserve face, skin tone, body proportions, and apparent age.";
 
 /**
  * The cast-integrity clause, emitted only when two or more identity references
@@ -355,11 +369,14 @@ function renderClaim(
         if (!state.lockEmitted) {
           state.lockEmitted = true;
           const cast = identityReferenceCount(input) >= 2 ? ` ${PROSE_FAMILY_CAST_INTEGRITY}` : "";
+          // Hidden hair is the one thing the reference may not restore: the
+          // lock drops its hair clause when any cast member is at `full`.
+          const lock = hairConcealedInCast(input) ? PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED : PROSE_FAMILY_IDENTITY_LOCK;
           // Bypasses `sentence()` so nothing renormalizes a character of the
           // frozen wording.
           return {
             kind: claim.segmentKind,
-            text: `${PROSE_FAMILY_IDENTITY_LOCK}${cast}`,
+            text: `${lock}${cast}`,
             mandatory: true,
             priority: IDENTITY_LOCK_PRIORITY,
           };
@@ -380,7 +397,12 @@ function renderClaim(
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
       return say(
-        faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)),
+        faceVisibilitySentence(
+          visibility,
+          subject,
+          faceVisibilityAnchor(input, claim),
+          hairConcealedForSubject(input, claim.subjectRef),
+        ),
         FACE_VISIBILITY_PRIORITY,
       );
     }
@@ -411,6 +433,8 @@ function renderClaim(
       return say(prefixed(subject, `is ${value}`));
     case "subject.wardrobe":
       return say(prefixed(subject, `wears ${value}`));
+    case "subject.hair_concealment":
+      return say(hairConcealmentSentence(subject));
     case "subject.exposure":
       return say(prefixed(subject, `is ${value}`));
 

@@ -11,7 +11,7 @@ The **world snapshot** is the frozen picture of what one render is allowed to kn
 It can include:
 
 - character visual facts;
-- current wardrobe and body coverage;
+- current wardrobe and body coverage, including whether the worn headwear fully hides the hair;
 - current location facts;
 - item facts;
 - relationships such as “Mira holds the umbrella”;

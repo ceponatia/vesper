@@ -382,6 +382,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     digest: slice.digest,
     attributes: slice.attributes,
     exposure: slice.exposure,
+    hairOcclusion: slice.hairOcclusion,
     realizedBody: slice.realizedBody,
   }));
   // The committed cut this render was asked over — the staleness check's whole

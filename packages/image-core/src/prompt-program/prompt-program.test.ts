@@ -17,6 +17,8 @@ import {
   imagePromptDialect,
   lintImagePromptCollisions,
   parseImagePromptProgramProvenance,
+  PROSE_FAMILY_IDENTITY_LOCK,
+  PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED,
   qwenImage2512Bindings,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
@@ -1303,5 +1305,103 @@ describe("the viewer's own body in a compiled prompt", () => {
     if (!invented.ok) throw new Error(`unexpected refusal: ${invented.refusal.code}`);
     expect(invented.compiled.positiveText).not.toContain("in the viewer's immediate foreground");
     expect(invented.compiled.droppedClaimIds).toContain("viewer.body_geometry");
+  });
+});
+
+/**
+ * HAIR THE HEADWEAR FULLY HIDES, per dialect family.
+ *
+ * `subject.hair_concealment` replaces every authored hair fact for a subject at
+ * the `full` hair-occlusion band, and it is the only sentence the render then
+ * has about hair — so a family that words it weakly, or drops it, leaves the
+ * model free to paint the hair the projection just withheld. Byte-pinned per
+ * family, because the meaning must be identical across endpoints while the
+ * register is each family's own, and no other gate reads these bytes.
+ */
+describe("hair the headwear fully hides", () => {
+  const concealedWorld = (): ImageWorldDigest =>
+    world({
+      subjects: [
+        entity("subject", "nyx", [
+          fact({
+            key: "nyx.hair_concealment",
+            concept: "subject.hair_concealment",
+            value: "hair fully covered by the headwear; no hair visible",
+            subjectRef: "nyx",
+            disposition: "required_visual",
+            priority: 0.99,
+          }),
+        ]),
+      ],
+    });
+
+  it.each([
+    ["seedream_45_prose", "Nyx's hair is fully covered by the headwear; no hair is visible."],
+    ["qwen_2511_delta_edit", "Nyx's hair is fully covered by the headwear; no hair is visible."],
+    ["qwen_2512_description", "Nyx's hair is fully covered by the headwear; no hair is visible."],
+    ["pony_compel_tags", "Nyx hair fully covered by headwear, no visible hair"],
+  ] as const)("%s states the concealment, and keeps it mandatory", (dialectId, wording) => {
+    const dialect = imagePromptDialect(dialectId);
+    if (dialect === null) throw new Error(`${dialectId} is not registered`);
+    const compiled = dialect.compilePositive({
+      claims: selectImagePositiveClaims(concealedWorld()),
+      operation: operation(),
+      references: [],
+      entityLabels: { nyx: "Nyx" },
+      budget: {},
+    });
+    expect(compiled.text).toContain(wording);
+    // The value never reaches the payload as itself: the fact carries a neutral
+    // descriptor and each family owns its sentence.
+    expect(compiled.text).not.toContain("no hair visible");
+    const segment = compiled.segments.find((entry) => entry.text.includes(wording));
+    expect(segment?.mandatory).toBe(true);
+    expect(segment?.kind).toBe("wardrobe");
+  });
+
+  /** A reference-anchored subject, with or without the concealment claim beside their identity. */
+  const anchoredWorld = (concealed: boolean): ImageWorldDigest =>
+    world({
+      subjects: [
+        entity("subject", "nyx", [
+          fact({ key: "nyx.identity", concept: "subject.identity", value: "the same person shown in the reference image", subjectRef: "nyx", disposition: "required_visual", priority: 1 }),
+          fact({ key: "nyx.face_visibility", concept: "subject.face_visibility", value: "hidden", subjectRef: "nyx", disposition: "required_visual", priority: 0.99 }),
+          ...(concealed
+            ? [fact({ key: "nyx.hair_concealment", concept: "subject.hair_concealment", value: "hair fully covered", subjectRef: "nyx", disposition: "required_visual", priority: 0.99 })]
+            : []),
+        ]),
+      ],
+    });
+
+  const anchoredText = (dialectId: string, concealed: boolean): string => {
+    const dialect = imagePromptDialect(dialectId);
+    if (dialect === null) throw new Error(`${dialectId} is not registered`);
+    return dialect.compilePositive({
+      claims: selectImagePositiveClaims(anchoredWorld(concealed)),
+      operation: operation(),
+      references: [{ position: 1, role: "identity", subjectRef: "nyx" }],
+      entityLabels: { nyx: "Nyx" },
+      budget: {},
+    }).text;
+  };
+
+  /**
+   * The prose family's lock and the tag family's face-visibility phrase are
+   * this file's to pin — no application suite compiles either on a covered
+   * subject. The lock drops its hair clause and nothing else; the tag phrase
+   * drops "hair" from its preserved list and keeps the no-rotation half.
+   */
+  it("drops hair from the prose family's lock only when somebody's hair is covered", () => {
+    expect(anchoredText("seedream_45_prose", false)).toContain(PROSE_FAMILY_IDENTITY_LOCK);
+    const concealed = anchoredText("seedream_45_prose", true);
+    expect(concealed).toContain(PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED);
+    expect(concealed).not.toContain(PROSE_FAMILY_IDENTITY_LOCK);
+  });
+
+  it.each([
+    [false, "Nyx's face not visible, hair, build and skin tone preserved, do not rotate Nyx to face the camera"],
+    [true, "Nyx's face not visible, build and skin tone preserved, do not rotate Nyx to face the camera"],
+  ])("words the tag family's hidden-face preservation with hair concealed: %s", (concealed, phrase) => {
+    expect(anchoredText("pony_compel_tags", concealed)).toContain(phrase);
   });
 });

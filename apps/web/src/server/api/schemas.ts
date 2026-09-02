@@ -130,12 +130,27 @@ export const itemExtrasSchema = itemDefinitionSchema.pick({
   subtype: true,
   wearer: true,
   color: true,
+  hairOcclusion: true,
   layer: true,
   opacity: true,
   sensory: true,
   fields: true,
 });
 export type ItemExtras = z.infer<typeof itemExtrasSchema>;
+
+/**
+ * `hairOcclusion` is a headwear-only override (docs/contracts/items/README.md
+ * §Hair occlusion). On any other category it is stale — the item was
+ * re-categorized, or a body named it for a garment that has no hair to hide —
+ * so the save drops it rather than storing a value no loader reads. Applied
+ * to the MERGED extras on create and patch, after the category is known.
+ */
+export function withoutStaleHairOcclusion<T extends Pick<ItemExtras, "category" | "hairOcclusion">>(extras: T): T {
+  if (extras.hairOcclusion === undefined || extras.category === "headwear") return extras;
+  const kept = { ...extras };
+  delete kept.hairOcclusion;
+  return kept;
+}
 
 export function emptyItemExtras(): ItemExtras {
   return itemExtrasSchema.parse({});

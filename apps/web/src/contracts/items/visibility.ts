@@ -1,4 +1,5 @@
 import type { ClothingLayer } from "./item";
+import type { HairOcclusion } from "./hair-occlusion";
 import { bodyLocationRegistry, type BodyLocationRegistry } from "../body/locations";
 
 /**
@@ -22,6 +23,14 @@ export interface WornItemInput {
   coverage: readonly string[];
   layer: ClothingLayer;
   opacity: "opaque" | "sheer";
+  /**
+   * The garment's resolved HAIR OCCLUSION band (hair-occlusion.ts) — subtype
+   * default + item override, resolved once where the row was loaded. Carried
+   * so `resolveHairOcclusion` can run over the worn rows every consumer already
+   * reads; absent means `none`. Never consulted by the occlusion or coverage
+   * rules in this module.
+   */
+  hairOcclusion?: HairOcclusion;
 }
 
 /** One coverage-bearing part of a garment — the per-part row a presentation-aware caller supplies. */

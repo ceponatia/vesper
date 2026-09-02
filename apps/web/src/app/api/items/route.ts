@@ -14,6 +14,7 @@ import {
   readBody,
   searchLibraryIds,
   withUser,
+  withoutStaleHairOcclusion,
 } from "@/server/api";
 
 // Explicit list columns: the bare row carries the 1536-dim search embedding —
@@ -91,7 +92,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   }
   const [row] = await db()
     .insert(items)
-    .values({ ownerId: user.id, ...body.value })
+    .values({ ownerId: user.id, ...body.value, definition: withoutStaleHairOcclusion(body.value.definition) })
     .returning();
   if (!row) return jsonError("create_failed", "item insert returned no row", 500);
   queueEmbedRefresh("item", row.id);

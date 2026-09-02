@@ -57,7 +57,11 @@ A conversation holds up to **4 full characters**. A roster of one is byte-identi
   member's own group (addressed else most-recently-active present), gated on their ring
   and toned by their regard; **sensory focus** aims at the member the message studies;
   disinhibition + condition-driven transient appearance render **per present member** in
-  the ensemble tail. The `turn_context` layout stays 1-on-1-only.
+  the ensemble tail. A member at `full` hair occlusion has their hair attributes withheld
+  from their sheet and its transient overrides, and carries their own third-person
+  **Covered hair** line in the sheet — the ensemble prompt has no state section
+  ([prompts.md](prompts.md) §Character-chat state as a narration system). The
+  `turn_context` layout stays 1-on-1-only.
 - **Per-character sheets**: tapping a roster member opens THEIR Character
   sheet (axes/texture toward the player, meters, conditions, mind note, loops, outfit +
   exposure, presence toggle); the state routes take `?characterId=` targeting. The

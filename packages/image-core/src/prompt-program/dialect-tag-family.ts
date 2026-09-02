@@ -11,6 +11,7 @@ import type { ImageConflictKey, ImageStyleMedium } from "./conflict-keys";
 import {
   describe,
   describeChange,
+  hairConcealedForSubject,
   label,
   listWords,
   possessionOwners,
@@ -259,10 +260,13 @@ function renderClaim(
       // described likeness, and naming a reference the prompt cannot see the
       // contents of would be the claim this family has least business making.
       const who = subject ?? "the subject";
+      // Hair leaves the preserved list for a subject whose headwear fully hides
+      // it — the same one edit the prose sentence takes — and nothing else moves.
+      const hair = hairConcealedForSubject(input, claim.subjectRef) ? "" : "hair, ";
       const preserved =
         visibility === "partial"
-          ? `${who}'s face partly turned from the camera, visible features, hair, build and skin tone preserved`
-          : `${who}'s face not visible, hair, build and skin tone preserved`;
+          ? `${who}'s face partly turned from the camera, visible features, ${hair}build and skin tone preserved`
+          : `${who}'s face not visible, ${hair}build and skin tone preserved`;
       return say(`${preserved}, do not rotate ${who} to face the camera`, FACE_VISIBILITY_PRIORITY);
     }
     case "subject.apparent_age":
@@ -286,6 +290,8 @@ function renderClaim(
       return say(of(`${value} expression`));
     case "subject.wardrobe":
       return say(of(`wearing ${value}`));
+    case "subject.hair_concealment":
+      return say(of("hair fully covered by headwear, no visible hair"));
     case "subject.exposure":
       return say(of(value));
 

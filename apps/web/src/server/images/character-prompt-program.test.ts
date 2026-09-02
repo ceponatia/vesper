@@ -11,6 +11,7 @@ import {
 import {
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
@@ -18,7 +19,9 @@ import { expectDiagnostic } from "@/test/diagnostics";
 import {
   LANE_PROBE_NAME,
   LANE_PROBE_SUBJECT_ID,
+  laneProbeAvatarProgram,
   laneProbeVariantCut,
+  laneProbeWardrobe,
   resolvedImageProfileFixture,
 } from "@/server/test-support";
 import {
@@ -143,6 +146,7 @@ function programInput(over: Partial<CharacterPromptProgramInput> = {}): Characte
         digest: VARIANT_CUT.digest,
         attributes: VARIANT_CUT.resolved,
         exposure: VARIANT_CUT.exposure,
+        hairOcclusion: VARIANT_CUT.hairOcclusion,
         realizedBody: VARIANT_CUT.realizedBody,
       },
     ],
@@ -545,5 +549,78 @@ describe("what a variant render actually sends", () => {
     // must not touch, named as the things they are.
     expect(result.prompt).toContain("unchanged from the source");
     expect(result.prompt).toContain("the horns");
+  });
+});
+
+/**
+ * HAIR THE HEADWEAR FULLY HIDES (docs/images/character-prompts.md §Hair the
+ * headwear conceals), through the shared seam rather than per route.
+ *
+ * The withholding itself is the character adapter's and is proved there
+ * (`contracts/images/subject-digest.test.ts`); what this owns is the WIRING:
+ * the band a lane resolved onto its cut reaches the projection through
+ * `castAssembly`, so a `full` cut compiles to the concealment sentence and a
+ * `partial` one compiles exactly as before. Falsified against the state the
+ * band's carrier left every prompt in — every lane populated `hairOcclusion`
+ * and nothing read it. The avatar lane is the probe; every other lane hands the
+ * same cut shape to the same fold.
+ */
+describe("hair the headwear fully hides", () => {
+  const HIJAB = { name: "hijab", coverage: ["hair", "ears"], layer: 2, opacity: "opaque" } as const;
+  const CONCEALED = `${LANE_PROBE_NAME}'s hair is fully covered by the headwear; no hair is visible.`;
+
+  it.each([
+    ["full", true],
+    ["partial", false],
+  ] as const)("compiles a `%s` cut with the concealment stated: %s", (band, stated) => {
+    const program = compiled(laneProbeAvatarProgram({ wardrobe: [{ ...HIJAB, hairOcclusion: band }] }));
+    expect(program.prompt.includes(CONCEALED)).toBe(stated);
+    const concealment = program.subjects
+      .flatMap((subject) => subject.facts)
+      .find((fact) => fact.concept === "subject.hair_concealment");
+    expect(concealment !== undefined).toBe(stated);
+    if (concealment !== undefined) {
+      // Required and kept: no budget squeeze may re-expose what the wardrobe hides.
+      expect(concealment.disposition).toBe("required_visual");
+      expect(program.keptClaimIds).toContain(concealment.key);
+    }
+    expect(program.missingRequired).toEqual([]);
+  });
+
+  /**
+   * A reference-anchored render must not ask the model to restore hair the
+   * headwear hides (issue #312). The lock is the family's own bytes, so the
+   * band reaches it through the compiled claim set rather than a second
+   * channel: at `full` the lock drops "hair" and keeps every other cue, at
+   * `partial` the measured lock ships untouched. Falsified against the lock
+   * that named hair on every render — a hijab-wearing edit from a bare-headed
+   * reference then preserved the reference's hair over the hijab.
+   */
+  it.each([
+    ["full", QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED, QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK],
+    ["partial", QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK, QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED],
+  ] as const)("locks a `%s` cut to its reference without the hair it cannot show", (band, lock, other) => {
+    const cut = laneProbeVariantCut([...laneProbeWardrobe(), { ...HIJAB, hairOcclusion: band }]);
+    expect(cut.hairOcclusion).toBe(band);
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          cuts: [
+            {
+              subjectId: LANE_PROBE_SUBJECT_ID,
+              name: LANE_PROBE_NAME,
+              digest: cut.digest,
+              attributes: cut.resolved,
+              exposure: cut.exposure,
+              hairOcclusion: cut.hairOcclusion,
+              realizedBody: cut.realizedBody,
+            },
+          ],
+        }),
+      ),
+    );
+    expect(program.prompt).toContain(lock);
+    expect(program.prompt).not.toContain(other);
+    if (band === "full") expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
   });
 });

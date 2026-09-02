@@ -106,6 +106,9 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
       attributeOverlays: stored.attributeOverlays,
       // OQ8: the two gates must agree, or the enqueue fires and the job no-ops.
       ...(scenario ? { garmentKey: chatGarmentLookKey(scenario.garments, [actorId], scenario.clockMinutes) } : {}),
+      // The same band the cut below renders from: a headwear override flip
+      // changes the prompt without moving any other term of the key.
+      hairOcclusion: wardrobe.hairOcclusion,
     });
     // Scoped to THIS character: a chat-wide freshness read would see a roster
     // sibling's look and skip minting one for the member whose outfit moved.
@@ -175,6 +178,7 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
       // The SAME coverage readout the key above hashed, so the anchor's
       // coverage reads and its cache key cannot disagree.
       exposure: wardrobe.exposure,
+      hairOcclusion: wardrobe.hairOcclusion,
       ...(visual === undefined ? {} : { visual }),
       // Visible age comes from the portrait reference itself. Scene-supporting
       // look renders never receive chronological or apparent-age fields.

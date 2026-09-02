@@ -57,12 +57,19 @@ exact name, or a name plus an outfit word.
 
 The item editor header carries **✦ Draft from description**, the classify seam extended into
 authoring. `POST /api/items/draft` proposes category, layer, wearer, color and opacity, **explicit
-coverage with carve-outs**, and the three sensory lines from name and description. The server
+coverage with carve-outs**, a headwear **hair-occlusion override** when the description clearly
+departs from the type default, and the three sensory lines from name and description. The server
 grounds every proposal against the registries (`groundItemDraft` in
 `server/api/item-classify.ts` — unknown ids drop per field, coverage explodes to the explicit-id
-convention, intimate locations are filtered), and the client fill-merges **empty fields only** into
-the unsaved form, so the SaveBar stays the review step. It is stateless: nothing is written
-server-side.
+convention, intimate locations are filtered, a hair-occlusion band survives only for headwear and
+only when it differs from the subtype default), and the client fill-merges **empty fields only**
+into the unsaved form (`mergeItemDraft`, `lib/items/draft-merge.ts`), so the SaveBar stays the
+review step. It is stateless: nothing is written server-side.
+
+For headwear the editor shows a **Hair occlusion** select beside the type: "Use type default"
+names the band the type resolves to and clears the override; `none` / `partial` / `full` store one
+([../contracts/items/README.md](../contracts/items/README.md) §Hair occlusion). Changing the
+category clears it with the subtype, and the save drops it on any non-headwear category.
 
 ## Per-value narrator glosses
 

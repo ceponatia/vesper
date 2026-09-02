@@ -22,7 +22,7 @@ import {
   type ImageWorldFact,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
-import type { AttributeValue, RealizedBody, RegionExposure, VisualImageDigest } from "@/contracts";
+import type { AttributeValue, HairOcclusion, RealizedBody, RegionExposure, VisualImageDigest } from "@/contracts";
 import {
   mergeVisualImageCastDigests,
   type VisualImageCastMergeRefusal,
@@ -117,6 +117,12 @@ export interface CharacterPromptSubjectCut {
   readonly digest: VisualImageDigest;
   readonly attributes: readonly AttributeValue[];
   readonly exposure: RegionExposure;
+  /**
+   * How much of the subject's hair their worn headwear hides — resolved once at
+   * the lane's wardrobe seam (docs/contracts/items/README.md §Hair occlusion)
+   * and carried beside `exposure`, never re-derived from garment names.
+   */
+  readonly hairOcclusion: HairOcclusion;
   readonly realizedBody: RealizedBody;
 }
 
@@ -411,6 +417,7 @@ function castAssembly(
     sources[cut.subjectId] = {
       attributes: cut.attributes,
       exposure: cut.exposure,
+      hairOcclusion: cut.hairOcclusion,
       realizedBody: cut.realizedBody,
     };
     if (intimateReveal) {

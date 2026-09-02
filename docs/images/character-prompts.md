@@ -78,6 +78,36 @@ name beyond the reviewed residue — the identity-free `chat_place` shot and the
 composer's own instruction builder, neither of which describes a character from
 attributes.
 
+## Hair the headwear conceals
+
+A cut carries the subject's resolved hair-occlusion band beside its coverage
+readout (`CharacterPromptSubjectCut.hairOcclusion`;
+[../contracts/items/README.md](../contracts/items/README.md) §Hair occlusion
+owns the band and its resolution). The seam hands it to the projection with the
+other canonical owners (`CharacterSubjectSources.hairOcclusion`), and the
+adapter — never a lane, never a route — applies the one image consequence:
+
+- **At `full`, no authored hair fact reaches the digest.** Every selected fact
+  that describes the hair is withheld as a designed suppression
+  (`character.hair.concealed`): the `hair.*` attributes, the current hairstyle
+  presentation, and any other fact at the `hair` body locus. The test is
+  structural — the attribute registry's body location, the presentation kind
+  id, the locus — never a match on value words. A withheld hair fact is not a
+  lost anchor; `missingRequired` never names one.
+- **In their place the subject states one required fact**,
+  `subject.hair_concealment`: the hair is fully covered by the headwear and
+  none of it is visible. It is `required_visual` and filed in the `wardrobe`
+  segment kind, beside the garment that causes it and unfittable by kind, so no
+  budget squeeze can drop the statement while the authored hair stays withheld
+  ([prompt-programs.md](prompt-programs.md) §Concepts). Each dialect words it in
+  its own register with the same meaning — the prose families
+  "`<Name>`'s hair is fully covered by the headwear; no hair is visible.", the
+  tag family "`<Name>` hair fully covered by headwear, no visible hair".
+- **At `none` and `partial` nothing changes.** Some hair remains visible, so
+  the authored facts stand exactly as visual state selected them, and no
+  concealment fact is stated. The two bands stay distinct values even though
+  this consumer treats them alike.
+
 ## A cast of more than one
 
 Visual state commits one cut per PERSON, and the assembly takes one digest
@@ -136,6 +166,21 @@ family emits its provider-neutral sentence. No adapter in
 `@vesper/image-models` touches prompt text, so a prompt reaches the provider
 exactly as it was compiled and hashed.
 
+**The lock never asks the reference to restore hair the headwear hides.** A
+subject at the `full` hair-occlusion band carries a `subject.hair_concealment`
+claim ([§Hair the headwear conceals](#hair-the-headwear-conceals)), and the
+dialect reads the band from that claim in the set it already renders — no
+second channel carries it. When any cast member's claim is present the lock
+ships its hair-free spelling (`…_IDENTITY_LOCK_HAIR_CONCEALED` in each family:
+the prose sentence without "hair color and style", the Qwen single- and
+multi-reference locks without "hair"), and every other cue — face, skin tone,
+build or proportions, apparent age — stays as the measured lock states it. The
+rule is conservative on purpose: the lock is one sentence for the whole cast,
+so one covered person drops the clause for everyone, because a lock that kept
+"hair" would tell the model to paint that person's reference hair back over the
+hijab, and the uncovered rest of the cast still carry their hair in their
+references. At `none` and `partial` the measured lock ships untouched.
+
 **A face the shot cannot show adapts the lock, in a sentence of its own and
 never inside the lock string.** The lock says preserve the exact face, and on a
 back-turned or profile shot that pulls against the composition: the cheapest way
@@ -159,6 +204,15 @@ and anchoring on the mere presence of references would tell the model to copy
 one character's hair, build and skin tone from a photograph of somebody else.
 Which shots carry an adaptation at all is the scene lane's
 ([pipelines/scene-framing.md](pipelines/scene-framing.md) §The camera).
+
+**Covered hair leaves the adaptation's preserve list, per subject.** For a
+subject whose own `subject.hair_concealment` claim is in the set, the sentence
+drops "hair color and style" (the tag family drops "hair") and keeps every
+other word — the visible features, build and skin tone, the anchor, and the
+"do not rotate … to face the camera" clause byte for byte. Decided per subject
+rather than per cast, because the sentence is per subject: a covered focal
+beside a bare-headed bystander adapts only the focal's list. At `none` and
+`partial` the measured wording is unchanged.
 
 ## Intimate anatomy on a permitting route
 

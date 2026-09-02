@@ -47,9 +47,16 @@ cover, precisely because ends and fringe hang out) and an ordinary hat, cap or h
 genuinely leaves some of the location readable. Mapping opaque to `hidden` would have the
 two layers contradicting each other and would suppress *every* hair observation under a
 hat, including ones coverage does not damp. Genuinely total concealment (a wrapped
-headscarf, a veil) reads `hidden`, but that needs a finer coverage signal than the
-per-location boolean, so no chat garment produces `hidden`; the gate itself fails closed
-for an unlisted location (`unknown`).
+headscarf, a hijab) is a finer signal than the per-location boolean, and the wardrobe
+input carries it: the resolved hair-occlusion band beside the coverage rows
+(`ChatAffordanceWardrobe.hairOcclusion`,
+[../contracts/items/README.md](../contracts/items/README.md) §Hair occlusion). At `full`
+the read is `hidden` at `coveredFraction` 1, whatever the outermost row's opacity, and
+every hair observation is suppressed with `affordance.perception.hidden` — no hair
+affordance cue and no hair visual detail reaches the narrator, and the physical-guidance
+coverage fence sees an enclosed head. `partial`, `none` and an absent band leave the
+opacity mapping above in force; the gate itself fails closed for an unlisted location
+(`unknown`).
 
 ## The garment domain
 

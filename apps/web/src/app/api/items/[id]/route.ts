@@ -16,6 +16,7 @@ import {
   toPublicItem,
   withOwnedEntity,
   withUser,
+  withoutStaleHairOcclusion,
 } from "@/server/api";
 
  type Params = { id: string };
@@ -65,7 +66,10 @@ export const PATCH = withOwnedItem(async (user, entity, req: NextRequest, ctx) =
     if (invalid.length > 0) {
       return jsonError("invalid_coverage", `unknown body locations: ${invalid.join(", ")}`, 400);
     }
-    update.definition = merged;
+    // A `hairOcclusion: null` patch arrives as a present-but-undefined key
+    // (the merge unsets it); a value left over from a non-headwear category
+    // is dropped here rather than stored.
+    update.definition = withoutStaleHairOcclusion(merged);
   }
   if (Object.keys(update).length === 0) return jsonOk({ item: existing });
 

@@ -41,8 +41,9 @@ folds in the persisted narrative `trait_overlays` first, then regard-colors on t
 composed **Relationship** block, social-card values, the **What lands well and badly**
 preferences block (`profile.preferences`, so a like/dislike shapes the reply *in the
 exchange*, not only the post-turn pulse; intimate-concept preferences fence out for a
-minor), Attributes, Phrasing guidance, Sensory cues, and `CHAT_RULES` — and a **volatile
-tail**.
+minor), Attributes (with the **Covered hair** line beside them at `full` hair occlusion —
+§Character-chat state as a narration system), Phrasing guidance, Sensory cues, and
+`CHAT_RULES` — and a **volatile tail**.
 
 The prefix is **byte-identical across consecutive turns** while authored inputs and both
 relationship bands hold — asserted by a prefix-byte-stability snapshot test — and re-renders
@@ -154,6 +155,19 @@ passed:
   condition can **never** rewrite an inherent attribute (eye colour, species) in the prompt.
   Chat conditions are seeded with real effects from a small label catalog
   (`contracts/conditions/catalog.ts`).
+- **Hair occlusion → withheld hair.** `state.hairOcclusion` is the wardrobe's resolved
+  band ([../contracts/items/README.md](../contracts/items/README.md) §Hair occlusion); the
+  builder consumes it and never infers coverage from a garment. At `full`,
+  `withholdHairAttributes` drops every attribute the registry anchors at the `hair` body
+  location from the resolved list **before** any block reads it — the Attributes lines,
+  their phrasing guidance, the transient condition overrides, the sensory-focus join —
+  and a binding **Covered hair** line rides the prefix beside Attributes: the character's
+  hair is completely covered by their headwear and not visible, and the withheld fields
+  are not licence to invent it. `partial` and `none` (and an absent band) change nothing,
+  because some hair is still visible. The prefix re-renders when the band crosses into or
+  out of `full` and returns to its prior bytes when it crosses back. An ensemble member's
+  sheet applies the same filter and carries its own third-person line
+  ([multi-character.md](multi-character.md)).
 - **Graded meter cues + anti-repetition.** `splitStateCues(meters, surfacedCues)` turns the
   meters into one **foreground** "just shifted" beat (the most-intense newly-crossed band)
   plus **standing** cues, diffed against the bands surfaced last turn

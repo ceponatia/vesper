@@ -54,6 +54,7 @@ describe("runChatLookImage over a degraded wardrobe resolve", () => {
     garments: "a linen shirt",
     exposure: FULLY_COVERED,
     exposed: false,
+    hairOcclusion: "none" as const,
     wornItemIds: ["def_shirt"],
     overlay: "",
     partVisibility: {},

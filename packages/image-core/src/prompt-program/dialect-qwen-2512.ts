@@ -16,6 +16,8 @@ import {
   distanceSentence,
   faceVisibilityAnchor,
   faceVisibilitySentence,
+  hairConcealedForSubject,
+  hairConcealmentSentence,
   framingSentence,
   heightSentence,
   label,
@@ -202,7 +204,14 @@ function renderClaim(
       // about whose face it holds.
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
-      return say(faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)));
+      return say(
+        faceVisibilitySentence(
+          visibility,
+          subject,
+          faceVisibilityAnchor(input, claim),
+          hairConcealedForSubject(input, claim.subjectRef),
+        ),
+      );
     }
     case "subject.apparent_age":
       return say(prefixed(subject, `appears ${value}`));
@@ -228,6 +237,8 @@ function renderClaim(
       return say(prefixed(subject, `is ${value}`));
     case "subject.wardrobe":
       return say(prefixed(subject, `wears ${value}`));
+    case "subject.hair_concealment":
+      return say(hairConcealmentSentence(subject));
     case "subject.exposure":
       return say(prefixed(subject, `is ${value}`));
 

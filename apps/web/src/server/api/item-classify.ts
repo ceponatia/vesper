@@ -11,11 +11,17 @@ import {
   colorFamilyById,
   colorFamilyIds,
   expandCoverage,
+  hairOcclusionBands,
+  hairOcclusionForItem,
+  hairOcclusionOf,
+  hairOcclusionSchema,
+  headwearSubtypes,
   objectSubtypeById,
   objectSubtypeIds,
   subtypedClothingCategoryIds,
   wearerTargetById,
   wearerTargetIds,
+  type HairOcclusion,
   type ItemKind,
 } from "@/contracts";
 import { log } from "@/server/log";
@@ -178,6 +184,8 @@ const draftedItemSchema = z.object({
     .optional()
     .catch(undefined),
   opacity: z.enum(["opaque", "sheer"]).optional().catch(undefined),
+  /** Headwear only: a hair-occlusion override the description clearly calls for. */
+  hairOcclusion: hairOcclusionSchema.optional().catch(undefined),
   /** Explicit covered body-location ids (carve-outs = omitted ids). */
   coverage: z.array(z.string()).optional().catch(undefined),
   sensory: z
@@ -198,6 +206,8 @@ export interface ItemDraftProposal {
   wearer?: string;
   color?: { family: string; shade?: string };
   opacity?: "opaque" | "sheer";
+  /** Present only for headwear, and only when it differs from the subtype default. */
+  hairOcclusion?: HairOcclusion;
   coverage?: string[];
   sensory?: { appearance?: string; scent?: string; tactile?: string };
 }
@@ -222,6 +232,14 @@ export function groundItemDraft(kind: ItemKind, drafted: DraftedItem): ItemDraft
     const wearer = drafted.wearer ? wearerTargetById(drafted.wearer) : undefined;
     if (wearer) proposal.wearer = wearer.id;
     if (drafted.opacity) proposal.opacity = drafted.opacity;
+    // Hair occlusion is a headwear-only OVERRIDE: it survives only for a
+    // headwear proposal, only as a band, and only when it differs from what
+    // the grounded subtype already resolves to — a redundant override would
+    // freeze a value the type default already gives.
+    const hairOcclusion = hairOcclusionOf(drafted.hairOcclusion);
+    if (proposal.category === "headwear" && hairOcclusion && hairOcclusion !== hairOcclusionForItem(proposal.subtype)) {
+      proposal.hairOcclusion = hairOcclusion;
+    }
     const known = (drafted.coverage ?? []).flatMap((id) => {
       const normalized = id.trim().toLowerCase();
       return bodyLocationRegistry.byId(normalized) ? [normalized] : [];
@@ -254,6 +272,24 @@ export function groundItemDraft(kind: ItemKind, drafted: DraftedItem): ItemDraft
 const DRAFT_SYSTEM =
   "You are a meticulous inventory librarian for a roleplaying engine. You draft an item's structured record from its name and description, using ONLY the exact vocabulary ids provided for facets. Skip any facet you cannot infer confidently — a missing facet is better than a wrong one. Sensory lines are short, concrete, present-tense prose.";
 
+/**
+ * The hair-occlusion block of the draft prompt (docs/contracts/items/README.md
+ * §Hair occlusion). Each type's default is read from the registry so a
+ * vocabulary edit never leaves the prompt stale; the model proposes the field
+ * only for a described EXCEPTION to that default.
+ */
+function hairOcclusionVocabularyLines(): string[] {
+  const defaults = hairOcclusionBands.map((band) => {
+    const types = headwearSubtypes.filter((s) => hairOcclusionForItem(s.id) === band).map((s) => s.id);
+    return `${band}: ${types.join(", ") || "(no type)"}`;
+  });
+  return [
+    `- hairOcclusion (clothing classified headwear ONLY): how much of the wearer's hair the piece hides — "none" (rests in or on the hair; all of it stays visible), "partial" (hides some of it), "full" (encloses it; no hair is visible).`,
+    `  Every headwear type already has a default — ${defaults.join("; ")}.`,
+    "  Propose hairOcclusion ONLY when the description clearly says this piece hides more or less hair than its type normally does: a headscarf leaving a fringe visible → partial; a helmet described as fully enclosing the hair → full; a hat merely perched above the hairstyle → none. Otherwise omit it — the type default applies.",
+  ];
+}
+
 function draftPrompt(kind: ItemKind, name: string, description: string): string {
   const coverageIds = bodyLocationRegistry.all
     .filter((loc) => loc.coverageRelevant ?? true)
@@ -262,6 +298,7 @@ function draftPrompt(kind: ItemKind, name: string, description: string): string 
     ...facetVocabularyLines(),
     '- opacity (clothing): "opaque" or "sheer" — sheer only when the fabric reads see-through',
     `- coverage (clothing): body-location ids — ${coverageIds.join(", ")}`,
+    ...hairOcclusionVocabularyLines(),
     "",
     `Item: [${kind}] ${name || "(unnamed)"}${description ? ` — ${description}` : ""}`,
     "",

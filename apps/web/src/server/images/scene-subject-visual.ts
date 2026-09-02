@@ -3,11 +3,13 @@ import {
   diag,
   exposedRegions,
   FULLY_COVERED,
+  HAIR_OCCLUSION_NONE,
   resolveAttributes,
   VISUAL_IMAGE_PROVENANCE_META_KEY,
   type ActiveCondition,
   type AttributeValue,
   type DiagnosticSink,
+  type HairOcclusion,
   type RegionExposure,
   type RealizedBody,
   type VisualImageDigest,
@@ -131,6 +133,8 @@ export interface SceneSubjectVisualMember {
   readonly profile: CharacterProfile;
   readonly exposure?: RegionExposure;
   readonly outfitExposed?: boolean;
+  /** The resolved wardrobe's hair-occlusion band; absent (no resolved wardrobe) reads `none`. */
+  readonly hairOcclusion?: HairOcclusion;
   readonly attributeOverlays?: readonly AttributeValue[];
   readonly conditions?: readonly ActiveCondition[];
 }
@@ -182,6 +186,8 @@ export interface SceneSubjectVisualSlice {
   readonly realizedBody: RealizedBody;
   /** The canonical coverage readout the exposure claims are made over. */
   readonly exposure: RegionExposure;
+  /** How much of the subject's hair their worn headwear hides (the wardrobe seam's resolved band). */
+  readonly hairOcclusion: HairOcclusion;
 }
 
 export interface SceneSubjectVisualBuild {
@@ -358,6 +364,7 @@ function produceSubjectVisual(
       attributes: resolved,
       realizedBody,
       exposure,
+      hairOcclusion: member.hairOcclusion ?? HAIR_OCCLUSION_NONE,
     },
   };
 }

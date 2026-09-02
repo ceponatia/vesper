@@ -14,7 +14,8 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
 import { IMAGE_ITEM_PROJECTION_OWNER } from "@/contracts/images/world-projection";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
-import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
+import { clothingSubtypeLabel, hairOcclusionForItem } from "@/contracts/items/subtypes";
+import { HAIR_OCCLUSION_NONE, hairOcclusionSchema } from "@/contracts/items/hair-occlusion";
 import { runImagePipeline } from "./assets";
 import {
   buildCharacterPromptProgram,
@@ -371,6 +372,7 @@ const outfitExtrasSchema = z.object({
   sensory: z.object({ appearance: z.string().optional() }).optional().catch(undefined),
   subtype: z.string().optional().catch(undefined),
   category: z.string().optional().catch(undefined),
+  hairOcclusion: hairOcclusionSchema.optional().catch(undefined),
   tags: z.array(z.string()).catch([]),
 });
 
@@ -437,6 +439,10 @@ export async function loadDefaultWardrobeWithRevisions(
       const coverage =
         extras.coverage === undefined || extras.coverage === COVERAGE_UNREADABLE ? [] : extras.coverage;
       const description = row.description?.trim() ?? "";
+      // Resolved ONCE here (item override, else subtype default) so every
+      // consumer of the row reads one band; sparse at `none`, which is what an
+      // absent band resolves to anyway.
+      const hairOcclusion = hairOcclusionForItem(extras.subtype, extras.hairOcclusion);
       wardrobe.push({
         id: row.id,
         name: row.name,
@@ -447,6 +453,7 @@ export async function loadDefaultWardrobeWithRevisions(
         ...(extras.sensory?.appearance ? { appearance: extras.sensory.appearance } : {}),
         ...(extras.subtype ? { subtype: extras.subtype } : {}),
         ...(extras.category ? { category: extras.category } : {}),
+        ...(hairOcclusion === HAIR_OCCLUSION_NONE ? {} : { hairOcclusion }),
         ...(extras.tags.length > 0 ? { tags: extras.tags } : {}),
       });
       revisions.push({ owner: IMAGE_ITEM_PROJECTION_OWNER, entityId: row.id, revision: row.updatedAt.toISOString() });

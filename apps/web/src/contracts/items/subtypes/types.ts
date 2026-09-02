@@ -10,6 +10,8 @@
  * because a bare jewelry name gives the image model too little to place the
  * piece (face-jewelry plan).
  */
+import type { HairOcclusion } from "../hair-occlusion";
+
 export interface ClothingSubtype {
   id: string;
   label: string;
@@ -19,4 +21,10 @@ export interface ClothingSubtype {
    * coverage untouched (a brooch pins to clothing, not to a body location).
    */
   coverage?: readonly string[];
+  /**
+   * Headwear only: the default HAIR OCCLUSION band for this type — how much of
+   * the wearer's hair it hides (`../hair-occlusion.ts`). An item's own
+   * `hairOcclusion` overrides it; absent on both ⇒ `none`.
+   */
+  hairOcclusion?: HairOcclusion;
 }
