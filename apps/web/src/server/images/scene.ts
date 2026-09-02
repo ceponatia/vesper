@@ -242,7 +242,7 @@ export interface RenderResolvedSceneInput {
    * Checked rather than trusted, and symmetrically: this list and the character
    * references naming a library entity must name the same people, once each, or
    * the render refuses before provider spend
-   * (`images.scene_render.cast_incomplete`). A person short, a person extra or
+   * (`images.scene_render.cast_mismatch`). A person short, a person extra or
    * one person twice is never rendered as a quieter scene.
    */
   cast?: readonly SceneSubjectVisualSlice[];
@@ -463,7 +463,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     sink.push(
       diag(
         "error",
-        "images.scene_render.cast_incomplete",
+        "images.scene_render.cast_mismatch",
         `the render draws ${intendedCast.length} people and compiled ${castCuts.length}: ${castRefusal}`,
         {
           context: {
@@ -507,7 +507,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     // The cast-integrity comparison above, spent on the chain: a rung whose cast
     // is not the cast the render draws says something the payload contradicts —
     // a person short, a person extra, or one person twice — so it compiles
-    // nothing at all. Silent by design: the one `cast_incomplete` report above
+    // nothing at all. Silent by design: the one `cast_mismatch` report above
     // names the people, and `rungs_dropped` below names the rungs it took down.
     if (castRefusal !== null) return "dropped";
     // No committed cut for anyone in the cast — the digest this scene's words

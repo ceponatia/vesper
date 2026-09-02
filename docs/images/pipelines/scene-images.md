@@ -32,7 +32,7 @@ A 1-on-1 chat is a roster of one.
 asked to draw (the character references naming a library entity, one per cast member whether or
 not an anchor image was found for them) against the committed cuts it was handed. The comparison
 is symmetric, and a disagreement of any shape fails the row with
-`images.scene_render.cast_incomplete` (error) with no provider called — the same reserve-and-fail
+`images.scene_render.cast_mismatch` (error) with no provider called — the same reserve-and-fail
 shape as an identity-pack refusal. One code and one refusal, because it is one invariant with one
 repair; the message and the diagnostic's context name each side separately, as `missing`, `extra`
 and `duplicated`:

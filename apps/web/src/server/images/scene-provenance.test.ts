@@ -446,7 +446,7 @@ describe("renderResolvedScene cast integrity", () => {
     expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_SECOND_NAME);
     // The one-person prompt was never compiled, so the failed row carries none.
     expect(pipelineCalls[0]?.asset.prompt).toBe("");
-    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
     expect(refused).toHaveLength(1);
     expect(refused[0]?.severity).toBe("error");
     expect(refused[0]?.context).toMatchObject({
@@ -474,7 +474,7 @@ describe("renderResolvedScene cast integrity", () => {
     expect(precondition).not.toContain(LANE_PROBE_NAME);
     expect(precondition).not.toContain(LANE_PROBE_THIRD_NAME);
     expect(pipelineCalls[0]?.asset.prompt).toBe("");
-    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
     expect(refused).toHaveLength(1);
     expect(refused[0]?.context).toMatchObject({
       intended: 3,
@@ -499,7 +499,7 @@ describe("renderResolvedScene cast integrity", () => {
     expect(mockIntent).not.toHaveBeenCalled();
     expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_THIRD_NAME);
     expect(pipelineCalls[0]?.asset.prompt).toBe("");
-    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
     expect(refused).toHaveLength(1);
     expect(refused[0]?.context).toMatchObject({
       intended: 2,
@@ -524,7 +524,7 @@ describe("renderResolvedScene cast integrity", () => {
     expect(mockIntent).not.toHaveBeenCalled();
     expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_SECOND_NAME);
     expect(pipelineCalls[0]?.asset.prompt).toBe("");
-    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
     expect(refused).toHaveLength(1);
     expect(refused[0]?.context).toMatchObject({
       intended: 2,

@@ -227,7 +227,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
       // provenance who is not in the picture. A caller that nonetheless means to
       // DRAW them — one whose references carry their identity — hits the
       // render's cast-integrity refusal instead (`scene.ts`,
-      // `cast_incomplete`), because a person in the payload and not in the
+      // `cast_mismatch`), because a person in the payload and not in the
       // prompt is the render this seam's silence would otherwise allow.
       sink?.push(
         diag("info", SCENE_VISUAL_DIGEST_UNAVAILABLE, "no scene spec draws this subject — no cut realized for them", {
