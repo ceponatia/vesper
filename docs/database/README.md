@@ -51,7 +51,11 @@ is optional there.
   (`chat_summary` / `chat_scene_sketch` / `chat_meanwhile` / `chat_scene_image` / `avatar` /
   `portrait_variant` / `entity_image` / `embed_refresh` / `image_sweep` / `identity_pack` / … —
   see the schema enum for the full list), `status` (`queued` / `running` / `done` / `failed`),
-  `runner_id?` (atomic claim), `heartbeat_at`, `payload` JSONB, `error?`, `attempts`, timestamps.
+  `runner_id?` (atomic claim), `heartbeat_at`, `payload` JSONB, `error?`, `attempts`, timestamps,
+  and `chat_id?` — an indexed foreign key to `character_chats` with `ON DELETE CASCADE`, written by
+  the chat-lane enqueue paths and null for system and library work, so deleting a conversation
+  takes its background jobs with it. Terminal rows (`done` / `failed`) are deleted seven days after
+  they settle; `queued` and `running` rows are never removed by age.
 - **`events`** — `type`, `payload` JSONB; an append-only observability stream written via
   `server/events.ts`. The chat inspector reads `retrieval` / `agent_failure` / `agent_run` events
   by created-at window.

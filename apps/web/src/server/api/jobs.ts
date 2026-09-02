@@ -96,6 +96,20 @@ export interface StartJobOptions {
   ownerId?: string;
   payload: Record<string, unknown>;
   /**
+   * The conversation this work belongs to, as a first-class column rather than a
+   * payload key — the database relationship that takes the row down with its chat
+   * (`ON DELETE CASCADE`). Chat-lane callers pass it IN ADDITION to keeping
+   * `chatId` in the payload, which is where handlers still read it. Omitted by
+   * library, image-lab, generator and system work that belongs to no
+   * conversation; those rows age out through retention instead.
+   *
+   * A chat deleted between the caller's read and this insert makes the insert
+   * fail the foreign key. That is correct — the work has no subject — and the
+   * chat-lane callers already wrap the call in their own catch-and-warn, so it
+   * costs a logged no-op rather than a thrown turn.
+   */
+  chatId?: string;
+  /**
    * Background work; its resolved value is merged into the job payload. The
    * context is optional to take — a closure ignoring it reports nothing and
    * keeps the default provider-outcome rule.
@@ -114,6 +128,7 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
       ownerId: opts.ownerId,
       type: opts.type,
       payload: opts.payload,
+      ...(opts.chatId === undefined ? {} : { chatId: opts.chatId }),
     });
     return claim.ok ? claim.jobId : { ok: false, active: claim.active, limit: claim.limit };
   }
@@ -126,6 +141,7 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
       payload: opts.payload,
       attempts: 1,
       startedAt: new Date(),
+      chatId: opts.chatId ?? null,
     })
     .returning({ id: jobs.id });
   if (!row) throw new Error("jobs insert returned no row");
