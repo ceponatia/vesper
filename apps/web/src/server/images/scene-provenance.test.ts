@@ -9,12 +9,15 @@ import {
   type ResolvedImageProfile,
   type SceneVisualReference,
 } from "@vesper/image-core";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   identityProvenanceFixture as record,
   LANE_PROBE_IMAGE_ID,
   LANE_PROBE_NAME,
   LANE_PROBE_SECOND_IMAGE_ID,
   LANE_PROBE_SECOND_NAME,
+  LANE_PROBE_SECOND_SUBJECT_ID,
+  LANE_PROBE_THIRD_NAME,
   laneProbeCastSceneRender,
 } from "@/server/test-support";
 
@@ -407,5 +410,59 @@ describe("renderResolvedScene intimate reveal", () => {
     expect(prompt).not.toContain("breast size");
     // Coverage is the wardrobe's truth, not intimate detail: stated on every rung.
     expect(prompt).toContain("bare at the torso");
+  });
+});
+
+/**
+ * Cast integrity: a render never compiles a smaller cast than the one it is
+ * about to draw. Upstream, a member can lose their committed cut on their own —
+ * a missing continuity row, a cut keyed to somebody else, a resolved plan that
+ * draws nobody by their name — and each of those is a warn about ONE person.
+ *
+ * Falsified against the render this replaces, which compiled whatever cuts it
+ * was handed: a scene with one cut short compiled a world digest one person
+ * short, asserted that smaller `subjectCount`, and still sent the missing
+ * member's identity reference — an internally inconsistent render that looks
+ * like a successful picture of a different scene. Pinned as: the refusal lands
+ * before provider spend, it names the missing member and nobody else, and the
+ * reserved row stores no prompt for the cast that was never going to be sent.
+ */
+describe("renderResolvedScene cast completeness", () => {
+  it("refuses a two-person render whose second member has no committed cut", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender();
+    const sink = new DiagnosticCollector();
+
+    await renderResolvedScene(baseInput({ ...scene, cast: scene.cast.slice(0, 1), sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_SECOND_NAME);
+    // The one-person prompt was never compiled, so the failed row carries none.
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.severity).toBe("error");
+    expect(refused[0]?.context).toMatchObject({ intended: 2, compiled: 1, missing: [LANE_PROBE_SECOND_SUBJECT_ID] });
+  });
+
+  it("refuses a three-person render missing the MIDDLE member's cut, blaming only them", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender({ size: 3 });
+    const sink = new DiagnosticCollector();
+    // Nyx and Tobrek keep their cuts; Ilsa's is gone — a loss a check comparing
+    // list lengths, or trusting cast order, would report against the wrong person.
+    const cast = scene.cast.filter((slice) => slice.subjectId !== LANE_PROBE_SECOND_SUBJECT_ID);
+
+    await renderResolvedScene(baseInput({ ...scene, cast, sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    const precondition = pipelineCalls[0]?.failedPrecondition ?? "";
+    expect(precondition).toContain(LANE_PROBE_SECOND_NAME);
+    expect(precondition).not.toContain(LANE_PROBE_NAME);
+    expect(precondition).not.toContain(LANE_PROBE_THIRD_NAME);
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.context).toMatchObject({ intended: 3, compiled: 2, missing: [LANE_PROBE_SECOND_SUBJECT_ID] });
   });
 });

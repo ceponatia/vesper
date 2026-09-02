@@ -27,6 +27,22 @@ downstream binding is by name, so the pair collapses into one and the cast claus
 The Image Lab refuses this outright; a player-facing render draws one person rather than none.
 A 1-on-1 chat is a roster of one.
 
+**The compiled cast is the intended cast, or the render refuses.** `renderResolvedScene` compares
+the two lists once, before anything is reserved: the people it was asked to draw (the character
+references naming a library entity, one per cast member whether or not an anchor image was found
+for them) against the committed cuts it was handed. A member with no cut fails the row with
+`images.scene_render.cast_incomplete` (error, naming the missing member) and no provider is
+called — the same reserve-and-fail shape as an identity-pack refusal. There is no per-member
+fallback to reach for: the committed cut is the only description of a person a scene render has,
+so a member without one is a member the prompt cannot mention, and drawing the rest would compile
+a smaller world digest, assert a smaller `operation.subjectCount`, and still send the missing
+person's identity reference. A member can lose their cut several ways — no `chat_participants`
+row, a cut keyed to somebody else, a resolved plan that draws nobody by their name — and each is
+reported where it happens; the completeness check is what stops any of them from becoming a
+quietly smaller picture. Past it, the subject count, the world digest's subjects and the identity
+references bound to them describe one cast by construction rather than by three lists happening
+to agree.
+
 ## Step 1 — the scene composer
 
 `sceneComposerModelId(chatComposerModel?)` is the composer's own `MODEL_DEFAULTS.sceneComposer`
@@ -176,7 +192,10 @@ a non-demo rung that cannot produce one is **dropped from the chain** — whethe
 refused, its model and job shape resolved no active binding, or it was reached with no committed
 cast cut. A rung that cannot be described honestly is a rung that cannot run, and handing off to
 the next one is what the ladder is for, so a drop costs the render nothing until the drops run
-out. `images.scene_render.rungs_dropped` (warn) names which rungs left the chain. The `demo` rung
+out. `images.scene_render.rungs_dropped` (warn) names which rungs left the chain. An incomplete
+cast is the one condition that takes the whole ladder rather than a rung: every rung would
+compile the same short cast, so none of them compiles at all and the row fails on the
+completeness refusal above. The `demo` rung
 is untouched by any of this: it paints a monogram and reads no prompt.
 
 **An empty chain is a visible refusal.** An edit-only model with no usable reference routes no

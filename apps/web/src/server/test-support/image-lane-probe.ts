@@ -94,6 +94,12 @@ export const LANE_PROBE_SECOND_NAME = "Ilsa";
 /** The second cast member's subject id — their own committed cut, never the focal's. */
 export const LANE_PROBE_SECOND_SUBJECT_ID = "probe-character-second";
 
+/** The third cast member's name; shares no letter with either name above. */
+export const LANE_PROBE_THIRD_NAME = "Tobrek";
+
+/** The third cast member's subject id — their own committed cut. */
+export const LANE_PROBE_THIRD_SUBJECT_ID = "probe-character-third";
+
 /**
  * The SECOND fixture character, for the cast ≥2 scene lane.
  *
@@ -310,6 +316,23 @@ export function laneProbeCastMember(over: Partial<SceneCastMember> = {}): SceneC
   };
 }
 
+/**
+ * The THIRD fixture as one scene cast member.
+ *
+ * It reuses the second's authored sheet and wardrobe under its own subject id
+ * and name, deliberately: a cast of three is read by the suites that ask who a
+ * render COMPILES — cast integrity, not appearance — and a third disjoint
+ * character sheet would be a second appearance fixture nothing reads.
+ */
+export function laneProbeThirdCastMember(over: Partial<SceneCastMember> = {}): SceneCastMember {
+  return {
+    ...laneProbeSecondCastMember(),
+    characterId: LANE_PROBE_THIRD_SUBJECT_ID,
+    name: LANE_PROBE_THIRD_NAME,
+    ...over,
+  };
+}
+
 /** One subject the cast production draws, paired with the committed cut it draws them from. */
 export interface LaneProbeCastSubject {
   readonly member: SceneCastMember;
@@ -321,10 +344,11 @@ export interface LaneProbeCastSubject {
  * focal, then the bystander, each with their OWN committed cut. Built here so
  * no two suites can assemble two different "same" casts.
  */
-export function laneProbeCastSubjects(): LaneProbeCastSubject[] {
+export function laneProbeCastSubjects(options: { readonly size?: 2 | 3 } = {}): LaneProbeCastSubject[] {
   return [
     { member: laneProbeCastMember(), shadow: laneProbeShadowInput() },
     { member: laneProbeSecondCastMember(), shadow: laneProbeSecondShadowInput() },
+    ...(options.size === 3 ? [{ member: laneProbeThirdCastMember(), shadow: laneProbeThirdShadowInput() }] : []),
   ];
 }
 
@@ -401,18 +425,31 @@ export function laneProbeSecondShadowInput(
   };
 }
 
+/** The THIRD cast member's camera-less shadow input — their own subject id and scope. */
+export function laneProbeThirdShadowInput(
+  profile: CharacterProfile = laneProbeSecondProfile(),
+): Omit<VisualStateShadowInput, "sink" | "camera"> {
+  return {
+    ...laneProbeShadowInput(profile),
+    subjectId: LANE_PROBE_THIRD_SUBJECT_ID,
+    scope: { kind: "chat", memoryGroupId: "probe-group-third" },
+  };
+}
+
 /** The stored image id of the probe subject's generated identity anchor. */
 export const LANE_PROBE_IMAGE_ID = "img-probe-nyx";
 /** The stored image id of the second probe subject's generated identity anchor. */
 export const LANE_PROBE_SECOND_IMAGE_ID = "img-probe-ilsa";
+/** The stored image id of the third probe subject's generated identity anchor. */
+export const LANE_PROBE_THIRD_IMAGE_ID = "img-probe-tobrek";
 
-/** A two-person chat scene as `renderResolvedScene` receives it from the queue. */
+/** A multi-person chat scene as `renderResolvedScene` receives it from the queue. */
 export interface LaneProbeCastSceneRender {
   /** The resolved plan — the scene's decisions, with a setting, a light and each person's action. */
   readonly plan: SceneRenderPlan;
   /** Each member's own committed cut, realized under that plan's camera — what the program compiles from. */
   readonly cast: readonly SceneSubjectVisualSlice[];
-  /** One generated identity reference per member, Nyx then Ilsa, each naming its subject. */
+  /** One generated identity reference per member, in cast order, each naming its subject. */
   readonly references: SceneVisualReference[];
   readonly referenceBuffers: Map<string, Buffer>;
 }
@@ -428,9 +465,16 @@ export interface LaneProbeCastSceneRender {
  * `bareFocal` undresses Nyx — every region bare — so a route's intimate reveal
  * has something to state, while Ilsa stays dressed so the covered half of the
  * same gate sits in the same prompt.
+ *
+ * `size: 3` adds Tobrek behind them, for the suites that need a cast where a
+ * member can go missing from the MIDDLE: a two-person render only ever loses an
+ * end, so a check that happened to compare list lengths, or to trust cast order,
+ * would pass a two-person case and fail a real ensemble.
  */
-export function laneProbeCastSceneRender(options: { readonly bareFocal?: boolean } = {}): LaneProbeCastSceneRender {
-  const members = laneProbeCastSubjects().map((subject, index) =>
+export function laneProbeCastSceneRender(
+  options: { readonly bareFocal?: boolean; readonly size?: 2 | 3 } = {},
+): LaneProbeCastSceneRender {
+  const members = laneProbeCastSubjects(options.size === undefined ? {} : { size: options.size }).map((subject, index) =>
     options.bareFocal === true && index === 0
       ? { ...subject, member: { ...subject.member, outfit: "", exposure: laneProbeBareExposure() } }
       : subject,
@@ -452,16 +496,17 @@ export function laneProbeCastSceneRender(options: { readonly bareFocal?: boolean
     imageId,
     source: "generated",
   });
-  return {
-    plan,
-    cast: built.visuals,
-    references: [
-      reference(LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID, LANE_PROBE_IMAGE_ID, "focal"),
-      reference(LANE_PROBE_SECOND_NAME, LANE_PROBE_SECOND_SUBJECT_ID, LANE_PROBE_SECOND_IMAGE_ID, "other"),
-    ],
-    referenceBuffers: new Map([
-      [LANE_PROBE_IMAGE_ID, Buffer.from("nyx")],
-      [LANE_PROBE_SECOND_IMAGE_ID, Buffer.from("ilsa")],
-    ]),
-  };
+  const references = [
+    reference(LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID, LANE_PROBE_IMAGE_ID, "focal"),
+    reference(LANE_PROBE_SECOND_NAME, LANE_PROBE_SECOND_SUBJECT_ID, LANE_PROBE_SECOND_IMAGE_ID, "other"),
+  ];
+  const referenceBuffers = new Map<string, Buffer>([
+    [LANE_PROBE_IMAGE_ID, Buffer.from("nyx")],
+    [LANE_PROBE_SECOND_IMAGE_ID, Buffer.from("ilsa")],
+  ]);
+  if (options.size === 3) {
+    references.push(reference(LANE_PROBE_THIRD_NAME, LANE_PROBE_THIRD_SUBJECT_ID, LANE_PROBE_THIRD_IMAGE_ID, "other"));
+    referenceBuffers.set(LANE_PROBE_THIRD_IMAGE_ID, Buffer.from("tobrek"));
+  }
+  return { plan, cast: built.visuals, references, referenceBuffers };
 }

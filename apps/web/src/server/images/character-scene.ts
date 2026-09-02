@@ -104,11 +104,16 @@ export interface RenderCharacterSceneInput {
    * `chatVisualStateShadowInput`. Every member with an entry (whose cut names
    * them) is realized under the plan's committed camera in one selection pass,
    * and that cut is the WHOLE of what the prompt program says about them; a cut
-   * that cannot be assembled fails the row before provider spend. A member with
-   * no entry has no cut and is not compiled: a render with no cut for anyone
-   * drops every provider rung (`scene.ts`, `program_castless`), and a member
-   * missing a cut beside members who have one is omitted from the picture
-   * (issue #389) — nothing here describes them from anywhere else.
+   * that cannot be assembled fails the row before provider spend.
+   *
+   * A member with no entry, or with an entry naming somebody else, has no cut
+   * and cannot be compiled — nothing here describes them from anywhere else.
+   * The render then REFUSES rather than drawing the rest: `renderResolvedScene`
+   * compares the cast it was asked to draw against the cuts it was given and
+   * fails the row before provider spend when one is short
+   * (`images.scene_render.cast_incomplete`). A smaller cast is never a quieter
+   * render — it is a different picture, sent with the missing person's identity
+   * reference still attached.
    */
   subjectVisuals?: ReadonlyMap<string, Omit<VisualStateShadowInput, "sink" | "camera">>;
   sink?: DiagnosticSink;
@@ -223,10 +228,12 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // one-member case of the same loop. A refusal reaches the row as a failed
   // precondition: reserved, failed, never sent to a provider.
   //
-  // A member whose cut names somebody else is skipped rather than refused: a
-  // mis-keyed cut is a caller bug about ONE person, and failing the whole
-  // picture over it would be the worse degradation. That member is then simply
-  // not compiled — the program describes nobody it has no cut for.
+  // A member whose cut names somebody else is skipped HERE — the mismatch is a
+  // fact about one person's cut and is reported as one — but skipping is not
+  // where the story ends: that member then has no cut, and the render's own
+  // cast-completeness check refuses before provider spend rather than compiling
+  // the picture without them (`renderResolvedScene`, `cast_incomplete`). The
+  // program still describes nobody it has no cut for; it simply never runs.
   let visualRefusal: string | null = null;
   let visualStateMeta: Record<string, unknown> | undefined;
   let appliedVisuals: readonly SceneSubjectVisualSlice[] = [];

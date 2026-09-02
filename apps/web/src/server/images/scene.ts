@@ -157,6 +157,17 @@ export function heuristicLighting(timeOfDay: string | undefined): string {
   return (timeOfDay && TIME_OF_DAY_LIGHTING[timeOfDay]) || "soft natural light";
 }
 
+/**
+ * One person a scene render intends to draw, read off the caller's character
+ * references — the list the cast-completeness check in {@link renderResolvedScene}
+ * holds the compiled cuts against. The name is for the refusal an operator reads;
+ * the id is what the two lists are matched on.
+ */
+interface IntendedCastMember {
+  readonly id: string;
+  readonly name: string;
+}
+
 export interface SceneAssetLinkage {
   ownerId: string;
   entityKind?: ImageEntityKind;
@@ -222,6 +233,11 @@ export interface RenderResolvedSceneInput {
    * that states both people, binds each identity reference to its own subject
    * and asserts a subject count of two. Handing over one cut would compile a
    * prompt describing one woman for a payload carrying two faces.
+   *
+   * Checked rather than trusted: every character reference naming a library
+   * entity must have its cut here, or the render refuses before provider spend
+   * (`images.scene_render.cast_incomplete`). A short list is never rendered as
+   * a smaller scene.
    */
   cast?: readonly SceneSubjectVisualSlice[];
   /**
@@ -354,6 +370,69 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // job-local cut id per render and hands every member the same one, and the
   // cast merge refuses a cast whose members disagree about it.
   const castReadToken = cast[0]?.cutId ?? "";
+
+  // -------------------------------------------------------------------------
+  // Cast completeness: the render describes everybody it is about to draw
+  // -------------------------------------------------------------------------
+  //
+  // The INTENDED cast is the caller's character references that name a library
+  // entity — one per person this render means to draw, whether or not an anchor
+  // image was found for them. The COMPILED cast is `input.cast`: one realized
+  // committed cut per person the prompt program will describe. Several upstream
+  // steps shrink the second without touching the first, each of them a warn
+  // about ONE person — a member whose continuity row is missing never gets a
+  // shadow input, a cut keyed to somebody else is skipped, and a member the
+  // resolved plan names nowhere realizes no cut. None of those is a fallback:
+  // the committed cut is the ONLY description of a person a scene render has,
+  // so a member without one is a member the prompt cannot mention.
+  //
+  // Rendering the rest anyway would compile a smaller world digest, assert a
+  // smaller `operation.subjectCount`, and still send the missing member's
+  // identity reference — a picture that is internally inconsistent in the one
+  // way a viewer cannot see, because it looks like a successful render of a
+  // different scene. So the two lists are compared ONCE, here, where both exist
+  // and before anything is reserved. A member with no cut refuses the render:
+  // there is no approved typed source to synthesize the missing slice from, and
+  // refusing before provider spend is the honest answer.
+  //
+  // Consumed twice from this one comparison — the rungs below compile nothing
+  // (so no partial program is ever built, hashed, or written to the reserved
+  // row) and the pipeline fails the row on the precondition — and reported
+  // once, here, so an operator reads the missing person rather than three rung
+  // drops.
+  const intendedCast = references.flatMap((reference): IntendedCastMember[] =>
+    reference.kind === "character" && reference.entityId !== undefined
+      ? [{ id: reference.entityId, name: reference.name ?? reference.entityId }]
+      : [],
+  );
+  const compiledSubjects = new Set(castCuts.map((cut) => cut.subjectId));
+  // Not asked of a render the CALLER has already refused: such a render is handed
+  // no cast at all (compiling a program for a picture nobody will make would only
+  // store it), so every intended member would read as missing and this would
+  // report a second, invented cause beside the real one. `?? null` mirrors
+  // `provenanceFor`'s precondition read below, empty string included.
+  const uncompiledCast: IntendedCastMember[] =
+    (input.failedPrecondition ?? null) !== null ? [] : intendedCast.filter((member) => !compiledSubjects.has(member.id));
+  const castRefusal =
+    uncompiledCast.length === 0 ? null : `no committed visual cut for ${uncompiledCast.map((member) => member.name).join(", ")}`;
+  if (castRefusal !== null) {
+    sink.push(
+      diag(
+        "error",
+        "images.scene_render.cast_incomplete",
+        `the render draws ${intendedCast.length} people and compiled ${castCuts.length}: ${castRefusal}`,
+        {
+          context: {
+            missing: uncompiledCast.map((member) => member.id),
+            missingNames: uncompiledCast.map((member) => member.name),
+            intended: intendedCast.length,
+            compiled: castCuts.length,
+          },
+        },
+      ),
+    );
+  }
+
   // The intimate permission each rung actually renders under. Per rung rather
   // than per render because a staged arrangement may only travel a route that
   // allows it: the reference-edit rungs render under their anchors' own
@@ -380,10 +459,18 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       );
       return "dropped";
     }
+    // The completeness comparison above, spent on the chain: a rung that would
+    // compile a smaller cast than the render intends says something the payload
+    // contradicts, so it compiles nothing at all. Silent by design — the one
+    // `cast_incomplete` report above names the people, and `rungs_dropped`
+    // below names the rungs it took down.
+    if (castRefusal !== null) return "dropped";
     // No committed cut for anyone in the cast — the digest this scene's words
-    // are made of. A render here has people to draw and nothing that says what
-    // they look like, so it fails rather than describing them from somewhere
-    // else.
+    // are made of. Reached only by a render that intends no cast either (a
+    // caller with no character reference at all); a cast the render DOES intend
+    // is the completeness refusal above. A render here has people to draw and
+    // nothing that says what they look like, so it fails rather than describing
+    // them from somewhere else.
     if (castCuts.length === 0) {
       sink.push(
         diag("warn", "images.scene_render.program_castless", `the ${id} rung has no committed cast cut to compile a prompt program from`, {
@@ -429,7 +516,11 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       }),
       // The cast size the render ASSERTS — what arms the single-subject
       // integrity guard on a solo shot and tells the anatomy guards how many
-      // bodies to defend on an ensemble one.
+      // bodies to defend on an ensemble one. The compiled cuts and the intended
+      // cast are the same set by the time a rung compiles (the completeness
+      // check above drops every rung otherwise), so this count, the digest's
+      // subjects and the identity references bound to them all describe one
+      // cast rather than three lists that happen to agree.
       operation: () => characterSceneImageOperation({ subjectCount: castCuts.length, kind }),
       // A scene of named people with a lost identity or morphology anchor draws
       // strangers. This is the ONE place that refusal is decided: the cast seam
@@ -598,7 +689,11 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           ...(reservedProgram?.meta ?? {}),
         },
       },
-      failedPrecondition: input.failedPrecondition ?? null,
+      // The caller's own refusal — an identity-pack block, an unassemblable cut
+      // — or this render's cast-completeness refusal. At most one is ever set:
+      // the completeness check stands down when the caller has already refused.
+      // Either way the row is reserved and failed before any provider is called.
+      failedPrecondition: input.failedPrecondition ?? castRefusal,
       afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
       produce: async (asset) => {
         const outcome = await executeSceneChain(runnableChain, (id) => runSceneProvider(id, ctx), sink);
