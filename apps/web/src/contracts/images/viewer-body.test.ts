@@ -14,21 +14,32 @@ const NUDE = exposedRegions([]);
 const PANTS: RegionExposure = { torso: "bare", pelvis: "covered", legs: "covered", feet: "bare" };
 const SHEER: RegionExposure = { torso: "covered", pelvis: "sheer", legs: "sheer", feet: "covered" };
 
+// The possessive-binding and frame-geometry invariant belongs to the layer that
+// now writes those words: `packages/image-core`'s dialects, asserted over a
+// compiled prompt. This registry decides which parts a frame may hold.
 describe("the viewer-body registry", () => {
-  it("every part is possessive-bound and cropped — never a bare noun a model could stand up", () => {
-    for (const part of viewerBodyParts) {
-      expect(part.framing).toContain("the viewer's own");
-      // Frame geometry is what stops a limb becoming a subject; every phrase carries some.
-      expect(part.framing).toMatch(/foreshorten|cropped|frame edge|lower edge|bottom of the frame|toward the lens|from the lens/);
-    }
-  });
-
   it("gates anatomy and nothing else — a clothed torso or lap is a fine POV element", () => {
     expect(viewerBodyPartById("genitals")?.requiresBare).toBe("pelvis");
     expect(viewerBodyPartById("genitals")?.intimate).toBe(true);
     for (const id of ["hands", "forearms", "lap_thighs", "legs_feet", "torso"]) {
       expect(viewerBodyPartById(id)?.requiresBare).toBeNull();
       expect(viewerBodyPartById(id)?.intimate).toBe(false);
+    }
+  });
+
+  /**
+   * A part whose rendering depends on a region reading bare must SHOW that
+   * region, or the frame gate and the coverage gate disagree: the part is in
+   * frame precisely because the region is uncovered, and then no anatomy of that
+   * region may be described. Registry-derived, so it asks about agreement rather
+   * than restating the table. Falsified against a new part that declares
+   * `requiresBare` and forgets `revealsIntimateRegions`, which is how the first
+   * cut of the reveal came to read the wardrobe and never the frame.
+   */
+  it("shows the region it needs bare", () => {
+    for (const part of viewerBodyParts) {
+      if (part.requiresBare === null) continue;
+      expect(part.revealsIntimateRegions).toContain(part.requiresBare);
     }
   });
 });

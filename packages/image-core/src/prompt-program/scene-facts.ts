@@ -1,12 +1,16 @@
 import {
   isSceneStagingId,
   sceneCaptureModes,
+  sceneViewerBodyPartIds,
   type SceneCaptureMode,
+  type SceneFaceVisibility,
   type SceneStagingSurfaceForm,
+  type SceneViewerBodyPartId,
 } from "../scene-ir";
 
 /**
- * What a `scene.*` fact's value is allowed to be, and the readers that narrow it.
+ * What a `scene.*` or `viewer.*` fact's value is allowed to be, and the readers
+ * that narrow it.
  *
  * Every other closed value in a digest arrives already typed: a camera band rides
  * a discriminated `ImageCameraFact`, so `claim.value as ImageFramingBand` inside a
@@ -23,8 +27,8 @@ import {
  * throw inside a compile).
  *
  * These readers are also the app's contract. The application lowers a resolved
- * scene into facts, and what it may put in a value is exactly what one of these
- * accepts.
+ * scene — and the viewer's own body in its foreground — into facts, and what it
+ * may put in a value is exactly what one of these accepts.
  *
  * PURE. No IO, no env, no provider.
  */
@@ -84,4 +88,75 @@ export function imageSceneStagingForm(value: unknown): SceneStagingSurfaceForm |
   if (typeof stagingId !== "string" || !isSceneStagingId(stagingId)) return null;
   if (typeof candidate["revision"] !== "string" || typeof candidate["digest"] !== "string") return null;
   return value as SceneStagingSurfaceForm;
+}
+
+/**
+ * The face visibilities that ADAPT an identity lock, and nothing else.
+ *
+ * `full` is absent on purpose. A shot that can show the whole face needs no
+ * adaptation, so there is nothing for a dialect to word, and admitting the value
+ * here would give the concept a legal value every dialect had to answer with
+ * silence — a claim that renders nothing is a dropped claim, and this one sits in
+ * a mandatory segment kind. Stating the fact at all IS the statement that the
+ * face is not the evidence.
+ */
+export type ImageObscuredFace = Exclude<SceneFaceVisibility, "full">;
+
+/**
+ * How much of a subject's face a `subject.face_visibility` fact says the shot can
+ * show, or null when the value names neither adaptable answer.
+ *
+ * Null is the honest outcome for a value nothing could read, and the compile
+ * records it as a dropped claim (docs/resilience.md §2). Because the concept sits
+ * in the mandatory `identity` kind, a malformed value refuses the render rather
+ * than shipping a lock nothing corrected — the same call `scene.staging` makes,
+ * and for the same reason: the claim exists precisely because the prompt is wrong
+ * without it.
+ */
+export function imageSceneObscuredFace(value: unknown): ImageObscuredFace | null {
+  return value === "partial" || value === "hidden" ? value : null;
+}
+
+const VIEWER_BODY_PART_IDS: ReadonlySet<string> = new Set<string>(sceneViewerBodyPartIds);
+
+/**
+ * The viewer's own parts a `viewer.body_geometry` fact puts in the foreground,
+ * in the order the projection listed them.
+ *
+ * Ids, never phrases. The registry that decides WHEN a part is in frame lives in
+ * the application and the geometry sentence belongs to the endpoint, so what
+ * crosses the seam is the closed vocabulary both sides already share — exactly
+ * as a camera band does. An unknown id drops rather than travelling as a word
+ * nothing checked; an empty list yields no clause, because a foreground
+ * statement naming no limb is the disembodied shot with extra steps.
+ *
+ * Order is the projection's and is preserved: it lists the parts in registry
+ * order, so two renders of the same frame word the foreground identically.
+ */
+export function imageViewerBodyParts(value: unknown): readonly SceneViewerBodyPartId[] {
+  if (!Array.isArray(value)) return [];
+  const known: SceneViewerBodyPartId[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const id = entry.trim() as SceneViewerBodyPartId;
+    if (VIEWER_BODY_PART_IDS.has(id) && !known.includes(id)) known.push(id);
+  }
+  return known;
+}
+
+/**
+ * The descriptor list a `viewer.appearance` or `viewer.intimate_anatomy` fact
+ * carries, cleaned of blanks.
+ *
+ * Attribute-derived values, the same class `subject.appearance` and
+ * `subject.intimate_anatomy` already carry — a registry label and its semantic
+ * value, never a sentence somebody wrote for a model. A value that is not a list
+ * of strings yields an empty list, and an empty list yields no clause.
+ */
+export function imageViewerDescriptors(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }

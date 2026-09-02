@@ -42,10 +42,23 @@ import type { ImageConflictKey } from "./conflict-keys";
  * prompt segment the frame is stated first. Channel is not segment kind: nothing
  * in this channel emits into a "scene" segment, because there is none — mood
  * lands in `atmosphere`, capture mode in `framing`, staging in `pose`.
+ *
+ * `viewer` is the person holding the camera, and it is its own channel because
+ * they are neither a subject nor a place. The viewer is deliberately absent from
+ * the digest's entities — no ref for a relation to bind, no label a sentence
+ * could call them by, and never a member of `operation.subjectCount`, which
+ * counts the cast — yet an embodied first-person shot crops their own hands,
+ * forearms, lap, legs or torso into the foreground and has to say so. Filing
+ * those claims as `subject` facts would enter the viewer into the cast; filing
+ * them as `scene` facts would say the shot has a mood-like property rather than
+ * that a body is in frame. It sits between the two for the same reason `scene`
+ * sits before `subject`: the foreground the lens is looking past frames every
+ * subject standing behind it.
  */
 export const imageConceptChannels = [
   "operation",
   "scene",
+  "viewer",
   "subject",
   "camera",
   "relation",
@@ -161,6 +174,31 @@ const CONCEPT_TABLE = [
   // `location.occupancy` makes for a crowded market.
   { id: "scene.staging", channel: "scene", segmentKind: "pose", protects: ["multiple_people"] },
 
+  // --- Viewer -----------------------------------------------------------------
+  // The person holding the camera, whose own body an embodied first-person shot
+  // crops into the foreground. Never a subject: the viewer has no entity slice,
+  // no ref a relation could bind, and no place in `operation.subjectCount`.
+  //
+  // Both kinds are droppable BY KIND, for the reason the whole `scene` channel
+  // is: the viewer's own forearm is the layer that should give way under a
+  // budget squeeze before a character stops being recognizable.
+  //
+  // The geometry claim protects `multiple_people` for exactly the reason
+  // `scene.staging` does — it puts a second body's anatomy in frame beside the
+  // subject's, so the single-subject exclusion would be the prompt arguing with
+  // the frame the story described. What keeps that limb from becoming a whole
+  // person is not the exclusion but the positive composite around it: the
+  // possessive binding in the wording, the frame geometry it always states, and
+  // the person count the operation contract asserts over the cast.
+  { id: "viewer.body_geometry", channel: "viewer", segmentKind: "pose", protects: ["multiple_people"] },
+  // The viewer's own skin and build for the parts in frame — what keeps a
+  // foreground arm the same person's arm from one render to the next.
+  { id: "viewer.appearance", channel: "viewer", segmentKind: "current_state", protects: [] },
+  // The viewer's own exposed anatomy, stated by a ROUTE that permits it, exactly
+  // as `subject.intimate_anatomy` is for the cast. `current_state` for the same
+  // reason: a squeeze sheds it before anything a body is recognized by.
+  { id: "viewer.intimate_anatomy", channel: "viewer", segmentKind: "current_state", protects: [] },
+
   // --- Subject ----------------------------------------------------------------
   { id: "subject.identity", channel: "subject", segmentKind: "identity", protects: [] },
   { id: "subject.apparent_age", channel: "subject", segmentKind: "age", protects: [] },
@@ -206,6 +244,37 @@ const CONCEPT_TABLE = [
   { id: "subject.current_state", channel: "subject", segmentKind: "current_state", protects: [] },
   { id: "subject.wardrobe", channel: "subject", segmentKind: "wardrobe", protects: [] },
   { id: "subject.exposure", channel: "subject", segmentKind: "exposure", protects: [] },
+  // How much of this subject's FACE the shot can show, when the answer is not
+  // "all of it" — `partial` or `hidden`. A front-facing shot states nothing.
+  //
+  // This is the identity lock's ADAPTATION, as a fact. The cheapest way for an
+  // edit model to prove it preserved a face is to SHOW that face, so a lock
+  // reading "preserve the exact face" quietly rotates a subject the shot just
+  // put back-to-camera; what a dialect has to say instead is what to preserve
+  // when the face is not the evidence, and that the turn is not on the table.
+  // The lock string itself is matched verbatim at the model boundary, so the
+  // adaptation is a separate claim and never an edit to those bytes.
+  //
+  // `identity`, deliberately: the sentence corrects the lock, so it belongs in
+  // the lock's own segment kind, and it is unfittable by kind for the same reason
+  // the lock is. An adaptation a budget squeeze dropped while the lock survived
+  // would leave the render with exactly the failure this concept exists to end.
+  // That is also why it is a SUBJECT concept rather than a scene one: the scene
+  // channel's absolute ban on mandatory kinds is a statement about the layer that
+  // should give way, and this claim may not.
+  //
+  // The dialects give it a priority strictly under the lock's, so it FOLLOWS the
+  // lock within the identity band and never precedes it. Adjacency is not
+  // promised and does not need to be: every other subject's identity claim sits
+  // at the lock's own priority, so on an ensemble one of those may land between
+  // them, and the retired builder's measured adjacency was between the lock and
+  // the identity ANCHOR — it placed this sentence third precisely so as not to
+  // split that pair.
+  //
+  // Protects nothing. It states what to preserve, which agrees with the
+  // identity-drift exclusion rather than contradicting it, and a turned head
+  // asks for no crop.
+  { id: "subject.face_visibility", channel: "subject", segmentKind: "identity", protects: [] },
 
   // --- Camera -----------------------------------------------------------------
   // Bands, not sentences. Their protections are value-sensitive and derived.
@@ -333,6 +402,7 @@ export function isImageConceptId(id: string): id is ImageConceptId {
 export const imageConceptChannelOrder: readonly ImageConceptChannel[] = [
   "operation",
   "scene",
+  "viewer",
   "subject",
   "camera",
   "relation",

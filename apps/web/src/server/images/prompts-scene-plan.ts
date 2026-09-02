@@ -574,8 +574,9 @@ function resolveSceneCamera(
  * registry, the cast, the evidence, and the subject's own coverage.
  *
  * Route gating is deliberately NOT here — an `intimate` staging is filtered per-prompt where
- * `allowIntimate` is known, exactly as `intimateAppearance` is, because the ladder's rungs
- * disagree about it. Everything below is a property of the SCENE and therefore settled once.
+ * `allowIntimate` is known, exactly as the subject's intimate reveal is (`intimateReveal` on
+ * the compiled program), because the ladder's rungs disagree about it. Everything below is a
+ * property of the SCENE and therefore settled once.
  */
 function resolveSceneStaging(
   proposal: SceneSpec["staging"],

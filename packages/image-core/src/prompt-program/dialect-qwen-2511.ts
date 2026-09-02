@@ -15,6 +15,8 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilityAnchor,
+  faceVisibilitySentence,
   framingSentence,
   heightSentence,
   label,
@@ -31,6 +33,10 @@ import {
   spatialWord,
   stagingSentence,
   subjectCountSentence,
+  viewerAppearanceSentence,
+  viewerGeometrySentence,
+  viewerIntimateSentence,
+  viewerIsEmbodied,
 } from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
@@ -43,7 +49,7 @@ import {
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -141,6 +147,17 @@ const DELTA_PRIORITY = {
  * shortens the sentence contract the edit path depends on.
  */
 const IDENTITY_LOCK_PRIORITY = 99;
+
+/**
+ * The lock adaptation's priority: strictly under the lock's, which is what makes
+ * a turned-away shot's "do not rotate" sentence FOLLOW the lock it corrects
+ * instead of preceding it. Segments are ordered by kind and then by priority
+ * descending, so this buys ordering and not adjacency: further subjects' identity
+ * claims arrive at the lock's own priority and may land between the two. The
+ * guarantee the adaptation actually needs is that it is in the identity band,
+ * after the lock, and as unfittable as the lock — all three of which hold.
+ */
+const FACE_VISIBILITY_PRIORITY = 98.9;
 
 /** Per-compile render state. Created fresh in `compilePositive`, never shared. */
 interface RenderState {
@@ -282,7 +299,7 @@ function renderClaim(
         DELTA_PRIORITY.geometry,
       );
     case "operation.subject_count":
-      return say(subjectCountSentence(Number(claim.value)));
+      return say(subjectCountSentence(Number(claim.value), viewerIsEmbodied(input)));
     case "operation.literal_text":
       // Quoted and letter-exact — the family's text rendering is an advertised
       // strength, and quoting is how its model cards ask for exact lettering.
@@ -325,6 +342,14 @@ function renderClaim(
       return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
 
+    // --- Viewer ---------------------------------------------------------------
+    case "viewer.body_geometry":
+      return sayOrNull(viewerGeometrySentence(claim.value));
+    case "viewer.appearance":
+      return sayOrNull(viewerAppearanceSentence(claim.value));
+    case "viewer.intimate_anatomy":
+      return sayOrNull(viewerIntimateSentence(claim.value));
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
       // The identity travels in the reference, so the identity claim compiles to
@@ -341,6 +366,20 @@ function renderClaim(
       // Further subjects: the multi lock already covers "each person", so their
       // identity claims anchor the NAME the numbered assignments bind.
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`, IDENTITY_LOCK_PRIORITY);
+    }
+    case "subject.face_visibility": {
+      // The lock's adaptation: same segment kind, strictly under the lock's
+      // priority, so it follows the lock it corrects and never precedes it. It
+      // never touches the lock's bytes. The anchor is per SUBJECT, not per
+      // payload — a numbered render can carry Ilsa's identity image and none of
+      // Nyx's, and "from the reference" would then aim Nyx's preservation set at
+      // a picture of Ilsa.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      return say(
+        faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)),
+        FACE_VISIBILITY_PRIORITY,
+      );
     }
     case "subject.apparent_age":
       // Text-authoritative by owner ruling: age text must correct an

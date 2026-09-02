@@ -3,13 +3,22 @@ import {
   imageModelProfileSchema,
   imageModelSchema,
   imageReferencePolicySchema,
+  QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
-import { DEFAULT_SCENE_CAMERA } from "@/contracts/images/scene-camera";
+import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
+import { realizeBody } from "@/contracts/species";
+import {
+  DEFAULT_SCENE_CAMERA,
+  sceneSubjectOrientationById,
+  type SceneSubjectOrientationId,
+} from "@/contracts/images/scene-camera";
 import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
+import type { ViewerBodyPartId } from "@/contracts/images/viewer-body";
 import {
   expectOrder,
   expectSections,
@@ -29,6 +38,7 @@ import {
   IMAGE_SCENE_STAGING_UNSENT,
   lowerScenePlan,
   sceneLightingBand,
+  type SceneLoweringViewer,
   type SceneProgramInputs,
 } from "./scene-lowering";
 import { applySceneCastVisual } from "./scene-subject-visual";
@@ -130,13 +140,56 @@ function populatedScenePlan(over: Partial<SceneRenderPlan> = {}): SceneRenderPla
   };
 }
 
+/**
+ * The person behind the lens: enough of a persona sheet to state a body, and a
+ * realized body carrying intimate anatomy in TWO regions.
+ *
+ * Two regions on purpose. A fixture with anatomy in one region cannot tell a
+ * region-aware gate from a body-wide one — both answer the same for every input
+ * — which is exactly how the first cut of this feature shipped a reveal that
+ * read the wardrobe and never asked what the frame was pointed at.
+ */
+const VIEWER: SceneLoweringViewer = {
+  attributes: [
+    { id: "skin.tone", value: "bronze", source: "base" },
+    { id: "build.frame", value: "sturdy", source: "base" },
+    { id: "hands.size", value: "large", source: "base" },
+    { id: "arms.hair", value: "light", source: "base" },
+    { id: "breasts.size", value: "ample", source: "base" },
+    { id: "breasts.nipples", value: "puffy", source: "base" },
+    { id: "vulva.shape", value: "neat_slit", source: "base" },
+  ],
+  realizedBody: realizeBody({ intimateRegions: ["breasts", "vulva"] }),
+};
+
+/** Nothing worn: every region bare, so only the ROUTE and the FRAME can gate anatomy. */
+const VIEWER_NUDE: RegionExposure = exposedRegions([]);
+/** Trousered: the pelvis reads covered, so coverage can gate the pelvic half alone. */
+const VIEWER_TROUSERED: RegionExposure = { torso: "bare", pelvis: "covered", legs: "covered", feet: "bare" };
+
 interface CompiledScene {
   readonly program: CharacterPromptProgram;
   readonly lowered: SceneProgramInputs;
 }
 
-/** The production chain: realize each cut under the plan's camera, lower, compile. */
-function compileScene(plan: SceneRenderPlan, allowIntimate = false): CompiledScene {
+/**
+ * The production chain: realize each cut under the plan's camera, lower, compile.
+ *
+ * `viewer` is the person behind the lens, for the embodied cases; absent, the
+ * frame states its geometry and nothing about whose body it is.
+ *
+ * `referenced` is which cast members get an identity image in the payload. It
+ * defaults to all of them, and exists because the scene ladder's single-reference
+ * rung offers ONE surviving identity image while the resolved plan picks its
+ * focal independently — so "the focal has no reference of their own, but the
+ * render has references" is a real production shape and not a contrived one.
+ */
+function compileScene(
+  plan: SceneRenderPlan,
+  allowIntimate = false,
+  viewer?: SceneLoweringViewer,
+  referenced: (subjectId: string) => boolean = () => true,
+): CompiledScene {
   const built = applySceneCastVisual({ plan, members: laneProbeCastSubjects() });
   expect(built.refusal).toBeNull();
   const cast = built.visuals;
@@ -144,15 +197,18 @@ function compileScene(plan: SceneRenderPlan, allowIntimate = false): CompiledSce
     plan,
     cast: cast.map((slice) => ({ subjectId: slice.subjectId, name: slice.name })),
     allowIntimate,
+    ...(viewer === undefined ? {} : { viewer }),
   });
-  const references = cast.map((slice): CharacterPromptReference => {
-    const reference: ImageRenderReference = {
-      role: "identity",
-      buffer: Buffer.from(slice.subjectId),
-      name: slice.name,
-    };
-    return { reference, subjectId: slice.subjectId };
-  });
+  const references = cast
+    .filter((slice) => referenced(slice.subjectId))
+    .map((slice): CharacterPromptReference => {
+      const reference: ImageRenderReference = {
+        role: "identity",
+        buffer: Buffer.from(slice.subjectId),
+        name: slice.name,
+      };
+      return { reference, subjectId: slice.subjectId };
+    });
   const result = buildCharacterPromptProgram({
     lane: "scene",
     task: "scene",
@@ -308,9 +364,17 @@ describe("an absent capture decision", () => {
     expect(plan.viewerBody).toEqual([]);
     expect(plan.staging).toBeUndefined();
 
-    const { program, lowered } = compileScene(plan);
+    const { program, lowered } = compileScene(plan, false, VIEWER);
     expect(lowered.scene.some((fact) => fact.concept === "scene.possession")).toBe(true);
     expect(program.prompt).toContain("Every visible body part belongs to Nyx or Ilsa.");
+
+    // And nothing about the viewer's own body, even with a persona supplied:
+    // the composite is the measured one, unchanged. The count keeps its plain
+    // wording — `fully in frame` is the embodied variant and must not leak back
+    // onto the shot that never needed it.
+    expect(lowered.scene.filter((fact) => fact.concept.startsWith("viewer."))).toEqual([]);
+    expect(program.prompt).toContain("Exactly 2 people are in frame.");
+    expect(program.prompt).not.toContain("fully in frame");
   });
 });
 
@@ -405,5 +469,286 @@ describe("a staging the rung may not state", () => {
     expect(lowered.scene.some((fact) => fact.concept === "scene.staging")).toBe(false);
     const unsent = sink.items.find((item) => item.code === IMAGE_SCENE_STAGING_UNSENT);
     expect(unsent?.context).toMatchObject({ staging: plan.staging?.id, reason });
+  });
+});
+
+/**
+ * THE IDENTITY LOCK'S ADAPTATION (issue #391).
+ *
+ * The lock and the camera pull against each other, and the lock wins by default:
+ * the cheapest way for an edit model to prove it preserved a face is to SHOW that
+ * face, so a lock reading "preserve the exact face" turns a character the shot
+ * just put back-to-camera around to the lens. The retired prose builder said so
+ * outright in a sentence beside the lock; the compiled path inherited the lock
+ * and not the sentence, and the effective face visibility — which the orientation
+ * registry answers and a staging may override — reached nothing.
+ *
+ * Falsified against that state, where every away, profile and crown-of-the-head
+ * shot compiled the unqualified lock.
+ *
+ * The lock's own bytes are asserted present in the same breath, because the
+ * cheap wrong fix is to edit the adaptation INTO the lock — and that string is
+ * matched verbatim at the model boundary. The order assertion is ORDER, not
+ * adjacency: the adaptation's priority is strictly under the lock's, so it can
+ * never precede the lock, while every other subject's identity claim sits at the
+ * lock's own priority and may legitimately fall between them.
+ */
+describe("a shot that cannot show the subject's face", () => {
+  const NO_ROTATION = "do not rotate Nyx to face the camera.";
+
+  /** The populated plan with its arrangement removed, so the CAMERA decides the answer. */
+  const shot = (orientation: SceneSubjectOrientationId): SceneRenderPlan =>
+    populatedScenePlan({
+      staging: undefined,
+      viewerBody: [],
+      camera: { ...DEFAULT_SCENE_CAMERA, orientation },
+    });
+
+  /** The measured sentences, for a subject whose OWN identity image is in the payload. */
+  const PARTIAL_FROM_REFERENCE =
+    "Nyx's face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+  const AWAY_FROM_REFERENCE =
+    "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+
+  it.each([
+    ["profile", PARTIAL_FROM_REFERENCE],
+    ["away", AWAY_FROM_REFERENCE],
+  ] as const)("adapts the lock on a %s shot without touching the lock's bytes", (orientation, adaptation) => {
+    const { program } = compileScene(shot(orientation));
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).toContain(adaptation);
+    // A separate sentence, and the lock still reads exactly as the boundary
+    // matches it — the adaptation follows it rather than being spliced into it.
+    expectOrder(program.prompt, [QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK, adaptation]);
+  });
+
+  it("states no adaptation on a front-facing shot", () => {
+    const { program, lowered } = compileScene(shot("toward_viewer"));
+    expect(lowered.scene.some((fact) => fact.concept === "subject.face_visibility")).toBe(false);
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(NO_ROTATION);
+  });
+
+  /**
+   * The override is the whole reason `SceneStagingSemantics.faceVisibility` is a
+   * field rather than a derivation: `kneeling_before_viewer_guided` is a
+   * `toward_viewer` shot of the crown of someone's head, and no orientation can
+   * see that. It also has to survive the arrangement's own per-rung gates —
+   * withholding the staged SENTENCE never un-turns the body — which is asserted
+   * here on the moderated rung, where the intimate arrangement is not stated.
+   */
+  it("takes a staging's own answer over the orientation's, even where the arrangement is withheld", () => {
+    const staging = sceneStagings.kneeling_before_viewer_guided;
+    expect(sceneSubjectOrientationById(staging.camera.orientation)?.faceVisibility).toBe("full");
+    expect(staging.faceVisibility).toBe("hidden");
+
+    const sink = new DiagnosticCollector();
+    const lowered = lowerScenePlan({
+      plan: populatedScenePlan({ staging, camera: staging.camera, viewerBody: [...staging.viewerParts] }),
+      cast: [{ subjectId: LANE_PROBE_SUBJECT_ID, name: LANE_PROBE_NAME }],
+      allowIntimate: false,
+      sink,
+    });
+
+    expect(lowered.scene.some((fact) => fact.concept === "scene.staging")).toBe(false);
+    expect(sink.items.some((item) => item.code === IMAGE_SCENE_STAGING_UNSENT)).toBe(true);
+    expect(lowered.scene.find((fact) => fact.concept === "subject.face_visibility")?.value).toBe("hidden");
+  });
+
+  /** The same shot for a subject with no identity image of their OWN in the payload. */
+  const AWAY_UNANCHORED =
+    "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly — do not rotate Nyx to face the camera.";
+
+  /**
+   * Whose photograph the preservation set points at.
+   *
+   * Falsified against `references.length > 0`, which asks whether the PAYLOAD has
+   * references rather than whether THIS person is in one. The scene ladder's
+   * single-reference rung sends one surviving identity image and the resolved
+   * plan picks its focal independently of which one that was, so a turned-away
+   * Nyx beside Ilsa's reference would have been told to take her hair, build and
+   * skin tone "exactly from the reference" — a picture of Ilsa. The other
+   * direction is the `away` row above, which keeps the measured wording on the
+   * render that legitimately earns it: a fix that simply deleted the clause would
+   * pass this case and fail that one.
+   */
+  it("anchors the preservation set to nothing when only another subject is referenced", () => {
+    const { program } = compileScene(shot("away"), false, undefined, (subjectId) => subjectId !== LANE_PROBE_SUBJECT_ID);
+
+    // The render still locks an identity — Ilsa's — so this is not a
+    // reference-free prompt; it is a prompt with a reference of the wrong person
+    // for this claim.
+    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).toContain(AWAY_UNANCHORED);
+    expect(program.prompt).not.toContain("build and skin tone exactly from the reference");
+  });
+});
+
+/**
+ * THE VIEWER'S OWN BODY IN AN EMBODIED FRAME (issue #390).
+ *
+ * The retired prose builder stated the viewer's cropped limbs, their skin and
+ * build, and their exposed anatomy; the compiled program had no carrier for any
+ * of it, so an embodied POV shot described a foreground it never mentioned. The
+ * carrier is the `viewer` channel: claims that describe a body in frame which is
+ * NOT in the cast.
+ *
+ * Falsified against three implementations that each look reasonable:
+ *
+ * - one that files the viewer as a subject — `operation.subjectCount` then
+ *   counts a person who has no cut, no identity reference and no face;
+ * - one that emits the generic geometry line for a part a staging already
+ *   places — the same two hands stated in two places in one prompt, which is
+ *   the self-contradiction that makes a model paint a third party's arms;
+ * - one that states the viewer's parts from the plan rather than from the gate —
+ *   a dressed player's anatomy in the prompt, past the coverage rule.
+ */
+describe("the viewer's own body in an embodied frame", () => {
+  /** No staging: the composer grounded the parts and nothing else words them. */
+  const generic = (parts: readonly ViewerBodyPartId[], over: Partial<SceneRenderPlan> = {}): SceneRenderPlan =>
+    populatedScenePlan({ staging: undefined, camera: { ...DEFAULT_SCENE_CAMERA }, viewerBody: [...parts], ...over });
+
+  it("states the generic geometry, the viewer's own body facts, and no possession clause", () => {
+    const { program, lowered } = compileScene(generic(["hands"]), false, VIEWER);
+
+    expect(lowered.scene.find((fact) => fact.concept === "scene.capture_mode")?.value).toBe("first_person_embodied");
+    expect(lowered.scene.find((fact) => fact.concept === "viewer.body_geometry")?.value).toEqual(["hands"]);
+
+    expectSections(program.prompt, [
+      "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame, though the viewer's own body may be cropped into the frame.",
+      "Also in frame, in the viewer's immediate foreground: the viewer's own hands entering frame from the lower edge, close to the lens and strongly foreshortened.",
+    ]);
+    // Whose body those hands are. Without it a foreground arm changes colour
+    // between shots and reads as a different person reaching in.
+    expect(program.prompt).toContain("The viewer's own body: ");
+    expect(program.prompt).toContain("hand size: large");
+    expect(program.prompt).toContain("skin tone: bronze");
+
+    // The viewer is in the picture but never in the cast: the count still names
+    // the two people who have cuts, and no clause hands their limbs an owner.
+    expect(program.prompt).toContain("Exactly 2 people are fully in frame.");
+    expect(program.prompt).not.toContain("Every visible body part belongs to");
+
+    // Geometry before the body facts: the model has to know the limbs are the
+    // viewer's and cropped before it is told what they look like.
+    expectOrder(program.prompt, [
+      "Also in frame, in the viewer's immediate foreground:",
+      "The viewer's own body: ",
+    ]);
+  });
+
+  it("emits no generic geometry line when a staging owns every part in frame", () => {
+    const plan = populatedScenePlan();
+    const { program, lowered } = compileScene(plan, false, VIEWER);
+
+    expect(lowered.scene.some((fact) => fact.concept === "scene.staging")).toBe(true);
+    expect(lowered.scene.some((fact) => fact.concept === "viewer.body_geometry")).toBe(false);
+    expect(program.prompt).not.toContain("Also in frame, in the viewer's immediate foreground");
+
+    // The staging owns the GEOMETRY, never whose body this is — the facts cover
+    // every part in frame, staged or not.
+    expect(program.prompt).toContain("The viewer's own body: ");
+    expect(program.prompt).toContain("the viewer's own hands resting on Nyx's shoulders.");
+  });
+
+  it("words only the parts the staging left over", () => {
+    const staged = sceneStagings.lying_face_down;
+    const plan = populatedScenePlan({ viewerBody: [...staged.viewerParts, "forearms"] });
+    expect(staged.viewerParts).toContain("hands");
+
+    const { program, lowered } = compileScene(plan, false, VIEWER);
+    expect(lowered.scene.find((fact) => fact.concept === "viewer.body_geometry")?.value).toEqual(["forearms"]);
+    expect(program.prompt).toContain("Also in frame, in the viewer's immediate foreground: the viewer's own forearms");
+    // The staged hands are placed once, by the arrangement, and never a second
+    // time relative to the lens.
+    expect(program.prompt).not.toContain(
+      "the viewer's own hands entering frame from the lower edge, close to the lens and strongly foreshortened",
+    );
+  });
+
+  /**
+   * The gate, from both sides. `genitals` is never proposed — the composer runs
+   * `allowIntimate: false` whatever model it picks — so it is derived from a
+   * shot already looking down the viewer's own body and then has to survive the
+   * route AND the coverage readout. Either refusal must remove the part from the
+   * geometry AND the anatomy sentence with it; nothing may state a body part the
+   * gate withheld.
+   */
+  it.each([
+    ["the moderated route", false, VIEWER_NUDE],
+    ["the pelvis reading covered", true, VIEWER_TROUSERED],
+    ["no coverage established at all", true, undefined],
+  ] as const)("refuses the viewer's intimate anatomy when %s stops it", (_reason, allowIntimate, exposure) => {
+    const plan = generic(["lap_thighs"], exposure === undefined ? {} : { playerExposure: exposure });
+    const { program, lowered } = compileScene(plan, allowIntimate, VIEWER);
+
+    expect(lowered.scene.find((fact) => fact.concept === "viewer.body_geometry")?.value).toEqual(["lap_thighs"]);
+    expect(lowered.scene.some((fact) => fact.concept === "viewer.intimate_anatomy")).toBe(false);
+    expect(program.prompt).not.toContain("the viewer's own genitals");
+    expect(program.prompt).not.toContain("The viewer's own exposed anatomy");
+  });
+
+  it("states it when the route permits it and the pelvis reads bare", () => {
+    const plan = generic(["lap_thighs"], { playerExposure: VIEWER_NUDE });
+    const { program, lowered } = compileScene(plan, true, VIEWER);
+
+    expect(lowered.scene.find((fact) => fact.concept === "viewer.body_geometry")?.value).toEqual([
+      "lap_thighs",
+      "genitals",
+    ]);
+    expect(program.prompt).toContain("the viewer's own genitals in the immediate foreground");
+    expect(program.prompt).toContain("The viewer's own exposed anatomy: vulva shape: neat slit.");
+  });
+
+  /**
+   * COVERAGE IS NOT FRAMING, in both directions.
+   *
+   * `revealSurfaces` answers what the clothes leave uncovered ANYWHERE on the
+   * body. For the cast that is nearly the whole question, because a render draws
+   * a whole figure. For the viewer it is half of one: the camera is their own
+   * eyes, so the frame holds a few cropped limbs and the rest of them is simply
+   * not in the picture.
+   *
+   * Falsified against the shipped gate, which asked only "did any intimate part
+   * survive?" and then let coverage decide the rest. That gate got both errors,
+   * and each case below is one of them:
+   *
+   * 1. a shirtless torso in frame stated NOTHING, because the trousers kept
+   *    `genitals` out and the whole reveal hung off that one part surviving;
+   * 2. a shot of the viewer's own lap stated their bare chest, because
+   *    `genitals` had survived and the loop then ran over the whole body.
+   */
+  it("states the anatomy of the region in frame and no other", () => {
+    // Shirtless but trousered, looking down over their own chest.
+    const bareTorso = generic(["torso"], {
+      playerExposure: { torso: "bare", pelvis: "covered", legs: "covered", feet: "covered" },
+    });
+    const { program, lowered } = compileScene(bareTorso, true, VIEWER);
+
+    // The pelvis is covered, so `genitals` never entered the frame at all — and
+    // the torso that DID must still be describable.
+    expect(lowered.scene.find((fact) => fact.concept === "viewer.body_geometry")?.value).toEqual(["torso"]);
+    expect(program.prompt).toContain("The viewer's own exposed anatomy: ");
+    expect(program.prompt).toContain("breast size: ample");
+    expect(program.prompt).not.toContain("vulva shape");
+  });
+
+  it("says nothing about a bare region the frame is not pointed at", () => {
+    // Wearing nothing at all, but the shot is the viewer's own lap: their chest
+    // is bare and off-camera, which is not a reason to describe it.
+    const plan = generic(["lap_thighs"], { playerExposure: VIEWER_NUDE });
+    const { program } = compileScene(plan, true, VIEWER);
+
+    expect(program.prompt).toContain("vulva shape: neat slit");
+    expect(program.prompt).not.toContain("breast size:");
+    expect(program.prompt).not.toContain("nipples:");
+  });
+
+  it("states nothing about a body it was given no persona for", () => {
+    const { program, lowered } = compileScene(generic(["hands"]));
+
+    expect(lowered.scene.some((fact) => fact.concept === "viewer.body_geometry")).toBe(true);
+    expect(lowered.scene.some((fact) => fact.concept === "viewer.appearance")).toBe(false);
+    expect(program.prompt).not.toContain("The viewer's own body: ");
   });
 });

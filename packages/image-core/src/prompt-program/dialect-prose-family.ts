@@ -15,6 +15,8 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilityAnchor,
+  faceVisibilitySentence,
   framingSentence,
   heightSentence,
   label,
@@ -30,6 +32,10 @@ import {
   spatialWord,
   stagingSentence,
   subjectCountSentence,
+  viewerAppearanceSentence,
+  viewerGeometrySentence,
+  viewerIntimateSentence,
+  viewerIsEmbodied,
 } from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
@@ -43,7 +49,7 @@ import {
   type ImagePromptDialectId,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -111,6 +117,16 @@ export const PROSE_FAMILY_CAST_INTEGRITY =
  * before it shortens the sentence the identity of the render depends on.
  */
 const IDENTITY_LOCK_PRIORITY = 99;
+
+/**
+ * The lock adaptation's priority: strictly under the lock's, which is what makes
+ * a turned-away shot's "do not rotate" sentence FOLLOW the lock it corrects
+ * instead of preceding it. Ordering, not adjacency — further subjects' identity
+ * claims share the lock's priority and may land between the two — and ordering
+ * plus the identity band plus the mandatory kind is the whole guarantee the
+ * adaptation needs.
+ */
+const FACE_VISIBILITY_PRIORITY = 98.9;
 
 /**
  * Within-band emission offsets for the operation claims, which all arrive at
@@ -267,7 +283,7 @@ function renderClaim(
         PROSE_PRIORITY.geometry,
       );
     case "operation.subject_count":
-      return say(subjectCountSentence(Number(claim.value)));
+      return say(subjectCountSentence(Number(claim.value), viewerIsEmbodied(input)));
     case "operation.literal_text":
       return say(
         object === null
@@ -320,6 +336,14 @@ function renderClaim(
       return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
 
+    // --- Viewer ---------------------------------------------------------------
+    case "viewer.body_geometry":
+      return sayOrNull(viewerGeometrySentence(claim.value));
+    case "viewer.appearance":
+      return sayOrNull(viewerAppearanceSentence(claim.value));
+    case "viewer.intimate_anatomy":
+      return sayOrNull(viewerIntimateSentence(claim.value));
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
       // With references in the payload the identity travels in the IMAGE, and
@@ -345,6 +369,20 @@ function renderClaim(
       // Text-to-image: there is no reference to lock to, so the projection's own
       // identity descriptors are the only thing that can carry a likeness.
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
+    }
+    case "subject.face_visibility": {
+      // The lock's adaptation, under the lock's priority so it follows the
+      // sentence it corrects. Emitted on the text-to-image path too: there the
+      // descriptors carry the likeness and the same pull toward the lens applies,
+      // so what changes is only what the preservation is anchored to — and that
+      // anchor is decided per SUBJECT, because this family's role labels can
+      // introduce one person's reference on a render whose focal has none.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      return say(
+        faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)),
+        FACE_VISIBILITY_PRIORITY,
+      );
     }
     case "subject.apparent_age":
       return say(prefixed(subject, `appears ${value}`));

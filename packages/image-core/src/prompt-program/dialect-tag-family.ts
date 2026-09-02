@@ -1,5 +1,5 @@
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { SceneCaptureMode, SceneStagingId } from "../scene-ir";
+import type { SceneCaptureMode, SceneStagingId, SceneViewerBodyPartId } from "../scene-ir";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -8,7 +8,15 @@ import type {
   ImageLightingBand,
 } from "./camera-bands";
 import type { ImageConflictKey, ImageStyleMedium } from "./conflict-keys";
-import { describe, describeChange, label, listWords, possessionOwners, preservedMeanings } from "./dialect-qwen-prose";
+import {
+  describe,
+  describeChange,
+  label,
+  listWords,
+  possessionOwners,
+  preservedMeanings,
+  viewerIsEmbodied,
+} from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
   registerImagePromptDialect,
@@ -22,7 +30,13 @@ import {
   type ImagePromptDialectId,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import {
+  imageSceneCaptureMode,
+  imageSceneObscuredFace,
+  imageSceneStagingForm,
+  imageViewerBodyParts,
+  imageViewerDescriptors,
+} from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -76,6 +90,14 @@ const CAST_INTEGRITY_TAG = "each person rendered exactly once, no merged faces, 
 
 /** Below the operation band (100+), above every projection claim. */
 const IDENTITY_LOCK_PRIORITY = 99;
+
+/**
+ * Strictly under the lock's priority, so the adaptation follows the lock tag it
+ * corrects rather than preceding it. Ordering only — other subjects' identity
+ * tags share the lock's priority — which is all the adaptation needs alongside
+ * the identity band and the mandatory kind.
+ */
+const FACE_VISIBILITY_PRIORITY = 98.9;
 
 const TAG_PRIORITY = {
   change: 100.4,
@@ -139,6 +161,15 @@ function renderClaim(
     case "operation.subject_count": {
       const count = Number(claim.value);
       if (!Number.isFinite(count) || count <= 0) return say("no people");
+      // `solo focus` rather than `solo` on an embodied shot, and the booru
+      // vocabulary means exactly the distinction the count needs: `solo` says
+      // one figure and nothing else, which fights the viewer's own cropped hands
+      // in the same prompt; `solo focus` says one figure is the subject while
+      // other anatomy may be present. The count itself is unchanged — it names
+      // the cast, and the viewer is never in it.
+      if (viewerIsEmbodied(input)) {
+        return say(count === 1 ? "solo focus, exactly one person fully in frame" : `${count} people fully in frame`);
+      }
       return say(count === 1 ? "solo, 1girl or 1boy as appropriate, exactly one person" : `${count} people`);
     }
     case "operation.literal_text":
@@ -181,6 +212,20 @@ function renderClaim(
       return form === null ? null : say(stagingTag(surfaces.replace(claim.id, form), subject ?? "the subject"));
     }
 
+    // --- Viewer ---------------------------------------------------------------
+    case "viewer.body_geometry": {
+      const phrases = imageViewerBodyParts(claim.value).map(viewerPartTag);
+      return phrases.length === 0 ? null : say(phrases.join(", "));
+    }
+    case "viewer.appearance": {
+      const descriptors = imageViewerDescriptors(claim.value);
+      return descriptors.length === 0 ? null : say(`the viewer's own body: ${descriptors.join(", ")}`);
+    }
+    case "viewer.intimate_anatomy": {
+      const descriptors = imageViewerDescriptors(claim.value);
+      return descriptors.length === 0 ? null : say(`the viewer's own exposed anatomy: ${descriptors.join(", ")}`);
+    }
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
       if (spec.referenceIsIdentityAdapter && input.references.length > 0) {
@@ -197,6 +242,28 @@ function renderClaim(
         return say(of(value), IDENTITY_LOCK_PRIORITY);
       }
       return say(of(value));
+    }
+    case "subject.face_visibility": {
+      // The lock's adaptation, in tag space — this family's own phrasing rather
+      // than the prose sentence, for the reason the lock is a tag here: an
+      // English clause is off-distribution on an SDXL checkpoint. The negative
+      // half stays negative, as `CAST_INTEGRITY_TAG`'s already does, because "do
+      // not rotate" is the whole instruction and there is no positive spelling of
+      // it that does not re-describe the pose the shot already stated.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      // No anchor decision to make, unlike the prose families: this phrasing says
+      // the tone and build are PRESERVED without claiming a photograph shows
+      // them, so it stays true on a render carrying somebody else's reference or
+      // none at all. PuLID's identity transport is an embedding rather than a
+      // described likeness, and naming a reference the prompt cannot see the
+      // contents of would be the claim this family has least business making.
+      const who = subject ?? "the subject";
+      const preserved =
+        visibility === "partial"
+          ? `${who}'s face partly turned from the camera, visible features, hair, build and skin tone preserved`
+          : `${who}'s face not visible, hair, build and skin tone preserved`;
+      return say(`${preserved}, do not rotate ${who} to face the camera`, FACE_VISIBILITY_PRIORITY);
     }
     case "subject.apparent_age":
       return say(of(`appears ${value}`));
@@ -404,6 +471,40 @@ function captureModeTag(mode: SceneCaptureMode, subject: string | null): string 
       return "first-person pov, the shot seen through the viewer's own eyes, the viewer's own body cropped into frame, their face and head out of frame";
     case "selfie":
       return `phone selfie taken by ${who}, camera at arm's length or in a mirror, ${who} looking into the lens`;
+  }
+}
+
+/**
+ * One of the viewer's own parts, as tags.
+ *
+ * Deliberately SHORT, for the same reason `stagingTag` is: these endpoints are
+ * SDXL checkpoints trained on tag corpora, where a long possessive-bound English
+ * clause sits as badly as it does in the identity lock this family already
+ * rewrote. What survives the compression is the pair that does the work — the
+ * possessive binding (`the viewer's own`, never a bare limb noun) and the frame
+ * geometry (`cropped by the lower frame edge`, `foreshortened`), because an
+ * unowned, uncropped limb in a two-body prompt is the phantom-limb scar and tag
+ * space does not soften it. `pov` leads each phrase: it is the tag corpus's own
+ * name for a limb belonging to the camera-holder, and it is the cheapest anchor
+ * available here.
+ *
+ * Exhaustive over the part vocabulary: a new part is a compile error rather than
+ * a limb these endpoints silently never hear about.
+ */
+function viewerPartTag(part: SceneViewerBodyPartId): string {
+  switch (part) {
+    case "hands":
+      return "pov hands, the viewer's own hands at the lower frame edge, close to the lens, foreshortened";
+    case "forearms":
+      return "pov forearms, the viewer's own forearms entering from the lower frame edge, foreshortened, cropped by the frame";
+    case "lap_thighs":
+      return "pov lap, the viewer's own thighs across the bottom of the frame, seen from above";
+    case "legs_feet":
+      return "pov legs, the viewer's own legs receding toward the lower frame edge, feet at the far end";
+    case "torso":
+      return "pov torso, the viewer's own chest and stomach along the bottom of the frame, foreshortened";
+    case "genitals":
+      return "pov crotch, the viewer's own genitals in the immediate foreground, cropped by the lower frame edge";
   }
 }
 

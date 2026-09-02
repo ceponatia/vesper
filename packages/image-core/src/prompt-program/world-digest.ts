@@ -418,6 +418,12 @@ export interface ImageWorldDigest {
    * has no ref for a relation to point at, no label a sentence could call it by,
    * and no morphology. What it has is a channel, and the ordinary fact ordering,
    * validation and fingerprinting apply to it exactly as they do to a subject's.
+   *
+   * The VIEWER's own facts ride this same list, for the same reason and one
+   * more: they describe a body that is in frame but is not in the cast, so an
+   * entity slice for them would be a subject the count assertion has to
+   * apologize for. Their `viewer` channel is what separates them from the
+   * shot's own facts once they are here.
    */
   readonly scene: readonly ImageWorldFact[];
   readonly subjects: readonly ImageSubjectDigest[];
@@ -704,6 +710,7 @@ function channelRankOf(fact: ImageWorldFact): number {
 const CHANNEL_RANK: readonly ImageConceptChannel[] = [
   "operation",
   "scene",
+  "viewer",
   "subject",
   "camera",
   "relation",

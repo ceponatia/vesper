@@ -9,12 +9,16 @@ import {
   type ResolvedImageProfile,
   type SceneVisualReference,
 } from "@vesper/image-core";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   identityProvenanceFixture as record,
   LANE_PROBE_IMAGE_ID,
   LANE_PROBE_NAME,
   LANE_PROBE_SECOND_IMAGE_ID,
   LANE_PROBE_SECOND_NAME,
+  LANE_PROBE_SECOND_SUBJECT_ID,
+  LANE_PROBE_THIRD_NAME,
+  LANE_PROBE_THIRD_SUBJECT_ID,
   laneProbeCastSceneRender,
 } from "@/server/test-support";
 
@@ -407,5 +411,158 @@ describe("renderResolvedScene intimate reveal", () => {
     expect(prompt).not.toContain("breast size");
     // Coverage is the wardrobe's truth, not intimate detail: stated on every rung.
     expect(prompt).toContain("bare at the torso");
+  });
+
+  /**
+   * The gate is per RUNG, not per render, and this is the render that proves it:
+   * one cut, one chain, two rungs that disagree. Ilsa's anchor forbids intimate
+   * detail, so the multi rung — which renders only under the permission EVERY
+   * character anchor gives — is moderated, while the single-anchor rung it falls
+   * back to renders under the focal anchor alone, which permits.
+   *
+   * Falsified against the tempting simplification of deciding the permission
+   * once per render and compiling every rung under it: whichever value that
+   * render picked, one of these two prompts would be wrong.
+   */
+  it("decides the reveal per rung of ONE render — a moderated primary, a permitting fallback", async () => {
+    mockIntent
+      .mockResolvedValueOnce({ ok: false, error: "multi boom" })
+      .mockResolvedValueOnce({ ok: true, image: Buffer.from("rendered") });
+    rowQueue.push([{ meta: { model: `replicate/${MODEL_SLUG}` } }]);
+    const scene = laneProbeCastSceneRender({ bareFocal: true });
+    await renderResolvedScene(
+      baseInput({
+        ...scene,
+        references: scene.references.map((reference) =>
+          reference.name === LANE_PROBE_SECOND_NAME ? { ...reference, allowForIntimate: false } : reference,
+        ),
+      }),
+    );
+    // The reserved row carries the PRIMARY (multi) rung's prompt: moderated.
+    expect(pipelineCalls[0]?.asset.prompt as string).not.toContain("nipples");
+    // The correction carries the WINNING (single-anchor) rung's: permitting.
+    expect(updateCalls[0]?.prompt as string).toContain(`${LANE_PROBE_NAME} has nipples: puffy.`);
+  });
+});
+
+/**
+ * Cast integrity: the cast a render compiles IS the cast it draws — the same
+ * people, once each. The two lists arrive from different places (the cuts from
+ * the visual assembly, the references from the lane's roster) and everything
+ * downstream is derived from one or the other: the digest's subjects and
+ * `subjectCount` from the cuts, the identity bindings from the references.
+ *
+ * Falsified against the render this replaces, which compiled whatever cuts it
+ * was handed: a scene one cut short compiled a world digest one person short,
+ * asserted that smaller `subjectCount`, and still sent the missing member's
+ * identity reference — an internally inconsistent render that looks like a
+ * successful picture of a different scene. The mirror faults are pinned beside
+ * it because a one-way check would pass them: a cut nobody drew adds a body and
+ * an identity lock the payload cannot honor, and a duplicated cut counts one
+ * person twice.
+ *
+ * Pinned as: the refusal lands before provider spend, it names exactly the
+ * people who disagree, and the reserved row stores no prompt for a cast that was
+ * never going to be sent.
+ */
+describe("renderResolvedScene cast integrity", () => {
+  it("refuses a two-person render whose second member has no committed cut", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender();
+    const sink = new DiagnosticCollector();
+
+    await renderResolvedScene(baseInput({ ...scene, cast: scene.cast.slice(0, 1), sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_SECOND_NAME);
+    // The one-person prompt was never compiled, so the failed row carries none.
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.severity).toBe("error");
+    expect(refused[0]?.context).toMatchObject({
+      intended: 2,
+      compiled: 1,
+      missing: [LANE_PROBE_SECOND_SUBJECT_ID],
+      extra: [],
+      duplicated: [],
+    });
+  });
+
+  it("refuses a three-person render missing the MIDDLE member's cut, blaming only them", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender({ size: 3 });
+    const sink = new DiagnosticCollector();
+    // Nyx and Tobrek keep their cuts; Ilsa's is gone — a loss a check comparing
+    // list lengths, or trusting cast order, would report against the wrong person.
+    const cast = scene.cast.filter((slice) => slice.subjectId !== LANE_PROBE_SECOND_SUBJECT_ID);
+
+    await renderResolvedScene(baseInput({ ...scene, cast, sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    const precondition = pipelineCalls[0]?.failedPrecondition ?? "";
+    expect(precondition).toContain(LANE_PROBE_SECOND_NAME);
+    expect(precondition).not.toContain(LANE_PROBE_NAME);
+    expect(precondition).not.toContain(LANE_PROBE_THIRD_NAME);
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.context).toMatchObject({
+      intended: 3,
+      compiled: 2,
+      missing: [LANE_PROBE_SECOND_SUBJECT_ID],
+      extra: [],
+      duplicated: [],
+    });
+  });
+
+  it("refuses a committed cut for a subject no reference draws", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender({ size: 3 });
+    const sink = new DiagnosticCollector();
+    // Three cuts, two references: the prompt would describe Tobrek and assert a
+    // cast of three while the payload carries two faces. Every INTENDED member
+    // still has a cut, so a one-way check sees nothing wrong here.
+    const references = scene.references.filter((reference) => reference.entityId !== LANE_PROBE_THIRD_SUBJECT_ID);
+
+    await renderResolvedScene(baseInput({ ...scene, references, sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_THIRD_NAME);
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.context).toMatchObject({
+      intended: 2,
+      compiled: 3,
+      missing: [],
+      extra: [LANE_PROBE_THIRD_SUBJECT_ID],
+      duplicated: [],
+    });
+  });
+
+  it("refuses a cast carrying two committed cuts for one person", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender();
+    const sink = new DiagnosticCollector();
+    // Ilsa twice. Every intended member has a cut and no cut is a stranger, so
+    // the fault is visible only to a check that matches the two lists person by
+    // person: the digest would carry an extra body and the count would claim it.
+    const cast = [...scene.cast, ...scene.cast.slice(1, 2)];
+
+    await renderResolvedScene(baseInput({ ...scene, cast, sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_SECOND_NAME);
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.context).toMatchObject({
+      intended: 2,
+      compiled: 3,
+      missing: [],
+      extra: [],
+      duplicated: [LANE_PROBE_SECOND_SUBJECT_ID],
+    });
   });
 });

@@ -9,6 +9,7 @@ import {
   DiagnosticCollector,
   emptyCharacterProfile,
   garmentActorForCharacter,
+  personaToCharacterProfile,
   timeOfDayFor,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
@@ -154,6 +155,12 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     });
 
     const player = await resolveChatPersona({ ownerId: args.userId, chatId: args.chatId });
+    // The viewer's own sheet, through the one persona→character adapter. An
+    // embodied first-person frame states the skin and build of the limbs it
+    // crops in; without them the viewer's arms change colour between shots and
+    // read as a different person reaching in. It never makes the player a
+    // subject — no cut, no identity reference, no place in the subject count.
+    const playerProfile = player.profile ? personaToCharacterProfile(player.profile) : undefined;
     const playerWardrobe = scenario
       ? await resolvePlayerWardrobe(scenario.playerState, args.userId, player.profile, collected, scenario.garments)
       : null;
@@ -278,10 +285,14 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     for (const detail of castDetail) {
       const memoryGroupId = memoryGroups.get(detail.member.characterId);
       if (memoryGroupId === undefined) {
-        // A structurally guaranteed row is missing — corrupt membership.
-        // Degrade to the legacy field production FOR THIS MEMBER (a degraded
-        // default over a failed turn) rather than refusing over a continuity
-        // id — and without taking the rest of the cast's digests down with it.
+        // A structurally guaranteed row is missing — corrupt membership. This
+        // member gets no cut, and there is no per-member fallback to degrade
+        // them to: the compiled prompt program is the scene's only prompt path,
+        // so a member with no cut is a member the render cannot describe. The
+        // queue records the missing row here and hands the render the cuts it
+        // could build; the render then refuses the whole scene before provider
+        // spend rather than drawing a cast one person short
+        // (`images.scene_render.cast_mismatch`).
         log.warn("chat_scene", "no participant row for scene subject — visual digest skipped", {
           chatId: args.chatId,
           characterId: detail.member.characterId,
@@ -353,6 +364,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           recentPlayerChat,
           committedScene,
           playerExposure: playerWardrobe?.exposure,
+          ...(playerProfile ? { playerProfile } : {}),
           chatId: args.chatId,
           anchorMessageId,
           flavor: args.flavor,

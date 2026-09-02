@@ -14,6 +14,8 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilityAnchor,
+  faceVisibilitySentence,
   framingSentence,
   heightSentence,
   label,
@@ -29,6 +31,10 @@ import {
   spatialWord,
   stagingSentence,
   subjectCountSentence,
+  viewerAppearanceSentence,
+  viewerGeometrySentence,
+  viewerIntimateSentence,
+  viewerIsEmbodied,
 } from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
@@ -40,7 +46,7 @@ import {
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -137,7 +143,7 @@ function renderClaim(
           : "Recompose the frame as the new content requires.",
       );
     case "operation.subject_count":
-      return say(subjectCountSentence(Number(claim.value)));
+      return say(subjectCountSentence(Number(claim.value), viewerIsEmbodied(input)));
     case "operation.literal_text":
       // Quoted and letter-exact: 2512's text rendering is one of its advertised
       // strengths, and quoting is how the model card asks for exact lettering.
@@ -175,9 +181,29 @@ function renderClaim(
       return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
 
+    // --- Viewer ---------------------------------------------------------------
+    case "viewer.body_geometry":
+      return sayOrNull(viewerGeometrySentence(claim.value));
+    case "viewer.appearance":
+      return sayOrNull(viewerAppearanceSentence(claim.value));
+    case "viewer.intimate_anatomy":
+      return sayOrNull(viewerIntimateSentence(claim.value));
+
     // --- Subject --------------------------------------------------------------
     case "subject.identity":
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
+    case "subject.face_visibility": {
+      // This endpoint speaks no identity lock — its identity claim is a
+      // descriptor — but the adaptation is still earned: a described face is the
+      // same pull toward the lens, and the sentence is what says the turn is not
+      // on the table. Reference-free unless an identity image OF THIS SUBJECT is
+      // being sent: 2512's single `image` input is a strength-based starting
+      // point rather than a guaranteed identity slot, so the count says nothing
+      // about whose face it holds.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      return say(faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)));
+    }
     case "subject.apparent_age":
       return say(prefixed(subject, `appears ${value}`));
     case "subject.morphology":

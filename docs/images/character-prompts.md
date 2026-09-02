@@ -136,6 +136,30 @@ family emits its provider-neutral sentence. No adapter in
 `@vesper/image-models` touches prompt text, so a prompt reaches the provider
 exactly as it was compiled and hashed.
 
+**A face the shot cannot show adapts the lock, in a sentence of its own and
+never inside the lock string.** The lock says preserve the exact face, and on a
+back-turned or profile shot that pulls against the composition: the cheapest way
+for a model to prove it preserved a face is to show that face, so the subject
+gets rotated back to the lens. A `subject.face_visibility` claim states what the
+shot can show, and each dialect words it separately — what to preserve when the
+face is not the evidence, and that the turn is not on the table. It is filed in
+the `identity` segment kind at a priority strictly below the lock's, so it
+**follows the lock within the identity band and never precedes it**, and it is as
+unfittable as the lock it corrects: an adaptation a budget squeeze dropped while
+the lock survived would leave exactly the failure it exists to end. Nothing
+promises the two are adjacent — every subject's identity claim sits at the lock's
+own priority, so on an ensemble one of those may fall between them.
+
+**The preservation set is anchored per subject, never per payload.** "Preserve
+… exactly from the reference" is said only where an identity reference for
+*that* subject is in the send list. A render can carry one person's identity
+image and not another's — the scene ladder's single-reference rung is exactly
+that shape, and its focal is chosen independently of which reference survived —
+and anchoring on the mere presence of references would tell the model to copy
+one character's hair, build and skin tone from a photograph of somebody else.
+Which shots carry an adaptation at all is the scene lane's
+([pipelines/scene-framing.md](pipelines/scene-framing.md) §The camera).
+
 ## Intimate anatomy on a permitting route
 
 A committed cut never carries intimate anatomy: the visual-state image selection keeps its
