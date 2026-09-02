@@ -2,7 +2,9 @@ import { affordancePerceptionView } from "@/contracts";
 import type { AttributeValue } from "@/contracts/attributes";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
 import type { CharacterProfile } from "@/contracts/world/profile";
+import type { SceneVisualReference } from "@vesper/image-core";
 import {
+  applySceneCastVisual,
   type AvatarSegmentAssembly,
   type AvatarStyle,
   type AvatarWardrobeItem,
@@ -13,6 +15,7 @@ import {
   type SceneCastMember,
   type SceneRenderPlan,
   sceneSpecSchema,
+  type SceneSubjectVisualSlice,
   toWornInputs,
   type VariantKind,
   type VariantSegmentAssembly,
@@ -606,4 +609,63 @@ export function duplicatedVisualFacts(
 ): string[] {
   const observed = observeVisualFacts(prompt, probes);
   return probes.filter((probe) => (observed[probe.key] ?? 0) > 1).map((probe) => probe.key);
+}
+
+/** The stored image id of the probe subject's generated identity anchor. */
+export const LANE_PROBE_IMAGE_ID = "img-probe-nyx";
+/** The stored image id of the second probe subject's generated identity anchor. */
+export const LANE_PROBE_SECOND_IMAGE_ID = "img-probe-ilsa";
+
+/** A two-person chat scene as `renderResolvedScene` receives it from the queue. */
+export interface LaneProbeCastSceneRender {
+  /** The resolved plan, every member's fields produced from their own committed cut. */
+  readonly plan: SceneRenderPlan;
+  /** The cast slices behind those fields — the cuts the scene's program compiles from. */
+  readonly cast: readonly SceneSubjectVisualSlice[];
+  /** One generated identity reference per member, Nyx then Ilsa, each naming its subject. */
+  readonly references: SceneVisualReference[];
+  readonly referenceBuffers: Map<string, Buffer>;
+}
+
+/**
+ * The two-subject cast, realized and referenced the way the scene queue hands it
+ * to the render: the plan with a setting, a light and a resolved action for each
+ * person, the committed cut behind every member, and one identity reference per
+ * member bound to the subject it depicts. The one shape an end-to-end scene
+ * render test compiles a real program over — populated, so a prompt that
+ * dropped a scene decision or a person would read wrong rather than empty.
+ */
+export function laneProbeCastSceneRender(): LaneProbeCastSceneRender {
+  const members = laneProbeCastSubjects();
+  const built = applySceneCastVisual({
+    plan: laneProbeCastScenePlan(members.map((subject) => subject.member)),
+    members,
+  });
+  if (built.refusal !== null) throw new Error(`the probe cast refused to realize: ${built.refusal}`);
+  const reference = (
+    name: string,
+    entityId: string,
+    imageId: string,
+    role: "focal" | "other",
+  ): SceneVisualReference => ({
+    kind: "character",
+    name,
+    entityId,
+    role,
+    allowForIntimate: true,
+    imageId,
+    source: "generated",
+  });
+  return {
+    plan: built.plan,
+    cast: built.visuals,
+    references: [
+      reference(LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID, LANE_PROBE_IMAGE_ID, "focal"),
+      reference(LANE_PROBE_SECOND_NAME, LANE_PROBE_SECOND_SUBJECT_ID, LANE_PROBE_SECOND_IMAGE_ID, "other"),
+    ],
+    referenceBuffers: new Map([
+      [LANE_PROBE_IMAGE_ID, Buffer.from("nyx")],
+      [LANE_PROBE_SECOND_IMAGE_ID, Buffer.from("ilsa")],
+    ]),
+  };
 }

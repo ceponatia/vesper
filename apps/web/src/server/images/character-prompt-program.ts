@@ -70,7 +70,7 @@ import "./packs-qwen-2512-portrait";
  * | | shadow | production |
  * |---|---|---|
  * | resolver | `imagePromptBindingForShadow` — `candidate` rows included | `activeImagePromptBinding` — `active` only |
- * | no binding | a recorded `unmeasured` verdict | this lane keeps its legacy prompt path |
+ * | no binding | a recorded `unmeasured` verdict | the lane's own law: a prose lane keeps its builder, the scene drops the rung |
  * | refusal | a recorded verdict; the render is untouched | the row fails BEFORE provider spend |
  * | `refuseOnMissingRequired` | `false` — the loss must be measurable, not fatal | the lane's own task decision |
  *
@@ -79,10 +79,12 @@ import "./packs-qwen-2512-portrait";
  * answer even now that every character profile the picker offers is bound
  * (#256): a lane whose profile key gains a row later, an operator-added
  * model with no dialect, and `chat_place` — the one identity-free chat lane,
- * deliberately unbound — all land here, and each must keep the prompt path it
- * already had rather than failing. A refusal, by contrast, is a real
- * configuration or compile fault on a lane that IS bound, and falling back to
- * the legacy paragraph there would hide it behind acceptable-looking images.
+ * deliberately unbound — all land here. What a lane does with it is the lane's
+ * own law, never this seam's: a lane that still has a prose builder keeps it,
+ * and the chat scene, whose only prompt path is this one, drops that rung from
+ * its chain (`scene.ts`). A refusal, by contrast, is a real configuration or
+ * compile fault on a lane that IS bound, and rendering something else there
+ * would hide it behind acceptable-looking images.
  *
  * ## Reference planning belongs here
  *
@@ -245,8 +247,9 @@ export interface CharacterPromptProgram {
 }
 
 /**
- * No binding for this (model, task[, profileKey]). The ORDINARY staged-rollout
- * answer, never an error: this lane keeps the prompt path it already had.
+ * No binding for this (model, task[, profileKey]). An ORDINARY answer, never an
+ * error: what the lane does with it — keep a prose builder, drop a rung — is the
+ * lane's own law.
  */
 export interface CharacterPromptProgramUnbound {
   readonly kind: "unbound";
@@ -291,24 +294,26 @@ export const IMAGE_CHARACTER_PROMPT_PACK_MISSING = "image_prompt_program.pack_mi
 
 /**
  * The slot numbers this prompt asserts would not describe the payload the lane
- * is about to send (#256) — a cutover failure, refused before provider spend.
+ * is about to send — refused before provider spend.
  *
  * ## It is a tripwire, not a bug detector
  *
  * Nothing here is currently wrong, and that is the point. This module numbers
- * from `planned.primary`, and every lane hands `renderImageIntent` a list the
- * same planner reduces to that same `primary` — so the slot the prompt calls N
- * IS the image the provider receives at N, by construction. The invariant holds
- * because two independent call sites happen to agree.
+ * from `planned.primary` and hands that list back as `sentReferences`. The
+ * scene lane sends exactly that list, and the transport's own planning of it is
+ * a fixed point — an already-planned list re-plans to itself — so the slot the
+ * prompt calls N IS the image the provider receives at N by construction. The
+ * other character lanes hand the transport the same list they handed this seam,
+ * which the same planner reduces to the same order.
  *
- * `renumbered` is the exact condition under which that agreement becomes
- * load-bearing: it means the order a LANE thinks in and the order its profile's
- * policy imposes have diverged. No production lane diverges today — every one
- * orders identity first, which is what the policies rank first, and capacity
- * trims from the tail. So this refusal fires only when somebody changes that,
- * and it fires before provider spend instead of after a plausible-looking image
- * of the wrong composition has been saved. #256 asks for exactly this until
- * #250 moves final numbering downstream and removes the coupling.
+ * `renumbered` is the condition under which a LANE's own order and the order
+ * its profile's policy imposes have diverged — the one state in which a reader
+ * of the lane's code would expect a different slot from the one the prompt
+ * names. No production lane diverges today: every one orders identity first,
+ * which is what the policies rank first, and capacity trims from the tail. So
+ * this refusal fires only when somebody changes that, and it fires before
+ * provider spend instead of after a plausible-looking image of the wrong
+ * composition has been saved.
  *
  * Refused rather than warned because the failure it guards is invisible in the
  * output: the render succeeds, and the row's prompt and payload are each

@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  imageModelProfileSchema,
-  imageModelSchema,
-  type ResolvedImageProfile,
-  type SceneVisualReference,
-} from "@vesper/image-core";
+import { imageModelProfileSchema, imageModelSchema, type ResolvedImageProfile } from "@vesper/image-core";
+import { laneProbeCastSceneRender } from "@/server/test-support";
 
 /**
  * What the scene renderer DOES with a caller-resolved LoRA: it rides every rung
@@ -13,6 +9,10 @@ import {
  * The transport is mocked at `renderImageIntent`, so each case reads the intent
  * that would have been sent. The row's `meta` is read off the reserve call, which
  * is where the model and the shot are already written.
+ *
+ * Every case renders a real two-person scene over a compiled program — the
+ * wrapper's base slug is bound for the scene task — because a rung that compiles
+ * no program is dropped from the chain and never reaches the intent at all.
  */
 
 vi.mock("../ai", async (importOriginal) => {
@@ -38,7 +38,6 @@ vi.mock("@/server/log", () => ({
 
 import { db } from "../db";
 import { runImagePipeline, type ImagePipelineOptions, type ImageRow } from "./assets";
-import { emptySceneRenderPlan } from "./prompts-scene-plan";
 import { renderImageIntent } from "./render-intent";
 import { renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
 
@@ -82,23 +81,9 @@ const wrapperProfile: ResolvedImageProfile = {
   }),
 };
 
-const characterRef = (name: string, imageId: string): SceneVisualReference => ({
-  kind: "character",
-  name,
-  role: "focal",
-  allowForIntimate: true,
-  imageId,
-  source: "generated",
-});
-
 function input(overrides: Partial<RenderResolvedSceneInput> = {}): RenderResolvedSceneInput {
   return {
-    plan: emptySceneRenderPlan(),
-    references: [characterRef("Mira", "imgA"), characterRef("Nadia", "imgB")],
-    referenceBuffers: new Map([
-      ["imgA", Buffer.from("a")],
-      ["imgB", Buffer.from("b")],
-    ]),
+    ...laneProbeCastSceneRender(),
     mode: "multi",
     profile: wrapperProfile,
     linkage: { ownerId: "usr-1" },

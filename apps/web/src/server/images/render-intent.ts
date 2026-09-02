@@ -257,15 +257,16 @@ export async function renderImageIntent(
       }),
     );
   }
-  // Renumbering is a WARNING, not an observation. Lanes that number their
-  // references in the prompt build that text from their own order, before the
-  // policy is consulted (`buildSceneRenderPrompt` writes "Image 2: the
-  // location"). Reordering is one way the slots move and removal from ahead of a
-  // kept reference is the other — dedicate or disallow the second of three and
-  // the third arrives as image two under a prompt still calling it image three.
-  // No lane triggers either today; if one starts, the prompt and the payload
-  // have begun describing different images and the operator needs to know before
-  // the renders look subtly wrong.
+  // Renumbering is a WARNING, not an observation. A prompt that numbers its
+  // references — every numbering-dialect prompt program — numbers them from the
+  // list its lane planned, and this planner reduces the lane's list to that
+  // same order; the chat scene hands over the planned list itself, so here it
+  // re-plans to itself. Reordering is one way the slots could move and removal
+  // from ahead of a kept reference is the other — dedicate or disallow the
+  // second of three and the third arrives as image two under a prompt still
+  // calling it image three. No lane triggers either today; if one starts, the
+  // prompt and the payload have begun describing different images and the
+  // operator needs to know before the renders look subtly wrong.
   if (plan.referencesRenumbered) {
     sink?.push(
       diag("warn", "image_profile.references_renumbered", "a reference is being sent in a slot the lane did not number it as", {

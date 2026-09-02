@@ -106,8 +106,10 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  * at all: `scene-lowering.ts` turns the resolved plan into typed prompt-program
  * inputs, and the endpoint's dialect words them (#388). The Stage 3 WP-C ruling
  * that the prose builder kept POV, framing and staging wording described the
- * pre-cutover lane and no longer does; `buildSceneRenderPrompt` survives only
- * for a rung whose model has no active binding.
+ * pre-cutover lane and no longer does. `buildSceneRenderPrompt` serves no
+ * production scene at all — a rung whose model has no active binding is dropped
+ * from the chain rather than worded by it — and survives only for the Image
+ * Lab's staged bench and the eval script.
  *
  * The one thing the plan still owes this module is its LIGHT: the composer's
  * phrase names a band ({@link sceneLightingBand}), and that band enters the
@@ -181,8 +183,8 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  * The scene task's segment policy: never state age (the narrative/visual age
  * split — scene renders inherit visible age from the reference), full-figure
  * frame, and intimate anatomy only where the region actually reads bare. The
- * per-route intimate gate (uncensored edit vs moderated fallback) stays in the
- * transport, which emits `intimateAppearance` per rung.
+ * selection is made once per cut and every rung compiles the same cut; the
+ * per-rung intimate gate is the staged arrangement's (`scene-lowering.ts`).
  */
 export const SCENE_SEGMENT_POLICY = {
   age: "omit",
