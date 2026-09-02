@@ -154,8 +154,8 @@ don't add them to new work.
 
 ## Iterations and milestones
 
-- Iterations are two-week Mon–Sun cycles (Iteration 1 = 2026-08-31 →
-  2026-09-13). At a boundary: accept or carry over the closing iteration's
+- Iterations are two-week cycles (Iteration 1 closed early on 2026-09-01;
+  Iteration 2 = 2026-09-02 → 2026-09-15, then every 14 days). At a boundary: accept or carry over the closing iteration's
   items, then pull the next execution issues in. Set via `item-edit` with
   `--iteration-id`.
 - Milestones per the README: **sparingly** — only when several issues
@@ -176,6 +176,11 @@ don't add them to new work.
   for anything scriptable.
 - The GraphQL API cannot edit single-select options, views, workflows, or
   create iteration fields — those are UI-only.
+- `updateProjectV2Field` with `iterationConfiguration` CAN change iteration
+  dates, but it **recreates every iteration with a new id and clears the
+  Iteration value on every item**. Snapshot `item-list` (number → iterationId)
+  first, run the mutation, then re-`item-edit --iteration-id` each item onto
+  the new ids (verified 2026-09-02: 47 items cleared, all restored).
 - New issues auto-add to the board within minutes; `gh project item-add` only
   when fields must be set immediately. PRs are **not** auto-added — step 4 is
   what puts them there.
