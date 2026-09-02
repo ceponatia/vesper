@@ -525,7 +525,6 @@ export function stagedSceneProgram(input: StagedSceneProgramInput): StagedSceneP
     profile: input.profile,
     bindingProfileKey: input.bindingProfileKey,
     bindingStrategy: "instruction_edit",
-    resolver: "active",
     cuts: [subject],
     scene: lowered.scene,
     location: lowered.location,

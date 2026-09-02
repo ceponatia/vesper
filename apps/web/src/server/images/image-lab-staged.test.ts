@@ -192,7 +192,6 @@ function chatLaneProgram(entry: SceneStaging): CharacterPromptProgram {
     profile: CHAT_PROFILE,
     bindingProfileKey: CHAT_PROFILE.profile.key,
     bindingStrategy: "instruction_edit",
-    resolver: "active",
     cuts: [
       {
         subjectId: slice.subjectId,
