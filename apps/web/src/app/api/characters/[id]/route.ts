@@ -9,7 +9,7 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
-import { deleteCharacterIdentityAssets, HIDDEN_IMAGE_KINDS } from "@/server/images";
+import { deleteNonGalleryCharacterImages, HIDDEN_IMAGE_KINDS } from "@/server/images";
 import {
   characterPatchSchema,
   findViewable,
@@ -135,15 +135,15 @@ export const DELETE = withAuthorizedResource(
     // Worlds/sessions hold their own snapshots, so a library delete never breaks
     // them and never hits a FK — no in-use guard.
     await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));
-    // Gallery-visible images (avatars, portraits, scenes) deliberately SURVIVE the
-    // character: they are owner-visible Gallery history, not internal state, so this
-    // route never calls `deleteEntityImages` for a character. `images.entity_id` is left
-    // dangling on purpose — the row keeps rendering with no character to point at.
-    // Hidden identity assets are the opposite: internal render inputs nobody browses,
-    // so they die with the character explicitly, here. The pack rows themselves cascade
-    // with the character row; the crop image rows do not (no FK), which is why this call
-    // exists.
-    void deleteCharacterIdentityAssets(id, user.id).catch(() => undefined);
+    // An image survives its character iff its kind is Gallery-listable
+    // (`GALLERY_IMAGE_KINDS` — scene, portrait_variant, entity): those rows are
+    // owner-visible Gallery history, not internal state, so this route never calls
+    // `deleteEntityImages` for a character and `images.entity_id` is left dangling on
+    // purpose — the row keeps rendering with no character to point at. Everything else
+    // — the canonical `avatar` (reachable only through the portrait studio, which dies
+    // with the character) and every hidden identity asset alike — dies with the
+    // character here, in the one call that states the rule.
+    void deleteNonGalleryCharacterImages(id, user.id).catch(() => undefined);
     return jsonOk({ ok: true });
   },
 );

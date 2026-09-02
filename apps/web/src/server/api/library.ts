@@ -395,10 +395,11 @@ export function composeItemDefinition(row: {
  * Entity deletion image cleanup (docs/images/asset-registry.md): drop the rows, then remove
  * files best-effort — sweepOrphans reconciles anything missed.
  *
- * Locations and items only. A character's Gallery-visible images (avatars, portraits,
- * scenes) deliberately SURVIVE the character as owner-visible Gallery history, so the
- * character delete route never calls this for `"character"` — only its hidden identity
- * assets are purged, explicitly, by `deleteCharacterIdentityAssets`.
+ * Locations and items only. A character follows a different rule — an image survives
+ * its character iff its kind is Gallery-listable (`GALLERY_IMAGE_KINDS`: scene,
+ * portrait_variant, entity) — so the character delete route never calls this for
+ * `"character"`; it calls `deleteNonGalleryCharacterImages` (`images/assets.ts`)
+ * instead, which purges everything else (the canonical `avatar` included) in one call.
  */
 export async function deleteEntityImages(entityKind: ImageEntityKind, entityId: string, ownerId: string): Promise<void> {
   await purgeImagesWhere(
