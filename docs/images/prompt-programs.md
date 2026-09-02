@@ -281,7 +281,10 @@ one compatible pack pair, so a render never observes half an activation.
 
 A binding's status says which pack pair production runs. Production resolution
 (`activeImagePromptBinding`) sees only `active` rows, and null is an ordinary
-answer rather than a fault — the lane keeps its existing prompt builder.
+answer rather than a fault — what it means is the lane's own law. `chat_place` is
+unbound by design and keeps its own builder; a character-bearing lane has no
+second prompt path, so an unbound scene rung is dropped from its degradation
+chain rather than worded another way.
 A binding exists only for a profile that actually renders on the bound model — a
 profile riding another endpoint gets no row, never a reserved name. Pack
 **versions** carry their own status independently: it records the data's

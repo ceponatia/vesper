@@ -41,8 +41,14 @@ client image schema passes it through.
 
 ## Failing before spend
 
+A character-bearing lane assembles its prompt **once**, as a compiled prompt program
+([../character-prompts.md](../character-prompts.md)). There is no second prose path to degrade
+to, so a lane that cannot state the render honestly refuses rather than wording it another way —
+and a lane with a degradation chain, such as the chat scene, drops the rung it cannot compile
+and fails only when none is left.
+
 A lane whose visual digest cannot be assembled, or whose required fact resolves no clause,
-**fails the row before the provider call** rather than degrading to a legacy prose builder.
+**fails the row before the provider call**.
 Each lane's page names its own diagnostic code. The degraded-state rules are
 [../../resilience.md](../../resilience.md): a failed or unreadable wardrobe is unknown state,
 never a bare body.

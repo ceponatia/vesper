@@ -93,12 +93,13 @@ travels back to the caller for exactly that reason.
 
 On a dialect that numbers its slots, planning that moves a sent reference out of
 the position the caller's order gave it **refuses**. It is a tripwire rather than
-a bug detector: the prompt is numbered from the plan, and every lane hands the
-renderer a list the same planner reduces to that same order, so slot N is the
-image received at N by construction. The refusal guards the moment that
-agreement stops holding, and fires before spend rather than after a plausible
-image of the wrong composition is saved. A dialect that names references by role,
-or names none, cannot misname a slot it never asserts.
+a bug detector: the prompt is numbered from the plan, the chat scene sends the
+planned list itself, and every other lane hands the renderer the list it handed
+this seam, which the same planner reduces to the same order — so slot N is the
+image received at N by construction. The refusal guards the moment a lane's own
+order stops agreeing with its profile's policy, and fires before spend rather
+than after a plausible image of the wrong composition is saved. A dialect that
+names references by role, or names none, cannot misname a slot it never asserts.
 
 ## Identity on a reference-anchored render
 
@@ -135,10 +136,15 @@ before provider spend.
 | `image_prompt_program.references_renumbered`  | planning moves a slot a numbering dialect names         |
 | `visual_state.digest.cast_*`                  | the cast could not be folded into one digest            |
 
-A refusal is never a fall-back to the legacy prompt: a binding that resolved and
-then failed to compile is a fault on a lane that IS bound, and rendering
-something reasonable instead hides it behind an acceptable-looking image. Each
-lane fails in its own shape — the reserving lanes fail the row before any
-provider call, and the chat-look mint leaves no row at all, because it re-fires
-on every outfit change and would otherwise accumulate one failed row per change.
+A refusal is never a fall-back to a second prompt system: a binding that resolved
+and then failed to compile is a fault on a lane that IS bound, and rendering
+something reasonable instead hides it behind an acceptable-looking image.
+
+Each lane fails in its own shape. The reserving lanes fail the row before any
+provider call. The chat-look mint leaves no row at all, because it re-fires on
+every outfit change and would otherwise accumulate one failed row per change. The
+scene lane's chain is several renders of one scene, so a refusal drops that rung
+and the row fails only when no rung survives
+([pipelines/scene-images.md](pipelines/scene-images.md)) — a handoff to the next
+rung, never a handoff to another prompt.
 

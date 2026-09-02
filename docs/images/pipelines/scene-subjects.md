@@ -36,16 +36,16 @@ Two output consequences ride this sourcing:
   not carry them).
 
 The digest owns the species feature groups, anatomy departures, cataloged distinctive marks,
-and the current-state owners (active conditions, body-surface wetness). The route's **residual
-sheet** keeps everything the projection does not yet carry in the legacy flat form,
-`identityAnchorSummary` still leads the anchor phrase (the digest's identity/morphology clauses
-join it), a cataloged mark keeps its single statement on the sheet/anchor side, and the reveal
-lines (`sceneRevealAppearance`) keep their exposure machinery and per-route intimate gating.
-
-The transport emits `appearance` for textual subjects and `identityAnchors` for referenced ones
-— mutually exclusive per subject — so a fact is never stated twice in one prompt, and the
-builder's own exposure segment is deliberately not consumed: the transport already states
-coverage once, from the queue's canonical readout.
+and the current-state owners (active conditions, body-surface wetness). What a chat scene
+sends is compiled from the **cut itself** — the digest, the subject's resolved attributes, the
+canonical coverage readout and the realized body — through the character seam
+([../character-prompts.md](../character-prompts.md)): the character adapter projects the visual
+attributes the digest does not carry as typed subject facts, states coverage **once** as
+authoritative `subject.exposure` claims over the readout, and synthesizes the identity anchor
+for a subject a required identity reference names. Of the plan's per-character fields, the
+compiled program reads only the name and the resolved action; the preformatted appearance,
+anchor and reveal strings the field production also writes feed `buildSceneRenderPrompt`,
+which serves the Image Lab's staged bench and no chat scene.
 
 **What this sourcing changes is where the per-character field strings come from, and nothing
 else.** The scene's own decisions — the setting, the light, the mood, the capture mode, the
@@ -124,26 +124,24 @@ with no modelled footwear reads barefoot.
 ## Subject body reveal
 
 The identity reference is a **waist-up** portrait, so it locks the face and upper body but
-underspecifies the figure below it. `buildSceneRenderPrompt` therefore supplements the
-identity-locked subject with a body line built from attributes tagged `imageReveal`
-([../../contracts/attributes.md](../../contracts/attributes.md)):
+underspecifies the figure below it. The cut's selection supplies the figure from attributes
+tagged `imageReveal` ([../../contracts/attributes.md](../../contracts/attributes.md)), under
+the scene policy's coverage rule:
 
 - `"shape"` — silhouette that reads *through* clothing (breast size/shape, waist, hips, leg
-  build/length, foot size) — is described **always**;
+  build/length, foot size) — is selected **always**;
 - `"skin"` — surface detail (nipples, leg hair, toenails, foot arch) — only when its region
   reads bare or sheer.
 
-`sceneRevealAppearance(…, {intimate})` splits them by sensitivity: the SFW lower-body half
-(`Body (below the portrait's framing): …`) rides every route, while the intimate half (breast
-silhouette always, nipples and anatomy when exposed) rides only the uncensored route. Untagged
-intimate anatomy (vulva, penis) keeps the plain exposure gate, so nothing is lost. Sensory
-scent and taste never render.
+Intimate anatomy follows the same rule (`intimate: "when_bare"`): a scene states it iff the
+character has it and the region is exposed. Untagged intimate anatomy (vulva, penis) keeps the
+plain exposure gate, so nothing is lost. Sensory scent and taste never render. It is selected
+at render assembly, not via the composer LLM.
 
-`buildSceneRenderPrompt` emits the intimate half **only when `allowIntimate` is set**, which
-`renderResolvedScene` passes on the uncensored reference-edit rungs and never on the
-bare-prompt fallback. It is injected at render assembly, not via the composer LLM — so a scene
-shows explicit anatomy iff the character has it, the region is exposed, and the route is
-uncensored.
+The selection is made **once per cut**, and every rung of the attempt chain compiles the same
+cut. What differs per rung is the intimate **staging**: the scene lowering carries a staged
+arrangement only on a route whose references permit it
+([scene-framing.md](scene-framing.md) §Intimate staging).
 
 This is wired on the **character-chat scene path only** (`images/character-scene.ts`, the
 iteration ground for image-prompt tuning); avatars keep strict exposure gating
@@ -180,12 +178,15 @@ rendered.
 
 ## Identity anchors and the setting
 
+A subject named by a required identity reference carries a synthesized **identity anchor** in
+the digest — a model-neutral fact that this subject is the person in the reference — and the
+bound endpoint's dialect words the lock
+([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored render).
+The reference stays authoritative for the face: an edit lane's digest states no identity
+descriptors, so nothing in the prompt invites the model to repaint what it should be copying.
 `identityAnchorSummary` (whitelisted identity-critical attributes — skin tone and undertone,
-lips, eyes, hair, face shape and freckles) rides `ScenePresentCharacter.identityAnchors` on the
-chat context builder, and `buildSceneRenderPrompt` emits it **only for the identity-locked
-reference subject**, worded reference-authoritative ("Same person as the reference image — …
-the reference is authoritative where they differ") so it reinforces the lock without overriding
-the avatar. The multi-reference path gets the same per-anchored-character phrase.
+lips, eyes, hair, face shape and freckles) still rides `ScenePresentCharacter.identityAnchors`
+on the chat context builder; a chat scene's compiled prompt does not read it.
 
 **Setting from scene memory:** `queueChatScene` derives the `room` from the chat's scene memory
 — the current place's background **sketch** when the `chat_scene_sketch` agent has written one,

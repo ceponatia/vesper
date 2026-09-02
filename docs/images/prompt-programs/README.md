@@ -194,6 +194,12 @@ This gives Vesper a clean way to become better at using a particular model witho
 
 There is one narrow exception, and it exists because of measurement rather than convenience. A small closed set of intimate staging arrangements has wording that was tuned against real renders, where a handful of words in each sentence carries almost the whole difference between a good result and a broken one. That wording travels with the fact under a version number, and each model dialect has to say explicitly whether it is using the reviewed sentence or writing its own. It is never a way for a caller to hand the model an arbitrary paragraph.
 
+## There is no alternative route
+
+A character image has exactly one assembly path. When a render cannot be described honestly — a lost identity anchor, an unregistered pack, a reference label that would no longer match the image being sent — Vesper refuses that render instead of reaching for a simpler prompt written somewhere else. A picture that looks acceptable but was assembled a different way hides the fault rather than reporting it.
+
+Where a route has a degradation ladder, as a chat scene does, the attempt that cannot be described is dropped and the next one is tried. The render fails only when no attempt is left.
+
 ## Prompt packs are tunable behavior, not world truth
 
 A prompt pack is the versioned set of prompt-behavior choices for a model/task combination.
@@ -292,7 +298,7 @@ A player should notice that:
 - characters keep distinctive visual facts across portraits, variants, and scenes;
 - reference-based edits change the requested thing without needlessly redesigning everything else;
 - current clothing and scene state beat stale information visible in an old reference image;
-- multi-character scenes are less likely to merge or swap identities;
+- multi-character scenes are less likely to merge or swap identities, because the images the prompt describes are the images actually sent;
 - authored unusual anatomy is preserved instead of “corrected” into generic human anatomy;
 - exact text is not sabotaged by a generic no-text rule;
 - retries are understandable: retrying the same composition means something different from rendering the current world again.
