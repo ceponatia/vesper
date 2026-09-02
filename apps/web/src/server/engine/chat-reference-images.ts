@@ -106,6 +106,9 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
       attributeOverlays: stored.attributeOverlays,
       // OQ8: the two gates must agree, or the enqueue fires and the job no-ops.
       ...(scenario ? { garmentKey: chatGarmentLookKey(scenario.garments, [actorId], scenario.clockMinutes) } : {}),
+      // The same band the cut below renders from: a headwear override flip
+      // changes the prompt without moving any other term of the key.
+      hairOcclusion: wardrobe.hairOcclusion,
     });
     // Scoped to THIS character: a chat-wide freshness read would see a roster
     // sibling's look and skip minting one for the member whose outfit moved.

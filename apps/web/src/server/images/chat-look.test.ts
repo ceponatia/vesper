@@ -52,6 +52,18 @@ describe("chatLookKey (chat-wardrobe-parity — structured key)", () => {
     );
   });
 
+  it("folds in a covering hair-occlusion band without invalidating an uncovered chat's key", () => {
+    const key = chatLookKey(base);
+    // `none` and absent hash identically: no chat whose hair shows re-mints
+    // because the band now exists on the input.
+    expect(chatLookKey({ ...base, hairOcclusion: "none" })).toBe(key);
+    // A headwear override flipping `none` → `full` moves nothing else in the key
+    // (same ids, exposure, overlays), so only this term can retire the old
+    // visible-hair anchor — the collision the band was added to break.
+    expect(chatLookKey({ ...base, hairOcclusion: "full" })).not.toBe(key);
+    expect(chatLookKey({ ...base, hairOcclusion: "partial" })).not.toBe(chatLookKey({ ...base, hairOcclusion: "full" }));
+  });
+
   it("a legacy free-text chat (empty worn list) keys on the overlay alone — stable across the change", () => {
     const legacy = { wornItemIds: [], overlay: "a linen sundress", exposure: FULLY_COVERED, attributeOverlays: [] };
     expect(chatLookKey(legacy)).toBe(chatLookKey({ ...legacy, overlay: "  A Linen Sundress " }));
