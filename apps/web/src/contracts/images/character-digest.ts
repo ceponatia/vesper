@@ -293,6 +293,13 @@ export interface CharacterWorldDigestAssemblyInput {
   readonly camera?: CharacterCameraAssemblyInput;
   /** Passed through untouched — reference planning stays the lane's own job. */
   readonly references?: readonly ImageReferenceFact[];
+  /**
+   * Facts a ROUTE states about a subject beyond its committed cut, by subject
+   * id — today the intimate reveal a permitting scene rung carries
+   * (`subject-reveal.ts`). Appended to that subject's projected facts untouched:
+   * the route decided them, and this assembly re-decides no value it is handed.
+   */
+  readonly subjectFacts?: Readonly<Record<string, readonly ImageWorldFact[]>>;
   /** Revisions recorded beside a committed cut, or added to a standalone token. */
   readonly sourceRevisions?: readonly ImageSourceRevision[];
 }
@@ -465,10 +472,17 @@ export function assembleCharacterWorldDigest(
     sources: input.sources,
   });
   const { read, sourceRevisions, camera } = characterWorldRead(input);
+  const routeFacts = input.subjectFacts ?? {};
+  const subjects = slices.subjects.map((subject) => {
+    const extra = routeFacts[subject.entityId] ?? [];
+    if (extra.length === 0) return subject;
+    const known = new Set(subject.facts.map((fact) => fact.key));
+    return { ...subject, facts: [...subject.facts, ...extra.filter((fact) => !known.has(fact.key))] };
+  });
   const digestInput: ImageWorldDigestInput = {
     read,
     ...(input.scene === undefined ? {} : { scene: input.scene }),
-    subjects: identityAnchoredSubjects(slices.subjects, input.references ?? []),
+    subjects: identityAnchoredSubjects(subjects, input.references ?? []),
     ...(input.location === undefined ? {} : { location: input.location }),
     ...(input.items === undefined ? {} : { items: input.items }),
     ...(input.relations === undefined ? {} : { relations: input.relations }),

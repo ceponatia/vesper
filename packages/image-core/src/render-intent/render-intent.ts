@@ -416,9 +416,9 @@ export interface PlannedImageReferences<T extends ImageRenderReferenceSpec> {
    * Whether any sent reference occupies a different SLOT than the caller's own
    * order would have given it.
    *
-   * Load-bearing, not a statistic. A lane that numbers its references in the
-   * prompt — `buildSceneRenderPrompt` writes "Image 2: the location" — builds
-   * that text from its OWN order, before this function runs. If the slot numbers
+   * Load-bearing, not a statistic. A prompt that numbers its references — a
+   * numbered-image dialect writes "Image 2 shows the place." — is built from a
+   * list decided before this function runs on the payload. If the slot numbers
    * move, the text and the payload disagree and the model is told the room is the
    * person.
    *

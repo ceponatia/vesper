@@ -64,7 +64,7 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
  *   image the payload sends first, and hands the dialect the wrong reference
  *   count to pick its identity lock from. When planning genuinely renumbers, a
  *   numbering dialect REFUSES rather than shipping a prompt that names the wrong
- *   slot (until #250 moves numbering downstream).
+ *   slot.
  * - **A compiled render that still carries the legacy segments.**
  *   `resolveIntentPrompt` prefers `promptSegments` over `prompt` whenever the
  *   list is non-empty, so such a render sends the legacy prose while its row

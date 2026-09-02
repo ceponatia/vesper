@@ -359,6 +359,7 @@ function renderClaim(
     case "subject.absence":
       return say(prefixed(subject, `has ${value}, shown plainly and anatomically correctly`));
     case "subject.appearance":
+    case "subject.intimate_anatomy":
       return say(prefixed(subject, `has ${value}`));
     case "subject.pose":
       return say(prefixed(subject, `is ${value}`));

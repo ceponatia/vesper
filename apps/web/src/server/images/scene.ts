@@ -50,7 +50,6 @@ import {
   sceneSpecSchema,
 } from "./prompts-scene-composer";
 import { heuristicFocalName, resolveScenePlan, type SceneRenderPlan } from "./prompts-scene-plan";
-import { buildSceneRenderPrompt } from "./prompts-scene-render";
 import { lowerScenePlan } from "./scene-lowering";
 
 export type SceneComposeInput = SceneComposerContext & {
@@ -214,10 +213,10 @@ export interface RenderResolvedSceneInput {
    * Every person this render draws, as their own realized cut, in cast order
    * (issue #256).
    *
-   * The prompt-program cutover's input. Present for the chat scene caller, which
-   * commits one cut per present cast member; absent — the lab, the staged
-   * lanes, any caller with no committed cuts — leaves the render on the legacy
-   * scene prose exactly as before this field existed.
+   * The scene's ONLY prompt input. Present for the chat scene caller, which
+   * commits one cut per present cast member; absent, there is nothing to compile
+   * a program from, every provider rung is dropped and the render fails — the
+   * scene has no second prompt system to draw from.
    *
    * The WHOLE cast, not the focal alone: a two-person scene compiles a program
    * that states both people, binds each identity reference to its own subject
@@ -243,6 +242,12 @@ export interface RenderResolvedSceneInput {
  * bare prompt), not a hop between vendors. A referenced edit never degrades to
  * an unrelated text-to-image person, and a failure on the chosen model stays
  * visible rather than being papered over by a different one.
+ *
+ * The compiled prompt program is the whole of the scene's words. Every rung that
+ * reaches a provider carries one, and a rung that compiles none is dropped from
+ * the ladder rather than handed a second description assembled somewhere else —
+ * see the per-rung compile below for why one prompt system is the point and not
+ * an economy.
  */
 export async function renderResolvedScene(input: RenderResolvedSceneInput): Promise<string> {
   const demo = isDemoMode();
@@ -290,47 +295,27 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const multiCapacity = model ? referenceCapacity(model).max : 1;
   const multiReferences = orderedReferences.slice(0, multiCapacity);
 
+  // The row's `sourceImageId` and `meta.referenceName` — which stored image this
+  // render was anchored on. A provenance read, not a prompt one: the prompt's
+  // account of its references comes from the compiled program, which plans them
+  // itself rather than trusting this list's order.
   const anchorRef = imageRefs[0];
-  const allowIntimate = anchorRef?.allowForIntimate ?? false;
-  const multiAllowIntimate = imageRefs
-    .filter((reference) => reference.kind === "character")
-    .every((reference) => reference.allowForIntimate);
 
-  // Who holds the camera has ONE source: the plan. The retired prose builder's
-  // own option is derived from it rather than passed beside it, so a selfie can
-  // never compile as a POV shot while the fallback prose calls it a selfie.
-  const framing = plan.captureMode === "selfie" ? ("selfie" as const) : undefined;
-  const textPrompt = buildSceneRenderPrompt(plan, { framing });
-  const editPrompt = anchorRef
-    ? buildSceneRenderPrompt(plan, { referenceName: anchorRef.name, allowIntimate, framing })
-    : textPrompt;
-  const multiPrompt =
-    multiReferences.length >= 2
-      ? buildSceneRenderPrompt(plan, {
-          allowIntimate: multiAllowIntimate,
-          multiReferences: imageRefs.slice(0, multiCapacity).map((reference) => ({
-            name: reference.name ?? "",
-            kind: reference.kind,
-          })),
-          framing,
-        })
-      : editPrompt;
-
-  const legacyPromptFor = (id: SceneAttemptId): string =>
-    id === "multi_edit" ? multiPrompt : id === "edit" ? editPrompt : textPrompt;
   /** Stored on the image row for provider/model auditability. */
   const modelFor = (id: SceneAttemptId): string => (id === "demo" || !model ? "demo" : `replicate/${model.slug}`);
 
-  // The reference set one attempt sends — the same selection runSceneProvider
-  // makes, restated here because provenance must describe the send, not the plan.
-  const sentReferencesFor = (id: SceneAttemptId): ImageRenderReference[] => {
+  // The references one rung OFFERS its program — the lane's own list, in the
+  // lane's own order, already cut to the model's capacity. Not the send list:
+  // the program plans these, and the list it hands back is what the rung sends
+  // (`sentReferencesFor`, below).
+  const offeredReferencesFor = (id: SceneAttemptId): ImageRenderReference[] => {
     if (id === "multi_edit") return multiReferences.slice(0, attemptReferenceCount(id, model));
     if (id === "edit" && primaryReference) return [primaryReference];
     return [];
   };
 
   // -------------------------------------------------------------------------
-  // The prompt-program cutover (issue #256), compiled PER RUNG
+  // The scene's ONE prompt assembly: a compiled program, PER RUNG
   // -------------------------------------------------------------------------
   //
   // Per rung because the rungs are genuinely different renders of one scene: the
@@ -342,12 +327,19 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // binding row.
   //
   // Pure and cheap, so every rung in the chain is compiled up front, before
-  // anything is reserved. That is what lets a rung whose program REFUSES be
-  // dropped from the chain rather than failing the whole render: a refusal
-  // means this rung cannot be described honestly (a renumbered numbered-slot
-  // prompt, a lost anchor, an unregistered pack), and the ladder's whole
-  // purpose is that a rung which cannot run hands off to the next one. The
-  // render fails only when no rung survives.
+  // anything is reserved. A rung that produces no program is DROPPED from the
+  // chain, whatever stopped it — a compile refusal, no active binding for its
+  // (model, task, profile key), no committed cast cut to describe, no resolved
+  // profile at all. There is nowhere else for its words to come from, and that
+  // is the law rather than a gap: a rung whose program will not compile cannot
+  // say honestly what it is about to draw, and a picture assembled from a second
+  // description nobody can trace is worse than no picture. The ladder's purpose
+  // is that a rung which cannot run hands off to the next one, so a drop costs
+  // this render nothing until the drops run out — the render fails when no rung
+  // survives.
+  //
+  // The demo rung is the one rung that needs no program: it draws a monogram
+  // from the focal name and never reads a prompt.
   const cast = input.cast ?? [];
   const castCuts = cast.map((slice) => ({
     subjectId: slice.subjectId,
@@ -362,14 +354,44 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // job-local cut id per render and hands every member the same one, and the
   // cast merge refuses a cast whose members disagree about it.
   const castReadToken = cast[0]?.cutId ?? "";
-  // The intimate permission each rung actually renders under — the same three
-  // answers its prompt is built with. The scene lowering needs it because a
-  // staged arrangement may only travel a route that allows it, exactly as the
-  // retired builder gated the staged sentence per prompt rather than per plan.
+  // The intimate permission each rung actually renders under. Per rung rather
+  // than per render because a staged arrangement may only travel a route that
+  // allows it: the reference-edit rungs render under their anchors' own
+  // permission — every character anchor must clear it on the multi rung — and
+  // the bare rung under none.
+  const allowIntimate = anchorRef?.allowForIntimate ?? false;
+  const multiAllowIntimate = imageRefs
+    .filter((reference) => reference.kind === "character")
+    .every((reference) => reference.allowForIntimate);
   const allowIntimateFor = (id: SceneAttemptId): boolean =>
     id === "multi_edit" ? multiAllowIntimate : id === "edit" ? allowIntimate : false;
-  const programFor = (id: SceneAttemptId): CharacterPromptProgram | "refused" | null => {
-    if (castCuts.length === 0 || profile === null || id === "demo") return null;
+  const programFor = (id: SceneAttemptId): CharacterPromptProgram | "dropped" | null => {
+    if (id === "demo") return null;
+    // Unreachable rather than tolerated: `routeSceneAttempts` routes no provider
+    // rung without a model, so a profile-less request arrives with an empty
+    // chain and never gets here. Written as a drop anyway because the only other
+    // honest option is a rung compiled against a model nobody resolved, and a
+    // routing change that made this reachable would then ship that silently.
+    if (profile === null) {
+      sink.push(
+        diag("warn", "images.scene_render.program_unprofiled", `the ${id} rung has no resolved image profile to compile a prompt program against`, {
+          context: { attempt: id },
+        }),
+      );
+      return "dropped";
+    }
+    // No committed cut for anyone in the cast — the digest this scene's words
+    // are made of. A render here has people to draw and nothing that says what
+    // they look like, so it fails rather than describing them from somewhere
+    // else.
+    if (castCuts.length === 0) {
+      sink.push(
+        diag("warn", "images.scene_render.program_castless", `the ${id} rung has no committed cast cut to compile a prompt program from`, {
+          context: { attempt: id, model: profile.model.slug, profileKey: profile.profile.key },
+        }),
+      );
+      return "dropped";
+    }
     // The scene itself: the setting, the light, the mood, the capture mode, the
     // staged arrangement and what each person is doing, lowered into the typed
     // inputs the program compiles. Per rung, because the staging gate is.
@@ -384,7 +406,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     // provider will be called with and resolution needs no special case: the
     // wrapper carries its own binding and its own delta-edit dialect.
     const kind = id === "generate" ? "generate" : "edit";
-    const sent = sentReferencesFor(id);
+    const offered = offeredReferencesFor(id);
     const program = buildCharacterPromptProgram({
       lane: "scene",
       task: "scene",
@@ -396,8 +418,13 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       scene: scene.scene,
       location: scene.location,
       camera: scene.camera,
+      // The rung's intimate permission, spent a second time: the lowering spent
+      // it on the staged arrangement, and this spends it on the cast's exposed
+      // anatomy. The uncensored reference-edit rungs state it; the bare-prompt
+      // fallback and a content-rejection retry compile the cut alone.
+      intimateReveal: allowIntimateFor(id),
       read: { kind: "committed_cut", token: castReadToken },
-      references: sent.map((reference): CharacterPromptReference => {
+      references: offered.map((reference): CharacterPromptReference => {
         const subjectId = subjectByReference.get(reference);
         return { reference, ...(subjectId === undefined ? {} : { subjectId }) };
       }),
@@ -419,33 +446,65 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           context: { attempt: id, code: program.code, ...program.context },
         }),
       );
-      return "refused";
+      return "dropped";
     }
-    // `unbound` — no active row for this model, task and job shape. The rung
-    // keeps the legacy scene prose; it is not a fault.
-    return null;
+    // `unbound` — no active row for this model, task and job shape. The binding
+    // table is where a scene's words are authorized, so an endpoint missing from
+    // it is an endpoint this lane may not speak for, and the seam's own answer
+    // names the three coordinates an operator has to go add a row for.
+    sink.push(
+      diag("warn", "images.scene_render.program_unbound", `the ${id} rung has no active prompt binding to compile against`, {
+        context: { attempt: id, model: program.modelSlug, task: program.task, profileKey: program.profileKey },
+      }),
+    );
+    return "dropped";
   };
 
-  const programs = new Map<SceneAttemptId, CharacterPromptProgram | "refused" | null>(
+  const programs = new Map<SceneAttemptId, CharacterPromptProgram | "dropped" | null>(
     chain.map((id) => [id, programFor(id)]),
   );
   const compiledFor = (id: SceneAttemptId): CharacterPromptProgram | null => {
     const program = programs.get(id);
-    return program === undefined || program === "refused" ? null : program;
+    return program === undefined || program === "dropped" ? null : program;
   };
+  /**
+   * The references one rung SENDS: its compiled program's own planned list, in
+   * the program's send order.
+   *
+   * ONE source for the payload and the prompt. The program numbers its slots
+   * from this list, so sending it — rather than re-deriving a list here that
+   * happens to reduce to the same order — is what makes "Image 2" name the image
+   * at slot 2 by construction. The transport plans the list once more on the way
+   * out, and planning an already-planned list is a fixed point, so nothing
+   * downstream can move a slot the prompt has named. Empty for the demo rung,
+   * which sends nothing.
+   */
+  const sentReferencesFor = (id: SceneAttemptId): readonly ImageRenderReference[] =>
+    compiledFor(id)?.sentReferences ?? [];
+  // The letters the demo rung draws. Resolved once and shared with the attempt
+  // context so the row's prompt and the picture cannot name different people.
+  const monogramLabel = plan.focal?.name || "Scene";
+  /**
+   * The prompt channels one rung sends on.
+   *
+   * The demo rung is the only rung a runnable chain can hold with no compiled
+   * program, so the first argument is only ever spent there — and what it spends
+   * is the monogram label, which is what makes the stored row describe the
+   * picture that was drawn rather than a request nobody made.
+   */
   const transportFor = (id: SceneAttemptId): CharacterPromptTransport =>
-    characterPromptTransport(legacyPromptFor(id), undefined, compiledFor(id));
-  const runnableChain = chain.filter((id) => programs.get(id) !== "refused");
+    characterPromptTransport(monogramLabel, undefined, compiledFor(id));
+  const runnableChain = chain.filter((id) => programs.get(id) !== "dropped");
   if (runnableChain.length < chain.length) {
     sink.push(
-      diag("warn", "images.scene_render.rungs_dropped", "a rung was dropped because its prompt program refused", {
-        context: { dropped: chain.filter((id) => programs.get(id) === "refused") },
+      diag("warn", "images.scene_render.rungs_dropped", "a rung was dropped because it compiled no prompt program", {
+        context: { dropped: chain.filter((id) => programs.get(id) === "dropped") },
       }),
     );
   }
 
   // An empty chain means the resolved model cannot serve this render at all
-  // (edit-only, no usable reference), or every rung's program refused. Reserve
+  // (edit-only, no usable reference), or no rung compiled a program. Reserve
   // nothing and fail the row with a message naming the model, rather than
   // silently rendering something else.
   const primary = runnableChain[0];
@@ -476,9 +535,8 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
 
   const ctx: SceneAttemptContext = {
     transportFor,
-    primaryReference,
-    multiReferences,
-    focalName: plan.focal?.name ?? "Scene",
+    referencesFor: sentReferencesFor,
+    focalName: monogramLabel,
     profile,
     ...(input.resolvedLora ? { resolvedLora: input.resolvedLora } : {}),
     attempts: new Map(),
@@ -494,7 +552,11 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         entityId: linkage.entityId,
         chatId: linkage.chatId,
         anchorMessageId: linkage.anchorMessageId,
-        prompt: primary ? transportFor(primary).prompt : textPrompt,
+        // No runnable rung means nothing will be asked of a provider, so there
+        // is no prompt to record: the column defaults to empty and the row is a
+        // failed render whose `no_attempt` diagnostic carries the cause. Writing
+        // a prompt no rung would have sent is the one thing this must not do.
+        prompt: primary ? transportFor(primary).prompt : "",
         sourceImageId: anchorRef?.imageId,
         meta: {
           demo,
@@ -528,8 +590,9 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           // rung-specific — each rung states its own references and operation
           // kind — so a fallback rung winning replaces it in the correction pass
           // below. The stored record always describes the rung the row's prompt
-          // and model describe. Absent on a caller with no committed cuts, which
-          // is how a row says which prompt system built it.
+          // and model describe. Absent only on the demo rung and on a row with
+          // no runnable rung at all, neither of which asks a provider for
+          // anything.
           ...(reservedProgram?.meta ?? {}),
         },
       },
@@ -583,8 +646,8 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
 
 interface SceneAttemptContext {
   transportFor: (id: SceneAttemptId) => CharacterPromptTransport;
-  primaryReference: ImageRenderReference | null;
-  multiReferences: ImageRenderReference[];
+  /** The rung's compiled program's planned send list — the slots its prompt describes. */
+  referencesFor: (id: SceneAttemptId) => readonly ImageRenderReference[];
   focalName: string;
   profile: ResolvedImageProfile | null;
   /** The caller-resolved LoRA every rung of this chain carries, when there is one. */
@@ -685,32 +748,26 @@ export async function executeSceneChain(
 }
 
 /**
- * Run one rung of the chain. The reference count comes from the model's own
- * capacity (`attemptReferenceCount`) rather than a fixed slice, so a
- * single-reference model on a `multi_edit` rung sends one image instead of
- * handing the provider three and having two silently dropped.
+ * Run one rung of the chain. The references it sends are its compiled program's
+ * own planned list — the slots the prompt describes — so a rung can neither hand
+ * the provider an image its text does not account for nor number one the
+ * payload does not carry. No capacity slice here: the list the program was
+ * offered was already cut to the model's own capacity, and planning trimmed the
+ * rest.
  */
 async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): Promise<ProviderRenderResult> {
   if (id === "demo") return { ok: true, image: monogramSvg(ctx.focalName || "Scene") };
   if (!ctx.profile) return { ok: false, failure: { reason: "other", message: "no image model is registered" } };
 
-  const wanted = attemptReferenceCount(id, ctx.profile.model);
-  const references =
-    id === "multi_edit"
-      ? ctx.multiReferences.slice(0, wanted)
-      : id === "edit" && ctx.primaryReference
-        ? [ctx.primaryReference]
-        : [];
-
   const result = await renderImageIntent(
     {
       profile: ctx.profile,
       // Prompt and any compiled negative in one decision. This lane never sets
-      // `promptSegments` — the scene builders produce prose, not segments — so
-      // the transport carries the compiled program's positive text when the rung
-      // compiled one and the legacy rung prose when it did not.
+      // `promptSegments`: every rung that reaches a provider carries a compiled
+      // program, so the transport is always that program's positive text and its
+      // exclusions, and there is no second channel for them to disagree with.
       ...ctx.transportFor(id),
-      references,
+      references: [...ctx.referencesFor(id)],
       target: { aspectRatio: IMAGE_TARGET_ASPECT },
       // Every rung carries it: the chain is one model's degradation ladder, so a
       // fallback from the multi-reference rung to the single-anchor one is still

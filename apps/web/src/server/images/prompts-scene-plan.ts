@@ -95,9 +95,9 @@ export interface SceneRenderPlan {
   staging?: SceneStaging;
   /**
    * The viewer's own parts in frame — registry-validated, but NOT yet gated on coverage or
-   * the route. That last filter runs per-prompt in `buildSceneRenderPrompt`, because
-   * `allowIntimate` differs per provider rung (the uncensored edit allows intimate detail;
-   * the text-to-image fallback does not), exactly like `intimateAppearance`.
+   * the route. That last filter runs per rung in the scene lowering (`scene-lowering.ts`),
+   * because `allowIntimate` differs per provider rung (the uncensored edit allows intimate
+   * detail; the text-to-image fallback does not).
    */
   viewerBody: ViewerBodyPartId[];
   /**

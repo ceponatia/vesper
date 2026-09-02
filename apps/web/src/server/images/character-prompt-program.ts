@@ -30,6 +30,7 @@ import {
   type VisualImageCastMergeRefusal,
 } from "@/contracts/images/visual-digest";
 import type { CharacterSubjectSources } from "@/contracts/images/character-adapter";
+import { subjectIntimateRevealFacts } from "@/contracts/images/subject-reveal";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   assembleCharacterWorldDigest,
@@ -70,7 +71,7 @@ import "./packs-qwen-2512-portrait";
  * | | shadow | production |
  * |---|---|---|
  * | resolver | `imagePromptBindingForShadow` — `candidate` rows included | `activeImagePromptBinding` — `active` only |
- * | no binding | a recorded `unmeasured` verdict | this lane keeps its legacy prompt path |
+ * | no binding | a recorded `unmeasured` verdict | the lane's own law: a prose lane keeps its builder, the scene drops the rung |
  * | refusal | a recorded verdict; the render is untouched | the row fails BEFORE provider spend |
  * | `refuseOnMissingRequired` | `false` — the loss must be measurable, not fatal | the lane's own task decision |
  *
@@ -79,10 +80,12 @@ import "./packs-qwen-2512-portrait";
  * answer even now that every character profile the picker offers is bound
  * (#256): a lane whose profile key gains a row later, an operator-added
  * model with no dialect, and `chat_place` — the one identity-free chat lane,
- * deliberately unbound — all land here, and each must keep the prompt path it
- * already had rather than failing. A refusal, by contrast, is a real
- * configuration or compile fault on a lane that IS bound, and falling back to
- * the legacy paragraph there would hide it behind acceptable-looking images.
+ * deliberately unbound — all land here. What a lane does with it is the lane's
+ * own law, never this seam's: a lane that still has a prose builder keeps it,
+ * and the chat scene, whose only prompt path is this one, drops that rung from
+ * its chain (`scene.ts`). A refusal, by contrast, is a real configuration or
+ * compile fault on a lane that IS bound, and rendering something else there
+ * would hide it behind acceptable-looking images.
  *
  * ## Reference planning belongs here
  *
@@ -198,6 +201,18 @@ export interface CharacterPromptProgramInput {
   readonly location?: ImageLocationDigest | null;
   /** The lane's own camera statement, layered over the committed cut's viewing reads. */
   readonly camera?: CharacterCameraAssemblyInput;
+  /**
+   * Whether this render's ROUTE permits intimate anatomy.
+   *
+   * The committed cut never carries it — the visual-state selection keeps its
+   * consent gate shut in every lane — so a permitting route projects each cut's
+   * exposed intimate anatomy as typed `subject.intimate_anatomy` facts beside
+   * the digest (`contracts/images/subject-reveal.ts`), from the same resolved
+   * attributes and coverage readout the cut was selected over. Absent or false
+   * projects nothing: a moderated rung, and every lane that does not decide
+   * this per render, compiles the cut alone.
+   */
+  readonly intimateReveal?: boolean;
   readonly read: CharacterWorldReadInput;
   /**
    * The references the lane would hand `renderImageIntent`, in the lane's own
@@ -245,8 +260,9 @@ export interface CharacterPromptProgram {
 }
 
 /**
- * No binding for this (model, task[, profileKey]). The ORDINARY staged-rollout
- * answer, never an error: this lane keeps the prompt path it already had.
+ * No binding for this (model, task[, profileKey]). An ORDINARY answer, never an
+ * error: what the lane does with it — keep a prose builder, drop a rung — is the
+ * lane's own law.
  */
 export interface CharacterPromptProgramUnbound {
   readonly kind: "unbound";
@@ -291,24 +307,26 @@ export const IMAGE_CHARACTER_PROMPT_PACK_MISSING = "image_prompt_program.pack_mi
 
 /**
  * The slot numbers this prompt asserts would not describe the payload the lane
- * is about to send (#256) — a cutover failure, refused before provider spend.
+ * is about to send — refused before provider spend.
  *
  * ## It is a tripwire, not a bug detector
  *
  * Nothing here is currently wrong, and that is the point. This module numbers
- * from `planned.primary`, and every lane hands `renderImageIntent` a list the
- * same planner reduces to that same `primary` — so the slot the prompt calls N
- * IS the image the provider receives at N, by construction. The invariant holds
- * because two independent call sites happen to agree.
+ * from `planned.primary` and hands that list back as `sentReferences`. The
+ * scene lane sends exactly that list, and the transport's own planning of it is
+ * a fixed point — an already-planned list re-plans to itself — so the slot the
+ * prompt calls N IS the image the provider receives at N by construction. The
+ * other character lanes hand the transport the same list they handed this seam,
+ * which the same planner reduces to the same order.
  *
- * `renumbered` is the exact condition under which that agreement becomes
- * load-bearing: it means the order a LANE thinks in and the order its profile's
- * policy imposes have diverged. No production lane diverges today — every one
- * orders identity first, which is what the policies rank first, and capacity
- * trims from the tail. So this refusal fires only when somebody changes that,
- * and it fires before provider spend instead of after a plausible-looking image
- * of the wrong composition has been saved. #256 asks for exactly this until
- * #250 moves final numbering downstream and removes the coupling.
+ * `renumbered` is the condition under which a LANE's own order and the order
+ * its profile's policy imposes have diverged — the one state in which a reader
+ * of the lane's code would expect a different slot from the one the prompt
+ * names. No production lane diverges today: every one orders identity first,
+ * which is what the policies rank first, and capacity trims from the tail. So
+ * this refusal fires only when somebody changes that, and it fires before
+ * provider spend instead of after a plausible-looking image of the wrong
+ * composition has been saved.
  *
  * Refused rather than warned because the failure it guards is invisible in the
  * output: the render succeeds, and the row's prompt and payload are each
@@ -377,11 +395,17 @@ function castAssembly(
   cuts: readonly CharacterPromptSubjectCut[],
   read: CharacterWorldReadInput,
   world: Pick<CharacterWorldDigestAssemblyInput, "scene" | "location" | "camera">,
+  intimateReveal: boolean,
 ): Omit<CharacterWorldDigestAssemblyInput, "operation" | "references"> | VisualImageCastMergeRefusal {
   const merged = mergeVisualImageCastDigests(cuts.map((cut) => cut.digest));
   if (!merged.ok) return merged.refusal;
   const labels: Record<string, string> = {};
   const sources: Record<string, CharacterSubjectSources> = {};
+  // The route's own facts about each person, beside the cut: the intimate
+  // reveal, on a route that permits it. Projected here from the cut's resolved
+  // attributes and coverage readout, because this is the one place that has
+  // both and the assembly re-decides nothing it is handed.
+  const subjectFacts: Record<string, readonly ImageWorldFact[]> = {};
   for (const cut of cuts) {
     if (cut.name !== undefined) labels[cut.subjectId] = cut.name;
     sources[cut.subjectId] = {
@@ -389,11 +413,21 @@ function castAssembly(
       exposure: cut.exposure,
       realizedBody: cut.realizedBody,
     };
+    if (intimateReveal) {
+      const reveal = subjectIntimateRevealFacts({
+        subjectId: cut.subjectId,
+        attributes: cut.attributes,
+        exposure: cut.exposure,
+        realizedBody: cut.realizedBody,
+      });
+      if (reveal.length > 0) subjectFacts[cut.subjectId] = reveal;
+    }
   }
   return {
     digest: merged.digest,
     ...(Object.keys(labels).length === 0 ? {} : { labels }),
     sources,
+    ...(Object.keys(subjectFacts).length === 0 ? {} : { subjectFacts }),
     read,
     // The lane's scene statement rides through untouched. Spread conditionally so
     // a lane that states none assembles exactly the input it did before the
@@ -494,11 +528,16 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   }
 
   // --- 3. Assemble the world digest over the lane's own cast ----------------
-  const cast = castAssembly(input.cuts, input.read, {
-    ...(input.scene === undefined ? {} : { scene: input.scene }),
-    ...(input.location === undefined ? {} : { location: input.location }),
-    ...(input.camera === undefined ? {} : { camera: input.camera }),
-  });
+  const cast = castAssembly(
+    input.cuts,
+    input.read,
+    {
+      ...(input.scene === undefined ? {} : { scene: input.scene }),
+      ...(input.location === undefined ? {} : { location: input.location }),
+      ...(input.camera === undefined ? {} : { camera: input.camera }),
+    },
+    input.intimateReveal === true,
+  );
   if ("code" in cast) {
     sink?.push(
       diag("warn", cast.code, "a character cast could not be folded into one digest", {

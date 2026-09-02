@@ -90,6 +90,11 @@ when something does — measured as slot equality, so removing the second of thr
 (dropped, disallowed, or routed to a dedicated field) counts, while trimming from the tail does
 not. No lane triggers it.
 
+A character-image prompt is numbered from the prompt program's own reference plan rather than
+from a list written before planning, so its slots agree with the payload by construction and the
+seam refuses (`image_prompt_program.references_renumbered`) if planning ever moves one
+([../character-prompts.md](../character-prompts.md)).
+
 ## Two things the intent deliberately does not send
 
 It does **not** pin a provider version: an ordinary render follows whatever the model slug

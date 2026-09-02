@@ -1,5 +1,6 @@
 import { attributeRegistry, type AttributeDefinition, type AttributeValue } from "@/contracts/attributes";
 import type { RegionExposure } from "@/contracts/items/visibility";
+import { revealSurfaces } from "@/contracts/images/subject-reveal";
 import { imageAgeBandPhrases } from "@/contracts/images/character-adapter";
 import { VIEWER_SKIN_ATTRIBUTE_IDS, type ViewerBodyPart } from "@/contracts/images/viewer-body";
 import type { CharacterProfile } from "@/contracts/world/profile";
@@ -251,74 +252,9 @@ export function viewerBodyAppearance(
   return excerpt(out.join("; "), VIEWER_BODY_CHARS);
 }
 
-/**
- * Which exposure region uncovers each intimate attribute category. An intimate
- * category with NO entry here never renders in an image (axis undefined ⇒
- * `intimateAttrRendersExposed` returns false) — this is deliberate for the
- * universal `anus` / `perineum` categories: image inclusion is a PLACEHOLDER
- * pending image-prompt re-evaluation (owner ruling 2026-07-23). Every render
- * today views the character from the front, where anal/perineal detail can't
- * show and would only confuse the model, so those categories stay omitted (they
- * remain fully exposure-gated for chat/prose). Add `anus`/`perineum → "pelvis"`
- * when rear/exposure framing lands.
- */
-const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
-  breasts: "torso",
-  vulva: "pelvis",
-  penis: "pelvis",
-  testicles: "pelvis",
-};
-
-/**
- * Whether an intimate-anatomy attribute should surface in an IMAGE prompt: its
- * region must read exposed (bare/sheer, not covered by a garment) and sensory
- * scent/taste attributes never render visually. The exposure rule the untagged
- * intimate attributes take in `sceneRevealAppearance` — the one place image
- * paths gate intimate anatomy, after the avatar path was made intimate-free by
- * rule (see docs/images/pipelines/avatars.md §Intimate-anatomy gating).
- */
-function intimateAttrRendersExposed(def: AttributeDefinition, exposure: RegionExposure): boolean {
-  if (def.kind === "sensory") return false; // scent/taste don't render in an image
-  const axis = INTIMATE_CATEGORY_EXPOSURE[def.category];
-  return axis !== undefined && exposure[axis] !== "covered";
-}
-
 /** Non-intimate body regions a waist-up portrait can't show — the scene subject's "shape" line draws from these. */
 const LOWER_BODY_CATEGORIES: ReadonlySet<string> = new Set(["waist", "hips", "legs", "feet"]);
 
-/**
- * Which exposure axis uncovers a `skin`-tier attribute, keyed by category. A
- * superset of INTIMATE_CATEGORY_EXPOSURE that also covers the everyday lower
- * body (legs/feet), so the same exposure state drives both the intimate and
- * the SFW reveal lines.
- */
-const REVEAL_EXPOSURE_REGION: Record<string, keyof RegionExposure> = {
-  chest: "torso",
-  breasts: "torso",
-  hips: "pelvis",
-  vulva: "pelvis",
-  penis: "pelvis",
-  testicles: "pelvis",
-  legs: "legs",
-  feet: "feet",
-};
-
-/**
- * Whether a `imageReveal`-tagged attribute surfaces in a scene render given the
- * coverage state: `shape` reads through clothing (always), `skin` only when its
- * region is uncovered. Untagged intimate attributes keep the existing
- * exposure-only rule (`intimateAttrRendersExposed`); untagged non-intimate
- * attributes are not part of the reveal line at all.
- */
-function revealSurfaces(def: AttributeDefinition, exposure: RegionExposure, intimate: boolean): boolean {
-  if (def.kind === "sensory") return false; // scent/taste never render visually
-  if (def.imageReveal === "shape") return true;
-  if (def.imageReveal === "skin") {
-    const axis = REVEAL_EXPOSURE_REGION[def.category];
-    return axis !== undefined && exposure[axis] !== "covered";
-  }
-  return intimate ? intimateAttrRendersExposed(def, exposure) : false;
-}
 
 /**
  * The identity-locked scene subject's body description, split by sensitivity so

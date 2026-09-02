@@ -202,6 +202,7 @@ function renderClaim(
       return say(of(`appears ${value}`));
     case "subject.morphology":
     case "subject.appearance":
+    case "subject.intimate_anatomy":
       return say(of(value));
     case "subject.absence":
       return say(of(`${value}, anatomically correct`));

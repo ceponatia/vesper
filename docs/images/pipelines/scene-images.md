@@ -98,11 +98,15 @@ described textually.
 **Two reference modes** (`SceneGenState.referenceMode`): **single** (default) sends ONE anchor;
 **multi** feeds every member's anchor in roster order up to the model's reference cap to the
 multi-reference rung, identity-locking each. Either way the other or overflow characters are
-described textually — appearance summary + state-forced outfit + action.
+described from their own cut — the digest's facts, their wardrobe and coverage, and their
+resolved action.
 
-The prompt asserts coverage state both ways — listed garments **and** bare regions — and closes
-with "depict only the clothing described … add no garment that is not listed", so the edit model
-can't re-paint a shed garment back onto the fully-dressed reference avatar.
+The prompt every rung sends is a **compiled prompt program** — the lane's only prompt path
+([../character-prompts.md](../character-prompts.md)). The cast's committed cuts fold into one
+multi-subject world digest, the operation contract states the job and how many people are in it,
+and the bound endpoint's dialect words the result. The compiled positive text is both the row's
+stored `prompt` and the intent's; the compiled exclusions ride the normalized
+`controls.negativePrompt`, so they reach a provider only through the version's own probed field.
 
 **The prompt budget belongs to the compile, and comes from the model.** Each rung compiles its
 own prompt program, budgeted from the resolved model's declared prompt binding rather than a
@@ -110,10 +114,27 @@ fixed ceiling, and the fitter protects the mandatory floor: a squeeze trims opti
 a rung that cannot express a required fact refuses before provider spend rather than sending a
 prompt Vesper already knows is incomplete ([../prompt-programs.md](../prompt-programs.md)).
 
-Two or more character references add the **cast clause** — "Render each person exactly once,
-matched to their own reference image; never merge, swap, or duplicate them" — because the count
-assertion says how many people there are while this says what must not happen to them, and a
-two-face edit can merge, swap or duplicate regardless of correct per-slot bindings.
+Two consequences are specific to a cast:
+
+- **Reference labels come from the program's own reference plan, and the rung sends that plan.**
+  Each rung offers its program the lane's list — people before the place, cut to the model's
+  capacity — and sends exactly the list the program planned, in the program's order, so a
+  numbered slot names the image the payload carries at that position by construction rather
+  than by two lists happening to agree. Planning that would move a slot a numbering dialect
+  names **refuses** (`image_prompt_program.references_renumbered`) rather than ship a plausible
+  picture of the wrong composition — and each identity reference names the cast member it
+  depicts, so an ensemble binds each face to its own person.
+- **The person count is asserted from the committed cast**, through the operation contract's
+  subject count: the claim that arms the single-subject guard on a solo shot and tells the
+  anatomy guards how many bodies to defend on an ensemble one.
+
+Wardrobe and exposure are claimed from each member's committed coverage readout rather than from
+what the anchor image happens to show, so a shed garment cannot be repainted back onto a
+fully-dressed reference avatar. Fitting is the bound model's own declared prompt budget, and it
+may never drop the mandatory floor.
+
+`scripts/image-reference-numbering.test.ts` fails the build if application code authors a
+reference-slot label of its own, or if the scene lane imports a prose builder.
 
 ## The attempt ladder
 
@@ -134,18 +155,33 @@ The rung ids name reference tiers, not vendors:
    visibly instead of silently painting a different-looking person).
 4. **demo monogram.**
 
-An **edit-only model with no reference yields an empty chain** and a visible refusal
-(`images.scene_render.no_attempt`) rather than a substitute render. The caller's `mode`
-(`single` | `multi`) only prepends the multi rung; it never blocks a render — `multi` degrades
-to the single-edit rung when fewer than two references are available, or the model only takes
-one.
+The caller's `mode` (`single` | `multi`) only prepends the multi rung; it never blocks a render —
+`multi` degrades to the single-edit rung when fewer than two references are available, or the
+model only takes one.
 
-Each rung compiles its **own** prompt program — the multi-reference rung composes N faces, the
-single-reference rung edits one, and the bare rung describes everybody from text — so an
-anchor-less render never carries the identity lock. A rung whose program refuses is dropped
-from the chain rather than failing the render; the render fails only when no rung survives.
-`allowIntimate` rides the image refs' `allowForIntimate`; for multi, every featured character
-ref must clear it.
+**Each rung compiles its own program**, because the rungs are genuinely different renders of one
+scene: the multi-reference rung composes N faces, the single-reference rung edits one, and the
+bare rung describes everybody from text with no reference at all. Each states its own reference
+claims and its own operation kind — `instruction_edit` on the edit rungs,
+`text_to_image_description` on the bare one — so an anchor-less render never carries an identity
+lock, and each shape resolves its own binding row. `allowIntimate` rides the image refs'
+`allowForIntimate`; for multi, every featured character ref must clear it. It decides two things
+per rung: whether a staged arrangement travels, and whether the cast's exposed intimate anatomy
+is stated ([scene-subjects.md](scene-subjects.md) §Subject body reveal).
+
+Programs are pure and cheap, so the whole chain is compiled **before anything is reserved**, and
+a non-demo rung that cannot produce one is **dropped from the chain** — whether its program
+refused, its model and job shape resolved no active binding, or it was reached with no committed
+cast cut. A rung that cannot be described honestly is a rung that cannot run, and handing off to
+the next one is what the ladder is for, so a drop costs the render nothing until the drops run
+out. `images.scene_render.rungs_dropped` (warn) names which rungs left the chain. The `demo` rung
+is untouched by any of this: it paints a monogram and reads no prompt.
+
+**An empty chain is a visible refusal.** An edit-only model with no usable reference routes no
+rungs at all, and a chain whose every rung was dropped leaves none; either way the render fails
+with `images.scene_render.no_attempt` and reserves nothing, rather than rendering from somewhere
+else. Such a row stores an **empty** `prompt`: no rung would have sent one, and recording a
+prompt nothing was going to ask for is the one thing a failed render must not do.
 
 The executor walks the chain with a **reason-keyed retry** over `classifyImageFailure`
 ([README.md](README.md) §Failure classification): a transient failure retries once on the same

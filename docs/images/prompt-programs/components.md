@@ -105,9 +105,13 @@ Reference roles let the prompt dialect say the right thing about each image and 
 
 For a multi-character scene, reference roles also help keep “this face belongs to this person” separate from “this image shows the location.”
 
+Because the roles travel with the images, the **final labels are assigned from the references that actually survive planning** — so “Image 1” names the image the provider receives first. Where planning would move an image out of the position a numbered label claims, the request is refused before any spend rather than sent with a label pointing at the wrong picture.
+
 ### What it must not do
 
 It must not infer role from upload order alone.
+
+An image route must not number its own references. A label written before planning describes a list the provider may never receive.
 
 It also must not promise a model that an image is a pose control, mask, or depth map when the endpoint has no real mechanism for treating it that way. A content reference and a structural control are different things.
 

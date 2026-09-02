@@ -248,6 +248,7 @@ export {
   type SceneRenderOptions,
   SELFIE_FRAMING,
 } from "./prompts-scene-render";
+export { applySceneCastVisual, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 export {
   buildEntityPromptProgram,
   isEntityPromptRefusal,
