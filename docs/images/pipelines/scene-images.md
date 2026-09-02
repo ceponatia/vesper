@@ -133,8 +133,10 @@ what the anchor image happens to show, so a shed garment cannot be repainted bac
 fully-dressed reference avatar. Fitting is the bound model's own declared prompt budget, and it
 may never drop the mandatory floor.
 
-`scripts/image-reference-numbering.test.ts` fails the build if application code authors a
-reference-slot label of its own, or if the scene lane imports a prose builder.
+`scripts/image-reference-numbering.test.ts` fails the build if any module under
+`server/images` authors a reference-slot label of its own (the census is empty and may never
+grow), or if a `prompts-scene-*` module other than the composer's contract and the plan
+resolver appears in that folder or is imported there.
 
 ## The attempt ladder
 

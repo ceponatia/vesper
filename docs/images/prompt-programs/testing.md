@@ -361,49 +361,6 @@ Expected behavior:
 
 “Best effort” is useful for optional detail. It is dangerous for identity and other mandatory truth.
 
-# Shadow comparison tests
-
-Shadow comparison answers whether a candidate request is semantically safe enough to keep investigating.
-
-A useful production-facing summary groups candidate renders into:
-
-- **parity** — every required comparison was measured and matched;
-- **divergence** — a real unexplained difference exists;
-- **unmeasured** — some required comparison could not be made;
-- **error** — the measurement itself failed.
-
-Do not treat `unmeasured` as “probably fine.” It means there is not enough evidence for a parity claim.
-
-## What to investigate when parity is low
-
-### Fact loss
-
-The candidate omitted something the current request actually said.
-
-Question: is that an intentional improvement or a bug?
-
-If intentional, the difference should be explicitly named as an accepted delta rather than disappearing into the statistics.
-
-### Unexpected fact
-
-The candidate states something the old request did not.
-
-Question: is this newly available world truth that should be added, or did the compiler invent something?
-
-### Mandatory loss
-
-Stop. A protected fact did not survive.
-
-### Transport mismatch
-
-The two prompts are not the only difference. A reference, control, model choice, shape, or other provider input moved too.
-
-That comparison cannot cleanly answer a prompt-only migration question.
-
-### Payload jump
-
-A much larger candidate may be semantically correct but still degrade model performance or hit practical budget limits. A much smaller one may reveal that useful detail vanished.
-
 # Visual A/B grading by lane
 
 Different tasks need different grading forms.

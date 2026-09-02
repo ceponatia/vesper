@@ -6,8 +6,10 @@ It owns four things:
 
 1. a semantic **feature vocabulary** for what a model family can express;
 2. the `defineImageModel` **composer** that turns features and quirks into an adapter;
-3. per-family **adapters** for prompt dialects, request validation, and execution hints; and
+3. per-family **adapters** for request validation and execution hints; and
 4. the **adapter registry** that resolves a registered model slug to the behavior Vesper knows about.
+
+Prompt wording is not among them: how an endpoint is told what to render — including the Qwen family's numbered identity locks — is a prompt-program dialect in `@vesper/image-core` ([prompt programs](../images/prompt-programs.md) §Dialects and transport), and no adapter here touches prompt text.
 
 The package does **not** replace the probed image-model registry. The database/probe remains authoritative for provider wire truth: input field bindings, reference arity and capacity, supported aspects, output controls, active provider version, and other schema-derived facts. `@vesper/image-models` owns behavior; the probed model record owns fields.
 
@@ -34,8 +36,8 @@ The registry keys adapters by the model's **base slug**, so a reproducibility pi
 
 | Model                                                                   | Role                                                                    | Composed features                                                                                                      | Family behavior                                                          |
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect                                   |
-| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor; separate legacy comparison endpoint | same edit feature set as 2511                                                                                          | numbered-reference dialect; eight-minute startup hint; one startup retry |
+| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | none — the family's prompt wording is an `@vesper/image-core` dialect    |
+| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor; separate legacy comparison endpoint | same edit feature set as 2511                                                                                          | eight-minute startup hint; one startup retry                             |
 | [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait           | `prompt`, `aspectRatio`, `seed`, `guidance`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle`               | no edit dialect; no execution hint                                       |
 
 One absence is deliberate:
@@ -84,7 +86,7 @@ Quirks own behavioral hooks. A prompt preparer, quirk validator, or execution-hi
 
 An `ImagePromptPreparer` must satisfy `prepare(prepare(prompt)) === prepare(prompt)`. Planning hashes the prepared prompt, while the send path prepares again. A non-idempotent dialect could make a render disagree with its own compiled fingerprint.
 
-The Qwen edit dialect rewrites Vesper's generic identity-lock sentence into Qwen's numbered-reference wording only when one or more references are present. One reference gets the single-reference lock; multiple references get the multi-reference lock. Prompts without the legacy identity sentence are left unchanged.
+No registered adapter claims a `preparePrompt` hook. Prompt wording — including the Qwen family's numbered identity locks — is compiled by `@vesper/image-core`'s prompt-program dialects, so a prompt reaches the provider exactly as it was compiled and hashed.
 
 ## Request validation
 
@@ -149,7 +151,7 @@ To add family-specific behavior:
 1. reuse the existing semantic features where they describe the family honestly;
 2. add a new feature only when the current vocabulary cannot state a real capability;
 3. keep provider field names in the probe/model record rather than the feature;
-4. use family quirks only for behavior such as prompt dialects, validations, or measured execution differences;
+4. use family quirks only for validations or measured execution differences — never for prompt wording, which belongs to `@vesper/image-core`'s dialects;
 5. compose endpoint adapters with `defineImageModel`;
 6. register base slugs in `src/registry.ts`; and
 7. update this documentation and the relevant page under [models/](models/README.md).

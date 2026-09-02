@@ -1,7 +1,8 @@
 # Character prompts
 
 Every character-image render — a library portrait, a portrait variant, a chat
-scene, a chat-look anchor — builds the prompt it sends through one seam,
+scene, a chat-look anchor, the Image Lab's staged bench — builds the prompt it
+sends through one seam,
 `apps/web/src/server/images/character-prompt-program.ts`. It owns the whole
 semantic path from a lane's realized visual cut to a compiled program: the cast
 merge, the world-digest assembly, the operation contract, binding and pack
@@ -69,6 +70,14 @@ and states what translation alone cannot:
   readable members with ids stripped; a record with nothing readable left is
   suppressed rather than flattened into a payload.
 
+The adapter is the ONE owner of character appearance wording.
+`scripts/image-appearance-prose.test.ts` fails the build if a production module
+under `server/images` turns an attribute into words (`formatAttribute`,
+`formatAttributeValue`, `attributeRegistry.byId`) or exports a prose builder by
+name beyond the reviewed residue — the identity-free `chat_place` shot and the
+composer's own instruction builder, neither of which describes a character from
+attributes.
+
 ## A cast of more than one
 
 Visual state commits one cut per PERSON, and the assembly takes one digest
@@ -118,12 +127,14 @@ cannot support. A subject whose projection already states identity keeps its own
 facts and gains nothing, so a describe-the-face lane cannot lock twice.
 
 **The lock wording belongs to the dialect, never to the digest.** The digest
-states what is true; each endpoint decides how it says so. The Qwen edit dialects
-emit their lock byte-identically to the wording the render kernel's family quirk
-writes, and the prose family emits the provider-neutral sentence its endpoints
-already receive — so no endpoint is asked something it has not been asked before.
-`scripts/qwen-identity-lock-parity.test.ts` fails the build if either copy
-drifts.
+states what is true; each endpoint decides how it says so. The Qwen edit
+dialects word the lock from `QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK` /
+`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` (`@vesper/image-core`,
+`dialect-qwen-2511.ts`), chosen by reference count — zero references lock
+nothing, because there is no image to lock an identity to — and the prose
+family emits its provider-neutral sentence. No adapter in
+`@vesper/image-models` touches prompt text, so a prompt reaches the provider
+exactly as it was compiled and hashed.
 
 ## Intimate anatomy on a permitting route
 
@@ -152,11 +163,29 @@ A refusal is never a fall-back to a second prompt system: a binding that resolve
 and then failed to compile is a fault on a lane that IS bound, and rendering
 something reasonable instead hides it behind an acceptable-looking image.
 
-Each lane fails in its own shape. The reserving lanes fail the row before any
-provider call. The chat-look mint leaves no row at all, because it re-fires on
-every outfit change and would otherwise accumulate one failed row per change. The
-scene lane's chain is several renders of one scene, so a refusal drops that rung
-and the row fails only when no rung survives
+The seam answers one of three ways, and `unbound` is deliberately a third answer
+rather than a refusal:
+
+| Answer     | Meaning                                                                      |
+| ---------- | ---------------------------------------------------------------------------- |
+| `compiled` | a program for this render — the lane sends exactly its prompt and references |
+| `refused`  | a configuration or compile fault on a lane that IS bound                     |
+| `unbound`  | no `active` binding row for this model, task and profile key                 |
+
+`unbound` is the honest "no row": the binding table is where a lane's words are
+authorized, so an endpoint missing from it is one the lane may not speak for,
+and `characterPromptUnboundRefusal` names the three coordinates an operator has
+to add a row for. It never degrades to a different prompt.
+
+Each lane fails in its own shape and names its own codes on its page. The
+reserving lanes — avatar, variant — fail the row before any provider call,
+whether the cut would not assemble, the program refused, or the model is
+unbound. The chat-look mint leaves no row at all, because it re-fires on every
+outfit change and would otherwise accumulate one failed row per change. The
+scene lane's chain is several renders of one scene, so a refused or unbound
+rung is dropped and the row fails only when no rung survives
 ([pipelines/scene-images.md](pipelines/scene-images.md)) — a handoff to the next
-rung, never a handoff to another prompt.
+rung, never a handoff to another prompt. The staged bench settles its row under
+the program's own code, or `image_prompt_program.unbound`
+([../image-lab/staged-scene.md](../image-lab/staged-scene.md)).
 

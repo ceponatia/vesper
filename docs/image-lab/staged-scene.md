@@ -9,38 +9,34 @@ A `staged_scene` benches one staging from Vesper's scene-staging registry withou
 - One staging id from the registry.
 - A selected/default registered model with an exact provider version.
 - Optionally, a compatible curated LoRA and scale.
-- A subject-facts mode, defaulting to production parity (see below).
 
-A staged scene has no chat and no control fixture.
+A staged scene has no chat and no control fixture, and the bench has **one arm**: the production cut.
 
 ## Prompt ownership
 
-This is the most important behavior of the kind: **the admin's instruction is not the staging prompt.** The form deliberately sends an empty instruction, and the runner compiles the prompt from the selected staging registry entry with the same scene-plan/render-prompt machinery used by the production chat path.
+This is the most important behavior of the kind: **the admin's instruction is not the staging prompt.** The form deliberately sends an empty instruction, and the runner compiles a prompt program from the selected staging registry entry and the subject's visual cut — the exact program the chat scene lane's single-reference `edit` rung compiles for the same plan and cut.
 
 That is what makes the result evidence about the production staging wording instead of about an ad-hoc prompt typed for the bench.
 
-The form can vary staging setting, lighting, and time of day where those fields are supplied. The selected character is named directly in the compiled staging sentence, and — on the default subject-facts mode below — described from the same visual state a chat render reads.
+The form can vary staging setting, lighting, and time of day where those fields are supplied. `stagedScenePlan` resolves those into a scene plan whose focal is the selected character, and `stagedSceneProgram` (`image-lab-staged.ts`, pure) lowers it with `lowerScenePlan` under `allowIntimate: true` — every intimate entry's arrangement is withheld without it, and a bench for the intimate LoRA whose prompt omitted the act would grade the model on the wrong picture — then compiles through the character seam with `bindingStrategy: "instruction_edit"`, `intimateReveal: true`, the identity reference bound to the subject, and `characterSceneImageOperation({ subjectCount: 1, kind: "edit" })`. The registry owns every explicit phrase (the lowering adopts the staging's measured surface form); nothing here paraphrases a template. For the same plan and cut the bench's program is byte-identical to the chat lane's, and `image-lab-staged.test.ts` pins it against a seam with no database behind it.
 
-## Subject facts
+## The subject
 
-A staged run chooses where the subject's own facts come from. The choice is recorded on the row, because two runs of one staging that describe the subject differently are exactly the comparison this control exists to make.
+The subject is a committed visual cut, realized by `image-lab-staged-visual.ts` through the same standalone assembly the avatar and variant lanes take, under the chat scene lane's own knobs: the digest's consent gate shut (intimate anatomy reaches a staged prompt the way it reaches a chat's — as the route's typed reveal over the cut's coverage, spent on the uncensored rung), the staging's own camera under the lane's viewpoint id `image_lab_staged_scene`. It is the ONLY thing the program says about the person, exactly as in a chat: appearance, identity anchor, figure, and — on the uncensored route — intimate anatomy, from the same visual state a chat render reads. A verdict then rules on the sentence a real conversation would have sent for this staging.
 
-- **Production parity — describe the character.** The default. The prompt carries the character's appearance, identity anchors, figure, and — on the uncensored route — their intimate anatomy, drawn from the character's visual digest under the production chat lane's own segment policy. A verdict then rules on the sentence a real conversation would have sent for this staging.
-- **Ablation — name only, no description.** The prompt names the character and says nothing else about them; the likeness has to come from the identity reference alone. It is a deliberately reduced run, and it answers only one question: whether the written description is helping the face or fighting the reference image. **Read it only beside a parity run of the same staging** — on its own it is a shorter prompt with no baseline.
+A run whose cut cannot be assembled settles the row failed with `visual_digest_unavailable`, before any provider spend. It is never degraded to a name-only render: a prompt production never sends would answer a different question than the row asks. A cut that assembles but compiles to a refusal — a lost required anchor, a missing pack, a renumbered slot — settles under the prompt program's own `image_prompt_program.*` code, the way an `image_lora.*` or `image_profile.*` refusal lands verbatim. A pinned endpoint with no active prompt binding for the scene task settles under `image_prompt_program.unbound` (`STAGED_PROGRAM_UNBOUND`); the bench has no authorized way to word the act until the endpoint is bound.
 
-A parity run that cannot describe its subject — the visual assembly failed, or a required visual fact resolved no prompt clause — settles the row failed with `visual_digest_unavailable`, before any provider spend. It never falls back to the ablation: an arm the operator did not choose would answer a different question than the row asks.
-
-Runs created before this control existed read back as the ablation, because that is what they sent.
-
-**The staging's exposure is the act's premise, not the character's wardrobe.** A staged row states bare skin exactly where its registry template describes bare skin, and covered everywhere else, and states the viewer's own exposure the same way. It does not read the character's saved clothing: a dressed character would suppress the bare-region phrasing the template is written around, and the bench would quietly pay for an ordinary portrait. That premise drives both the prompt's exposure readout and what the camera is treated as able to see, so the two halves of one run cannot disagree about what the shot shows.
+**The staging's exposure is the act's premise, not the character's wardrobe.** A staged row states bare skin exactly where its registry template describes bare skin, and covered everywhere else, and states the viewer's own exposure the same way. It does not read the character's saved clothing: a dressed character would suppress the bare-region phrasing the template is written around, and the bench would quietly pay for an ordinary portrait. That premise is handed to the assembly as worn coverage (`stagedPremiseWorn`), so the digest's exposure readout and the camera's per-location perception both answer the premise and the two halves of one run cannot disagree about what the shot shows.
 
 ## References
 
-Exactly one identity reference is required. The staged recipe also permits an optional `location` role, supplied through the general owned-image picker — the chat-independent place-image source this kind needs, since a staged experiment intentionally has no chat.
+Exactly one identity reference is required. The staged recipe also permits an optional `location` role, supplied through the general owned-image picker — the chat-independent place-image source this kind needs, since a staged experiment intentionally has no chat. The runner sends the program's **own planned list** (`program.sentReferences`), in the program's order, so a numbered slot names the image the payload carries at that position by construction.
 
 ## Model and LoRA behavior
 
 The selected model is honored and must be pinnable. In the Model picker, `Default` resolves to the intimate LoRA-capable wrapper rather than the ordinary Qwen edit default, because the normal default cannot load the seeded staging LoRA.
+
+The recipe profile (`imageLabStagedSceneRecipeProfile`) runs the `instruction_edit` prompt strategy, which passes the compiled prompt through untouched — the program already numbers its own references, and a composing strategy would prefix a second numbering over the program's. The recipe profile carries no binding row (it is a request shape, not an authorized endpoint), so the program binds on the profile key a chat scene would compile this model under: the pinned model's own offered scene profile, else the scene task's default.
 
 LoRA resolution is shared with production. The lab can override the selected LoRA's scale within its curated range, making this kind useful for scale sweeps. The built-in staging LoRA's band is deliberately wider than the strengths already graded, because a sweep is only informative if it can reach both edges the verdicts below distinguish — `anatomy_withheld` is the scale too low, `geometry_wrong` is the scale too high.
 
@@ -57,4 +53,4 @@ Raw provider input is refused because the experiment is specifically meant to re
 
 ## Execution path
 
-`apps/web/src/server/images/image-lab-staged.ts` → `runStagedScene` → staging registry + subject facts (`image-lab-staged-visual.ts`, on the parity mode) + production scene prompt compiler → `imageLabStagedSceneRecipeProfile` → shared `runRecipeIntent`.
+`apps/web/src/server/images/image-lab-staged.ts` → `runStagedScene` → staging registry + the subject's cut (`image-lab-staged-visual.ts`) → `stagedScenePlan` → `stagedSceneProgram` (`lowerScenePlan` + `buildCharacterPromptProgram`) → `imageLabStagedSceneRecipeProfile` → shared `runRecipeIntent` with the program's prompt, planned references and compiled negative.

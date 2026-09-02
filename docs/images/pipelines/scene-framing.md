@@ -79,7 +79,8 @@ carry the same option-bias as the first.
 
 The composer proposes non-intimate parts only — it runs with `allowIntimate: false` whatever
 model its seam picks, since exposure gating is code's job however bold the composer is — so
-**intimate anatomy never touches it**, exactly as `sceneRevealAppearance` never has.
+**intimate anatomy never touches it**; the intimate reveal is the route's own projection over the
+committed cut (`contracts/images/subject-reveal.ts`), spent per rung at render assembly.
 
 `resolveViewerParts` is the gate: unknown id → route → coverage, with **missing coverage
 counting as covered** (default-shut). Only anatomy is gated — a *clothed* torso in frame is a

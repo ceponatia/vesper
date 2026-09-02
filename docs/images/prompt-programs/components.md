@@ -361,38 +361,9 @@ It must not become another mutable source of truth. It is a record of what happe
 
 ---
 
-## 14. Shadow comparison
+## 14. Visual evaluation
 
-**Shadow comparison** is a safe way to compare new prompt behavior with current production behavior before the new prompt is trusted.
-
-The candidate prompt is built but does not control the player's render.
-
-### What it does
-
-It checks whether the candidate:
-
-- covers the same meaningful facts apart from known intentional differences;
-- preserves mandatory requirements;
-- would send the same references and controls;
-- stays within a sensible payload size.
-
-### What it cannot prove
-
-It cannot prove that the candidate creates a better picture.
-
-That requires visual evidence.
-
-Two prompts can state the same facts and still produce noticeably different identity fidelity, composition, anatomy, or style.
-
-### Long-term role
-
-Shadow comparison is useful beyond the original migration. Any major prompt behavior change can benefit from “measure beside production before trusting it.”
-
----
-
-## 15. Visual evaluation
-
-The **visual-evaluation** layer asks the question shadow comparison cannot:
+The **visual-evaluation** layer asks the one question no inspection of the request can answer:
 
 > Did the image actually get better, stay equivalent, or get worse?
 
@@ -425,7 +396,7 @@ A model can produce a beautiful image that failed the actual task.
 
 ---
 
-## 16. Promotion state
+## 15. Promotion state
 
 A candidate prompt behavior should have a clearly different status from production behavior.
 
@@ -472,20 +443,6 @@ For a selected image, show:
 - model/profile/version and final controls.
 
 Its job is to answer **“What did Vesper tell the model, and why?”**
-
-## Shadow Evidence View
-
-For a lane/model/profile, summarize:
-
-- parity rate;
-- divergences;
-- unmeasured cases;
-- mandatory losses;
-- transport mismatches;
-- common reasons;
-- prompt-size changes.
-
-Its job is to answer **“Is this candidate semantically ready for a visual trial or production decision?”**
 
 ## Visual Comparison View
 

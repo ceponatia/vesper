@@ -114,32 +114,38 @@ Diagnostics and provenance report the final payload, not infer it from the row.
 
 Qwen's multi-image guidance recommends identifying which image supplies which
 subject or visual element and stating what should change versus remain fixed.
-The Qwen Edit-family adapter in `@vesper/image-models` rewrites Vesper's exact
-provider-neutral identity sentence into the family's numbered-reference dialect.
-The same behavior is shared by 2511 and the older plus-LoRA wrapper rather than
-implemented as a slug check in the shared render kernel.
+Vesper words that contract in the Qwen 2511 delta-edit dialect
+(`dialect-qwen-2511.ts`, `@vesper/image-core`), which compiles a subject's
+`subject.identity` claim into the family's identity lock, chosen by reference
+count. The dialect is the only source of the wording — no adapter in
+`@vesper/image-models` touches prompt text, so a prompt reaches this endpoint
+exactly as it was compiled and hashed — and 2511 and the older plus-LoRA wrapper
+share the implementation as two dialect ids with their own bindings and packs.
 
-With one reference:
+With one reference (`QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`):
 
 ```text
 Image 1 is the identity reference. Preserve the exact face, hair, skin tone,
 body proportions, and apparent age. Change only what this instruction requests.
 ```
 
-With several references:
+With several references (`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK`):
 
 ```text
 Use numbered references as assigned below. Preserve each person's exact face,
 hair, skin tone, build, and apparent age; change only requested details.
 ```
 
-The scene prompt already enumerates references later in send order. The adapter
-supplies the interpretation contract without changing non-Qwen prompts or custom
-Qwen instructions that do not contain the legacy lock.
-
-Both replacements are no longer than the generic sentence they replace. The edit
-builder has already fitted its prompt before model selection, so provider-specific
-preparation cannot silently re-expand it beyond the fitted budget.
+The lock leads the compiled prompt, ahead of the numbered `Image N` assignments:
+the multi-reference lock says "as assigned below", so the dialect's own emission
+order puts the assignments after it. Zero references lock nothing — there is no
+image to lock an identity to, and describing a face in prose on an endpoint whose
+whole identity transport IS the reference would render a stranger. The numbered
+assignments are compiled from the prompt program's own reference plan, so a slot
+names the image the payload carries at that position
+([character-prompts.md](../../images/character-prompts.md) §Reference planning and
+numbering). Fitting runs before the dialect reorders, so what a budget squeeze
+keeps or trims is unchanged by the order.
 
 The apparent-age requirement remains text-authoritative. This preserves the owner
 ruling that age text must correct an age-ambiguous reference rather than inherit
