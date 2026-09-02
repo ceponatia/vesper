@@ -634,9 +634,17 @@ export interface LaneProbeCastSceneRender {
  * member bound to the subject it depicts. The one shape an end-to-end scene
  * render test compiles a real program over — populated, so a prompt that
  * dropped a scene decision or a person would read wrong rather than empty.
+ *
+ * `bareFocal` undresses Nyx — every region bare — so a route's intimate reveal
+ * has something to state, while Ilsa stays dressed so the covered half of the
+ * same gate sits in the same prompt.
  */
-export function laneProbeCastSceneRender(): LaneProbeCastSceneRender {
-  const members = laneProbeCastSubjects();
+export function laneProbeCastSceneRender(options: { readonly bareFocal?: boolean } = {}): LaneProbeCastSceneRender {
+  const members = laneProbeCastSubjects().map((subject, index) =>
+    options.bareFocal === true && index === 0
+      ? { ...subject, member: { ...subject.member, outfit: "", exposure: laneProbeBareExposure() } }
+      : subject,
+  );
   const built = applySceneCastVisual({
     plan: laneProbeCastScenePlan(members.map((subject) => subject.member)),
     members,

@@ -369,3 +369,43 @@ describe("renderResolvedScene reference payload", () => {
     expect(sent.map((reference) => reference.role)).toEqual(["identity", "identity"]);
   });
 });
+
+/**
+ * The route's intimate reveal, per rung. A committed cut never carries intimate
+ * anatomy — the visual-state selection keeps its consent gate shut in every
+ * lane — so it reaches a compiled prompt only through the scene route's typed
+ * projection, and only on a rung whose anchors permit it. Pinned at the lane
+ * because the permission is the lane's: the seam projects whatever it is told,
+ * and what it is told is `allowForIntimate` on the anchors.
+ *
+ * Falsified against the cutover's compiled path, which stated no intimate
+ * anatomy on any rung — the uncensored rung drew a bare torso from nothing —
+ * and against the naive fix of projecting the reveal into the cut itself, which
+ * would state it on the moderated rung too.
+ */
+describe("renderResolvedScene intimate reveal", () => {
+  it("states the exposed anatomy on a permitting rung and withholds a covered subject's skin", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    await renderResolvedScene(baseInput({ ...laneProbeCastSceneRender({ bareFocal: true }) }));
+    const prompt = pipelineCalls[0]?.asset.prompt as string;
+    expect(prompt).toContain("Nyx has nipples: puffy."); // torso bare → skin stated
+    expect(prompt).toContain("Nyx has breast size: ample."); // shape reads through regardless
+    expect(prompt).not.toContain("inverted"); // Ilsa's torso is covered → her skin is withheld
+  });
+
+  it("compiles the cut alone on a rung whose anchors forbid intimate detail", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender({ bareFocal: true });
+    await renderResolvedScene(
+      baseInput({
+        ...scene,
+        references: scene.references.map((reference) => ({ ...reference, allowForIntimate: false })),
+      }),
+    );
+    const prompt = pipelineCalls[0]?.asset.prompt as string;
+    expect(prompt).not.toContain("nipples");
+    expect(prompt).not.toContain("breast size");
+    // Coverage is the wardrobe's truth, not intimate detail: stated on every rung.
+    expect(prompt).toContain("bare at the torso");
+  });
+});

@@ -124,23 +124,36 @@ with no modelled footwear reads barefoot.
 ## Subject body reveal
 
 The identity reference is a **waist-up** portrait, so it locks the face and upper body but
-underspecifies the figure below it. The cut's selection supplies the figure from attributes
-tagged `imageReveal` ([../../contracts/attributes.md](../../contracts/attributes.md)), under
-the scene policy's coverage rule:
+underspecifies the figure below it — and a committed cut cannot supply the intimate half of
+that figure. The visual-state image selection keeps its consent gate **shut in every lane**
+(the chat lane has no consent owner, and no owner is not "allowed"), so no cut carries
+intimate anatomy whatever the wardrobe exposes. Non-intimate body facts are the cut's own and
+reach the prompt as the digest's facts.
 
-- `"shape"` — silhouette that reads *through* clothing (breast size/shape, waist, hips, leg
-  build/length, foot size) — is selected **always**;
-- `"skin"` — surface detail (nipples, leg hair, toenails, foot arch) — only when its region
-  reads bare or sheer.
+The scene **route** supplies the intimate half instead, per rung, as typed
+`subject.intimate_anatomy` facts beside the digest (`contracts/images/subject-reveal.ts`,
+through the character seam's `intimateReveal` input) — on a rung whose references permit
+intimate detail, which is the uncensored reference-edit rungs and never the bare-prompt
+fallback or a content-rejection retry. The projection reads the cut's own resolved attributes
+and coverage readout under one rule, shared with the prose reveal the Image Lab bench still
+runs ([../../contracts/attributes.md](../../contracts/attributes.md) `imageReveal`):
 
-Intimate anatomy follows the same rule (`intimate: "when_bare"`): a scene states it iff the
-character has it and the region is exposed. Untagged intimate anatomy (vulva, penis) keeps the
-plain exposure gate, so nothing is lost. Sensory scent and taste never render. It is selected
-at render assembly, not via the composer LLM.
+- `"shape"` — silhouette that reads *through* clothing (breast size and shape) — is stated
+  **always**;
+- `"skin"` — surface detail (nipples) — only when its region reads bare or sheer;
+- untagged intimate anatomy (vulva, penis, testicles) when its region is exposed; anal and
+  perineal categories never render in an image (owner ruling 2026-07-23: every render views
+  the character from the front);
+- sensory scent and taste never render.
 
-The selection is made **once per cut**, and every rung of the attempt chain compiles the same
-cut. What differs per rung is the intimate **staging**: the scene lowering carries a staged
-arrangement only on a route whose references permit it
+A rung that forbids intimate detail compiles the cut alone. Coverage is not intimate detail
+and is stated on every rung — "bare at the torso" is the wardrobe's truth, and the reveal is
+what a bare torso lets the prompt say about the body under it. The projection runs at render
+assembly, not via the composer LLM.
+
+The cut is selected **once**, and every rung of the attempt chain compiles the same cut. What
+differs per rung is what the route adds to it: the intimate reveal above, and the intimate
+**staging**, which the scene lowering carries only on a route whose references permit it
 ([scene-framing.md](scene-framing.md) §Intimate staging).
 
 This is wired on the **character-chat scene path only** (`images/character-scene.ts`, the

@@ -174,6 +174,14 @@ const CONCEPT_TABLE = [
     protects: ["missing_limbs", "missing_digits"],
   },
   { id: "subject.appearance", channel: "subject", segmentKind: "current_state", protects: [] },
+  // Intimate anatomy a ROUTE states beside the cut. The visual-state selection
+  // keeps its consent gate shut in every lane, so these facts arrive only from
+  // the scene route's own reveal projection, on a rung whose references permit
+  // intimate detail. `current_state` — droppable by kind, like appearance detail
+  // — because a budget squeeze must be able to shed it before a morphology
+  // anchor or the coverage statement. Protects nothing: the anatomy exclusions
+  // guard malformed anatomy, and stating a body part plainly agrees with them.
+  { id: "subject.intimate_anatomy", channel: "subject", segmentKind: "current_state", protects: [] },
   { id: "subject.pose", channel: "subject", segmentKind: "pose", protects: [] },
   // What the person is DOING, which is not how they are held. "Sitting
   // cross-legged" is a pose and "pouring coffee" is an activity, and a composer

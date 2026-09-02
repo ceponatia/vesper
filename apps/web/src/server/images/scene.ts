@@ -418,6 +418,11 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       scene: scene.scene,
       location: scene.location,
       camera: scene.camera,
+      // The rung's intimate permission, spent a second time: the lowering spent
+      // it on the staged arrangement, and this spends it on the cast's exposed
+      // anatomy. The uncensored reference-edit rungs state it; the bare-prompt
+      // fallback and a content-rejection retry compile the cut alone.
+      intimateReveal: allowIntimateFor(id),
       read: { kind: "committed_cut", token: castReadToken },
       references: offered.map((reference): CharacterPromptReference => {
         const subjectId = subjectByReference.get(reference);

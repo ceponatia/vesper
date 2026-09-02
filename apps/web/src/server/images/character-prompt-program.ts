@@ -30,6 +30,7 @@ import {
   type VisualImageCastMergeRefusal,
 } from "@/contracts/images/visual-digest";
 import type { CharacterSubjectSources } from "@/contracts/images/character-adapter";
+import { subjectIntimateRevealFacts } from "@/contracts/images/subject-reveal";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   assembleCharacterWorldDigest,
@@ -200,6 +201,18 @@ export interface CharacterPromptProgramInput {
   readonly location?: ImageLocationDigest | null;
   /** The lane's own camera statement, layered over the committed cut's viewing reads. */
   readonly camera?: CharacterCameraAssemblyInput;
+  /**
+   * Whether this render's ROUTE permits intimate anatomy.
+   *
+   * The committed cut never carries it — the visual-state selection keeps its
+   * consent gate shut in every lane — so a permitting route projects each cut's
+   * exposed intimate anatomy as typed `subject.intimate_anatomy` facts beside
+   * the digest (`contracts/images/subject-reveal.ts`), from the same resolved
+   * attributes and coverage readout the cut was selected over. Absent or false
+   * projects nothing: a moderated rung, and every lane that does not decide
+   * this per render, compiles the cut alone.
+   */
+  readonly intimateReveal?: boolean;
   readonly read: CharacterWorldReadInput;
   /**
    * The references the lane would hand `renderImageIntent`, in the lane's own
@@ -382,11 +395,17 @@ function castAssembly(
   cuts: readonly CharacterPromptSubjectCut[],
   read: CharacterWorldReadInput,
   world: Pick<CharacterWorldDigestAssemblyInput, "scene" | "location" | "camera">,
+  intimateReveal: boolean,
 ): Omit<CharacterWorldDigestAssemblyInput, "operation" | "references"> | VisualImageCastMergeRefusal {
   const merged = mergeVisualImageCastDigests(cuts.map((cut) => cut.digest));
   if (!merged.ok) return merged.refusal;
   const labels: Record<string, string> = {};
   const sources: Record<string, CharacterSubjectSources> = {};
+  // The route's own facts about each person, beside the cut: the intimate
+  // reveal, on a route that permits it. Projected here from the cut's resolved
+  // attributes and coverage readout, because this is the one place that has
+  // both and the assembly re-decides nothing it is handed.
+  const subjectFacts: Record<string, readonly ImageWorldFact[]> = {};
   for (const cut of cuts) {
     if (cut.name !== undefined) labels[cut.subjectId] = cut.name;
     sources[cut.subjectId] = {
@@ -394,11 +413,21 @@ function castAssembly(
       exposure: cut.exposure,
       realizedBody: cut.realizedBody,
     };
+    if (intimateReveal) {
+      const reveal = subjectIntimateRevealFacts({
+        subjectId: cut.subjectId,
+        attributes: cut.attributes,
+        exposure: cut.exposure,
+        realizedBody: cut.realizedBody,
+      });
+      if (reveal.length > 0) subjectFacts[cut.subjectId] = reveal;
+    }
   }
   return {
     digest: merged.digest,
     ...(Object.keys(labels).length === 0 ? {} : { labels }),
     sources,
+    ...(Object.keys(subjectFacts).length === 0 ? {} : { subjectFacts }),
     read,
     // The lane's scene statement rides through untouched. Spread conditionally so
     // a lane that states none assembles exactly the input it did before the
@@ -499,11 +528,16 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   }
 
   // --- 3. Assemble the world digest over the lane's own cast ----------------
-  const cast = castAssembly(input.cuts, input.read, {
-    ...(input.scene === undefined ? {} : { scene: input.scene }),
-    ...(input.location === undefined ? {} : { location: input.location }),
-    ...(input.camera === undefined ? {} : { camera: input.camera }),
-  });
+  const cast = castAssembly(
+    input.cuts,
+    input.read,
+    {
+      ...(input.scene === undefined ? {} : { scene: input.scene }),
+      ...(input.location === undefined ? {} : { location: input.location }),
+      ...(input.camera === undefined ? {} : { camera: input.camera }),
+    },
+    input.intimateReveal === true,
+  );
   if ("code" in cast) {
     sink?.push(
       diag("warn", cast.code, "a character cast could not be folded into one digest", {

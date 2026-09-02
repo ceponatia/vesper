@@ -165,7 +165,9 @@ bare rung describes everybody from text with no reference at all. Each states it
 claims and its own operation kind — `instruction_edit` on the edit rungs,
 `text_to_image_description` on the bare one — so an anchor-less render never carries an identity
 lock, and each shape resolves its own binding row. `allowIntimate` rides the image refs'
-`allowForIntimate`; for multi, every featured character ref must clear it.
+`allowForIntimate`; for multi, every featured character ref must clear it. It decides two things
+per rung: whether a staged arrangement travels, and whether the cast's exposed intimate anatomy
+is stated ([scene-subjects.md](scene-subjects.md) §Subject body reveal).
 
 Programs are pure and cheap, so the whole chain is compiled **before anything is reserved**, and
 a non-demo rung that cannot produce one is **dropped from the chain** — whether its program

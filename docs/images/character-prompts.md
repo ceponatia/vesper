@@ -125,6 +125,18 @@ already receive — so no endpoint is asked something it has not been asked befo
 `scripts/qwen-identity-lock-parity.test.ts` fails the build if either copy
 drifts.
 
+## Intimate anatomy on a permitting route
+
+A committed cut never carries intimate anatomy: the visual-state image selection keeps its
+consent gate shut in every lane. A lane whose route permits it — the chat scene's uncensored
+reference-edit rungs — passes `intimateReveal` to the seam, which projects each cut's exposed
+intimate anatomy as optional `subject.intimate_anatomy` facts beside the digest
+(`contracts/images/subject-reveal.ts`): silhouette through clothing, surface detail when the
+region reads bare, untagged anatomy when its region is exposed, sensory never. The facts are
+the route's, sourced `images.subject_reveal`, and the assembly appends them to the subject
+untouched. A lane that passes nothing compiles the cut alone, which is every lane but the
+scene ([pipelines/scene-subjects.md](pipelines/scene-subjects.md) §Subject body reveal).
+
 ## Refusals the seam adds
 
 Beyond the layer's own refusals, three belong to this seam. All happen
