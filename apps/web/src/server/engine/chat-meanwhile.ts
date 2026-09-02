@@ -81,7 +81,7 @@ export { armMeanwhilePass };
 export async function enqueueChatMeanwhile(args: EnqueueChatMeanwhileArgs): Promise<void> {
   try {
     if (await hasLiveChatJob("chat_meanwhile", args.chatId)) return;
-    await enqueueJob({ type: "chat_meanwhile", payload: { ...args } });
+    await enqueueJob({ type: "chat_meanwhile", payload: { ...args }, chatId: args.chatId });
   } catch (err) {
     log.warn("chat_meanwhile", "failed to enqueue meanwhile pass", {
       chatId: args.chatId,

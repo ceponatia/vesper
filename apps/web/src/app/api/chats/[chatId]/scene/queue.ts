@@ -344,6 +344,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     const job = await startJob({
       type: "chat_scene_image",
       ownerId: args.userId,
+      chatId: args.chatId,
       payload: {
         chatId: args.chatId,
         characterId: args.character.id,

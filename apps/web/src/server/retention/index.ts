@@ -5,12 +5,14 @@
 // passes, never the scheduling.
 import { log } from "@/server/log";
 import { authSessionsExpired, verificationsExpired } from "./auth";
+import { jobsExpired } from "./jobs";
 import type { RetentionPass } from "./pass";
 
 export { RETENTION_BATCH_SIZE, type RetentionPass } from "./pass";
+export { JOB_RETENTION_DAYS, jobsExpired } from "./jobs";
 
 /** Every pass the tick runs, in order. A new rule is one file here plus one entry. */
-const PASSES: readonly RetentionPass[] = [authSessionsExpired, verificationsExpired];
+const PASSES: readonly RetentionPass[] = [jobsExpired, authSessionsExpired, verificationsExpired];
 
 /**
  * Run every retention pass once, each isolated: a failing pass is logged with
