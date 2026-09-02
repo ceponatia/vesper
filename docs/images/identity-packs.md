@@ -97,7 +97,9 @@ revision is never touched, `pending` rows abandoned by a dead process are retire
 a `current` row that lost its source is retired so its crop can age out at all, and orphan crops go too), plus
 consistency **findings** counted into the sweep job's payload rather than silently repaired. Hidden crops are
 hard-deleted with the character (`deleteCharacterIdentityAssets`, guarded by kind *and*
-entity, which keeps them dying with it once data-lifecycle retires `deleteEntityImages`). Copy and publish stay
+entity), while the character's Gallery-visible images (avatars, portraits, scenes) survive it as
+owner-visible Gallery history — the character delete route never calls `deleteEntityImages` for a
+character, only this explicit hidden-asset purge. Copy and publish stay
 isolated: a clone carries no crop, and the destination derives its own pack from its own copied portrait.
 
 ## Surfaces

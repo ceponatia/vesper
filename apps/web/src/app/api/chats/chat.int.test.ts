@@ -622,6 +622,63 @@ describe.runIf(ready)("DELETE /api/characters/:id — conversations go through d
     expect(await factCount(chat.memoryGroupId)).toBe(0);
   });
 
+  it("keeps a Gallery-visible image with a dangling entity_id and drops the hidden identity asset (#284)", async () => {
+    // Falsified against the pre-#284 route, which called `deleteEntityImages("character", …)`
+    // and hard-deleted every image row filed under the character — Gallery-visible art
+    // included. The fix: leave Gallery-visible kinds alone (dangling `entity_id` is
+    // intentional Gallery history) and purge only the hidden identity assets explicitly.
+    const [gwen] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Gwen", profile: {} }).returning();
+    if (!gwen) throw new Error("failed to seed character");
+    const chat = await createChat(gwen.id, "shared");
+    plantedGroups.push(chat.memoryGroupId);
+
+    const [visible] = await db()
+      .insert(images)
+      .values(
+        canonicalImageRow({
+          ownerId: authState.user.id,
+          kind: "avatar" as const,
+          entityKind: "character" as const,
+          entityId: gwen.id,
+          status: "ready" as const,
+        }),
+      )
+      .returning({ id: images.id });
+    const [hidden] = await db()
+      .insert(images)
+      .values(
+        canonicalImageRow({
+          ownerId: authState.user.id,
+          kind: "identity_face_crop" as const,
+          entityKind: "character" as const,
+          entityId: gwen.id,
+          status: "ready" as const,
+        }),
+      )
+      .returning({ id: images.id });
+    if (!visible || !hidden) throw new Error("failed to seed image fixtures");
+
+    const res = await characterDelete(
+      apiRequest(`/api/characters/${gwen.id}`, { method: "DELETE" }),
+      routeCtx({ id: gwen.id }),
+    );
+    expect(res.status).toBe(200);
+
+    expect(await db().select({ id: characterChats.id }).from(characterChats).where(eq(characterChats.id, chat.id))).toHaveLength(0);
+
+    // The Gallery-visible row survives immediately — nothing in the route ever queues
+    // its removal, so no polling is needed for this half of the assertion.
+    const [survivingRow] = await db().select({ entityId: images.entityId }).from(images).where(eq(images.id, visible.id)).limit(1);
+    expect(survivingRow?.entityId).toBe(gwen.id); // dangling: the character row is gone, the pointer is not.
+
+    // `deleteCharacterIdentityAssets` runs fire-and-forget (`void … .catch(...)`), so poll
+    // for it to land rather than racing it.
+    await vi.waitFor(async () => {
+      const hiddenRows = await db().select({ id: images.id }).from(images).where(eq(images.id, hidden.id));
+      expect(hiddenRows).toHaveLength(0);
+    });
+  });
+
   it("leaves another owner's conversation intact when the character anomalously participates in it", async () => {
     // The cross-owner participant row violates today's "chat owner == character owner"
     // invariant, so it is seeded directly — no route can produce it. That is the shape

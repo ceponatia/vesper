@@ -323,10 +323,11 @@ async function deleteOrphanIdentityCrops(cutoff: Date, limit: number, sink: Diag
  *
  * The pack ROWS cascade with the character; these image rows do not (they hang off
  * `entity_kind`/`entity_id`, which carry no foreign key), so the delete path calls
- * this explicitly. Today `deleteEntityImages` would take them anyway; when the
- * data-lifecycle plan makes Gallery-visible images survive their character, this is
- * what keeps hidden crops dying with it. The broader retention rule deliberately
- * does not extend to internal render inputs: nobody browses a face crop.
+ * this explicitly. A character's Gallery-visible images (avatars, portraits, scenes)
+ * survive the character as owner-visible Gallery history — `deleteEntityImages` is
+ * never called for a character — and this is what keeps hidden crops dying with it
+ * anyway. The broader retention rule deliberately does not extend to internal render
+ * inputs: nobody browses a face crop.
  *
  * Guarded by kind AND entity, the same shape `deleteChatAssets` uses, so a wrong
  * character id can only ever delete nothing.
