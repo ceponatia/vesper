@@ -132,9 +132,9 @@ describe("applySceneSubjectVisual", () => {
   /**
    * The cut's attribute resolve takes all THREE layers the rest of the app
    * takes — authored sheet → the chat's persisted narrative overlays → this
-   * moment's condition overlays — the composition `character-chat.ts`
-   * (`fullResolved`), `chat-affordances.ts` and `visual-state/assemble.ts`
-   * (`resolveShadowAttributes`) each spell out. The slice's `attributes` are
+   * moment's condition overlays — the composition the shared appearance read
+   * (`contracts/visual-state/appearance-read.ts`'s `fullResolved`) and
+   * `chat-affordances.ts` each spell out. The slice's `attributes` are
    * what the route's own reveal reads beside the digest, so a resolve that
    * skipped the middle layer would let a recorded dye reach the narrator and the
    * projection while the picture re-asserted the old hair.

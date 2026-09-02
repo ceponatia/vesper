@@ -82,7 +82,6 @@ function PreviewBody({ data }: { data: VisualStatePreview }) {
             value={`${m.image.mandatoryCount} mandatory · ${m.image.selectedCount} optional (${m.image.suppressedOptionalCount} past budget)`}
           />
         </dl>
-        <ComparisonBlock label="Attributes vs legacy narrator block" comparison={m.attributes} />
         <ComparisonBlock label="Garments vs resolved wardrobe" comparison={m.garments} />
       </Panel>
 
@@ -241,12 +240,12 @@ function ComparisonBlock({
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px]">
           <Row
             term="counts"
-            value={`legacy ${comparison.legacyCount} · projected ${comparison.projectedCount} · shared ${comparison.sharedCount}`}
+            value={`resolved ${comparison.resolvedCount} · projected ${comparison.projectedCount} · shared ${comparison.sharedCount}`}
           />
           <Row
-            term="legacy only"
-            value={comparison.legacyOnly.length > 0 ? comparison.legacyOnly.join(", ") : "—"}
-            muted={comparison.legacyOnly.length > 0}
+            term="resolved only"
+            value={comparison.resolvedOnly.length > 0 ? comparison.resolvedOnly.join(", ") : "—"}
+            muted={comparison.resolvedOnly.length > 0}
           />
           <Row
             term="projected only"

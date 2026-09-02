@@ -1957,6 +1957,45 @@ describe("ensemble group perks (followups ruling 12)", () => {
     expect(parts.tail).toContain("While Vera's current condition lasts");
     expect(parts.tail).toContain("unkempt");
   });
+
+  /**
+   * The one invariant the shared narrator appearance read
+   * (`contracts/visual-state/appearance-read.ts`) exists to hold: solo and
+   * ensemble narration may lay a character out differently — the roster block
+   * has no separate Sensory-cues section — but they may not disagree about
+   * which appearance facts that character HAS. Falsified against the
+   * pre-consolidation builder, where each frame ran its own copy of the
+   * registry/applicability/elision guard chain, so a guard tightened in one
+   * frame silently stayed loose in the other.
+   */
+  it("gives a member the same appearance facts the solo frame gives that character", () => {
+    const profile = maraProfile({
+      intimateRegions: ["vulva"],
+      attributes: [
+        // Values Mara's default sheet does not carry, so "present in the
+        // ensemble" can only mean Vera's own block.
+        attr("hair.color", "silver"),
+        attr("voice.pitch", "reedy"),
+        attr("presentation.scent_baseline", "soft floral perfume"),
+        attr("nose.piercings", "none"),
+        attr("vulva.scent", "INTIMATE_SCENT_SENTINEL"),
+      ],
+    });
+    const solo = buildCharacterChatSystemPrompt({ name: "Vera", profile, player: { name: "Brian" } });
+    const roster = buildChatPromptPartsForRoster(input(), [member("Mara"), member("Vera", { profile })]);
+    const ensemble = [roster.prefix, roster.tail].join("\n\n");
+    // Present in both, wherever each frame chooses to spend it.
+    for (const fact of ["hair color: silver", "pitch: reedy", "soft floral perfume"]) {
+      expect(solo).toContain(fact);
+      expect(ensemble).toContain(fact);
+    }
+    // Refused by both: an intimate sense chat carries no exposure signal to
+    // earn, and a "none" the prompt-side elision drops.
+    for (const refused of ["INTIMATE_SCENT_SENTINEL", "nose piercings"]) {
+      expect(solo).not.toContain(refused);
+      expect(ensemble).not.toContain(refused);
+    }
+  });
 });
 
 describe("ensemble relationship matrix injection", () => {

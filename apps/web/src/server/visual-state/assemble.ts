@@ -2,7 +2,6 @@ import {
   adaptProjectedAppearanceTruth,
   buildVisualAttentionCandidates,
   buildVisualStateSnapshot,
-  conditionAttributeOverlays,
   diag,
   emptyVisualCueState,
   emptyVisualMemoryState,
@@ -17,8 +16,7 @@ import {
   projectPresentationFeatures,
   projectSpeciesFeatureGroups,
   projectWardrobeFeatures,
-  realizeBody,
-  resolveAttributes,
+  readNarratorAppearance,
   resolveVisualViewingConditions,
   selectVisualImageFacts,
   selectVisualNarratorCues,
@@ -153,7 +151,7 @@ export interface VisualStateAssemblyInput {
 
 export interface VisualStateAssembly {
   readonly snapshot: VisualStateSnapshot;
-  /** Base + persisted overlays — what the legacy prompt's stable block resolves. */
+  /** Base + persisted overlays — what the narrator's stable block resolves. */
   readonly stableResolved: readonly AttributeValue[];
   /** Stable + condition overlays — what the projection was taken over. */
   readonly fullResolved: readonly AttributeValue[];
@@ -203,24 +201,6 @@ function laneUnavailable(
 // ---------------------------------------------------------------------------
 // Snapshot assembly
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve the subject's attributes the way both live prompts do: authored base,
- * then persisted narrative overlays, then this moment's condition overlays —
- * identical composition to `chat-affordances.ts`'s `resolveSubjectAttributes`,
- * so the shadow can never disagree with the read the narrator rides.
- */
-function resolveShadowAttributes(input: VisualStateAssemblyInput): {
-  stable: readonly AttributeValue[];
-  full: readonly AttributeValue[];
-} {
-  const stable = resolveAttributes(input.attributes, [...(input.attributeOverlays ?? [])]);
-  const full = resolveAttributes(input.attributes, [
-    ...(input.attributeOverlays ?? []),
-    ...conditionAttributeOverlays([...(input.conditions ?? [])]),
-  ]);
-  return { stable, full };
-}
 
 /** The wardrobe adapter's per-garment inputs, from the lane's store. */
 function garmentInputsOf(garments: VisualStateLaneGarments): VisualStateGarmentInput[] {
@@ -276,8 +256,16 @@ function coverageBySubject(input: VisualStateAssemblyInput): ReadonlyMap<string,
  */
 export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): VisualStateAssembly {
   const sink = input.sink;
-  const { stable, full } = resolveShadowAttributes(input);
-  const realizedBody = realizeBody(input.realize ?? {});
+  // The SAME appearance read the narrator prompts consume: authored base, then
+  // persisted narrative overlays, then this moment's condition overlays, over
+  // the realized body. Sharing it is what makes "the projection and the prompt
+  // cannot disagree" structural rather than a convention two files uphold.
+  const { stableResolved: stable, fullResolved: full, realizedBody } = readNarratorAppearance({
+    attributes: input.attributes,
+    ...(input.attributeOverlays === undefined ? {} : { attributeOverlays: input.attributeOverlays }),
+    ...(input.conditions === undefined ? {} : { conditions: input.conditions }),
+    ...(input.realize === undefined ? {} : { realize: input.realize }),
+  });
 
   // Appearance truth: attributes (overlays applied), located facts and anatomy.
   // The chat lane authors neither located facts nor evented anatomy yet

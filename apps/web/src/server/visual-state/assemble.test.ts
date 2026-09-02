@@ -19,6 +19,7 @@ import {
   VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS,
   VISUAL_STATE_VISIBILITY_DECLARED,
   VISUAL_STATE_VISIBILITY_UNKNOWN,
+  type AttributeValue,
   type ChatGarmentStore,
 } from "@/contracts";
 import { assembleVisualStateSnapshot, type VisualStateAssemblyInput } from "./assemble";
@@ -144,6 +145,42 @@ describe("assembleVisualStateSnapshot", () => {
     expect(laneDetails).toContain("lane:wardrobe");
     expect(laneDetails).toContain("lane:scene_relation");
     expect(sink.items.some((entry) => entry.code === VISUAL_STATE_SOURCE_UNAVAILABLE)).toBe(true);
+  });
+
+  /**
+   * The assembly and the narrator prompt take the SAME appearance read
+   * (`contracts/visual-state/appearance-read.ts`), so this proves the assembly
+   * still hands that read every owner it holds, and that the read keeps the two
+   * apart: a persisted narrative overlay is identity, a live condition's effect
+   * is current state only. Falsified by forwarding `attributes` alone — the
+   * shape that compiles, projects a plausible body, and silently loses both a
+   * recorded haircut and every active condition. The stable/current split is
+   * load-bearing beyond the projection: the prompt's cached prefix renders the
+   * stable resolve, so a condition leaking into it would churn the prefix every
+   * time one came or went.
+   */
+  it("forwards persisted overlays and live conditions into the shared appearance read", () => {
+    const assembly = assembleVisualStateSnapshot({
+      ...chatShadowInput(),
+      attributeOverlays: [{ id: "nose.shape", value: "straight", source: "narrative" }],
+      conditions: [
+        {
+          id: "c_unwashed",
+          label: "unwashed",
+          startedAtMinutes: 100,
+          attributeEffects: [{ attributeId: "presentation.grooming" as const, value: "unkempt" }],
+        },
+      ],
+    });
+    const valueOf = (values: readonly AttributeValue[], id: string): AttributeValue["value"] | undefined =>
+      values.find((entry) => entry.id === id)?.value;
+    // The authored nose is crooked; the narrative overlay is who she is NOW, in
+    // both resolves.
+    expect(valueOf(assembly.stableResolved, "nose.shape")).toBe("straight");
+    expect(valueOf(assembly.fullResolved, "nose.shape")).toBe("straight");
+    // The condition's effect exists only in the current resolve.
+    expect(valueOf(assembly.stableResolved, "presentation.grooming")).toBeUndefined();
+    expect(valueOf(assembly.fullResolved, "presentation.grooming")).toBe("unkempt");
   });
 
   it("is byte-deterministic over one cut, and a restored (cloned) cut reproduces it", () => {
@@ -289,7 +326,7 @@ describe("buildVisualStateShadow", () => {
     );
   });
 
-  it("measures missing owners, duplicates, and the two summary comparisons", () => {
+  it("measures missing owners, duplicates, and the wardrobe comparison", () => {
     const build = buildVisualStateShadow(chatShadowInput());
     const { measurements } = build;
     expect(measurements.featureCount).toBe(build.snapshot.features.length);
@@ -298,20 +335,13 @@ describe("buildVisualStateShadow", () => {
     expect(measurements.duplicateKeyCount).toBe(0);
     // The worn top is both resolved-worn and projected: full agreement.
     expect(measurements.garments).not.toBeNull();
-    expect(measurements.garments?.legacyOnly).toEqual([]);
+    expect(measurements.garments?.resolvedOnly).toEqual([]);
     expect(measurements.garments?.projectedOnly).toEqual([]);
     expect(measurements.garments?.sharedCount).toBe(1);
-    // The legacy block renders `nose.size: medium`; the projection deliberately
-    // does not (ordinary vocabulary is not a recognition candidate). That is
-    // exactly the disagreement this slice exists to measure.
-    expect(measurements.attributes).not.toBeNull();
-    expect(measurements.attributes?.legacyOnly).toContain("nose.size");
-    expect(measurements.attributes?.projectedOnly).toEqual([]);
   });
 
-  it("compares nothing in the successor lane — its narrator renders no attribute summary", () => {
+  it("compares no wardrobe in the successor lane — it resolves no worn rows", () => {
     const build = buildVisualStateShadow(simShadowInput());
-    expect(build.measurements.attributes).toBeNull();
     expect(build.measurements.garments).toBeNull();
   });
 });

@@ -58,6 +58,12 @@ A conversation holds up to **4 full characters**. A roster of one is byte-identi
   and toned by their regard; **sensory focus** aims at the member the message studies;
   disinhibition + condition-driven transient appearance render **per present member** in
   the ensemble tail. The `turn_context` layout stays 1-on-1-only.
+- **One appearance source for both frames**: a member's attribute lines and their transient
+  condition overrides come from the same narrator appearance read the 1-on-1 frame uses
+  ([prompts.md](prompts.md) §The narrator appearance read). The roster block spends the
+  facts differently — it has no separate Sensory-cues section, so a member's closeness-gated
+  senses ride the same list as everything else — but the two frames can never disagree about
+  which facts a character has.
 - **Per-character sheets**: tapping a roster member opens THEIR Character
   sheet (axes/texture toward the player, meters, conditions, mind note, loops, outfit +
   exposure, presence toggle); the state routes take `?characterId=` targeting. The

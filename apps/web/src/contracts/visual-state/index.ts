@@ -50,3 +50,4 @@ export * from "./visibility";
 export * from "./viewing";
 export * from "./cue-state";
 export * from "./extraction";
+export * from "./appearance-read";
