@@ -4,12 +4,13 @@
 // the one request-driven periodic tick the app has; this module owns only the
 // passes, never the scheduling.
 import { log } from "@/server/log";
+import { authSessionsExpired, verificationsExpired } from "./auth";
 import type { RetentionPass } from "./pass";
 
 export { RETENTION_BATCH_SIZE, type RetentionPass } from "./pass";
 
 /** Every pass the tick runs, in order. A new rule is one file here plus one entry. */
-const PASSES: readonly RetentionPass[] = [];
+const PASSES: readonly RetentionPass[] = [authSessionsExpired, verificationsExpired];
 
 /**
  * Run every retention pass once, each isolated: a failing pass is logged with
