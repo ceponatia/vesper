@@ -78,7 +78,9 @@ same direction: a chat deletion nulls `images.chat_id` (`SET NULL`) and keeps th
 survives in the Gallery; a character deletion leaves `images.entity_id` dangling and keeps every
 Gallery-visible asset the same way. The Gallery's own list queries join outward to the character
 by that id — a LEFT JOIN, not an inner one — so a surviving image still lists once its character is
-gone, with a null character name.
+gone, with no character id or name (the row lists; nothing links): the DTO carries the JOINED
+character's id, never the image's own dangling `entity_id`, so a gone character can never surface
+as a link with nowhere to go.
 
 ## The sweep
 

@@ -55,6 +55,7 @@ const ids = {
   sceneNew2: "",
   sceneNew3: "",
   sceneOld: "",
+  sceneDangling: "",
   portrait: "",
   entityArt: "",
 };
@@ -106,12 +107,20 @@ beforeAll(async () => {
     { sceneImageId: sceneNew2.id, kind: "character", entityId: "char-bob", name: "Bob", source: "generated" },
   ]);
 
-  // Excluded rows: pending / failed status, a character-anchored scene whose
-  // character no longer exists (inner join drops it), and another owner's scene.
+  // Excluded rows: pending / failed status, and another owner's scene. A
+  // character-anchored scene whose character no longer exists is NOT excluded — the
+  // LEFT JOIN keeps it listed (#284), oldest of the five (createdAt before sceneOld)
+  // so it sorts last; see the scenes-tab assertion below for its null characterId/
+  // characterName.
   await db().insert(images).values(scene({ status: "pending" }));
   await db().insert(images).values(scene({ status: "failed" }));
-  await db().insert(images).values(scene({ entityId: "no-such-character" }));
+  const [sceneDangling] = await db()
+    .insert(images)
+    .values(scene({ entityId: "no-such-character", createdAt: new Date(stamp - 1000) }))
+    .returning();
   await db().insert(images).values(scene({ ownerId: other.id }));
+  if (!sceneDangling) throw new Error("failed to seed dangling-character scene");
+  ids.sceneDangling = sceneDangling.id;
 
   // The other tabs' rows: a portrait variant and a location render — neither
   // may leak into the scenes tab, and each surfaces under its own tab.
@@ -138,9 +147,11 @@ describe.skipIf(!ready)("GET /api/gallery", () => {
     const body = await expectJson<GalleryOut>(await galleryRoute(apiRequest("/api/gallery"), noCtx));
     const scenes = body.images;
 
-    // Only the four ready owned scenes — not pending, failed, the character-less
-    // orphan, another owner's, or the portrait/entity rows — newest first (keyset order).
-    expect(scenes.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneNew3, ids.sceneOld]);
+    // The five ready owned scenes — not pending, failed, another owner's, or the
+    // portrait/entity rows — newest first (keyset order). The dangling-character scene
+    // lists too (#284: the LEFT JOIN keeps a Gallery-visible image whose character is
+    // gone), sorted last as the oldest of the five.
+    expect(scenes.map((s) => s.id)).toEqual([ids.sceneNew1, ids.sceneNew2, ids.sceneNew3, ids.sceneOld, ids.sceneDangling]);
     expect(body.nextCursor).toBeNull();
 
     // Every scene is tagged with its anchor character (no session/world fields anymore).
@@ -157,6 +168,13 @@ describe.skipIf(!ready)("GET /api/gallery", () => {
       ]),
     );
     expect(scenes.find((s) => s.id === ids.sceneOld)!.references).toEqual([]);
+
+    // The dangling row still lists (the point of #284) but carries no navigable
+    // character id or name — `entity_id` points at nothing, and the DTO must never
+    // hand the client an id with nowhere to link.
+    const dangling = scenes.find((s) => s.id === ids.sceneDangling)!;
+    expect(dangling.characterId).toBeNull();
+    expect(dangling.characterName).toBeNull();
   });
 
   it("pages by keyset cursor without overlap or gaps", async () => {
@@ -184,6 +202,42 @@ describe.skipIf(!ready)("GET /api/gallery", () => {
     );
     expect(body.images.map((p) => p.id)).toEqual([ids.portrait]);
     expect(body.images[0]!.characterName).toBe("Alice Char");
+  });
+
+  it("portraits tab: a deleted character's portrait still lists, with no navigable id or name (#284)", async () => {
+    // Falsified against the pre-#284 inner join, which dropped the row entirely, and
+    // against an interim fix that leaked the image's own dangling `entity_id` as
+    // `characterId` — a client-navigable id with nowhere to go. A dedicated character
+    // (never reused elsewhere in this suite) so deleting it here cannot affect any
+    // other test's fixtures.
+    const [orphan] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Ghost" }).returning();
+    if (!orphan) throw new Error("failed to seed orphan character");
+    const [orphanPortrait] = await db()
+      .insert(images)
+      .values(
+        canonicalImageRow({
+          ownerId: authState.user.id,
+          kind: "portrait_variant" as const,
+          status: "ready" as const,
+          entityKind: "character" as const,
+          entityId: orphan.id,
+          prompt: "",
+          meta: {},
+        }),
+      )
+      .returning();
+    if (!orphanPortrait) throw new Error("failed to seed orphan portrait");
+    await db().delete(characters).where(eq(characters.id, orphan.id));
+
+    const body = await expectJson<GalleryOut>(
+      await galleryRoute(apiRequest("/api/gallery", { query: { tab: "portraits" } }), noCtx),
+    );
+    const row = body.images.find((p) => p.id === orphanPortrait.id);
+    expect(row).toBeDefined();
+    expect(row?.characterId).toBeNull();
+    expect(row?.characterName).toBeNull();
+
+    await db().delete(images).where(eq(images.id, orphanPortrait.id));
   });
 
   it("entity tab: entity art with the source entity's name resolved", async () => {
