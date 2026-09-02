@@ -3,7 +3,7 @@ import { attributeRegistry, formatAttribute, type AttributeValue } from "../attr
 import { isIntimateAttributeCategory } from "../body/locations";
 import type { RegionExposure } from "../items/visibility";
 import type { RealizedBody } from "../species";
-import { revealSurfaces } from "./subject-reveal";
+import { REVEAL_EXPOSURE_REGION, revealSurfaces } from "./subject-reveal";
 import { VIEWER_SKIN_ATTRIBUTE_IDS, type ViewerBodyPart, type ViewerBodyPartId } from "./viewer-body";
 
 /**
@@ -28,8 +28,10 @@ import { VIEWER_SKIN_ATTRIBUTE_IDS, type ViewerBodyPart, type ViewerBodyPartId }
  *   reaching in, which is why `skin.tone` and `build.frame` ride ANY embodied
  *   frame while each part contributes only its own descriptors on top.
  * - **`viewer.intimate_anatomy`** — the exposed half, stated only by a route
- *   that permits it, the same seam and the same coverage rule the cast's
- *   `subject.intimate_anatomy` uses ({@link revealSurfaces}).
+ *   that permits it, and only for a region an in-frame part actually shows. The
+ *   coverage rule is the cast's ({@link revealSurfaces}); the framing rule is
+ *   the viewer's alone, because the camera is their own eyes and a POV shot
+ *   holds a few cropped limbs rather than a whole figure.
  *
  * ## What this does NOT decide
  *
@@ -38,7 +40,9 @@ import { VIEWER_SKIN_ATTRIBUTE_IDS, type ViewerBodyPart, type ViewerBodyPartId }
  * `requiresBare` region that must read bare or sheer, with missing coverage
  * counting as covered. This projection states what it is handed; a part the
  * gate dropped never enters it, so there is no prompt text to leak and nothing
- * to talk a model out of.
+ * to talk a model out of. What it DOES decide is which regions the surviving
+ * parts put on screen, because that is a question about the frame rather than
+ * about the wardrobe, and no coverage readout can answer it.
  *
  * PURE: values in, facts out. No IO, no env, no registry writes.
  */
@@ -173,23 +177,39 @@ function viewerDescriptors(input: ViewerBodyFactsInput, ids: readonly string[]):
 /**
  * The viewer's exposed anatomy, or nothing.
  *
- * Three conditions, all of which must hold, and none of which is this module's
- * judgment: the route permits intimate detail, an intimate part actually
- * survived into frame (`resolveViewerParts` already refused otherwise), and the
- * coverage readout uncovers the attribute's own region. The last is
- * {@link revealSurfaces} — the cast's rule, reused rather than restated, so a
- * bare torso lets the viewer's prompt say exactly what it lets a character's
- * say. No readout is not permission: with no coverage there is no reveal.
+ * **Coverage and framing are two different questions, and both must answer yes.**
+ * `revealSurfaces` — the cast's rule, reused rather than restated — asks what the
+ * clothes leave uncovered anywhere on the body. It cannot ask what the frame is
+ * pointed at, and for the viewer that is the half that decides: the camera is
+ * their own eyes, so a POV shot holds a few cropped limbs rather than a whole
+ * figure. Asking coverage alone got both errors at once — a shirtless torso in
+ * frame stated nothing because the pelvis was covered, and a shot of the
+ * viewer's own lap stated their bare chest because the chest happened to be
+ * bare somewhere off-camera.
+ *
+ * So an attribute is stated only when its region is one an in-frame part
+ * actually shows ({@link ViewerBodyPart.revealsIntimateRegions}) AND the
+ * coverage readout uncovers it. The region map is the cast's own
+ * ({@link REVEAL_EXPOSURE_REGION}), so the two paths cannot come to disagree
+ * about which region a category belongs to; a category the map does not name —
+ * the deliberately omitted `anus`/`perineum` — is stated by neither path.
+ *
+ * The route is the third condition and the coarsest: `allowIntimate` is the
+ * rung's permission, and no readout is not permission either — with no coverage
+ * there is no reveal.
  */
 function viewerIntimateDescriptors(input: ViewerBodyFactsInput): string[] {
   const exposure = input.exposure;
   if (!input.allowIntimate || exposure === undefined) return [];
-  if (!input.parts.some((part) => part.intimate)) return [];
+  const inFrame = new Set<string>(input.parts.flatMap((part) => part.revealsIntimateRegions));
+  if (inFrame.size === 0) return [];
   const out: string[] = [];
   for (const value of input.attributes ?? []) {
     const def = attributeRegistry.byId(value.id);
     if (def === undefined || def.excludeFromPrompts === true) continue;
     if (!isIntimateAttributeCategory(def.category)) continue;
+    const region = REVEAL_EXPOSURE_REGION[def.category];
+    if (region === undefined || !inFrame.has(region)) continue;
     if (input.realizedBody && !input.realizedBody.isAttributeApplicable(def)) continue;
     if (!revealSurfaces(def, exposure, true)) continue;
     const formatted = formatAttribute(def, value.value);
