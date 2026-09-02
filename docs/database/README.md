@@ -55,3 +55,20 @@ is optional there.
 - **`events`** — `type`, `payload` JSONB; an append-only observability stream written via
   `server/events.ts`. The chat inspector reads `retrieval` / `agent_failure` / `agent_run` events
   by created-at window.
+
+## Retention
+
+The image sweep's maintenance tick (`kickImageSweep` in `apps/web/src/server/images/assets.ts`)
+also runs the passes in `apps/web/src/server/retention/`. Each pass is a bounded delete of at
+most `RETENTION_BATCH_SIZE` (1000) rows per tick, decided from the row's own timestamp or status
+alone — a large backlog is worked down over several ticks, never in one statement. These passes
+carry **no** mass-expiry refusal: that rule is the image sweep's own, guarding against a missing
+volume making healthy image rows look broken, and it does not apply to rows whose expiry comes
+from database data.
+
+| Pass                                  | Deletes when        |
+| ------------------------------------- | ------------------- |
+| `events`                              | older than 30 days  |
+| `jobs` (terminal: `done` / `failed`)  | older than 7 days   |
+| `auth_sessions`                       | past `expires_at`   |
+| `verifications`                       | past `expires_at`   |
