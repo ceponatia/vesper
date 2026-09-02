@@ -11,7 +11,7 @@ import type {
 import type { ImageStyleMedium } from "./conflict-keys";
 import type { ImageDialectPositiveInput } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageScenePossessionOwners } from "./scene-facts";
+import { imageScenePossessionOwners, type ImageObscuredFace } from "./scene-facts";
 
 /**
  * Wording helpers shared by the Qwen-family dialects — and, for the
@@ -436,4 +436,48 @@ export function sentence(text: string): string {
   if (body.length === 0) return "";
   if (tail.includes("…")) return `${body}…`;
   return `${body}${tail.includes("!") ? "!" : tail.includes("?") ? "?" : "."}`;
+}
+
+/**
+ * The identity lock's adaptation, for a shot whose subject's face is turned or
+ * hidden — a sentence of its own, always beside the lock and never inside it.
+ *
+ * The lock and the camera pull against each other, and the lock wins by default:
+ * the cheapest way for a model to prove it preserved a face is to show that face,
+ * so "preserve the exact face" quietly rotates a character the shot just put
+ * back-to-camera. Adapting means naming what to preserve when the face is not the
+ * evidence — hair, build, skin tone — and saying outright that the turn is not on
+ * the table.
+ *
+ * **A separate sentence, never woven into the lock.** Every family's lock string
+ * is matched verbatim at the model boundary, so editing one here would silently
+ * un-lock every adapted prompt. The lock also stays WHOLE rather than being
+ * replaced: hair, build and tone still bind to the reference, which remains
+ * authoritative for whatever the shot does show.
+ *
+ * The wording is the retired scene prose builder's, kept to the byte on a
+ * reference-bearing render, because it is the only version of this sentence
+ * anything measured. `preserveFrom` is what a reference-free render loses: with no
+ * image in the payload there is nothing to preserve "from the reference", and
+ * claiming otherwise would point the model at a photograph it was never sent.
+ *
+ * Name-bound and pronoun-free: the cast is any gender, and "her face"
+ * mis-genders half of it the moment this sentence meets a character the phrasing
+ * was not written for. An unlabelled subject degrades to "the subject" rather
+ * than to no sentence at all — the claim is mandatory by kind, and a missing
+ * label is not a reason to leave a turned-away render telling the model to
+ * preserve a face it cannot see.
+ */
+export function faceVisibilitySentence(
+  visibility: ImageObscuredFace,
+  subject: string | null,
+  preserveFrom: "reference" | "nothing",
+): string {
+  const name = subject ?? "the subject";
+  const seen =
+    visibility === "partial"
+      ? `${name}'s face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone`
+      : `${name}'s face is not visible in this shot; preserve the hair color and style, build and skin tone`;
+  const anchor = preserveFrom === "reference" ? " exactly from the reference" : " exactly";
+  return `${seen}${anchor} — do not rotate ${name} to face the camera.`;
 }

@@ -3,12 +3,17 @@ import {
   imageModelProfileSchema,
   imageModelSchema,
   imageReferencePolicySchema,
+  QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
-import { DEFAULT_SCENE_CAMERA } from "@/contracts/images/scene-camera";
+import {
+  DEFAULT_SCENE_CAMERA,
+  sceneSubjectOrientationById,
+  type SceneSubjectOrientationId,
+} from "@/contracts/images/scene-camera";
 import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
 import {
   expectOrder,
@@ -405,5 +410,86 @@ describe("a staging the rung may not state", () => {
     expect(lowered.scene.some((fact) => fact.concept === "scene.staging")).toBe(false);
     const unsent = sink.items.find((item) => item.code === IMAGE_SCENE_STAGING_UNSENT);
     expect(unsent?.context).toMatchObject({ staging: plan.staging?.id, reason });
+  });
+});
+
+/**
+ * THE IDENTITY LOCK'S ADAPTATION (issue #391).
+ *
+ * The lock and the camera pull against each other, and the lock wins by default:
+ * the cheapest way for an edit model to prove it preserved a face is to SHOW that
+ * face, so a lock reading "preserve the exact face" turns a character the shot
+ * just put back-to-camera around to the lens. The retired prose builder said so
+ * outright in a sentence beside the lock; the compiled path inherited the lock
+ * and not the sentence, and the effective face visibility — which the orientation
+ * registry answers and a staging may override — reached nothing.
+ *
+ * Falsified against that state, where every away, profile and crown-of-the-head
+ * shot compiled the unqualified lock.
+ *
+ * The lock's own bytes are asserted present in the same breath, because the
+ * cheap wrong fix is to edit the adaptation INTO the lock — and that string is
+ * matched verbatim at the model boundary.
+ */
+describe("a shot that cannot show the subject's face", () => {
+  const NO_ROTATION = "do not rotate Nyx to face the camera.";
+
+  /** The populated plan with its arrangement removed, so the CAMERA decides the answer. */
+  const shot = (orientation: SceneSubjectOrientationId): SceneRenderPlan =>
+    populatedScenePlan({
+      staging: undefined,
+      viewerBody: [],
+      camera: { ...DEFAULT_SCENE_CAMERA, orientation },
+    });
+
+  it.each([
+    [
+      "profile",
+      "Nyx's face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.",
+    ],
+    [
+      "away",
+      "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.",
+    ],
+  ] as const)("adapts the lock on a %s shot without touching the lock's bytes", (orientation, adaptation) => {
+    const { program } = compileScene(shot(orientation));
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).toContain(adaptation);
+    // A separate sentence, and the lock still reads exactly as the boundary
+    // matches it — the adaptation follows it rather than being spliced into it.
+    expectOrder(program.prompt, [QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK, adaptation]);
+  });
+
+  it("states no adaptation on a front-facing shot", () => {
+    const { program, lowered } = compileScene(shot("toward_viewer"));
+    expect(lowered.scene.some((fact) => fact.concept === "subject.face_visibility")).toBe(false);
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(NO_ROTATION);
+  });
+
+  /**
+   * The override is the whole reason `SceneStagingSemantics.faceVisibility` is a
+   * field rather than a derivation: `kneeling_before_viewer_guided` is a
+   * `toward_viewer` shot of the crown of someone's head, and no orientation can
+   * see that. It also has to survive the arrangement's own per-rung gates —
+   * withholding the staged SENTENCE never un-turns the body — which is asserted
+   * here on the moderated rung, where the intimate arrangement is not stated.
+   */
+  it("takes a staging's own answer over the orientation's, even where the arrangement is withheld", () => {
+    const staging = sceneStagings.kneeling_before_viewer_guided;
+    expect(sceneSubjectOrientationById(staging.camera.orientation)?.faceVisibility).toBe("full");
+    expect(staging.faceVisibility).toBe("hidden");
+
+    const sink = new DiagnosticCollector();
+    const lowered = lowerScenePlan({
+      plan: populatedScenePlan({ staging, camera: staging.camera, viewerBody: [...staging.viewerParts] }),
+      cast: [{ subjectId: LANE_PROBE_SUBJECT_ID, name: LANE_PROBE_NAME }],
+      allowIntimate: false,
+      sink,
+    });
+
+    expect(lowered.scene.some((fact) => fact.concept === "scene.staging")).toBe(false);
+    expect(sink.items.some((item) => item.code === IMAGE_SCENE_STAGING_UNSENT)).toBe(true);
+    expect(lowered.scene.find((fact) => fact.concept === "subject.face_visibility")?.value).toBe("hidden");
   });
 });

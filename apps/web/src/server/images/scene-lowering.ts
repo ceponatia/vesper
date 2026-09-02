@@ -8,7 +8,7 @@ import type {
 import type { VisualSceneLightingBand } from "@/contracts";
 import type { CharacterCameraAssemblyInput } from "@/contracts/images/character-digest";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { DEFAULT_SCENE_CAMERA } from "@/contracts/images/scene-camera";
+import { DEFAULT_SCENE_CAMERA, sceneSubjectOrientationById } from "@/contracts/images/scene-camera";
 import { sceneStagingSurfaceForms } from "@/contracts/images/scene-staging";
 import { resolveViewerParts, type ViewerBodyPart } from "@/contracts/images/viewer-body";
 import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./prompts-scene-plan";
@@ -27,8 +27,8 @@ import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./
  * and camera facts through three different doors:
  *
  * - **scene facts** — the mood, whose eyes the shot is through, the possession
- *   binding, the staged arrangement, and each featured person's pose and
- *   activity;
+ *   binding, the staged arrangement, each featured person's pose and activity,
+ *   and what this shot can show of the focal's face;
  * - **an ephemeral location digest** — the setting and its light, as a place the
  *   digest carries for this render only;
  * - **camera facts** — the height nothing else can state, plus which components
@@ -171,6 +171,7 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
     ...moodFact(plan.mood),
     ...stagingFact(input, focalRef),
     ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)))),
+    ...faceVisibilityFact(plan, focalRef),
   ];
 
   return { scene: facts, location: sceneLocationDigest(plan), camera: sceneCameraInput(plan) };
@@ -325,6 +326,52 @@ function stagingFact(input: SceneLoweringInput, focalRef: string | undefined): r
       disposition: "required_visual",
       priority: 1,
       source: source(`staging.${staging.id}`),
+    },
+  ];
+}
+
+/**
+ * How much of the focal's face this shot can show, stated only when the answer
+ * is not "all of it".
+ *
+ * The camera answers it — the orientation registry carries a `faceVisibility` per
+ * id — unless the staging overrode it. The override exists because a face hides
+ * by head angle alone: `kneeling_before_viewer_guided` is a `toward_viewer` shot
+ * of the crown of someone's head, which no orientation can see, so the
+ * arrangement that knows says so. It wins wherever the plan committed it, because
+ * the camera the arrangement wrote is already `plan.camera` and the two describe
+ * one shot; that holds even on a rung whose gates withheld the staging SENTENCE,
+ * since withholding the words never un-turns the body.
+ *
+ * A front-facing shot emits nothing. There is no adaptation to make when the face
+ * is the evidence, and a claim saying so would be a mandatory sentence restating
+ * the lock.
+ *
+ * Two gates mirror the retired prose builder's, which is the only version of this
+ * behavior anything measured: a **selfie** is skipped, because the subject holds
+ * the lens and the geometry is theirs rather than a camera the fiction moved; and
+ * a focal with **no committed cut** is skipped, because the claim would name a
+ * subject the digest does not carry.
+ */
+function faceVisibilityFact(plan: SceneRenderPlan, focalRef: string | undefined): readonly ImageWorldFact[] {
+  if (focalRef === undefined || plan.captureMode === "selfie") return [];
+  const visibility =
+    plan.staging?.faceVisibility ?? sceneSubjectOrientationById(plan.camera.orientation)?.faceVisibility ?? "full";
+  if (visibility === "full") return [];
+  return [
+    {
+      key: `${focalRef}.face_visibility`,
+      concept: "subject.face_visibility",
+      value: visibility,
+      subjectRef: focalRef,
+      semanticTags: [`face_visibility:${visibility}`],
+      // Required, and the segment kind makes it so anyway: an adaptation a budget
+      // squeeze dropped while the lock it corrects survived is the whole defect.
+      disposition: "required_visual",
+      // Just under an identity anchor, so on an endpoint with no lock band the
+      // sentence still follows the descriptors it qualifies.
+      priority: 0.99,
+      source: source("face_visibility"),
     },
   ];
 }

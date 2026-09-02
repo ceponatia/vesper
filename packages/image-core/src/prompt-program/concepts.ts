@@ -206,6 +206,29 @@ const CONCEPT_TABLE = [
   { id: "subject.current_state", channel: "subject", segmentKind: "current_state", protects: [] },
   { id: "subject.wardrobe", channel: "subject", segmentKind: "wardrobe", protects: [] },
   { id: "subject.exposure", channel: "subject", segmentKind: "exposure", protects: [] },
+  // How much of this subject's FACE the shot can show, when the answer is not
+  // "all of it" — `partial` or `hidden`. A front-facing shot states nothing.
+  //
+  // This is the identity lock's ADAPTATION, as a fact. The cheapest way for an
+  // edit model to prove it preserved a face is to SHOW that face, so a lock
+  // reading "preserve the exact face" quietly rotates a subject the shot just
+  // put back-to-camera; what a dialect has to say instead is what to preserve
+  // when the face is not the evidence, and that the turn is not on the table.
+  // The lock string itself is matched verbatim at the model boundary, so the
+  // adaptation is a separate claim and never an edit to those bytes.
+  //
+  // `identity`, deliberately: the sentence corrects the lock, so it belongs in
+  // the lock's own segment kind — adjacent to it by priority, and unfittable by
+  // kind for the same reason the lock is. An adaptation a budget squeeze dropped
+  // while the lock survived would leave the render with exactly the failure this
+  // concept exists to end. That is also why it is a SUBJECT concept rather than
+  // a scene one: the scene channel's absolute ban on mandatory kinds is a
+  // statement about the layer that should give way, and this claim may not.
+  //
+  // Protects nothing. It states what to preserve, which agrees with the
+  // identity-drift exclusion rather than contradicting it, and a turned head
+  // asks for no crop.
+  { id: "subject.face_visibility", channel: "subject", segmentKind: "identity", protects: [] },
 
   // --- Camera -----------------------------------------------------------------
   // Bands, not sentences. Their protections are value-sensitive and derived.

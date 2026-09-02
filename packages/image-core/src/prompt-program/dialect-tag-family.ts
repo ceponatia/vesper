@@ -22,7 +22,7 @@ import {
   type ImagePromptDialectId,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -76,6 +76,9 @@ const CAST_INTEGRITY_TAG = "each person rendered exactly once, no merged faces, 
 
 /** Below the operation band (100+), above every projection claim. */
 const IDENTITY_LOCK_PRIORITY = 99;
+
+/** One step under the lock, so the adaptation reads as part of the lock's phrase. */
+const FACE_VISIBILITY_PRIORITY = 98.9;
 
 const TAG_PRIORITY = {
   change: 100.4,
@@ -197,6 +200,22 @@ function renderClaim(
         return say(of(value), IDENTITY_LOCK_PRIORITY);
       }
       return say(of(value));
+    }
+    case "subject.face_visibility": {
+      // The lock's adaptation, in tag space — this family's own phrasing rather
+      // than the prose sentence, for the reason the lock is a tag here: an
+      // English clause is off-distribution on an SDXL checkpoint. The negative
+      // half stays negative, as `CAST_INTEGRITY_TAG`'s already does, because "do
+      // not rotate" is the whole instruction and there is no positive spelling of
+      // it that does not re-describe the pose the shot already stated.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      const who = subject ?? "the subject";
+      const preserved =
+        visibility === "partial"
+          ? `${who}'s face partly turned from the camera, visible features, hair, build and skin tone preserved`
+          : `${who}'s face not visible, hair, build and skin tone preserved`;
+      return say(`${preserved}, do not rotate ${who} to face the camera`, FACE_VISIBILITY_PRIORITY);
     }
     case "subject.apparent_age":
       return say(of(`appears ${value}`));
