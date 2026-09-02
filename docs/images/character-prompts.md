@@ -166,6 +166,21 @@ family emits its provider-neutral sentence. No adapter in
 `@vesper/image-models` touches prompt text, so a prompt reaches the provider
 exactly as it was compiled and hashed.
 
+**The lock never asks the reference to restore hair the headwear hides.** A
+subject at the `full` hair-occlusion band carries a `subject.hair_concealment`
+claim ([§Hair the headwear conceals](#hair-the-headwear-conceals)), and the
+dialect reads the band from that claim in the set it already renders — no
+second channel carries it. When any cast member's claim is present the lock
+ships its hair-free spelling (`…_IDENTITY_LOCK_HAIR_CONCEALED` in each family:
+the prose sentence without "hair color and style", the Qwen single- and
+multi-reference locks without "hair"), and every other cue — face, skin tone,
+build or proportions, apparent age — stays as the measured lock states it. The
+rule is conservative on purpose: the lock is one sentence for the whole cast,
+so one covered person drops the clause for everyone, because a lock that kept
+"hair" would tell the model to paint that person's reference hair back over the
+hijab, and the uncovered rest of the cast still carry their hair in their
+references. At `none` and `partial` the measured lock ships untouched.
+
 **A face the shot cannot show adapts the lock, in a sentence of its own and
 never inside the lock string.** The lock says preserve the exact face, and on a
 back-turned or profile shot that pulls against the composition: the cheapest way
@@ -189,6 +204,15 @@ and anchoring on the mere presence of references would tell the model to copy
 one character's hair, build and skin tone from a photograph of somebody else.
 Which shots carry an adaptation at all is the scene lane's
 ([pipelines/scene-framing.md](pipelines/scene-framing.md) §The camera).
+
+**Covered hair leaves the adaptation's preserve list, per subject.** For a
+subject whose own `subject.hair_concealment` claim is in the set, the sentence
+drops "hair color and style" (the tag family drops "hair") and keeps every
+other word — the visible features, build and skin tone, the anchor, and the
+"do not rotate … to face the camera" clause byte for byte. Decided per subject
+rather than per cast, because the sentence is per subject: a covered focal
+beside a bare-headed bystander adapts only the focal's list. At `none` and
+`partial` the measured wording is unchanged.
 
 ## Intimate anatomy on a permitting route
 

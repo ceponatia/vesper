@@ -154,6 +154,11 @@ covers, what it occludes, or how it layers.
   states one required fact that the hair is fully covered and none is visible; `partial` and
   `none` leave the hair as selected ([../../images/character-prompts.md](../../images/character-prompts.md)
   §Hair the headwear conceals).
+- **Reference-anchored renders:** at `full` the identity lock and the turned-away adaptation
+  preserve the face, skin tone, build and apparent age from the reference but never its hair;
+  the no-rotation instruction is unchanged
+  ([../../images/character-prompts.md](../../images/character-prompts.md) §Identity on a
+  reference-anchored render).
 
 ## Object subtypes
 

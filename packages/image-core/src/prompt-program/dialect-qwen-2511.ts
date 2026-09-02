@@ -17,6 +17,8 @@ import {
   distanceSentence,
   faceVisibilityAnchor,
   faceVisibilitySentence,
+  hairConcealedForSubject,
+  hairConcealedInCast,
   hairConcealmentSentence,
   framingSentence,
   heightSentence,
@@ -106,14 +108,35 @@ export const QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK =
   "Use numbered references as assigned below. Preserve each person's exact face, hair, skin tone, build, and apparent age; change only requested details.";
 
 /**
+ * The two locks with "hair" removed — the spellings a render takes when
+ * somebody in the cast wears headwear that fully hides their hair
+ * (`hairConcealedInCast`). Preserving hair from a reference that shows it is
+ * the instruction to paint that hair back over the hijab; every other cue
+ * stays as the lock states it. The multi lock is one sentence for the whole
+ * cast, so one covered person drops the clause for all — the conservative
+ * reading, and the one the per-subject face-visibility sentence refines.
+ */
+export const QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED =
+  "Image 1 is the identity reference. Preserve the exact face, skin tone, body proportions, and apparent age. Change only what this instruction requests.";
+
+/** See {@link QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED} — multi-reference spelling. */
+export const QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED =
+  "Use numbered references as assigned below. Preserve each person's exact face, skin tone, build, and apparent age; change only requested details.";
+
+/**
  * The lock for a reference count, mirroring the kernel quirk's own choice: the
  * quirk rewrites on total reference count, blind to roles, so byte parity
  * requires the same rule. Zero references returns null — there is no image to
  * lock an identity to, and on an endpoint whose whole transport for identity IS
  * the reference, describing a face in prose instead would render a stranger.
  */
-function identityLock(referenceCount: number): string | null {
+function identityLock(referenceCount: number, hairConcealed: boolean): string | null {
   if (referenceCount <= 0) return null;
+  if (hairConcealed) {
+    return referenceCount === 1
+      ? QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED
+      : QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED;
+  }
   return referenceCount === 1 ? QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK : QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK;
 }
 
@@ -357,7 +380,7 @@ function renderClaim(
       // the lock — the exact bytes the kernel quirk writes today (owner ruling
       // 2026-08-29), emitted once however many subjects the render carries.
       // Bypasses `sentence()` so nothing can renormalize a character of it.
-      const lock = identityLock(input.references.length);
+      const lock = identityLock(input.references.length, hairConcealedInCast(input));
       if (lock === null) return null;
       if (!state.lockEmitted) {
         state.lockEmitted = true;
@@ -378,7 +401,12 @@ function renderClaim(
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
       return say(
-        faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)),
+        faceVisibilitySentence(
+          visibility,
+          subject,
+          faceVisibilityAnchor(input, claim),
+          hairConcealedForSubject(input, claim.subjectRef),
+        ),
         FACE_VISIBILITY_PRIORITY,
       );
     }

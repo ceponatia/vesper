@@ -4,6 +4,7 @@ import {
   imageModelSchema,
   imageReferencePolicySchema,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   type ImageRenderReference,
   type ResolvedImageProfile,
@@ -24,8 +25,11 @@ import {
   expectSections,
   LANE_PROBE_NAME,
   LANE_PROBE_SUBJECT_ID,
+  laneProbeCastMember,
   laneProbeCastScenePlan,
   laneProbeCastSubjects,
+  laneProbeShadowInput,
+  type LaneProbeCastSubject,
 } from "@/server/test-support";
 import {
   buildCharacterPromptProgram,
@@ -189,8 +193,9 @@ function compileScene(
   allowIntimate = false,
   viewer?: SceneLoweringViewer,
   referenced: (subjectId: string) => boolean = () => true,
+  members: readonly LaneProbeCastSubject[] = laneProbeCastSubjects(),
 ): CompiledScene {
-  const built = applySceneCastVisual({ plan, members: laneProbeCastSubjects() });
+  const built = applySceneCastVisual({ plan, members });
   expect(built.refusal).toBeNull();
   const cast = built.visuals;
   const lowered = lowerScenePlan({
@@ -582,6 +587,41 @@ describe("a shot that cannot show the subject's face", () => {
     expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
     expect(program.prompt).toContain(AWAY_UNANCHORED);
     expect(program.prompt).not.toContain("build and skin tone exactly from the reference");
+  });
+
+  /** The away sentence for a subject whose headwear fully hides their hair: hair leaves the preserve list, nothing else moves. */
+  const AWAY_HAIR_CONCEALED =
+    "Nyx's face is not visible in this shot; preserve the build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+
+  /** The probe cast with the focal's resolved hair-occlusion band overridden. */
+  const castAt = (band: "partial" | "full"): LaneProbeCastSubject[] => {
+    const [, ...rest] = laneProbeCastSubjects();
+    return [{ member: laneProbeCastMember({ hairOcclusion: band }), shadow: laneProbeShadowInput() }, ...rest];
+  };
+
+  /**
+   * Covered hair on a reference-anchored, turned-away shot (issue #312). The
+   * lock and the adaptation both tell the model what to keep from the
+   * reference, and at `full` "hair" may not be on either list: a hijab-wearing
+   * character rendered from a bare-headed reference would otherwise have the
+   * reference's hair painted back over the hijab. The turn stays off the
+   * table byte for byte — dropping the clause was the cheap wrong fix — and
+   * `partial` keeps the measured wording untouched, because some hair still
+   * shows and the reference remains authoritative for it.
+   */
+  it.each([
+    ["full", QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED, AWAY_HAIR_CONCEALED],
+    ["partial", QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK, AWAY_FROM_REFERENCE],
+  ] as const)("at `%s` hair occlusion, a turned-away shot preserves the right set from the reference", (band, lock, adaptation) => {
+    const { program } = compileScene(shot("away"), false, undefined, () => true, castAt(band));
+    expect(program.prompt).toContain(lock);
+    expect(program.prompt).toContain(adaptation);
+    expect(program.prompt).toContain(NO_ROTATION);
+    expectOrder(program.prompt, [lock, adaptation]);
+    if (band === "full") {
+      expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+      expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
+    }
   });
 });
 

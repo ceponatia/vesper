@@ -11,6 +11,7 @@ import {
 import {
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
@@ -20,6 +21,7 @@ import {
   LANE_PROBE_SUBJECT_ID,
   laneProbeAvatarProgram,
   laneProbeVariantCut,
+  laneProbeWardrobe,
   resolvedImageProfileFixture,
 } from "@/server/test-support";
 import {
@@ -583,5 +585,42 @@ describe("hair the headwear fully hides", () => {
       expect(program.keptClaimIds).toContain(concealment.key);
     }
     expect(program.missingRequired).toEqual([]);
+  });
+
+  /**
+   * A reference-anchored render must not ask the model to restore hair the
+   * headwear hides (issue #312). The lock is the family's own bytes, so the
+   * band reaches it through the compiled claim set rather than a second
+   * channel: at `full` the lock drops "hair" and keeps every other cue, at
+   * `partial` the measured lock ships untouched. Falsified against the lock
+   * that named hair on every render — a hijab-wearing edit from a bare-headed
+   * reference then preserved the reference's hair over the hijab.
+   */
+  it.each([
+    ["full", QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED, QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK],
+    ["partial", QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK, QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED],
+  ] as const)("locks a `%s` cut to its reference without the hair it cannot show", (band, lock, other) => {
+    const cut = laneProbeVariantCut([...laneProbeWardrobe(), { ...HIJAB, hairOcclusion: band }]);
+    expect(cut.hairOcclusion).toBe(band);
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          cuts: [
+            {
+              subjectId: LANE_PROBE_SUBJECT_ID,
+              name: LANE_PROBE_NAME,
+              digest: cut.digest,
+              attributes: cut.resolved,
+              exposure: cut.exposure,
+              hairOcclusion: cut.hairOcclusion,
+              realizedBody: cut.realizedBody,
+            },
+          ],
+        }),
+      ),
+    );
+    expect(program.prompt).toContain(lock);
+    expect(program.prompt).not.toContain(other);
+    if (band === "full") expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
   });
 });

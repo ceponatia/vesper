@@ -274,7 +274,9 @@ export {
   // the app's program suite (character-prompt-program.test.ts) can pin the
   // exact bytes.
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
   imagePromptProgramProvenanceSchema,
   imageWorldStateProvenanceSchema,
 } from "./prompt-program";

@@ -17,6 +17,8 @@ import {
   imagePromptDialect,
   lintImagePromptCollisions,
   parseImagePromptProgramProvenance,
+  PROSE_FAMILY_IDENTITY_LOCK,
+  PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED,
   qwenImage2512Bindings,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
@@ -1355,5 +1357,51 @@ describe("hair the headwear fully hides", () => {
     const segment = compiled.segments.find((entry) => entry.text.includes(wording));
     expect(segment?.mandatory).toBe(true);
     expect(segment?.kind).toBe("wardrobe");
+  });
+
+  /** A reference-anchored subject, with or without the concealment claim beside their identity. */
+  const anchoredWorld = (concealed: boolean): ImageWorldDigest =>
+    world({
+      subjects: [
+        entity("subject", "nyx", [
+          fact({ key: "nyx.identity", concept: "subject.identity", value: "the same person shown in the reference image", subjectRef: "nyx", disposition: "required_visual", priority: 1 }),
+          fact({ key: "nyx.face_visibility", concept: "subject.face_visibility", value: "hidden", subjectRef: "nyx", disposition: "required_visual", priority: 0.99 }),
+          ...(concealed
+            ? [fact({ key: "nyx.hair_concealment", concept: "subject.hair_concealment", value: "hair fully covered", subjectRef: "nyx", disposition: "required_visual", priority: 0.99 })]
+            : []),
+        ]),
+      ],
+    });
+
+  const anchoredText = (dialectId: string, concealed: boolean): string => {
+    const dialect = imagePromptDialect(dialectId);
+    if (dialect === null) throw new Error(`${dialectId} is not registered`);
+    return dialect.compilePositive({
+      claims: selectImagePositiveClaims(anchoredWorld(concealed)),
+      operation: operation(),
+      references: [{ position: 1, role: "identity", subjectRef: "nyx" }],
+      entityLabels: { nyx: "Nyx" },
+      budget: {},
+    }).text;
+  };
+
+  /**
+   * The prose family's lock and the tag family's face-visibility phrase are
+   * this file's to pin — no application suite compiles either on a covered
+   * subject. The lock drops its hair clause and nothing else; the tag phrase
+   * drops "hair" from its preserved list and keeps the no-rotation half.
+   */
+  it("drops hair from the prose family's lock only when somebody's hair is covered", () => {
+    expect(anchoredText("seedream_45_prose", false)).toContain(PROSE_FAMILY_IDENTITY_LOCK);
+    const concealed = anchoredText("seedream_45_prose", true);
+    expect(concealed).toContain(PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED);
+    expect(concealed).not.toContain(PROSE_FAMILY_IDENTITY_LOCK);
+  });
+
+  it.each([
+    [false, "Nyx's face not visible, hair, build and skin tone preserved, do not rotate Nyx to face the camera"],
+    [true, "Nyx's face not visible, build and skin tone preserved, do not rotate Nyx to face the camera"],
+  ])("words the tag family's hidden-face preservation with hair concealed: %s", (concealed, phrase) => {
+    expect(anchoredText("pony_compel_tags", concealed)).toContain(phrase);
   });
 });

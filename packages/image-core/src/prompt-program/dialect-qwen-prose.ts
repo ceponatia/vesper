@@ -607,6 +607,35 @@ export function hairConcealmentSentence(subject: string | null): string {
 }
 
 /**
+ * Whether THIS subject's hair is fully hidden — the question that decides
+ * whether a preservation set may still name their hair.
+ *
+ * Read from the claim list the dialect already renders: the character
+ * projection states a `subject.hair_concealment` claim for exactly the subjects
+ * at the `full` band and for nobody else, so its presence IS the band, and no
+ * second channel has to carry it through the digest. A claim with no subject
+ * ref answers nothing for anyone.
+ */
+export function hairConcealedForSubject(input: ImageDialectPositiveInput, subjectRef: string | undefined): boolean {
+  if (subjectRef === undefined) return false;
+  return input.claims.some((claim) => claim.concept === "subject.hair_concealment" && claim.subjectRef === subjectRef);
+}
+
+/**
+ * Whether ANY subject's hair is fully hidden — the question a lock stated once
+ * for the whole cast has to ask.
+ *
+ * The conservative reading, deliberately: a shared lock that kept "hair" while
+ * one person's hair is under a hijab would tell the model to restore that
+ * person's hair from their reference, and losing the hair clause for the
+ * uncovered rest of the cast costs less than that — their hair is still in
+ * their references, which stay authoritative for whatever the shot shows.
+ */
+export function hairConcealedInCast(input: ImageDialectPositiveInput): boolean {
+  return input.claims.some((claim) => claim.concept === "subject.hair_concealment");
+}
+
+/**
  * The identity lock's adaptation, for a shot whose subject's face is turned or
  * hidden — a sentence of its own, never spliced into the lock string.
  *
@@ -637,17 +666,25 @@ export function hairConcealmentSentence(subject: string | null): string {
  * than to no sentence at all — the claim is mandatory by kind, and a missing
  * label is not a reason to leave a turned-away render telling the model to
  * preserve a face it cannot see.
+ *
+ * `hairConcealed` is the one edit the measured wording takes: a subject whose
+ * headwear fully hides their hair ({@link hairConcealedForSubject}) loses "hair
+ * color and style" from the preserve list — preserving it "exactly from the
+ * reference" would be the instruction to paint the reference's hair back over
+ * the hijab — and keeps every other word, the "do not rotate" clause included.
  */
 export function faceVisibilitySentence(
   visibility: ImageObscuredFace,
   subject: string | null,
   preserveFrom: "reference" | "nothing",
+  hairConcealed = false,
 ): string {
   const name = subject ?? "the subject";
+  const hair = hairConcealed ? "" : "hair color and style, ";
   const seen =
     visibility === "partial"
-      ? `${name}'s face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone`
-      : `${name}'s face is not visible in this shot; preserve the hair color and style, build and skin tone`;
+      ? `${name}'s face is partly turned from the camera; preserve the visible features, ${hair}build and skin tone`
+      : `${name}'s face is not visible in this shot; preserve the ${hair}build and skin tone`;
   const anchor = preserveFrom === "reference" ? " exactly from the reference" : " exactly";
   return `${seen}${anchor} — do not rotate ${name} to face the camera.`;
 }
