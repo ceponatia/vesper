@@ -213,8 +213,8 @@ function renderClaim(
       const who = subject ?? "the subject";
       const preserved =
         visibility === "partial"
-          ? `${who} face partly turned from the camera, visible features, hair, build and skin tone preserved`
-          : `${who} face not visible, hair, build and skin tone preserved`;
+          ? `${who}'s face partly turned from the camera, visible features, hair, build and skin tone preserved`
+          : `${who}'s face not visible, hair, build and skin tone preserved`;
       return say(`${preserved}, do not rotate ${who} to face the camera`, FACE_VISIBILITY_PRIORITY);
     }
     case "subject.apparent_age":
