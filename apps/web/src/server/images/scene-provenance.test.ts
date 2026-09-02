@@ -18,6 +18,7 @@ import {
   LANE_PROBE_SECOND_NAME,
   LANE_PROBE_SECOND_SUBJECT_ID,
   LANE_PROBE_THIRD_NAME,
+  LANE_PROBE_THIRD_SUBJECT_ID,
   laneProbeCastSceneRender,
 } from "@/server/test-support";
 
@@ -445,20 +446,26 @@ describe("renderResolvedScene intimate reveal", () => {
 });
 
 /**
- * Cast integrity: a render never compiles a smaller cast than the one it is
- * about to draw. Upstream, a member can lose their committed cut on their own —
- * a missing continuity row, a cut keyed to somebody else, a resolved plan that
- * draws nobody by their name — and each of those is a warn about ONE person.
+ * Cast integrity: the cast a render compiles IS the cast it draws — the same
+ * people, once each. The two lists arrive from different places (the cuts from
+ * the visual assembly, the references from the lane's roster) and everything
+ * downstream is derived from one or the other: the digest's subjects and
+ * `subjectCount` from the cuts, the identity bindings from the references.
  *
  * Falsified against the render this replaces, which compiled whatever cuts it
- * was handed: a scene with one cut short compiled a world digest one person
- * short, asserted that smaller `subjectCount`, and still sent the missing
- * member's identity reference — an internally inconsistent render that looks
- * like a successful picture of a different scene. Pinned as: the refusal lands
- * before provider spend, it names the missing member and nobody else, and the
- * reserved row stores no prompt for the cast that was never going to be sent.
+ * was handed: a scene one cut short compiled a world digest one person short,
+ * asserted that smaller `subjectCount`, and still sent the missing member's
+ * identity reference — an internally inconsistent render that looks like a
+ * successful picture of a different scene. The mirror faults are pinned beside
+ * it because a one-way check would pass them: a cut nobody drew adds a body and
+ * an identity lock the payload cannot honor, and a duplicated cut counts one
+ * person twice.
+ *
+ * Pinned as: the refusal lands before provider spend, it names exactly the
+ * people who disagree, and the reserved row stores no prompt for a cast that was
+ * never going to be sent.
  */
-describe("renderResolvedScene cast completeness", () => {
+describe("renderResolvedScene cast integrity", () => {
   it("refuses a two-person render whose second member has no committed cut", async () => {
     mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
     const scene = laneProbeCastSceneRender();
@@ -470,10 +477,16 @@ describe("renderResolvedScene cast completeness", () => {
     expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_SECOND_NAME);
     // The one-person prompt was never compiled, so the failed row carries none.
     expect(pipelineCalls[0]?.asset.prompt).toBe("");
-    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
     expect(refused).toHaveLength(1);
     expect(refused[0]?.severity).toBe("error");
-    expect(refused[0]?.context).toMatchObject({ intended: 2, compiled: 1, missing: [LANE_PROBE_SECOND_SUBJECT_ID] });
+    expect(refused[0]?.context).toMatchObject({
+      intended: 2,
+      compiled: 1,
+      missing: [LANE_PROBE_SECOND_SUBJECT_ID],
+      extra: [],
+      duplicated: [],
+    });
   });
 
   it("refuses a three-person render missing the MIDDLE member's cut, blaming only them", async () => {
@@ -492,8 +505,64 @@ describe("renderResolvedScene cast completeness", () => {
     expect(precondition).not.toContain(LANE_PROBE_NAME);
     expect(precondition).not.toContain(LANE_PROBE_THIRD_NAME);
     expect(pipelineCalls[0]?.asset.prompt).toBe("");
-    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_incomplete");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
     expect(refused).toHaveLength(1);
-    expect(refused[0]?.context).toMatchObject({ intended: 3, compiled: 2, missing: [LANE_PROBE_SECOND_SUBJECT_ID] });
+    expect(refused[0]?.context).toMatchObject({
+      intended: 3,
+      compiled: 2,
+      missing: [LANE_PROBE_SECOND_SUBJECT_ID],
+      extra: [],
+      duplicated: [],
+    });
+  });
+
+  it("refuses a committed cut for a subject no reference draws", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender({ size: 3 });
+    const sink = new DiagnosticCollector();
+    // Three cuts, two references: the prompt would describe Tobrek and assert a
+    // cast of three while the payload carries two faces. Every INTENDED member
+    // still has a cut, so a one-way check sees nothing wrong here.
+    const references = scene.references.filter((reference) => reference.entityId !== LANE_PROBE_THIRD_SUBJECT_ID);
+
+    await renderResolvedScene(baseInput({ ...scene, references, sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_THIRD_NAME);
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.context).toMatchObject({
+      intended: 2,
+      compiled: 3,
+      missing: [],
+      extra: [LANE_PROBE_THIRD_SUBJECT_ID],
+      duplicated: [],
+    });
+  });
+
+  it("refuses a cast carrying two committed cuts for one person", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender();
+    const sink = new DiagnosticCollector();
+    // Ilsa twice. Every intended member has a cut and no cut is a stranger, so
+    // the fault is visible only to a check that matches the two lists person by
+    // person: the digest would carry an extra body and the count would claim it.
+    const cast = [...scene.cast, ...scene.cast.slice(1, 2)];
+
+    await renderResolvedScene(baseInput({ ...scene, cast, sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(pipelineCalls[0]?.failedPrecondition).toContain(LANE_PROBE_SECOND_NAME);
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    const refused = sink.items.filter((entry) => entry.code === "images.scene_render.cast_mismatch");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.context).toMatchObject({
+      intended: 2,
+      compiled: 3,
+      missing: [],
+      extra: [],
+      duplicated: [LANE_PROBE_SECOND_SUBJECT_ID],
+    });
   });
 });

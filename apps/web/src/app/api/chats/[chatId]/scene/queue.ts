@@ -292,7 +292,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
         // queue records the missing row here and hands the render the cuts it
         // could build; the render then refuses the whole scene before provider
         // spend rather than drawing a cast one person short
-        // (`images.scene_render.cast_incomplete`).
+        // (`images.scene_render.cast_mismatch`).
         log.warn("chat_scene", "no participant row for scene subject — visual digest skipped", {
           chatId: args.chatId,
           characterId: detail.member.characterId,

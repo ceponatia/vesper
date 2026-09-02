@@ -124,9 +124,9 @@ export interface RenderCharacterSceneInput {
    * A member with no entry, or with an entry naming somebody else, has no cut
    * and cannot be compiled — nothing here describes them from anywhere else.
    * The render then REFUSES rather than drawing the rest: `renderResolvedScene`
-   * compares the cast it was asked to draw against the cuts it was given and
-   * fails the row before provider spend when one is short
-   * (`images.scene_render.cast_incomplete`). A smaller cast is never a quieter
+   * holds the cast it was asked to draw against the cuts it was given — the same
+   * people, once each, or the row fails before provider spend
+   * (`images.scene_render.cast_mismatch`). A smaller cast is never a quieter
    * render — it is a different picture, sent with the missing person's identity
    * reference still attached.
    */
@@ -257,8 +257,8 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // A member whose cut names somebody else is skipped HERE — the mismatch is a
   // fact about one person's cut and is reported as one — but skipping is not
   // where the story ends: that member then has no cut, and the render's own
-  // cast-completeness check refuses before provider spend rather than compiling
-  // the picture without them (`renderResolvedScene`, `cast_incomplete`). The
+  // cast-integrity check refuses before provider spend rather than compiling
+  // the picture without them (`renderResolvedScene`, `cast_mismatch`). The
   // program still describes nobody it has no cut for; it simply never runs.
   let visualRefusal: string | null = null;
   let visualStateMeta: Record<string, unknown> | undefined;
