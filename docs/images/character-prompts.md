@@ -136,6 +136,19 @@ family emits its provider-neutral sentence. No adapter in
 `@vesper/image-models` touches prompt text, so a prompt reaches the provider
 exactly as it was compiled and hashed.
 
+**A face the shot cannot show adapts the lock beside it, never inside it.** The
+lock says preserve the exact face, and on a back-turned or profile shot that
+pulls against the composition: the cheapest way for a model to prove it
+preserved a face is to show that face, so the subject gets rotated back to the
+lens. A `subject.face_visibility` claim states what the shot can show, and each
+dialect words it as a separate sentence — what to preserve when the face is not
+the evidence, and that the turn is not on the table. It is filed in the
+`identity` segment kind one priority step under the lock, so it reads as part of
+the same statement and is as unfittable as the lock it corrects: an adaptation a
+budget squeeze dropped while the lock survived would leave exactly the failure
+it exists to end. Which shots carry one is the scene lane's
+([pipelines/scene-framing.md](pipelines/scene-framing.md) §The camera).
+
 ## Intimate anatomy on a permitting route
 
 A committed cut never carries intimate anatomy: the visual-state image selection keeps its

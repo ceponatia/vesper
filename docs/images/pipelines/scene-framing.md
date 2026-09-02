@@ -133,12 +133,23 @@ three-band restatement can neither agree redundantly nor contradict the scene's 
 that classifies as nothing leaves the band unstated rather than inventing one, and `silhouette`
 stays camera-only — backlighting says where the camera stands, not how a place is lit.
 
-**A shot that hides the face carries no lock adaptation.** Face visibility is in the
-vocabulary — the orientation registry answers it and a staged arrangement may override it, a
-shot down onto the crown of a head being the case the override exists for — but nothing lowers
-it, so a compiled prompt states the same identity lock whatever the shot shows of the face. The
-lock itself is the dialect's, emitted from the digest's identity anchor
-([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored render).
+**A shot that cannot show the face adapts the lock.** Face visibility is the orientation
+registry's answer — `profile` and `away_glance_back` are partial, `away` is hidden — and a
+staged arrangement may override it, a shot down onto the crown of a head being the case the
+override exists for. Whenever the answer is not "the whole face", the lowering states it as a
+`subject.face_visibility` claim on the focal, and each dialect words it as **its own sentence
+beside the identity lock**: what to preserve when the face is not the evidence — hair, build
+and skin tone, plus the visible features on a partly turned shot — and that the subject is not
+to be rotated to face the camera. The lock string itself is never edited, because it is matched
+verbatim at the model boundary; the lock is the dialect's, emitted from the digest's identity
+anchor ([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored
+render).
+
+A front-facing shot states nothing — there is no adaptation to make when the face is the
+evidence — and neither does a selfie, where the subject holds the lens and the geometry is
+theirs rather than a camera the fiction moved. A staging's own answer wins over the
+orientation's wherever the plan committed the arrangement, **including on a rung whose gates
+withheld the staged sentence**: withholding the words never un-turns the body.
 
 ## Intimate staging
 

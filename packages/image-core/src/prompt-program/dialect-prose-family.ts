@@ -15,6 +15,7 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilitySentence,
   framingSentence,
   heightSentence,
   label,
@@ -43,7 +44,7 @@ import {
   type ImagePromptDialectId,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -111,6 +112,13 @@ export const PROSE_FAMILY_CAST_INTEGRITY =
  * before it shortens the sentence the identity of the render depends on.
  */
 const IDENTITY_LOCK_PRIORITY = 99;
+
+/**
+ * The lock adaptation's priority: one step under the lock, so a turned-away
+ * shot's "do not rotate" sentence follows the lock it corrects rather than
+ * drifting behind every further subject's name.
+ */
+const FACE_VISIBILITY_PRIORITY = 98.9;
 
 /**
  * Within-band emission offsets for the operation claims, which all arrive at
@@ -345,6 +353,18 @@ function renderClaim(
       // Text-to-image: there is no reference to lock to, so the projection's own
       // identity descriptors are the only thing that can carry a likeness.
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
+    }
+    case "subject.face_visibility": {
+      // The lock's adaptation, one priority step under the lock so the two are
+      // read as a pair. Emitted on the text-to-image path too: there the
+      // descriptors carry the likeness and the same pull toward the lens applies,
+      // so what changes is only what the preservation is anchored to.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      return say(
+        faceVisibilitySentence(visibility, subject, input.references.length > 0 ? "reference" : "nothing"),
+        FACE_VISIBILITY_PRIORITY,
+      );
     }
     case "subject.apparent_age":
       return say(prefixed(subject, `appears ${value}`));

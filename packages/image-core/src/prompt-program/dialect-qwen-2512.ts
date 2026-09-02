@@ -14,6 +14,7 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilitySentence,
   framingSentence,
   heightSentence,
   label,
@@ -40,7 +41,7 @@ import {
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -178,6 +179,17 @@ function renderClaim(
     // --- Subject --------------------------------------------------------------
     case "subject.identity":
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
+    case "subject.face_visibility": {
+      // This endpoint speaks no identity lock — its identity claim is a
+      // descriptor — but the adaptation is still earned: a described face is the
+      // same pull toward the lens, and the sentence is what says the turn is not
+      // on the table. Reference-free unless the render actually carries an image,
+      // because 2512's `image` input is a strength-based starting point rather
+      // than a guaranteed slot.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      return say(faceVisibilitySentence(visibility, subject, input.references.length > 0 ? "reference" : "nothing"));
+    }
     case "subject.apparent_age":
       return say(prefixed(subject, `appears ${value}`));
     case "subject.morphology":

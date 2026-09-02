@@ -15,6 +15,7 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilitySentence,
   framingSentence,
   heightSentence,
   label,
@@ -43,7 +44,7 @@ import {
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -141,6 +142,13 @@ const DELTA_PRIORITY = {
  * shortens the sentence contract the edit path depends on.
  */
 const IDENTITY_LOCK_PRIORITY = 99;
+
+/**
+ * The lock adaptation's priority: one step under the lock, so a turned-away
+ * shot's "do not rotate" sentence follows the lock it corrects rather than
+ * drifting to the end of the identity band behind every further subject's name.
+ */
+const FACE_VISIBILITY_PRIORITY = 98.9;
 
 /** Per-compile render state. Created fresh in `compilePositive`, never shared. */
 interface RenderState {
@@ -341,6 +349,17 @@ function renderClaim(
       // Further subjects: the multi lock already covers "each person", so their
       // identity claims anchor the NAME the numbered assignments bind.
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`, IDENTITY_LOCK_PRIORITY);
+    }
+    case "subject.face_visibility": {
+      // The lock's adaptation, immediately after the lock: same segment kind, one
+      // step down in priority, so the two are read as a pair however many further
+      // subjects the render names. It never touches the lock's bytes.
+      const visibility = imageSceneObscuredFace(claim.value);
+      if (visibility === null) return null;
+      return say(
+        faceVisibilitySentence(visibility, subject, input.references.length > 0 ? "reference" : "nothing"),
+        FACE_VISIBILITY_PRIORITY,
+      );
     }
     case "subject.apparent_age":
       // Text-authoritative by owner ruling: age text must correct an

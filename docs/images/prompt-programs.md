@@ -128,10 +128,11 @@ extending the id union fails the registry until it answers for the new id.
 config, any other compiler internal — so a later extraction is a file move plus an
 import rewrite. Its names reach consumers through the package's single `.` entry.
 
-Six concepts describe the SHOT rather than anybody in it: `scene.mood`,
+Seven concepts describe the SHOT rather than anybody in it: `scene.mood`,
 `scene.capture_mode`, `scene.possession` and `scene.staging`, plus
-`subject.activity` — what a person is DOING, which is not how they are held — and
-`camera.height`. Scene facts ride a flat list on the digest rather than an entity
+`subject.activity` — what a person is DOING, which is not how they are held —
+`subject.face_visibility` — how much of a subject's face this shot can show,
+which is what adapts the identity lock — and `camera.height`. Scene facts ride a flat list on the digest rather than an entity
 slice, because a scene has no ref a relation could point at. There is no "scene"
 prompt segment: mood emits in `atmosphere`, capture mode in `framing`, and
 staging, possession and activity in `pose`. **No scene concept may be filed into
@@ -139,6 +140,11 @@ staging, possession and activity in `pose`. **No scene concept may be filed into
 2026-09-01), which are unfittable by kind — a scene is the layer that gives way
 under a budget squeeze before a character stops being recognizable. A scene fact
 that must survive says so on the fact, through a `required_visual` disposition.
+`subject.face_visibility` is where that line shows: the scene lane lowers it, but
+it is a SUBJECT concept filed into `identity` beside the lock it corrects,
+because a sentence that stops the model rotating a turned-away subject may not
+outlive that lock by one budget squeeze — and a scene concept could not have been
+filed there at all.
 
 ### Measured wording is a versioned artifact
 
