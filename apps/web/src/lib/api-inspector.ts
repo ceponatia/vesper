@@ -306,10 +306,10 @@ const countRecord = z.record(z.string(), z.number()).catch({});
 
 const visualStateSetComparisonSchema = z
   .object({
-    legacyCount: z.number().catch(0),
+    resolvedCount: z.number().catch(0),
     projectedCount: z.number().catch(0),
     sharedCount: z.number().catch(0),
-    legacyOnly: z.array(z.string()).catch([]),
+    resolvedOnly: z.array(z.string()).catch([]),
     projectedOnly: z.array(z.string()).catch([]),
   })
   .nullable()
@@ -389,7 +389,6 @@ const visualStateMeasurementsSchema = z
         mandatoryCount: 0,
         suppressedOptionalCount: 0,
       }),
-    attributes: visualStateSetComparisonSchema,
     garments: visualStateSetComparisonSchema,
   })
   .catch({
@@ -408,7 +407,6 @@ const visualStateMeasurementsSchema = z
       mandatoryCount: 0,
       suppressedOptionalCount: 0,
     },
-    attributes: null,
     garments: null,
   });
 export type VisualStateMeasurementsRow = z.infer<typeof visualStateMeasurementsSchema>;

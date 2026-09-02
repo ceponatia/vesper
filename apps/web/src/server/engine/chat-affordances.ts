@@ -331,9 +331,10 @@ export interface ChatAffordanceReadResult {
 /**
  * The character's attributes as the narrator sees them: authored base + persisted
  * narrative overlays + this moment's condition overlays. Identical composition to
- * `character-chat.ts`'s `fullResolved`, deliberately — an affordance read that
- * disagreed with the prompt about what the hair is doing would be worse than no
- * read at all.
+ * the shared narrator appearance read's `fullResolved`
+ * (`contracts/visual-state/appearance-read.ts`), deliberately — an affordance
+ * read that disagreed with the prompt about what the hair is doing would be
+ * worse than no read at all.
  *
  * `hair.arrangement` is materialized from the REGISTRY's declared default when
  * unset. That is reading the authored default, not guessing: the attribute

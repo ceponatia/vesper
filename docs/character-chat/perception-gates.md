@@ -42,12 +42,13 @@ baseline.
 With no exposure mask, the lane gates the senses through a deterministic per-turn **sensory
 allowance** instead of scattered prose teachings.
 
-- **The data** stays in the stable prefix: the builder extracts proximity-gated,
-  non-intimate sensory attributes via `sensoryCues` (filter `kind === "sensory" && category
-  !== "voice" && !isIntimateAttributeCategory(category)`) and renders them as the **"Sensory
+- **The data** stays in the stable prefix: the builder spends the shared appearance read's
+  closeness-gated facts (`proximitySensory` — `kind === "sensory"` and not the `voice`
+  category, [prompts.md](prompts.md) §The narrator appearance read) as the **"Sensory
   cues"** block whose closing bullet defers to the allowance. Exclusions: **voice** (audible
-  at any distance — stays a normal Attributes line) and **intimate scent/taste** (no
-  exposure signal in chat earns it). Renders nothing for an unscented character.
+  at any distance — stays a normal Attributes line) and **intimate scent/taste** (the read
+  refuses it outright; no exposure signal in chat earns it). Renders nothing for an
+  unscented character.
 - **The permission** is the volatile-tail **"Sensory allowance this turn"** line: the route
   derives `none | visual_accent | close_range_hook | focused_description` per real player
   turn via `deriveChatSensoryAllowance` (`engine/chat-intent.ts`, a pure mapping over the

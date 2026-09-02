@@ -303,11 +303,11 @@ function produceSubjectVisual(
 ): SceneSubjectVisualProduction {
   const { member, shadow } = subject;
   // Authored base → persisted narrative overlays → this moment's condition
-  // overlays: the same three-layer resolve the narrator prompt takes
-  // (`character-chat.ts`'s `fullResolved`), the affordance read takes
-  // (`chat-affordances.ts`'s `resolveSubjectAttributes`) and the shadow
-  // assembly itself takes (`visual-state/assemble.ts`'s
-  // `resolveShadowAttributes`), so the route's own reveal can never disagree
+  // overlays: the same three-layer resolve the narrator prompt and the shadow
+  // assembly both take from the shared appearance read
+  // (`contracts/visual-state/appearance-read.ts`'s `fullResolved`) and the
+  // affordance read takes in `chat-affordances.ts`'s
+  // `resolveSubjectAttributes`, so the route's own reveal can never disagree
   // with the projection about a recorded haircut or dye.
   const resolved = resolveAttributes(member.profile.attributes, [
     ...(member.attributeOverlays ?? []),

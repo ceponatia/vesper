@@ -20,7 +20,7 @@ import {
   type VisualStateLane,
   type VisualStateLaneScene,
 } from "./assemble";
-import { legacyNarratorAttributeIds, measureVisualState, type VisualStateMeasurements } from "./measure";
+import { measureVisualState, type VisualStateMeasurements } from "./measure";
 
 /**
  * THE SHADOW BUILD: one committed cut → the
@@ -118,13 +118,6 @@ export function buildVisualStateShadow(input: VisualStateShadowInput): VisualSta
     snapshot: assembled.snapshot,
     narrator: selections.narrator,
     image: selections.image,
-    // The successor narrator deliberately renders no attribute summary (its
-    // canon block never reads profile.attributes), so
-    // there is nothing to disagree with in that lane.
-    legacyAttributeIds:
-      input.lane === "character_chat"
-        ? legacyNarratorAttributeIds(assembled.stableResolved, assembled.realizedBody)
-        : null,
     wornGarmentIds: input.wornGarmentIds === undefined ? null : input.wornGarmentIds,
   });
   return {
@@ -182,9 +175,7 @@ export function visualStateShadowLogSummary(build: VisualStateShadowBuild): Reco
     narratorCues: measurements.narrator.selectedCount,
     imageMandatory: measurements.image.mandatoryCount,
     imageOptional: measurements.image.selectedCount,
-    attributesLegacyOnly: measurements.attributes?.legacyOnly.length ?? null,
-    attributesProjectedOnly: measurements.attributes?.projectedOnly.length ?? null,
-    garmentsLegacyOnly: measurements.garments?.legacyOnly.length ?? null,
+    garmentsResolvedOnly: measurements.garments?.resolvedOnly.length ?? null,
     garmentsProjectedOnly: measurements.garments?.projectedOnly.length ?? null,
   };
 }

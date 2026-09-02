@@ -139,6 +139,35 @@ opening-beat instruction or the per-turn **Response-shape** line.
   prefix and turn data sits adjacent to the input it governs. Applies to real player turns
   only, and to 1-on-1 conversations only.
 
+## The narrator appearance read
+
+Every appearance fact any narration frame states about a character comes from one pure,
+structured read — `readNarratorAppearance`
+(`apps/web/src/contracts/visual-state/appearance-read.ts`). It answers two questions and
+nothing else: what this body stably looks like, and what a live condition is changing about
+it right now.
+
+- **One guard chain, stated once.** A resolved attribute is a narrator fact only when it is
+  not the portrait-studio-only `identity.apparent_age`, the registry knows its id, the
+  definition is not `excludeFromPrompts`, it is not intimate sensory (chat carries no
+  exposure signal that earns intimate scent or taste), the realized body actually has it
+  (`isAttributeApplicable`), and something survives the prompt-side `"none"` elision. No
+  prompt helper re-derives any part of that.
+- **Stable versus current.** The `stable` set resolves the authored sheet under the
+  persisted narrative overlays; the `current` set is the delta this moment's condition
+  overlays add on top, with every fact the condition left alone removed. The split is what
+  lets identity ride the cached prefix while a condition's overrides ride the volatile tail.
+- **The projection shares it.** `visual-state/assemble.ts` derives its own stable and full
+  resolves and its realized body from the same read, so the prompt and the visual-state
+  projection cannot disagree about which facts a body has.
+- **Presentation stays at each prompt boundary.** Headings, grammar, the `label: value`
+  phrasing with its `narratorGuidance` gloss, and which block a fact is spent in belong to
+  the 1-on-1 and ensemble frames. They choose where a fact goes; they never decide whether
+  it exists.
+- **Never switch-dependent.** Ordinary character description does not consult the per-chat
+  visual-continuity switch. That switch owns the extra must-not-contradict fence and the
+  attention cues ([visual-memory.md](visual-memory.md)), and nothing else.
+
 ## Character-chat state as a narration system
 
 The chat lane *enacts* the tracked `character_chat_state`, not just lists it. All of this is
@@ -146,10 +175,11 @@ in the chat prompt builder and degrades to the prior stateless output when no st
 passed:
 
 - **Condition → attribute overlays.** A condition's `attributeEffects` (`source:
-  "condition"`, precedence 3) overlay grooming/scent/hair while active. They render as a
-  **volatile tail block** ("While your current condition lasts … these override the matching
-  Attribute/Sensory lines above") instead of being baked into the prefix's Attributes — a
-  condition starting or expiring never busts the cached prefix. `conditionAttributeOverlays`
+  "condition"`, precedence 3) overlay grooming/scent/hair while active. They reach the
+  prompt as the appearance read's **current** set and render as a **volatile tail block**
+  ("While your current condition lasts … these override the matching Attribute/Sensory lines
+  above") instead of being baked into the prefix's Attributes — a condition starting or
+  expiring never busts the cached prefix. `conditionAttributeOverlays`
   guards each effect with `overlaySourceMayChange(def.mutability, "condition")`, so a
   condition can **never** rewrite an inherent attribute (eye colour, species) in the prompt.
   Chat conditions are seeded with real effects from a small label catalog

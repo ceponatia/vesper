@@ -1,8 +1,12 @@
-import { attributeRegistry, promptValueWithNoneElided, type AttributeDefinition } from "@/contracts/attributes";
-import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
+import { promptValueWithNoneElided, type AttributeDefinition } from "@/contracts/attributes";
+import type { AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
-import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
+import {
+  readNarratorAppearance,
+  type NarratorAppearanceFact,
+  type NarratorAppearanceRead,
+} from "@/contracts/visual-state/appearance-read";
 import { deriveMoodDescriptor, meterStateCue, splitStateCues } from "@/contracts/meters/registry";
 import {
   currentScenePlace,
@@ -26,7 +30,7 @@ import {
 } from "@/contracts/relationships/law";
 import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
-import { expandBodyTarget, realizeBody, speciesIntimacyNote, speciesLorePhrase, type RealizedBody } from "@/contracts/species";
+import { expandBodyTarget, speciesIntimacyNote, speciesLorePhrase } from "@/contracts/species";
 import { isMinorAge, lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/life-stage";
 import { formatAge, hasVoiceAnchors, type CharacterProfile, type VoiceAnchors } from "@/contracts/world/profile";
 import type { VoiceExemplar } from "../chat-voice";
@@ -1057,44 +1061,47 @@ function attributePhrase(
   return text ? `${label}: ${text}` : null;
 }
 
-interface SensoryCue {
-  /** The attribute id, so the flat Attributes loop can skip what we've claimed. */
-  id: string;
-  /** The rendered `label: value` phrase (reused from `attributePhrase`). */
-  phrase: string;
+/**
+ * The shared appearance read for one character sheet under that character's own
+ * live state. Every narration surface in this file — the solo Attributes block,
+ * the solo sensory cues, the solo transient block, the ensemble member lines and
+ * the ensemble transient block — goes through here, so solo and ensemble can
+ * never disagree about which facts a body has.
+ */
+function narratorAppearanceOf(
+  profile: CharacterProfile,
+  attributeOverlays?: readonly AttributeValue[],
+  conditions?: readonly ActiveCondition[],
+): NarratorAppearanceRead {
+  return readNarratorAppearance({
+    attributes: profile.attributes,
+    ...(attributeOverlays === undefined ? {} : { attributeOverlays }),
+    ...(conditions === undefined ? {} : { conditions }),
+    realize: {
+      speciesId: profile.speciesId,
+      heritageId: profile.heritageId,
+      bodyPlanId: profile.bodyPlanId,
+      intimateRegions: profile.intimateRegions,
+      bodyFeatures: profile.bodyFeatures,
+    },
+  });
 }
 
 /**
- * Proximity-gated, non-intimate sensory attributes — surfaced as *opportunistic*
- * "use only when the beat earns it" cues instead of
- * flat attribute lines, because scent reads as embodiment when close and as a checklist
- * when listed unconditionally. The filter (kind sensory, not `voice`, not intimate)
- * resolves to `presentation.scent_baseline` today; a future non-voice/non-intimate
- * sensory attribute (a skin-warmth/texture sense) would qualify automatically.
+ * One appearance fact from the shared narrator read as its prompt line.
  *
- * - **Voice is excluded** (`category === "voice"`): pitch/timbre/cadence are audible at
- *   any conversational distance, so they are NOT closeness-gated — they stay in the
- *   normal Attributes block.
- * - **Intimate scent/taste is excluded** (`isIntimateAttributeCategory`): chat carries
- *   no exposure/intimacy signal to earn it, so it surfaces nowhere here.
- *
- * Same applicability + exclusion guards as the main attribute loop, so a stale or
- * prompt-excluded attribute never leaks.
+ * Phrasing — the label, the `narratorGuidance` gloss, the humanized value — is
+ * presentation and stays here. WHICH facts exist is decided once by
+ * `readNarratorAppearance`, so this only ever formats what it is handed; the
+ * empty string it degrades to is a type convenience, not a guard.
  */
-function sensoryCues(resolved: readonly AttributeValue[], realizedBody: RealizedBody): SensoryCue[] {
-  const cues: SensoryCue[] = [];
-  for (const value of resolved) {
-    const def = attributeRegistry.byId(value.id);
-    if (!def || def.kind !== "sensory") continue;
-    if (def.category === "voice") continue; // audible at distance — not a closeness cue
-    if (isIntimateAttributeCategory(def.category)) continue; // no exposure signal in chat earns it
-    if (def.excludeFromPrompts) continue;
-    if (!realizedBody.isAttributeApplicable(def)) continue;
-    const phrase = attributePhrase(def, value.value);
-    if (!phrase) continue;
-    cues.push({ id: value.id, phrase });
-  }
-  return cues;
+function factPhrase(fact: NarratorAppearanceFact): string {
+  return attributePhrase(fact.def, fact.value) ?? "";
+}
+
+/** The read's facts as prompt lines, in read order. */
+function factPhrases(facts: readonly NarratorAppearanceFact[]): string[] {
+  return facts.map(factPhrase).filter(Boolean);
 }
 
 /**
@@ -1103,12 +1110,19 @@ function sensoryCues(resolved: readonly AttributeValue[], realizedBody: Realized
  * per-cue lines are `label: value` for the model's reference; the framing forbids
  * reciting them and ties any use to closeness/relevance. "" when there are no cues, so
  * the prompt stays byte-identical for an unscented character.
+ *
+ * Which facts are closeness-gated is the shared read's `proximitySensory` flag
+ * (sensory, not `voice`) — scent reads as embodiment when close and as a
+ * checklist when listed unconditionally, while pitch/timbre/cadence carry at any
+ * conversational distance and stay ordinary Attributes lines. Intimate scent and
+ * taste never reach the read at all: chat carries no exposure signal to earn
+ * them. This section only decides where the gated ones are SPENT.
  */
-function buildSensorySection(cues: SensoryCue[], name: string): string {
+function buildSensorySection(cues: readonly string[], name: string): string {
   if (!cues.length) return "";
   return [
     "Sensory cues (use only when the beat earns them — never list them):",
-    ...cues.map((c) => `- ${name}'s ${c.phrase}`),
+    ...cues.map((phrase) => `- ${name}'s ${phrase}`),
     // Pre-2026-07-10 wording (the when-it's-earned teaching moved to the
     // per-turn Sensory-allowance line; rollback: restore this bullet):
     // "- Work a sensory detail into action only when proximity, touch, intimacy, a first impression, or " +
@@ -1459,12 +1473,17 @@ function buildSensoryFocusSection(
   player: string,
   state: CharacterChatPromptInput["state"] | undefined,
   hint: SensoryFocusHint,
-  resolved: readonly AttributeValue[],
-  realizedBody: RealizedBody,
+  appearance: NarratorAppearanceRead,
   name: string,
 ): string {
   const meters = state?.meters ?? {};
-  const byId = (id: string): AttributeValue | undefined => resolved.find((v) => v.id === id);
+  const realizedBody = appearance.realizedBody;
+  // The stable resolve, not the read's fact set: this block is the one place an
+  // INTIMATE sense may surface, and only because the player's beat targeted
+  // intimate anatomy (`hint.intimate`). The shared read drops those facts by
+  // design, so the focus gate reads the resolved values directly and applies its
+  // own, beat-earned admission below.
+  const byId = (id: string): AttributeValue | undefined => appearance.stableResolved.find((v) => v.id === id);
   const lines: string[] = [];
   const hygieneCue = meters.hygiene !== undefined ? meterStateCue("hygiene", meters.hygiene) : null;
 
@@ -1722,9 +1741,10 @@ export interface CharacterChatPromptNodes {
 
 /**
  * Build the system prompt embodying `name` from their saved profile, split into the
- * stable prefix + volatile tail. Attribute applicability is checked against the
- * realized body (`realizeBody`) so a stale attribute (e.g. wings left on a character
- * after a species change) never leaks, mirroring images/prompts-*.ts and engine/scene.ts.
+ * stable prefix + volatile tail. Which appearance facts are true comes from the
+ * shared narrator appearance read, so a stale attribute (e.g. wings left on a
+ * character after a species change) never leaks and the prompt can never
+ * disagree with the visual-state projection about what this body has.
  *
  * Rendering is `input.instructionSource`'s call: absent or `production` ⇒ today's
  * prompt to the byte; a `test` source swaps the behavior layer for the owner's body.
@@ -1746,23 +1766,15 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
   const { name, profile } = input;
   const displayName = name.trim() || "this character";
 
-  const realizedBody = realizeBody({
-    speciesId: profile.speciesId,
-    heritageId: profile.heritageId,
-    bodyPlanId: profile.bodyPlanId,
-    intimateRegions: profile.intimateRegions,
-    bodyFeatures: profile.bodyFeatures,
-  });
-
-  // Attribute overlays resolve in provenance order:
-  // the authored base, then the PERSISTED narrative overlays that evolve over the chat
-  // (a recorded haircut/dye) — both stable across turns, so they render in the prefix.
-  // The TRANSIENT condition overlays (a "disheveled"/"unwashed" condition shifting
-  // grooming/scent/hair while active) resolve separately and surface as a volatile
-  // tail block, so a condition coming or going never busts the cached prefix. Both
-  // overlay sources are pre-guarded against rewriting inherent attributes (eye
-  // colour, species) at their write sites.
-  const stableResolved = resolveAttributes(profile.attributes, [...(input.state?.attributeOverlays ?? [])]);
+  // THE shared narrator appearance read (contracts/visual-state/appearance-read.ts):
+  // one decision about which appearance facts are true for this body, consumed
+  // here, by the ensemble frame, and by the visual-state assembly. Its `stable`
+  // set is the authored base under the PERSISTED narrative overlays that evolve
+  // over the chat (a recorded haircut/dye) — stable across turns, so it renders
+  // in the cached prefix — and its `current` set is only what an active
+  // condition changes right now, which rides the volatile tail so a condition
+  // coming or going never busts the prefix.
+  const appearance = narratorAppearanceOf(profile, input.state?.attributeOverlays, input.state?.conditions);
   const agePhrase = formatAge(profile.age); // the character's real age (basic info) — NOT the portrait-studio-only apparent age
   // The life-stage band a bare numeric age maps to: a hint on the identity line,
   // register rules as a binding block, and the minor
@@ -1816,30 +1828,19 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
       ].join("\n")
     : "";
 
-  // Proximity-gated sensory attributes (scent) become an opportunistic "Sensory cues"
-  // block instead of flat attribute lines. Compute them
-  // first so the attribute loop can skip what we've claimed (and drop their exposure-mask
-  // phrasing hint, which references a mask the chat lane doesn't have).
-  const cues = sensoryCues(stableResolved, realizedBody);
-  const claimedSensory = new Set(cues.map((c) => c.id));
-
-  // Attribute lines + a deduped phrasing-guidance set (same shape as
-  // engine/scene.buildGlanceImpressions) so a hint shared by many attributes is
-  // stated once instead of repeated per line.
-  const attributeLines: string[] = [];
+  // Where the read's stable facts are SPENT. The closeness-gated senses (scent)
+  // become the opportunistic "Sensory cues" block rather than flat attribute
+  // lines; everything else is an Attributes line, carrying a deduped
+  // phrasing-guidance set (same shape as engine/scene.buildGlanceImpressions) so
+  // a hint shared by many attributes is stated once instead of per line. The
+  // cue facts deliberately contribute no hints — theirs reference an exposure
+  // mask the chat lane does not have.
+  const cues = factPhrases(appearance.stable.filter((fact) => fact.proximitySensory));
+  const flatFacts = appearance.stable.filter((fact) => !fact.proximitySensory);
+  const attributeLines = factPhrases(flatFacts).map((phrase) => `- ${phrase}`);
   const hints = new Set<string>();
-  for (const value of stableResolved) {
-    if (value.id === "identity.apparent_age") continue; // visual age is portrait-studio-only; the narrator gets real `age` (identity block)
-    if (claimedSensory.has(value.id)) continue; // surfaced in the Sensory cues block, not as a flat line
-    const def = attributeRegistry.byId(value.id);
-    if (!def) continue; // unknown vocabulary — never leak a raw id
-    if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
-    if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue; // intimate scent/taste: chat has no exposure signal to earn it
-    if (!realizedBody.isAttributeApplicable(def)) continue;
-    const phrase = attributePhrase(def, value.value);
-    if (!phrase) continue;
-    attributeLines.push(`- ${phrase}`);
-    for (const hint of def.promptHints ?? []) hints.add(hint);
+  for (const fact of flatFacts) {
+    for (const hint of fact.def.promptHints ?? []) hints.add(hint);
   }
 
   // Identity framing (framework text) stays trusted; the author-written `bio`,
@@ -1927,8 +1928,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
         input.player?.name.trim() || "the player",
         input.state,
         input.sensoryFocus,
-        stableResolved,
-        realizedBody,
+        appearance,
         displayName,
       )
     : "";
@@ -2081,7 +2081,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
       "disinhibition_shift",
       minor ? "" : buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
     ),
-    context("transient_appearance", buildTransientAppearanceSection(input, stableResolved, realizedBody)),
+    context("transient_appearance", buildTransientAppearanceSection(appearance)),
     // The "Right now" digest states outright that it OVERRIDES the standing rules for
     // this turn — a per-turn ceiling, not craft, so no override may drop it.
     promptUnit("turn_notes", "runtime_invariant", turnNotes),
@@ -2145,43 +2145,19 @@ function buildDisinhibitionSection(
 }
 
 /**
- * The volatile transient-appearance block (a cache-layout tail): active conditions'
- * `attributeEffects` (a "disheveled"/"unwashed" condition shifting grooming/scent/hair)
- * rendered as overrides of the prefix's Attributes/Sensory lines instead of being baked
- * into them, so a condition starting or expiring never busts the cached prefix. Same
- * guards as the prefix loop (registry-known, applicable, never intimate sensory);
- * `conditionAttributeOverlays` already drops inherent attributes. No conditions ⇒ "".
+ * The volatile transient-appearance block (a cache-layout tail): the shared
+ * read's CURRENT facts — what an active condition ("disheveled"/"unwashed"
+ * shifting grooming/scent/hair) is changing about this body right now —
+ * rendered as overrides of the prefix's Attributes/Sensory lines instead of
+ * being baked into them, so a condition starting or expiring never busts the
+ * cached prefix. Nothing changed ⇒ "".
  */
-function buildTransientAppearanceSection(
-  input: CharacterChatPromptInput,
-  stableResolved: readonly AttributeValue[],
-  realizedBody: RealizedBody,
-): string {
-  const conditionOverlays = conditionAttributeOverlays(input.state?.conditions ?? []);
-  if (!conditionOverlays.length) return "";
-  const fullResolved = resolveAttributes(input.profile.attributes, [
-    ...(input.state?.attributeOverlays ?? []),
-    ...conditionOverlays,
-  ]);
-  const stableById = new Map(stableResolved.map((v) => [v.id, v]));
-  const lines: string[] = [];
-  for (const value of fullResolved) {
-    if (value.id === "identity.apparent_age") continue;
-    const def = attributeRegistry.byId(value.id);
-    if (!def) continue;
-    if (def.excludeFromPrompts) continue;
-    if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue; // intimate scent/taste never surfaces in chat
-    if (!realizedBody.isAttributeApplicable(def)) continue;
-    const stable = stableById.get(value.id);
-    if (stable && stable.value === value.value) continue; // unchanged by the condition
-    const phrase = attributePhrase(def, value.value);
-    if (!phrase) continue;
-    lines.push(`- ${phrase}`);
-  }
+function buildTransientAppearanceSection(appearance: NarratorAppearanceRead): string {
+  const lines = factPhrases(appearance.current);
   if (!lines.length) return "";
   return [
     "While your current condition lasts (transient — these override the matching Attribute/Sensory lines above):",
-    ...lines,
+    ...lines.map((phrase) => `- ${phrase}`),
   ].join("\n");
 }
 
@@ -2459,14 +2435,7 @@ export function buildEnsembleChatPromptNodes(
           player,
           focusTarget.state,
           extras.sensoryFocus.hint,
-          resolveAttributes(focusTarget.profile.attributes, [...(focusTarget.state?.attributeOverlays ?? [])]),
-          realizeBody({
-            speciesId: focusTarget.profile.speciesId,
-            heritageId: focusTarget.profile.heritageId,
-            bodyPlanId: focusTarget.profile.bodyPlanId,
-            intimateRegions: focusTarget.profile.intimateRegions,
-            bodyFeatures: focusTarget.profile.bodyFeatures,
-          }),
+          narratorAppearanceOf(focusTarget.profile, focusTarget.state?.attributeOverlays),
           focusTarget.name.trim() || "the character",
         )
       : "";
@@ -2679,29 +2648,17 @@ function relationshipLineParts(
   return parts.join(" ");
 }
 
-/** The member's attribute lines under the same guards as the single-character loop. */
+/**
+ * The member's attribute lines, from the same shared read the solo frame uses.
+ *
+ * The ensemble spends the facts differently — a roster block has no separate
+ * Sensory-cues section, so a member's closeness-gated senses ride the same list
+ * as everything else — but the fact SET is identical to the one the solo frame
+ * would get for this sheet.
+ */
 function ensembleAttributeLines(member: EnsembleMemberInput): string[] {
-  const { profile } = member;
-  const realizedBody = realizeBody({
-    speciesId: profile.speciesId,
-    heritageId: profile.heritageId,
-    bodyPlanId: profile.bodyPlanId,
-    intimateRegions: profile.intimateRegions,
-    bodyFeatures: profile.bodyFeatures,
-  });
-  const resolved = resolveAttributes(profile.attributes, [...(member.state?.attributeOverlays ?? [])]);
-  const lines: string[] = [];
-  for (const value of resolved) {
-    if (value.id === "identity.apparent_age") continue;
-    const def = attributeRegistry.byId(value.id);
-    if (!def) continue;
-    if (def.excludeFromPrompts) continue;
-    if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue;
-    if (!realizedBody.isAttributeApplicable(def)) continue;
-    const phrase = attributePhrase(def, value.value);
-    if (phrase) lines.push(`- ${phrase}`);
-  }
-  return lines;
+  const appearance = narratorAppearanceOf(member.profile, member.state?.attributeOverlays);
+  return factPhrases(appearance.stable).map((phrase) => `- ${phrase}`);
 }
 
 /**
@@ -2741,42 +2698,18 @@ function ensembleMemberEnactment(member: EnsembleMemberInput): string {
     }
   }
 
-  const conditionOverlays = conditionAttributeOverlays(member.state.conditions ?? []);
-  if (conditionOverlays.length) {
-    const realizedBody = realizeBody({
-      speciesId: profile.speciesId,
-      heritageId: profile.heritageId,
-      bodyPlanId: profile.bodyPlanId,
-      intimateRegions: profile.intimateRegions,
-      bodyFeatures: profile.bodyFeatures,
-    });
-    const stableResolved = resolveAttributes(profile.attributes, [...(member.state.attributeOverlays ?? [])]);
-    const fullResolved = resolveAttributes(profile.attributes, [
-      ...(member.state.attributeOverlays ?? []),
-      ...conditionOverlays,
-    ]);
-    const stableById = new Map(stableResolved.map((v) => [v.id, v]));
-    const lines: string[] = [];
-    for (const value of fullResolved) {
-      if (value.id === "identity.apparent_age") continue;
-      const def = attributeRegistry.byId(value.id);
-      if (!def) continue;
-      if (def.excludeFromPrompts) continue;
-      if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue;
-      if (!realizedBody.isAttributeApplicable(def)) continue;
-      const stable = stableById.get(value.id);
-      if (stable && stable.value === value.value) continue;
-      const phrase = attributePhrase(def, value.value);
-      if (!phrase) continue;
-      lines.push(`- ${phrase}`);
-    }
-    if (lines.length) {
-      blocks.push(
-        [`While ${name}'s current condition lasts (transient — these override ${name}'s matching attribute lines above):`, ...lines].join(
-          "\n",
-        ),
-      );
-    }
+  // The member's CURRENT facts, from the same shared read — the third-person
+  // arm of the solo transient block, never a second opinion about what changed.
+  const transientLines = factPhrases(
+    narratorAppearanceOf(profile, member.state.attributeOverlays, member.state.conditions).current,
+  );
+  if (transientLines.length) {
+    blocks.push(
+      [
+        `While ${name}'s current condition lasts (transient — these override ${name}'s matching attribute lines above):`,
+        ...transientLines.map((phrase) => `- ${phrase}`),
+      ].join("\n"),
+    );
   }
 
   return blocks.join("\n\n");

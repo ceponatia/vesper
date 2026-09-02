@@ -1,11 +1,6 @@
 import {
-  attributeRegistry,
-  isIntimateAttributeCategory,
-  promptValueWithNoneElided,
   VISUAL_STATE_DUPLICATE_KEY,
   VISUAL_STATE_SOURCE_UNAVAILABLE,
-  type AttributeValue,
-  type RealizedBody,
   type VisualImageSelection,
   type VisualNarratorSelection,
   type VisualStateSnapshot,
@@ -13,63 +8,20 @@ import {
 } from "@/contracts";
 
 /**
- * SLICE-6 MEASUREMENT: missing-owner frequency,
- * duplicate facts, and disagreement with the current summaries — computed from
- * one shadow build, surfaced as one structured log
- * line per shadowed turn and recomputed on demand by the inspector. Nothing
- * here is persisted; accumulation happens over the deploy's log stream, which
- * is the same place every other turn measurement already lands.
- */
-
-// ---------------------------------------------------------------------------
-// The legacy comparison set
-// ---------------------------------------------------------------------------
-
-/**
- * The attribute ids the legacy narrator prompt surfaces for this body — the
- * guard chain `character-chat.ts` runs over `stableResolved` before rendering
- * its Attributes block and sensory cues (audit finding 2 records that chain
- * re-typed at seven sites; this is a MEASUREMENT REPLICA of it, and slice 10
- * owns consolidating all of them onto the shared snapshot).
+ * SHADOW MEASUREMENT: missing-owner frequency, duplicate facts, and the
+ * wardrobe comparison — computed from one shadow build, surfaced as one
+ * structured log line per shadowed turn and recomputed on demand by the
+ * inspector. Nothing here is persisted; accumulation happens over the deploy's
+ * log stream, which is the same place every other turn measurement already
+ * lands.
  *
- * Deliberately measured against the STABLE resolve (base + persisted overlays,
- * no condition overlays), because that is what the prompt's stable block reads;
- * the snapshot projects the full resolve, so a condition-overlaid attribute can
- * honestly appear as projected-only — a real current-state-versus-identity
- * disagreement, not measurement noise.
+ * There is deliberately no attribute comparison. The narrator prompt and this
+ * projection now take their appearance facts from the one shared read
+ * (`contracts/visual-state/appearance-read.ts`), so an attribute set that
+ * disagreed with the prompt's would mean a defect in that read rather than the
+ * drift between two independent implementations this measurement once watched.
+ * Wardrobe still has two independent producers, so its comparison stays.
  */
-export function legacyNarratorAttributeIds(
-  stableResolved: readonly AttributeValue[],
-  realizedBody: RealizedBody,
-): string[] {
-  const ids: string[] = [];
-  for (const value of stableResolved) {
-    if (value.id === "identity.apparent_age") continue; // portrait-studio-only
-    const def = attributeRegistry.byId(value.id);
-    if (!def) continue; // unknown vocabulary — the prompt never leaks a raw id
-    if (def.excludeFromPrompts) continue;
-    if (def.kind === "sensory" && isIntimateAttributeCategory(def.category)) continue;
-    if (!realizedBody.isAttributeApplicable(def)) continue;
-    const rendered = promptValueWithNoneElided(def, value.value);
-    if (rendered === null) continue;
-    if (typeof rendered === "boolean" && !rendered) continue;
-    if (typeof rendered === "string" && rendered.trim().length === 0) continue;
-    if (Array.isArray(rendered) && rendered.length === 0) continue;
-    ids.push(value.id);
-  }
-  return ids.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-}
-
-/** The attribute ids the snapshot actually carries, via appearance provenance. */
-export function projectedAttributeIds(snapshot: VisualStateSnapshot): string[] {
-  const ids = new Set<string>();
-  for (const feature of snapshot.features) {
-    if (feature.sourceRef.kind === "appearance" && feature.sourceRef.ref.kind === "attribute") {
-      ids.add(feature.sourceRef.ref.attributeId);
-    }
-  }
-  return [...ids].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-}
 
 /** The garment instance ids the snapshot's wardrobe-identity features carry. */
 export function projectedGarmentIds(snapshot: VisualStateSnapshot): string[] {
@@ -87,14 +39,14 @@ export function projectedGarmentIds(snapshot: VisualStateSnapshot): string[] {
 // ---------------------------------------------------------------------------
 
 export interface VisualStateSetComparison {
-  /** What the current (legacy) summary surfaces. */
-  readonly legacyCount: number;
+  /** What the lane's own resolved summary surfaces. */
+  readonly resolvedCount: number;
   /** What the snapshot projects. */
   readonly projectedCount: number;
   readonly sharedCount: number;
-  /** Surfaced by the legacy summary, absent from the snapshot — the drift risk. */
-  readonly legacyOnly: readonly string[];
-  /** Projected but never surfaced by the legacy summary. */
+  /** Surfaced by the resolved summary, absent from the snapshot — the drift risk. */
+  readonly resolvedOnly: readonly string[];
+  /** Projected but never surfaced by the resolved summary. */
   readonly projectedOnly: readonly string[];
 }
 
@@ -122,8 +74,6 @@ export interface VisualStateMeasurements {
     readonly mandatoryCount: number;
     readonly suppressedOptionalCount: number;
   };
-  /** `null` when the lane has no attribute-rendering summary to compare against. */
-  readonly attributes: VisualStateSetComparison | null;
   /** `null` when the lane resolved no structured worn rows this cut. */
   readonly garments: VisualStateSetComparison | null;
 }
@@ -146,7 +96,6 @@ export function emptyVisualStateMeasurements(): VisualStateMeasurements {
       mandatoryCount: 0,
       suppressedOptionalCount: 0,
     },
-    attributes: null,
     garments: null,
   };
 }
@@ -165,21 +114,20 @@ function countCode(suppressions: readonly VisualStateSuppression[], code: string
   return suppressions.reduce((count, suppression) => (suppression.code === code ? count + 1 : count), 0);
 }
 
-export function compareSets(legacy: readonly string[], projected: readonly string[]): VisualStateSetComparison {
+export function compareSets(resolved: readonly string[], projected: readonly string[]): VisualStateSetComparison {
   // Both sides are DE-DUPLICATED before differencing. Either list may legally
-  // repeat an id (the legacy attribute chain can surface one id through two
-  // guard steps), and differencing the raw arrays would count that id twice in
-  // `legacyOnly` — which subtracted from a Set size produced a `sharedCount`
+  // repeat an id, and differencing the raw arrays would count that id twice in
+  // `resolvedOnly` — which subtracted from a Set size produced a `sharedCount`
   // that undercounts agreement and can go negative.
-  const legacySet = new Set(legacy);
+  const resolvedSet = new Set(resolved);
   const projectedSet = new Set(projected);
-  const legacyOnly = [...legacySet].filter((id) => !projectedSet.has(id));
-  const projectedOnly = [...projectedSet].filter((id) => !legacySet.has(id));
+  const resolvedOnly = [...resolvedSet].filter((id) => !projectedSet.has(id));
+  const projectedOnly = [...projectedSet].filter((id) => !resolvedSet.has(id));
   return {
-    legacyCount: legacySet.size,
+    resolvedCount: resolvedSet.size,
     projectedCount: projectedSet.size,
-    sharedCount: legacySet.size - legacyOnly.length,
-    legacyOnly,
+    sharedCount: resolvedSet.size - resolvedOnly.length,
+    resolvedOnly,
     projectedOnly,
   };
 }
@@ -188,8 +136,6 @@ export interface MeasureVisualStateInput {
   readonly snapshot: VisualStateSnapshot;
   readonly narrator: VisualNarratorSelection;
   readonly image: VisualImageSelection;
-  /** `null` ⇒ this lane renders no attribute summary (the successor's canon block). */
-  readonly legacyAttributeIds: readonly string[] | null;
   /** `null` ⇒ no structured worn rows this cut (free-text wardrobe, or no store). */
   readonly wornGarmentIds: readonly string[] | null;
 }
@@ -230,10 +176,6 @@ export function measureVisualState(input: MeasureVisualStateInput): VisualStateM
       mandatoryCount: image.mandatory.length,
       suppressedOptionalCount: image.suppressedOptionalCount,
     },
-    attributes:
-      input.legacyAttributeIds === null
-        ? null
-        : compareSets(input.legacyAttributeIds, projectedAttributeIds(snapshot)),
     garments:
       input.wornGarmentIds === null ? null : compareSets(input.wornGarmentIds, projectedGarmentIds(snapshot)),
   };
