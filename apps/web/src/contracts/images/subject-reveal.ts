@@ -9,11 +9,11 @@ import type { RealizedBody } from "../species";
  * The subject body REVEAL — which of a character's `imageReveal`-tagged and
  * intimate attributes an image may state, given the garment coverage readout.
  *
- * PURE: the rule and its tables, with no prompt wording. Two consumers read
- * them — the scene prose builder's reveal lines, and the typed projection below
- * that a compiled scene program carries on a route permitting intimate anatomy.
- * One rule for both, so the prose and the program can never disagree about
- * what a bare torso lets a prompt say.
+ * PURE: the rule and its tables, with no prompt wording. One consumer reads
+ * them — the typed projection below, which a compiled scene program carries on
+ * a route permitting intimate anatomy. The rule stays a function of its own
+ * because it is what a bare torso lets a prompt say, and that answer is a
+ * property of the coverage readout rather than of the prompt built from it.
  *
  * ## Why a projection exists beside the digest
  *
