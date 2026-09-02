@@ -293,4 +293,34 @@ describe.runIf(ready)("deleting a successor chat deletes its world (E20-1)", () 
     const fresh = await createSuccessorChat("Later World");
     expect(fresh.worldId).not.toBe(created.worldId);
   });
+
+  // The delete-time belt above is not the only protection, and the case that
+  // needs the other one is this: a record still reading `ready` whose world is
+  // already gone. `deleteChat` never ran (an admin orphan sweep, a repair), or
+  // it committed in the window between the front door loading the record and
+  // trusting it — the race Codex found on PR #437, which is why the front door
+  // re-reads the record and its whole graph in ONE statement and replays only
+  // the row that query returns. Falsified against the pre-#197 route, which
+  // replayed the stored 201 here.
+  it("refuses a ready record whose world vanished without the delete path retiring it", async () => {
+    const requestId = `stale-orphan-${Date.now()}`;
+    const created = await createSuccessorChat("Vanished World", requestId);
+
+    // Straight to the database, so the ledger row keeps saying `ready` — exactly
+    // what the route holds in hand when a concurrent delete has just committed.
+    await db().delete(simWorlds).where(eq(simWorlds.id, created.worldId));
+    await db().delete(characterChats).where(eq(characterChats.id, created.id));
+    expect((await provisioningRecord(requestId))?.state).toBe("ready");
+
+    const res = await postSuccessorChat("Vanished World", requestId);
+    const body = await res.text();
+    expect(res.status).toBe(409);
+    expect((JSON.parse(body) as { error: { code: string } }).error.code).toBe("provision_stale");
+    for (const dead of [created.id, created.worldId, created.branchId]) expect(body).not.toContain(dead);
+
+    // …and the record it could not trust is retired, so the next tap rebuilds.
+    const retired = await provisioningRecord(requestId);
+    expect(retired?.state).toBe("failed");
+    expect(retired?.error).toBe(PROVISIONING_STALE_AFTER_DELETE);
+  });
 });
