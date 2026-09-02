@@ -138,6 +138,8 @@ export async function syncChatGarments(input: {
       seeds.set(item.id, {
         definitionId: item.id,
         name: item.name,
+        // Already `hairOcclusionForItem`-resolved by the loader; sparse at `none`.
+        ...(item.hairOcclusion ? { hairOcclusion: item.hairOcclusion } : {}),
         ...(item.category ? { categoryId: item.category } : {}),
         coverage: item.coverage,
         materialProfileId: inferGarmentMaterialProfile(

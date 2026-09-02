@@ -142,6 +142,11 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
   deltas, `garment-effective-coverage.ts`) feeds the visibility resolver — the
   same resolution the narrator exposure gate and image prompts consume. Bands (with ±500
   hysteresis) surface in `garmentReadout`; raw fixed point never leaves the server.
+- **A deleted library row keeps its band.** An instance snapshots its definition's resolved
+  hair-occlusion band at mint time beside its name (`GarmentInstanceState.hairOcclusion`,
+  sparse at `none`), and the resolve seam reads that snapshot only when the definition is
+  gone — a live definition's band, absent included, always wins, so an editor override
+  applies at once while an orphaned hijab still hides hair.
 - **Rollback for free.** The store rides the `pre_exchange_scenario` blob, so retakes
   restore blueprints, loci, presentation, and gradients byte-identically (int-tested).
 - **`outfit_exposed` demoted.** Authoritative only for unmodelled actors (no instances);

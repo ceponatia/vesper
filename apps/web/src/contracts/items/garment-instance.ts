@@ -16,6 +16,7 @@ import {
   emptyEffectiveCoverageRead,
   type EffectiveCoverageRead,
 } from "./effective-coverage-read";
+import { hairOcclusionSchema } from "./hair-occlusion";
 
 /**
  * Garment INSTANCE state — the instance and its locus, its condition vector, and
@@ -336,6 +337,16 @@ export const garmentInstanceStateSchema = z.object({
   definitionId: z.string().trim().min(1).max(64).optional().catch(undefined),
   /** Display name captured at mint time so a deleted library row still reads. */
   name: z.string().trim().min(1).max(120).catch("garment").default("garment"),
+  /**
+   * The hair-occlusion band resolved at mint time (`hairOcclusionForItem`), on
+   * the same footing as `name`: a snapshot for the ORPHAN case only. While the
+   * library definition exists its live band is the truth, so an item-editor
+   * override takes effect at once; once the row is deleted this is the only
+   * record that the still-worn hijab hides hair. Sparse at `none`, and absent
+   * on instances minted before it was captured — an orphan with no snapshot
+   * resolves `none`, the "unknown shows hair" law of the band itself.
+   */
+  hairOcclusion: hairOcclusionSchema.optional().catch(undefined),
   locus: garmentLocusSchema,
   presentation: garmentPresentationStateSchema
     .catch(emptyGarmentPresentationState())

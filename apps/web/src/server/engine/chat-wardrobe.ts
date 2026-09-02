@@ -130,8 +130,15 @@ export async function loadChatWardrobe(
  * has subtracted whatever a rolled sleeve or open placket takes away (OQ6) — and
  * the library DEFINITION owns phrasing plus the layer/opacity semantics the
  * occlusion pass has always used. A garment whose library row is gone still reads
- * (its name and blueprint were snapshotted at mint time), it simply drops out of
- * the definition-id look key.
+ * (its name, blueprint and hair-occlusion band were snapshotted at mint time), it
+ * simply drops out of the definition-id look key.
+ *
+ * The band is the one field with two sources, and the choice is by PRESENCE of
+ * the definition, never a `??` chain: a live definition's band is authoritative
+ * even when it is absent (= `none`), so an item-editor override that cleared a
+ * hijab's band cannot be undone by the instance's stale `full`; only an orphan
+ * reads its snapshot. An orphan minted before the snapshot existed carries none
+ * and reads `none` — unknown resolves toward showing hair.
  */
 export function garmentWardrobeItem(
   instance: GarmentInstanceState,
@@ -139,10 +146,12 @@ export function garmentWardrobeItem(
   definition: AvatarWardrobeItem | undefined,
 ): AvatarWardrobeItem {
   const effective = garmentEffectiveCoverage(instance, blueprint);
+  const hairOcclusion = definition !== undefined ? definition.hairOcclusion : instance.hairOcclusion;
   return {
     ...(definition ?? { name: instance.name, coverage: [] }),
     garmentId: instance.id,
     name: definition?.name ?? instance.name,
+    ...(hairOcclusion === undefined || hairOcclusion === HAIR_OCCLUSION_NONE ? {} : { hairOcclusion }),
     coverage: effective.covers,
     parts: effective.parts.map((part) => ({
       partId: part.partId,

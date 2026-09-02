@@ -143,7 +143,9 @@ covers, what it occludes, or how it layers.
   and the image subject cut (`CharacterPromptSubjectCut.hairOcclusion`), the narrator prompt state
   (`state.hairOcclusion`) and the hair-affordance wardrobe input
   (`ChatAffordanceWardrobe.hairOcclusion`) each carry that one value. No consumer reads item rows
-  or infers the band from a garment's name.
+  or infers the band from a garment's name. A garment instance snapshots its definition's resolved
+  band at mint time beside its name (`GarmentInstanceState.hairOcclusion`), read only when the
+  library row is gone — a live definition's band, absent included, always wins.
 - **The narrator withholds fully covered hair.** At `full` the chat prompt drops every
   `hair`-anchored attribute before its blocks are built and states a binding covered-hair line
   instead, and the hair affordance read is `hidden`

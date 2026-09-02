@@ -19,6 +19,7 @@ import {
   type GarmentOperation,
 } from "./garment-instance";
 import { garmentTemplateForCategory, mintGarmentBlueprint } from "./garment-templates";
+import type { HairOcclusion } from "./hair-occlusion";
 
 /**
  * The chat garment STORE reducer.
@@ -173,6 +174,8 @@ export interface GarmentSeed {
   definitionId: string;
   /** Display name captured at mint time (a later library delete cannot blank it). */
   name: string;
+  /** The definition's RESOLVED hair-occlusion band, snapshotted like `name` (absent = `none`). */
+  hairOcclusion?: HairOcclusion;
   /** `clothingCategories` id — picks the sparse part template (OQ1). */
   categoryId?: string;
   /** The DEFINITION's own coverage, which the template is rescoped onto (see below). */
@@ -280,6 +283,8 @@ export function instantiateGarment(
     atMinutes: number;
     /** Library provenance, when there is any (an ad-hoc mint has none). */
     definitionId?: string;
+    /** The resolved band to snapshot beside `name`; an ad-hoc mint carries none. */
+    hairOcclusion?: HairOcclusion;
   },
   sink?: DiagnosticSink,
 ): { store: ChatGarmentStore; instance: GarmentInstanceState } {
@@ -294,6 +299,7 @@ export function instantiateGarment(
     blueprintHash: registration.hash,
     ...(input.definitionId ? { definitionId: input.definitionId } : {}),
     name: input.name,
+    ...(input.hairOcclusion ? { hairOcclusion: input.hairOcclusion } : {}),
     locus: input.locus,
     presentation: emptyGarmentPresentationState(),
     condition: pristineGarmentConditionState(),
@@ -437,6 +443,8 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
     const sibling = instances.find((i) => i.definitionId === definitionId);
     let hash: string;
     let name: string;
+    // Snapshotted beside the name so an orphaned instance still hides hair.
+    let hairOcclusion: HairOcclusion | undefined;
     if (seed) {
       const registration = registerBlueprint(blueprints, garmentBlueprintForSeed(seed), instances);
       if (!registration.stored) {
@@ -445,10 +453,12 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
       }
       hash = registration.hash;
       name = seed.name;
+      hairOcclusion = seed.hairOcclusion;
     } else if (sibling) {
       // A second copy of something already instantiated: reuse its snapshot.
       hash = sibling.blueprintHash;
       name = sibling.name;
+      hairOcclusion = sibling.hairOcclusion;
     } else {
       const registration = registerBlueprint(blueprints, degradedGarmentBlueprint(), instances);
       if (!registration.stored) {
@@ -470,6 +480,7 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
       blueprintHash: hash,
       definitionId,
       name,
+      ...(hairOcclusion ? { hairOcclusion } : {}),
       locus: { kind: "worn", actorId },
       presentation: emptyGarmentPresentationState(),
       condition: pristineGarmentConditionState(),

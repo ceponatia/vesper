@@ -158,6 +158,19 @@ describe("materialization from worn ids", () => {
     expect(second.instances.filter((i) => i.locus.kind === "wardrobe")).toHaveLength(1);
   });
 
+  it("snapshots the seed's hair-occlusion band beside the name, and a twin minted off a sibling copies it", () => {
+    // The orphan read has only this snapshot once the library row is gone; a
+    // mint that dropped it — from the seed, or on the sibling arm that never
+    // sees a seed — would strand a still-worn hijab at `none`.
+    const hijab: GarmentSeed = { ...seed("hijab", "headwear"), hairOcclusion: "full" };
+    const first = sync(emptyChatGarmentStore(), ALICE, ["hijab"], garmentSeedMap([hijab]), counterIds());
+    const twins = sync(first, ALICE, ["hijab", "hijab"], garmentSeedMap([]), counterIds("m"));
+    expect(twins.instances.map((i) => i.hairOcclusion)).toEqual(["full", "full"]);
+    // Sparse: a seed with no band mints no key at all.
+    const cap = sync(emptyChatGarmentStore(), ALICE, ["cap"], garmentSeedMap([seed("cap", "headwear")]), counterIds());
+    expect(cap.instances[0]).not.toHaveProperty("hairOcclusion");
+  });
+
   it("F6: an instance's blueprint is a snapshot — later seed changes cannot reach it", () => {
     const seeds = garmentSeedMap([seed("shirt", "top")]);
     const store = sync(emptyChatGarmentStore(), ALICE, ["shirt"], seeds, counterIds());

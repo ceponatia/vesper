@@ -811,4 +811,21 @@ describe("the presentation-aware wardrobe read", () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((row) => row.hairOcclusion === "full")).toBe(true);
   });
+
+  it("an orphaned instance reads its mint-time band, and a live definition's band beats it", () => {
+    // Falsified against the definition-less fallback `{ name, coverage: [] }`:
+    // a worn hijab whose library row was deleted kept its phrase and coverage
+    // but read `none`, showing hair to the narrator, the image and the
+    // affordance read. The other arm guards the item editor: a live definition
+    // whose band was cleared to `none` must not be overruled by the instance's
+    // stale `full` — presence of the definition decides, never a `??` chain.
+    const HIJAB_DEF = definition("def_hijab", "hijab", ["hair", "ears"], 2);
+    const blueprint = blueprintFor(HIJAB_DEF, "headwear");
+    const minted: GarmentInstanceState = { ...instance("g_hijab", blueprint, "def_hijab"), hairOcclusion: "full" };
+    const orphaned = toWornInputs([garmentWardrobeItem(minted, blueprint, undefined)]);
+    expect(orphaned.length).toBeGreaterThan(0);
+    expect(orphaned.every((row) => row.hairOcclusion === "full")).toBe(true);
+    const live = toWornInputs([garmentWardrobeItem(minted, blueprint, HIJAB_DEF)]);
+    expect(live.every((row) => row.hairOcclusion === undefined)).toBe(true);
+  });
 });
