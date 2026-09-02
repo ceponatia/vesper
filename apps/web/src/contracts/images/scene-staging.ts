@@ -15,8 +15,9 @@ import {
  * During intimate play the picture and the text diverge worst: the narration describes a
  * specific act with a specific geometry, and the render comes back a nude portrait — right
  * person, right room, wrong moment. The cause is not prudishness in the image model but a
- * hole in the prompt. The character's explicit anatomy is already injected deterministically
- * (`sceneRevealAppearance`), while the **act** never is, because the only thing that could
+ * hole in the prompt. The character's explicit anatomy is already stated deterministically
+ * (the program's intimate reveal over the committed cut's coverage), while the **act** never
+ * is, because the only thing that could
  * write it is the small composing model — which runs in a safe configuration and answers
  * with "close to the viewer, intimate".
  *

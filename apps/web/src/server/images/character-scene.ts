@@ -23,10 +23,6 @@ import { resolveIntimateSceneLoraRoute } from "./scene-lora";
 import { applySceneCastVisual, type SceneCastVisualSubject, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 
-// The meter note lives with the cast seam; existing consumers keep this import
-// surface.
-export { visualStateNote } from "./scene-subject-visual";
-
 export const DEFAULT_CHAT_ROOM =
   "A warm, softly lit room — a comfortable couch, a low wooden table, shelves of books along one wall, and a tall window letting in natural light.";
 

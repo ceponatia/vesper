@@ -20,9 +20,9 @@ import { repoRelative, sourceFilesUnder } from "@/server/test-support";
  * lanes cut over, and it may never GROW. A new exclusion belongs in a versioned
  * negative pack with a guard, not in a sentence.
  *
- * It is a census rather than a ban because the scene prose builder is still in
- * the tree. Every entry here is a lane awaiting cutover, and deleting the entry
- * is part of cutting it over.
+ * It is a census rather than a ban because two reviewed sentences remain — the
+ * identity-free `chat_place` shot's own contract, and the composer's
+ * instructions to an LLM. Neither is a character lane, and neither may grow.
  */
 
 const PROMPT_DIR = path.join(process.cwd(), "apps/web/src/server/images");
@@ -47,10 +47,10 @@ const EXCLUSION_PATTERNS: readonly RegExp[] = [
 /**
  * Every embedded exclusion this repository still has, reviewed 2026-09-01.
  *
- * Each is a lane that has not cut over. `entity-prompt-program.ts` and the
- * character lanes are deliberately absent: they ARE cut over, and their
- * exclusions live in versioned negative packs behind the collision linter,
- * which is what every line below is waiting to become.
+ * Neither entry is a character lane. Every character route and the entity lane
+ * compile prompt programs, and their exclusions live in versioned negative
+ * packs behind the collision linter; what remains is the identity-free
+ * `chat_place` shot and the composer's LLM instructions.
  */
 const APPROVED: Readonly<Record<string, number>> = {
   // The chat-place shot's "no people anywhere in frame" — the same claim the

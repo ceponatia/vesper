@@ -17,7 +17,7 @@ installIdentityPackMaintenance();
 // accident (nor silently vanish from this barrel when a second module happens to
 // export the same name — an ambiguous `export *` name is dropped, not reported).
 // Modules absent below export nothing public: the pack service's derivation and
-// promotion halves, the lab's five lanes, and the prompt format kit.
+// promotion halves, the lab's five lanes and the staged bench's subject cut.
 
 export * from "./assets";
 
@@ -210,14 +210,6 @@ export {
   wardrobeOutfitSummary,
 } from "./prompts-scene-composer";
 export {
-  apparentAgeAnchor,
-  characterAppearanceSummary,
-  identityAnchorSummary,
-  imageAgeWord,
-  sceneRevealAppearance,
-  viewerBodyAppearance,
-} from "./prompts-appearance";
-export {
   bindLimbsToOwner,
   emptySceneRenderPlan,
   heuristicFocalName,
@@ -267,25 +259,13 @@ export * from "./avatar";
 export {
   buildStandaloneLaneCut,
   buildStandaloneSubjectCut,
-  buildStandaloneSubjectVisual,
   portraitPerception,
   standaloneSubjectPromptCut,
   type StandaloneLaneCutInput,
   type StandaloneLaneViewpoint,
   type StandaloneSubjectCut,
   type StandaloneSubjectCutInput,
-  type StandaloneSubjectVisual,
-  type StandaloneSubjectVisualInput,
 } from "./standalone-subject-visual";
-export {
-  VISUAL_CLAUSE_OMIT_CURATED,
-  VISUAL_CLAUSE_OMIT_ELIDED,
-  VISUAL_CLAUSE_OMIT_INAPPLICABLE,
-  VISUAL_CLAUSE_OMIT_NONVISUAL,
-  VISUAL_CLAUSE_OMIT_REGISTRY,
-  visualFactClauseResolver,
-  type VisualFactClauseSources,
-} from "./visual-fact-clauses";
 export * from "./variants";
 export * from "./upload";
 export * from "./entity";

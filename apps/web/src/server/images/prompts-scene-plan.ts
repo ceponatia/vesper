@@ -153,9 +153,7 @@ const BLUSH_WORDS = /\b(blush\w*|flush\w*|rosy|ruddy|reddening|red-faced|pink-ch
  * (contracts/meters/registry.ts), so the composer reads it in the recent narration
  * and hands it straight back. Same shape as {@link scrubPlayerFromAction}: drop the
  * offending clause whole and keep the rest, since the surrounding beats ("eyes
- * bright", "breath shallow") are the physiology we actually wanted. The
- * deterministic sibling is `visualStateNote` (images/character-scene.ts) — keep the
- * two in agreement.
+ * bright", "breath shallow") are the physiology we actually wanted.
  */
 export function scrubBlush(text: string): string {
   if (!BLUSH_WORDS.test(text)) return text;

@@ -179,8 +179,6 @@ describe("generateAvatar program wiring", () => {
     const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
     expect(intent?.prompt).toBe(opts?.asset.prompt);
     expect(intent?.prompt).toMatch(/late twenties/);
-    // No second prompt channel: `promptSegments` would outrank the program.
-    expect(intent !== undefined && "promptSegments" in intent).toBe(false);
     expect(Object.keys(opts?.asset.meta ?? {})).toEqual(
       expect.arrayContaining(["visualState", IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY]),
     );

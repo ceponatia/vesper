@@ -122,10 +122,11 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
     // minting a wrong anchor and purging the right one.
     //
     // `memoryGroupId` is the only input the job did not already have; the scene
-    // queue takes the same select. A missing row is corrupt membership, so it
-    // degrades to the route-owned prompt production (docs/resilience.md §2 —
-    // a degraded default over a failed turn) rather than refusing an anchor
-    // over a continuity id.
+    // queue takes the same select. A missing row is corrupt membership: the
+    // mint then receives no cut and refuses before reserving a row
+    // (`images.chat_look.visual_cut_missing`), because the compiled program is
+    // the only prompt a look can send and there is nothing to compile it over.
+    // The next outfit or appearance change re-fires the job.
     const [participant] = await db()
       .select({ memoryGroupId: chatParticipants.memoryGroupId })
       .from(chatParticipants)
@@ -133,7 +134,7 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
       .limit(1);
     if (!participant) {
       jobSink.push(
-        diag("warn", "images.chat_look.participant_missing", "no participant row for the look subject — minting without the visual digest", {
+        diag("warn", "images.chat_look.participant_missing", "no participant row for the look subject — the mint has no cut to compile and will refuse", {
           path: "images.chat_look",
           context: { chatId: input.chatId, characterId: input.characterId },
         }),

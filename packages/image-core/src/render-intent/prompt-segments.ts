@@ -22,10 +22,10 @@ import type { ImagePromptBinding } from "../capabilities/image-model-capabilitie
  * - PROVENANCE (`source`), so a diagnostic can say which projection contributed a
  *   segment — without that string ever reaching a provider.
  *
- * This module owns the vocabulary and the fitting rules only. Writing prose,
- * compact SDXL tags or Pony-flavoured tags from these segments is the dialect
- * work of slice 3; the one compiler here is the `prose` dialect's initial
- * behavior — today's prose, in segment order.
+ * This module owns the vocabulary and the fitting rules only. Writing prose or
+ * tags from these segments is the prompt-program dialects' work
+ * (`../prompt-program/dialects.ts`); the only text producer here is
+ * {@link joinImagePromptSegments}, which a dialect calls on its fitted list.
  */
 
 /**
@@ -480,34 +480,12 @@ export function joinImagePromptSegments(segments: readonly ImagePromptSegment[])
 }
 
 /**
- * Normalize, order, fit and compile one segment list into the prompt text a
- * render will send — the single call a lane or planner makes.
- *
- * Every degradation is reported and none of them fails the render: trimmed
- * optional material is an `info`, a shortened mandatory segment is a `warn`, and
- * a mandatory floor that still exceeds the provider's hard ceiling is
- * `image_model.prompt_too_long_required` — the code the prompt binding's own
- * contract already names for exactly this case. Sending the over-long prompt and
- * saying so beats cutting an identity lock in half to fit.
- */
-export function compileImagePromptSegments(
-  segments: readonly ImagePromptSegment[],
-  budget: ImagePromptBudget = {},
-  sink?: DiagnosticSink,
-): string {
-  const fitted = fitImagePromptSegments(normalizeImagePromptSegments(segments, sink), budget);
-  reportImagePromptFitting(fitted, budget, sink);
-  return joinImagePromptSegments(fitted.segments);
-}
-
-/**
  * Report what fitting cost, without joining anything.
  *
- * Split out of {@link compileImagePromptSegments} so a caller that needs the
- * FITTED SEGMENTS as well as the text — the prompt-program dialects, which have
- * to say which semantic claim a budget squeeze removed — reports the same three
- * events rather than growing a second, drifting copy of them. The compile
- * function is still the ordinary entry point and its behavior is unchanged.
+ * Kept apart from {@link fitImagePromptSegments} so the prompt-program
+ * dialects — which need the FITTED SEGMENTS as well as the text, to say which
+ * semantic claim a budget squeeze removed — report the same three events from
+ * one place rather than each growing a drifting copy of them.
  */
 export function reportImagePromptFitting(
   fitted: FittedImagePromptSegments,

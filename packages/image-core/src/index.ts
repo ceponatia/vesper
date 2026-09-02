@@ -270,8 +270,8 @@ export {
   IMAGE_PROVIDER_DEFAULT_OVERRIDE_BLOCK,
   IMAGE_WORLD_STATE_META_KEY,
   // The 2511 identity-lock byte contract with `@vesper/image-models` — public so
-  // the root parity tripwire (scripts/qwen-identity-lock-parity.test.ts) and the
-  // app's shadow comparison can pin the exact bytes.
+  // the app's program suite (character-prompt-program.test.ts) can pin the
+  // exact bytes.
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   imagePromptProgramProvenanceSchema,
@@ -352,7 +352,6 @@ export type {
   SceneStagingSurfaceLog,
 } from "./prompt-program";
 export {
-  compileImagePromptSegments,
   controlReferenceTransport,
   defaultImageRenderPolicy,
   fitImagePromptSegments,

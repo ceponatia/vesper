@@ -17,16 +17,10 @@ import {
   type VisualImageDigest,
   type WornItemInput,
 } from "@/contracts";
-import {
-  buildVisualSubjectSegments,
-  type VisualSegmentTaskPolicy,
-  type VisualSubjectSegmentsBuild,
-} from "@/contracts/images/visual-segments";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { assembleVisualStateSnapshot, buildVisualStateImageDigest } from "@/server/visual-state";
 import { toWornInputs, type AvatarWardrobeItem } from "./avatar-wardrobe";
 import type { CharacterPromptSubjectCut } from "./character-prompt-program";
-import { visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
  * THE STANDALONE-CHARACTER CUT — one snapshot → one camera-bound selection →
@@ -38,8 +32,8 @@ import { visualFactClauseResolver } from "./visual-fact-clauses";
  * A standalone render has none of those owners: the character sheet, its
  * default wardrobe and a read token ARE the committed cut. The avatar and
  * variant lanes compile their prompt programs from exactly this cut
- * (`character-prompt-program.ts`), and the Image Lab's staged bench reads the
- * same fields off {@link StandaloneSubjectVisual}.
+ * (`character-prompt-program.ts`), and the Image Lab's staged bench compiles
+ * its program from the same cut (`image-lab-staged-visual.ts`).
  *
  * ## What it decides, and what it does not
  *
@@ -50,16 +44,6 @@ import { visualFactClauseResolver } from "./visual-fact-clauses";
  * than a branch, so a second caller cannot quietly acquire the first caller's
  * framing: the camera and its id, and whether the attention context may see
  * intimate anatomy at all.
- *
- * ## The retained segment pass
- *
- * {@link buildStandaloneSubjectVisual} layers the legacy clause build
- * (`buildVisualSubjectSegments`) over the cut as `subject`. No character lane
- * reads it any more — the prompt program refuses on the adapter's own
- * missing-required set — but the Image Lab's staged bench
- * (`image-lab-staged-visual.ts`) still phrases its production-parity arm from
- * it, so the pass stays until that bench moves onto the program. It is a
- * separate function precisely so the lanes pay nothing for it.
  *
  * ## Failure behavior
  *
@@ -236,23 +220,6 @@ export interface StandaloneLaneViewpoint {
   readonly cameraId: string;
 }
 
-export interface StandaloneSubjectVisualInput extends StandaloneSubjectCutInput {
-  /**
-   * The character's display name. Unread since #251 retired the lane-side
-   * age-anchor sentence; the staged bench still supplies it, and it leaves
-   * with the retained segment pass.
-   */
-  readonly name: string;
-  readonly policy: VisualSegmentTaskPolicy;
-  /** Attribute ids this lane's curated policy withholds from the clause pass. */
-  readonly omitAttributeIds?: ReadonlySet<string>;
-}
-
-export interface StandaloneSubjectVisual extends StandaloneSubjectCut {
-  /** The retained clause pass over the cut — see the module header. */
-  readonly subject: VisualSubjectSegmentsBuild;
-}
-
 // ---------------------------------------------------------------------------
 // The assembly
 // ---------------------------------------------------------------------------
@@ -362,23 +329,3 @@ export function standaloneSubjectPromptCut(
   };
 }
 
-/**
- * The cut plus the retained clause pass — the staged bench's shape. Character
- * lanes call {@link buildStandaloneSubjectCut} and never see `subject`.
- */
-export function buildStandaloneSubjectVisual(input: StandaloneSubjectVisualInput): StandaloneSubjectVisual {
-  const cut = buildStandaloneSubjectCut(input);
-  const subject = buildVisualSubjectSegments({
-    digest: cut.digest,
-    subjectId: input.characterId,
-    exposure: cut.exposure,
-    policy: input.policy,
-    clause: visualFactClauseResolver({
-      attributes: cut.resolved,
-      realizedBody: cut.realizedBody,
-      ...(input.omitAttributeIds === undefined ? {} : { omitAttributeIds: input.omitAttributeIds }),
-    }),
-    ...(input.sink === undefined ? {} : { sink: input.sink }),
-  });
-  return { ...cut, subject };
-}

@@ -67,10 +67,11 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
  *   count to pick its identity lock from. When planning genuinely renumbers, a
  *   numbering dialect REFUSES rather than shipping a prompt that names the wrong
  *   slot.
- * - **A second prompt channel beside the program.** `resolveIntentPrompt`
- *   prefers `promptSegments` over `prompt` whenever the list is non-empty, so a
- *   transport that grew one would send something other than the program while
- *   the row stored the program — a disagreement nothing anywhere reports.
+ * - **A second prompt channel beside the program.** The intent carries one
+ *   prompt, and the transport sends the program's text as exactly that; a
+ *   transport that grew a second channel would send something other than the
+ *   program while the row stored the program — a disagreement nothing anywhere
+ *   reports.
  *
  * CAUTION: `registerImagePromptBinding` writes a process-global registry that is
  * never reset, so every row this file adds is on a `test-only/…` slug that no
@@ -429,13 +430,12 @@ describe("compiling a bound lane", () => {
  * channels together, for every character lane at once — the avatar, the
  * variant, the chat-look mint and each scene rung. It is pinned here rather
  * than in an integration suite because the failure is silent and the function
- * is pure: `resolveIntentPrompt` prefers `promptSegments` over `prompt`
- * whenever the list is non-empty, so a transport that grew a second channel
- * would send something other than the program while the row recorded the
- * program — a provider seeing one prompt and an operator reading another, with
- * nothing reporting the disagreement. The `controls` half kills an invented
- * `negativePrompt: ""` on the Qwen endpoints, which expose no negative field
- * at all.
+ * is pure: the intent carries one prompt channel, and a transport that grew a
+ * second would send something other than the program while the row recorded
+ * the program — a provider seeing one prompt and an operator reading another,
+ * with nothing reporting the disagreement. The `controls` half kills an
+ * invented `negativePrompt: ""` on the Qwen endpoints, which expose no negative
+ * field at all.
  */
 describe("characterPromptTransport", () => {
   it.each([

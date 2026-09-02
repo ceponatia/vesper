@@ -47,7 +47,7 @@ export interface ViewerBodyPart {
    * possessive-bound and always cropped/foreshortened; never a bare noun.
    */
   framing: string;
-  /** Intimate ⇒ rides only an uncensored route, exactly like `sceneRevealAppearance`. */
+  /** Intimate ⇒ rides only an uncensored route, exactly like the character's own intimate reveal. */
   intimate: boolean;
   /**
    * The exposure region that must read bare/sheer for this part to be renderable at all;
@@ -184,7 +184,7 @@ const LOOKING_DOWN_PART_IDS: readonly string[] = ["lap_thighs", "torso"];
  *
  * The composer has no intimate vocabulary — it runs `allowIntimate: false` whatever
  * model its seam picks — so `genitals` can never be *proposed*. It has to be
- * **earned**, deterministically, the way `sceneRevealAppearance` is:
+ * **earned**, deterministically, the way the character's intimate reveal is:
  *
  * - the shot must already be looking down the viewer's body (`lap_thighs` or `torso` in
  *   frame). Hands in frame is a hand on someone's cheek, not a view of your own crotch;

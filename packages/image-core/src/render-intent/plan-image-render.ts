@@ -1,4 +1,3 @@
-import type { DiagnosticSink } from "@vesper/contracts";
 import type { ImageModel } from "../models/image-models";
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import type { ResolvedImageProfile } from "../models/image-model-profiles";
@@ -9,7 +8,6 @@ import {
   type ImageRenderDimensionFacts,
 } from "../render-kernel/compile-profile-plan";
 import type { CompileReferenceBinding } from "../references/reference-role-prompt";
-import { compileImagePromptSegments, imagePromptBudgetFromBinding } from "./prompt-segments";
 import {
   type DroppedImageReference,
   type ImageRenderIntentCore,
@@ -245,18 +243,12 @@ export type PlanImageRenderResult = { ok: true; plan: PlannedImageRender } | { o
  * the caller's own flags), control precedence, a strategy this path cannot
  * execute — are testable without a database, a provider, or a deployment.
  *
- * The `sink` is the one concession to reporting, and it is optional: prompt
- * fitting can degrade (optional detail dropped, a mandatory sentence given up)
- * and a degradation nobody is told about is the failure mode `docs/resilience.md`
- * exists to prevent. It stays a sink rather than a returned list because every
- * caller already has one and the refusal channel is reserved for decisions that
- * stop the render.
+ * Nothing is reported from here: the prompt arrives compiled (fitting and its
+ * diagnostics happen where the program is compiled), and every decision this
+ * function makes either lands in the plan or stops the render through the
+ * refusal channel.
  */
-export function planImageRender(
-  intent: ImageRenderIntent,
-  runtime: ImageRenderRuntimeFacts,
-  sink?: DiagnosticSink,
-): PlanImageRenderResult {
+export function planImageRender(intent: ImageRenderIntent, runtime: ImageRenderRuntimeFacts): PlanImageRenderResult {
   const { profile, model } = intent.profile;
   const planned = planIntentReferences(model, profile.referencePolicy, intent.references);
   const { primary, dedicated, dropped } = planned;
@@ -345,7 +337,7 @@ export function planImageRender(
   const compiled = compileProfileRenderPlan({
     model,
     profile,
-    basePrompt: resolveIntentPrompt(intent, model, sink),
+    basePrompt: intent.prompt,
     baseNegativePrompt: null,
     safetyCheckerDisabled: runtime.safetyCheckerDisabled,
     // Absent leaves the compile step on its legacy dialect step, which is what
@@ -416,27 +408,6 @@ export function planImageRender(
 
 function roleNames(references: readonly ImageRenderReferenceSpec[]): ImageReferenceRole[] {
   return references.map((reference) => reference.role);
-}
-
-/**
- * The text the profile's prompt strategy compiles from: the lane's segments when
- * it supplied any, and otherwise its prompt exactly as before.
- *
- * The budget comes off the model's OWN probed prompt binding — `maxChars` is a
- * provider ceiling and `recommendedChars` the documented quality knee — rather
- * than from anything decided here. That matters twice over. It keeps the limit a
- * measured fact about one version instead of a family-wide guess — the
- * assumption this seam exists not to reintroduce — and because no
- * seeded model has a probed prompt binding at all, every budget resolves empty
- * today and no render is fitted by this seam's arrival.
- *
- * An empty segment list falls through to `prompt` rather than compiling to "": a
- * lane that built no segments has not asked for an empty prompt.
- */
-function resolveIntentPrompt(intent: ImageRenderIntent, model: ImageModel, sink?: DiagnosticSink): string {
-  const segments = intent.promptSegments;
-  if (!segments || segments.length === 0) return intent.prompt;
-  return compileImagePromptSegments(segments, imagePromptBudgetFromBinding(model.advancedCapabilities.prompt), sink);
 }
 
 /**

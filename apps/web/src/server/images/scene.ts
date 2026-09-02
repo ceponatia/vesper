@@ -488,9 +488,9 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
    * The prompt channels one rung sends on.
    *
    * The demo rung is the only rung a runnable chain can hold with no compiled
-   * program, so the first argument is only ever spent there — and what it spends
-   * is the monogram label, which is what makes the stored row describe the
-   * picture that was drawn rather than a request nobody made.
+   * program, so the monogram label is the only prompt ever sent beside a
+   * program — and it is what makes the stored row describe the picture that
+   * was drawn rather than a request nobody made.
    */
   const transportFor = (id: SceneAttemptId): CharacterPromptTransport => {
     const compiled = compiledFor(id);
@@ -764,10 +764,9 @@ async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): P
   const result = await renderImageIntent(
     {
       profile: ctx.profile,
-      // Prompt and any compiled negative in one decision. This lane never sets
-      // `promptSegments`: every rung that reaches a provider carries a compiled
-      // program, so the transport is always that program's positive text and its
-      // exclusions, and there is no second channel for them to disagree with.
+      // Prompt and any compiled negative in one decision: every rung that
+      // reaches a provider carries a compiled program, so the transport is
+      // always that program's positive text and its exclusions.
       ...ctx.transportFor(id),
       references: [...ctx.referencesFor(id)],
       target: { aspectRatio: IMAGE_TARGET_ASPECT },

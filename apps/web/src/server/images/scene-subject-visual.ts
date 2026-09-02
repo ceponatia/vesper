@@ -90,9 +90,9 @@ import { sceneLightingBand } from "./scene-lowering";
  * into that one shape:
  *
  * - `subjects` and `suppressions` are CONCATENATED in cast order, so the record
- *   carries one entry per person rather than the last write winning. This is
- *   what `render-intent-capture.ts`'s `requiredFactKeysOf` flattens, so the
- *   required-fact key set covers the whole cast.
+ *   carries one entry per person rather than the last write winning, and a
+ *   reader of the row sees every person's required facts rather than the
+ *   focal's alone.
  * - `snapshotFingerprint` and `selectionFingerprint` become a cast-wide
  *   composite (`fnv1aHex` over the per-cut values in order, the same fixed-width
  *   form a single cut carries), so "same composition, retry it" versus "current
@@ -120,34 +120,6 @@ export const SCENE_VISUAL_CAMERA_ID = "chat_scene";
 
 /** The shadow assembly failed; the render refuses before provider spend. */
 export const SCENE_VISUAL_DIGEST_UNAVAILABLE = "images.scene_render.visual_digest_unavailable";
-
-// ---------------------------------------------------------------------------
-// Meter state note
-// ---------------------------------------------------------------------------
-
-/**
- * A compact image-specific description of visible meter state.
- *
- * The one stated mapping from a meter level to the physiology a picture can
- * show. Meters are not a visual-state owner, so no committed cut carries this
- * and no compiled scene states it; lowering it as a scene fact is the way it
- * would reach a prompt again.
- */
-export function visualStateNote(meters: Record<string, number> = {}): string {
-  const parts: string[] = [];
-  const intoxication = meters.intoxication ?? 0;
-  if (intoxication > 0.7) parts.push("visibly unsteady from drink, eyes glassy and unfocused, posture slack");
-  else if (intoxication > 0.35) parts.push("loose and warm from a drink or two, gaze a little unfocused");
-  const hygiene = meters.hygiene ?? 1;
-  if (hygiene < 0.3) parts.push("unwashed — hair gone lank, skin sheened, clothes rumpled");
-  else if (hygiene < 0.55) parts.push("a little disheveled, hair loosened and skin damp");
-  const energy = meters.energy ?? 1;
-  if (energy < 0.2) parts.push("exhausted and heavy-lidded");
-  else if (energy < 0.45) parts.push("tired, eyes heavy");
-  const arousal = meters.arousal ?? 0;
-  if (arousal > 0.55) parts.push("eyes bright and heavy-lidded, lips parted, breath shallow, a faint sheen of sweat");
-  return parts.join("; ");
-}
 
 // ---------------------------------------------------------------------------
 // The seam

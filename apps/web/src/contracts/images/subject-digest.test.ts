@@ -645,6 +645,13 @@ describe("projectCharacterWorldSlices", () => {
     expect(age?.source.owner).toBe(IMAGE_CHARACTER_ATTRIBUTE_OWNER);
     expect(adult.subjects[0]?.missingRequired).toEqual([]);
 
+    // The floor itself (owner ruling 2026-07-29): `eighteen` states the number
+    // outright as an adult, never a word that could read younger.
+    const floor = adapterSlices(digest, { attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "eighteen" }] });
+    const eighteen = floor.subjects[0]?.facts.find((fact) => fact.concept === "subject.apparent_age");
+    expect(eighteen?.value).toBe("exactly eighteen years old, an adult");
+    expect(eighteen?.value).not.toMatch(/\bteen\b/i);
+
     const minor = adapterSlices(digest, { attributes: [...crookedNoseAttributes(), MINOR_AGE_VALUE] });
     expect(minor.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
     expect(minor.subjects[0]?.missingRequired).toEqual([]);

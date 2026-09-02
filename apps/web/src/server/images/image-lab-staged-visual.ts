@@ -1,11 +1,10 @@
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { SceneStaging } from "@/contracts/images/scene-staging";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
-import type { VisualSegmentTaskPolicy } from "@/contracts/images/visual-segments";
 import { FULLY_COVERED, type RegionExposure, type WornItemInput } from "@/contracts/items/visibility";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { CharacterPromptSubjectCut } from "./character-prompt-program";
-import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
+import { buildStandaloneSubjectCut, standaloneSubjectPromptCut } from "./standalone-subject-visual";
 
 /**
  * THE STAGED BENCH'S SUBJECT CUT — the staged character render compiles the
@@ -21,20 +20,21 @@ import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
  *
  * ## The same cut every other chat-less character render takes
  *
- * A bench has no conversation, so it takes the STANDALONE assembly
- * (`buildStandaloneSubjectVisual`) — one snapshot, one camera-bound selection,
- * one digest — exactly as the avatar and variant lanes do. Every knob is set to
- * the CHAT SCENE lane's value rather than a bench-local one, because parity with
- * that lane is the entire claim:
+ * A bench has no conversation, so it takes the STANDALONE cut
+ * (`buildStandaloneSubjectCut`) — one snapshot, one camera-bound selection,
+ * one digest — exactly as the avatar and variant lanes do, and hands the
+ * program the same mapping of it they do (`standaloneSubjectPromptCut`). Every
+ * knob is set to the CHAT SCENE lane's value rather than a bench-local one,
+ * because parity with that lane is the entire claim:
  *
  * - `intimateAllowed: false`, matching the chat lane's own image context
  *   (`buildVisualStateSelections` hard-codes it). Intimate anatomy reaches a
  *   staged prompt the way it reaches a chat's — as the ROUTE's typed reveal
  *   over the cut's coverage (`intimateReveal` on the program), spent on the
  *   uncensored rung — so the digest never carries a second copy of it.
- * - the segment policy is the scene lane's, for the assembly's own segments
- *   pass ({@link STAGED_SEGMENT_POLICY}); the bench reads the assembly's DIGEST
- *   and never its segments, so the policy shapes nothing the render sends.
+ * - the camera is the staging's own under this lane's viewpoint id, and the
+ *   coverage is the staging's premise — the next section — so the facts are
+ *   selected for exactly the shot the template describes.
  *
  * ## The camera and the coverage are the STAGING's, not the character's
  *
@@ -50,15 +50,15 @@ import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
  * the character's closet, and a real wardrobe read would switch several stagings
  * off — a dressed character would cover the regions the template is written
  * around, and the bench would quietly pay for an ordinary portrait. So the worn
- * list handed to the standalone assembly is {@link stagedPremiseWorn}, which
+ * list handed to the standalone cut is {@link stagedPremiseWorn}, which
  * encodes that invented exposure as coverage: the digest's exposure readout and
  * the camera's per-location perception then both answer the premise, and the
  * two halves cannot disagree about what this shot shows.
  *
  * ## Failure behavior
  *
- * An assembly that throws refuses the run before provider spend, and it does
- * NOT fall back to a name-only render: a prompt production never sends would
+ * A cut that throws refuses the run before provider spend, and it does NOT
+ * fall back to a name-only render: a prompt production never sends would
  * answer a different question than the row asks. The caller settles the row
  * with `visual_digest_unavailable`. A cut that assembles but cannot be compiled
  * — a lost required anchor, most likely — is the prompt program's own refusal,
@@ -79,23 +79,8 @@ import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
  */
 export const STAGED_VISUAL_CAMERA_ID = "image_lab_staged_scene";
 
-/** The standalone assembly threw; the run refuses before any provider spend. */
+/** The standalone cut threw; the run refuses before any provider spend. */
 export const STAGED_VISUAL_DIGEST_UNAVAILABLE = "images.image_lab_staged.visual_digest_unavailable";
-
-/**
- * The segment policy the standalone assembly runs its subject-segments pass
- * under: the chat scene lane's own rules — never state age, full-figure frame,
- * intimate skin only where the region reads bare, coverage stated. The bench
- * compiles the assembly's digest, not its segments, so nothing the render sends
- * turns on this; it is stated so the assembly runs under the rules of the lane
- * this bench claims parity with rather than a portrait's.
- */
-const STAGED_SEGMENT_POLICY: VisualSegmentTaskPolicy = {
-  age: "omit",
-  frame: "full_figure",
-  intimate: "when_bare",
-  exposure: "state",
-};
 
 // ---------------------------------------------------------------------------
 // The staging's premise, as coverage
@@ -124,7 +109,7 @@ export function stagedSubjectExposure(entry: SceneStaging): RegionExposure {
  * The invented exposure expressed as worn coverage — one opaque garment over
  * exactly the regions the staging leaves clothed.
  *
- * It exists because the standalone assembly derives both its exposure readout
+ * It exists because the standalone cut derives both its exposure readout
  * (`exposedRegions`) and the camera's per-location perception
  * (`portraitPerception`) from ONE worn list, which is the property that keeps
  * those two halves from disagreeing. A bench cannot hand it the character's real
@@ -160,7 +145,7 @@ export function stagedPremiseWorn(exposure: RegionExposure): readonly WornItemIn
 }
 
 // ---------------------------------------------------------------------------
-// The assembly
+// The cut
 // ---------------------------------------------------------------------------
 
 /**
@@ -208,32 +193,24 @@ export type StagedSubjectVisualBuild =
  */
 export function buildStagedSubjectVisual(input: StagedSubjectVisualInput): StagedSubjectVisualBuild {
   const { entry, profile, sink } = input;
-  const visual = buildStandaloneSubjectVisual({
+  const cut = buildStandaloneSubjectCut({
     characterId: input.characterId,
-    name: input.name,
     profile,
     readToken: standaloneCharacterReadToken({ characterId: input.characterId, revision: input.revision }),
     worn: stagedPremiseWorn(stagedSubjectExposure(entry)),
     camera: entry.camera,
     cameraId: STAGED_VISUAL_CAMERA_ID,
-    policy: STAGED_SEGMENT_POLICY,
     intimateAllowed: false,
     ...(sink === undefined ? {} : { sink }),
   });
   return {
     ok: true,
-    digestMeta: visual.digestMeta,
-    cut: {
-      subjectId: input.characterId,
-      name: input.name,
-      digest: visual.digest,
-      attributes: visual.resolved,
-      // The assembly's own readout over the premise coverage — the same value
-      // the camera's perception was derived from, so the cut's exposure claims
-      // and its selected detail answer one shot.
-      exposure: visual.exposure,
-      realizedBody: visual.realizedBody,
-    },
+    digestMeta: cut.digestMeta,
+    // The one mapping every standalone lane hands the program, so the bench
+    // cannot compile from the cut's exposure while stating another's
+    // attributes: the exposure is the cut's own readout over the premise
+    // coverage — the same value the camera's perception was derived from.
+    cut: { ...standaloneSubjectPromptCut(cut, { subjectId: input.characterId, name: input.name }), name: input.name },
   };
 }
 

@@ -64,10 +64,14 @@ describe("age context separation", () => {
     const lookRender = readFileSync(new URL("./images/chat-look.ts", import.meta.url), "utf8");
 
     // These are source-boundary tripwires: a future scene change must not quietly
-    // reintroduce the old explicit apparent-age anchor or an age-bearing look input.
-    expect(scene).not.toMatch(/\bapparentAgeAnchor\b/);
+    // reintroduce an explicit apparent-age anchor — the retired lane-side sentence
+    // under any name, or the image age vocabulary read directly — or an
+    // age-bearing look input. Age reaches a picture through the compiled
+    // program's adapter alone.
+    const ageWords = /\bapparentAgeAnchor\b|\bimageAgeBandPhrases\b|\bimageApparentAgeValue\b/;
+    expect(scene).not.toMatch(ageWords);
     expect(scene).not.toMatch(/\bageAnchor\s*:/);
-    expect(lookJob).not.toMatch(/\bapparentAgeAnchor\b/);
+    expect(lookJob).not.toMatch(ageWords);
     expect(lookJob).not.toMatch(/\bageAnchor\s*:/);
     expect(lookRender).not.toMatch(/\bageAnchor\b/);
   });

@@ -40,8 +40,9 @@ export const MODEL_DEFAULTS = {
    * narrative default as the approved refusal fallback (`composeSceneSpec`).
    *
    * The propose-then-verify architecture does not move with it: the registries still own
-   * every explicit word, and `characterAppearanceSummary` still runs `allowIntimate:false`
-   * for the composer, because exposure gating is code's job however bold the model is.
+   * every explicit word, and the composer's context still carries no intimate anatomy at
+   * all (wardrobe and coverage only), because exposure gating is code's job however bold
+   * the model is.
    */
   sceneComposer: DEFAULT_SCENE_COMPOSER_MODEL_ID,
   embedding: "openai/text-embedding-3-small",

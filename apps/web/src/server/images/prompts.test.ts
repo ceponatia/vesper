@@ -17,7 +17,6 @@ import {
 } from "@/contracts/images/scene-camera";
 import { sceneStagingList } from "@/contracts/images/scene-staging";
 import { attr, makeProfile } from "@/server/test-support";
-import { apparentAgeAnchor, imageAgeWord } from "./prompts-appearance";
 import {
   buildSceneComposerPrompt,
   emptySceneSpec,
@@ -695,50 +694,4 @@ describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
     expect(scrubPlayerFromAction(clean, { embodied: true })).toBe(clean);
     expect(scrubPlayerFromAction(clean)).toBe(clean);
   });
-});
-
-describe("apparent-age anchor + image age floor (owner ruling 2026-07-29)", () => {
-  const anchorAttrs = (band: string): AttributeValue[] => [
-    baseAttr("identity.gender", "female"),
-    baseAttr("identity.apparent_age", band),
-    baseAttr("skin.texture", "smooth"),
-  ];
-
-  it("states the sheet's age name-bound, with the youthful-skin clause for young smooth-skinned bands", () => {
-    expect(apparentAgeAnchor("Kristin", anchorAttrs("late_twenties"))).toBe(
-      "Kristin is in her late twenties; her skin, hands and legs read smooth and youthful.",
-    );
-  });
-
-  it("makes eighteen explicit and adult — never an ambiguous teen word", () => {
-    const line = apparentAgeAnchor("Marcus", [
-      baseAttr("identity.gender", "male"),
-      baseAttr("identity.apparent_age", "eighteen"),
-    ]);
-    expect(line).toBe("Marcus is exactly eighteen years old, an adult.");
-    expect(line).not.toMatch(/\bteen\b/i);
-  });
-
-  it("emits NOTHING for minor bands and unknown values — no age text beats a wrong word", () => {
-    expect(apparentAgeAnchor("Kid", anchorAttrs("teen"))).toBe("");
-    expect(apparentAgeAnchor("Kid", anchorAttrs("child"))).toBe("");
-    expect(apparentAgeAnchor("Kid", anchorAttrs("made_up_band"))).toBe("");
-    expect(apparentAgeAnchor("Kid", [baseAttr("identity.gender", "female")])).toBe("");
-  });
-
-  it("skips the youthful-skin clause for older bands and unstated texture, and defaults pronouns to they/their", () => {
-    expect(apparentAgeAnchor("Wren", anchorAttrs("forties"))).toBe("Wren is in her forties.");
-    expect(
-      apparentAgeAnchor("Ash", [baseAttr("identity.apparent_age", "late_twenties")]),
-    ).toBe("Ash is in their late twenties.");
-  });
-
-  it("imageAgeWord floors the avatar subject descriptor the same way", () => {
-    expect(imageAgeWord("eighteen")).toBe("eighteen-year-old");
-    expect(imageAgeWord("late_twenties")).toBe("late twenties");
-    expect(imageAgeWord("teen")).toBeUndefined();
-    expect(imageAgeWord("tween")).toBeUndefined();
-    expect(imageAgeWord(42)).toBeUndefined();
-  });
-
 });

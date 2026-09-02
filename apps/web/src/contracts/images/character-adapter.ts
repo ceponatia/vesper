@@ -126,10 +126,9 @@ export const IMAGE_CHARACTER_VALUE_UNREADABLE = "character.value_unreadable";
  * unknown value produces NO age text at all, never a younger word; `eighteen`
  * states the number outright.
  *
- * `{pos}` is a possessive slot for the lane-side anchor sentence
- * (`apparentAgeAnchor`, server/images/prompts-appearance.ts), which resolves it
- * from the sheet's gender. The world-digest path never guesses a pronoun, so
- * {@link imageApparentAgeValue} renders the neutral article instead.
+ * `{pos}` is a possessive slot. The world-digest path never guesses a pronoun,
+ * so {@link imageApparentAgeValue} — the table's one reader — renders the
+ * neutral article there.
  */
 export const imageAgeBandPhrases: Readonly<Record<string, string>> = {
   eighteen: "exactly eighteen years old, an adult",

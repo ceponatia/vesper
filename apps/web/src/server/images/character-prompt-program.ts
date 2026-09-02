@@ -630,11 +630,10 @@ export interface CharacterPromptTransport {
 
 /**
  * The prompt channels a compiled render sends, decided in ONE place because
- * they must move together: the positive text as the intent's `prompt`, and the
- * compiled exclusions as the normalized control — never as a second prompt
- * channel. No lane sets `promptSegments`: that channel outranks `prompt` in
- * `resolveIntentPrompt`, and a character render has nothing but the program
- * to send.
+ * they must move together: the positive text as the intent's `prompt` — the
+ * intent's only prompt channel — and the compiled exclusions as the normalized
+ * control, never as a second prompt. A character render has nothing but the
+ * program to send.
  *
  * The compiled exclusions ride the normalized control so they reach a provider
  * only through the version's own probed `negative_prompt` binding, and are
