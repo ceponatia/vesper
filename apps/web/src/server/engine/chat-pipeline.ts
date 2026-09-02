@@ -56,6 +56,7 @@ import {
   type NarratorRunLane,
   type NarratorRunProvenance,
 } from "@/contracts/narrator-prompts";
+import { PROVISIONING_STALE_AFTER_DELETE } from "@vesper/simulation-core/provisioning";
 import { fnv1aHex } from "@/lib/hash";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
@@ -74,6 +75,7 @@ import {
   db,
   images,
   simBranches,
+  simProvisioningRequests,
   simWorlds,
 } from "../db";
 import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
@@ -4424,6 +4426,12 @@ export async function previewChatPrompt(input: {
  * because the chat row dies in the same tx. Every delete confirm dialog (Worlds
  * page, Chats hub, in-conversation) states that consequence before the call.
  *
+ * Its `ready` provisioning records are retired in that same transaction (#197):
+ * the ledger's chat/world pointers are soft by design, so nothing else would
+ * stop the front door replaying this chat's recorded 201 after it is gone.
+ * `pending` and `failed` records are left exactly where they are — the first
+ * belongs to a provision still in flight, the second is the failure audit.
+ *
  * Ownership is re-read here rather than trusted from the caller: a destructive
  * service takes only ids and
  * proves the pairing itself, so no route-supplied `ownerId` — or an anomalous
@@ -4497,6 +4505,42 @@ export async function deleteChat(chatId: string, ownerId: string): Promise<void>
     await tx.delete(characterChats).where(eq(characterChats.id, chat.id));
     // E20-1: the world graph goes with the chat that owned it.
     if (simWorldId !== null) await tx.delete(simWorlds).where(eq(simWorlds.id, simWorldId));
+    // #197: retire this chat's SUCCESSFUL provisioning records in the same tx, so
+    // a re-POST of the original request id cannot replay a 201 naming ids that
+    // just died. The front door re-checks the graph anyway; this is the belt —
+    // dropping `response`/`http_status` here means there is no recorded 201 left
+    // to replay even if that check were removed.
+    //
+    // The ids stay: `world_id`/`branch_id`/`chat_id` are soft pointers precisely
+    // so this ledger can outlive the graph it names (#283 — no cascade FK), and
+    // a retired record that still says WHICH world it built is the audit this
+    // table exists for. They are also how the front door knows the refusal is
+    // still owed: it answers one `provision_stale`, nulls them, and the next POST
+    // with that key is an ordinary failed → retry.
+    //
+    // `ready` ONLY. A pending row belongs to a provision still in flight (the
+    // owner lock makes that unreachable here, but the predicate says so rather
+    // than relying on it), and a `failed` row is somebody else's failure record.
+    // `sim_provisioning_requests` has no FK to this chat, so this plain
+    // owner-scoped UPDATE is the only thing that reaches these rows; it matches
+    // nothing when the chat is a legacy one, which is why it is safe on every
+    // delete rather than only successor ones.
+    await tx
+      .update(simProvisioningRequests)
+      .set({
+        state: "failed",
+        response: null,
+        httpStatus: null,
+        error: PROVISIONING_STALE_AFTER_DELETE,
+        completedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(simProvisioningRequests.ownerId, chat.ownerId),
+          eq(simProvisioningRequests.chatId, chat.id),
+          eq(simProvisioningRequests.state, "ready"),
+        ),
+      );
     for (const p of participants) {
       const [survivor] = await tx
         .select({ chatId: chatParticipants.chatId })
