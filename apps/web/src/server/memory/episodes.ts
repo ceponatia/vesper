@@ -189,16 +189,22 @@ export async function retrieveEpisodes(
 
   const candidates = await queryEpisodeCandidates(scope, toVectorLiteral(embedded.vector), cutoff, limit, opts);
   const hits = candidates.filter((c) => c.score >= minScore);
-  await logEvent("retrieval", {
-    kind: "episodes",
-    scope: scopeLabel(scope),
-    query: query.slice(0, 300),
-    minScore,
-    windowCutoff: cutoff,
-    viewpointId: opts.viewpointId ?? null,
-    candidates: candidates.map((c) => ({ id: c.id, turnNumber: c.turnNumber, score: round(c.score) })),
-    hitIds: hits.map((h) => h.id),
-  });
+  await logEvent(
+    "retrieval",
+    {
+      kind: "episodes",
+      scope: scopeLabel(scope),
+      minScore,
+      windowCutoff: cutoff,
+      viewpointId: opts.viewpointId ?? null,
+      candidates: candidates.map((c) => ({ id: c.id, turnNumber: c.turnNumber, score: round(c.score) })),
+      hitIds: hits.map((h) => h.id),
+    },
+    // The query is the player's own words: development detail, never stored in
+    // production. The memory scope keys a memory GROUP, not a conversation, so
+    // there is no chat id to pass without a lookup this path must not do.
+    { content: { query: query.slice(0, 300) } },
+  );
   return hits;
 }
 
@@ -304,24 +310,28 @@ export async function retrieveEpisodesFused(
     .slice(0, limit)
     .map((f) => ({ ...f.hit, score: f.bestScore, sources: f.sources }));
 
-  await logEvent("retrieval", {
-    kind: "episodes",
-    fused: true,
-    scope: scopeLabel(scope),
-    queries: usable.map((q) => q.slice(0, 300)),
-    minScore: EPISODE_MIN_SCORE,
-    rrfK: RRF_K,
-    windowCutoff: cutoff,
-    viewpointId: eligibility?.viewpointId ?? null,
-    candidates: fused.map((f) => ({
-      id: f.hit.id,
-      turnNumber: f.hit.turnNumber,
-      bestScore: round(f.bestScore),
-      rrfScore: round(f.rrfScore, 4),
-      sources: f.sources,
-    })),
-    hitIds: hits.map((h) => h.id),
-  });
+  await logEvent(
+    "retrieval",
+    {
+      kind: "episodes",
+      fused: true,
+      scope: scopeLabel(scope),
+      minScore: EPISODE_MIN_SCORE,
+      rrfK: RRF_K,
+      windowCutoff: cutoff,
+      viewpointId: eligibility?.viewpointId ?? null,
+      candidates: fused.map((f) => ({
+        id: f.hit.id,
+        turnNumber: f.hit.turnNumber,
+        bestScore: round(f.bestScore),
+        rrfScore: round(f.rrfScore, 4),
+        sources: f.sources,
+      })),
+      hitIds: hits.map((h) => h.id),
+    },
+    // Player-authored text — development detail only (see `retrieveEpisodes`).
+    { content: { queries: usable.map((q) => q.slice(0, 300)) } },
+  );
   return hits;
 }
 

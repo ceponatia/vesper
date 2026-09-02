@@ -49,10 +49,16 @@ export function buildCompositionFallback(input: RecordCompositionFallbackInput):
   });
 }
 
-/** Record one composed-turn degradation. Fire-and-forget — callers do not await it. */
+/**
+ * Record one composed-turn degradation. Fire-and-forget — callers do not await it.
+ *
+ * The private `detail` can quote the turn, so it rides `content`: the dev
+ * inspector shows it, production stores the `site`/`code` pair alone — which is
+ * what the tally is built from.
+ */
 export function recordCompositionFallback(input: RecordCompositionFallbackInput): void {
-  const fallback = buildCompositionFallback(input);
-  void logEvent(COMPOSITION_FALLBACK_EVENT, { ...fallback });
+  const { detail, ...diagnostic } = buildCompositionFallback(input);
+  void logEvent(COMPOSITION_FALLBACK_EVENT, diagnostic, { chatId: input.chatId ?? null, content: { detail } });
 }
 
 /**
