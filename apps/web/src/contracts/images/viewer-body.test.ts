@@ -26,6 +26,22 @@ describe("the viewer-body registry", () => {
       expect(viewerBodyPartById(id)?.intimate).toBe(false);
     }
   });
+
+  /**
+   * A part whose rendering depends on a region reading bare must SHOW that
+   * region, or the frame gate and the coverage gate disagree: the part is in
+   * frame precisely because the region is uncovered, and then no anatomy of that
+   * region may be described. Registry-derived, so it asks about agreement rather
+   * than restating the table. Falsified against a new part that declares
+   * `requiresBare` and forgets `revealsIntimateRegions`, which is how the first
+   * cut of the reveal came to read the wardrobe and never the frame.
+   */
+  it("shows the region it needs bare", () => {
+    for (const part of viewerBodyParts) {
+      if (part.requiresBare === null) continue;
+      expect(part.revealsIntimateRegions).toContain(part.requiresBare);
+    }
+  });
 });
 
 describe("resolveViewerParts (the composer proposes, coverage disposes)", () => {

@@ -120,7 +120,14 @@ by `contracts/images/viewer-digest.ts`:
   someone's cheek does not state their leg hair. Without it a foreground arm changes colour
   between shots and reads as a different person reaching in.
 - **`viewer.intimate_anatomy`** — the exposed half, stated only by a route that permits it,
-  through the same coverage rule the cast's own reveal uses.
+  and **only for a region the frame is pointed at**. Coverage and framing are two separate
+  questions here, unlike for the cast: the camera is the viewer's own eyes, so a shot holds a
+  few cropped limbs rather than a whole figure, and what the wardrobe leaves uncovered
+  elsewhere on the body is not in the picture. Each part declares the exposure regions it
+  puts on screen (`revealsIntimateRegions` — `torso` shows the torso, `genitals` the pelvis,
+  every other part none), and an intimate attribute is stated only when an in-frame part
+  shows its region **and** the coverage readout uncovers it. Coverage is the cast's own rule
+  reused, so the two paths cannot disagree about what a bare region permits.
 
 **A part a staged sentence already places gets no generic geometry line.** A staging says
 where a limb is on somebody and the geometry claim says where it is relative to the lens;

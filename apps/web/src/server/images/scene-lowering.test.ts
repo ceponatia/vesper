@@ -136,7 +136,12 @@ function populatedScenePlan(over: Partial<SceneRenderPlan> = {}): SceneRenderPla
 
 /**
  * The person behind the lens: enough of a persona sheet to state a body, and a
- * realized body that actually has the intimate region the gate tests turn on.
+ * realized body carrying intimate anatomy in TWO regions.
+ *
+ * Two regions on purpose. A fixture with anatomy in one region cannot tell a
+ * region-aware gate from a body-wide one — both answer the same for every input
+ * — which is exactly how the first cut of this feature shipped a reveal that
+ * read the wardrobe and never asked what the frame was pointed at.
  */
 const VIEWER: SceneLoweringViewer = {
   attributes: [
@@ -144,14 +149,16 @@ const VIEWER: SceneLoweringViewer = {
     { id: "build.frame", value: "sturdy", source: "base" },
     { id: "hands.size", value: "large", source: "base" },
     { id: "arms.hair", value: "light", source: "base" },
+    { id: "breasts.size", value: "ample", source: "base" },
+    { id: "breasts.nipples", value: "puffy", source: "base" },
     { id: "vulva.shape", value: "neat_slit", source: "base" },
   ],
-  realizedBody: realizeBody({ intimateRegions: ["vulva"] }),
+  realizedBody: realizeBody({ intimateRegions: ["breasts", "vulva"] }),
 };
 
-/** Nothing worn: every region bare, so only the ROUTE can gate intimate anatomy. */
+/** Nothing worn: every region bare, so only the ROUTE and the FRAME can gate anatomy. */
 const VIEWER_NUDE: RegionExposure = exposedRegions([]);
-/** Trousered: the pelvis reads covered, so only coverage can gate it. */
+/** Trousered: the pelvis reads covered, so coverage can gate the pelvic half alone. */
 const VIEWER_TROUSERED: RegionExposure = { torso: "bare", pelvis: "covered", legs: "covered", feet: "bare" };
 
 interface CompiledScene {
@@ -555,6 +562,50 @@ describe("the viewer's own body in an embodied frame", () => {
     ]);
     expect(program.prompt).toContain("the viewer's own genitals in the immediate foreground");
     expect(program.prompt).toContain("The viewer's own exposed anatomy: vulva shape: neat slit.");
+  });
+
+  /**
+   * COVERAGE IS NOT FRAMING, in both directions.
+   *
+   * `revealSurfaces` answers what the clothes leave uncovered ANYWHERE on the
+   * body. For the cast that is nearly the whole question, because a render draws
+   * a whole figure. For the viewer it is half of one: the camera is their own
+   * eyes, so the frame holds a few cropped limbs and the rest of them is simply
+   * not in the picture.
+   *
+   * Falsified against the shipped gate, which asked only "did any intimate part
+   * survive?" and then let coverage decide the rest. That gate got both errors,
+   * and each case below is one of them:
+   *
+   * 1. a shirtless torso in frame stated NOTHING, because the trousers kept
+   *    `genitals` out and the whole reveal hung off that one part surviving;
+   * 2. a shot of the viewer's own lap stated their bare chest, because
+   *    `genitals` had survived and the loop then ran over the whole body.
+   */
+  it("states the anatomy of the region in frame and no other", () => {
+    // Shirtless but trousered, looking down over their own chest.
+    const bareTorso = generic(["torso"], {
+      playerExposure: { torso: "bare", pelvis: "covered", legs: "covered", feet: "covered" },
+    });
+    const { program, lowered } = compileScene(bareTorso, true, VIEWER);
+
+    // The pelvis is covered, so `genitals` never entered the frame at all — and
+    // the torso that DID must still be describable.
+    expect(lowered.scene.find((fact) => fact.concept === "viewer.body_geometry")?.value).toEqual(["torso"]);
+    expect(program.prompt).toContain("The viewer's own exposed anatomy: ");
+    expect(program.prompt).toContain("breast size: ample");
+    expect(program.prompt).not.toContain("vulva shape");
+  });
+
+  it("says nothing about a bare region the frame is not pointed at", () => {
+    // Wearing nothing at all, but the shot is the viewer's own lap: their chest
+    // is bare and off-camera, which is not a reason to describe it.
+    const plan = generic(["lap_thighs"], { playerExposure: VIEWER_NUDE });
+    const { program } = compileScene(plan, true, VIEWER);
+
+    expect(program.prompt).toContain("vulva shape: neat slit");
+    expect(program.prompt).not.toContain("breast size:");
+    expect(program.prompt).not.toContain("nipples:");
   });
 
   it("states nothing about a body it was given no persona for", () => {

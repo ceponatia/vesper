@@ -61,6 +61,21 @@ export interface ViewerBodyPart {
    */
   requiresBare: SceneExposureRegionId | null;
   /**
+   * The exposure regions this part actually puts ON SCREEN — the ones whose intimate
+   * anatomy a render may describe because the frame is looking at them.
+   *
+   * Distinct from {@link ViewerBodyPart.requiresBare}, which asks whether the part may be
+   * drawn at all, and the difference is the whole point: coverage says what the clothes
+   * leave uncovered ANYWHERE on the body, and this says what the frame is pointed at. A
+   * bare chest under a shirtless torso in frame is describable; the same bare chest is not
+   * describable in a shot cropped to the viewer's own lap, however little they are wearing.
+   *
+   * Empty for every part that shows no intimate region: hands, forearms, thighs and legs
+   * are ordinary anatomy, so a frame holding only them describes no intimate anatomy at
+   * all whatever the coverage readout says.
+   */
+  revealsIntimateRegions: readonly SceneExposureRegionId[];
+  /**
    * The persona attributes that describe THIS part (slice 4) — so a shot with only the
    * viewer's hands in frame doesn't state their leg hair. Registry ids; unknown ones are
    * ignored downstream. `skin.tone` is added for any part (see `VIEWER_SKIN_ATTRIBUTE_IDS`)
@@ -82,36 +97,42 @@ export const viewerBodyParts: readonly ViewerBodyPart[] = [
     id: "hands",
     intimate: false,
     requiresBare: null,
+    revealsIntimateRegions: [],
     attributeIds: ["hands.size", "hands.texture", "hands.nails"],
   },
   {
     id: "forearms",
     intimate: false,
     requiresBare: null,
+    revealsIntimateRegions: [],
     attributeIds: ["arms.build", "arms.hair"],
   },
   {
     id: "lap_thighs",
     intimate: false,
     requiresBare: null,
+    revealsIntimateRegions: [],
     attributeIds: ["legs.build", "legs.hair"],
   },
   {
     id: "legs_feet",
     intimate: false,
     requiresBare: null,
+    revealsIntimateRegions: [],
     attributeIds: ["legs.build", "legs.hair", "legs.length", "feet.size"],
   },
   {
     id: "torso",
     intimate: false,
     requiresBare: null,
+    revealsIntimateRegions: ["torso"],
     attributeIds: ["build.musculature", "chest.hair", "skin.markings"],
   },
   {
     id: "genitals",
     intimate: true,
     requiresBare: "pelvis",
+    revealsIntimateRegions: ["pelvis"],
     attributeIds: [],
   },
 ];
