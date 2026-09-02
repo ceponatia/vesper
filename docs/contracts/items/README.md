@@ -149,7 +149,6 @@ covers, what it occludes, or how it layers.
   instead, and the hair affordance read is `hidden`
   ([../../character-chat/prompts.md](../../character-chat/prompts.md) §Character-chat state as a
   narration system, [../../character-chat/affordance-cues.md](../../character-chat/affordance-cues.md)).
-- `partial` and `none` are distinct values even where a consumer treats them alike.
 - **Image prompts:** at `full` the character projection withholds every authored hair fact and
   states one required fact that the hair is fully covered and none is visible; `partial` and
   `none` leave the hair as selected ([../../images/character-prompts.md](../../images/character-prompts.md)
@@ -159,6 +158,7 @@ covers, what it occludes, or how it layers.
   the no-rotation instruction is unchanged
   ([../../images/character-prompts.md](../../images/character-prompts.md) §Identity on a
   reference-anchored render).
+- `partial` and `none` are distinct values even where a consumer treats them alike.
 
 ## Object subtypes
 
