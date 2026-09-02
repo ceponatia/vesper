@@ -408,4 +408,35 @@ describe("renderResolvedScene intimate reveal", () => {
     // Coverage is the wardrobe's truth, not intimate detail: stated on every rung.
     expect(prompt).toContain("bare at the torso");
   });
+
+  /**
+   * The gate is per RUNG, not per render, and this is the render that proves it:
+   * one cut, one chain, two rungs that disagree. Ilsa's anchor forbids intimate
+   * detail, so the multi rung — which renders only under the permission EVERY
+   * character anchor gives — is moderated, while the single-anchor rung it falls
+   * back to renders under the focal anchor alone, which permits.
+   *
+   * Falsified against the tempting simplification of deciding the permission
+   * once per render and compiling every rung under it: whichever value that
+   * render picked, one of these two prompts would be wrong.
+   */
+  it("decides the reveal per rung of ONE render — a moderated primary, a permitting fallback", async () => {
+    mockIntent
+      .mockResolvedValueOnce({ ok: false, error: "multi boom" })
+      .mockResolvedValueOnce({ ok: true, image: Buffer.from("rendered") });
+    rowQueue.push([{ meta: { model: `replicate/${MODEL_SLUG}` } }]);
+    const scene = laneProbeCastSceneRender({ bareFocal: true });
+    await renderResolvedScene(
+      baseInput({
+        ...scene,
+        references: scene.references.map((reference) =>
+          reference.name === LANE_PROBE_SECOND_NAME ? { ...reference, allowForIntimate: false } : reference,
+        ),
+      }),
+    );
+    // The reserved row carries the PRIMARY (multi) rung's prompt: moderated.
+    expect(pipelineCalls[0]?.asset.prompt as string).not.toContain("nipples");
+    // The correction carries the WINNING (single-anchor) rung's: permitting.
+    expect(updateCalls[0]?.prompt as string).toContain(`${LANE_PROBE_NAME} has nipples: puffy.`);
+  });
 });
