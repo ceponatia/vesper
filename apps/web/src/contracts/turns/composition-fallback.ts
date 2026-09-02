@@ -72,8 +72,13 @@ export const compositionFallbackSchema = z.object({
   chatId: z.string().nullish().catch(null).transform((v) => v ?? null),
   /** The beat/reply this degradation is attached to, when known. */
   messageId: z.string().nullish().catch(null).transform((v) => v ?? null),
-  /** The private cause — events-row ONLY, never surfaced to a player (ruling 2). Truncated. */
-  detail: z.string().catch(""),
+  /**
+   * The private cause — events-row ONLY, never surfaced to a player (ruling 2).
+   * Truncated, and **absent on a production row**: it can quote the turn, so the
+   * event logger stores it only outside production. Defaulted, not required, so
+   * a scrubbed row still parses.
+   */
+  detail: z.string().catch("").default(""),
   at: z.string().catch(""),
 });
 export type CompositionFallback = z.infer<typeof compositionFallbackSchema>;

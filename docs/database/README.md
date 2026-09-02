@@ -52,6 +52,13 @@ is optional there.
   `portrait_variant` / `entity_image` / `embed_refresh` / `image_sweep` / `identity_pack` / … —
   see the schema enum for the full list), `status` (`queued` / `running` / `done` / `failed`),
   `runner_id?` (atomic claim), `heartbeat_at`, `payload` JSONB, `error?`, `attempts`, timestamps.
-- **`events`** — `type`, `payload` JSONB; an append-only observability stream written via
-  `server/events.ts`. The chat inspector reads `retrieval` / `agent_failure` / `agent_run` events
-  by created-at window.
+- **`events`** — `type`, `payload` JSONB, `chat_id?` (indexed, `ON DELETE CASCADE`); an append-only
+  observability stream written via `server/events.ts`. A writer that already holds a conversation
+  passes its id — never a lookup made to fill the column in — so deleting a chat takes its telemetry
+  with it; everything else leaves it null. **In production the row stores the diagnostic payload
+  alone** — ids, statuses, counts, scores, durations, error classes — and never the user-authored or
+  roleplay-derived text a call site passes separately as `content` (a retrieval query, a leg's
+  summary and detail, a fallback's private cause). Outside production that text is merged into the
+  stored payload, which is the detail the dev chat inspector renders. Rows expire 30 days after
+  `created_at`. The chat inspector reads `agent_failure` / `agent_run` / `composition_fallback`
+  events by created-at window.

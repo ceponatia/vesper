@@ -1,7 +1,8 @@
 /**
  * Memory tuning knobs (docs/memory.md §Tuning knobs). All scores are pgvector
  * cosine similarity (`1 - (a <=> b)`). When tuning, the `events` rows
- * (`type: "retrieval"`) carry query, candidates, and scores for the inspector.
+ * (`type: "retrieval"`) carry candidates and scores; the query itself is
+ * player-authored text, stored only outside production (`server/events.ts`).
  */
 
 /**

@@ -443,12 +443,18 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
         anchorMessageId: input.anchorMessageId,
       },
       logResult: (imageId, status, started) =>
-        void logEvent("image.character_scene", {
-          imageId,
-          characterId: input.characterId,
-          status,
-          durationMs: Date.now() - started,
-        }),
+        // Ids, status and duration only — no prompt text. The chat id ties the
+        // row to its conversation so deleting the chat takes it too.
+        void logEvent(
+          "image.character_scene",
+          {
+            imageId,
+            characterId: input.characterId,
+            status,
+            durationMs: Date.now() - started,
+          },
+          { chatId: input.chatId ?? null },
+        ),
       sink: input.sink,
     });
   };

@@ -94,10 +94,18 @@ export function buildAgentFailure(input: RecordAgentFailureInput): AgentFailure 
   });
 }
 
-/** Record a failed agent leg. Fire-and-forget — callers do not await it. */
+/**
+ * Record a failed agent leg. Fire-and-forget — callers do not await it.
+ *
+ * `detail` is what the provider or the parser actually said, which can quote the
+ * model's output back at us, so it rides `content`: kept for the dev inspector,
+ * never stored in production. The classified `cause` — the field the tally and
+ * the explanation are built from — stays in the payload, so production keeps the
+ * diagnosis without the quote.
+ */
 export function recordAgentFailure(input: RecordAgentFailureInput): void {
-  const failure = buildAgentFailure(input);
-  void logEvent(AGENT_FAILURE_EVENT, { ...failure });
+  const { detail, ...diagnostic } = buildAgentFailure(input);
+  void logEvent(AGENT_FAILURE_EVENT, diagnostic, { chatId: input.chatId ?? null, content: { detail } });
 }
 
 const SUMMARY_CAP = 200;
@@ -154,6 +162,9 @@ export function buildAgentRun(input: RecordAgentRunInput): AgentRun {
  * Fire-and-forget, same as `recordAgentFailure`; a run with no `legId` is skipped by the caller.
  */
 export function recordAgentRun(input: RecordAgentRunInput): void {
-  const run = buildAgentRun(input);
-  void logEvent(AGENT_RUN_EVENT, { ...run });
+  const { summary, details, ...diagnostic } = buildAgentRun(input);
+  // `summary` and `details` describe what the leg produced — facts, queries,
+  // narration fragments — so they are content, not diagnostics. Production keeps
+  // the leg id, the model, and the latency; the words stay in development.
+  void logEvent(AGENT_RUN_EVENT, diagnostic, { chatId: input.chatId ?? null, content: { summary, details } });
 }
