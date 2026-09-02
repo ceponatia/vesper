@@ -42,10 +42,23 @@ import type { ImageConflictKey } from "./conflict-keys";
  * prompt segment the frame is stated first. Channel is not segment kind: nothing
  * in this channel emits into a "scene" segment, because there is none — mood
  * lands in `atmosphere`, capture mode in `framing`, staging in `pose`.
+ *
+ * `viewer` is the person holding the camera, and it is its own channel because
+ * they are neither a subject nor a place. The viewer is deliberately absent from
+ * the digest's entities — no ref for a relation to bind, no label a sentence
+ * could call them by, and never a member of `operation.subjectCount`, which
+ * counts the cast — yet an embodied first-person shot crops their own hands,
+ * forearms, lap, legs or torso into the foreground and has to say so. Filing
+ * those claims as `subject` facts would enter the viewer into the cast; filing
+ * them as `scene` facts would say the shot has a mood-like property rather than
+ * that a body is in frame. It sits between the two for the same reason `scene`
+ * sits before `subject`: the foreground the lens is looking past frames every
+ * subject standing behind it.
  */
 export const imageConceptChannels = [
   "operation",
   "scene",
+  "viewer",
   "subject",
   "camera",
   "relation",
@@ -160,6 +173,31 @@ const CONCEPT_TABLE = [
   // prompt arguing with the geometry the story described. The same call
   // `location.occupancy` makes for a crowded market.
   { id: "scene.staging", channel: "scene", segmentKind: "pose", protects: ["multiple_people"] },
+
+  // --- Viewer -----------------------------------------------------------------
+  // The person holding the camera, whose own body an embodied first-person shot
+  // crops into the foreground. Never a subject: the viewer has no entity slice,
+  // no ref a relation could bind, and no place in `operation.subjectCount`.
+  //
+  // Both kinds are droppable BY KIND, for the reason the whole `scene` channel
+  // is: the viewer's own forearm is the layer that should give way under a
+  // budget squeeze before a character stops being recognizable.
+  //
+  // The geometry claim protects `multiple_people` for exactly the reason
+  // `scene.staging` does — it puts a second body's anatomy in frame beside the
+  // subject's, so the single-subject exclusion would be the prompt arguing with
+  // the frame the story described. What keeps that limb from becoming a whole
+  // person is not the exclusion but the positive composite around it: the
+  // possessive binding in the wording, the frame geometry it always states, and
+  // the person count the operation contract asserts over the cast.
+  { id: "viewer.body_geometry", channel: "viewer", segmentKind: "pose", protects: ["multiple_people"] },
+  // The viewer's own skin and build for the parts in frame — what keeps a
+  // foreground arm the same person's arm from one render to the next.
+  { id: "viewer.appearance", channel: "viewer", segmentKind: "current_state", protects: [] },
+  // The viewer's own exposed anatomy, stated by a ROUTE that permits it, exactly
+  // as `subject.intimate_anatomy` is for the cast. `current_state` for the same
+  // reason: a squeeze sheds it before anything a body is recognized by.
+  { id: "viewer.intimate_anatomy", channel: "viewer", segmentKind: "current_state", protects: [] },
 
   // --- Subject ----------------------------------------------------------------
   { id: "subject.identity", channel: "subject", segmentKind: "identity", protects: [] },
@@ -356,6 +394,7 @@ export function isImageConceptId(id: string): id is ImageConceptId {
 export const imageConceptChannelOrder: readonly ImageConceptChannel[] = [
   "operation",
   "scene",
+  "viewer",
   "subject",
   "camera",
   "relation",

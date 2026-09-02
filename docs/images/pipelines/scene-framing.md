@@ -9,11 +9,12 @@ reaches the prompt a provider receives. The lane itself — cast, composer, atte
 ## Owns / does not own
 
 - **Owns:** the composer's capture-mode, camera, viewer-body and staging decisions, the
-  evidence gates that admit them, and the **lowering** that turns a resolved plan into the
-  typed scene inputs a prompt program compiles (`server/images/scene-lowering.ts`).
-- **Does not own:** the vocabulary those inputs are written in, or the `scene` channel they
-  travel on ([../prompt-programs.md](../prompt-programs.md) §Scene semantics); the final
-  wording, which is the endpoint dialect's; how each person is described
+  evidence gates that admit them, and the **lowering** that turns a resolved plan — and the
+  viewer's own body in its foreground — into the typed inputs a prompt program compiles
+  (`server/images/scene-lowering.ts`).
+- **Does not own:** the vocabulary those inputs are written in, or the `scene` and `viewer`
+  channels they travel on ([../prompt-programs.md](../prompt-programs.md) §Scene semantics);
+  the final wording, which is the endpoint dialect's; how each person is described
   ([scene-subjects.md](scene-subjects.md)).
 
 The lowering runs **per rung**, not per plan: the ladder's rungs disagree about
@@ -23,7 +24,13 @@ The lowering runs **per rung**, not per plan: the ladder's rungs disagree about
 
 Every chat scene image is composed from the player's eyes unless the route says otherwise.
 **An absent capture decision means first-person POV; this lane never asserts a third-person
-camera.** The decision belongs to the route rather than the composer — a selfie is chosen
+camera.** Which first person it is — disembodied, or embodied with the viewer's own body
+cropped in — is resolved **per rung** from the parts that survive that rung's gates, because
+a prompt that asserts the viewer's absence beside a description of their hands contradicts
+itself. Embodiment is a framing state, not only a set of per-part claims: it decides the
+capture-mode sentence, whether the possession clause may run, and how the count is worded.
+
+Third person versus first belongs to the route rather than the composer — a selfie is chosen
 before the plan is composed, and asking a model to re-derive it would let a confused answer
 un-selfie a render the player asked for — and the shared vocabulary deliberately carries no
 default capture mode, so no lowering can spell `framing ?? default` and invert every chat
@@ -42,12 +49,17 @@ single POV sentence:
 - the **capture-mode claim** (`scene.capture_mode`), marked required so no budget squeeze can
   drop it and leave the other three arguing about a frame nobody described;
 - the **person-count assertion** — "Exactly one person is in frame." — carried by the operation
-  contract's subject count rather than by a scene claim;
+  contract's subject count rather than by a scene claim. It counts the **cast**, never the
+  viewer, so an embodied shot takes the `fully in frame` wording instead: the cast are the
+  bodies the frame holds whole, and a limb the frame edge cuts is not one of them. The tag
+  family says the same thing as `solo focus` rather than `solo`. The distinction is the
+  dialect's to spell; that the count excludes the viewer is not;
 - an **abstract possession clause** (`scene.possession`) — "Every visible body part belongs to
   Kristin." Its value is a list of entity refs the dialect resolves to names, so there is no
-  place in the fact for a limb noun. It is emitted for first person only: a selfie has the
-  subject's own arm on the lens, and an observing camera has no viewer in the room to bind
-  limbs against;
+  place in the fact for a limb noun. It is emitted for the **disembodied** first person only:
+  a selfie has the subject's own arm on the lens, an observing camera has no viewer in the
+  room to bind limbs against, and an embodied frame would be handing the viewer's own limbs
+  to an NPC;
 - **`bindLimbsToOwner`**, the deterministic backstop ("one hand holding a cup" → "Kristin's
   hand holding a cup"), which stays upstream in the application and is not a claim. It runs on
   the pose and the activity separately, because the composer produces them as two fields.
@@ -66,8 +78,10 @@ What stops a limb becoming a third person is never a negative — "no man in fra
 *man*, as "no camera" once did. It is **possessive binding** ("the viewer's own"), **frame
 geometry** (cropped by the edge, strongly foreshortened — a limb the frame cuts through can't
 be composed as someone standing there), and the **positive person-count assertion** above, the
-realistic-model analogue of booru `solo focus`. The vocabulary is a closed registry
-(`contracts/images/viewer-body.ts`), because the phrasing IS the feature.
+realistic-model analogue of booru `solo focus`. Which parts exist is a closed registry
+(`contracts/images/viewer-body.ts`) because it is a gate list before it is anything else;
+the two anchors are the endpoint dialect's words, and a compiled prompt is where they are
+checked.
 
 **The anti-eagerness evidence gate.** An LLM given an optional field uses it far more often
 than the fiction warrants, so every proposed part must carry a `viewerBodyEvidence` entry — a
@@ -88,11 +102,39 @@ fine POV element. The player's coverage is computed from their persona's worn it
 ([../../character-chat/wardrobe.md](../../character-chat/wardrobe.md) §The player's wardrobe),
 never a manual flag, which is why that wardrobe has no `exposed` toggle at all.
 
-**A viewer part reaches the compiled prompt only inside a staged sentence.** The scene
-vocabulary carries the part ids so a claim can name them, and a staging template speaks the
-viewer-limb geometry for the parts it names, because a template owns the phrasing for its own
-parts. There is no generic per-part framing carrier: an accepted part that no staged
-arrangement names is a gate input and nothing else.
+**Every part that survives the gate reaches the prompt, and the viewer channel is what
+carries it.** The viewer is not a subject — no entity slice, no ref a relation could bind, no
+place in `operation.subjectCount` — so their facts ride the digest's flat scene list on a
+channel of their own, between the scene and the cast
+([../prompt-programs.md](../prompt-programs.md) §Scene semantics). Three concepts, projected
+by `contracts/images/viewer-digest.ts`:
+
+- **`viewer.body_geometry`** — the parts the frame crops in, as ids. One clause for all of
+  them, because the foreground is a single region of the picture and three separate
+  statements about it give a model three chances to compose three separate things. The
+  geometry sentence is the endpoint dialect's, exactly as a camera band's is; the part
+  vocabulary is what crosses the seam.
+- **`viewer.appearance`** — the skin and build of those parts, from the player's persona
+  through the one persona→character adapter. `skin.tone` and `build.frame` ride any embodied
+  frame and each part adds only its own descriptors, so a shot of the viewer's hands on
+  someone's cheek does not state their leg hair. Without it a foreground arm changes colour
+  between shots and reads as a different person reaching in.
+- **`viewer.intimate_anatomy`** — the exposed half, stated only by a route that permits it,
+  through the same coverage rule the cast's own reveal uses.
+
+**A part a staged sentence already places gets no generic geometry line.** A staging says
+where a limb is on somebody and the geometry claim says where it is relative to the lens;
+both at once puts the same two hands in two places in one prompt, which is the
+self-contradiction that makes a model paint a third party's arms rather than choose. The
+staging owns geometry and nothing else — its parts still carry the viewer's skin and build,
+and the ownership is read off the staging claim the rung actually emitted, so an arrangement
+the route or coverage withheld leaves its parts to the generic line.
+
+**A part's derived-intimate rule stands.** `genitals` is added when `lap_thighs` or `torso`
+is already in frame, because the composer has no intimate vocabulary and can never propose
+it, and that framing is the only one in which the part is in view. It earns nothing on its
+own: the route and coverage gates still run over the result, and without the derivation the
+viewer's own exposed anatomy would have no path to a prompt at all.
 
 ## The camera
 

@@ -30,6 +30,10 @@ import {
   spatialWord,
   stagingSentence,
   subjectCountSentence,
+  viewerAppearanceSentence,
+  viewerGeometrySentence,
+  viewerIntimateSentence,
+  viewerIsEmbodied,
 } from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
@@ -138,7 +142,7 @@ function renderClaim(
           : "Recompose the frame as the new content requires.",
       );
     case "operation.subject_count":
-      return say(subjectCountSentence(Number(claim.value)));
+      return say(subjectCountSentence(Number(claim.value), viewerIsEmbodied(input)));
     case "operation.literal_text":
       // Quoted and letter-exact: 2512's text rendering is one of its advertised
       // strengths, and quoting is how the model card asks for exact lettering.
@@ -175,6 +179,14 @@ function renderClaim(
       // the owed re-measurement runs.
       return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
+
+    // --- Viewer ---------------------------------------------------------------
+    case "viewer.body_geometry":
+      return sayOrNull(viewerGeometrySentence(claim.value));
+    case "viewer.appearance":
+      return sayOrNull(viewerAppearanceSentence(claim.value));
+    case "viewer.intimate_anatomy":
+      return sayOrNull(viewerIntimateSentence(claim.value));
 
     // --- Subject --------------------------------------------------------------
     case "subject.identity":

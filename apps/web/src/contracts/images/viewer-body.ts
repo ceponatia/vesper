@@ -10,19 +10,25 @@ import type { RegionExposure } from "../items/visibility";
  * frame as theirs.
  *
  * **A registry, not free text** (CLAUDE.md: registries are the extension point), because
- * the phrasing is the whole feature. Two failure modes bound every line here:
+ * which parts exist is a gate list before it is anything else. Two failure modes bound
+ * every line here:
  *
  * 1. **Third-person men.** Naming a body part without binding it to the camera makes the
  *    model paint a whole second person into the room. What prevents that is NOT a negative
  *    — "no man in frame" anchors on *man*, exactly as the literal "no camera" once anchored
- *    on cameras (the scar recorded on `SCENE_POV_RULE`). It is **possessive binding** ("the
- *    viewer's own") plus **frame geometry**: a limb cropped by the frame edge and strongly
- *    foreshortened cannot be composed as a standing subject. The person-count assertion in
- *    `sceneFramingRule` does the rest.
+ *    on cameras. It is **possessive binding** ("the viewer's own") plus **frame geometry**:
+ *    a limb cropped by the frame edge and strongly foreshortened cannot be composed as a
+ *    standing subject, plus the person-count assertion the operation contract makes over
+ *    the cast. That wording is the ENDPOINT DIALECT's, exactly as a camera band's phrasing
+ *    is: this registry decides which parts a frame may hold and
+ *    `contracts/images/viewer-digest.ts` states them as typed claims, while
+ *    `image-core`'s dialects decide how each endpoint says "foreshortened". A phrase here
+ *    would be a second, unread copy of words the prompt takes from somewhere else.
  * 2. **Anatomy through clothing.** `requiresBare` is the gate, and it is deliberately
  *    *coverage*, not judgment — see `resolveViewerParts`.
  *
- * PURE. Tuning a phrase is a data edit here; adding a part is one entry.
+ * PURE. Adding a part is one entry here plus a wording decision per dialect, which is a
+ * compile error until each one makes it.
  */
 
 /**
@@ -33,7 +39,7 @@ import type { RegionExposure } from "../items/visibility";
  * kept compiling. The local names are kept so every call site still reads in the app's own
  * vocabulary — what moved is where the union is defined, not what it means.
  *
- * Everything below stays: a phrase, an intimate flag and an attribute list are wording and
+ * Everything below stays: an intimate flag, a coverage gate and an attribute list are
  * planning, which no compiler has any business owning.
  */
 export { sceneViewerBodyPartIds as viewerBodyPartIds } from "@vesper/image-core";
@@ -42,11 +48,6 @@ export type ViewerBodyPartId = SceneViewerBodyPartId;
 
 export interface ViewerBodyPart {
   id: ViewerBodyPartId;
-  /**
-   * The frame-geometry phrase — what makes this a POV limb rather than a subject. Always
-   * possessive-bound and always cropped/foreshortened; never a bare noun.
-   */
-  framing: string;
   /** Intimate ⇒ rides only an uncensored route, exactly like the character's own intimate reveal. */
   intimate: boolean;
   /**
@@ -79,42 +80,36 @@ export const VIEWER_SKIN_ATTRIBUTE_IDS = ["skin.tone", "build.frame"] as const;
 export const viewerBodyParts: readonly ViewerBodyPart[] = [
   {
     id: "hands",
-    framing: "the viewer's own hands entering frame from the lower edge, close to the lens and strongly foreshortened",
     intimate: false,
     requiresBare: null,
     attributeIds: ["hands.size", "hands.texture", "hands.nails"],
   },
   {
     id: "forearms",
-    framing: "the viewer's own forearms entering frame from the lower edge, foreshortened, cropped where the frame cuts them",
     intimate: false,
     requiresBare: null,
     attributeIds: ["arms.build", "arms.hair"],
   },
   {
     id: "lap_thighs",
-    framing: "the viewer's own thighs across the bottom of the frame, seen from above as they look down at their own lap",
     intimate: false,
     requiresBare: null,
     attributeIds: ["legs.build", "legs.hair"],
   },
   {
     id: "legs_feet",
-    framing: "the viewer's own legs receding away from the lens toward the lower frame edge, feet at the far end",
     intimate: false,
     requiresBare: null,
     attributeIds: ["legs.build", "legs.hair", "legs.length", "feet.size"],
   },
   {
     id: "torso",
-    framing: "the viewer's own chest and stomach along the bottom of the frame, foreshortened as they look down over themselves",
     intimate: false,
     requiresBare: null,
     attributeIds: ["build.musculature", "chest.hair", "skin.markings"],
   },
   {
     id: "genitals",
-    framing: "the viewer's own genitals in the immediate foreground, close to the lens and cropped by the lower frame edge",
     intimate: true,
     requiresBare: "pelvis",
     attributeIds: [],
@@ -192,8 +187,13 @@ const LOOKING_DOWN_PART_IDS: readonly string[] = ["lap_thighs", "torso"];
  *   pelvis reads bare/sheer AND the route is uncensored.
  *
  * So three independent conditions must all hold, and the two that matter (coverage, route)
- * are code, not judgment. **This rule is a guess worth revisiting** — it is the one piece of
- * the feature with no owner ruling behind it (recorded as an open question in the plan).
+ * are code, not judgment.
+ *
+ * **The rule stands**, and the reason is structural rather than a preference: the composer
+ * cannot propose the part, so without a derivation there is no path by which the viewer's
+ * own intimate anatomy could ever reach a prompt, and `viewer.intimate_anatomy` would be a
+ * concept nothing can produce. The premise it derives from is the only framing in which the
+ * part is in view at all, and both hard gates still run over the result.
  */
 function withDerivedIntimateParts(proposed: readonly string[]): readonly string[] {
   const lookingDown = proposed.some((id) => LOOKING_DOWN_PART_IDS.includes(id.trim()));

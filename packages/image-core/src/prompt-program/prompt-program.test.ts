@@ -44,6 +44,7 @@ import {
 import {
   createSceneStagingSurfaceForms,
   sceneStagingIds,
+  sceneViewerBodyPartIds,
   type SceneStagingId,
   type SceneStagingSurfaceFormEntry,
   type SceneStagingSurfaceFormTable,
@@ -1238,5 +1239,69 @@ describe("a render's staging wording and its dropped claims", () => {
     for (const claimId of positiveClaimIds.filter((id) => id === "scene.staging")) {
       expect(sceneStagingSurfaces.filter((record) => record.claimId === claimId)).toHaveLength(1);
     }
+  });
+});
+
+/**
+ * THE VIEWER'S OWN LIMBS, AND WHY THEIR WORDING IS BOUND (issue #390).
+ *
+ * The measured scar: naming a body part without binding it to the camera makes
+ * the model paint a whole second person into the room, and no negative fixes it
+ * — "no man in frame" anchors on *man*, exactly as the literal "no camera" once
+ * anchored on cameras. What works is positive: **possessive binding** ("the
+ * viewer's own") plus **frame geometry** (cropped by the edge, strongly
+ * foreshortened), because a limb the frame cuts through and the lens looms over
+ * cannot be composed as somebody standing there.
+ *
+ * That is a wording invariant, so it is asserted over the compiled TEXT rather
+ * than over a helper, and it is derived from the part vocabulary rather than
+ * typed out — a seventh part cannot ship worded like a bare noun.
+ *
+ * Falsified against a phrase that drops either anchor, and against one part's
+ * phrase being reused for another (six limbs stated as one).
+ */
+describe("the viewer's own body in a compiled prompt", () => {
+  /** The anchors that make a limb the camera-holder's rather than a subject's. */
+  const GEOMETRY = /foreshorten|cropped|frame edge|lower edge|bottom of the frame|toward the lens|from the lens/;
+
+  const viewerWorld = (parts: readonly string[]): ImageWorldDigest =>
+    world({
+      scene: [fact({ key: "viewer.body_geometry", concept: "viewer.body_geometry", value: [...parts] })],
+      subjects: [
+        entity("subject", "nyx", [
+          fact({ key: "nyx.identity", concept: "subject.identity", value: "a woman with dark hair", disposition: "required_visual", priority: 1 }),
+        ]),
+      ],
+    });
+
+  const compiledText = (parts: readonly string[]): string => {
+    const result = compileImagePromptProgram(compileInput(viewerWorld(parts)));
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    return result.compiled.positiveText;
+  };
+
+  it.each([...sceneViewerBodyPartIds])("binds %s to the camera-holder and to the frame", (part) => {
+    const text = compiledText([part]);
+    expect(text).toContain("the viewer's own");
+    expect(text).toMatch(GEOMETRY);
+  });
+
+  it("gives every part its own phrase, so six limbs are not stated as one", () => {
+    const phrases = new Set(sceneViewerBodyPartIds.map((part) => compiledText([part])));
+    expect(phrases.size).toBe(sceneViewerBodyPartIds.length);
+  });
+
+  /**
+   * The value is a closed vocabulary, not words. A part id nothing recognizes
+   * leaves the clause unwritten rather than travelling into a payload as a
+   * string nobody checked — and a foreground clause naming no limb is the
+   * disembodied shot spelled at greater length, so it is not written either.
+   */
+  it("writes no foreground clause for a value it cannot read", () => {
+    expect(compiledText([])).not.toContain("in the viewer's immediate foreground");
+    const invented = compileImagePromptProgram(compileInput(viewerWorld(["elbows"])));
+    if (!invented.ok) throw new Error(`unexpected refusal: ${invented.refusal.code}`);
+    expect(invented.compiled.positiveText).not.toContain("in the viewer's immediate foreground");
+    expect(invented.compiled.droppedClaimIds).toContain("viewer.body_geometry");
   });
 });

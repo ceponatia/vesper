@@ -502,6 +502,11 @@ export interface StagedSceneProgram {
  *   wardrobe's;
  * - the identity reference is bound to the subject, so the dialect's slot
  *   wording names the person the act is about;
+ * - **no viewer is supplied**, and that is the bench's premise rather than an
+ *   omission: there is no persona behind this lens, only a coverage premise. An
+ *   arrangement names every viewer part it puts in frame, so the geometry is
+ *   stated by the template either way; what a chat scene adds on top is the
+ *   player's own skin and build, which a bench has nobody to read;
  * - `refuseOnMissingRequired`, because a staged act on somebody with a lost
  *   identity or morphology anchor is the act happening to a stranger.
  *

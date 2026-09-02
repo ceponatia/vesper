@@ -50,7 +50,7 @@ import {
   sceneSpecSchema,
 } from "./prompts-scene-composer";
 import { heuristicFocalName, resolveScenePlan, type SceneRenderPlan } from "./prompts-scene-plan";
-import { lowerScenePlan } from "./scene-lowering";
+import { lowerScenePlan, type SceneLoweringViewer } from "./scene-lowering";
 
 export type SceneComposeInput = SceneComposerContext & {
   sink?: DiagnosticSink;
@@ -240,6 +240,19 @@ export interface RenderResolvedSceneInput {
    * a smaller scene.
    */
   cast?: readonly SceneSubjectVisualSlice[];
+  /**
+   * The person behind the lens, as their own resolved sheet (issue #390).
+   *
+   * Never a cast member: the viewer has no subject slice, no identity reference
+   * and no place in `operation.subjectCount`. This is only what an EMBODIED
+   * first-person frame says about the limbs it crops in — the skin and build
+   * that keep a foreground forearm the same person's forearm across renders,
+   * and, on a route that permits it, their own exposed anatomy.
+   *
+   * Absent leaves the render exactly as it was before the field existed: the
+   * frame still states its own geometry, and nothing invents a body for it.
+   */
+  viewer?: SceneLoweringViewer;
   /**
    * Non-null refuses the render before generation: the row is reserved and
    * failed with this text, no provider is called. The flag-on identity-pack
@@ -486,6 +499,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       plan,
       cast: cast.map((slice) => ({ subjectId: slice.subjectId, name: slice.name })),
       allowIntimate: allowIntimateFor(id),
+      // The rung's intimate permission is spent on the viewer's own anatomy
+      // here, exactly as it is on the cast's below: one resolved plan feeds the
+      // uncensored edit and its moderated fallback, and the two disagree.
+      ...(input.viewer === undefined ? {} : { viewer: input.viewer }),
       sink,
     });
     // The intimate route swapped this render onto the LoRA wrapper before the

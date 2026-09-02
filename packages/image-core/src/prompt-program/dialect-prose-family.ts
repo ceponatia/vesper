@@ -31,6 +31,10 @@ import {
   spatialWord,
   stagingSentence,
   subjectCountSentence,
+  viewerAppearanceSentence,
+  viewerGeometrySentence,
+  viewerIntimateSentence,
+  viewerIsEmbodied,
 } from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
@@ -275,7 +279,7 @@ function renderClaim(
         PROSE_PRIORITY.geometry,
       );
     case "operation.subject_count":
-      return say(subjectCountSentence(Number(claim.value)));
+      return say(subjectCountSentence(Number(claim.value), viewerIsEmbodied(input)));
     case "operation.literal_text":
       return say(
         object === null
@@ -327,6 +331,14 @@ function renderClaim(
       // here would throw the evidence away and buy nothing measured back.
       return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
+
+    // --- Viewer ---------------------------------------------------------------
+    case "viewer.body_geometry":
+      return sayOrNull(viewerGeometrySentence(claim.value));
+    case "viewer.appearance":
+      return sayOrNull(viewerAppearanceSentence(claim.value));
+    case "viewer.intimate_anatomy":
+      return sayOrNull(viewerIntimateSentence(claim.value));
 
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
