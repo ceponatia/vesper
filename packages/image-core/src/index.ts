@@ -578,7 +578,6 @@ export type {
   TrialVerdictValue,
 } from "./identity";
 export {
-  IMAGE_LAB_DEFAULT_SUBJECT_FACTS,
   IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
   IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY,
   IMAGE_LAB_FINISHING_RECIPE_KEY,
@@ -613,8 +612,6 @@ export {
   imageLabStagedSceneRecipeProfile,
   imageLabStagedSceneVerdicts,
   imageLabStagingSchema,
-  imageLabSubjectFactsModeSchema,
-  imageLabSubjectFactsModes,
   imageLabTwoCharacterRecipeProfile,
   imageLabTwoCharacterVerdicts,
   imageLabUploadControlRequestSchema,
@@ -647,7 +644,6 @@ export type {
   ImageLabRecordVerdictRequest,
   ImageLabSettings,
   ImageLabStaging,
-  ImageLabSubjectFactsMode,
   ImageLabUploadControlRequest,
   ImageLabVerdict,
 } from "./lab";

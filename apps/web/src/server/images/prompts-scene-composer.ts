@@ -1,11 +1,9 @@
 import { z } from "zod";
 import type { SceneCaptureMode } from "@vesper/image-core";
-import type { AttributeValue } from "@/contracts/attributes";
 import { sceneCameraHeights, sceneShotDistances, sceneSubjectOrientationIds } from "@/contracts/images/scene-camera";
 import { describeCommittedFacts, type CommittedSceneFacts } from "@/contracts/images/scene-committed";
 import { sceneStagingList } from "@/contracts/images/scene-staging";
 import type { RegionExposure } from "@/contracts/items/visibility";
-import type { CharacterProfile } from "@/contracts/world/profile";
 import { excerpt, formatGarment } from "./prompts-format";
 
 /** The scene composer's contract: its structured output schema, its system rules, and the prompt it is given. */
@@ -129,30 +127,13 @@ export interface ScenePresentCharacter {
    * supplies a described outfit directly. Sessions never set this (they have item state).
    */
   outfitDescription?: string;
-  /** Compact attribute phrase (characterAppearanceSummary) for textual render descriptions. */
-  appearance?: string;
   /**
-   * Identity-anchor phrase (identityAnchorSummary) for the identity-locked reference subject:
-   * whitelisted identity-critical features (lips, skin tone, eyes, hair) that reinforce the
-   * reference image — the render prompt words the reference as authoritative over them.
+   * Per-region coverage (exposedRegions). The composer prompt states it so the
+   * shot planner knows what is bare; the staging gate reads it so an act that
+   * describes bare skin cannot fire on a covered subject. What the IMAGE model
+   * is told about coverage comes from the committed cut the program compiles,
+   * never from this entry.
    */
-  identityAnchors?: string;
-  /**
-   * The apparent-age anchor sentence (apparentAgeAnchor, owner ruling 2026-07-29) —
-   * TEXT-authoritative, unlike identityAnchors: Qwen edits over-read an
-   * age-ambiguous reference and compound a step older per generation, so the
-   * sheet's age must overrule the reference. "" / absent ⇒ no age text.
-   */
-  ageAnchor?: string;
-  /**
-   * SFW lower-body shape line (sceneRevealAppearance, `{intimate:false}`): the
-   * figure below a waist-up reference portrait — waist/hips/legs/feet, with
-   * skin-level detail gated by exposure. Emitted for the identity-locked subject.
-   */
-  lowerBody?: string;
-  /** Visible intimate-anatomy phrase (sceneRevealAppearance, `{intimate: true}`), exposure-gated; emitted only on the uncensored route. */
-  intimateAppearance?: string;
-  /** Per-region coverage (exposedRegions) — drives explicit bare-skin phrasing. */
   exposure?: RegionExposure;
   /**
    * Gate for bare phrasing. Scene-image callers set this when the session's
@@ -216,12 +197,6 @@ export interface SceneComposerContext {
    * judgment call.
    */
   playerExposure?: RegionExposure;
-  /** The persona's resolved attributes — the viewer's own body facts (slice 4). */
-  playerAttributes?: ReadonlyArray<AttributeValue>;
-  /** The persona's profile, for realized-body applicability of those attributes. */
-  playerProfile?: CharacterProfile;
-  /** The viewer's exposure-gated intimate anatomy (uncensored route only). */
-  playerIntimateAppearance?: string;
 }
 
 /**

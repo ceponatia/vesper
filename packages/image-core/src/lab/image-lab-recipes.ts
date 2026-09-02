@@ -586,11 +586,19 @@ function imageLabStagedScenePolicy(): ImageReferencePolicy {
  *
  * Task `scene`, because a named person performing an act somewhere IS a scene,
  * and because the scene screening is the one whose composition demands match what
- * is being asked — the same reasoning the two-character recipe gives. `edit` on
- * `multi_reference_compose` like every other recipe here, which matters more than
- * usual: the compiled staging sentence arrives as the base prompt, and the
- * compose strategy is what names the identity slot around it without paraphrasing
- * a template the registry owns.
+ * is being asked — the same reasoning the two-character recipe gives.
+ *
+ * `edit` on `instruction_edit`, and NOT the `multi_reference_compose` every other
+ * recipe here runs. The base prompt this recipe is handed is a compiled prompt
+ * program — the same one the chat scene lane's single-reference rung compiles —
+ * and that program already numbers its own reference slots from the list it
+ * plans. The compose strategy would prefix a second numbering over the same
+ * slot, so the prompt would describe one image twice in two conventions; the
+ * instruction strategy passes the program through untouched, which is the whole
+ * parity claim. The strategy also has to agree with the program's own: a scene
+ * program compiled for a single-reference edit states `instruction_edit`, and a
+ * profile claiming a different strategy over that text would fingerprint a
+ * request it did not send.
  *
  * The LABEL carries the raw staging id, which reads unlike every other label in
  * this file and is the honest thing to write: the registry that knows this entry
@@ -612,7 +620,7 @@ export function imageLabStagedSceneRecipeProfile(imageModelId: string, stagingId
     label: `Staged scene — ${stagingId}`,
     task: "scene",
     operation: "edit",
-    promptStrategy: "multi_reference_compose",
+    promptStrategy: "instruction_edit",
     referencePolicy: imageLabStagedScenePolicy(),
     controlDefaults: emptyImageControlDefaults(),
     providerOverrides: {},

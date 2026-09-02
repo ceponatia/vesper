@@ -433,9 +433,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       // bodies to defend on an ensemble one.
       operation: () => characterSceneImageOperation({ subjectCount: castCuts.length, kind }),
       // A scene of named people with a lost identity or morphology anchor draws
-      // strangers. The cast seam already refuses on its own missing-required set
-      // before this render was reserved, so this is the join-level check the
-      // adapter performs rather than a second policy.
+      // strangers. This is the ONE place that refusal is decided: the cast seam
+      // refuses only a cut it cannot assemble at all, and the adapter's
+      // join-level check here is what turns a lost required anchor into a dropped
+      // rung rather than a render of somebody else.
       refuseOnMissingRequired: true,
       sink,
     });

@@ -436,12 +436,9 @@ export function laneProbeCastMember(over: Partial<SceneCastMember> = {}): SceneC
 }
 
 /**
- * The scene plan a lane renders, built through the production seams — context →
- * composer-spec resolve — and stopped THERE: this is the legacy
- * `presentCharacter`-field plan, before the cast-1 digest patch
- * (`applySceneSubjectVisual`) the render job applies once the committed camera
- * exists. The characterization freeze applies the patch on top; the cutover
- * comparison renders both sides of it.
+ * The scene plan a lane renders for a cast of one, built through the production
+ * seams — context → composer-spec resolve. The committed cut is realized against
+ * it afterwards (`applySceneSubjectVisual`), once the plan's camera exists.
  */
 export function laneProbeScenePlan(member: SceneCastMember = laneProbeCastMember()): SceneRenderPlan {
   return laneProbeCastScenePlan([member]);
@@ -618,9 +615,9 @@ export const LANE_PROBE_SECOND_IMAGE_ID = "img-probe-ilsa";
 
 /** A two-person chat scene as `renderResolvedScene` receives it from the queue. */
 export interface LaneProbeCastSceneRender {
-  /** The resolved plan, every member's fields produced from their own committed cut. */
+  /** The resolved plan — the scene's decisions, with a setting, a light and each person's action. */
   readonly plan: SceneRenderPlan;
-  /** The cast slices behind those fields — the cuts the scene's program compiles from. */
+  /** Each member's own committed cut, realized under that plan's camera — what the program compiles from. */
   readonly cast: readonly SceneSubjectVisualSlice[];
   /** One generated identity reference per member, Nyx then Ilsa, each naming its subject. */
   readonly references: SceneVisualReference[];
@@ -645,10 +642,8 @@ export function laneProbeCastSceneRender(options: { readonly bareFocal?: boolean
       ? { ...subject, member: { ...subject.member, outfit: "", exposure: laneProbeBareExposure() } }
       : subject,
   );
-  const built = applySceneCastVisual({
-    plan: laneProbeCastScenePlan(members.map((subject) => subject.member)),
-    members,
-  });
+  const plan = laneProbeCastScenePlan(members.map((subject) => subject.member));
+  const built = applySceneCastVisual({ plan, members });
   if (built.refusal !== null) throw new Error(`the probe cast refused to realize: ${built.refusal}`);
   const reference = (
     name: string,
@@ -665,7 +660,7 @@ export function laneProbeCastSceneRender(options: { readonly bareFocal?: boolean
     source: "generated",
   });
   return {
-    plan: built.plan,
+    plan,
     cast: built.visuals,
     references: [
       reference(LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID, LANE_PROBE_IMAGE_ID, "focal"),

@@ -412,12 +412,13 @@ describe("imageLabStagedSceneRecipeProfile", () => {
     }
   });
 
-  it("screens as a scene on the compose strategy, and holds every knob where the other recipes do", () => {
+  it("screens as a scene on the instruction strategy, and holds every knob where the other recipes do", () => {
     const profile = imageLabStagedSceneRecipeProfile("mdl_x", "lying_beneath_viewer");
     expect(profile.task).toBe("scene");
-    // The compiled staging sentence is the base prompt; compose is what names the
-    // identity slot around it without paraphrasing a registry-owned template.
-    expect(profile.promptStrategy).toBe("multi_reference_compose");
+    // The base prompt is a compiled prompt program that already numbers its own
+    // reference slots, so the recipe must pass it through untouched: the compose
+    // strategy would prefix a second numbering over the same slot.
+    expect(profile.promptStrategy).toBe("instruction_edit");
     // The rest is asserted AGAINST the two-character recipe rather than restated,
     // because "the same request shape every other lab recipe declares" is the
     // claim itself — a recipe fixes the shape and the experiment's own settings

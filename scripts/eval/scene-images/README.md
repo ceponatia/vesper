@@ -1,23 +1,20 @@
 # Scene-image eval harness
 
-Fixture-driven, **human-scored** quality harness for scene rendering.
-This is **not** a `pnpm test` gate — image identity and
-quality can only be judged by eye.
+The composer-model A/B and the orientation/staging beats it grades. This is
+**not** a `pnpm test` gate — the pure graders and helpers beside these scripts
+are, and the paid probe is run by hand.
 
 ## What's here
 
-- `fixtures.ts` — ~24 fixed scenes. The routing matrix (one character; two
-  clothed; two partial; three characters; character+location; location-only;
-  high-risk wardrobe/exposure; uploaded-anchor safety case), plus the
-  orientation/staging block — a non-default camera
-  on the `orientation` rows, a registry staging entry on the `staging` ones, and
-  the frontal rows above them as the identity-regression control.
 - `beats.ts` — the seven orientation/staging beats (`behind`, `glance`, `kneel`,
   plus the four intimate acceptance scenes `doggy`, `oral`, `oral_guided`,
-  `missionary`, owner-specified 2026-08-10) as resolved specs + context, shared
-  so `composer-model-ab.ts` grades the exact same beats a render A/B would —
-  two probes disagreeing about what "doggy" is would make their gradings
-  incomparable. The render-side A/B that used to own these definitions
+  `missionary`, owner-specified 2026-08-10) as resolved specs + composer context,
+  shared so `composer-model-ab.ts` grades the exact same beats a render A/B would
+  — two probes disagreeing about what "doggy" is would make their gradings
+  incomparable. A beat's composer entry carries what the shot planner reads (name,
+  outfit, coverage) and nothing about the subject's looks: a render describes a
+  person from their committed visual cut, which a text-only beat has no chat to
+  commit. The render-side A/B that used to own these definitions
   (`orientation-ab.ts`) and the model A/B that graded them on Qwen/PuLID/LoRA
   arms (`intimate-model-ab.ts`) were deleted (#356): both were paid, manually
   run harnesses whose only inputs were portraits under a `docs/` eval-asset
@@ -41,15 +38,20 @@ quality can only be judged by eye.
   exact production fallback trigger, reports primary and effective two-rung cost,
   flags the owner-set 10% fallback-review threshold, and writes
   `ladder-summary.json`. The arithmetic helper is covered by `pnpm test`.
-- `run.ts` — offline runner. Computes each fixture's provider routing decision and
-  the exact prompt(s) the executor would build, and writes:
-  - `data/eval/scene-images/manifest.json` — inputs / chain / primary provider / prompts
-  - `data/eval/scene-images/scores.csv` — one row per fixture with blank manual-score columns
+- `model.ts` — the Replicate edit-model handle the Qwen reference-sheet spike
+  under `scripts/spikes/` renders through.
+
+The offline render-prompt runner (`run.ts`) and its hand-written
+`SceneRenderPlan` fixtures (`fixtures.ts`) were retired with #251, the way #356
+retired the render A/Bs: they built prompts through the scene prose builder,
+and a chat scene's prompt is now a compiled prompt program over each cast
+member's committed visual cut — there is no prose builder to run a fixture
+through, and a fixture has no cut to compile. Git history preserves both. The
+sent prompt for a real scene is on its image row, and the Image Lab's staged
+bench (`apps/web/src/server/images/image-lab-staged.ts`) compiles the same
+program for one staging on demand.
 
 ```
-pnpm tsx scripts/eval/scene-images/run.ts        # writes manifest + scores template
-EVAL_OUT=/tmp/eval pnpm tsx scripts/eval/scene-images/run.ts
-
 # the composer-model A/B — PAID, but TEXT: the full 8×7×2 matrix is well under $2
 # Use the owner entrypoint so the unchanged A/B is followed by production-ladder economics.
 pnpm tsx scripts/eval/scene-images/composer-model-eval.ts
@@ -66,25 +68,11 @@ free to review; only the calls cost anything. The owner entrypoint preserves tha
 no-provider behavior: the underlying A/B prints its prompts, then the wrapper skips ladder
 economics rather than reading stale results from an earlier paid run.
 
-## Scoring (manual)
-
-1. Run the runner to get `manifest.json` + `scores.csv`.
-2. For each fixture, render its `prompts.edit` (or `prompts.text`) through its
-   `primary_provider` — using a real reference avatar for anchored fixtures (seed
-   one from `scripts/fixtures/harbor-house.ts`) — and save the output beside the row.
-3. Fill `scores.csv`: `identity_A`, `identity_B`, `location`, `clothing`,
-   `exposure`, `collage_contamination` (0–3 each, your scale), and `notes`.
-4. **Safety row (acceptance test):** the `safety_uploaded_reached_uncensored`
-   column is pre-marked `MUST_BE_NO` for fixtures whose anchor is an uploaded
-   real-person avatar (e.g. `single-uploaded-anchor-intimate-SAFETY`). Today the
-   uploaded-avatar guard is deferred, so this can fire — it becomes a hard
-   acceptance test (must score "no") once the uploaded-avatar guard ships.
-
 ## Notes
 
-- Routing is exercised offline (no keys) — eyeball that the matrix routes as
-  expected (anchored → `edit`; no-avatar → `generate` when the model can run bare;
-  multi mode with ≥2 anchors → `multi_edit → edit`). The rungs name reference
-  tiers on ONE model, not a hop between providers.
+- Scene routing is one model's degradation ladder (multi-reference edit →
+  single-reference edit → bare prompt), not a hop between providers; a rung
+  whose prompt program will not compile is dropped from the chain
+  (`apps/web/src/server/images/scene.ts`).
 - The Qwen reference-sheet spike has its own script under `scripts/spikes/`
   (the Flux-multiref spike was dropped with the Flux removal).

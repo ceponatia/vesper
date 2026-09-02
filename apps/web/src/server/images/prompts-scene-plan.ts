@@ -1,4 +1,3 @@
-import type { AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { RegionExposure } from "@/contracts/items/visibility";
 import {
@@ -17,9 +16,7 @@ import { sceneStagingById, stagingEvidenceFromContacts, type SceneStaging } from
 import type { ScenePosture } from "@/contracts/affordances/scene/vocabulary";
 import { viewerBodyPartById, type ViewerBodyPartId } from "@/contracts/images/viewer-body";
 import type { SceneCaptureMode } from "@vesper/image-core";
-import type { CharacterProfile } from "@/contracts/world/profile";
 import {
-  formatExposure,
   sceneEvidenceCorpus,
   type SceneComposerContext,
   type ScenePresentCharacter,
@@ -52,18 +49,6 @@ export interface SceneCharacterSpec {
   action: string;
   /** Deterministic occlusion-filtered outfit phrase, forced from wardrobe state. */
   outfitSummary: string;
-  /** Compact appearance phrase for textual description. */
-  appearance: string;
-  /** Identity-anchor phrase for the identity-locked subject — reinforces the reference image. */
-  identityAnchors?: string;
-  /** Apparent-age anchor sentence — TEXT-authoritative over the reference (owner ruling 2026-07-29). */
-  ageAnchor?: string;
-  /** SFW lower-body shape line for the identity-locked subject (the waist-up portrait's blind spot). */
-  lowerBody?: string;
-  /** Explicit bare-region phrase ("topless, bare chest; barefoot"), forced from coverage state; "" when fully covered or untracked. */
-  exposure?: string;
-  /** Visible intimate-anatomy phrase for exposed regions; emitted only on the uncensored render route. */
-  intimateAppearance?: string;
 }
 
 export interface SceneRenderPlan {
@@ -105,16 +90,6 @@ export interface SceneRenderPlan {
    * Absent ⇒ treated as covered, so anatomy stays shut (the default-shut rule).
    */
   playerExposure?: RegionExposure;
-  /**
-   * The persona's resolved attributes (slice 4) — the viewer's own body facts, filtered to
-   * the parts in frame at render time by `viewerBodyAppearance`. Without them the viewer's
-   * arms change colour between shots and read as a different person reaching in.
-   */
-  playerAttributes?: ReadonlyArray<AttributeValue>;
-  /** The persona's profile — realized-body applicability for those attributes. */
-  playerProfile?: CharacterProfile;
-  /** The viewer's exposure-gated intimate anatomy; emitted only on an uncensored route. */
-  playerIntimateAppearance?: string;
 }
 
 export function emptySceneRenderPlan(): SceneRenderPlan {
@@ -343,9 +318,6 @@ export function resolveScenePlan(
     ...(staging ? { staging } : {}),
     viewerBody: resolvedViewerBody,
     ...(context.playerExposure ? { playerExposure: context.playerExposure } : {}),
-    ...(context.playerAttributes ? { playerAttributes: context.playerAttributes } : {}),
-    ...(context.playerProfile ? { playerProfile: context.playerProfile } : {}),
-    ...(context.playerIntimateAppearance ? { playerIntimateAppearance: context.playerIntimateAppearance } : {}),
     setting:
       spec.setting.trim() ||
       [context.locationName, context.locationDescription].filter(Boolean).join(" — ").slice(0, 300),
@@ -745,18 +717,13 @@ function characterSpec(
     ...(entry.species ? { species: entry.species } : {}),
     pose: scrubbedPose,
     activity: scrubbedActivity,
-    // The single phrase the retired prose builder's one action sentence reads.
-    // Trailing periods were stripped per field before the join — "…teasing
-    // smile.; Leading…" reads as two stitched sentences rather than one phrase.
+    // The two halves as one phrase, for the readers that want the resolver's
+    // whole answer about a person at once. Trailing periods were stripped per
+    // field before the join — "…teasing smile.; Leading…" reads as two stitched
+    // sentences rather than one phrase.
     action: [scrubbedPose, scrubbedActivity].filter(Boolean).join("; "),
     // Forced from occlusion-filtered state regardless of anything the model said; a free-text
     // override (character chat — no equippable wardrobe) wins when present.
     outfitSummary: entry.outfitDescription ?? wardrobeOutfitSummary(entry.wornVisible),
-    appearance: entry.appearance ?? "",
-    ...(entry.identityAnchors ? { identityAnchors: entry.identityAnchors } : {}),
-    ...(entry.ageAnchor ? { ageAnchor: entry.ageAnchor } : {}),
-    ...(entry.lowerBody ? { lowerBody: entry.lowerBody } : {}),
-    exposure: formatExposure(entry.exposure, entry.wardrobeTracked),
-    intimateAppearance: entry.intimateAppearance ?? "",
   };
 }

@@ -9,8 +9,6 @@ import {
   DiagnosticCollector,
   emptyCharacterProfile,
   garmentActorForCharacter,
-  personaToCharacterProfile,
-  resolveAttributes,
   timeOfDayFor,
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
@@ -159,8 +157,6 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     const playerWardrobe = scenario
       ? await resolvePlayerWardrobe(scenario.playerState, args.userId, player.profile, collected, scenario.garments)
       : null;
-    const playerProfile = player.profile ? personaToCharacterProfile(player.profile) : undefined;
-    const playerResolved = playerProfile ? resolveAttributes(playerProfile.attributes, []) : [];
 
     const place = scenario ? currentScenePlace(scenario.sceneMemory) : null;
     const room = place
@@ -357,8 +353,6 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           recentPlayerChat,
           committedScene,
           playerExposure: playerWardrobe?.exposure,
-          playerAttributes: playerResolved,
-          playerProfile,
           chatId: args.chatId,
           anchorMessageId,
           flavor: args.flavor,

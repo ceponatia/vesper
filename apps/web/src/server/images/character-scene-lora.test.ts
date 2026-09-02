@@ -133,7 +133,7 @@ const member: SceneCastMember = {
 function plan(stagingId?: string): SceneRenderPlan {
   const base: SceneRenderPlan = {
     ...emptySceneRenderPlan(),
-    focal: { name: "Mira", action: "sitting", appearance: "", outfitSummary: "", exposure: "" },
+    focal: { name: "Mira", action: "sitting", outfitSummary: "" },
   };
   if (stagingId === undefined) return base;
   const staging = sceneStagingById(stagingId);
