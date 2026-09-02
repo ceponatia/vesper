@@ -78,6 +78,36 @@ name beyond the reviewed residue — the identity-free `chat_place` shot and the
 composer's own instruction builder, neither of which describes a character from
 attributes.
 
+## Hair the headwear conceals
+
+A cut carries the subject's resolved hair-occlusion band beside its coverage
+readout (`CharacterPromptSubjectCut.hairOcclusion`;
+[../contracts/items/README.md](../contracts/items/README.md) §Hair occlusion
+owns the band and its resolution). The seam hands it to the projection with the
+other canonical owners (`CharacterSubjectSources.hairOcclusion`), and the
+adapter — never a lane, never a route — applies the one image consequence:
+
+- **At `full`, no authored hair fact reaches the digest.** Every selected fact
+  that describes the hair is withheld as a designed suppression
+  (`character.hair.concealed`): the `hair.*` attributes, the current hairstyle
+  presentation, and any other fact at the `hair` body locus. The test is
+  structural — the attribute registry's body location, the presentation kind
+  id, the locus — never a match on value words. A withheld hair fact is not a
+  lost anchor; `missingRequired` never names one.
+- **In their place the subject states one required fact**,
+  `subject.hair_concealment`: the hair is fully covered by the headwear and
+  none of it is visible. It is `required_visual` and filed in the `wardrobe`
+  segment kind, beside the garment that causes it and unfittable by kind, so no
+  budget squeeze can drop the statement while the authored hair stays withheld
+  ([prompt-programs.md](prompt-programs.md) §Concepts). Each dialect words it in
+  its own register with the same meaning — the prose families
+  "`<Name>`'s hair is fully covered by the headwear; no hair is visible.", the
+  tag family "`<Name>` hair fully covered by headwear, no visible hair".
+- **At `none` and `partial` nothing changes.** Some hair remains visible, so
+  the authored facts stand exactly as visual state selected them, and no
+  concealment fact is stated. The two bands stay distinct values even though
+  this consumer treats them alike.
+
 ## A cast of more than one
 
 Visual state commits one cut per PERSON, and the assembly takes one digest

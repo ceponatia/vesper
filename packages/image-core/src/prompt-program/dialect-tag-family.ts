@@ -286,6 +286,8 @@ function renderClaim(
       return say(of(`${value} expression`));
     case "subject.wardrobe":
       return say(of(`wearing ${value}`));
+    case "subject.hair_concealment":
+      return say(of("hair fully covered by headwear, no visible hair"));
     case "subject.exposure":
       return say(of(value));
 

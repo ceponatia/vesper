@@ -23,6 +23,7 @@ import {
   VISUAL_STATE_FIXTURE_ACTOR,
   type VisualStateFeature,
 } from "../visual-state";
+import { IMAGE_CHARACTER_HAIR_CONCEALED } from "./hair-concealment";
 import {
   characterSemanticValueResolver,
   projectCharacterWorldSlices,
@@ -754,6 +755,48 @@ describe("projectCharacterWorldSlices", () => {
       atMinutes: 10,
     });
     expect(freckle && expired(freckle)).toBeUndefined();
+  });
+});
+
+/**
+ * Gap 5: hair the worn headwear fully hides (docs/images/character-prompts.md
+ * §Hair the headwear conceals). Visual state selected the hairstyle by camera
+ * visibility and knows nothing of the band; the adapter is the one place that
+ * holds both. Falsified against an adapter that carried `hairOcclusion` and read
+ * it nowhere — the state the band's carrier left every prompt in — and against
+ * one that filtered by value words, which the structural fixture (a record
+ * value at the hair locus) never contains.
+ */
+describe("hair the headwear fully hides", () => {
+  const HAIRSTYLE_KEY = `${SUBJECT}/hair/presentation.hairstyle`;
+
+  it("withholds every hair fact at `full` as a designed suppression and states the concealment in its place", () => {
+    const digest = characterDigest([ageAnchorFeature()]);
+    expect(selectedByKey(digest).has(HAIRSTYLE_KEY)).toBe(true);
+
+    const slices = adapterSlices(digest, { hairOcclusion: "full" });
+    const subject = slices.subjects[0];
+    const byKey = new Map((subject?.facts ?? []).map((fact) => [fact.key, fact]));
+    expect(byKey.has(HAIRSTYLE_KEY)).toBe(false);
+    expect(slices.suppressions).toContainEqual(
+      expect.objectContaining({ key: HAIRSTYLE_KEY, reason: IMAGE_CHARACTER_HAIR_CONCEALED }),
+    );
+    const concealment = byKey.get(`subject.${SUBJECT}.hair_concealment`);
+    expect(concealment?.concept).toBe("subject.hair_concealment");
+    expect(concealment?.disposition).toBe("required_visual");
+    // A withheld hair fact is not a lost anchor: the subject still binds.
+    expect(subject?.missingRequired).toEqual([]);
+    // Nothing else moved: the nose, the wings and the garment are exactly as
+    // they were, so the filter is structural rather than a broad sweep.
+    expect(byKey.get(`${SUBJECT}/nose/shape`)?.value).toBe("Nose shape: crooked");
+    expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
+  });
+
+  it.each(["none", "partial"] as const)("leaves the hair exactly as selected at `%s`", (band) => {
+    const digest = characterDigest([ageAnchorFeature()]);
+    const facts = adapterSlices(digest, { hairOcclusion: band }).subjects[0]?.facts ?? [];
+    expect(facts.some((fact) => fact.key === HAIRSTYLE_KEY)).toBe(true);
+    expect(facts.some((fact) => fact.concept === "subject.hair_concealment")).toBe(false);
   });
 });
 

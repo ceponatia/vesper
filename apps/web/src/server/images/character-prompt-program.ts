@@ -417,6 +417,7 @@ function castAssembly(
     sources[cut.subjectId] = {
       attributes: cut.attributes,
       exposure: cut.exposure,
+      hairOcclusion: cut.hairOcclusion,
       realizedBody: cut.realizedBody,
     };
     if (intimateReveal) {

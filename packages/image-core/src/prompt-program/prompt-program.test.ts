@@ -1305,3 +1305,55 @@ describe("the viewer's own body in a compiled prompt", () => {
     expect(invented.compiled.droppedClaimIds).toContain("viewer.body_geometry");
   });
 });
+
+/**
+ * HAIR THE HEADWEAR FULLY HIDES, per dialect family.
+ *
+ * `subject.hair_concealment` replaces every authored hair fact for a subject at
+ * the `full` hair-occlusion band, and it is the only sentence the render then
+ * has about hair — so a family that words it weakly, or drops it, leaves the
+ * model free to paint the hair the projection just withheld. Byte-pinned per
+ * family, because the meaning must be identical across endpoints while the
+ * register is each family's own, and no other gate reads these bytes.
+ */
+describe("hair the headwear fully hides", () => {
+  const concealedWorld = (): ImageWorldDigest =>
+    world({
+      subjects: [
+        entity("subject", "nyx", [
+          fact({
+            key: "nyx.hair_concealment",
+            concept: "subject.hair_concealment",
+            value: "hair fully covered by the headwear; no hair visible",
+            subjectRef: "nyx",
+            disposition: "required_visual",
+            priority: 0.99,
+          }),
+        ]),
+      ],
+    });
+
+  it.each([
+    ["seedream_45_prose", "Nyx's hair is fully covered by the headwear; no hair is visible."],
+    ["qwen_2511_delta_edit", "Nyx's hair is fully covered by the headwear; no hair is visible."],
+    ["qwen_2512_description", "Nyx's hair is fully covered by the headwear; no hair is visible."],
+    ["pony_compel_tags", "Nyx hair fully covered by headwear, no visible hair"],
+  ] as const)("%s states the concealment, and keeps it mandatory", (dialectId, wording) => {
+    const dialect = imagePromptDialect(dialectId);
+    if (dialect === null) throw new Error(`${dialectId} is not registered`);
+    const compiled = dialect.compilePositive({
+      claims: selectImagePositiveClaims(concealedWorld()),
+      operation: operation(),
+      references: [],
+      entityLabels: { nyx: "Nyx" },
+      budget: {},
+    });
+    expect(compiled.text).toContain(wording);
+    // The value never reaches the payload as itself: the fact carries a neutral
+    // descriptor and each family owns its sentence.
+    expect(compiled.text).not.toContain("no hair visible");
+    const segment = compiled.segments.find((entry) => entry.text.includes(wording));
+    expect(segment?.mandatory).toBe(true);
+    expect(segment?.kind).toBe("wardrobe");
+  });
+});

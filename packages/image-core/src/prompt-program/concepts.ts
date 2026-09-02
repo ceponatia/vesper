@@ -243,6 +243,25 @@ const CONCEPT_TABLE = [
   { id: "subject.body_language", channel: "subject", segmentKind: "pose", protects: [] },
   { id: "subject.current_state", channel: "subject", segmentKind: "current_state", protects: [] },
   { id: "subject.wardrobe", channel: "subject", segmentKind: "wardrobe", protects: [] },
+  // The subject's hair is FULLY hidden by their worn headwear: none of it is
+  // visible, and the projection has withheld every authored hair fact in its
+  // favour. Stated only at that band — a cap or a hood leaves hair showing and
+  // states nothing here.
+  //
+  // `wardrobe`, deliberately. The fact is a consequence of a worn garment, and
+  // the wardrobe band is where that garment is said, so the concealment lands
+  // beside the headwear that causes it rather than a band earlier, among
+  // appearance detail, describing a cover the prompt has not yet mentioned.
+  // Not `identity`: it is not who the person is, and a scene-independent
+  // wardrobe fact filed into the lock's band would be the mis-filing the
+  // concept-filing law forbids. It arrives `required_visual` every time, so a
+  // by-kind-protected band smuggles no optional detail past a budget squeeze —
+  // and it MUST be unfittable: a squeeze that dropped it while the authored
+  // hair stayed withheld would leave the render free to paint any hair at all.
+  //
+  // Protects nothing: the anatomy exclusions guard malformed bodies, and hidden
+  // hair contradicts none of them.
+  { id: "subject.hair_concealment", channel: "subject", segmentKind: "wardrobe", protects: [] },
   { id: "subject.exposure", channel: "subject", segmentKind: "exposure", protects: [] },
   // How much of this subject's FACE the shot can show, when the answer is not
   // "all of it" — `partial` or `hidden`. A front-facing shot states nothing.

@@ -16,6 +16,7 @@ import {
   distanceSentence,
   faceVisibilityAnchor,
   faceVisibilitySentence,
+  hairConcealmentSentence,
   framingSentence,
   heightSentence,
   label,
@@ -228,6 +229,8 @@ function renderClaim(
       return say(prefixed(subject, `is ${value}`));
     case "subject.wardrobe":
       return say(prefixed(subject, `wears ${value}`));
+    case "subject.hair_concealment":
+      return say(hairConcealmentSentence(subject));
     case "subject.exposure":
       return say(prefixed(subject, `is ${value}`));
 

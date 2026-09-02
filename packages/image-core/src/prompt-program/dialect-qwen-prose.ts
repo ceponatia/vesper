@@ -595,6 +595,18 @@ export function faceVisibilityAnchor(
 }
 
 /**
+ * The one sentence a subject whose headwear fully hides their hair gets in
+ * place of every authored hair fact — shared by the three prose-register
+ * families so the meaning cannot drift between endpoints. Name-bound and
+ * pronoun-free for the reason {@link faceVisibilitySentence} is, and the
+ * possessive rather than `prefixed`'s "<subject> has …", because what is
+ * being stated is a condition of the hair, not a feature the person has.
+ */
+export function hairConcealmentSentence(subject: string | null): string {
+  return `${capitalize(subject ?? "the subject")}'s hair is fully covered by the headwear; no hair is visible.`;
+}
+
+/**
  * The identity lock's adaptation, for a shot whose subject's face is turned or
  * hidden — a sentence of its own, never spliced into the lock string.
  *
