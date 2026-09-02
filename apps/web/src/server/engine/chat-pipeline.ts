@@ -71,6 +71,7 @@ import {
   characterChats,
   characterChatMessages,
   chatParticipants,
+  chatVisualCues,
   chatVisualMemory,
   db,
   images,
@@ -4555,6 +4556,11 @@ export async function deleteChat(chatId: string, ownerId: string): Promise<void>
         // nothing would cascade it, and orphaned rows would silently resurrect
         // recognition if the group id were ever minted again.
         await tx.delete(chatVisualMemory).where(eq(chatVisualMemory.memoryGroupId, p.memoryGroupId));
+        // `chat_visual_cues` is the sibling record for the same observer/subject
+        // pair, keyed the same way: memory holds what the observer recognizes,
+        // cues hold what the narrator has had in view/said. It carries no FK
+        // either, so it goes on the same condition or it orphans the same way.
+        await tx.delete(chatVisualCues).where(eq(chatVisualCues.memoryGroupId, p.memoryGroupId));
       }
     }
   });

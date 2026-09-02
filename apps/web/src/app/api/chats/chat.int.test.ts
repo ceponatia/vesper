@@ -11,6 +11,7 @@ import {
   chatParticipants,
   characterRelationships,
   chatScenarioPresets,
+  chatVisualCues,
   db,
   episodes,
   facts,
@@ -204,6 +205,14 @@ async function factCount(groupId: string): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(facts)
     .where(eq(facts.chatMemoryGroupId, groupId));
+  return row?.n ?? 0;
+}
+
+async function cueCount(groupId: string): Promise<number> {
+  const [row] = await db()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(chatVisualCues)
+    .where(eq(chatVisualCues.memoryGroupId, groupId));
   return row?.n ?? 0;
 }
 
@@ -576,18 +585,28 @@ describe.runIf(ready)("memory-choice semantics (D7)", () => {
     await db().insert(facts).values({ chatMemoryGroupId: first.memoryGroupId, kind: "knowledge", subjectName: "nyx", text: "the player brings nyx tea every visit" });
     await db().insert(facts).values({ chatMemoryGroupId: island.memoryGroupId, kind: "knowledge", subjectName: "nyx", text: "in this universe nyx has never met the player" });
 
+    // chat_visual_cues is chat_visual_memory's sibling — same memory-group key,
+    // no FK either — so it has to be purged on the same !survivor condition or
+    // it orphans the same way (#210).
+    await db().insert(chatVisualCues).values({ memoryGroupId: first.memoryGroupId, viewpointId: authState.user.id, subjectId: nyx.id, cues: {} });
+    await db().insert(chatVisualCues).values({ memoryGroupId: island.memoryGroupId, viewpointId: authState.user.id, subjectId: nyx.id, cues: {} });
+
     // Deleting the only chat of a group purges the group's memory…
     expect((await chatDelete(delReq(island.id), ctx(island.id))).status).toBe(200);
     expect(await factCount(island.memoryGroupId)).toBe(0);
     expect(await factCount(first.memoryGroupId)).toBe(1);
+    expect(await cueCount(island.memoryGroupId)).toBe(0);
+    expect(await cueCount(first.memoryGroupId)).toBe(1);
 
     // …but deleting one of two shared-history siblings keeps the relationship's memory alive…
     expect((await chatDelete(delReq(sibling.id), ctx(sibling.id))).status).toBe(200);
     expect(await factCount(first.memoryGroupId)).toBe(1);
+    expect(await cueCount(first.memoryGroupId)).toBe(1);
 
     // …until the last referencing conversation goes.
     expect((await chatDelete(delReq(first.id), ctx(first.id))).status).toBe(200);
     expect(await factCount(first.memoryGroupId)).toBe(0);
+    expect(await cueCount(first.memoryGroupId)).toBe(0);
   });
 });
 
