@@ -249,10 +249,10 @@ prompt gains one more section between SIM PRESENTATION STATE and CONVERSATION:
 the must-not-contradict **fence** of visible committed facts, then the short
 **offer** of details worth noticing this turn. Both are rendered from the shared
 visual-state projection over the same committed cut the render is about to
-narrate, in the wording the chat lane uses for the same two blocks
-(`prompts/visual-state-block.ts`, and
-[visual-memory.md](../character-chat/visual-memory.md) for the record behind
-them) — one projection, one phrasing, two lanes. The switch is per chat and
+narrate. Both lanes write these two blocks — and their headings — from
+`prompts/visual-state-block.ts`, which owns that wording outright
+([visual-memory.md](../character-chat/visual-memory.md) covers the record behind
+them): one projection, one phrasing, two lanes. The switch is per chat and
 off by default; with it off, and when the projection resolves nothing, the
 prompt carries no such node at all.
 

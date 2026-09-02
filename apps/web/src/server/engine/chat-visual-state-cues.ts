@@ -79,7 +79,7 @@ import { chatRecognitionDetailPhrase } from "./chat-recognition-adapter";
 // ---------------------------------------------------------------------------
 
 /**
- * The two block headings, re-exported from the prompt builder that writes them.
+ * The two block headings, re-exported from the module that writes the blocks.
  *
  * They live there and not here for the same reason `AFFORDANCE_CUE_BLOCK_HEADING`
  * does: the sensory-allowance carve-out names the cue block by heading, and a
@@ -87,7 +87,7 @@ import { chatRecognitionDetailPhrase } from "./chat-recognition-adapter";
  * allowance exempting a block the prompt no longer calls that. One constant,
  * one owner, re-exported so a caller of this module never has to know which.
  */
-export { VISUAL_STATE_CONSTRAINT_BLOCK_HEADING, VISUAL_STATE_CUE_BLOCK_HEADING } from "./prompts/character-chat";
+export { VISUAL_STATE_CONSTRAINT_BLOCK_HEADING, VISUAL_STATE_CUE_BLOCK_HEADING } from "./prompts/visual-state-block";
 
 // ---------------------------------------------------------------------------
 // Subject and lookup context

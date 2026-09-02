@@ -56,6 +56,9 @@ export * from "./prompts/chat-summary";
 export * from "./prompts/chat-state";
 export * from "./prompts/character-chat";
 export * from "./prompts/sim-render";
+// The two narrator lanes' shared visual-state blocks, and the headings they own
+// — named by the sensory-allowance carve-out and by the eval harness's splice.
+export * from "./prompts/visual-state-block";
 // prompts/constants re-exports engine constants; only its unique values here.
 export {
   AGENT_INPUT_CAP,
