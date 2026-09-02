@@ -291,10 +291,12 @@ render-input superset) versus `SceneReference` (the Gallery DTO the table projec
 `images.kind`:
 
 - **`?tab=scenes`** (default) lists every owner's **ready** character-chat scene in one
-  keyset-ordered query (`entityKind:"character"` — owner-scoped character join, so a deleted
-  character drops them; chat-keyed via `chat_id`, which deleting the conversation SET-NULLs, so
-  the asset stays with its prompt scrubbed);
-- **`?tab=portraits`** lists `portrait_variant` rows joined to their character; and
+  keyset-ordered query (`entityKind:"character"` — owner-scoped LEFT JOIN to the character, so a
+  deleted character's scenes still list, with a null character name, rather than dropping out;
+  chat-keyed via `chat_id`, which deleting the conversation SET-NULLs, so the asset stays with its
+  prompt scrubbed);
+- **`?tab=portraits`** lists `portrait_variant` rows LEFT-joined to their character the same way —
+  a deleted character's portraits survive with a null character name; and
 - **`?tab=entity`** lists `entity` art with the source location or item name resolved.
 
 Every tab pages by the **keyset cursor** `?cursor=<createdAtMs>_<id>` plus `?limit` (default

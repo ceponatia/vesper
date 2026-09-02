@@ -53,21 +53,32 @@ explicit fixture delete; `generator_output` is an
 
 ## Deletes
 
-Deleting an entity **hard-deletes** its owned `images` rows and unlinks the files immediately —
-best-effort `fs.unlink`, not a queued job (`deleteEntityImages`).
+Deleting a location or item **hard-deletes** its owned `images` rows and unlinks the files
+immediately — best-effort `fs.unlink`, not a queued job (`deleteEntityImages`).
+
+A **character** is the exception: its Gallery-visible images (avatars, portraits, scenes) are
+deliberately never purged by `deleteEntityImages` — they survive the character as owner-visible
+Gallery history, with `images.entity_id` left dangling by design. Only the character's hidden
+identity assets (`identity_face_crop`, under `HIDDEN_IMAGE_KINDS` above) are hard-deleted, by the
+explicit `deleteCharacterIdentityAssets` call ([identity-packs.md](identity-packs.md)) — internal
+render inputs carry none of the Gallery-retention exception.
 
 **Every** delete path — the owned-image helpers, the chat cascades, the entity reclaim, the look
-anchor's keep-latest purge — runs the same `purgeImagesWhere(where)` (`images/assets.ts`): select →
-delete → best-effort unlink, once. The **caller** supplies the predicate and therefore owns every
-guard (owner id, kind, chat), and the helper adds nothing to it, so a purge can never be wider than
-the call site asked for. Route handlers are barred from importing it (ESLint) and use the
-owner-scoped `deleteOwnedImage(s)` instead.
+anchor's keep-latest purge, `deleteCharacterIdentityAssets` — runs the same `purgeImagesWhere(where)`
+(`images/assets.ts`): select → delete → best-effort unlink, once. The **caller** supplies the
+predicate and therefore owns every guard (owner id, kind, chat/entity), and the helper adds nothing
+to it, so a purge can never be wider than the call site asked for. Route handlers are barred from
+importing it (ESLint) and use the owner-scoped `deleteOwnedImage(s)` instead.
 
 Reading an asset's bytes is likewise one helper, `readImageBytes(row)` — null when the file is
 lost, never a throw, because the sweep below reconciles it.
 
-Only a **chat** deletion differs: it nulls `images.chat_id` (`SET NULL`) and deliberately keeps the
-asset, which survives in the Gallery.
+A **chat** deletion and a **character** deletion both differ from the location/item rule, in the
+same direction: a chat deletion nulls `images.chat_id` (`SET NULL`) and keeps the asset, which
+survives in the Gallery; a character deletion leaves `images.entity_id` dangling and keeps every
+Gallery-visible asset the same way. The Gallery's own list queries join outward to the character
+by that id — a LEFT JOIN, not an inner one — so a surviving image still lists once its character is
+gone, with a null character name.
 
 ## The sweep
 

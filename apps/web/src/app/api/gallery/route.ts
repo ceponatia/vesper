@@ -57,15 +57,23 @@ export const GET = withUser(async (user, req: NextRequest) => {
     const rows = await db()
       .select({
         id: images.id,
-        characterId: characters.id,
+        // The image's own `entity_id`, not the joined row's — a deleted character
+        // leaves this dangling on purpose (Gallery-retention: the portrait survives
+        // as owner-visible history), and the LEFT JOIN below returns no character row
+        // for it.
+        characterId: images.entityId,
         characterName: characters.name,
         prompt: images.prompt,
         favorite: images.favorite,
         createdAt: images.createdAt,
       })
       .from(images)
-      // Owner-scope the joined character too (security Cluster I2 posture).
-      .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
+      // LEFT JOIN, not inner: a character can be deleted while its Gallery-visible
+      // images survive (dangling `entity_id`, by design), and those rows must still
+      // list — with a null `characterName` — rather than vanish from the tab. Still
+      // owner-scoped in the join condition (security Cluster I2 posture), so a
+      // coincidental id match can never leak another owner's character name.
+      .leftJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
       .where(and(...base, eq(images.kind, "portrait_variant")))
       .orderBy(desc(images.createdAt), desc(images.id))
       .limit(limit + 1);
@@ -108,19 +116,21 @@ export const GET = withUser(async (user, req: NextRequest) => {
     });
   }
 
-  // Scenes: character-chat scenes, joined to their character (must still exist;
-  // owner-scoped join, security Cluster I2).
+  // Scenes: character-chat scenes, left-joined to their character — the character may
+  // be deleted while the scene survives as Gallery history (dangling `entity_id`, by
+  // design), and the row must still list with a null `characterName` rather than
+  // vanish. Still owner-scoped in the join condition (security Cluster I2 posture).
   const rows = await db()
     .select({
       id: images.id,
-      characterId: characters.id,
+      characterId: images.entityId,
       characterName: characters.name,
       prompt: images.prompt,
       favorite: images.favorite,
       createdAt: images.createdAt,
     })
     .from(images)
-    .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
+    .leftJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
     .where(and(...base, eq(images.kind, "scene"), eq(images.entityKind, "character")))
     .orderBy(desc(images.createdAt), desc(images.id))
     .limit(limit + 1);
