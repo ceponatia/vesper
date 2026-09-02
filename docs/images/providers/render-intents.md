@@ -74,26 +74,34 @@ buying a provider rejection at full latency.
 
 ## Prompt strategies add nothing the lane already said
 
-The two production prompt strategies add **nothing** to the lane's own text: the lane's builder
-already names its references, so a second set of numbered bindings would describe the same images
-twice.
+The two production prompt strategies add **nothing** to the lane's own text: a character lane's
+compiled program already names its references, so a second set of numbered bindings would
+describe the same images twice.
 
 `multi_reference_compose` is the exception and the point of the strategy — it prefixes a numbered
 `Image N:` binding per reference from one reference upward, in send order, naming each role's
 purpose, and adds a closing clause whenever a structural control is present telling the model to
 follow the control and never render it. The identity-pack vocabulary compiles its own separate
-numbered preamble for the identity trial.
+numbered preamble for the identity trial. No character lane runs it: the Image Lab's staged
+bench, which compiles the chat scene's own program, runs `instruction_edit` for exactly that
+reason.
 
-Lanes that number their references in their own prompt text build that text before selection
-runs, so nothing may move a slot underneath them. `image_profile.references_renumbered` reports
-when something does — measured as slot equality, so removing the second of three references
-(dropped, disallowed, or routed to a dedicated field) counts, while trimming from the tail does
-not. No lane triggers it.
+`image_profile.references_renumbered` reports when selection moves a slot under a prompt that
+was written before planning — measured as slot equality, so removing the second of three
+references (dropped, disallowed, or routed to a dedicated field) counts, while trimming from the
+tail does not. No application module authors a reference-slot label of its own
+(`scripts/image-reference-numbering.test.ts` keeps that census empty), so no lane triggers it.
 
 A character-image prompt is numbered from the prompt program's own reference plan rather than
-from a list written before planning, so its slots agree with the payload by construction and the
-seam refuses (`image_prompt_program.references_renumbered`) if planning ever moves one
-([../character-prompts.md](../character-prompts.md)).
+from a list written before planning, so its slots agree with the payload by construction, the
+lane sends the planned list, and the seam refuses (`image_prompt_program.references_renumbered`)
+if planning ever moves one ([../character-prompts.md](../character-prompts.md)).
+
+An intent carries **one** prompt channel, `prompt` — the lane's text before the profile's prompt
+strategy compiles it. A character render sends its compiled program's positive text there,
+already fitted to the model's probed prompt binding inside the compile
+(`imagePromptBudgetFromBinding`), and its compiled exclusions as the normalized
+`controls.negativePrompt`; there is no second prompt channel for the two to disagree with.
 
 ## Two things the intent deliberately does not send
 

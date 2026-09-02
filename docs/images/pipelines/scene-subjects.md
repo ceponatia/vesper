@@ -13,19 +13,19 @@ per present member** — camera-less shadow inputs built by `chatVisualStateShad
 (`engine/chat-pipeline.ts`), the same factory the admin visual-state inspector preview uses, so
 the scene digest and the preview assemble one cut identically — resolving every member's memory
 group in one batched query. A selfie's cast is trimmed to the sender. A member with no
-participant row, or a cut naming a different character, degrades to the legacy field production
-**for that member alone**, with a warn rather than a refusal.
+participant row has no cut — the queue warns and skips them — and a cut naming a different
+character is skipped with `images.scene_render.visual_subject_mismatch` (warn); either way the
+program describes nobody it has no cut for, and the rest of the cast is unaffected.
 
-After the composer's plan resolves, `applySceneSubjectVisual` binds the plan's **viewpoint** —
-its committed camera, plus the band the composer's own lighting phrase names — into the
-digest's ONE selection pass, never a re-select, and replaces the focal spec's preformatted
-appearance, identity-anchor and reveal fields with digest-sourced clauses, through the same
-segments builder and clause table the avatar lane uses, under the scene policy: **age never
-stated, full-figure frame, intimate skin only where the region reads bare**. The viewpoint is
-built once per plan: two people in one shot stand in one room under one lamp, and a per-subject
-derivation is how two members of one cast end up selected at different detail tiers. A scene
-that named no light leaves the lane's declared band standing rather than asserting a darkness
-nobody established ([scene-framing.md](scene-framing.md) §The camera).
+After the composer's plan resolves, `applySceneCastVisual` binds the plan's **viewpoint** —
+its committed camera, plus the band the composer's own lighting phrase names — into each
+member's ONE selection pass, never a re-select, and hands back one `SceneSubjectVisualSlice`
+per person: the realized digest, the three-layer attribute resolve it was selected over, the
+realized body and the canonical coverage readout — the program's own cut shape. The viewpoint
+is built once per plan: two people in one shot stand in one room under one lamp, and a
+per-subject derivation is how two members of one cast end up selected at different detail
+tiers. A scene that named no light leaves the lane's declared band standing rather than
+asserting a darkness nobody established ([scene-framing.md](scene-framing.md) §The camera).
 
 Two output consequences ride this sourcing:
 
@@ -43,19 +43,20 @@ canonical coverage readout and the realized body — through the character seam
 attributes the digest does not carry as typed subject facts, states coverage **once** as
 authoritative `subject.exposure` claims over the readout, and synthesizes the identity anchor
 for a subject a required identity reference names. Of the plan's per-character fields, the
-compiled program reads only the name and the resolved action; the preformatted appearance,
-anchor and reveal strings the field production also writes feed `buildSceneRenderPrompt`,
-which serves the Image Lab's staged bench and no chat scene.
+lowering reads only the name, the pose and the activity — `SceneCharacterSpec` carries no
+appearance, anchor or reveal text — and the plan's outfit summary and exposure serve the
+composer and the staging gate, never the image model.
 
-**What this sourcing changes is where the per-character field strings come from, and nothing
-else.** The scene's own decisions — the setting, the light, the mood, the capture mode, the
-staged arrangement, what each person is doing — do not travel as prose at all: the lane lowers
-its resolved plan into typed prompt-program inputs, and the endpoint's dialect words them
-([scene-framing.md](scene-framing.md)). LoRA routing and the attempt chains are untouched. A
-digest that cannot be built, or a required fact with no resolvable clause, **fails the row
-before provider spend** (`images.scene_render.visual_digest_unavailable` /
-`images.scene_render.visual_required_missing`), and the digest's `meta.visualState` provenance
-is written at reserve time so it survives a failed render.
+The scene's own decisions — the setting, the light, the mood, the capture mode, the staged
+arrangement, what each person is doing — do not travel as prose either: the lane lowers its
+resolved plan into typed prompt-program inputs (`scene-lowering.ts`), and the endpoint's
+dialect words them ([scene-framing.md](scene-framing.md)). A cut that cannot be built **fails
+the row before provider spend** (`images.scene_render.visual_digest_unavailable`), and the
+cast's `meta.visualState` provenance is written at reserve time so it survives a failed
+render. A cut that assembles but loses a required anchor on its way to the prompt is the
+compile's refusal, not this seam's: every rung compiles with `refuseOnMissingRequired`, and a
+refusing rung is dropped from the chain ([scene-images.md](scene-images.md) §The attempt
+ladder).
 
 ## One digest describes the whole cast
 
@@ -90,8 +91,10 @@ provenance the row carries.
 
 `applySceneCastVisual` runs one shadow assembly, one camera-bound selection and one digest
 realization per subject — nobody can answer what somebody else is wearing or showing — and
-feeds every one of them through the same per-subject producer that describes a lone character,
-patching `plan.focal` and the matching `plan.others` entries. There is no second appearance
+feeds every one of them through the same per-subject producer that describes a lone character
+(`applySceneSubjectVisual` is the one-subject spelling of the same call). Focal first, then
+roster order: the merged provenance takes its identifying fields from the head record, and a
+refusal names the focal's failure before a bystander's. There is no second appearance
 algorithm for bystanders.
 
 The per-subject provenance merges into **one** `meta.visualState` record: subjects and
@@ -99,8 +102,9 @@ suppressions concatenated in cast order, snapshot and selection fingerprints com
 cast-wide composite, the cut id and story minute from the shared cut, and the camera
 fingerprint from the focal — the framing identity of a shot is the focal's read.
 
-A required fact with no clause refuses the **whole** render, for a bystander as readily as for
-the focal: a scene missing one person's anchors is the same wrong picture.
+A cut that cannot be assembled refuses the **whole** render, and a required anchor no owner can
+value refuses the rung, for a bystander as readily as for the focal: a scene missing one
+person's anchors is the same wrong picture.
 
 ## Bare-region phrasing
 
@@ -135,8 +139,8 @@ The scene **route** supplies the intimate half instead, per rung, as typed
 through the character seam's `intimateReveal` input) — on a rung whose references permit
 intimate detail, which is the uncensored reference-edit rungs and never the bare-prompt
 fallback or a content-rejection retry. The projection reads the cut's own resolved attributes
-and coverage readout under one rule, shared with the prose reveal the Image Lab bench still
-runs ([../../contracts/attributes.md](../../contracts/attributes.md) `imageReveal`):
+and coverage readout under one rule, the same one the Image Lab's staged bench compiles
+through ([../../contracts/attributes.md](../../contracts/attributes.md) `imageReveal`):
 
 - `"shape"` — silhouette that reads *through* clothing (breast size and shape) — is stated
   **always**;
@@ -167,27 +171,24 @@ attribute.
 ## State-aware appearance
 
 `buildCharacterSceneContext` folds the chat's live state into the shot. Active conditions
-overlay attributes via `conditionAttributeOverlays`, so a "disheveled" or "unwashed" condition
-renders that way with the same inherent-attribute guard as the prompt, and
-`visualStateNote(meters)` appends a render-tuned visible-state phrase — glassy-eyed and
-unsteady from intoxication, lank and sheened from low hygiene, heavy-lidded from low energy,
-breath shallow from arousal — to the subject's appearance. The route threads
-`chatState.meters` and `conditions` in; mood and affect ride the avatar reference, not this
-note.
+overlay attributes via `conditionAttributeOverlays` inside each member's cut, so a
+"disheveled" or "unwashed" condition renders that way with the same inherent-attribute guard
+as the narrator prompt; mood and affect ride the identity reference. Meters are not a
+visual-state owner: no committed cut carries a meter reading and no compiled scene states one,
+so a meter's physiology reaches a prompt only if it is lowered as a typed scene fact.
 
 **No skin-colour words anywhere in an image prompt.** "Flushed", "blushing" and "rosy" render
-as *stage blusher* — a clown-makeup face, not a body state — so every meter phrase states
-physiology the model paints as physiology instead (eyes, lips, breath, sweat, posture, hair).
-Two leak paths are closed: `visualStateNote` is the deterministic one, and the **composer echo**
-is the LLM one, since the narrator's own arousal threshold hint says "flushed skin"
-(`contracts/meters/registry.ts`) and the composer reads it in the recent narration and hands it
-back in `pose` or `mood`. `SCENE_COMPOSER_SYSTEM` rules against colour words *and* `scrubBlush`
-(`images/prompts-scene-plan.ts`, applied to each action field in `characterSpec` and to `mood`
-in `resolveScenePlan`) drops any surviving clause whole — the rule alone is not trustworthy, the
-same belt-and-braces as `scrubPlayerFromAction`. Deliberately **not** scrubbed:
-`skin.undertone: rosy` is an authored identity attribute (the registry is the author's intent,
-not the composer's slip), and the narrator's hint itself stays, because narration isn't
-rendered.
+as *stage blusher* — a clown-makeup face, not a body state — so a body state is stated as
+physiology the model paints as physiology (eyes, lips, breath, sweat, posture, hair). The one
+leak path is the **composer echo**: the narrator's own arousal threshold hint says "flushed
+skin" (`contracts/meters/registry.ts`), and the composer reads it in the recent narration and
+hands it back in `pose` or `mood`. `SCENE_COMPOSER_SYSTEM` rules against colour words *and*
+`scrubBlush` (`images/prompts-scene-plan.ts`, applied to each action field in `characterSpec`
+and to `mood` in `resolveScenePlan`) drops any surviving clause whole — the rule alone is not
+trustworthy, the same belt-and-braces as `scrubPlayerFromAction`. Deliberately **not**
+scrubbed: `skin.undertone: rosy` is an authored identity attribute (the registry is the
+author's intent, not the composer's slip), and the narrator's hint itself stays, because
+narration isn't rendered.
 
 ## Identity anchors and the setting
 
@@ -197,9 +198,8 @@ bound endpoint's dialect words the lock
 ([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored render).
 The reference stays authoritative for the face: an edit lane's digest states no identity
 descriptors, so nothing in the prompt invites the model to repaint what it should be copying.
-`identityAnchorSummary` (whitelisted identity-critical attributes — skin tone and undertone,
-lips, eyes, hair, face shape and freckles) still rides `ScenePresentCharacter.identityAnchors`
-on the chat context builder; a chat scene's compiled prompt does not read it.
+`ScenePresentCharacter` and `SceneCharacterSpec` carry no appearance or anchor text at all —
+the cut is the only description of a person a scene render has.
 
 **Setting from scene memory:** `queueChatScene` derives the `room` from the chat's scene memory
 — the current place's background **sketch** when the `chat_scene_sketch` agent has written one,

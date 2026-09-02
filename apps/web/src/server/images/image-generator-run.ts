@@ -421,7 +421,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
 
   // 10. Plan, and refuse ANY planner refusal verbatim — the `image_profile.*`
   // vocabulary belongs to the layer that refused.
-  const planned = planImageRender(intent, imageRenderRuntimeFacts(model), sink);
+  const planned = planImageRender(intent, imageRenderRuntimeFacts(model));
   if (!planned.ok) {
     return await settleGeneratorRunFailed(row, planned.refusal.code, planned.refusal.message, sink, { columns });
   }

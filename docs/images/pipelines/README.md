@@ -9,7 +9,7 @@ The generation lanes. Every lane resolves its task's profile
 
 | Doc                                          | What it covers                                                                    |
 | -------------------------------------------- | --------------------------------------------------------------------------------- |
-| [avatars.md](avatars.md)                     | The canonical avatar: digest-sourced segments, waist-up policy, model switch      |
+| [avatars.md](avatars.md)                     | The canonical avatar: the standalone cut, the compiled program, model switch      |
 | [avatar-upload.md](avatar-upload.md)         | The user-supplied portrait: crop dialog, backdrop, synchronous promotion          |
 | [portrait-variants.md](portrait-variants.md) | Reference edits of the canonical avatar, promotion, the `nsfw test` anatomy bench |
 | [scene-images.md](scene-images.md)           | The chat scene lane: cast, composer, attempt ladder, chat keying, the Gallery     |

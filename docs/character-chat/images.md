@@ -3,7 +3,7 @@
 Everything visual the lane exchanges: photos the player attaches, selfies the
 character sends back, and the cached reference anchors renders are built from. This page
 owns the lane's **triggers, gates, cooldowns and lifecycle**; the render mechanics behind
-each kind — framing rules, reference routing, prompt segments, retry classification — are
+each kind — framing rules, reference routing, prompt programs, retry classification — are
 owned by [images/pipelines/](../images/pipelines/README.md).
 
 ## Pipeline scope

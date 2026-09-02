@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY, type ResolvedImageProfile } from "@vesper/image-core";
+import { FULLY_COVERED } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import type { CharacterProfile } from "@/contracts/world/profile";
 
 vi.mock("../db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db")>();
@@ -13,27 +16,46 @@ vi.mock("./assets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./assets")>();
   return { ...actual, runImagePipeline: vi.fn() };
 });
-vi.mock("./avatar-segments", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./avatar-segments")>();
-  return { ...actual, buildAvatarSegments: vi.fn(actual.buildAvatarSegments) };
+vi.mock("./model-profiles", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./model-profiles")>();
+  return { ...actual, resolveImageProfileForTask: vi.fn() };
+});
+vi.mock("./render-intent", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./render-intent")>();
+  return { ...actual, renderImageIntent: vi.fn() };
+});
+vi.mock("./standalone-subject-visual", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./standalone-subject-visual")>();
+  return { ...actual, buildStandaloneLaneCut: vi.fn(actual.buildStandaloneLaneCut) };
 });
 
 import { isDemoMode } from "../ai";
 import { db } from "../db";
-import { runImagePipeline } from "./assets";
+import { runImagePipeline, type ImageRow } from "./assets";
 import {
-  AVATAR_DIGEST_INELIGIBLE,
+  AVATAR_CUT_FAILED,
+  AVATAR_PROGRAM_UNBOUND,
   defaultOutfitPhrase,
   generateAvatar,
   loadDefaultWardrobeWithRevisions,
   wardrobeOutfitText,
 } from "./avatar";
-import { buildAvatarSegments } from "./avatar-segments";
-import { laneProbeProfile, LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID } from "@/server/test-support";
+import { resolveImageProfileForTask } from "./model-profiles";
+import { renderImageIntent } from "./render-intent";
+import { buildStandaloneLaneCut } from "./standalone-subject-visual";
+import {
+  attr,
+  LANE_PROBE_PORTRAIT_PROFILE,
+  laneProbeAvatarCut,
+  laneProbeAvatarProgram,
+  laneProbeProfile,
+  laneProbeWardrobe,
+  resolvedImageProfileFixture,
+} from "@/server/test-support";
 import { expectDiagnostic } from "@/test/diagnostics";
 
-const { buildAvatarSegments: actualBuildAvatarSegments, portraitPerception } =
-  await vi.importActual<typeof import("./avatar-segments")>("./avatar-segments");
+const { buildStandaloneLaneCut: actualBuildStandaloneLaneCut, portraitPerception } =
+  await vi.importActual<typeof import("./standalone-subject-visual")>("./standalone-subject-visual");
 
 const mockDb = vi.mocked(db);
 
@@ -85,104 +107,156 @@ describe("defaultOutfitPhrase degradation", () => {
 });
 
 /**
- * The Stage 3 digest wiring in `generateAvatar`. The assembly's own refusal
- * semantics are
- * owned by `contracts/images/visual-segments.test.ts`; what these prove is the
- * ROUTE's half of the contract, through the pipeline seam:
+ * `generateAvatar`'s wiring of its ONLY prompt path, through the pipeline seam
+ * (#251). The program's compile, the packs and the prompt's wording have their
+ * own owners; what these prove is the ROUTE's half of the contract:
  *
- * - an ELIGIBLE assembly reaches the reserve with `meta.visualState` beside
- *   style/model/demo and no precondition failure — and an EMPTY digest (a
- *   sparse human sheet) is eligible, killing the "empty digest refuses every
- *   plain human" defect;
- * - an ineligible or failed assembly fails the row via the precondition path
- *   (so the provider is never reached) AND records
- *   `images.avatar.visual_digest_ineligible` — degradation tests assert
- *   fallback and diagnostic code, per CLAUDE.md.
+ * - the row's stored `prompt` IS the prompt the provider receives — there is no
+ *   second prompt system to disagree with it — and demo mode, which compiles
+ *   nothing, stores the monogram's own label;
+ * - every answer that is not a compiled program fails the row through the
+ *   precondition path (so the provider is never reached) AND records its code:
+ *   the compile's own refusal, the lane's `images.avatar.program_unbound`, and
+ *   `images.avatar.visual_cut_failed` for a cut that would not assemble —
+ *   degradation tests assert fallback and diagnostic code, per CLAUDE.md;
+ * - `meta.visualState` lands at RESERVE time on every row that had a cut,
+ *   refused or not, so the visual moment survives a failed render.
  */
-describe("generateAvatar digest wiring", () => {
-  const characterRow = {
+describe("generateAvatar program wiring", () => {
+  const characterRow = (profile: unknown) => ({
     id: "chr-1",
     name: "Mira",
-    profile: {},
+    profile,
     updatedAt: new Date("2026-08-21T00:00:00Z"),
-  };
+  });
+  const bound = resolvedImageProfileFixture(LANE_PROBE_PORTRAIT_PROFILE);
 
-  function primeDb(): void {
+  function prime(options: { demo: boolean; profile: unknown; picked?: ResolvedImageProfile }): void {
+    vi.mocked(isDemoMode).mockReturnValue(options.demo);
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(options.picked ?? null);
+    vi.mocked(buildStandaloneLaneCut).mockImplementation(actualBuildStandaloneLaneCut);
+    vi.mocked(renderImageIntent).mockResolvedValue({ ok: true, image: Buffer.from("png") });
+    // The reserve → produce shell, minus the database: a failed precondition
+    // never reaches produce, which is what "before provider spend" means here.
+    vi.mocked(runImagePipeline).mockImplementation(async (opts) => {
+      if ((opts.failedPrecondition ?? null) !== null) return { imageId: "img-1", status: "failed" };
+      const produced = await opts.produce({ id: "img-1" } as unknown as ImageRow);
+      return { imageId: "img-1", status: produced.ok ? "ready" : "failed" };
+    });
     mockDb.mockImplementation(
       () =>
         ({
           select: () => ({
-            from: () => ({ where: () => ({ limit: () => Promise.resolve([characterRow]) }) }),
+            from: () => ({ where: () => ({ limit: () => Promise.resolve([characterRow(options.profile)]) }) }),
           }),
         }) as unknown as ReturnType<typeof db>,
     );
   }
 
-  function primePipeline(): void {
-    vi.mocked(isDemoMode).mockReturnValue(true);
-    vi.mocked(runImagePipeline).mockResolvedValue({ imageId: "img-1", status: "ready" });
-    primeDb();
-  }
+  const reserved = () => vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+  const generate = (sink: DiagnosticCollector) => generateAvatar({ characterId: "chr-1", userId: "u-1", sink });
 
-  it("reserves with meta.visualState and no refusal — an empty digest is still eligible", async () => {
-    primePipeline();
-    vi.mocked(buildAvatarSegments).mockImplementation(actualBuildAvatarSegments);
+  it("demo mode compiles nothing: the row reserves with meta.visualState, the monogram's label as its prompt and no refusal", async () => {
+    prime({ demo: true, profile: {} });
     const sink = new DiagnosticCollector();
-    await expect(generateAvatar({ characterId: "chr-1", userId: "u-1", sink })).resolves.toBe("img-1");
-    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    await expect(generate(sink)).resolves.toBe("img-1");
+    const opts = reserved();
     expect(opts?.failedPrecondition ?? null).toBeNull();
-    expect(opts?.asset.prompt).toContain("Subject: Mira");
-    expect(opts?.asset.meta).toMatchObject({ demo: true, style: "realistic" });
+    expect(opts?.asset.prompt).toBe("Mira");
+    expect(opts?.asset.meta).toMatchObject({ demo: true, style: "realistic", model: "demo" });
     // The provenance fragment lands at RESERVE time, so it survives a thrown produce.
     expect(opts?.asset.meta?.visualState).toMatchObject({ version: 1, scopeKey: "standalone_character:chr-1" });
-    expect(sink.items.some((d) => d.code === AVATAR_DIGEST_INELIGIBLE)).toBe(false);
+    expect(vi.mocked(renderImageIntent)).not.toHaveBeenCalled();
+    expect(sink.items.filter((d) => d.code.startsWith("images.avatar."))).toEqual([]);
   });
 
-  it("fails the row before provider spend when required facts are missing, with the diagnostic", async () => {
-    primePipeline();
-    vi.mocked(buildAvatarSegments).mockReturnValue({
-      // A refused assembly still CARRIES the cut it refused over — the builder
-      // always returns `visual` (refusal means a required fact resolved no
-      // clause, not that the cut failed to build) — so the fixture takes a real
-      // build's cut and overrides only the refusal-bearing fields. The empty
-      // ledger is the honest pairing of the empty segment list: nothing was
-      // emitted, so nothing is ledgered.
-      ...actualBuildAvatarSegments({
-        characterId: "chr-1",
-        name: "Mira",
-        profile: laneProbeProfile(),
-        style: "realistic",
-        wardrobe: [],
-        readToken: "refused-fixture-token",
-      }),
-      segments: [],
-      prompt: "",
-      digestMeta: { visualState: { refused: true } },
-      missingRequired: ["chr-1/wings"],
-      suppressions: [],
-      emittedFactKeys: [],
+  it("a bound model sends exactly the prompt the row stores, with the program's provenance beside the cut's", async () => {
+    prime({ demo: false, profile: laneProbeProfile(), picked: bound });
+    const sink = new DiagnosticCollector();
+    await expect(generate(sink)).resolves.toBe("img-1");
+    const opts = reserved();
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
+    expect(intent?.prompt).toBe(opts?.asset.prompt);
+    expect(intent?.prompt).toMatch(/late twenties/);
+    expect(Object.keys(opts?.asset.meta ?? {})).toEqual(
+      expect.arrayContaining(["visualState", IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY]),
+    );
+  });
+
+  it("an unbound model fails the row before provider spend, naming the row to add", async () => {
+    prime({
+      demo: false,
+      profile: laneProbeProfile(),
+      picked: resolvedImageProfileFixture({ slug: "test-only/unbound-portrait", task: "portrait", key: "portrait-standard" }),
     });
     const sink = new DiagnosticCollector();
-    await generateAvatar({ characterId: "chr-1", userId: "u-1", sink });
-    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
-    expect(opts?.failedPrecondition).toMatch(/missing required facts/);
-    // The refused attempt still records WHICH visual moment it refused over.
-    expect(opts?.asset.meta?.visualState).toEqual({ refused: true });
-    const recorded = sink.items.filter((d) => d.code === AVATAR_DIGEST_INELIGIBLE);
-    expect(recorded).toHaveLength(1);
-    expect(recorded[0]?.context).toMatchObject({ missingRequired: ["chr-1/wings"] });
+    await generate(sink);
+    const opts = reserved();
+    expect(opts?.failedPrecondition).toContain("test-only/unbound-portrait");
+    expect(opts?.failedPrecondition).toContain("portrait-standard");
+    expect(opts?.asset.prompt).toBe("");
+    expect(vi.mocked(renderImageIntent)).not.toHaveBeenCalled();
+    expectDiagnostic(sink, AVATAR_PROGRAM_UNBOUND);
   });
 
-  it("degrades an assembly failure to a failed row with the diagnostic, never a thrown request", async () => {
-    primePipeline();
-    vi.mocked(buildAvatarSegments).mockImplementation(() => {
+  it("a sheet the program cannot anchor fails the row before provider spend, with the compile's own code", async () => {
+    // A sheet that projects a subject but no apparent-age band: the age anchor
+    // is mandatory and fails closed.
+    const base = laneProbeProfile();
+    prime({
+      demo: false,
+      profile: { ...base, attributes: base.attributes.filter((value) => value.id !== "identity.apparent_age") },
+      picked: bound,
+    });
+    const sink = new DiagnosticCollector();
+    await generate(sink);
+    const opts = reserved();
+    expect(opts?.failedPrecondition).toBeTruthy();
+    expect(opts?.asset.prompt).toBe("");
+    // The refused attempt still records WHICH visual moment it refused over.
+    expect(opts?.asset.meta?.visualState).toMatchObject({ scopeKey: "standalone_character:chr-1" });
+    expect(vi.mocked(renderImageIntent)).not.toHaveBeenCalled();
+    // The compile's own refusal code (image-core `compile-program.ts`).
+    expectDiagnostic(sink, "image_prompt_program.missing_required_fact");
+  });
+
+  it("a cut that will not assemble degrades to a failed row with the diagnostic, never a thrown request", async () => {
+    prime({ demo: true, profile: {} });
+    vi.mocked(buildStandaloneLaneCut).mockImplementation(() => {
       throw new Error("boom");
     });
     const sink = new DiagnosticCollector();
-    await expect(generateAvatar({ characterId: "chr-1", userId: "u-1", sink })).resolves.toBe("img-1");
-    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
-    expect(opts?.failedPrecondition).toMatch(/could not be assembled/);
-    expect(sink.items.some((d) => d.code === AVATAR_DIGEST_INELIGIBLE)).toBe(true);
+    await expect(generate(sink)).resolves.toBe("img-1");
+    expect(reserved()?.failedPrecondition).toMatch(/could not be assembled/);
+    expectDiagnostic(sink, AVATAR_CUT_FAILED);
+  });
+});
+
+/**
+ * The portrait studio's field policy, read off the compiled program — the one
+ * prompt a portrait sends. The selection's consent gate, the adapter's
+ * excluded-field and non-visual gates and the lane's decision not to project an
+ * intimate reveal each have their own owner; this pins what they add up to for
+ * THIS lane, because the defect is a one-line one — `intimateAllowed: true` or
+ * an `intimateReveal` on the avatar program — and the picture it produces is a
+ * nude portrait of a character whose sheet merely lists their anatomy.
+ */
+describe("the portrait program's field policy", () => {
+  it("withholds intimate anatomy, non-visual senses and excluded fields — bare or dressed", () => {
+    const base = laneProbeProfile();
+    const profile: CharacterProfile = {
+      ...base,
+      attributes: [...base.attributes, attr("identity.natal_sex", "female", "base")],
+    };
+    for (const wardrobe of [[], laneProbeWardrobe()]) {
+      const program = laneProbeAvatarProgram({ profile, wardrobe });
+      if (program.kind !== "compiled") throw new Error(`the avatar program did not compile: ${program.kind}`);
+      expect(program.prompt).toMatch(/late twenties/); // the sheet does reach the prompt…
+      expect(program.prompt).not.toMatch(/\bample\b|\bpuffy\b/); // …minus breasts.size / breasts.nipples
+      expect(program.prompt).not.toMatch(/gravelly/); // voice.timbre never renders
+      expect(program.prompt).not.toMatch(/natal/i); // identity.natal_sex is excludeFromPrompts
+    }
   });
 });
 
@@ -203,7 +277,7 @@ describe("loadDefaultWardrobe degradation", () => {
     });
     const sink = new DiagnosticCollector();
     const load = await loadDefaultWardrobeWithRevisions("u-1", ["item-1", "item-2"], sink);
-    expect(load.wardrobe).toEqual([]); // degraded: attributes-only prompt
+    expect(load.wardrobe).toEqual([]); // degraded: coverage unknown
     const recorded = sink.items.filter((d) => d.code === "images.avatar.outfit_load_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
@@ -248,35 +322,25 @@ describe("loadDefaultWardrobe degradation", () => {
 
   it("a failed wardrobe load never becomes exposure claims — a genuinely empty wardrobe still does", () => {
     // Kills the regression the Stage 3 review caught: a transient item-table
-    // failure degraded to `[]`, which the digest path then read as a confirmed
+    // failure degraded to `[]`, which the cut then read as a confirmed
     // undressed character and rendered a topless portrait against the saved
-    // outfit. Unknown coverage must stay silent; only CONFIRMED bare states it.
-    const base = {
-      characterId: LANE_PROBE_SUBJECT_ID,
-      name: LANE_PROBE_NAME,
-      profile: laneProbeProfile(),
-      style: "realistic" as const,
-      wardrobe: [],
-      readToken: "unavailable-wardrobe-token",
-    };
-    const unavailable = actualBuildAvatarSegments({ ...base, wardrobeUnavailable: true });
-    expect(unavailable.segments.some((s) => s.kind === "exposure")).toBe(false);
-    expect(unavailable.prompt).not.toMatch(/\bbare\b|\btopless\b|\bnude\b/i);
-    expect(unavailable.missingRequired).toEqual([]); // degraded, still render-eligible
-
-    const confirmedBare = actualBuildAvatarSegments(base);
-    expect(confirmedBare.segments.some((s) => s.kind === "exposure")).toBe(true);
+    // outfit. Unknown coverage must read fully covered — the adapter's
+    // exposure claims are silence for a covered region — and only CONFIRMED
+    // bare states anything.
+    const unavailable = laneProbeAvatarCut([], laneProbeProfile(), { wardrobeUnavailable: true });
+    expect(unavailable.exposure).toEqual(FULLY_COVERED);
+    expect(laneProbeAvatarCut([]).exposure.torso).toBe("bare");
 
     // Coverage-unreliable is the same degrade with the wardrobe LIST intact: a
     // malformed coverage column loaded the kimono with `coverage: []`, which
-    // must not read as an undressed body — no exposure claims — while the
-    // outfit line keeps its real name.
+    // must not read as an undressed body.
     const kimono = { name: "silk kimono", coverage: [] as string[], layer: 1 as const, opacity: "opaque" as const };
-    const unreliable = actualBuildAvatarSegments({ ...base, wardrobe: [kimono], coverageUnreliable: true });
-    expect(unreliable.segments.some((s) => s.kind === "exposure")).toBe(false);
-    expect(unreliable.prompt).not.toMatch(/\bbare\b|\btopless\b|\bnude\b/i);
-    expect(unreliable.prompt).toContain("silk kimono");
-    expect(unreliable.missingRequired).toEqual([]);
+    expect(laneProbeAvatarCut([kimono], laneProbeProfile(), { coverageUnreliable: true }).exposure).toEqual(FULLY_COVERED);
+
+    // …and the compiled portrait over the degraded cut says nothing about a bare body.
+    const program = laneProbeAvatarProgram({ wardrobeUnavailable: true });
+    if (program.kind !== "compiled") throw new Error(`the degraded cut did not compile: ${program.kind}`);
+    expect(program.prompt).not.toMatch(/\bbare\b|\btopless\b|\bnude\b/i);
   });
 
   it("the degraded perception hides what a fully-covering wardrobe hides — and only that", () => {
@@ -286,7 +350,7 @@ describe("loadDefaultWardrobe degradation", () => {
     // and stated even while exposure claimed fully covered. Degraded, every
     // location an exposure region reaches answers hidden; the identity
     // locations a portrait requires stay in plain view (mandatory facts bypass
-    // perception entirely — the missingRequired pins above are that half).
+    // perception entirely — the program's own refusal pins that half).
     const degraded = portraitPerception([], true);
     // Wings and tail sit under back/pelvis in the registry, so a fully-covering
     // wardrobe hides them too — harmless, because morphology anchors are

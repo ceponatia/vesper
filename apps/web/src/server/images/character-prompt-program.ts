@@ -5,7 +5,6 @@ import {
   compileImagePromptProgram,
   imageNegativePack,
   imagePositivePack,
-  imagePromptBindingForShadow,
   imagePromptBudgetFromBinding,
   imagePromptDialectForBinding,
   planIntentReferences,
@@ -15,7 +14,6 @@ import {
   type ImageDialectReference,
   type ImageOperationContract,
   type ImagePromptProfileBinding,
-  type ImagePromptSegment,
   type ImagePromptStrategy,
   type ImageLocationDigest,
   type ImageReferenceFact,
@@ -41,51 +39,50 @@ import {
   type CharacterWorldDigestAssemblyInput,
   type CharacterWorldReadInput,
 } from "@/contracts/images/character-digest";
-import type { VariantKind } from "./prompts-variant";
+import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 // The character pack seeds register their packs and bindings at import time, and
-// this module is the one place both the shadow and production resolve a binding
-// — so the registration import belongs here rather than being duplicated at
-// every caller. A module that imported this one alone and skipped the seeds
-// would silently resolve null and read as "this lane is not cut over".
-// All three files together are the whole character surface: the two Qwen
-// endpoints, and every other model the profile picker still offers (#256).
+// this module is the one place a character lane resolves a binding — so the
+// registration import belongs here rather than being duplicated at every
+// caller. A module that imported this one alone and skipped the seeds would
+// silently resolve `unbound` for every lane. All three files together are the
+// whole character surface: the two Qwen endpoints, and every other model the
+// profile picker offers (#256).
 import "./packs-character-endpoints";
 import "./packs-qwen-2511";
 import "./packs-qwen-2512-portrait";
 
 /**
  * THE CHARACTER PROMPT-PROGRAM SEAM (issue #256) — the one path that turns a
- * lane's realized visual cut into a compiled prompt program, shared verbatim by
- * the shadow that MEASURES a cutover and the production render that PERFORMS
- * one.
+ * lane's realized visual cut into a compiled prompt program. It is the ONLY
+ * prompt path a character lane has (#251): the avatar, the portrait variant,
+ * the chat-look mint and every scene rung compile here or refuse before
+ * provider spend, and nothing anywhere phrases a character from prose.
  *
- * It exists because of a single invariant: the prompt production sends after a
- * lane is cut over must be produced by the same semantic program-building path
- * the shadow measured. Two independent implementations — one to observe, one to
- * ship — would let the evidence describe a prompt nobody sends, which is the
- * one failure mode that makes the whole staged rollout worthless. So the
- * assembly, the operation contract, the binding, the packs, the reference
- * planning, the budget and the compile all live here exactly once, and the two
- * callers differ only where their PURPOSES genuinely differ:
+ * The assembly, the operation contract, the binding, the packs, the reference
+ * planning, the budget and the compile all live here exactly once, so the four
+ * lanes cannot drift apart in what a "compiled character prompt" means. What
+ * differs per lane is stated by the lane as input — its cut, its operation,
+ * its references, its camera — and what a lane does with each of the three
+ * answers is the lane's own law:
  *
- * | | shadow | production |
+ * | answer | what it means | what a lane does |
  * |---|---|---|
- * | resolver | `imagePromptBindingForShadow` — `candidate` rows included | `activeImagePromptBinding` — `active` only |
- * | no binding | a recorded `unmeasured` verdict | the lane's own law: a prose lane keeps its builder, the scene drops the rung |
- * | refusal | a recorded verdict; the render is untouched | the row fails BEFORE provider spend |
- * | `refuseOnMissingRequired` | `false` — the loss must be measurable, not fatal | the lane's own task decision |
+ * | `compiled` | a program for this render | sends exactly its prompt and references |
+ * | `refused` | a configuration or compile fault on a lane that IS bound | fails the row BEFORE provider spend, or (chat look) mints nothing |
+ * | `unbound` | no `active` row for this (model, task, profile key) | fails the row naming the three coordinates, or (scene) drops the rung |
  *
  * `unbound` is deliberately a THIRD result rather than a refusal. It is the
  * honest "no row for this (model, task, profile key)", and it stays a real
  * answer even now that every character profile the picker offers is bound
  * (#256): a lane whose profile key gains a row later, an operator-added
  * model with no dialect, and `chat_place` — the one identity-free chat lane,
- * deliberately unbound — all land here. What a lane does with it is the lane's
- * own law, never this seam's: a lane that still has a prose builder keeps it,
- * and the chat scene, whose only prompt path is this one, drops that rung from
- * its chain (`scene.ts`). A refusal, by contrast, is a real configuration or
- * compile fault on a lane that IS bound, and rendering something else there
- * would hide it behind acceptable-looking images.
+ * deliberately unbound — all land here. It never degrades to a different
+ * prompt: the binding table is where a lane's words are authorized, so an
+ * endpoint missing from it is an endpoint the lane may not speak for
+ * ({@link characterPromptUnboundRefusal} names the row an operator has to
+ * add). A refusal, by contrast, is a real configuration or compile fault on a
+ * lane that IS bound, and rendering something else there would hide it behind
+ * acceptable-looking images.
  *
  * ## Reference planning belongs here
  *
@@ -112,13 +109,7 @@ export type CharacterPromptLane = "avatar" | "variant" | "chat_look" | "scene";
 
 /**
  * One subject's realized cut, in the vocabulary every lane already exposes
- * (`StandaloneSubjectVisual`, `ChatLookSegmentAssembly.visual`,
- * `SceneSubjectVisualSlice`).
- *
- * Deliberately WITHOUT the segment build's emission ledger: that is evidence
- * about what the LEGACY builder emitted, which only the comparison half has any
- * use for. A production compile that could see it would be a compile that could
- * be influenced by the string it is replacing.
+ * (`StandaloneSubjectCut`, `ChatLookCut`, `SceneSubjectVisualSlice`).
  */
 export interface CharacterPromptSubjectCut {
   readonly subjectId: string;
@@ -174,8 +165,6 @@ export interface CharacterPromptProgramInput {
    * on exactly that disagreement.
    */
   readonly bindingStrategy?: ImagePromptStrategy;
-  /** Which status set resolution may see. Production is always `"active"`. */
-  readonly resolver: "active" | "shadow";
   /**
    * Every person this render draws, in cast order — one entry for a portrait,
    * variant or look mint, N for an ensemble scene (#256).
@@ -226,14 +215,15 @@ export interface CharacterPromptProgramInput {
   readonly operation: (subjects: readonly ImageSubjectDigest[]) => ImageOperationContract;
   /**
    * A TASK question, not a prompt one: a variant of a specific person is
-   * worthless without her identity anchors, while the shadow must compile
-   * THROUGH the loss to be able to report it.
+   * worthless without her identity anchors, so every production lane refuses
+   * — while a bench that wants to measure the loss may compile THROUGH it and
+   * read `missingRequired` off the result.
    */
   readonly refuseOnMissingRequired: boolean;
   readonly sink?: DiagnosticSink;
 }
 
-/** A compiled program, plus what the comparison half still needs from the compile. */
+/** A compiled program, plus what the compile learned on the way. */
 export interface CharacterPromptProgram {
   readonly kind: "compiled";
   /** The positive text: what the row stores and what the intent sends. */
@@ -253,7 +243,7 @@ export interface CharacterPromptProgram {
   readonly numberedReferences: readonly ImageRenderReference[];
   /** The assembly's aggregated missing anchors — empty unless the compile tolerated them. */
   readonly missingRequired: readonly string[];
-  /** The assembled subject slices, pre-build: the compiled side's fact source. */
+  /** The assembled subject slices, pre-build: the facts the prompt was compiled from. */
   readonly subjects: readonly ImageSubjectDigest[];
   /** The claims that survived to the prompt, by id. */
   readonly keptClaimIds: readonly string[];
@@ -261,8 +251,8 @@ export interface CharacterPromptProgram {
 
 /**
  * No binding for this (model, task[, profileKey]). An ORDINARY answer, never an
- * error: what the lane does with it — keep a prose builder, drop a rung — is the
- * lane's own law.
+ * error — but never a prompt either: the lane fails its render naming the row
+ * ({@link characterPromptUnboundRefusal}), or drops the rung.
  */
 export interface CharacterPromptProgramUnbound {
   readonly kind: "unbound";
@@ -272,10 +262,20 @@ export interface CharacterPromptProgramUnbound {
 }
 
 /**
- * A configuration gap or a compile refusal on a lane that IS bound. Production
- * fails the row on it; it never falls back to the legacy prompt, because a
- * binding that resolved and then could not compile is a fault to surface rather
- * than to paper over.
+ * The operator-facing text for an unbound lane: the three coordinates a
+ * binding row has to be added for. A failed row carries it as its own message,
+ * so the studio tile says which endpoint the lane may not speak for.
+ */
+export function characterPromptUnboundRefusal(unbound: CharacterPromptProgramUnbound): string {
+  const profile = unbound.profileKey === null ? "" : `, profile ${unbound.profileKey}`;
+  return `no active prompt binding for ${unbound.modelSlug} (task ${unbound.task}${profile})`;
+}
+
+/**
+ * A configuration gap or a compile refusal on a lane that IS bound. The lane
+ * fails its render on it and sends nothing else, because a binding that
+ * resolved and then could not compile is a fault to surface rather than to
+ * paper over.
  */
 export interface CharacterPromptProgramRefusal {
   readonly kind: "refused";
@@ -441,27 +441,25 @@ function castAssembly(
 /**
  * Resolve, assemble, compile — the whole semantic path, once.
  *
- * Throws nothing of its own: every decision is a returned discriminant. The
- * shadow wraps this in its own total container because an observation must never
- * fail a render; production lets a genuine defect throw, because a lane that
- * cannot compile the program it is bound to must not quietly ship something else.
+ * Throws nothing of its own: every decision is a returned discriminant. A
+ * genuine defect is allowed to throw, because a lane that cannot compile the
+ * program it is bound to must not quietly ship something else.
  */
 export function buildCharacterPromptProgram(input: CharacterPromptProgramInput): CharacterPromptProgramResult {
   const { lane, profile, sink } = input;
   const profileKey = input.bindingProfileKey;
 
   // --- 1. The binding, on the lane's own FINAL resolved model ---------------
-  const resolve = input.resolver === "shadow" ? imagePromptBindingForShadow : activeImagePromptBinding;
   // The BASE slug, not the row's own. Three seeded character models are
   // community checkpoints whose registry rows carry a `:version` pin
   // (LikeReality Pony, NSFW FLUX Dev, SDXL PuLID), and so does the LoRA wrapper
   // the intimate and bench routes swap onto — so resolving on the raw slug
   // would answer `unbound` for four endpoints that ARE bound, and each would
-  // silently keep its legacy prompt with nothing in the binding table showing
-  // it. Pinning a binding to one provider version is what `versionId` is for,
-  // and it is a separate decision from which endpoint a row is about.
+  // fail every render with nothing in the binding table showing why. Pinning a
+  // binding to one provider version is what `versionId` is for, and it is a
+  // separate decision from which endpoint a row is about.
   const modelSlug = baseImageModelSlug(profile.model.slug);
-  const binding = resolve({
+  const binding = activeImagePromptBinding({
     modelSlug,
     task: input.task,
     ...(profileKey === undefined ? {} : { profileKey }),
@@ -620,29 +618,22 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
 }
 
 // ---------------------------------------------------------------------------
-// The transport every cut-over lane sends on
+// The transport every character lane sends on
 // ---------------------------------------------------------------------------
 
 /** The prompt channels one character render sets on its intent. */
 export interface CharacterPromptTransport {
   readonly prompt: string;
-  /** The semantic segments, on a LEGACY render only. */
-  readonly promptSegments?: readonly ImagePromptSegment[];
   /** The compiled exclusions, normalized — absent when the program compiled none. */
   readonly controls?: { readonly negativePrompt: string };
 }
 
 /**
- * The prompt channels a cut-over render sends, decided in ONE place because they
- * must move together.
- *
- * `resolveIntentPrompt` prefers `promptSegments` over `prompt` whenever the list
- * is non-empty, so a compiled render that still carried the legacy segments
- * would send the legacy prose while its row stored the compiled program — a
- * provider seeing one prompt and an operator reading another, with nothing
- * anywhere reporting a disagreement. Deciding the three channels separately at
- * each call site is exactly how that ships; deciding them here makes the
- * coupling structural for every lane at once.
+ * The prompt channels a compiled render sends, decided in ONE place because
+ * they must move together: the positive text as the intent's `prompt` — the
+ * intent's only prompt channel — and the compiled exclusions as the normalized
+ * control, never as a second prompt. A character render has nothing but the
+ * program to send.
  *
  * The compiled exclusions ride the normalized control so they reach a provider
  * only through the version's own probed `negative_prompt` binding, and are
@@ -651,14 +642,10 @@ export interface CharacterPromptTransport {
  * negative block enabled that its dialect can transport — and no key is
  * invented.
  */
-export function characterPromptTransport(
-  legacyPrompt: string,
-  segments: readonly ImagePromptSegment[] | undefined,
-  compiled: { readonly prompt: string; readonly negativePrompt: string | null } | null,
-): CharacterPromptTransport {
-  if (compiled === null) {
-    return { prompt: legacyPrompt, ...(segments === undefined ? {} : { promptSegments: segments }) };
-  }
+export function characterPromptTransport(compiled: {
+  readonly prompt: string;
+  readonly negativePrompt: string | null;
+}): CharacterPromptTransport {
   const negative = compiled.negativePrompt;
   return {
     prompt: compiled.prompt,
@@ -671,8 +658,8 @@ export function characterPromptTransport(
 // ---------------------------------------------------------------------------
 
 /**
- * The variant kinds' change concepts — the ONE mapping, shared by the shadow
- * that measured this lane and the production compile that will ship it.
+ * The variant kinds' change concepts — the ONE mapping the variant lane
+ * compiles through.
  *
  * The concept is not prose: it never reaches the prompt text. It does exactly
  * two things — it is the sole input to the preserve-set derivation
@@ -698,7 +685,7 @@ export function characterPromptTransport(
  * is a wording decision with output consequences rather than a typo — so it
  * belongs to whichever trial grades those kinds, not to this migration.
  */
-export const VARIANT_CHANGE_CONCEPTS: Record<VariantKind, ImageConceptId> = {
+export const VARIANT_CHANGE_CONCEPTS: Record<PortraitVariantKind, ImageConceptId> = {
   pose: "subject.pose",
   outfit: "subject.wardrobe",
   expression: "subject.expression",
@@ -708,7 +695,7 @@ export const VARIANT_CHANGE_CONCEPTS: Record<VariantKind, ImageConceptId> = {
 
 /** The variant lane's operation contract for one kind and instruction. */
 export function variantChangeOperation(
-  kind: VariantKind,
+  kind: PortraitVariantKind,
   instruction: string,
 ): (subjects: readonly ImageSubjectDigest[]) => ImageOperationContract {
   return (subjects) =>

@@ -35,23 +35,41 @@ first row, and let a second failure stand as a debuggable `failed` row. Diagnost
 its identity reference(s) sourced from the identity-pack service
 ([../identity-packs.md](../identity-packs.md)).
 
-Its prompt is **segments over the conversation's committed visual digest**
-(`buildChatLookSegments`, `server/images/chat-look-segments.ts`) under the look policy: **age
-omitted** (the narrative/visual age split, [avatars.md](avatars.md) §Apparent age), waist-up
-frame, intimate never, and **exposure omitted**, because the operation line already states the
-coverage being requested.
+Its prompt is the **compiled prompt program over the conversation's committed cut**
+(`buildChatLookCut` → the mint's program, `server/images/chat-look.ts`), the mint's only prompt
+path ([../character-prompts.md](../character-prompts.md)). The cut is this character's committed
+chat cut as the shared factory hands it over (`chatVisualStateShadowInput`), realized under the
+look's fixed studio viewpoint `CHAT_LOOK_CAMERA` — facing the viewer at medium distance, the
+`waist_up` band, camera id `chat_look_studio` — rather than a committed scene camera, because
+a look keyed to whatever the fiction's camera was doing would invalidate on every shot change.
+The read is `committed_cut` on the cut's own id: the cut id IS the staleness check.
 
-Like its sibling edit lane ([portrait-variants.md](portrait-variants.md)) the mint carries no
-route-owned attribute sheet: it gains the digest's body-shape anchors — horns, wings, tail —
-while hair, eye and skin color stay unstated and come off the reference photograph.
+The program compiles as lane `chat_look`, task `chat_look`, with every reference bound to the
+subject (each is the subject's own identity pack) and `refuseOnMissingRequired: true`. The
+outfit reaches the prompt as the operation's **change contract** on `subject.wardrobe`
+(`characterChatLookImageOperation`): the tracked outfit text, or `nothing` for an undressed
+character, or a simple casual outfit when the conversation settled on nothing in particular —
+an empty outfit is a real instruction, not a missing one. No intimate reveal is passed, and the
+digest's consent gate stays shut.
+
+Like its sibling edit lane ([portrait-variants.md](portrait-variants.md)) the mint states no
+identity descriptors: it gains the digest's body-shape anchors — horns, wings, tail — and the
+seam's identity anchor, while hair, eye and skin color come off the reference photograph.
 
 **Current state is deliberately suppressed** — active conditions, body-surface wetness, garment
 condition. The anchor is cached under `chatLookKey`, which cannot see transient body state, so a
 "skin damp" clause would bake a wet character into an asset whose key never moves again.
 
-A digest the mint cannot build refuses **before reserving a row**, so an ineligible chat
-accumulates no failed rows and simply retries on the next outfit or appearance change; a missing
-participant row warns and the mint still happens on the route-owned segments alone.
+Every refusal happens **before reserving a row**, so an ineligible chat accumulates no failed
+rows and simply retries on the next outfit or appearance change. A caller with no committed
+cut to give — a missing `chat_participants` row — refuses with
+`images.chat_look.visual_cut_missing`: there is no second prompt system to phrase an anchor
+from, and a plausible face minted from a string would be one every later scene composes from.
+A cut that will not assemble refuses with `images.chat_look.visual_digest_unavailable`; a
+refused program mints nothing; a chat-look profile whose model has no active binding refuses
+with `images.chat_look.program_unbound`, naming the row to add. What a successful mint sends is
+`characterPromptTransport(compiled)`: the compiled prompt plus the compiled exclusions on the
+normalized `controls.negativePrompt`.
 
 `chatLookKey` is outfit + exposed + appearance overlays, keep-latest **per character** — the
 loader, the freshness check and the purge all scope on `entityId`, because a chat-wide read

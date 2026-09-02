@@ -1,12 +1,9 @@
 import { z } from "zod";
 import type { SceneCaptureMode } from "@vesper/image-core";
-import type { AttributeValue } from "@/contracts/attributes";
 import { sceneCameraHeights, sceneShotDistances, sceneSubjectOrientationIds } from "@/contracts/images/scene-camera";
 import { describeCommittedFacts, type CommittedSceneFacts } from "@/contracts/images/scene-committed";
 import { sceneStagingList } from "@/contracts/images/scene-staging";
 import type { RegionExposure } from "@/contracts/items/visibility";
-import type { CharacterProfile } from "@/contracts/world/profile";
-import { excerpt, formatGarment } from "./prompts-format";
 
 /** The scene composer's contract: its structured output schema, its system rules, and the prompt it is given. */
 
@@ -129,30 +126,13 @@ export interface ScenePresentCharacter {
    * supplies a described outfit directly. Sessions never set this (they have item state).
    */
   outfitDescription?: string;
-  /** Compact attribute phrase (characterAppearanceSummary) for textual render descriptions. */
-  appearance?: string;
   /**
-   * Identity-anchor phrase (identityAnchorSummary) for the identity-locked reference subject:
-   * whitelisted identity-critical features (lips, skin tone, eyes, hair) that reinforce the
-   * reference image — the render prompt words the reference as authoritative over them.
+   * Per-region coverage (exposedRegions). The composer prompt states it so the
+   * shot planner knows what is bare; the staging gate reads it so an act that
+   * describes bare skin cannot fire on a covered subject. What the IMAGE model
+   * is told about coverage comes from the committed cut the program compiles,
+   * never from this entry.
    */
-  identityAnchors?: string;
-  /**
-   * The apparent-age anchor sentence (apparentAgeAnchor, owner ruling 2026-07-29) —
-   * TEXT-authoritative, unlike identityAnchors: Qwen edits over-read an
-   * age-ambiguous reference and compound a step older per generation, so the
-   * sheet's age must overrule the reference. "" / absent ⇒ no age text.
-   */
-  ageAnchor?: string;
-  /**
-   * SFW lower-body shape line (sceneRevealAppearance, `{intimate:false}`): the
-   * figure below a waist-up reference portrait — waist/hips/legs/feet, with
-   * skin-level detail gated by exposure. Emitted for the identity-locked subject.
-   */
-  lowerBody?: string;
-  /** Visible intimate-anatomy phrase (sceneRevealAppearance, `{intimate: true}`), exposure-gated; emitted only on the uncensored route. */
-  intimateAppearance?: string;
-  /** Per-region coverage (exposedRegions) — drives explicit bare-skin phrasing. */
   exposure?: RegionExposure;
   /**
    * Gate for bare phrasing. Scene-image callers set this when the session's
@@ -216,12 +196,6 @@ export interface SceneComposerContext {
    * judgment call.
    */
   playerExposure?: RegionExposure;
-  /** The persona's resolved attributes — the viewer's own body facts (slice 4). */
-  playerAttributes?: ReadonlyArray<AttributeValue>;
-  /** The persona's profile, for realized-body applicability of those attributes. */
-  playerProfile?: CharacterProfile;
-  /** The viewer's exposure-gated intimate anatomy (uncensored route only). */
-  playerIntimateAppearance?: string;
 }
 
 /**
@@ -254,7 +228,8 @@ const COMPOSER_DISEMBODIED_RULES = [
  * **Genitals are absent from its vocabulary on purpose** — this composer runs with
  * `allowIntimate: false` whatever model its seam picks (exposure gating is code's job
  * however bold the composer is — owner ruling 2026-08-10), so intimate anatomy is derived
- * at render assembly instead, exactly as `sceneRevealAppearance` always has been.
+ * at render assembly instead — the program's intimate reveal over the committed cut's
+ * coverage.
  */
 const COMPOSER_EMBODIED_RULES = [
   "The image is rendered from the player's first-person POV — shot through their own eyes, so their face and head are NEVER in frame. Their own hands, arms, lap or legs MAY enter the foreground when the scene actually puts them there — that is what `viewerBody` is for. Never describe the player's clothing, and never place the player as a person standing in the scene.",
@@ -458,6 +433,31 @@ function committedFactLines(context: SceneComposerContext): string[] {
     if (described) lines.push(`- ${described}`);
   }
   return lines;
+}
+
+/** Collapse whitespace and cap a passage the composer is shown, marking the cut with an ellipsis. */
+function excerpt(text: string, max: number): string {
+  const collapsed = text.trim().replace(/\s+/g, " ");
+  return collapsed.length <= max ? collapsed : `${collapsed.slice(0, max).trimEnd()}…`;
+}
+
+/**
+ * Garment phrasing for the composer's wardrobe lines: the item's description is
+ * the primary text — it usually restates the name and carries more visual
+ * detail — with the bare name as the fallback when there is no description, and
+ * the sensory appearance appended in parentheses. Untruncated: clothing detail
+ * is authoritative for what the composer may assume the subject wears.
+ *
+ * Accessory subtypes LEAD the phrase ("nose ring: thin gold hoop") — a bare
+ * jewelry name gives the model nothing to place the piece with (face-jewelry
+ * plan). Skipped when the text already names the type ("Gold nose ring").
+ */
+function formatGarment(item: { name: string; description?: string; appearance?: string; subtypeLabel?: string }): string {
+  const base = (item.description?.trim() || item.name).trim();
+  const type = item.subtypeLabel?.trim();
+  const lead = type && !base.toLowerCase().includes(type) ? `${type}: ${base}` : base;
+  const detail = item.appearance?.trim();
+  return detail ? `${lead} (${detail})` : lead;
 }
 
 function wardrobeLines(worn: ReadonlyArray<SceneWornItem>): string {

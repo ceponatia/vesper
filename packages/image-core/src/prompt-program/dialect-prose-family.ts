@@ -80,19 +80,13 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  */
 
 /**
- * The provider-neutral identity lock — a byte-copy of the app's
- * `PORTRAIT_IDENTITY_LOCK` (`apps/web/src/server/images/prompts-variant.ts`).
- *
- * Copied rather than imported because `@vesper/image-core` may not import the
- * app, and byte-equality is the point: this is the exact sentence every
- * non-Qwen endpoint receives from the legacy builders today. The Qwen family
- * adapter rewrites that sentence into its numbered spelling at the model
- * boundary and these endpoints have no such adapter, so keeping the bytes makes
- * the cutover a change of PROVENANCE rather than a change of instruction — no
- * endpoint here is asked something it has not already been asked.
- *
- * `scripts/qwen-identity-lock-parity.test.ts` already pins the app constant
- * against the Qwen copies; `prompt-program.test.ts` pins this one.
+ * The provider-neutral identity lock this family compiles a `subject.identity`
+ * anchor into — the sentence every non-Qwen character endpoint has always
+ * received, kept byte for byte so cutting a lane over to the program changed
+ * its PROVENANCE rather than its instruction. This dialect is now the
+ * sentence's only source: the lane-side prose builders that once emitted it
+ * are gone, and the Qwen family speaks its own numbered lock from the same
+ * claim (`dialect-qwen-2511.ts`). `prompt-program.test.ts` pins these bytes.
  */
 export const PROSE_FAMILY_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
@@ -101,8 +95,8 @@ export const PROSE_FAMILY_IDENTITY_LOCK =
  * The cast-integrity clause, emitted only when two or more identity references
  * ride the same request.
  *
- * A byte-copy of the legacy multi-reference builder's own clause
- * (`assembleMulti` in `prompts-scene-render.ts`), for the reason above. The
+ * A byte-copy of the clause the application's retired scene prose builder
+ * emitted on its multi-reference path (git history), for the reason above. The
  * lock states what must be preserved about each person; this states what must
  * not happen to the SET, which is a different failure and is not prevented by
  * correct per-person wording.

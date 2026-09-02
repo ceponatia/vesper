@@ -413,7 +413,6 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       profile,
       bindingProfileKey: profile.profile.key,
       bindingStrategy: kind === "edit" ? "instruction_edit" : "text_to_image_description",
-      resolver: "active",
       cuts: castCuts,
       scene: scene.scene,
       location: scene.location,
@@ -433,9 +432,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       // bodies to defend on an ensemble one.
       operation: () => characterSceneImageOperation({ subjectCount: castCuts.length, kind }),
       // A scene of named people with a lost identity or morphology anchor draws
-      // strangers. The cast seam already refuses on its own missing-required set
-      // before this render was reserved, so this is the join-level check the
-      // adapter performs rather than a second policy.
+      // strangers. This is the ONE place that refusal is decided: the cast seam
+      // refuses only a cut it cannot assemble at all, and the adapter's
+      // join-level check here is what turns a lost required anchor into a dropped
+      // rung rather than a render of somebody else.
       refuseOnMissingRequired: true,
       sink,
     });
@@ -488,12 +488,14 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
    * The prompt channels one rung sends on.
    *
    * The demo rung is the only rung a runnable chain can hold with no compiled
-   * program, so the first argument is only ever spent there — and what it spends
-   * is the monogram label, which is what makes the stored row describe the
-   * picture that was drawn rather than a request nobody made.
+   * program, so the monogram label is the only prompt ever sent beside a
+   * program — and it is what makes the stored row describe the picture that
+   * was drawn rather than a request nobody made.
    */
-  const transportFor = (id: SceneAttemptId): CharacterPromptTransport =>
-    characterPromptTransport(monogramLabel, undefined, compiledFor(id));
+  const transportFor = (id: SceneAttemptId): CharacterPromptTransport => {
+    const compiled = compiledFor(id);
+    return compiled === null ? { prompt: monogramLabel } : characterPromptTransport(compiled);
+  };
   const runnableChain = chain.filter((id) => programs.get(id) !== "dropped");
   if (runnableChain.length < chain.length) {
     sink.push(
@@ -762,10 +764,9 @@ async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): P
   const result = await renderImageIntent(
     {
       profile: ctx.profile,
-      // Prompt and any compiled negative in one decision. This lane never sets
-      // `promptSegments`: every rung that reaches a provider carries a compiled
-      // program, so the transport is always that program's positive text and its
-      // exclusions, and there is no second channel for them to disagree with.
+      // Prompt and any compiled negative in one decision: every rung that
+      // reaches a provider carries a compiled program, so the transport is
+      // always that program's positive text and its exclusions.
       ...ctx.transportFor(id),
       references: [...ctx.referencesFor(id)],
       target: { aspectRatio: IMAGE_TARGET_ASPECT },

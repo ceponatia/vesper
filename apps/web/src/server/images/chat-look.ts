@@ -1,9 +1,24 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
-import type { AttributeValue } from "@/contracts/attributes/value";
-import type { RegionExposure } from "@/contracts/items/visibility";
-import { DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
+import {
+  conditionAttributeOverlays,
+  exposedRegions,
+  FULLY_COVERED,
+  realizeBody,
+  resolveAttributes,
+  type AttributeValue,
+  type RealizedBody,
+  type RegionExposure,
+  type SceneCameraSpec,
+  type VisualImageDigest,
+} from "@/contracts";
+import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
 import { logDiagnostics } from "@/server/log";
+import {
+  safeBuildVisualStateShadow,
+  visualStateImageDigestOfShadow,
+  type VisualStateShadowInput,
+} from "@/server/visual-state";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import {
@@ -13,10 +28,10 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
-import { buildChatLookSegments, type ChatLookSegmentAssembly, type ChatLookVisualCut } from "./chat-look-segments";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
+  characterPromptUnboundRefusal,
   type CharacterPromptProgramResult,
 } from "./character-prompt-program";
 import {
@@ -26,7 +41,6 @@ import {
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
-import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 
 /**
  * Chat reference images: the two cached anchors
@@ -41,9 +55,8 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
  *   itself (`meta.lookKey` on the newest ready row) — no state column, so a
  *   regenerate rollback can never desync pointer from asset. Its prompt is the
  *   compiled prompt program (#256, `activeChatLookProgram`) over the committed
- *   chat cut; a mint whose caller could not load a participant row has no cut to
- *   compile and falls back to `buildChatLookSegments`, the route-owned
- *   assembly that also owns this lane's refusal and its `meta.visualState`.
+ *   chat cut, and that program is the mint's ONLY prompt: a mint with no cut to
+ *   compile, or whose program will not compile, mints nothing.
  * - **`chat_place`**: a text-to-image establishing shot of the current
  *   scene-memory place, minted lazily from its agent-written sketch on the
  *   first render there; feeds the chat lane's multi-edit rung as the second
@@ -93,34 +106,6 @@ export function chatLookKey(input: {
   return fnv1aHex(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
 }
 
-/**
- * The identity-locked look-edit instruction: same person, new outfit, neutral
- * framing. Age is inherited from the portrait reference; neither chronological
- * nor apparent-age fields are accepted by this scene-supporting render.
- *
- * RETAINED BUT UNCALLED BY PRODUCTION since the Stage 4 cutover:
- * `renderChatLookImage` now assembles its
- * prompt from `buildChatLookSegments`, which carries these three sentences as
- * route-owned segments beside the visual digest's facts. This builder stays in
- * the tree as the frozen comparison baseline (`prompt-freeze.test.ts`) exactly
- * as `buildAvatarPrompt` did, and Stage 6 deletes both.
- */
-export function buildChatLookPrompt(input: { outfit: string; outfitExposed: boolean }): string {
-  const outfit = input.outfit.trim();
-  const wearing = outfit
-    ? `Change the outfit: now wearing ${outfit}. Depict only this clothing — remove anything the reference wears that is not listed.`
-    : input.outfitExposed
-      ? "Remove the outfit: undressed."
-      : "Keep a simple, casual outfit.";
-  return [
-    PORTRAIT_IDENTITY_LOCK,
-    wearing,
-    "Standing, relaxed neutral pose, facing the viewer; plain softly lit neutral backdrop; waist-up to three-quarter frame.",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
 /** True when this conversation has ever rendered an image (the ruled mint gate). */
 export async function chatHasRenders(chatId: string): Promise<boolean> {
   const [row] = await db()
@@ -166,6 +151,130 @@ export async function latestChatLook(
   return buffer ? { imageId: row.id, buffer } : null; // no bytes — the sweep reconciles; fall back to the avatar
 }
 
+// ---------------------------------------------------------------------------
+// The look mint's cut
+// ---------------------------------------------------------------------------
+
+/**
+ * The look mint's fixed viewpoint: facing the camera at medium distance, which
+ * `visualCameraReadsOfSceneCamera` maps to the `waist_up` framing band — the
+ * same spec the avatar's portrait studio uses. This is a studio viewpoint, not
+ * a committed scene camera: the mint is a wardrobe anchor, and a look keyed to
+ * whatever the fiction's camera happened to be doing would invalidate on every
+ * shot change.
+ */
+export const CHAT_LOOK_CAMERA: SceneCameraSpec = {
+  orientation: "toward_viewer",
+  distance: "medium",
+  height: "eye_level",
+};
+
+/** The camera id the selection fingerprints. */
+export const CHAT_LOOK_CAMERA_ID = "chat_look_studio";
+
+/**
+ * The caller supplied no committed cut for the look subject (a missing
+ * `chat_participants` row — corrupt membership). The mint has nothing to
+ * compile a program over, and this lane's refusal shape applies: no row, no
+ * mint, retry on the next outfit or appearance change.
+ */
+export const CHAT_LOOK_VISUAL_CUT_MISSING = "images.chat_look.visual_cut_missing";
+/** The shadow assembly failed; the mint refuses before reserving a row. */
+export const CHAT_LOOK_VISUAL_DIGEST_UNAVAILABLE = "images.chat_look.visual_digest_unavailable";
+/** The chat-look profile's model has no active prompt binding; the mint refuses before reserving a row. */
+export const CHAT_LOOK_PROGRAM_UNBOUND = "images.chat_look.program_unbound";
+
+/** One subject's committed chat cut, as the shared factory hands it over. */
+export type ChatLookVisualCut = Omit<VisualStateShadowInput, "sink" | "camera">;
+
+/** The realized cut the mint's program compiles from, plus its row provenance. */
+export interface ChatLookCut {
+  readonly digest: VisualImageDigest;
+  /** The three-layer resolve the adapter values facts from. */
+  readonly attributes: readonly AttributeValue[];
+  readonly realizedBody: RealizedBody;
+  /** The canonical coverage readout the exposure claims are made over. */
+  readonly exposure: RegionExposure;
+  /** The `meta.visualState` fragment the row records at reserve time. */
+  readonly digestMeta: Record<string, unknown>;
+}
+
+export interface ChatLookCutInput {
+  readonly cut: ChatLookVisualCut;
+  /**
+   * The canonical garment-coverage readout — the SAME `wardrobe.exposure` the
+   * look key hashed. Absent falls back to the caller's binary exposed flag, the
+   * scene lane's own default for a member with no resolved readout.
+   */
+  readonly exposure?: RegionExposure;
+  /** True when the resolved wardrobe positively says the body is exposed. */
+  readonly outfitExposed: boolean;
+  readonly sink?: DiagnosticSink;
+}
+
+/**
+ * Realize the look mint's cut from a committed chat cut. One shadow assembly,
+ * ONE camera-bound selection pass, one digest realized from that exact
+ * selection — never a re-select (`image-digest.ts` §Reuse the selection). The
+ * committed cut arrives from `runChatLookImage`, which builds it through the
+ * shared chat factory (`chatVisualStateShadowInput`) — the same one the scene
+ * queue and the visual-state inspector use, so a look anchor and the scene
+ * that anchors on it can never assemble two different cuts of one
+ * conversation.
+ *
+ * Null when the shadow assembly threw ({@link CHAT_LOOK_VISUAL_DIGEST_UNAVAILABLE}
+ * is on the sink); the caller mints nothing. Deterministic over its inputs.
+ */
+export function buildChatLookCut(input: ChatLookCutInput): ChatLookCut | null {
+  const { cut, sink } = input;
+  const build = safeBuildVisualStateShadow(
+    {
+      ...cut,
+      // The look mint's own studio viewpoint, bound into the ONE selection pass.
+      camera: { cameraId: CHAT_LOOK_CAMERA_ID, spec: CHAT_LOOK_CAMERA },
+      ...(sink === undefined ? {} : { sink }),
+    },
+    sink,
+  );
+  if (build === null) {
+    sink?.push(
+      diag("error", CHAT_LOOK_VISUAL_DIGEST_UNAVAILABLE, "the visual digest could not be assembled for this look", {
+        path: "images.chat_look",
+        context: { subjectId: cut.subjectId, cutId: cut.cutId },
+      }),
+    );
+    return null;
+  }
+
+  // This job realizes the cut it just assembled, so `forCutId` names the same
+  // id and the digest's stale-cut gate stays a seam contract rather than a live
+  // branch.
+  const realized = visualStateImageDigestOfShadow(build, {
+    forCutId: cut.cutId,
+    ...(sink === undefined ? {} : { sink }),
+  });
+
+  // The same three-layer resolve the projection was taken over (base →
+  // persisted narrative overlays → condition overlays), read back off the cut
+  // so the adapter can never disagree with the digest about a recorded haircut
+  // or dye.
+  const attributes = resolveAttributes(cut.attributes, [
+    ...(cut.attributeOverlays ?? []),
+    ...conditionAttributeOverlays([...(cut.conditions ?? [])]),
+  ]);
+  return {
+    digest: realized.digest,
+    attributes,
+    realizedBody: realizeBody(cut.realize ?? {}),
+    exposure: input.exposure ?? (input.outfitExposed ? exposedRegions([]) : FULLY_COVERED),
+    digestMeta: realized.meta,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The look mint
+// ---------------------------------------------------------------------------
+
 export interface RenderChatLookInput {
   chatId: string;
   userId: string;
@@ -175,13 +284,13 @@ export interface RenderChatLookInput {
   outfitExposed: boolean;
   /**
    * This character's committed chat cut, as the shared factory
-   * (`chatVisualStateShadowInput`) hands it over — the Stage 4 digest source.
+   * (`chatVisualStateShadowInput`) hands it over — the mint's digest source.
    *
-   * OPTIONAL, and the absence is a real production path: the caller could not
-   * load a `chat_participants` row for this subject (corrupt membership), and
-   * the mint degrades to the route-owned segments rather than refusing a
-   * wardrobe anchor over a continuity id. Every pre-cutover call site (the
-   * identity-render-lane tests, the lab baselines) supplies none.
+   * OPTIONAL because the caller may have none to give: a missing
+   * `chat_participants` row (corrupt membership) builds no cut. The mint then
+   * REFUSES rather than degrading — a wardrobe anchor phrased from nothing is
+   * a face every later scene composes from, and there is no second prompt
+   * system to phrase it with ({@link CHAT_LOOK_VISUAL_CUT_MISSING}).
    */
   visual?: ChatLookVisualCut;
   /**
@@ -226,14 +335,7 @@ async function chatLookIdentity(
 }
 
 /**
- * The chat-look mint's ACTIVE prompt program, or null when this mint has
- * nothing to compile (issue #256).
- *
- * Null is the route-only degraded mint: the caller could not load a
- * `chat_participants` row for this subject, so the assembly realized no cut and
- * there is no committed visual moment to compile a program over. That mint
- * keeps the route-owned segments, which is the degradation this lane has always
- * promised rather than refusing a wardrobe anchor over a continuity id.
+ * The chat-look mint's prompt program over its cut (issue #256).
  *
  * `chat-look-standard` on Qwen Image Edit 2511 is the only chat-look profile the
  * catalog offers, and it is bound; the profile key still narrows resolution, so
@@ -247,33 +349,29 @@ async function chatLookIdentity(
  */
 function activeChatLookProgram(
   input: RenderChatLookInput,
-  assembly: ChatLookSegmentAssembly,
+  cut: ChatLookCut,
   resolved: ResolvedImageProfile,
   references: readonly ImageRenderReference[],
   sink: DiagnosticSink,
-): CharacterPromptProgramResult | null {
-  const visual = assembly.visual;
-  const cut = input.visual;
-  if (visual === undefined || cut === undefined) return null;
+): CharacterPromptProgramResult {
   const outfit = input.outfit.trim();
   return buildCharacterPromptProgram({
     lane: "chat_look",
     task: "chat_look",
     profile: resolved,
     bindingProfileKey: resolved.profile.key,
-    resolver: "active",
     cuts: [
       {
         subjectId: input.characterId,
-        digest: visual.digest,
-        attributes: visual.attributes,
-        exposure: visual.exposure,
-        realizedBody: visual.realizedBody,
+        digest: cut.digest,
+        attributes: cut.attributes,
+        exposure: cut.exposure,
+        realizedBody: cut.realizedBody,
       },
     ],
     // The committed cut names itself: the cut id IS the staleness check, and a
     // minted token would throw that away.
-    read: { kind: "committed_cut", token: cut.cutId },
+    read: { kind: "committed_cut", token: input.visual?.cutId ?? "" },
     // Every reference this mint sends is the subject's own identity pack.
     references: references.map((reference) => ({ reference, subjectId: input.characterId })),
     operation: (subjects) =>
@@ -283,8 +381,8 @@ function activeChatLookProgram(
             concept: "subject.wardrobe",
             // An empty outfit is a real instruction, not a missing one: the
             // conversation either undressed this character or settled on
-            // nothing in particular, and the segment build already words both.
-            // The concept is what the preserve derivation excludes either way.
+            // nothing in particular. The concept is what the preserve
+            // derivation excludes either way.
             value: outfit.length > 0 ? outfit : input.outfitExposed ? "nothing" : "a simple, casual outfit",
           },
           subjects,
@@ -309,16 +407,17 @@ function activeChatLookProgram(
  *
  * Both anchor lanes check their preconditions BEFORE reserving anything (a
  * keyless or demo chat leaves no row at all) and log no event — the two
- * differences from the avatar/entity shape, both deliberate. The Stage 4 digest
- * refusal joins that set rather than becoming a `failedPrecondition`: this job
- * re-fires on every outfit and appearance change, so a reserving refusal would
- * accumulate one failed row per change for every ineligible chat, forever.
+ * differences from the avatar/entity shape, both deliberate. A missing cut, a
+ * digest that will not assemble, a refused or unbound program all join that
+ * set rather than becoming a `failedPrecondition`: this job re-fires on every
+ * outfit and appearance change, so a reserving refusal would accumulate one
+ * failed row per change for every ineligible chat, forever.
  *
  * Both lanes also DRAIN their diagnostics into the process log (the scene
  * lane's collector pattern): the production caller is a detached job with no
- * sink, and a flag-on pack refusal returns null with no row reserved — without
- * the drain that refusal would be a look that silently never appears, with no
- * record anywhere of why.
+ * sink, and a refusal returns null with no row reserved — without the drain
+ * that refusal would be a look that silently never appears, with no record
+ * anywhere of why.
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
   if (isDemoMode() || !hasReplicate()) return null;
@@ -330,37 +429,48 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     // having a control of its own.
     const resolved = await resolveImageProfileForTask("chat_look", null, sink);
     if (!resolved) return null;
-    // The Stage 4 segment assembly runs BEFORE the identity pack is consulted:
-    // it is pure and free, and refusing here costs no owned byte reads. Its
-    // refusal has this lane's shape — no row, no mint, retry on the next
-    // outfit or appearance change.
-    const assembly = buildChatLookSegments({
-      outfit: input.outfit,
+    // The cut is realized BEFORE the identity pack is consulted: it is pure and
+    // free, and refusing here costs no owned byte reads. A caller with no cut
+    // to give has nothing this mint can compile, and it is NOT a fallback to a
+    // second prompt system: minting a plausible anchor from a string would
+    // hide the corrupt membership behind an acceptable-looking face that every
+    // later scene then composes from.
+    if (input.visual === undefined) {
+      sink.push(
+        diag("warn", CHAT_LOOK_VISUAL_CUT_MISSING, "no committed cut for the look subject — no anchor is minted", {
+          path: "images.chat_look",
+          context: { chatId: input.chatId, characterId: input.characterId },
+        }),
+      );
+      return null;
+    }
+    const cut = buildChatLookCut({
+      cut: input.visual,
       outfitExposed: input.outfitExposed,
-      ...(input.visual === undefined ? {} : { shadow: input.visual }),
       ...(input.exposure === undefined ? {} : { exposure: input.exposure }),
       sink,
     });
-    if (assembly.refusal !== null) return null;
+    if (cut === null) return null;
     const identity = await chatLookIdentity(input, resolved, sink);
     if (!identity) return null;
     const model = resolved.model;
-    // The cutover (issue #256): the prompt this mint sends is the compiled
-    // prompt program. A refusal takes this lane's own refusal shape rather than
-    // failing a row — no row, no mint, retry on the next outfit or appearance
-    // change — because this job re-fires on every change and a reserving refusal
-    // would accumulate one failed row per change for every ineligible chat,
-    // forever. It is NOT a fallback to the legacy prose: a bound lane that could
-    // not compile is a fault to surface, and minting a plausible anchor from the
-    // string the program replaced would hide it behind an acceptable-looking
-    // face that every later scene then composes from.
-    const program = activeChatLookProgram(input, assembly, resolved, identity.references, sink);
-    if (program?.kind === "refused") return null;
-    const compiled = program?.kind === "compiled" ? program : null;
-    // Prompt, segments and any compiled negative in ONE decision — a compiled
-    // mint must not still carry the legacy segments, which `resolveIntentPrompt`
-    // would prefer over the compiled string.
-    const transport = characterPromptTransport(assembly.prompt, assembly.segments, compiled);
+    // The prompt this mint sends is the compiled prompt program, and nothing
+    // else. A refusal already pushed the seam's diagnostic; an unbound model
+    // pushes the lane's here, because the seam records nothing for an ordinary
+    // "no row". Either way this lane's refusal shape applies: no row, no mint,
+    // retry on the next outfit or appearance change.
+    const program = activeChatLookProgram(input, cut, resolved, identity.references, sink);
+    if (program.kind === "unbound") {
+      sink.push(
+        diag("warn", CHAT_LOOK_PROGRAM_UNBOUND, characterPromptUnboundRefusal(program), {
+          path: "images.chat_look",
+          context: { chatId: input.chatId, characterId: input.characterId, model: program.modelSlug, profileKey: program.profileKey },
+        }),
+      );
+      return null;
+    }
+    if (program.kind === "refused") return null;
+    const transport = characterPromptTransport(program);
     const { imageId, status } = await runImagePipeline({
       asset: {
         ownerId: input.userId,
@@ -376,22 +486,15 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
           // The digest provenance lands at RESERVE time beside the key, so the
           // visual moment that shaped the prompt survives a failed render — the
           // avatar and scene lanes record it the same way.
-          ...(assembly.digestMeta ?? {}),
-          // The compiled program's own provenance. Absent on the route-only
-          // degraded mint, which is how a row says which prompt system built it.
-          ...(compiled?.meta ?? {}),
+          ...cut.digestMeta,
+          // The compiled program's own provenance.
+          ...program.meta,
         },
       },
       produce: async () => {
         const edit = await renderImageIntent(
           {
             profile: resolved,
-            // Prompt, segments and the normalized negative in one decision. On
-            // the route-only degraded mint the semantic segments stay
-            // authoritative and `prompt` is the same segments compiled — safe to
-            // send both, because this lane's profile runs `instruction_edit`,
-            // which passes the base prompt through unchanged. On a compiled mint
-            // the segments are absent, or they would outrank the program.
             ...transport,
             references: identity.references,
             target: { aspectRatio: IMAGE_TARGET_ASPECT },

@@ -11,7 +11,6 @@ import type {
   ImageReferencePolicy,
   ImageRenderControls,
 } from "../models/image-model-profiles";
-import type { ImagePromptSegment } from "./prompt-segments";
 
 /**
  * The normalized render request every image lane speaks.
@@ -180,31 +179,12 @@ export function resolveImageRenderPolicy(policy: ImageRenderPolicy | undefined):
  */
 export interface ImageRenderIntentCore {
   /**
-   * The lane's prompt, BEFORE the profile's prompt strategy compiles it.
-   *
-   * The fallback rather than the only channel since prompt segments arrived: a
-   * lane that supplies {@link ImageRenderIntentCore.promptSegments} has said the
-   * same thing in a form the render path can reason about, and that form wins.
-   * Every lane still sets this, and every lane still sends exactly it.
+   * The lane's prompt, BEFORE the profile's prompt strategy compiles it — the
+   * ONE prompt channel an intent carries. A lane that compiled a prompt program
+   * sends the program's positive text here and its exclusions as a control, so
+   * there is no second channel for the two to disagree with.
    */
   prompt: string;
-  /**
-   * The same prompt said semantically — ordered segments the render path may
-   * order, fit and (later) compile into a model's own dialect.
-   *
-   * AUTHORITATIVE over `prompt` when present and non-empty, because the two are
-   * two spellings of one request and a render that merged them would say
-   * everything twice. Absent on every lane today, which is what keeps the field's
-   * arrival payload-neutral: with no segments there is nothing to compile, and
-   * `prompt` travels exactly as it always did.
-   *
-   * The point of carrying them rather than the finished paragraph is what fitting
-   * can then promise. A budget squeeze on a string removes whatever happened to
-   * be last, which is where the identity lock and the age anchor were appended; a
-   * squeeze on segments removes the lowest-priority OPTIONAL one and leaves the
-   * mandatory floor standing.
-   */
-  promptSegments?: readonly ImagePromptSegment[];
   target: ImageRenderTarget;
   /**
    * How strictly this render treats what it was asked to send

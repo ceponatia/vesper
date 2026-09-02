@@ -124,8 +124,8 @@ export function seedNewPersonaProfile(profile: PersonaProfile): PersonaProfile {
 
 /**
  * **The one seam** every character-shaped consumer goes through to take a
- * persona — the contract plus the adapter: `resolveChatWardrobe`,
- * `characterAppearanceSummary`, `sceneRevealAppearance`, `identityAnchorSummary`,
+ * persona — the contract plus the adapter: `resolveChatWardrobe`, the visual
+ * digest's snapshot assembly and the character image adapter behind it,
  * `AttributePicker`, `OutfitEditor` — all already take a `CharacterProfile` and none
  * are character-coupled, so this buys every one of them with no fork.
  *

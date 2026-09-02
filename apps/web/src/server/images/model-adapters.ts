@@ -79,8 +79,6 @@ export function adapterRequestRefusals(model: ImageModel, facts: ImageModelReque
  * benches — because the safety setting and the dialect are read at the same
  * boundary for the same reason: the pure planner may read neither an
  * environment nor a package above it, so both arrive as values from here.
- * (`captureRenderIntent` is the deliberate exception: a capture is handed its
- * runtime facts explicitly, so it can never guess a posture it did not state.)
  */
 export function imageRenderRuntimeFacts(model: ImageModel): ImageRenderRuntimeFacts {
   return { safetyCheckerDisabled: disableSafetyChecker(), ...preparePromptFor(model) };

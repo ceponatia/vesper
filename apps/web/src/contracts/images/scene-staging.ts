@@ -15,8 +15,9 @@ import {
  * During intimate play the picture and the text diverge worst: the narration describes a
  * specific act with a specific geometry, and the render comes back a nude portrait — right
  * person, right room, wrong moment. The cause is not prudishness in the image model but a
- * hole in the prompt. The character's explicit anatomy is already injected deterministically
- * (`sceneRevealAppearance`), while the **act** never is, because the only thing that could
+ * hole in the prompt. The character's explicit anatomy is already stated deterministically
+ * (the program's intimate reveal over the committed cut's coverage), while the **act** never
+ * is, because the only thing that could
  * write it is the small composing model — which runs in a safe configuration and answers
  * with "close to the viewer, intimate".
  *
@@ -200,11 +201,14 @@ export const sceneStagings = {
     // and the dropped "before the viewer"), so which one cost the presence is unproven; what
     // is proven is that the pair together is worse than this wording on every axis.
     //
-    // Budget: the assembled edit prompt measures 1491 against `EDIT_RENDER_PROMPT_LIMIT`
-    // (1500), and this entry is written AGAINST that ceiling — every clause here was funded
-    // by shortening another one. Longer anchors ("below the camera", "in front of {name}'s
-    // face") measured over and cost the setting/lighting/quality tail. Re-measure on any
-    // edit; there is no slack left to spend twice.
+    // Budget: this entry was written AGAINST a 1,500-character prompt ceiling (the retired
+    // scene prose builder's self-imposed bound; the assembled edit prompt measured 1491),
+    // and every clause here was funded by shortening another one. Longer anchors ("below
+    // the camera", "in front of {name}'s face") measured over and cost the setting,
+    // lighting and quality tail. The live budget is the binding's — the endpoint's own
+    // prompt capability, applied when the program is compiled — and the sentence rides as
+    // a required claim, so what a squeeze drops is optional detail around it rather than the
+    // act; but a longer template still spends that room. Re-measure on any edit.
     template:
       "{name} kneeling before the viewer with {name}'s head bowed, the crown of {name}'s head toward the camera and {name}'s mouth on the viewer's own genitals rising into frame from the lower edge, {name}'s palms on the floor, the viewer's own arm entering frame from the upper edge, close to the lens and strongly foreshortened, and the viewer's own hand resting flat on top of {name}'s head",
     faceVisibility: "hidden",
@@ -275,11 +279,14 @@ export const sceneStagings = {
     //    an upright kneeling spread with both arms free to reach back; straight arms held
     //    ahead pin the all-fours pose AND leave her no hands to be recruited for the hips.
     //
-    // It is written TIGHT because it has to be: this entry's assembled edit prompt sits ~25
-    // characters under `EDIT_RENDER_PROMPT_LIMIT`, and past that the budgeter's clamp eats
-    // the setting, lighting and quality tail. Longer drafts (the knees clause, "close to the
-    // lens and strongly foreshortened", "either side of {name}'s hips") each measured over
-    // the line and were cut for the two levers above. Re-measure before adding a word.
+    // It is written TIGHT because it had to be: this entry's assembled edit prompt sat ~25
+    // characters under the 1,500-character ceiling the retired prose builder budgeted to,
+    // past which the setting, lighting and quality tail was clamped away. Longer drafts (the
+    // knees clause, "close to the lens and strongly foreshortened", "either side of {name}'s
+    // hips") each measured over the line and were cut for the two levers above. The live
+    // budget is the binding's own prompt capability, applied at compile time, and this
+    // sentence rides as a required claim — but the room it spends is real on every endpoint.
+    // Re-measure before adding a word.
     template:
       "{name} on all fours with {name}'s arms straight ahead and {name}'s palms planted, {name}'s back to the camera and {name}'s bare hips raised toward the viewer, {name}'s head lowered and facing away from the lens, the viewer's own hands and forearms entering frame from the lower corners onto {name}'s waist and hips",
     hint: "she is on hands and knees on a low surface, back to the viewer, entered from behind — the viewer's hands on her waist or hips.",

@@ -226,29 +226,7 @@ Conceptually it says:
 
 That matters because “portrait,” “variant,” and “scene” are not interchangeable even when they happen to use the same model.
 
-A binding also gives Vesper a safe distinction between:
-
-- a prompt behavior that exists for testing; and
-- a prompt behavior that is trusted for production.
-
-That distinction is what makes side-by-side shadow testing possible.
-
-## Shadow comparison is the safety harness
-
-When Vesper changes an established image lane, it should not have to jump from the old prompt to the new one blindly.
-
-During shadow comparison, Vesper can build the new prompt program **beside** the current production request without using the candidate prompt to render the player's image.
-
-The comparison asks four practical questions:
-
-1. **Fact coverage:** Did the candidate keep the facts the current request actually expressed, apart from explicitly accepted differences?
-2. **Transport parity:** Other than the prompt itself, would the provider receive the same model, references, controls, shape, and other request details?
-3. **Mandatory survival:** Did an identity anchor or other required fact disappear?
-4. **Payload size:** Is the new prompt becoming unexpectedly bloated or unexpectedly tiny?
-
-A shadow result is evidence about the request, not proof that the resulting picture is good. Visual trials are still needed because two semantically equivalent prompts can produce very different images.
-
-Shadow comparison remains useful after the original migration is over. The same idea can protect future dialect revisions, new prompt packs, provider-version changes, or other substantial changes to production prompt behavior.
+A binding's status also keeps a prompt behavior that exists for testing apart from one that is trusted for production: only an `active` binding is ever used for a render, and a lane whose model has no active binding refuses rather than wording the render another way.
 
 ## Visual evidence still decides whether a prompt is good
 
@@ -323,20 +301,20 @@ Those systems can feed information into prompt programs or consume their output,
 
 ## The surrounding system at a glance
 
-| System | What it contributes |
-| --- | --- |
-| Visual state | Which character facts are visually true and relevant to this render |
-| Wardrobe / coverage | Current clothing and what body regions it covers |
-| Scene composition | Cast, action, setting, lighting, mood, camera, framing, whose eyes the shot is through, staging |
-| Items / locations | Their visual identity, state, relationships, and authored text |
-| Identity packs | Eligible character reference images |
-| Model profiles / capabilities | Which model is doing the job and what that endpoint can really accept |
-| Prompt program | Positive requirements + negative guardrails over one frozen world snapshot |
-| Dialect | How the selected endpoint should be told those requirements |
-| Prompt packs | Versioned, evidence-backed prompt behavior for that lane |
-| Render system | Sends the final request to the provider |
-| Provenance | Records what world and prompt behavior produced the image |
-| Shadow / visual evaluation | Proves a prompt change is safe and useful before trusting it broadly |
+| System                        | What it contributes                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| Visual state                  | Which character facts are visually true and relevant to this render                             |
+| Wardrobe / coverage           | Current clothing and what body regions it covers                                                |
+| Scene composition             | Cast, action, setting, lighting, mood, camera, framing, whose eyes the shot is through, staging |
+| Items / locations             | Their visual identity, state, relationships, and authored text                                  |
+| Identity packs                | Eligible character reference images                                                             |
+| Model profiles / capabilities | Which model is doing the job and what that endpoint can really accept                           |
+| Prompt program                | Positive requirements + negative guardrails over one frozen world snapshot                      |
+| Dialect                       | How the selected endpoint should be told those requirements                                     |
+| Prompt packs                  | Versioned, evidence-backed prompt behavior for that lane                                        |
+| Render system                 | Sends the final request to the provider                                                         |
+| Provenance                    | Records what world and prompt behavior produced the image                                       |
+| Visual evaluation             | Proves a prompt change is useful before trusting it broadly                                     |
 
 ## Reading this conceptual guide
 

@@ -17,7 +17,6 @@ import {
   imageLabSettingsSchema,
   imageLabStagingSchema,
   imageLabStoredInputListSchema,
-  imageLabSubjectFactsModes,
   imageLabStoredSettingsSchema,
   imageLabUploadControlRequestSchema,
   imageLabFinishingVerdicts,
@@ -197,7 +196,6 @@ describe("imageLabExperimentSchema", () => {
       id: "exp_1",
       kind: "control_probe",
       mode: null,
-      subjectFacts: null,
       characterId: "chr_1",
       chatId: null,
       modelSlug: "qwen/qwen-image-edit-2511",
@@ -1003,38 +1001,6 @@ describe("imageLabCreateExperimentRequestSchema — staged scenes", () => {
     expect(stagedScene({ sourceExperimentId: "exp_controlled" }).success).toBe(false);
     expect(stagedScene({ finishingVariant: "lora_only" }).success).toBe(false);
   });
-
-  it("takes either subject-facts arm, and leaves the default for the create path to resolve", () => {
-    // The two arms compile DIFFERENT prompts, so both have to be requestable —
-    // and an absent one is left absent here rather than defaulted, because the
-    // default belongs where the row is written: a schema default would also be
-    // injected into every other kind's request, where the mode is refused.
-    for (const mode of imageLabSubjectFactsModes) {
-      const parsed = stagedScene({ subjectFacts: mode });
-      expect(parsed.success).toBe(true);
-      if (parsed.success) expect(parsed.data.subjectFacts).toBe(mode);
-    }
-    const bare = stagedScene();
-    expect(bare.success).toBe(true);
-    if (bare.success) expect(bare.data.subjectFacts).toBeUndefined();
-  });
-
-  it("refuses a subject-facts arm on every other kind, whose runner reads none", () => {
-    // Same rule as the staging above: a stored mode on a kind that never
-    // describes a staged subject would record an arm the render never ran.
-    const elsewhere: Record<string, unknown>[] = [
-      { kind: "baseline_portrait", characterId: "chr_1" },
-      { kind: "controlled_portrait", characterId: "chr_1", inputs: probeInputs, controlImageId: "img_skeleton", controlKind: "pose" },
-      { kind: "finishing_pass", sourceExperimentId: "exp_controlled" },
-    ];
-    for (const request of elsewhere) {
-      // Each payload is valid on its own — the mode is the only thing wrong.
-      expect(imageLabCreateExperimentRequestSchema.safeParse(request).success).toBe(true);
-      expect(
-        imageLabCreateExperimentRequestSchema.safeParse({ ...request, subjectFacts: "production_parity" }).success,
-      ).toBe(false);
-    }
-  });
 });
 
 describe("imageLabExperimentSchema — the staged row", () => {
@@ -1049,45 +1015,6 @@ describe("imageLabExperimentSchema — the staged row", () => {
       createdAt: "2026-08-15T12:00:00.000Z",
     });
     expect(parsed.staging).toEqual({ id: "astride_viewer_facing", setting: "a dim hotel room" });
-  });
-
-  it("reads a staged row written before the subject-facts arms existed without inventing one", () => {
-    // The hard constraint on the migration: a legacy row records no mode, and
-    // the wire must report that absence rather than stamping today's default
-    // onto it. What the absence MEANS to the runner (the name-only ablation,
-    // which is what those rows actually sent) is decided once, app-side.
-    const legacy = imageLabExperimentSchema.parse({
-      id: "exp_staged_legacy",
-      kind: "staged_scene",
-      modelSlug: "qwen/qwen-image-edit-plus-lora",
-      status: "succeeded",
-      characterId: "chr_sabrina",
-      staging: { id: "astride_viewer_facing" },
-      createdAt: "2026-08-15T12:00:00.000Z",
-    });
-    expect(legacy.subjectFacts).toBeNull();
-    const recorded = imageLabExperimentSchema.parse({
-      id: "exp_staged_parity",
-      kind: "staged_scene",
-      modelSlug: "qwen/qwen-image-edit-plus-lora",
-      status: "pending",
-      characterId: "chr_sabrina",
-      staging: { id: "astride_viewer_facing" },
-      subjectFacts: "production_parity",
-      createdAt: "2026-08-25T12:00:00.000Z",
-    });
-    expect(recorded.subjectFacts).toBe("production_parity");
-    // A bag that no longer parses costs the field, never the row.
-    const damaged = imageLabExperimentSchema.parse({
-      id: "exp_staged_damaged",
-      kind: "staged_scene",
-      modelSlug: "qwen/qwen-image-edit-plus-lora",
-      status: "failed",
-      characterId: "chr_sabrina",
-      subjectFacts: "whatever_this_is",
-      createdAt: "2026-08-25T12:00:00.000Z",
-    });
-    expect(damaged.subjectFacts).toBeNull();
   });
 
   it("reports no staging on every other kind, and never a placeholder", () => {

@@ -20,10 +20,9 @@ import { repoRelative, sourceFilesUnder } from "@/server/test-support";
  * lanes cut over, and it may never GROW. A new exclusion belongs in a versioned
  * negative pack with a guard, not in a sentence.
  *
- * It is a census rather than a ban because these lanes are frozen mid-migration
- * (`apps/web/src/server/images/prompt-freeze.test.ts` pins their payloads). Every
- * entry here is a lane awaiting cutover, and deleting the entry is part of
- * cutting it over.
+ * It is a census rather than a ban because two reviewed sentences remain — the
+ * identity-free `chat_place` shot's own contract, and the composer's
+ * instructions to an LLM. Neither is a character lane, and neither may grow.
  */
 
 const PROMPT_DIR = path.join(process.cwd(), "apps/web/src/server/images");
@@ -46,46 +45,20 @@ const EXCLUSION_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * Every embedded exclusion this repository still has, reviewed 2026-08-19.
+ * Every embedded exclusion this repository still has, reviewed 2026-09-01.
  *
- * Each is a lane that has not cut over. `entity-prompt-program.ts` is
- * deliberately absent: the item and location lanes ARE cut over, and their
- * exclusions now live in `qwenImage2512NegativePack` behind the collision
- * linter, which is what every line below is waiting to become.
+ * Neither entry is a character lane. Every character route and the entity lane
+ * compile prompt programs, and their exclusions live in versioned negative
+ * packs behind the collision linter; what remains is the identity-free
+ * `chat_place` shot and the composer's LLM instructions.
  */
 const APPROVED: Readonly<Record<string, number>> = {
-  // The two style suffixes, each ending "no text, no watermark".
-  "apps/web/src/server/images/prompts-avatar.ts": 2,
-  // The SAME two suffix sentences, carried verbatim through the Stage 3 avatar
-  // cutover as the route-owned `quality` segment (avatar wording is preserved
-  // behavior). Not a new exclusion: this copy and the legacy one above retire
-  // together when Stage 6 deletes `buildAvatarPrompt` and the tail moves into a
-  // versioned negative pack under the model-aware plan.
-  "apps/web/src/server/images/avatar-segments.ts": 2,
-  // The variant instruction's tail, on every portrait edit.
-  "apps/web/src/server/images/prompts-variant.ts": 1,
-  // The SAME tail sentence, carried verbatim through the Stage 4 variant
-  // cutover as the route-owned `quality` segment (variant wording is preserved
-  // behavior). Not a new exclusion: this copy and the legacy one above retire
-  // together when Stage 6 deletes `buildVariantInstruction` and the tail moves
-  // into a versioned negative pack under the model-aware plan.
-  "apps/web/src/server/images/variant-segments.ts": 1,
-  // The POV rule's "never visible", the two cast-integrity lines, the
-  // turned-away adaptation's "not visible"/"do not rotate" pair, the
-  // clothing-authority sentence, the empty-scene "no people in frame", the
-  // shared "no text, no watermark" tail, and the multi-reference "never merge,
-  // swap, or duplicate".
-  "apps/web/src/server/images/prompts-scene-render.ts": 9,
-  // The chat look edit's clothing authority, and the chat-place shot's "no
-  // people anywhere in frame" — the same claim the item and location lanes now
-  // make as an operation contract with `subjectCount: 0`.
-  "apps/web/src/server/images/chat-look.ts": 2,
-  // The SAME clothing-authority sentence, carried verbatim through the Stage 4
-  // chat-look cutover as the route-owned `operation` segment (look wording is
-  // preserved behavior). Not a new exclusion: this copy and the legacy one
-  // above retire together when Stage 6 deletes `buildChatLookPrompt` and the
-  // clause becomes an operation contract with a garment authority.
-  "apps/web/src/server/images/chat-look-segments.ts": 1,
+  // The chat-place shot's "no people anywhere in frame" — the same claim the
+  // item and location lanes make as an operation contract with
+  // `subjectCount: 0`. (The avatar, variant, chat-look and scene lanes carry
+  // none: their prompts are compiled programs, and their exclusions live in
+  // versioned negative packs behind the collision linter.)
+  "apps/web/src/server/images/chat-look.ts": 1,
   // The composer's instructions to the scene-spec LLM, not prompt text sent to
   // an image provider — but counted, because the day the composer's output
   // feeds a prompt program these become claims like any other.

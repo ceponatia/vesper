@@ -1,8 +1,8 @@
 import { DiagnosticCollector } from "@vesper/contracts";
 import { describe, expect, it } from "vitest";
 import {
-  compileImagePromptSegments,
   fitImagePromptSegments,
+  type ImagePromptBudget,
   type ImagePromptSegment,
   type ImagePromptSegmentKind,
   imagePromptBudgetFromBinding,
@@ -11,6 +11,7 @@ import {
   joinImagePromptSegments,
   normalizeImagePromptSegments,
   orderImagePromptSegments,
+  reportImagePromptFitting,
 } from "./prompt-segments";
 
 /**
@@ -231,20 +232,14 @@ describe("joinImagePromptSegments", () => {
   });
 });
 
-describe("compileImagePromptSegments", () => {
-  it("compiles today's prose in canonical order with no budget", () => {
-    expect(
-      compileImagePromptSegments([
-        segment("quality", "Sharp focus."),
-        segment("identity", "Preserve Mira's exact face."),
-        segment("operation", "Change only the outfit."),
-      ]),
-    ).toBe("Change only the outfit. Preserve Mira's exact face. Sharp focus.");
-  });
+describe("reportImagePromptFitting", () => {
+  // The dialects' own sequence: normalize, fit, then report what fitting cost.
+  const report = (segments: ImagePromptSegment[], budget: ImagePromptBudget, sink: DiagnosticCollector) =>
+    reportImagePromptFitting(fitImagePromptSegments(normalizeImagePromptSegments(segments), budget), budget, sink);
 
   it("reports the trim as an info diagnostic when optional detail goes", () => {
     const sink = new DiagnosticCollector();
-    compileImagePromptSegments(
+    report(
       [segment("identity", "Preserve Mira's exact face."), segment("atmosphere", "Quiet and unhurried.")],
       { maxCharacters: 30 },
       sink,
@@ -256,23 +251,16 @@ describe("compileImagePromptSegments", () => {
 
   it("warns when a mandatory segment had to lose a sentence", () => {
     const sink = new DiagnosticCollector();
-    compileImagePromptSegments(
-      [segment("identity", "Preserve Mira's exact face. Preserve her hair and skin tone.")],
-      { maxCharacters: 40 },
-      sink,
-    );
+    report([segment("identity", "Preserve Mira's exact face. Preserve her hair and skin tone.")], { maxCharacters: 40 }, sink);
     const warned = sink.items.find((entry) => entry.code === "image_prompt.mandatory_segment_compressed");
     expect(warned?.severity).toBe("warn");
   });
 
   it("reports the spec's prompt_too_long_required code rather than cutting a sentence in half", () => {
     const sink = new DiagnosticCollector();
-    const compiled = compileImagePromptSegments(
-      [segment("identity", "Preserve Mira's exact face.")],
-      { maxCharacters: 5 },
-      sink,
-    );
-    expect(compiled).toBe("Preserve Mira's exact face.");
+    const fitted = fitImagePromptSegments([segment("identity", "Preserve Mira's exact face.")], { maxCharacters: 5 });
+    reportImagePromptFitting(fitted, { maxCharacters: 5 }, sink);
+    expect(joinImagePromptSegments(fitted.segments)).toBe("Preserve Mira's exact face.");
     const refused = sink.items.find((entry) => entry.code === "image_model.prompt_too_long_required");
     expect(refused?.severity).toBe("warn");
     expect(refused?.context?.maximum).toBe(5);
@@ -280,7 +268,7 @@ describe("compileImagePromptSegments", () => {
 
   it("reports nothing when everything fits", () => {
     const sink = new DiagnosticCollector();
-    compileImagePromptSegments([segment("identity", "Mira.")], { maxCharacters: 500 }, sink);
+    report([segment("identity", "Mira.")], { maxCharacters: 500 }, sink);
     expect(sink.items).toEqual([]);
   });
 });

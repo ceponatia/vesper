@@ -5,46 +5,61 @@ as reference edits through **the New Variant picker's model** (the registry filt
 `canEdit`; default `qwen/qwen-image-edit-2511`, shared with scene images). The identity
 reference(s) come from the identity-pack service
 ([../identity-packs.md](../identity-packs.md) — provenance on `meta.identityReferences`, a
-blocked pack refuses the render), and the instruction is prefixed with the **identity lock**
-block: preserve face, hair, age, build, the `PORTRAIT_IDENTITY_LOCK` wording.
+blocked pack refuses the render). The prompt is the **compiled prompt program** over the
+character's standalone cut (`buildVariantCut` → the lane's program, `server/images/variants.ts`),
+the lane's only prompt path ([../character-prompts.md](../character-prompts.md)).
 
-## The prompt is segments over the visual digest
+## The cut
 
-`buildVariantSegments` (`server/images/variant-segments.ts`) runs the same standalone assembly
-the avatar lane uses (`standalone-subject-visual.ts` — one snapshot of the character sheet, one
-selection pass bound to this lane's fixed full-figure viewpoint, one digest realized from that
-selection) under the variant policy: **age stated, full-figure frame, intimate never, exposure
-omitted**.
+`buildVariantCut` runs the same standalone assembly the avatar lane uses
+(`standalone-subject-visual.ts` — one snapshot of the character sheet, one selection pass, one
+digest realized from that selection) under the edit's fixed viewpoint, `VARIANT_EDIT_CAMERA`:
+facing the viewer at **full-figure** distance, camera id `variant_edit`. A pose, setting or
+bench restage is not a waist-up portrait, and below-waist morphology — a tail, digitigrade
+legs — is exactly the anchor the edit must not lose, so a waist-up frame would cut it. The
+digest's consent gate stays shut (`intimateAllowed: false`).
 
-On a legacy render the lane sets BOTH `prompt` and `intent.promptSegments`, which is safe
-here and only here because the variant profiles run `instruction_edit`, the strategy that
-passes a base prompt through unchanged. The lane also **derives its own age anchor** from the sheet rather than
-being handed one, and **loads the character's default wardrobe** — not to name garments (the
-reference image shows them) but because coverage drives the camera's per-location perception
-and the exposure gate. A failed or unreadable coverage load degrades to fully covered, never to
-a bare body. A digest the lane cannot build **refuses before provider spend** rather than
-falling back to the legacy prose builder.
+The lane **loads the character's default wardrobe** for one reason: the camera's per-location
+perception and the exposure readout must come from the saved outfit, not from an assumed-bare
+body. No garment **name** reaches this prompt — the reference image shows the clothes. A
+failed or unreadable coverage load degrades to fully covered, never to a bare body
+([avatars.md](avatars.md) §The wardrobe). A cut that throws **fails the row before provider
+spend** with `images.variant.visual_cut_failed`.
 
-## The render sends a compiled program
+## The program
 
-Once the final resolved profile and the final identity references are known, the lane asks
-the shared character prompt-program seam for the **active** program for that model and task
-([character-prompts.md](../character-prompts.md)). Every variant profile the picker offers is
-bound, and so is the LoRA wrapper the bench kind swaps onto, so this is the path every real
-render takes: the compiled positive text becomes both the row's stored prompt and the intent's,
-the segments above are **omitted entirely** — they outrank `prompt` and would ship the prose the
-program replaced — and the compiled exclusions ride the normalized `controls.negativePrompt` so
-they reach a provider only through the version's own probed field. Profile, references, target,
-LoRA decisions and every other control are identical either way: the migration is the prompt.
+Once the final resolved profile and the final identity references are known, the lane compiles
+through the character seam as lane `variant`, task `variant`: a cast of one, every reference
+bound to the subject (each one is the subject's own identity pack, so each names the one person
+the variant is of), the operation `variantChangeOperation(kind, instruction)`, and
+`refuseOnMissingRequired: true` — an identity-critical lane refuses on a lost anchor rather than
+rendering a stranger.
 
-A render with nothing to compile — demo mode, no resolved model, a render already refused, a
-failed bench route — keeps the segments above unchanged. That is a render with no world to
-compile, never a model left behind.
+Resolution runs on the **final** resolved profile and is keyed on the model slug as well as the
+profile key. Every variant profile the picker offers shares the key `variant-standard` — Qwen
+Edit 2511, Seedream 4.5, Seedream 5 Lite, Wan 2.7, SDXL PuLID — and each resolves its own
+model's dialect; a binding keyed on the profile alone would hand one endpoint's packs to the
+other four. The compiled prompt describes its references and picks its identity-lock wording by
+their count, so it cannot be built before the final send list is known.
 
-A compiled render records `meta.promptProgram` and `meta.worldState` beside the visual-state
-provenance it already carried. A program that resolves a binding and then cannot compile
-**fails the row before provider spend** and never falls back to the segments: a bound lane
-that quietly rendered something else would hide a configuration fault behind an
+What reaches the provider is `characterPromptTransport(compiled)`: the compiled positive text —
+also the row's stored `prompt` — plus the compiled exclusions on the normalized
+`controls.negativePrompt`, so they reach a provider only through the version's own probed
+field. Profile, references, target, LoRA decisions and every other control are the lane's own.
+
+A render with nothing to compile — demo mode, no resolved model, a cut that would not
+assemble, a failed bench route, a refused pack — compiles no program; each of those fails or
+draws its own way. A compiled render records `meta.promptProgram` and `meta.worldState` beside
+the `meta.visualState` provenance the cut recorded at reserve time.
+
+| Answer     | What the lane does                                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------------------- |
+| `compiled` | sends exactly the compiled prompt and the references it planned                                                       |
+| `refused`  | fails the row before provider spend with the program's own refusal                                                    |
+| `unbound`  | fails the row before spend — `images.variant.program_unbound` (warn) — naming the model, task and profile key to bind |
+
+A program that resolves a binding and then cannot compile never falls back to anything: a
+bound lane that quietly rendered something else would hide a configuration fault behind an
 acceptable-looking picture.
 
 ## What the digest adds is deliberately narrow
@@ -54,15 +69,23 @@ and anatomy departures, the horns/wings/tail an edit model "corrects" away — a
 distinctive marks, and nothing else.
 
 Hair, eye and skin color stay **unstated**: they come off the identity reference,
-pixel-perfect, and a text anchor beside the picture only competes with it. Consequently this
-lane carries **no route-owned residual attribute sheet** — unlike the avatar and scene lanes,
-which describe a body from scratch — so the digest's mark clause is the only statement of a
-mark and the clause resolver runs with an empty omit set.
+pixel-perfect, and a text anchor beside the picture only competes with it. The subject named
+by the required identity reference carries the seam's synthesized **identity anchor** instead,
+and the bound endpoint's dialect words the lock
+([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored render).
+The apparent-age claim is the adapter's, required and text-authoritative
+([avatars.md](avatars.md) §Apparent age).
 
-The route still owns the identity lock (byte-identical to the constant the Qwen dialect
-matches), the age anchor, the requested change as the `operation` segment, the "keep the same
-outfit" line, and the quality tail. The row records the digest's `meta.visualState` provenance
-at reserve time.
+## The change contract
+
+The requested change reaches the program as the operation's **change contract**
+(`characterChangeContract`), never as prose the lane wrote: the admin's instruction is its
+value, and the kind's concept (`VARIANT_CHANGE_CONCEPTS` — `pose` → `subject.pose`, `outfit` →
+`subject.wardrobe`, `expression` → `subject.expression`, `setting` → `location.identity`,
+`nsfw_test` → `subject.pose`) is the sole input to the **preserve set**: every required anchor
+whose concept the change does not name is preserved, so an `outfit` variant releases the
+wardrobe and a pose variant keeps it. The concept never reaches the prompt text; it rides as
+claim metadata into the program fingerprint.
 
 ## Promotion
 
@@ -84,20 +107,17 @@ chaining edits, because drift compounds.
 
 ## The `nsfw test` anatomy bench
 
-`nsfw test` is the studio's anatomy bench, and the only variant kind that chooses its own
-model. It pairs the picked variant profile with the LoRA-capable wrapper
+`nsfw test` (`NSFW_TEST_VARIANT_KIND`) is the studio's anatomy bench, and the only variant kind
+that chooses its own model. It pairs the picked variant profile with the LoRA-capable wrapper
 `qwen/qwen-image-edit-plus-lora` and the same builtin `image_loras` row the chat scene lane
 uses, at that row's curated scale (`server/images/nsfw-lora.ts` assembles the pairing for both
-lanes; the row's `allowedTasks` covers `scene` and `variant`).
-
-Its prompt keeps the identity lock and the apparent-age anchor, adds the character sheet's
-**intimate attributes stated exposure-free** as a route-owned `morphology` segment — the bench
-exists to state the sheet's anatomy with no coverage state at all, so routing it through the
-digest's coverage gate would delete it the moment the character owns a wardrobe — and omits the
-"keep the same outfit" clause, because there (as for the `outfit` kind) the wardrobe IS the
-operation's target.
+lanes; the row's `allowedTasks` covers `scene` and `variant`). The swap is decided **before**
+the row is reserved, so the row records the model it runs on, and binding resolution runs on
+the wrapper — which carries a binding and a delta-edit dialect of its own rather than borrowing
+2511's row.
 
 Unlike the chat lane it **fails rather than degrades**: a missing wrapper row, LoRA row or
 Civitai credential fails the image row with the leg's own message, because a tame render
-silently substituted for an explicit one is exactly what the bench is testing against. The row
-records the wrapper slug and the resolved LoRA id in `meta`.
+silently substituted for an explicit one is exactly what the bench is testing against. A
+failed bench route compiles no program either — the fallback profile is not the model the
+render would have run on. The row records the wrapper slug and the resolved LoRA id in `meta`.

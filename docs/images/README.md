@@ -47,8 +47,8 @@ The suite spans three places, and the split is the load-bearing distinction:
   code that reads `REPLICATE_*` and hands it one configured client per process.
 - **`apps/web/src/server/images/`** — the application's image work: turning game state into an image
   request, and everything stateful around it. Persistence, ownership, job state, event logging,
-  prompt composition from a character's attributes and wardrobe, identity-pack and lab lifecycle,
-  the gallery, the chat scene queue.
+  the projection of a character's visual cut into a prompt program, identity-pack and lab
+  lifecycle, the gallery, the chat scene queue.
 
 The rule for new code: a provider-neutral image decision belongs in `@vesper/image-core`; Replicate
 network or schema work belongs in `@vesper/image-replicate`; translating Vesper's characters,
@@ -77,8 +77,9 @@ automated test suite.
 
 ## Adding a pipeline
 
-A new generation kind is a new `images.kind` value plus a job type plus a prompt builder in
-`server/images/`, run through the **shared pipeline shell**: `runImagePipeline`
+A new generation kind is a new `images.kind` value plus a job type plus a lane module in
+`server/images/` that compiles its prompt — a character-bearing lane through the character seam
+([character-prompts.md](character-prompts.md)) — run through the **shared pipeline shell**: `runImagePipeline`
 (`images/assets.ts`), which owns the reserve → generate → save-or-fail → log sequence in exactly one
 place. Never copy a neighbouring lane.
 

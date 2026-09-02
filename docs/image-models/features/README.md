@@ -78,8 +78,9 @@ provider still accepts a prompt, and treating the missing measurement as proof t
 model has no prompt would create false refusals. Prompt-length fitting remains
 `@vesper/image-core`'s responsibility.
 
-The two Qwen edit adapters additionally apply the Qwen numbered-reference prompt dialect
-through a quirk; the prompt feature itself is provider-neutral and performs no rewriting.
+The prompt feature is provider-neutral and performs no rewriting, and no adapter in this
+package prepares prompt text: the Qwen family's numbered-reference wording is a prompt-program
+dialect in `@vesper/image-core`.
 
 ## References
 

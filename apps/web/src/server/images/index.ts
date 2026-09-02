@@ -17,7 +17,7 @@ installIdentityPackMaintenance();
 // accident (nor silently vanish from this barrel when a second module happens to
 // export the same name — an ambiguous `export *` name is dropped, not reported).
 // Modules absent below export nothing public: the pack service's derivation and
-// promotion halves, the lab's five lanes, and the prompt format kit.
+// promotion halves, the lab's five lanes and the staged bench's subject cut.
 
 export * from "./assets";
 
@@ -186,22 +186,11 @@ export * from "./models";
 export * from "./model-profiles";
 export * from "./model-versions";
 export * from "./render-intent";
-export * from "./render-intent-capture";
-export * from "./shadow-comparison";
 export * from "./render-fingerprint";
 export * from "./route-safe";
 export * from "./chat-look";
 export * from "./monogram";
-export {
-  type AvatarOutfitItem,
-  type AvatarStyle,
-  type AvatarWardrobeItem,
-  buildAvatarPrompt,
-  toWornInputs,
-  visibleAvatarOutfit,
-  wardrobeGarmentKey,
-} from "./prompts-avatar";
-export { buildVariantInstruction, PORTRAIT_IDENTITY_LOCK, type VariantKind } from "./prompts-variant";
+export { type AvatarStyle, type AvatarWardrobeItem, toWornInputs, wardrobeGarmentKey } from "./avatar-wardrobe";
 export {
   buildSceneComposerPrompt,
   emptySceneSpec,
@@ -221,14 +210,6 @@ export {
   wardrobeOutfitSummary,
 } from "./prompts-scene-composer";
 export {
-  apparentAgeAnchor,
-  characterAppearanceSummary,
-  identityAnchorSummary,
-  imageAgeWord,
-  sceneRevealAppearance,
-  viewerBodyAppearance,
-} from "./prompts-appearance";
-export {
   bindLimbsToOwner,
   emptySceneRenderPlan,
   heuristicFocalName,
@@ -239,15 +220,6 @@ export {
   scrubBlush,
   scrubPlayerFromAction,
 } from "./prompts-scene-plan";
-export {
-  buildSceneRenderPrompt,
-  EDIT_RENDER_PROMPT_LIMIT,
-  SCENE_POV_RULE,
-  sceneFramingRule,
-  type SceneMultiReference,
-  type SceneRenderOptions,
-  SELFIE_FRAMING,
-} from "./prompts-scene-render";
 export { applySceneCastVisual, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 export {
   buildEntityPromptProgram,
@@ -263,10 +235,11 @@ export {
 // entity lane resolves bindings today, and it asks for item/location alone.
 export * from "./packs-qwen-2511";
 export * from "./packs-qwen-2512-portrait";
-// The one semantic path a character lane's prompt program is built on, for the
-// shadow that measures a cutover and the production render that performs one.
+// The one semantic path a character lane's prompt program is built on — the
+// only prompt path a character lane has.
 export {
   buildCharacterPromptProgram,
+  characterPromptUnboundRefusal,
   isCharacterPromptCompiled,
   isCharacterPromptRefusal,
   isCharacterPromptUnbound,
@@ -282,52 +255,17 @@ export {
   type CharacterPromptSubjectCut,
   type CharacterPromptTask,
 } from "./character-prompt-program";
-// The Round 2 shadow wiring: lane entries, seeded deltas, canonical fact names.
-export * from "./character-shadow";
 export * from "./avatar";
 export {
-  AVATAR_PORTRAIT_CAMERA,
-  AVATAR_PORTRAIT_CAMERA_ID,
-  AVATAR_SEGMENT_POLICY,
-  buildAvatarSegments,
-  type AvatarSegmentAssembly,
-  type AvatarSegmentAssemblyInput,
-} from "./avatar-segments";
-export {
-  buildStandaloneSubjectVisual,
+  buildStandaloneLaneCut,
+  buildStandaloneSubjectCut,
   portraitPerception,
-  type StandaloneSubjectVisual,
-  type StandaloneSubjectVisualInput,
+  standaloneSubjectPromptCut,
+  type StandaloneLaneCutInput,
+  type StandaloneLaneViewpoint,
+  type StandaloneSubjectCut,
+  type StandaloneSubjectCutInput,
 } from "./standalone-subject-visual";
-export {
-  buildVariantSegments,
-  VARIANT_EDIT_CAMERA,
-  VARIANT_EDIT_CAMERA_ID,
-  VARIANT_SEGMENT_POLICY,
-  type VariantSegmentAssembly,
-  type VariantSegmentAssemblyInput,
-} from "./variant-segments";
-export {
-  buildChatLookSegments,
-  CHAT_LOOK_CAMERA,
-  CHAT_LOOK_CAMERA_ID,
-  CHAT_LOOK_SEGMENT_POLICY,
-  CHAT_LOOK_VISUAL_DIGEST_UNAVAILABLE,
-  CHAT_LOOK_VISUAL_REQUIRED_MISSING,
-  VISUAL_CLAUSE_OMIT_CHAT_LOOK_CACHE,
-  type ChatLookSegmentAssembly,
-  type ChatLookSegmentInput,
-  type ChatLookVisualCut,
-} from "./chat-look-segments";
-export {
-  VISUAL_CLAUSE_OMIT_CURATED,
-  VISUAL_CLAUSE_OMIT_ELIDED,
-  VISUAL_CLAUSE_OMIT_INAPPLICABLE,
-  VISUAL_CLAUSE_OMIT_NONVISUAL,
-  VISUAL_CLAUSE_OMIT_REGISTRY,
-  visualFactClauseResolver,
-  type VisualFactClauseSources,
-} from "./visual-fact-clauses";
 export * from "./variants";
 export * from "./upload";
 export * from "./entity";

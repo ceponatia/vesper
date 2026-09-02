@@ -218,7 +218,6 @@ export {
   imagePositiveProtections,
   imagePostMergeCollisions,
   imageProjectionDispositions,
-  imagePromptBindingForShadow,
   imagePromptDialect,
   imagePromptDialectForBinding,
   imagePromptDialectIds,
@@ -271,8 +270,8 @@ export {
   IMAGE_PROVIDER_DEFAULT_OVERRIDE_BLOCK,
   IMAGE_WORLD_STATE_META_KEY,
   // The 2511 identity-lock byte contract with `@vesper/image-models` — public so
-  // the root parity tripwire (scripts/qwen-identity-lock-parity.test.ts) and the
-  // app's shadow comparison can pin the exact bytes.
+  // the app's program suite (character-prompt-program.test.ts) can pin the
+  // exact bytes.
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   imagePromptProgramProvenanceSchema,
@@ -353,7 +352,6 @@ export type {
   SceneStagingSurfaceLog,
 } from "./prompt-program";
 export {
-  compileImagePromptSegments,
   controlReferenceTransport,
   defaultImageRenderPolicy,
   fitImagePromptSegments,
@@ -578,7 +576,6 @@ export type {
   TrialVerdictValue,
 } from "./identity";
 export {
-  IMAGE_LAB_DEFAULT_SUBJECT_FACTS,
   IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
   IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY,
   IMAGE_LAB_FINISHING_RECIPE_KEY,
@@ -613,8 +610,6 @@ export {
   imageLabStagedSceneRecipeProfile,
   imageLabStagedSceneVerdicts,
   imageLabStagingSchema,
-  imageLabSubjectFactsModeSchema,
-  imageLabSubjectFactsModes,
   imageLabTwoCharacterRecipeProfile,
   imageLabTwoCharacterVerdicts,
   imageLabUploadControlRequestSchema,
@@ -647,7 +642,6 @@ export type {
   ImageLabRecordVerdictRequest,
   ImageLabSettings,
   ImageLabStaging,
-  ImageLabSubjectFactsMode,
   ImageLabUploadControlRequest,
   ImageLabVerdict,
 } from "./lab";

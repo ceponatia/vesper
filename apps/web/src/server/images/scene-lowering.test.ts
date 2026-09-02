@@ -6,12 +6,15 @@ import {
   type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { DEFAULT_SCENE_CAMERA } from "@/contracts/images/scene-camera";
-import { sceneStagings } from "@/contracts/images/scene-staging";
+import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
 import {
   expectOrder,
   expectSections,
+  LANE_PROBE_NAME,
+  LANE_PROBE_SUBJECT_ID,
   laneProbeCastScenePlan,
   laneProbeCastSubjects,
 } from "@/server/test-support";
@@ -22,7 +25,12 @@ import {
   type CharacterPromptReference,
 } from "./character-prompt-program";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
-import { lowerScenePlan, sceneLightingBand, type SceneProgramInputs } from "./scene-lowering";
+import {
+  IMAGE_SCENE_STAGING_UNSENT,
+  lowerScenePlan,
+  sceneLightingBand,
+  type SceneProgramInputs,
+} from "./scene-lowering";
 import { applySceneCastVisual } from "./scene-subject-visual";
 
 /**
@@ -133,7 +141,7 @@ function compileScene(plan: SceneRenderPlan, allowIntimate = false): CompiledSce
   expect(built.refusal).toBeNull();
   const cast = built.visuals;
   const lowered = lowerScenePlan({
-    plan: built.plan,
+    plan,
     cast: cast.map((slice) => ({ subjectId: slice.subjectId, name: slice.name })),
     allowIntimate,
   });
@@ -151,7 +159,6 @@ function compileScene(plan: SceneRenderPlan, allowIntimate = false): CompiledSce
     profile: sceneProfile(),
     bindingProfileKey: "scene-standard",
     bindingStrategy: "instruction_edit",
-    resolver: "active",
     cuts: cast.map((slice) => ({
       subjectId: slice.subjectId,
       name: slice.name,
@@ -220,6 +227,11 @@ describe("the compiled scene prompt over a populated plan", () => {
 
     // The scene's own light, never the release's declared `bright` placeholder.
     expect(program.prompt).not.toContain("Bright, even light.");
+
+    // The arrangement's camera turned her away, and a moved orientation reaches
+    // the prompt through the cut's own viewing reads — the default is silenced
+    // by the lowering (below), a non-default one must not be.
+    expect(program.prompt).toContain("is seen from behind.");
 
     // The three statements have to be mutually consistent. The arrangement says
     // the viewer's own hands are on Nyx's shoulders, so the frame may not also
@@ -348,5 +360,50 @@ describe("a staging that places the viewer", () => {
     // The arrangement is still stated — embodiment withdraws the possession
     // clause, never the staging it was contradicting.
     expect(program.prompt).toContain("the viewer's own hands resting on Nyx's shoulders.");
+  });
+});
+
+/**
+ * The gates a committed staging runs PER RUNG on its way into the program, and
+ * the leak-proofing among them. One resolved plan feeds the uncensored edit and
+ * its moderated fallback, and the two disagree about the same arrangement: an
+ * intimate act travels only a permitting route; an arrangement that names a
+ * viewer part the player's coverage gated out is withheld WHOLE, because the
+ * template speaks that anatomy in its own words and would smuggle it past the
+ * coverage rule the phrasing is checked by; and a selfie has no viewer standing
+ * anywhere for a two-body geometry. Each withholding is recorded under
+ * `IMAGE_SCENE_STAGING_UNSENT` with its reason, so a render whose act went
+ * missing says why.
+ *
+ * Falsified against a lowering that stated the staging fact unconditionally —
+ * the moderated rung would then carry the explicit act, and a dressed player's
+ * gated-out anatomy would reach the prompt inside the template's own sentence.
+ */
+describe("a staging the rung may not state", () => {
+  const staged = (entry: SceneStaging, over: Partial<SceneRenderPlan> = {}): SceneRenderPlan =>
+    populatedScenePlan({
+      staging: entry,
+      camera: entry.camera,
+      viewerBody: [...entry.viewerParts],
+      // No player coverage stated: the default-shut rule reads that as covered.
+      ...over,
+    });
+
+  it.each([
+    ["route_disallows_intimate", staged(sceneStagings.on_all_fours), false],
+    ["viewer_parts_out_of_frame", staged(sceneStagings.kneeling_before_viewer), true],
+    ["selfie", staged(sceneStagings.lying_face_down, { captureMode: "selfie" }), true],
+  ] as const)("withholds the arrangement and records %s", (reason, plan, allowIntimate) => {
+    expect(plan.staging).toBeDefined();
+    const sink = new DiagnosticCollector();
+    const lowered = lowerScenePlan({
+      plan,
+      cast: [{ subjectId: LANE_PROBE_SUBJECT_ID, name: LANE_PROBE_NAME }],
+      allowIntimate,
+      sink,
+    });
+    expect(lowered.scene.some((fact) => fact.concept === "scene.staging")).toBe(false);
+    const unsent = sink.items.find((item) => item.code === IMAGE_SCENE_STAGING_UNSENT);
+    expect(unsent?.context).toMatchObject({ staging: plan.staging?.id, reason });
   });
 });

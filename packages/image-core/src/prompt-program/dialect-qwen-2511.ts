@@ -77,27 +77,19 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  *    question for a fixed trial, exactly as it was for 2512.
  *
  * The identity lock (owner ruling 2026-08-29): the compiled `subject.identity`
- * claim reproduces, byte for byte, the lock sentence the render kernel's
- * `qwen.numbered-reference-dialect` quirk writes today, chosen single vs multi
- * by reference count — so a shadow compile of this dialect is byte-checkable
- * against the shipping edit path. The kernel quirk is untouched this round and
- * retires per lane at cutover.
+ * claim is worded here, chosen single vs multi by reference count. This
+ * dialect is the ONLY source of the family's lock wording: the render kernel's
+ * `@vesper/image-models` quirk that once rewrote the lane-side legacy sentence
+ * into these bytes retired with the lane prose (#251), so a prompt reaches the
+ * provider exactly as it was compiled and hashed.
  */
 
 const DIALECT_ID = "qwen_2511_delta_edit" as const;
 
 /**
- * Byte-copies of `QWEN_SINGLE_REFERENCE_IDENTITY_LOCK` and
- * `QWEN_MULTI_REFERENCE_IDENTITY_LOCK` in `@vesper/image-models`
- * (`packages/image-models/src/families/qwen/shared.ts`).
- *
- * Duplicated, not imported: `@vesper/image-core` and `@vesper/image-models`
- * are peer packages that may not import each other, and the coupling is a
- * byte-level contract rather than a code dependency — the whole point is that
- * two independent layers spell the same sentence, so a shadow compile of this
- * dialect matches the kernel quirk's output exactly. The root tripwire
- * `scripts/qwen-identity-lock-parity.test.ts` imports both packages and fails
- * the build the moment either copy drifts.
+ * The family's identity-lock spellings. Kept no longer than the legacy lock
+ * they replaced, so an edit prompt fitted before the lock was chosen stays
+ * fitted.
  */
 export const QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK =
   "Image 1 is the identity reference. Preserve the exact face, hair, skin tone, body proportions, and apparent age. Change only what this instruction requests.";

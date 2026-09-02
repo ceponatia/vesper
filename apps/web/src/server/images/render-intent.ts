@@ -224,14 +224,10 @@ export async function renderImageIntent(
   const prepared = await resolveIntentLora(intent, sink);
   if (!prepared.ok) return { ok: false, error: prepared.error };
   const seeded = resolveIntentSeed(withLoraCredential(prepared.intent));
-  // The sink reaches the planner because prompt fitting reports there: an intent
-  // carrying segments can lose optional detail, or a mandatory sentence, to a
-  // version's declared prompt ceiling, and that is a degradation an operator has
-  // to be able to see.
   // The deployment facts, with this model family's dialect joined to them. Read
   // immediately before planning rather than cached, because that is where the
   // payload builder reads the same environment too.
-  const planned = planImageRender(seeded.intent, imageRenderRuntimeFacts(seeded.intent.profile.model), sink);
+  const planned = planImageRender(seeded.intent, imageRenderRuntimeFacts(seeded.intent.profile.model));
   if (!planned.ok) {
     const { code, message, context } = planned.refusal;
     sink?.push(diag("warn", code, message, { path: "image_model_profiles", context }));
