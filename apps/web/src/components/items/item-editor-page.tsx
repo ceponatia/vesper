@@ -10,14 +10,19 @@ import {
   clothingSubtypesForCategory,
   colorFamilies,
   expandCoverage,
+  hairOcclusionBands,
+  hairOcclusionForItem,
+  hairOcclusionOf,
   objectSubtypeById,
   objectSubtypes,
   toggleCoverage,
   wearerTargets,
   type BodyLocation,
+  type HairOcclusion,
   type ItemKind,
 } from "@/contracts";
 import { itemsApi, type ItemDefinitionParts } from "@/lib/client/api";
+import { mergeItemDraft } from "@/lib/items/draft-merge";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
@@ -54,6 +59,12 @@ const layerOptions = [
   { value: 2, label: "2 · mid" },
   { value: 3, label: "3 · outerwear" },
 ] as const;
+/** Headwear's hair-occlusion bands as the editor names them (contracts/items/hair-occlusion.ts). */
+const hairOcclusionLabels: Readonly<Record<HairOcclusion, string>> = {
+  none: "None — hair fully visible",
+  partial: "Partial — some hair hidden",
+  full: "Full — no hair visible",
+};
 
 export function ItemEditorPage({ itemId }: { itemId: string }) {
   const router = useRouter();
@@ -135,10 +146,11 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
 
   /**
    * ✦ Draft from description: the classify seam extended into the editor —
-   * propose category/layer/wearer/color/
-   * opacity, explicit coverage (carve-outs included) and the three sensory
-   * lines from name + description. Fill-EMPTY-only merge into the unsaved
-   * form; the SaveBar stays the review/undo step (Forge-the-rest discipline).
+   * propose category/layer/wearer/color/opacity, a headwear hair-occlusion
+   * override, explicit coverage (carve-outs included) and the three sensory
+   * lines from name + description. Fill-EMPTY-only merge (`mergeItemDraft`)
+   * into the unsaved form; the SaveBar stays the review/undo step
+   * (Forge-the-rest discipline).
    */
   const draftFromDescription = async () => {
     if (!form || drafting) return;
@@ -157,32 +169,9 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
     }
     const drafted = result.data.draft;
     editGenRef.current += 1;
-    setForm((current) => {
-      if (!current) return current;
-      const def = current.definition;
-      return {
-        ...current,
-        definition: {
-          ...def,
-          category: def.category ?? drafted.category ?? null,
-          subtype: def.subtype ?? drafted.subtype ?? null,
-          wearer: def.wearer ?? drafted.wearer ?? null,
-          layer: def.layer ?? drafted.layer ?? null,
-          color:
-            def.color ??
-            (drafted.color ? { family: drafted.color.family, shade: drafted.color.shade ?? null, accent: null } : null),
-          // Opacity has no empty state (default "opaque") — a proposed value
-          // applies only over the default; the SaveBar review still guards it.
-          opacity: def.opacity === "opaque" && drafted.opacity ? drafted.opacity : def.opacity,
-          coverage: def.coverage.length > 0 ? def.coverage : (drafted.coverage ?? def.coverage),
-          sensory: {
-            appearance: def.sensory.appearance?.trim() ? def.sensory.appearance : drafted.sensory?.appearance,
-            scent: def.sensory.scent?.trim() ? def.sensory.scent : drafted.sensory?.scent,
-            tactile: def.sensory.tactile?.trim() ? def.sensory.tactile : drafted.sensory?.tactile,
-          },
-        },
-      };
-    });
+    setForm((current) =>
+      current ? { ...current, definition: mergeItemDraft(current.definition, drafted) } : current,
+    );
     setDirty(true);
     setStagedDraft(true); // pause autosave — the SaveBar is the review step
     toast.push({ title: "Item drafted", description: "Review the filled fields, then save.", tone: "success" });
@@ -542,15 +531,23 @@ function ClothingFields({
 
   // Picking a category applies its template (coverage + layer); everything
   // stays editable after — the category is a starting point, not a constraint.
-  // Subtype vocabularies are per-category, so a category change clears it.
+  // Subtype vocabularies are per-category, so a category change clears it —
+  // and with it the headwear-only hair-occlusion override, which is relative
+  // to the subtype it corrected (a stale one is dropped at save regardless).
   const applyCategory = (id: string) => {
     if (!id) {
-      onPatch({ category: null, subtype: null });
+      onPatch({ category: null, subtype: null, hairOcclusion: null });
       return;
     }
     const category = clothingCategoryById(id);
     if (!category) return;
-    onPatch({ category: id, subtype: null, coverage: [...category.coverage], layer: category.layer });
+    onPatch({
+      category: id,
+      subtype: null,
+      hairOcclusion: null,
+      coverage: [...category.coverage],
+      layer: category.layer,
+    });
   };
 
   // Picking a subtype applies its coverage template when it has one (a lip
@@ -597,6 +594,27 @@ function ClothingFields({
                 {subtypeOptions.map((subtype) => (
                   <option key={subtype.id} value={subtype.id}>
                     {subtype.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        ) : null}
+        {definition.category === "headwear" ? (
+          <Field
+            label="Hair occlusion"
+            hint="How much of the wearer's hair this piece hides — images and the narrator read it; coverage is unchanged."
+          >
+            {(id) => (
+              <Select
+                id={id}
+                value={definition.hairOcclusion ?? ""}
+                onChange={(e) => onPatch({ hairOcclusion: hairOcclusionOf(e.target.value) ?? null })}
+              >
+                <option value="">Use type default ({hairOcclusionForItem(definition.subtype)})</option>
+                {hairOcclusionBands.map((band) => (
+                  <option key={band} value={band}>
+                    {hairOcclusionLabels[band]}
                   </option>
                 ))}
               </Select>

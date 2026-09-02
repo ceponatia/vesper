@@ -140,4 +140,22 @@ describe("groundItemDraft (✦ draft-from-description, ux-improvements slice 5)"
   it("returns an empty proposal when nothing survives grounding", () => {
     expect(groundItemDraft("container", { category: "top", coverage: ["feet"] })).toEqual({});
   });
+
+  // Hair occlusion is a headwear-only OVERRIDE of the subtype default
+  // (docs/contracts/items/README.md §Hair occlusion). Falsified by a grounding
+  // that stores the proposal wherever the model wrote it: a redundant band
+  // would freeze what the type already resolves to, a band on a non-headwear
+  // garment would be dropped at save anyway, and a non-band must never reach
+  // the form.
+  it.each([
+    ["headscarf with the fringe out", "headwear", "headscarf", "partial", "partial"],
+    ["fully enclosing helmet", "headwear", "helmet", "full", "full"],
+    ["hat perched above the hairstyle", "headwear", "hat", "none", "none"],
+    ["hat already partial by type — redundant", "headwear", "hat", "partial", undefined],
+    ["non-headwear garment", "jewelry", "choker", "full", undefined],
+    ["not a band", "headwear", "hat", "mostly", undefined],
+  ] as const)("hair occlusion: %s", (_label, category, subtype, band, expected) => {
+    const proposal = groundItemDraft("clothing", { category, subtype, hairOcclusion: band as never });
+    expect(proposal.hairOcclusion).toBe(expected);
+  });
 });

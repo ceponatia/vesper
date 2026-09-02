@@ -9,6 +9,7 @@ import {
   locationPatchSchema,
   personaCreateSchema,
   personaPatchSchema,
+  withoutStaleHairOcclusion,
 } from "./schemas";
 
 describe("character body schemas", () => {
@@ -104,6 +105,23 @@ describe("item body schemas", () => {
   it("invalidCoverageIds flags unknown body locations only", () => {
     expect(invalidCoverageIds(["head", "neck"])).toEqual([]);
     expect(invalidCoverageIds(["head", "left_flipper"])).toEqual(["left_flipper"]);
+  });
+
+  // The headwear hair-occlusion override rides the extras slice: a pick list
+  // that omits it strips every save silently, a `null` patch must clear the
+  // stored key (the editor's "Use type default"), and a value on a
+  // non-headwear category is stale and dropped at the boundary
+  // (docs/contracts/items/README.md §Hair occlusion).
+  it("stores, clears and drops the hair-occlusion override", () => {
+    expect(itemCreateSchema.parse({ name: "Hijab", kind: "clothing", definition: { hairOcclusion: "full" } }).definition.hairOcclusion).toBe("full");
+    const cleared = itemPatchSchema.parse({ definition: { hairOcclusion: null } });
+    expect(cleared.definition !== undefined && "hairOcclusion" in cleared.definition).toBe(true);
+    expect(cleared.definition?.hairOcclusion).toBeUndefined();
+
+    const headwear = { category: "headwear", hairOcclusion: "partial" as const };
+    expect(withoutStaleHairOcclusion(headwear)).toEqual(headwear);
+    expect(withoutStaleHairOcclusion({ category: "jewelry", hairOcclusion: "partial" as const })).toEqual({ category: "jewelry" });
+    expect(withoutStaleHairOcclusion({ hairOcclusion: "full" as const })).toEqual({});
   });
 });
 

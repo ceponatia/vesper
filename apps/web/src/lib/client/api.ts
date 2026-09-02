@@ -9,7 +9,7 @@ import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
-import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
+import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
 import {
   type IdentityPackAdminOverrideRequest,
   type IdentityPackAdminRevision,
@@ -677,6 +677,11 @@ const itemDefinitionPartsSchema = z
       .nullish()
       .catch(null)
       .transform((v) => v ?? null),
+    /** Headwear only: the hair-occlusion override; null = the type's default (contracts/items/hair-occlusion.ts). */
+    hairOcclusion: hairOcclusionSchema
+      .nullish()
+      .catch(null)
+      .transform((v) => v ?? null),
     layer: z
       .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
       .nullish()
@@ -692,6 +697,7 @@ const itemDefinitionPartsSchema = z
     subtype: null,
     wearer: null,
     color: null,
+    hairOcclusion: null,
     layer: null,
     opacity: "opaque" as const,
     sensory: {},
@@ -2101,6 +2107,8 @@ export const itemDraftProposalSchema = z.object({
     .optional()
     .catch(undefined),
   opacity: z.enum(["opaque", "sheer"]).optional().catch(undefined),
+  /** Headwear only, and only when the description differs from the type's default band. */
+  hairOcclusion: hairOcclusionSchema.optional().catch(undefined),
   coverage: z.array(z.string()).optional().catch(undefined),
   sensory: z
     .object({

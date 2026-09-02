@@ -124,7 +124,13 @@ covers, what it occludes, or how it layers.
   headscarf worn with the fringe out is `partial`, a fully enclosing helmet is `full`.
   `hairOcclusionForItem(subtypeId, override)` (`subtypes/index.ts`) is the one per-item rule: a
   valid override wins, else the subtype default, else `none`; a value that is not a band is
-  ignored rather than trusted.
+  ignored rather than trusted. The item editor authors it for headwear only — a **Hair occlusion**
+  select whose "Use type default" choice names the resolved band and clears the override
+  (`hairOcclusion: null`), while ✦ Draft from description proposes one only when the description
+  clearly departs from the type default and never when it equals it (`groundItemDraft`). The
+  override is stale on any other category: the item create and patch routes drop it at the trust
+  boundary (`withoutStaleHairOcclusion`, `server/api/schemas.ts`) instead of storing a value no
+  loader reads, and a category change in the editor clears it with the subtype.
 - **The subject's band is resolved once over their worn rows** (`resolveHairOcclusion`): only
   worn pieces count — held, stored and scene-placed items hide nothing — the strongest band wins
   (`full` over `partial` over `none`), and a missing or unknown value is `none`. Bad data resolves
