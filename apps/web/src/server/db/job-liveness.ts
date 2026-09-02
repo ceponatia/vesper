@@ -69,6 +69,13 @@ export async function reclaimOrphanedJobs(now: Date = new Date()): Promise<numbe
  * Whether a non-stale `queued`/`running` job of `type` exists for `chatId`.
  * Callers use it both as the enqueue dedupe and (for the scene lane) as the
  * client's "still rendering" flag, so the same staleness rule governs both.
+ *
+ * Read from the PAYLOAD, not from the first-class `jobs.chat_id` column, and
+ * deliberately so: every chat-lane enqueue writes the id to both, the payload is
+ * the reading the character dedupe below shares, and a chat-scoped row can only
+ * be live while its chat exists (the column's `ON DELETE CASCADE` takes the row
+ * with the chat). The two readings therefore agree on every row this predicate
+ * can see.
  */
 export function hasLiveChatJob(type: JobType, chatId: string): Promise<boolean> {
   return hasLiveJobForSubject(type, "chatId", chatId);

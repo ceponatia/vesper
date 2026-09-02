@@ -321,15 +321,18 @@ async function deleteOrphanIdentityCrops(cutoff: Date, limit: number, sink: Diag
 /**
  * Hard-delete a character's hidden identity assets — rows and files.
  *
- * The pack ROWS cascade with the character; these image rows do not (they hang off
- * `entity_kind`/`entity_id`, which carry no foreign key), so the delete path calls
- * this explicitly. Today `deleteEntityImages` would take them anyway; when the
- * data-lifecycle plan makes Gallery-visible images survive their character, this is
- * what keeps hidden crops dying with it. The broader retention rule deliberately
- * does not extend to internal render inputs: nobody browses a face crop.
- *
- * Guarded by kind AND entity, the same shape `deleteChatAssets` uses, so a wrong
- * character id can only ever delete nothing.
+ * The character delete route does not call this directly: it calls
+ * `deleteNonGalleryCharacterImages` (`images/assets.ts`), whose `notInArray`
+ * predicate already covers `HIDDEN_IMAGE_KINDS` as one case of the general rule
+ * — an image survives its character iff its kind is Gallery-listable. This
+ * function stays as the narrower, identity-pack-scoped purge (guarded by kind
+ * AND entity like `deleteChatAssets`, so a wrong character id can only ever
+ * delete nothing) for callers that specifically want "this character's hidden
+ * identity assets, and nothing else" — its own lifecycle suite exercises it
+ * directly. The pack ROWS cascade with the character via FK; these image rows
+ * do not (they hang off `entity_kind`/`entity_id`, which carry no foreign key),
+ * which is why either purge path has to name them explicitly rather than
+ * relying on cascade.
  */
 export async function deleteCharacterIdentityAssets(characterId: string, ownerId: string): Promise<number> {
   return purgeImagesWhere(

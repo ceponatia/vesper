@@ -1,5 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { PROVISIONING_STALE_AFTER_DELETE } from "@vesper/simulation-core/provisioning";
 import {
   characterChats,
   characters,
@@ -7,6 +8,7 @@ import {
   simBranches,
   simItemHoldings,
   simPhysicalLoci,
+  simProvisioningRequests,
   simWorlds,
 } from "@/server/db";
 
@@ -15,7 +17,9 @@ import {
 // leak this suite pins closed. A legacy chat must still touch no `sim_*` row,
 // ownership is still re-proved in-service, and a chat whose branch has vanished
 // must still delete (degraded default + diagnostic, docs/resilience.md).
-// Self-skips without a database.
+// The last case pins #197: the provisioning ledger outlives the graph it names,
+// so deleting a world must also stop its `ready` record replaying the 201 that
+// named it. Self-skips without a database.
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "World Deleter", role: "user" as "admin" | "user" },
@@ -66,24 +70,31 @@ interface CreatedWorld {
   branchId: string;
 }
 
-/** Provision a successor chat through the real front-door route. */
-async function createSuccessorChat(title: string): Promise<CreatedWorld> {
-  const body = await expectJson<CreatedWorld>(
-    await successorCreate(
-      apiRequest("/api/successor-chats", {
-        // `requestId` is the required per-intent idempotency key.
-        body: {
-          characterId: ids.characterId,
-          title,
-          requestId: `delete-${title.toLowerCase().replace(/\s+/gu, "-")}-${Date.now()}`,
-        },
-      }),
-      collectionCtx,
-    ),
-    201,
+/** POST the real front door. `requestId` is the required per-intent idempotency key. */
+async function postSuccessorChat(title: string, requestId: string): Promise<Response> {
+  return successorCreate(
+    apiRequest("/api/successor-chats", { body: { characterId: ids.characterId, title, requestId } }),
+    collectionCtx,
   );
+}
+
+/** Provision a successor chat through the real front-door route. */
+async function createSuccessorChat(title: string, requestId?: string): Promise<CreatedWorld> {
+  const key = requestId ?? `delete-${title.toLowerCase().replace(/\s+/gu, "-")}-${Date.now()}`;
+  const body = await expectJson<CreatedWorld>(await postSuccessorChat(title, key), 201);
   seededWorlds.push(body.worldId);
   return body;
+}
+
+async function provisioningRecord(requestId: string) {
+  const [row] = await db()
+    .select()
+    .from(simProvisioningRequests)
+    .where(
+      and(eq(simProvisioningRequests.ownerId, ids.user), eq(simProvisioningRequests.requestId, requestId)),
+    )
+    .limit(1);
+  return row;
 }
 
 /** Create an ordinary legacy conversation through the real route. */
@@ -231,5 +242,85 @@ describe.runIf(ready)("deleting a successor chat deletes its world (E20-1)", () 
     } finally {
       await db().execute(sql.raw(ADD_CHAT_BRANCH_FK));
     }
+  });
+
+  // #197. `sim_provisioning_requests` deliberately has no FK to the chat (#283:
+  // failed records are the audit trail and must survive compensating cleanup),
+  // so a `ready` record kept naming a chat, branch and world that this delete had
+  // just destroyed — and the front door replayed its recorded 201 verbatim,
+  // handing the client three tombstones with a 201 status. Falsified against
+  // that route: the re-POST below returned `created`'s exact ids.
+  it("refuses to replay a deleted world for the same request id, then rebuilds on the next tap", async () => {
+    const requestId = `stale-replay-${Date.now()}`;
+    const created = await createSuccessorChat("Replayed World", requestId);
+    expect((await provisioningRecord(requestId))?.state).toBe("ready");
+
+    expect(
+      (await chatDelete(apiRequest(`/api/chats/${created.id}`, { method: "DELETE" }), ctx(created.id))).status,
+    ).toBe(200);
+
+    // The belt, written inside the delete's own transaction: no recorded 201
+    // survives, so there is nothing left to replay even before the front door's
+    // own liveness check runs. The ids stay for the audit; the marker says why.
+    const retired = await provisioningRecord(requestId);
+    expect(retired?.state).toBe("failed");
+    expect(retired?.error).toBe(PROVISIONING_STALE_AFTER_DELETE);
+    expect(retired?.response).toBeNull();
+    expect(retired?.httpStatus).toBeNull();
+
+    const replay = await postSuccessorChat("Replayed World", requestId);
+    // Read the raw body once: the assertion that matters is about the WHOLE
+    // payload, not just the fields an envelope helper would surface.
+    const replayBody = await replay.text();
+    const refusal = JSON.parse(replayBody) as { error: { code: string; message: string } };
+    expect(replay.status).toBe(409);
+    expect(refusal.error.code).toBe("provision_stale");
+    // The point of the whole fix: not one of the dead ids reaches the client.
+    for (const dead of [created.id, created.worldId, created.branchId]) expect(replayBody).not.toContain(dead);
+    expect(await chatCount(created.id)).toBe(0);
+    expect(await worldCount(created.worldId)).toBe(0);
+
+    // The refusal is owed once. The same key is then an ordinary `failed` record,
+    // so the next tap rebuilds from scratch — a NEW chat, under the same derived
+    // world id (which is exactly why a bare 201 could never have been trusted to
+    // mean "your world is there").
+    const rebuilt = await createSuccessorChat("Replayed World", requestId);
+    expect(rebuilt.id).not.toBe(created.id);
+    expect(rebuilt.worldId).toBe(created.worldId);
+    expect(await worldCount(rebuilt.worldId)).toBe(1);
+
+    // And a genuinely new intent is untouched by any of it.
+    const fresh = await createSuccessorChat("Later World");
+    expect(fresh.worldId).not.toBe(created.worldId);
+  });
+
+  // The delete-time belt above is not the only protection, and the case that
+  // needs the other one is this: a record still reading `ready` whose world is
+  // already gone. `deleteChat` never ran (an admin orphan sweep, a repair), or
+  // it committed in the window between the front door loading the record and
+  // trusting it — the race Codex found on PR #437, which is why the front door
+  // re-reads the record and its whole graph in ONE statement and replays only
+  // the row that query returns. Falsified against the pre-#197 route, which
+  // replayed the stored 201 here.
+  it("refuses a ready record whose world vanished without the delete path retiring it", async () => {
+    const requestId = `stale-orphan-${Date.now()}`;
+    const created = await createSuccessorChat("Vanished World", requestId);
+
+    // Straight to the database, so the ledger row keeps saying `ready` — exactly
+    // what the route holds in hand when a concurrent delete has just committed.
+    await db().delete(simWorlds).where(eq(simWorlds.id, created.worldId));
+    await db().delete(characterChats).where(eq(characterChats.id, created.id));
+    expect((await provisioningRecord(requestId))?.state).toBe("ready");
+
+    const res = await postSuccessorChat("Vanished World", requestId);
+    const body = await res.text();
+    expect(res.status).toBe(409);
+    expect((JSON.parse(body) as { error: { code: string } }).error.code).toBe("provision_stale");
+    for (const dead of [created.id, created.worldId, created.branchId]) expect(body).not.toContain(dead);
+
+    // …and the record it could not trust is retired, so the next tap rebuilds.
+    const retired = await provisioningRecord(requestId);
+    expect(retired?.state).toBe("failed");
+    expect(retired?.error).toBe(PROVISIONING_STALE_AFTER_DELETE);
   });
 });

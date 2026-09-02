@@ -8,6 +8,7 @@ import { characters, db, images, items, jobs, locations, reclaimOrphanedJobs } f
 import { describeProviderError } from "../ai";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
+import { runRetentionPasses } from "@/server/retention";
 import { parseOr } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -434,6 +435,36 @@ function kindGuard(opts: { kind?: ImageKind; kinds?: readonly ImageKind[] }) {
 
 /** The asset classes the Gallery hub may act on (list / favorite / delete). */
 export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as const satisfies readonly ImageKind[];
+
+/**
+ * The character-deletion survival rule, stated once: **an image survives its
+ * character iff its kind is Gallery-listable** (`GALLERY_IMAGE_KINDS` above —
+ * scene, portrait_variant, entity). Everything else — `avatar` included, and
+ * every `HIDDEN_IMAGE_KINDS` entry — is hard-deleted with the character, rows
+ * and files alike, by this one `notInArray` predicate.
+ *
+ * `avatar` is neither Gallery-listable nor hidden: it is reachable only through
+ * the character's own portrait studio, which dies with the character, so it is
+ * not Gallery history. Left uncovered, a canonical avatar outlives its character
+ * with no surface left to view or delete it through, while still counting
+ * against the owner's storage quota forever (quota sums every non-hidden
+ * image). Routing `avatar` and every hidden kind through the same predicate as
+ * this one call, rather than two, keeps the rule impossible to state
+ * inconsistently at the two call sites.
+ *
+ * Owner-scoped and guarded by kind AND entity, the same shape every purge here
+ * uses, so a wrong character id can only ever delete nothing.
+ */
+export async function deleteNonGalleryCharacterImages(characterId: string, ownerId: string): Promise<number> {
+  return purgeImagesWhere(
+    and(
+      eq(images.ownerId, ownerId),
+      eq(images.entityKind, "character"),
+      eq(images.entityId, characterId),
+      notInArray(images.kind, [...GALLERY_IMAGE_KINDS]),
+    ),
+  );
+}
 
 /**
  * Kinds that are INTERNAL operational assets, never user-visible ones: the
@@ -1064,15 +1095,21 @@ async function runScheduledSweep(now: Date): Promise<void> {
     // cleanup for superseded crops. It runs AFTER `sweepOrphans` so a crop whose
     // file vanished is already marked failed when the findings look at it.
     const identity = (await identityPackMaintenance?.sweep(now)) ?? {};
-    const summary = { ...result, jobsReclaimed, ...identity };
+    // Database retention rides the same tick (`@/server/retention`): bounded
+    // deletes of expired telemetry, finished jobs, and expired auth rows. Each
+    // pass isolates its own failure, so this call never throws.
+    const retention = await runRetentionPasses(now);
+    const summary = { ...result, jobsReclaimed, ...identity, ...retention };
     const identityTotal = Object.values(identity).reduce((total, value) => total + value, 0);
+    const retentionTotal = Object.values(retention).reduce((total, value) => total + value, 0);
     if (
       result.orphanFilesRemoved +
         result.stalePendingFilesRemoved +
         result.rowsMarkedFailed +
         result.failedRowsRetired +
         jobsReclaimed +
-        identityTotal >
+        identityTotal +
+        retentionTotal >
       0
     ) {
       log.warn("images", "sweep reconciled orphaned rows/files", summary);

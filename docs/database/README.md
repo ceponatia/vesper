@@ -51,7 +51,35 @@ is optional there.
   (`chat_summary` / `chat_scene_sketch` / `chat_meanwhile` / `chat_scene_image` / `avatar` /
   `portrait_variant` / `entity_image` / `embed_refresh` / `image_sweep` / `identity_pack` / … —
   see the schema enum for the full list), `status` (`queued` / `running` / `done` / `failed`),
-  `runner_id?` (atomic claim), `heartbeat_at`, `payload` JSONB, `error?`, `attempts`, timestamps.
-- **`events`** — `type`, `payload` JSONB; an append-only observability stream written via
-  `server/events.ts`. The chat inspector reads `retrieval` / `agent_failure` / `agent_run` events
-  by created-at window.
+  `runner_id?` (atomic claim), `heartbeat_at`, `payload` JSONB, `error?`, `attempts`, timestamps,
+  and `chat_id?` — an indexed foreign key to `character_chats` with `ON DELETE CASCADE`, written by
+  the chat-lane enqueue paths and null for system and library work, so deleting a conversation
+  takes its background jobs with it. Terminal rows (`done` / `failed`) are deleted seven days after
+  they settle; `queued` and `running` rows are never removed by age.
+- **`events`** — `type`, `payload` JSONB, `chat_id?` (indexed, `ON DELETE CASCADE`); an append-only
+  observability stream written via `server/events.ts`. A writer that already holds a conversation
+  passes its id — never a lookup made to fill the column in — so deleting a chat takes its telemetry
+  with it; everything else leaves it null. **In production the row stores the diagnostic payload
+  alone** — ids, statuses, counts, scores, durations, error classes — and never the user-authored or
+  roleplay-derived text a call site passes separately as `content` (a retrieval query, a leg's
+  summary and detail, a fallback's private cause). Outside production that text is merged into the
+  stored payload, which is the detail the dev chat inspector renders. Rows expire 30 days after
+  `created_at`. The chat inspector reads `agent_failure` / `agent_run` / `composition_fallback`
+  events by created-at window.
+
+## Retention
+
+The image sweep's maintenance tick (`kickImageSweep` in `apps/web/src/server/images/assets.ts`)
+also runs the passes in `apps/web/src/server/retention/`. Each pass is a bounded delete of at
+most `RETENTION_BATCH_SIZE` (1000) rows per tick, decided from the row's own timestamp or status
+alone — a large backlog is worked down over several ticks, never in one statement. These passes
+carry **no** mass-expiry refusal: that rule is the image sweep's own, guarding against a missing
+volume making healthy image rows look broken, and it does not apply to rows whose expiry comes
+from database data.
+
+| Pass                                  | Deletes when        |
+| ------------------------------------- | ------------------- |
+| `events`                              | older than 30 days  |
+| `jobs` (terminal: `done` / `failed`)  | older than 7 days   |
+| `auth_sessions`                       | past `expires_at`   |
+| `verifications`                       | past `expires_at`   |

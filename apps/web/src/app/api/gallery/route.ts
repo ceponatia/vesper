@@ -57,6 +57,11 @@ export const GET = withUser(async (user, req: NextRequest) => {
     const rows = await db()
       .select({
         id: images.id,
+        // The JOINED row's id, not the image's own `entity_id`: a deleted character
+        // leaves `entity_id` dangling on purpose (Gallery-retention: the portrait
+        // survives as owner-visible history), but the DTO must never hand the client
+        // an id with nowhere to navigate — `characters.id` is null on a LEFT JOIN
+        // miss, exactly where the row would otherwise carry a dead link.
         characterId: characters.id,
         characterName: characters.name,
         prompt: images.prompt,
@@ -64,8 +69,13 @@ export const GET = withUser(async (user, req: NextRequest) => {
         createdAt: images.createdAt,
       })
       .from(images)
-      // Owner-scope the joined character too (security Cluster I2 posture).
-      .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
+      // LEFT JOIN, not inner: a character can be deleted while its Gallery-visible
+      // images survive (dangling `entity_id`, by design), and those rows must still
+      // list — with no character id or name (the row lists; nothing links) — rather
+      // than vanish from the tab. Still owner-scoped in the join condition (security
+      // Cluster I2 posture), so a coincidental id match can never leak another
+      // owner's character name.
+      .leftJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
       .where(and(...base, eq(images.kind, "portrait_variant")))
       .orderBy(desc(images.createdAt), desc(images.id))
       .limit(limit + 1);
@@ -108,8 +118,13 @@ export const GET = withUser(async (user, req: NextRequest) => {
     });
   }
 
-  // Scenes: character-chat scenes, joined to their character (must still exist;
-  // owner-scoped join, security Cluster I2).
+  // Scenes: character-chat scenes, left-joined to their character — the character may
+  // be deleted while the scene survives as Gallery history (dangling `entity_id`, by
+  // design), and the row must still list with no character id or name (the row
+  // lists; nothing links) rather than vanish. `characterId` is the JOINED row's id
+  // (null on a miss), never the image's own dangling `entity_id` — the DTO must
+  // never hand the client an id with nowhere to navigate. Still owner-scoped in the
+  // join condition (security Cluster I2 posture).
   const rows = await db()
     .select({
       id: images.id,
@@ -120,7 +135,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       createdAt: images.createdAt,
     })
     .from(images)
-    .innerJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
+    .leftJoin(characters, and(eq(images.entityId, characters.id), eq(characters.ownerId, user.id)))
     .where(and(...base, eq(images.kind, "scene"), eq(images.entityKind, "character")))
     .orderBy(desc(images.createdAt), desc(images.id))
     .limit(limit + 1);

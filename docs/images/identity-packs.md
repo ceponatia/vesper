@@ -96,8 +96,13 @@ retired revisions' crops after a **7-day diagnostic window** (pack metadata surv
 revision is never touched, `pending` rows abandoned by a dead process are retired at the 15-minute job-staleness bound,
 a `current` row that lost its source is retired so its crop can age out at all, and orphan crops go too), plus
 consistency **findings** counted into the sweep job's payload rather than silently repaired. Hidden crops are
-hard-deleted with the character (`deleteCharacterIdentityAssets`, guarded by kind *and*
-entity, which keeps them dying with it once data-lifecycle retires `deleteEntityImages`). Copy and publish stay
+hard-deleted with the character, one case of the character delete route's general rule — an image
+survives its character iff its kind is Gallery-listable (`GALLERY_IMAGE_KINDS`: scene,
+portrait_variant, entity) — carried out by `deleteNonGalleryCharacterImages`
+([asset-registry.md](asset-registry.md) §Deletes), never `deleteEntityImages`. The narrower,
+identity-pack-scoped `deleteCharacterIdentityAssets` (guarded by kind *and* entity) still exists for
+callers that want exactly "this character's hidden identity assets, and nothing else" — the route
+itself does not call it. Copy and publish stay
 isolated: a clone carries no crop, and the destination derives its own pack from its own copied portrait.
 
 ## Surfaces

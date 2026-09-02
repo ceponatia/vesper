@@ -170,7 +170,7 @@ export function normalizeChatSummary(
 export async function enqueueChatSummary(args: { chatId: string }): Promise<void> {
   try {
     if (await hasLiveChatJob("chat_summary", args.chatId)) return;
-    await enqueueJob({ type: "chat_summary", payload: { ...args } });
+    await enqueueJob({ type: "chat_summary", payload: { ...args }, chatId: args.chatId });
   } catch (err) {
     log.warn("chat_summary", "failed to enqueue fold", { ...args, error: errorText(err) });
   }

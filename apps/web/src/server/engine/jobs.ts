@@ -60,12 +60,25 @@ export function registerJobHandler(type: JobType, fn: JobHandler): void {
 export interface EnqueueJobInput {
   type: JobType;
   payload: Record<string, unknown>;
+  /**
+   * The conversation this work belongs to, as a first-class column rather than a
+   * payload key — the database relationship that takes the row down with its chat
+   * (`ON DELETE CASCADE`). Chat-lane callers pass it IN ADDITION to keeping
+   * `chatId` in the payload, which is where handlers still read it. Omitted by
+   * system and library work that belongs to no conversation.
+   *
+   * A chat deleted between the caller's read and this insert makes the insert
+   * fail the foreign key. That is correct — the work has no subject — and every
+   * chat-lane enqueue wrapper already catches and warn-logs, so it costs a
+   * logged no-op rather than a thrown turn.
+   */
+  chatId?: string;
 }
 
 export async function enqueueJob(input: EnqueueJobInput): Promise<string> {
   const [row] = await db()
     .insert(jobs)
-    .values({ type: input.type, payload: input.payload })
+    .values({ type: input.type, payload: input.payload, chatId: input.chatId ?? null })
     .returning({ id: jobs.id });
   if (!row) throw new Error("job insert returned no row");
   void runDetachedJob(row.id);

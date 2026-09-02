@@ -91,8 +91,13 @@ export const agentFailureSchema = z.object({
   reasoningEnabled: z.boolean().catch(false).default(false),
   /** HTTP status, when the provider gave one. */
   httpStatus: z.number().int().catch(0),
-  /** What the provider or parser actually said — truncated. */
-  detail: z.string().catch(""),
+  /**
+   * What the provider or parser actually said — truncated, and **absent on a
+   * production row**: it can quote model output, so the event logger stores it
+   * only outside production. Defaulted, not required, so a scrubbed row parses
+   * rather than being dropped by the reader's `parseOr`.
+   */
+  detail: z.string().catch("").default(""),
   at: z.string().catch(""),
 });
 export type AgentFailure = z.infer<typeof agentFailureSchema>;
@@ -256,9 +261,13 @@ export const agentRunSchema = z.object({
   /** The effective admin reasoning experiment at call time (old rows heal to off). */
   reasoningProfile: z.string().catch("off").default("off"),
   reasoningEnabled: z.boolean().catch(false).default(false),
-  /** One line of what the leg produced ("3 facts · 1 episode · 2 queries"); "" = nothing changed. */
-  summary: z.string().catch(""),
-  /** The actual content behind the summary — the click-to-open detail (empty on old rows). */
+  /**
+   * One line of what the leg produced ("3 facts · 1 episode · 2 queries").
+   * Empty on an old row and on every production row — the logger stores what a
+   * leg wrote only outside production.
+   */
+  summary: z.string().catch("").default(""),
+  /** The actual content behind the summary — the click-to-open detail (empty on old and production rows). */
   details: z.array(agentRunDetailSectionSchema).catch([]).default([]),
   at: z.string().catch(""),
 });

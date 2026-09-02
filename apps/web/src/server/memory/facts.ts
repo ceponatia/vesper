@@ -403,16 +403,22 @@ export async function retrieveFacts(
   const scored = candidates.filter((c) => !pinnedIds.has(c.id) && (c.pinned || c.score >= FACT_MIN_SCORE));
   const hits = [...pinnedHits, ...scored];
 
-  await logEvent("retrieval", {
-    kind: "facts",
-    scope: scopeLabel(scope),
-    query: query.slice(0, 300),
-    minScore: FACT_MIN_SCORE,
-    pinnedCount: pinnedHits.length,
-    viewpointId: eligibility?.viewpointId ?? null,
-    candidates: candidates.map((h) => ({ id: h.id, subjectName: h.subjectName, score: round(h.score) })),
-    hitIds: hits.map((h) => h.id),
-  });
+  await logEvent(
+    "retrieval",
+    {
+      kind: "facts",
+      scope: scopeLabel(scope),
+      minScore: FACT_MIN_SCORE,
+      pinnedCount: pinnedHits.length,
+      viewpointId: eligibility?.viewpointId ?? null,
+      candidates: candidates.map((h) => ({ id: h.id, subjectName: h.subjectName, score: round(h.score) })),
+      hitIds: hits.map((h) => h.id),
+    },
+    // The query is the player's own words: development detail, never stored in
+    // production. The memory scope keys a memory GROUP, not a conversation, so
+    // there is no chat id to pass without a lookup this path must not do.
+    { content: { query: query.slice(0, 300) } },
+  );
   return hits;
 }
 
@@ -478,24 +484,28 @@ export async function retrieveFactsFused(
     .map((f) => ({ ...f.hit, score: f.bestScore, sources: f.sources }));
   const hits = [...pinnedHits, ...scored];
 
-  await logEvent("retrieval", {
-    kind: "facts",
-    fused: true,
-    scope: scopeLabel(scope),
-    queries: usable.map((q) => q.slice(0, 300)),
-    minScore: FACT_MIN_SCORE,
-    rrfK: RRF_K,
-    pinnedCount: pinnedHits.length,
-    viewpointId: eligibility?.viewpointId ?? null,
-    candidates: fused.map((f) => ({
-      id: f.hit.id,
-      subjectName: f.hit.subjectName,
-      bestScore: round(f.bestScore),
-      rrfScore: round(f.rrfScore, 4),
-      sources: f.sources,
-    })),
-    hitIds: hits.map((h) => h.id),
-  });
+  await logEvent(
+    "retrieval",
+    {
+      kind: "facts",
+      fused: true,
+      scope: scopeLabel(scope),
+      minScore: FACT_MIN_SCORE,
+      rrfK: RRF_K,
+      pinnedCount: pinnedHits.length,
+      viewpointId: eligibility?.viewpointId ?? null,
+      candidates: fused.map((f) => ({
+        id: f.hit.id,
+        subjectName: f.hit.subjectName,
+        bestScore: round(f.bestScore),
+        rrfScore: round(f.rrfScore, 4),
+        sources: f.sources,
+      })),
+      hitIds: hits.map((h) => h.id),
+    },
+    // Player-authored text — development detail only (see `retrieveFacts`).
+    { content: { queries: usable.map((q) => q.slice(0, 300)) } },
+  );
   return hits;
 }
 

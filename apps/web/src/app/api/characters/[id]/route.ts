@@ -9,10 +9,9 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
-import { deleteCharacterIdentityAssets, HIDDEN_IMAGE_KINDS } from "@/server/images";
+import { deleteNonGalleryCharacterImages, HIDDEN_IMAGE_KINDS } from "@/server/images";
 import {
   characterPatchSchema,
-  deleteEntityImages,
   findViewable,
   jsonError,
   jsonOk,
@@ -111,17 +110,20 @@ export const DELETE = withAuthorizedResource(
   async (user, params: Params) => (await findOwnedCharacter(params.id, user.id)) ?? null,
   async (user, existing) => {
     const id = existing.id;
-    // The character's conversations go through `deleteChat` FIRST (deletion-leak audit,
-    // 2026-07-10): deleting the character row alone cascades `chat_participants` +
-    // `character_chat_state` away but leaves the chat row, its transcript, and the memory
-    // group's facts/episodes orphaned — invisible in the hub (it inner-joins participants)
-    // yet fully stored. `deleteChat` owns the purge order (prompt scrub → cascades →
-    // last-reference memory purge), so route every referencing chat through it while the
-    // participant rows still exist. Today every chat is 1:1; when multi-character chats
-    // land, this becomes "remove the participant, delete the chat only when it empties".
-    // The join is owner-scoped so an anomalous cross-owner participant row can never
-    // route another user's chat into deletion — it is skipped and survives,
-    // correctly; `deleteChat` re-proves the pairing anyway.
+    // Deleting a character deletes every chat it participated in, through `deleteChat`
+    // (deletion-leak audit, 2026-07-10) — multi-character chats included: removing a
+    // participant from a chat's cast invalidates the transcript (every remaining line
+    // was said to or in front of a character who is no longer there), so the chat goes
+    // rather than the participant alone. Deleting the character row by itself cascades
+    // `chat_participants` + `character_chat_state` away but leaves the chat row, its
+    // transcript, and the memory group's facts/episodes orphaned — invisible in the hub
+    // (it inner-joins participants) yet fully stored. `deleteChat` owns the purge order
+    // (prompt scrub → cascades → last-reference memory purge) AND the chat's own hidden
+    // assets (`chat_upload`, `chat_look`, `chat_place`), so route every referencing chat
+    // through it while the participant rows still exist rather than adding a second
+    // chat-image cleanup path here. The join is owner-scoped so an anomalous cross-owner
+    // participant row can never route another user's chat into deletion — it is skipped
+    // and survives, correctly; `deleteChat` re-proves the pairing anyway.
     const chats = await db()
       .select({ id: characterChats.id })
       .from(chatParticipants)
@@ -133,13 +135,15 @@ export const DELETE = withAuthorizedResource(
     // Worlds/sessions hold their own snapshots, so a library delete never breaks
     // them and never hits a FK — no in-use guard.
     await db().delete(characters).where(and(eq(characters.id, id), eq(characters.ownerId, user.id)));
-    void deleteEntityImages("character", id, user.id).catch(() => undefined);
-    // Hidden identity assets are named explicitly even though `deleteEntityImages`
-    // takes every image of this character today: planned retention will let
-    // Gallery-visible images SURVIVE their character, and that retention must never
-    // extend to an internal render input nobody browses. The pack rows themselves
-    // cascade with the character row.
-    void deleteCharacterIdentityAssets(id, user.id).catch(() => undefined);
+    // An image survives its character iff its kind is Gallery-listable
+    // (`GALLERY_IMAGE_KINDS` — scene, portrait_variant, entity): those rows are
+    // owner-visible Gallery history, not internal state, so this route never calls
+    // `deleteEntityImages` for a character and `images.entity_id` is left dangling on
+    // purpose — the row keeps rendering with no character to point at. Everything else
+    // — the canonical `avatar` (reachable only through the portrait studio, which dies
+    // with the character) and every hidden identity asset alike — dies with the
+    // character here, in the one call that states the rule.
+    void deleteNonGalleryCharacterImages(id, user.id).catch(() => undefined);
     return jsonOk({ ok: true });
   },
 );

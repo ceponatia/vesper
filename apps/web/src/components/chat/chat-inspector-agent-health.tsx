@@ -398,7 +398,9 @@ function AgentItemDialog({ item, onClose }: { item: FeedItem; onClose: () => voi
               ))}
             </div>
           ) : (
-            <p className="text-xs text-paper-500">This run completed but changed nothing (no facts, state, or queries).</p>
+            <p className="text-xs text-paper-500">
+              {"No detail recorded: the run changed nothing, or this is a production row (leg output is not stored)."}
+            </p>
           )
         ) : (
           <div className="flex flex-col gap-2">

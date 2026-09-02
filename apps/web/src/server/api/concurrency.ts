@@ -35,6 +35,12 @@ export interface ClaimJobSlotInput {
   readonly ownerId: string;
   readonly type: ApiJobType;
   readonly payload: Record<string, unknown>;
+  /**
+   * The conversation this work belongs to, written to the first-class `chat_id`
+   * column so the row dies with its chat. Absent for work that belongs to no
+   * conversation, which stores null.
+   */
+  readonly chatId?: string;
   readonly limit?: number;
 }
 
@@ -76,8 +82,8 @@ export async function claimJobSlot(input: ClaimJobSlotInput): Promise<JobSlotCla
   const inserted = await db().transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`job_slot:${input.ownerId}`}, 0))`);
     return tx.execute(sql`
-      INSERT INTO "jobs" ("id", "type", "status", "owner_id", "payload", "attempts", "started_at", "heartbeat_at")
-      SELECT ${id}, ${input.type}, 'running', ${input.ownerId}, ${JSON.stringify(input.payload)}::jsonb, 1, now(), now()
+      INSERT INTO "jobs" ("id", "type", "status", "owner_id", "payload", "attempts", "started_at", "heartbeat_at", "chat_id")
+      SELECT ${id}, ${input.type}, 'running', ${input.ownerId}, ${JSON.stringify(input.payload)}::jsonb, 1, now(), now(), ${input.chatId ?? null}::text
       WHERE (
         SELECT count(*) FROM "jobs"
         WHERE "jobs"."owner_id" = ${input.ownerId}

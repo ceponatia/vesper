@@ -58,6 +58,23 @@ export const provisioningRequestIdSchema = z
   .refine((value) => value.trim() === value, "request ids cannot have surrounding whitespace")
   .refine((value) => !/\s/u.test(value), "request ids cannot contain whitespace");
 
+/**
+ * The `error` a provisioning record carries once the world it recorded no
+ * longer exists — the chat (and with it the whole `sim_worlds` graph) was
+ * deleted after the record reached `ready`.
+ *
+ * A stable, greppable marker rather than a free-text message. Two writers set
+ * it — the chat delete that made the world disappear, and the front door when
+ * its own replay check finds the graph gone — and the front door READS it, so
+ * a record retired by a delete answers the same typed refusal a record it
+ * caught itself would. An operator reading the ledger can also tell this apart
+ * from a genuine build failure, which is why the marker survives the refusal
+ * instead of being cleared. It is never returned to the caller;
+ * `sim_provisioning_requests.error` is operator-facing.
+ */
+export const PROVISIONING_STALE_AFTER_DELETE =
+  "stale_after_delete: the chat/world this request created no longer exists";
+
 /** What a provisioning request asked for — the hash's canonical input. */
 export interface ProvisioningPayload {
   characterId: string;

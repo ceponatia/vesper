@@ -53,7 +53,7 @@ export interface EnqueueChatSceneSketchArgs {
 export async function enqueueChatSceneSketch(args: EnqueueChatSceneSketchArgs): Promise<void> {
   try {
     if (await hasLiveChatJob("chat_scene_sketch", args.chatId)) return;
-    await enqueueJob({ type: "chat_scene_sketch", payload: { ...args } });
+    await enqueueJob({ type: "chat_scene_sketch", payload: { ...args }, chatId: args.chatId });
   } catch (err) {
     log.warn("chat_scene_sketch", "failed to enqueue sketch", {
       chatId: args.chatId,
