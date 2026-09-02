@@ -186,13 +186,14 @@ stays camera-only — backlighting says where the camera stands, not how a place
 registry's answer — `profile` and `away_glance_back` are partial, `away` is hidden — and a
 staged arrangement may override it, a shot down onto the crown of a head being the case the
 override exists for. Whenever the answer is not "the whole face", the lowering states it as a
-`subject.face_visibility` claim on the focal, and each dialect words it as **its own sentence
-beside the identity lock**: what to preserve when the face is not the evidence — hair, build
-and skin tone, plus the visible features on a partly turned shot — and that the subject is not
-to be rotated to face the camera. The lock string itself is never edited, because it is matched
-verbatim at the model boundary; the lock is the dialect's, emitted from the digest's identity
-anchor ([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored
-render).
+`subject.face_visibility` claim on the focal, and each dialect words it as **its own sentence,
+following the identity lock within the identity band**: what to preserve when the face is not
+the evidence — hair, build and skin tone, plus the visible features on a partly turned shot —
+and that the subject is not to be rotated to face the camera. The lock string itself is never
+edited, because it is matched verbatim at the model boundary; the lock is the dialect's,
+emitted from the digest's identity anchor, which also owns how the sentence is ordered and what
+it may anchor its preservation set to ([../character-prompts.md](../character-prompts.md)
+§Identity on a reference-anchored render).
 
 A front-facing shot states nothing — there is no adaptation to make when the face is the
 evidence — and neither does a selfie, where the subject holds the lens and the geometry is

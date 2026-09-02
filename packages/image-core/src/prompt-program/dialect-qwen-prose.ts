@@ -566,8 +566,37 @@ export function sentence(text: string): string {
 }
 
 /**
+ * Whether THIS subject has an identity image in the send list — the one question
+ * that decides whether their adaptation may say "from the reference".
+ *
+ * Reference COUNT is the wrong question, and dangerously so on an ensemble. The
+ * scene ladder's single-reference rung offers one surviving identity image, and
+ * the resolved plan picks its focal independently — the focal is not required to
+ * be the first cast member — so a render where Nyx is focal and turned away while
+ * only Ilsa's reference survived has `references.length > 0` and no image of Nyx
+ * at all. Anchoring her preservation set to "the reference" there points the
+ * model at a photograph of somebody else and asks it to copy that person's hair,
+ * build and skin tone onto her.
+ *
+ * The slot's `subjectRef` exists for exactly this: it is what keeps two identity
+ * images apart. An identity image the lane could not attribute carries none, and
+ * that answers "nothing" for everyone, which is the conservative reading — an
+ * unattributed photograph is not evidence about any particular person.
+ */
+export function faceVisibilityAnchor(
+  input: ImageDialectPositiveInput,
+  claim: ImagePositiveClaim,
+): "reference" | "nothing" {
+  if (claim.subjectRef === undefined) return "nothing";
+  const own = input.references.some(
+    (slot) => slot.role === "identity" && slot.subjectRef === claim.subjectRef,
+  );
+  return own ? "reference" : "nothing";
+}
+
+/**
  * The identity lock's adaptation, for a shot whose subject's face is turned or
- * hidden — a sentence of its own, always beside the lock and never inside it.
+ * hidden — a sentence of its own, never spliced into the lock string.
  *
  * The lock and the camera pull against each other, and the lock wins by default:
  * the cheapest way for a model to prove it preserved a face is to show that face,
@@ -582,11 +611,13 @@ export function sentence(text: string): string {
  * replaced: hair, build and tone still bind to the reference, which remains
  * authoritative for whatever the shot does show.
  *
- * The wording is the retired scene prose builder's, kept to the byte on a
- * reference-bearing render, because it is the only version of this sentence
- * anything measured. `preserveFrom` is what a reference-free render loses: with no
- * image in the payload there is nothing to preserve "from the reference", and
- * claiming otherwise would point the model at a photograph it was never sent.
+ * The wording is the retired scene prose builder's, kept to the byte for a
+ * subject whose own reference is in the payload, because it is the only version
+ * of this sentence anything measured. `preserveFrom` is what every other render
+ * loses: with no image of THIS person being sent there is nothing to preserve
+ * "from the reference", and saying it anyway points the model at a photograph it
+ * either was never given or was given of somebody else
+ * ({@link faceVisibilityAnchor}).
  *
  * Name-bound and pronoun-free: the cast is any gender, and "her face"
  * mis-genders half of it the moment this sentence meets a character the phrasing

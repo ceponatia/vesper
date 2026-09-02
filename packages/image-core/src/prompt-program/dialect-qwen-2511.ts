@@ -15,6 +15,7 @@ import {
   describe,
   describeChange,
   distanceSentence,
+  faceVisibilityAnchor,
   faceVisibilitySentence,
   framingSentence,
   heightSentence,
@@ -148,9 +149,13 @@ const DELTA_PRIORITY = {
 const IDENTITY_LOCK_PRIORITY = 99;
 
 /**
- * The lock adaptation's priority: one step under the lock, so a turned-away
- * shot's "do not rotate" sentence follows the lock it corrects rather than
- * drifting to the end of the identity band behind every further subject's name.
+ * The lock adaptation's priority: strictly under the lock's, which is what makes
+ * a turned-away shot's "do not rotate" sentence FOLLOW the lock it corrects
+ * instead of preceding it. Segments are ordered by kind and then by priority
+ * descending, so this buys ordering and not adjacency: further subjects' identity
+ * claims arrive at the lock's own priority and may land between the two. The
+ * guarantee the adaptation actually needs is that it is in the identity band,
+ * after the lock, and as unfittable as the lock — all three of which hold.
  */
 const FACE_VISIBILITY_PRIORITY = 98.9;
 
@@ -363,13 +368,16 @@ function renderClaim(
       return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`, IDENTITY_LOCK_PRIORITY);
     }
     case "subject.face_visibility": {
-      // The lock's adaptation, immediately after the lock: same segment kind, one
-      // step down in priority, so the two are read as a pair however many further
-      // subjects the render names. It never touches the lock's bytes.
+      // The lock's adaptation: same segment kind, strictly under the lock's
+      // priority, so it follows the lock it corrects and never precedes it. It
+      // never touches the lock's bytes. The anchor is per SUBJECT, not per
+      // payload — a numbered render can carry Ilsa's identity image and none of
+      // Nyx's, and "from the reference" would then aim Nyx's preservation set at
+      // a picture of Ilsa.
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
       return say(
-        faceVisibilitySentence(visibility, subject, input.references.length > 0 ? "reference" : "nothing"),
+        faceVisibilitySentence(visibility, subject, faceVisibilityAnchor(input, claim)),
         FACE_VISIBILITY_PRIORITY,
       );
     }

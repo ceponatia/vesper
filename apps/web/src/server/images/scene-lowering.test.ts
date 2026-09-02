@@ -4,6 +4,7 @@ import {
   imageModelSchema,
   imageReferencePolicySchema,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
@@ -171,8 +172,24 @@ interface CompiledScene {
   readonly lowered: SceneProgramInputs;
 }
 
-/** The production chain: realize each cut under the plan's camera, lower, compile. */
-function compileScene(plan: SceneRenderPlan, allowIntimate = false, viewer?: SceneLoweringViewer): CompiledScene {
+/**
+ * The production chain: realize each cut under the plan's camera, lower, compile.
+ *
+ * `viewer` is the person behind the lens, for the embodied cases; absent, the
+ * frame states its geometry and nothing about whose body it is.
+ *
+ * `referenced` is which cast members get an identity image in the payload. It
+ * defaults to all of them, and exists because the scene ladder's single-reference
+ * rung offers ONE surviving identity image while the resolved plan picks its
+ * focal independently — so "the focal has no reference of their own, but the
+ * render has references" is a real production shape and not a contrived one.
+ */
+function compileScene(
+  plan: SceneRenderPlan,
+  allowIntimate = false,
+  viewer?: SceneLoweringViewer,
+  referenced: (subjectId: string) => boolean = () => true,
+): CompiledScene {
   const built = applySceneCastVisual({ plan, members: laneProbeCastSubjects() });
   expect(built.refusal).toBeNull();
   const cast = built.visuals;
@@ -182,14 +199,16 @@ function compileScene(plan: SceneRenderPlan, allowIntimate = false, viewer?: Sce
     allowIntimate,
     ...(viewer === undefined ? {} : { viewer }),
   });
-  const references = cast.map((slice): CharacterPromptReference => {
-    const reference: ImageRenderReference = {
-      role: "identity",
-      buffer: Buffer.from(slice.subjectId),
-      name: slice.name,
-    };
-    return { reference, subjectId: slice.subjectId };
-  });
+  const references = cast
+    .filter((slice) => referenced(slice.subjectId))
+    .map((slice): CharacterPromptReference => {
+      const reference: ImageRenderReference = {
+        role: "identity",
+        buffer: Buffer.from(slice.subjectId),
+        name: slice.name,
+      };
+      return { reference, subjectId: slice.subjectId };
+    });
   const result = buildCharacterPromptProgram({
     lane: "scene",
     task: "scene",
@@ -469,7 +488,10 @@ describe("a staging the rung may not state", () => {
  *
  * The lock's own bytes are asserted present in the same breath, because the
  * cheap wrong fix is to edit the adaptation INTO the lock — and that string is
- * matched verbatim at the model boundary.
+ * matched verbatim at the model boundary. The order assertion is ORDER, not
+ * adjacency: the adaptation's priority is strictly under the lock's, so it can
+ * never precede the lock, while every other subject's identity claim sits at the
+ * lock's own priority and may legitimately fall between them.
  */
 describe("a shot that cannot show the subject's face", () => {
   const NO_ROTATION = "do not rotate Nyx to face the camera.";
@@ -482,15 +504,15 @@ describe("a shot that cannot show the subject's face", () => {
       camera: { ...DEFAULT_SCENE_CAMERA, orientation },
     });
 
+  /** The measured sentences, for a subject whose OWN identity image is in the payload. */
+  const PARTIAL_FROM_REFERENCE =
+    "Nyx's face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+  const AWAY_FROM_REFERENCE =
+    "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+
   it.each([
-    [
-      "profile",
-      "Nyx's face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.",
-    ],
-    [
-      "away",
-      "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.",
-    ],
+    ["profile", PARTIAL_FROM_REFERENCE],
+    ["away", AWAY_FROM_REFERENCE],
   ] as const)("adapts the lock on a %s shot without touching the lock's bytes", (orientation, adaptation) => {
     const { program } = compileScene(shot(orientation));
     expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
@@ -531,6 +553,34 @@ describe("a shot that cannot show the subject's face", () => {
     expect(lowered.scene.some((fact) => fact.concept === "scene.staging")).toBe(false);
     expect(sink.items.some((item) => item.code === IMAGE_SCENE_STAGING_UNSENT)).toBe(true);
     expect(lowered.scene.find((fact) => fact.concept === "subject.face_visibility")?.value).toBe("hidden");
+  });
+
+  /** The same shot for a subject with no identity image of their OWN in the payload. */
+  const AWAY_UNANCHORED =
+    "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly — do not rotate Nyx to face the camera.";
+
+  /**
+   * Whose photograph the preservation set points at.
+   *
+   * Falsified against `references.length > 0`, which asks whether the PAYLOAD has
+   * references rather than whether THIS person is in one. The scene ladder's
+   * single-reference rung sends one surviving identity image and the resolved
+   * plan picks its focal independently of which one that was, so a turned-away
+   * Nyx beside Ilsa's reference would have been told to take her hair, build and
+   * skin tone "exactly from the reference" — a picture of Ilsa. The other
+   * direction is the `away` row above, which keeps the measured wording on the
+   * render that legitimately earns it: a fix that simply deleted the clause would
+   * pass this case and fail that one.
+   */
+  it("anchors the preservation set to nothing when only another subject is referenced", () => {
+    const { program } = compileScene(shot("away"), false, undefined, (subjectId) => subjectId !== LANE_PROBE_SUBJECT_ID);
+
+    // The render still locks an identity — Ilsa's — so this is not a
+    // reference-free prompt; it is a prompt with a reference of the wrong person
+    // for this claim.
+    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).toContain(AWAY_UNANCHORED);
+    expect(program.prompt).not.toContain("build and skin tone exactly from the reference");
   });
 });
 

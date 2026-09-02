@@ -404,7 +404,8 @@ function faceVisibilityFact(plan: SceneRenderPlan, focalRef: string | undefined)
       // squeeze dropped while the lock it corrects survived is the whole defect.
       disposition: "required_visual",
       // Just under an identity anchor, so on an endpoint with no lock band the
-      // sentence still follows the descriptors it qualifies.
+      // sentence still follows the descriptors it qualifies rather than opening
+      // the identity band ahead of them.
       priority: 0.99,
       source: source("face_visibility"),
     },

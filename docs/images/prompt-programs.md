@@ -142,7 +142,7 @@ kind — a scene is the layer that gives way under a budget squeeze before a
 character stops being recognizable. A scene fact that must survive says so on the
 fact, through a `required_visual` disposition. `subject.face_visibility` is where
 that line shows: the scene lane lowers it, but it is a SUBJECT concept filed into
-`identity` beside the lock it corrects, because a sentence that stops the model
+`identity`, under the lock it corrects, because a sentence that stops the model
 rotating a turned-away subject may not outlive that lock by one budget squeeze —
 and a scene concept could not have been filed there at all.
 

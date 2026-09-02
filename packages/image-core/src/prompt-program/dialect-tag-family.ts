@@ -91,7 +91,12 @@ const CAST_INTEGRITY_TAG = "each person rendered exactly once, no merged faces, 
 /** Below the operation band (100+), above every projection claim. */
 const IDENTITY_LOCK_PRIORITY = 99;
 
-/** One step under the lock, so the adaptation reads as part of the lock's phrase. */
+/**
+ * Strictly under the lock's priority, so the adaptation follows the lock tag it
+ * corrects rather than preceding it. Ordering only — other subjects' identity
+ * tags share the lock's priority — which is all the adaptation needs alongside
+ * the identity band and the mandatory kind.
+ */
 const FACE_VISIBILITY_PRIORITY = 98.9;
 
 const TAG_PRIORITY = {
@@ -247,6 +252,12 @@ function renderClaim(
       // it that does not re-describe the pose the shot already stated.
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
+      // No anchor decision to make, unlike the prose families: this phrasing says
+      // the tone and build are PRESERVED without claiming a photograph shows
+      // them, so it stays true on a render carrying somebody else's reference or
+      // none at all. PuLID's identity transport is an embedding rather than a
+      // described likeness, and naming a reference the prompt cannot see the
+      // contents of would be the claim this family has least business making.
       const who = subject ?? "the subject";
       const preserved =
         visibility === "partial"
