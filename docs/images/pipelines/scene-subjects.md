@@ -14,8 +14,10 @@ per present member** — camera-less shadow inputs built by `chatVisualStateShad
 the scene digest and the preview assemble one cut identically — resolving every member's memory
 group in one batched query. A selfie's cast is trimmed to the sender. A member with no
 participant row has no cut — the queue warns and skips them — and a cut naming a different
-character is skipped with `images.scene_render.visual_subject_mismatch` (warn); either way the
-program describes nobody it has no cut for, and the rest of the cast is unaffected.
+character is skipped with `images.scene_render.visual_subject_mismatch` (warn). Either way the
+program describes nobody it has no cut for, and the render then refuses rather than drawing the
+rest: the cut is the only description of a person a scene has, so a member without one is a
+member the picture cannot contain ([scene-images.md](scene-images.md) §Trigger and cast).
 
 After the composer's plan resolves, `applySceneCastVisual` binds the plan's **viewpoint** —
 its committed camera, plus the band the composer's own lighting phrase names — into each

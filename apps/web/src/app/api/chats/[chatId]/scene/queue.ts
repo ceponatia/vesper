@@ -278,10 +278,14 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     for (const detail of castDetail) {
       const memoryGroupId = memoryGroups.get(detail.member.characterId);
       if (memoryGroupId === undefined) {
-        // A structurally guaranteed row is missing — corrupt membership.
-        // Degrade to the legacy field production FOR THIS MEMBER (a degraded
-        // default over a failed turn) rather than refusing over a continuity
-        // id — and without taking the rest of the cast's digests down with it.
+        // A structurally guaranteed row is missing — corrupt membership. This
+        // member gets no cut, and there is no per-member fallback to degrade
+        // them to: the compiled prompt program is the scene's only prompt path,
+        // so a member with no cut is a member the render cannot describe. The
+        // queue records the missing row here and hands the render the cuts it
+        // could build; the render then refuses the whole scene before provider
+        // spend rather than drawing a cast one person short
+        // (`images.scene_render.cast_incomplete`).
         log.warn("chat_scene", "no participant row for scene subject — visual digest skipped", {
           chatId: args.chatId,
           characterId: detail.member.characterId,
