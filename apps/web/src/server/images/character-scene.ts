@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import type { AttributeValue } from "@/contracts/attributes/value";
+import { resolveAttributes, type AttributeValue } from "@/contracts/attributes";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { resolveImageProfileForTask } from "./model-profiles";
 import type { CommittedSceneFacts } from "@/contracts/images/scene-committed";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
-import { speciesLabelPhrase } from "@/contracts/species";
+import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { IdentityReferenceProvenance, SceneCaptureMode, SceneReferenceSource } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
@@ -19,6 +19,7 @@ import { latestChatLook } from "./chat-look";
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
+import type { SceneLoweringViewer } from "./scene-lowering";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
 import { applySceneCastVisual, type SceneCastVisualSubject, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 import type { VisualStateShadowInput } from "@/server/visual-state";
@@ -78,14 +79,28 @@ export interface RenderCharacterSceneInput {
    */
   committedScene?: ReadonlyMap<string, CommittedSceneFacts>;
   /**
-   * The PLAYER's coverage, computed from their worn items. The one fact about
-   * the viewer's own body the scene reads: it gates which viewer parts a staging
-   * may put in frame (`scene-lowering.ts`). The persona's attributes are not
-   * taken — no compiled scene states the viewer's own body facts yet (the
-   * embodied shot is the dialect's deliberate follow-up), so there is nothing
-   * to hand them to.
+   * The PLAYER's coverage, computed from their worn items. The gate half of the
+   * viewer's own body: it decides which viewer parts a frame — staged or
+   * generic — may hold at all (`scene-lowering.ts`), and which of their intimate
+   * attributes an uncensored rung may state.
    */
   playerExposure?: RegionExposure;
+  /**
+   * The player's persona as a character profile — the DESCRIBED half of the
+   * viewer's own body (issue #390).
+   *
+   * An embodied first-person frame crops the viewer's hands, forearms, lap, legs
+   * or torso into the foreground, and without their skin and build those limbs
+   * change colour between shots and read as a different person reaching in. The
+   * profile arrives rather than the resolved list because both things the
+   * projection needs — the attributes and the realized body that decides which
+   * of them apply — come from it.
+   *
+   * Never makes the viewer a subject: no cut, no identity reference, no place in
+   * `operation.subjectCount`. Absent leaves an embodied frame stating its own
+   * geometry and nothing about whose body it is.
+   */
+  playerProfile?: CharacterProfile;
   chatId?: string;
   anchorMessageId?: string;
   flavor?: "selfie";
@@ -215,6 +230,17 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
     playerExposure: input.playerExposure,
   });
   const plan = await composeSceneSpec({ ...context, sink, composerModel: input.composerModel });
+
+  // The viewer, resolved once. Their sheet does not change between rungs — only
+  // the route's intimate permission does, and that is spent in the lowering —
+  // and the resolve carries no overlays because a persona has no chat-tracked
+  // condition or narrative overlay behind it, unlike a cast member's cut.
+  const viewer: SceneLoweringViewer | undefined = input.playerProfile
+    ? {
+        attributes: resolveAttributes(input.playerProfile.attributes, []),
+        realizedBody: realizeBody(input.playerProfile),
+      }
+    : undefined;
 
   // The cast, realized AFTER the plan resolves because the committed scene
   // camera is `plan.camera` and it must enter EACH subject's ONE selection pass.
@@ -397,6 +423,10 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       ...(appliedVisuals.length === 0 || identityRefusal !== null || visualRefusal !== null
         ? {}
         : { cast: appliedVisuals }),
+      // The viewer, beside the cast and never in it. Resolved once for the
+      // render: the persona's sheet does not change between rungs, and only the
+      // route's intimate permission does.
+      ...(viewer === undefined ? {} : { viewer }),
       failedPrecondition: identityRefusal ?? visualRefusal,
       linkage: {
         ownerId: input.userId,

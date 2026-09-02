@@ -86,9 +86,9 @@ A concept is what a fact MEANS, in a closed registry no model owns
 (`concepts.ts`). "Auburn hair" is `subject.appearance` — not the sentence and not
 the tag. Each concept declares three things:
 
-- **the channel it belongs to** — operation, scene, subject, camera, relation,
-  item, location or style — which is what kind of world fact it is, and which
-  fixes the order the selector walks and the order a duplicated fact key is
+- **the channel it belongs to** — operation, scene, viewer, subject, camera,
+  relation, item, location or style — which is what kind of world fact it is, and
+  which fixes the order the selector walks and the order a duplicated fact key is
   resolved in;
 - **the prompt-segment kind its prose belongs to**, so the existing canonical
   order and mandatory floor apply to claims for free;
@@ -139,6 +139,30 @@ staging, possession and activity in `pose`. **No scene concept may be filed into
 2026-09-01), which are unfittable by kind — a scene is the layer that gives way
 under a budget squeeze before a character stops being recognizable. A scene fact
 that must survive says so on the fact, through a `required_visual` disposition.
+
+### The viewer is a channel, not a subject
+
+An embodied first-person shot crops the viewer's own hands, forearms, lap, legs
+or torso into the foreground, and the viewer is deliberately not in the cast:
+they have no entity slice, no ref a relation could bind, no identity reference,
+and no place in `operation.subjectCount`. Three concepts carry them —
+`viewer.body_geometry` (which parts the frame holds, as ids from the shared part
+vocabulary), `viewer.appearance` (the skin and build of those parts) and
+`viewer.intimate_anatomy` (the exposed half, on a route that permits it). They
+ride the same flat scene list for the same reason scene facts do, and their own
+channel is what keeps them apart from it: geometry emits in `pose` beside the
+staging it complements, the two descriptive concepts in `current_state`, and
+none of them in a mandatory kind.
+
+`scene.capture_mode` distinguishes the embodied first person from the
+disembodied one, because the two decide different prompts: the disembodied form
+asserts the viewer's absence and lets `scene.possession` bind every visible limb
+to the cast, while the embodied form asserts only that the face and head stay out
+of frame — binding the cast to every visible limb there would hand them the
+viewer's own hands. The count claim stays the cast's either way; how a dialect
+words it beside cropped viewer anatomy is the dialect's decision
+([pipelines/scene-framing.md](pipelines/scene-framing.md) §Whose eyes the shot is
+through).
 
 ### Measured wording is a versioned artifact
 

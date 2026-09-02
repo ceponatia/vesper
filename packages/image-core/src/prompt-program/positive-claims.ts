@@ -118,12 +118,14 @@ export function selectImagePositiveClaims(digest: ImageWorldDigest): readonly Im
     });
   }
 
-  // The scene. Facts about the SHOT rather than about anybody in it — the mood,
-  // whose eyes it is through, how two bodies are staged. Selected before the
-  // subjects because the frame is what they are standing in, and taken exactly as
-  // the projection classified them: a scene decision the composer marked
-  // `required_visual` is on the mandatory lane, and one it marked optional gives
-  // way to an identity anchor under a squeeze.
+  // The scene, and the viewer whose eyes it is through. Facts about the SHOT
+  // rather than about anybody in the cast — the mood, the capture mode, how two
+  // bodies are staged, and which of the viewer's own limbs the frame crops in.
+  // Selected before the subjects because the frame is what they are standing in,
+  // and taken exactly as the projection classified them: a scene decision the
+  // composer marked `required_visual` is on the mandatory lane, and one it marked
+  // optional gives way to an identity anchor under a squeeze. Both channels
+  // travel this one list; their concepts keep them apart in the ordering.
   for (const fact of digest.scene) claims.push(factClaim(fact));
 
   // 2–4, 7. Subjects: identity, morphology, age, wardrobe and exposure all arrive

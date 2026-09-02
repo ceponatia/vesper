@@ -6,11 +6,14 @@ import type {
   SceneCaptureMode,
 } from "@vesper/image-core";
 import type { VisualSceneLightingBand } from "@/contracts";
+import type { AttributeValue } from "@/contracts/attributes/value";
 import type { CharacterCameraAssemblyInput } from "@/contracts/images/character-digest";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { DEFAULT_SCENE_CAMERA } from "@/contracts/images/scene-camera";
 import { sceneStagingSurfaceForms } from "@/contracts/images/scene-staging";
-import { resolveViewerParts, type ViewerBodyPart } from "@/contracts/images/viewer-body";
+import { resolveViewerParts, type ViewerBodyPart, type ViewerBodyPartId } from "@/contracts/images/viewer-body";
+import { viewerBodyFacts } from "@/contracts/images/viewer-digest";
+import type { RealizedBody } from "@/contracts/species";
 import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./prompts-scene-plan";
 
 /**
@@ -27,8 +30,11 @@ import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./
  * and camera facts through three different doors:
  *
  * - **scene facts** — the mood, whose eyes the shot is through, the possession
- *   binding, the staged arrangement, and each featured person's pose and
- *   activity;
+ *   binding, the staged arrangement, each featured person's pose and activity,
+ *   and the viewer's own body where the frame crops it in. The viewer's facts
+ *   ride this list on their own channel: they describe a body that is in frame
+ *   without being in the cast, so they are neither a subject slice nor a
+ *   member of `operation.subjectCount`;
  * - **an ephemeral location digest** — the setting and its light, as a place the
  *   digest carries for this render only;
  * - **camera facts** — the height nothing else can state, plus which components
@@ -75,6 +81,26 @@ export interface SceneLoweringCastMember {
   readonly name: string;
 }
 
+/**
+ * The VIEWER, as a render input beside the cast rather than a member of it.
+ *
+ * Beside `cast` and not on the plan, because it is the same kind of thing: the
+ * plan is what the scene DECIDED (which parts the frame holds, what coverage
+ * gates them), and this is the realized source those decisions are stated from —
+ * the persona's own resolved sheet, exactly as a cast member's cut is theirs.
+ *
+ * Absent states no viewer body facts at all. That is the honest answer for a
+ * caller with no persona behind the lens (the staged lab bench, a bare test
+ * render): the geometry the frame holds is still stated, and nothing invents a
+ * body to hang on it.
+ */
+export interface SceneLoweringViewer {
+  /** The persona's resolved attributes — the viewer's own skin, build and anatomy. */
+  readonly attributes: readonly AttributeValue[];
+  /** Applicability: a body without the region states nothing about it. */
+  readonly realizedBody?: RealizedBody;
+}
+
 export interface SceneLoweringInput {
   readonly plan: SceneRenderPlan;
   /**
@@ -90,6 +116,11 @@ export interface SceneLoweringInput {
    * feeds both.
    */
   readonly allowIntimate: boolean;
+  /**
+   * The person behind the lens. Absent ⇒ an embodied frame still states its own
+   * geometry and says nothing about whose body it is.
+   */
+  readonly viewer?: SceneLoweringViewer;
   readonly sink?: DiagnosticSink;
 }
 
@@ -163,13 +194,16 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
   // possession clause read the same answer. Deciding them separately is exactly
   // how a prompt comes to say the viewer is never visible and then describe the
   // viewer's own hands on somebody.
-  const captureMode = resolveCaptureMode(plan, viewerPartsInFrame(input));
+  const inFrame = viewerPartsInFrame(input);
+  const captureMode = resolveCaptureMode(plan, inFrame);
+  const staging = stagingFact(input, focalRef);
 
   const facts: ImageWorldFact[] = [
     captureModeFact(captureMode, focalRef),
     ...possessionFact(captureMode, featured, refByName),
     ...moodFact(plan.mood),
-    ...stagingFact(input, focalRef),
+    ...staging,
+    ...viewerFacts(input, captureMode, inFrame, stagedGeometryOwned(input, staging)),
     ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)))),
   ];
 
@@ -361,6 +395,54 @@ function viewerPartsInFrame(input: SceneLoweringInput): readonly ViewerBodyPart[
 function resolveCaptureMode(plan: SceneRenderPlan, inFrame: readonly ViewerBodyPart[]): SceneCaptureMode {
   if (plan.captureMode === "selfie" || plan.captureMode === "third_person") return plan.captureMode;
   return inFrame.length > 0 ? "first_person_embodied" : "first_person_disembodied";
+}
+
+/**
+ * The viewer's own body, stated only where the frame actually holds it.
+ *
+ * Gated on the resolved capture mode rather than on the part list, and the two
+ * are not the same question: a selfie's camera is on the SUBJECT's arm, so a
+ * viewer part the plan proposed describes nobody in that frame, and an observing
+ * camera has no viewer in the room at all. `first_person_embodied` is by
+ * construction the only mode reached with a part in frame, so this states the
+ * rule the mode already encodes rather than re-deriving it from the list.
+ *
+ * The gates ran upstream: `viewerPartsInFrame` is `resolveViewerParts`, so an
+ * unknown id, an intimate part on a moderated rung, and a part whose region does
+ * not read bare or sheer have all already dropped, with missing coverage
+ * counting as covered. Nothing here re-decides any of it.
+ */
+function viewerFacts(
+  input: SceneLoweringInput,
+  mode: SceneCaptureMode,
+  inFrame: readonly ViewerBodyPart[],
+  stagedParts: readonly ViewerBodyPartId[],
+): readonly ImageWorldFact[] {
+  if (mode !== "first_person_embodied") return [];
+  return viewerBodyFacts({
+    parts: inFrame,
+    stagedParts,
+    ...(input.viewer ? { attributes: input.viewer.attributes } : {}),
+    ...(input.viewer?.realizedBody ? { realizedBody: input.viewer.realizedBody } : {}),
+    ...(input.plan.playerExposure ? { exposure: input.plan.playerExposure } : {}),
+    allowIntimate: input.allowIntimate,
+  });
+}
+
+/**
+ * The viewer parts whose geometry a staged sentence in THIS render owns.
+ *
+ * Read off the staging fact that was actually emitted, never off the plan: an
+ * arrangement the rung withheld — for the route, for a selfie, for coverage —
+ * words nothing, so its parts are unowned and the generic geometry line is the
+ * only thing left that can place them. Taking the plan's list instead would
+ * silently delete the foreground of every render whose staging did not survive.
+ */
+function stagedGeometryOwned(
+  input: SceneLoweringInput,
+  staging: readonly ImageWorldFact[],
+): readonly ViewerBodyPartId[] {
+  return staging.length === 0 ? [] : (input.plan.staging?.viewerParts ?? []);
 }
 
 /** Whether every viewer part the arrangement names survives this route's coverage gate. */

@@ -1,5 +1,5 @@
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { SceneCaptureMode, SceneStagingId } from "../scene-ir";
+import type { SceneCaptureMode, SceneStagingId, SceneViewerBodyPartId } from "../scene-ir";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -8,7 +8,15 @@ import type {
   ImageLightingBand,
 } from "./camera-bands";
 import type { ImageConflictKey, ImageStyleMedium } from "./conflict-keys";
-import { describe, describeChange, label, listWords, possessionOwners, preservedMeanings } from "./dialect-qwen-prose";
+import {
+  describe,
+  describeChange,
+  label,
+  listWords,
+  possessionOwners,
+  preservedMeanings,
+  viewerIsEmbodied,
+} from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
   registerImagePromptDialect,
@@ -22,7 +30,12 @@ import {
   type ImagePromptDialectId,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneStagingForm } from "./scene-facts";
+import {
+  imageSceneCaptureMode,
+  imageSceneStagingForm,
+  imageViewerBodyParts,
+  imageViewerDescriptors,
+} from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
 
 /**
@@ -139,6 +152,15 @@ function renderClaim(
     case "operation.subject_count": {
       const count = Number(claim.value);
       if (!Number.isFinite(count) || count <= 0) return say("no people");
+      // `solo focus` rather than `solo` on an embodied shot, and the booru
+      // vocabulary means exactly the distinction the count needs: `solo` says
+      // one figure and nothing else, which fights the viewer's own cropped hands
+      // in the same prompt; `solo focus` says one figure is the subject while
+      // other anatomy may be present. The count itself is unchanged — it names
+      // the cast, and the viewer is never in it.
+      if (viewerIsEmbodied(input)) {
+        return say(count === 1 ? "solo focus, exactly one person fully in frame" : `${count} people fully in frame`);
+      }
       return say(count === 1 ? "solo, 1girl or 1boy as appropriate, exactly one person" : `${count} people`);
     }
     case "operation.literal_text":
@@ -179,6 +201,20 @@ function renderClaim(
       // reader finds `on_all_fours@3` in this endpoint's provenance and credits
       // the measurements behind it to an image that never contained those words.
       return form === null ? null : say(stagingTag(surfaces.replace(claim.id, form), subject ?? "the subject"));
+    }
+
+    // --- Viewer ---------------------------------------------------------------
+    case "viewer.body_geometry": {
+      const phrases = imageViewerBodyParts(claim.value).map(viewerPartTag);
+      return phrases.length === 0 ? null : say(phrases.join(", "));
+    }
+    case "viewer.appearance": {
+      const descriptors = imageViewerDescriptors(claim.value);
+      return descriptors.length === 0 ? null : say(`the viewer's own body: ${descriptors.join(", ")}`);
+    }
+    case "viewer.intimate_anatomy": {
+      const descriptors = imageViewerDescriptors(claim.value);
+      return descriptors.length === 0 ? null : say(`the viewer's own exposed anatomy: ${descriptors.join(", ")}`);
     }
 
     // --- Subject --------------------------------------------------------------
@@ -404,6 +440,40 @@ function captureModeTag(mode: SceneCaptureMode, subject: string | null): string 
       return "first-person pov, the shot seen through the viewer's own eyes, the viewer's own body cropped into frame, their face and head out of frame";
     case "selfie":
       return `phone selfie taken by ${who}, camera at arm's length or in a mirror, ${who} looking into the lens`;
+  }
+}
+
+/**
+ * One of the viewer's own parts, as tags.
+ *
+ * Deliberately SHORT, for the same reason `stagingTag` is: these endpoints are
+ * SDXL checkpoints trained on tag corpora, where a long possessive-bound English
+ * clause sits as badly as it does in the identity lock this family already
+ * rewrote. What survives the compression is the pair that does the work — the
+ * possessive binding (`the viewer's own`, never a bare limb noun) and the frame
+ * geometry (`cropped by the lower frame edge`, `foreshortened`), because an
+ * unowned, uncropped limb in a two-body prompt is the phantom-limb scar and tag
+ * space does not soften it. `pov` leads each phrase: it is the tag corpus's own
+ * name for a limb belonging to the camera-holder, and it is the cheapest anchor
+ * available here.
+ *
+ * Exhaustive over the part vocabulary: a new part is a compile error rather than
+ * a limb these endpoints silently never hear about.
+ */
+function viewerPartTag(part: SceneViewerBodyPartId): string {
+  switch (part) {
+    case "hands":
+      return "pov hands, the viewer's own hands at the lower frame edge, close to the lens, foreshortened";
+    case "forearms":
+      return "pov forearms, the viewer's own forearms entering from the lower frame edge, foreshortened, cropped by the frame";
+    case "lap_thighs":
+      return "pov lap, the viewer's own thighs across the bottom of the frame, seen from above";
+    case "legs_feet":
+      return "pov legs, the viewer's own legs receding toward the lower frame edge, feet at the far end";
+    case "torso":
+      return "pov torso, the viewer's own chest and stomach along the bottom of the frame, foreshortened";
+    case "genitals":
+      return "pov crotch, the viewer's own genitals in the immediate foreground, cropped by the lower frame edge";
   }
 }
 

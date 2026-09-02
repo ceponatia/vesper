@@ -1,6 +1,6 @@
 import { diag } from "@vesper/contracts";
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
-import type { SceneCaptureMode } from "../scene-ir";
+import type { SceneCaptureMode, SceneViewerBodyPartId } from "../scene-ir";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -11,7 +11,12 @@ import type {
 import type { ImageStyleMedium } from "./conflict-keys";
 import type { ImageDialectPositiveInput } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageScenePossessionOwners } from "./scene-facts";
+import {
+  imageSceneCaptureMode,
+  imageScenePossessionOwners,
+  imageViewerBodyParts,
+  imageViewerDescriptors,
+} from "./scene-facts";
 
 /**
  * Wording helpers shared by the Qwen-family dialects — and, for the
@@ -209,10 +214,43 @@ export function spatialWord(value: string): string {
   }
 }
 
-export function subjectCountSentence(count: number): string {
+/**
+ * The person count, as the positive form of "no third person".
+ *
+ * It counts the CAST and only the cast — the viewer is never a subject — so on
+ * an embodied shot the plain form would be a contradiction the prompt has to
+ * resolve on its own: "exactly one person is in frame" beside a sentence
+ * describing the viewer's own hands. The retired prose builder's answer was the
+ * word `fully`, and it is kept: the cast are the bodies the frame holds whole,
+ * and a limb cropped by the frame edge is not one of them.
+ *
+ * `embodied` is a property of the shot rather than of the count, which is why it
+ * arrives as a parameter instead of riding the claim: `operation.subject_count`
+ * is an operation-contract member with no idea whose eyes the shot is through.
+ * {@link viewerIsEmbodied} answers it from the compiled claim list.
+ */
+export function subjectCountSentence(count: number, embodied = false): string {
   if (!Number.isFinite(count) || count <= 0) return "No people are present anywhere in the frame.";
+  if (embodied) {
+    return count === 1 ? "Exactly one person is fully in frame." : `Exactly ${count} people are fully in frame.`;
+  }
   if (count === 1) return "Exactly one person is in frame.";
   return `Exactly ${count} people are in frame.`;
+}
+
+/**
+ * Whether THIS render's frame crops the viewer's own body into it.
+ *
+ * Read off the capture-mode claim rather than passed down, because the shot's
+ * embodiment is already stated once as a fact and a second channel for it is a
+ * second thing to keep in agreement. The claim is `required_visual` on every
+ * scene the application lowers, so it is present whenever the answer is `true`.
+ */
+export function viewerIsEmbodied(input: ImageDialectPositiveInput): boolean {
+  return input.claims.some(
+    (claim) =>
+      claim.concept === "scene.capture_mode" && imageSceneCaptureMode(claim.value) === "first_person_embodied",
+  );
 }
 
 export function framingSentence(band: ImageFramingBand): string {
@@ -290,12 +328,13 @@ export function heightSentence(band: ImageCameraHeightBand): string {
  * disembodied foreground hands, and even a possessively-bound enumeration
  * summoned what it named. What held up 3/3 is this shape.
  *
- * It is the DISEMBODIED rule, which is the only shot Vesper can compile today:
- * the viewer's own visible body is a deliberate follow-up (owner ruling
- * 2026-09-01), and until a concept carries it, "the viewer is never visible" is
- * true of every POV render this vocabulary can describe. An embodied shot needs
- * the measured embodied variant, which belongs with the concept that puts a limb
- * in frame.
+ * Two first-person forms, because a POV frame either holds the viewer's own body
+ * or does not, and a prompt that gets that wrong contradicts itself. The
+ * disembodied form is the measured one and asserts the viewer's absence; the
+ * embodied form asserts only what stays out of frame — the face and head — and
+ * says plainly that the rest may be cropped in, because `viewer.body_geometry`
+ * is about to describe exactly which limbs those are. Saying "never visible"
+ * beside that description is the self-contradiction this pair exists to prevent.
  *
  * The selfie is worded here rather than copied from the retired builder's selfie
  * framing, whose sentence said "of herself" — a dialect may not assert a gender the world
@@ -346,6 +385,93 @@ export function possessionOwners(input: ImageDialectPositiveInput, value: unknow
 export function possessionSentence(owners: readonly string[]): string | null {
   if (owners.length === 0) return null;
   return `Every visible body part belongs to ${listWords(owners, "or")}.`;
+}
+
+/**
+ * One of the viewer's own parts, as frame geometry.
+ *
+ * Two things carry this wording and neither is decoration. **Possessive
+ * binding** — "the viewer's own", never a bare noun and never a subject noun for
+ * the viewer — and **frame geometry**: every phrase says where the limb meets
+ * the frame edge and how hard it is foreshortened, because a limb the frame cuts
+ * through and the lens looms over cannot be composed as somebody standing there.
+ * Drop either half and the model paints a second person; that is the measured
+ * failure the whole vocabulary is shaped around, and it is the same scar behind
+ * the possession clause's abstraction.
+ *
+ * A dialect's wording rather than a registry's, for the reason a camera band's
+ * is: the application decides WHICH parts the frame holds, and how an endpoint
+ * should be told about a foreshortened forearm is this layer's question.
+ * Exhaustive over the part vocabulary, so a new part is a compile error here
+ * rather than a limb that silently never reaches a prompt.
+ */
+export function viewerPartPhrase(part: SceneViewerBodyPartId): string {
+  switch (part) {
+    case "hands":
+      return "the viewer's own hands entering frame from the lower edge, close to the lens and strongly foreshortened";
+    case "forearms":
+      return "the viewer's own forearms entering frame from the lower edge, foreshortened, cropped where the frame cuts them";
+    case "lap_thighs":
+      return "the viewer's own thighs across the bottom of the frame, seen from above as they look down at their own lap";
+    case "legs_feet":
+      return "the viewer's own legs receding away from the lens toward the lower frame edge, feet at the far end";
+    case "torso":
+      return "the viewer's own chest and stomach along the bottom of the frame, foreshortened as they look down over themselves";
+    case "genitals":
+      return "the viewer's own genitals in the immediate foreground, close to the lens and cropped by the lower frame edge";
+  }
+}
+
+/**
+ * "Also in frame, in the viewer's immediate foreground: …" — the generic
+ * geometry line.
+ *
+ * One sentence for every part the frame holds, not one per part: the foreground
+ * is a single region of the picture, and a model handed three separate
+ * statements about it has three chances to compose three separate things.
+ *
+ * The list carries only the parts NO staged sentence already places. That
+ * filtering happens upstream, in the projection, because it is a fact about the
+ * render rather than about this endpoint — a staged arrangement says where a
+ * limb is on somebody and this says where it is relative to the lens, and both
+ * at once puts the same two hands in two places in one prompt.
+ *
+ * An empty list yields null. A foreground clause naming no limb would be the
+ * disembodied shot spelled at greater length.
+ */
+export function viewerGeometrySentence(value: unknown): string | null {
+  const phrases = imageViewerBodyParts(value).map(viewerPartPhrase);
+  if (phrases.length === 0) return null;
+  return `Also in frame, in the viewer's immediate foreground: ${listWords(phrases)}.`;
+}
+
+/**
+ * "The viewer's own body: …" — who those limbs belong to, as facts.
+ *
+ * It rides AFTER the geometry deliberately (the concept's `current_state`
+ * segment kind emits later than `pose`): the model has to know the limbs are the
+ * viewer's and cropped before it is told what they look like, or a described
+ * body is an invitation to paint the whole person wearing it.
+ *
+ * Semicolons rather than a conjunction. These are registry label/value pairs
+ * ("skin tone: olive"), and "and" between two of them reads as one phrase.
+ */
+export function viewerAppearanceSentence(value: unknown): string | null {
+  const descriptors = imageViewerDescriptors(value);
+  return descriptors.length === 0 ? null : `The viewer's own body: ${descriptors.join("; ")}.`;
+}
+
+/**
+ * The viewer's own exposed anatomy, possessively bound.
+ *
+ * Bound where the retired prose builder left it bare: its line rode immediately
+ * after the body line and borrowed that sentence's binding, which an ordered
+ * claim list cannot promise. An unowned anatomy sentence in a two-body prompt is
+ * the phantom-limb shape, so the binding is stated rather than inherited.
+ */
+export function viewerIntimateSentence(value: unknown): string | null {
+  const descriptors = imageViewerDescriptors(value);
+  return descriptors.length === 0 ? null : `The viewer's own exposed anatomy: ${descriptors.join("; ")}.`;
 }
 
 /** `{name}`, the one substitution a staging template carries. */

@@ -14,15 +14,10 @@ const NUDE = exposedRegions([]);
 const PANTS: RegionExposure = { torso: "bare", pelvis: "covered", legs: "covered", feet: "bare" };
 const SHEER: RegionExposure = { torso: "covered", pelvis: "sheer", legs: "sheer", feet: "covered" };
 
+// The possessive-binding and frame-geometry invariant belongs to the layer that
+// now writes those words: `packages/image-core`'s dialects, asserted over a
+// compiled prompt. This registry decides which parts a frame may hold.
 describe("the viewer-body registry", () => {
-  it("every part is possessive-bound and cropped — never a bare noun a model could stand up", () => {
-    for (const part of viewerBodyParts) {
-      expect(part.framing).toContain("the viewer's own");
-      // Frame geometry is what stops a limb becoming a subject; every phrase carries some.
-      expect(part.framing).toMatch(/foreshorten|cropped|frame edge|lower edge|bottom of the frame|toward the lens|from the lens/);
-    }
-  });
-
   it("gates anatomy and nothing else — a clothed torso or lap is a fine POV element", () => {
     expect(viewerBodyPartById("genitals")?.requiresBare).toBe("pelvis");
     expect(viewerBodyPartById("genitals")?.intimate).toBe(true);
