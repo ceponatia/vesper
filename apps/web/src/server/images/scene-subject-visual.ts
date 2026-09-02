@@ -226,7 +226,7 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
       // them: a cut the program never compiles would only add a person to the
       // provenance who is not in the picture. A caller that nonetheless means to
       // DRAW them — one whose references carry their identity — hits the
-      // render's cast-completeness refusal instead (`scene.ts`,
+      // render's cast-integrity refusal instead (`scene.ts`,
       // `cast_incomplete`), because a person in the payload and not in the
       // prompt is the render this seam's silence would otherwise allow.
       sink?.push(

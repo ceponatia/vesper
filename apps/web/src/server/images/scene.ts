@@ -158,14 +158,19 @@ export function heuristicLighting(timeOfDay: string | undefined): string {
 }
 
 /**
- * One person a scene render intends to draw, read off the caller's character
- * references — the list the cast-completeness check in {@link renderResolvedScene}
- * holds the compiled cuts against. The name is for the refusal an operator reads;
- * the id is what the two lists are matched on.
+ * One person named on either side of the cast-integrity comparison in
+ * {@link renderResolvedScene} — read off a character reference the render was
+ * asked to draw, or off a committed cut it compiled. The id is what the two
+ * sides are matched on; the name is for the refusal an operator reads.
  */
 interface IntendedCastMember {
   readonly id: string;
   readonly name: string;
+}
+
+/** The people one half of a cast disagreement names, for the refusal an operator reads. */
+function castNames(members: readonly IntendedCastMember[]): string {
+  return members.map((member) => member.name).join(", ");
 }
 
 export interface SceneAssetLinkage {
@@ -234,10 +239,11 @@ export interface RenderResolvedSceneInput {
    * and asserts a subject count of two. Handing over one cut would compile a
    * prompt describing one woman for a payload carrying two faces.
    *
-   * Checked rather than trusted: every character reference naming a library
-   * entity must have its cut here, or the render refuses before provider spend
-   * (`images.scene_render.cast_incomplete`). A short list is never rendered as
-   * a smaller scene.
+   * Checked rather than trusted, and symmetrically: this list and the character
+   * references naming a library entity must name the same people, once each, or
+   * the render refuses before provider spend
+   * (`images.scene_render.cast_incomplete`). A person short, a person extra or
+   * one person twice is never rendered as a quieter scene.
    */
   cast?: readonly SceneSubjectVisualSlice[];
   /**
@@ -372,49 +378,87 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const castReadToken = cast[0]?.cutId ?? "";
 
   // -------------------------------------------------------------------------
-  // Cast completeness: the render describes everybody it is about to draw
+  // Cast integrity: the compiled cast IS the intended cast
   // -------------------------------------------------------------------------
   //
   // The INTENDED cast is the caller's character references that name a library
   // entity — one per person this render means to draw, whether or not an anchor
   // image was found for them. The COMPILED cast is `input.cast`: one realized
-  // committed cut per person the prompt program will describe. Several upstream
-  // steps shrink the second without touching the first, each of them a warn
-  // about ONE person — a member whose continuity row is missing never gets a
-  // shadow input, a cut keyed to somebody else is skipped, and a member the
-  // resolved plan names nowhere realizes no cut. None of those is a fallback:
-  // the committed cut is the ONLY description of a person a scene render has,
-  // so a member without one is a member the prompt cannot mention.
+  // committed cut per person the prompt program will describe. The invariant is
+  // that those two name the SAME people, once each — not that one contains the
+  // other — because everything downstream is derived from one or the other and
+  // has to agree: the world digest's subjects and `operation.subjectCount` come
+  // from the cuts, while the identity references and their per-subject bindings
+  // come from the reference list.
   //
-  // Rendering the rest anyway would compile a smaller world digest, assert a
-  // smaller `operation.subjectCount`, and still send the missing member's
-  // identity reference — a picture that is internally inconsistent in the one
-  // way a viewer cannot see, because it looks like a successful render of a
-  // different scene. So the two lists are compared ONCE, here, where both exist
-  // and before anything is reserved. A member with no cut refuses the render:
-  // there is no approved typed source to synthesize the missing slice from, and
-  // refusing before provider spend is the honest answer.
+  // So the comparison is symmetric, and it refuses on three shapes:
   //
-  // Consumed twice from this one comparison — the rungs below compile nothing
-  // (so no partial program is ever built, hashed, or written to the reserved
-  // row) and the pipeline fails the row on the precondition — and reported
-  // once, here, so an operator reads the missing person rather than three rung
-  // drops.
+  // - **A member with no cut.** Several upstream steps shrink the cuts without
+  //   touching the references, each a warn about ONE person: a member whose
+  //   continuity row is missing never gets a shadow input, a cut keyed to
+  //   somebody else is skipped, and a member the resolved plan names nowhere
+  //   realizes no cut. None of those is a fallback — the committed cut is the
+  //   ONLY description of a person a scene render has — so rendering on would
+  //   compile a smaller digest, assert a smaller subject count, and still send
+  //   the missing member's identity reference.
+  // - **A cut nobody drew.** A subject the prompt describes with no reference
+  //   naming them is the same fault mirrored: an extra body in the picture, an
+  //   inflated subject count, and an identity lock the payload cannot honor.
+  // - **Two cuts for one person.** A duplicate gives the cast an extra body and
+  //   lets the fold keep whichever copy sorted first. The digest merge refuses
+  //   this too (`visual_state.digest.cast_duplicate_subject`), but only once a
+  //   rung is already compiling, where it reads as a lost rung rather than as
+  //   the cast fault it is.
+  //
+  // The intended side needs no duplicate check of its own: a lane builds one
+  // reference per cast member and the cast comes from distinct participants, so
+  // a repeated entity id there is not a shape this list can take.
+  //
+  // Compared ONCE, here, where both lists exist and before anything is reserved,
+  // then consumed twice — the rungs below compile nothing (so no partial program
+  // is ever built, hashed, or written to the reserved row) and the pipeline fails
+  // the row on the precondition. Reported once too, under one code: it is one
+  // invariant with one outcome and one repair, so an operator reads which people
+  // disagreed rather than three rung drops. There is no approved typed source to
+  // synthesize a missing slice from, and no honest way to drop an extra one, so
+  // refusing before provider spend is the answer to all three.
   const intendedCast = references.flatMap((reference): IntendedCastMember[] =>
     reference.kind === "character" && reference.entityId !== undefined
       ? [{ id: reference.entityId, name: reference.name ?? reference.entityId }]
       : [],
   );
-  const compiledSubjects = new Set(castCuts.map((cut) => cut.subjectId));
+  const compiledIds = castCuts.map((cut) => cut.subjectId);
+  const compiledSubjects = new Set(compiledIds);
+  const intendedSubjects = new Set(intendedCast.map((member) => member.id));
   // Not asked of a render the CALLER has already refused: such a render is handed
   // no cast at all (compiling a program for a picture nobody will make would only
   // store it), so every intended member would read as missing and this would
   // report a second, invented cause beside the real one. `?? null` mirrors
   // `provenanceFor`'s precondition read below, empty string included.
-  const uncompiledCast: IntendedCastMember[] =
-    (input.failedPrecondition ?? null) !== null ? [] : intendedCast.filter((member) => !compiledSubjects.has(member.id));
-  const castRefusal =
-    uncompiledCast.length === 0 ? null : `no committed visual cut for ${uncompiledCast.map((member) => member.name).join(", ")}`;
+  const alreadyRefused = (input.failedPrecondition ?? null) !== null;
+  const missingCast: IntendedCastMember[] = alreadyRefused
+    ? []
+    : intendedCast.filter((member) => !compiledSubjects.has(member.id));
+  const strangerCast: IntendedCastMember[] = alreadyRefused
+    ? []
+    : castCuts.flatMap((cut): IntendedCastMember[] =>
+        intendedSubjects.has(cut.subjectId) ? [] : [{ id: cut.subjectId, name: cut.name }],
+      );
+  // Named once each however many copies arrived: "Ilsa twice" and "Ilsa three
+  // times" are the same fault, and the count is already in `compiled` below.
+  const duplicateCast: IntendedCastMember[] = alreadyRefused
+    ? []
+    : castCuts.flatMap((cut, index): IntendedCastMember[] =>
+        compiledIds.indexOf(cut.subjectId) === index && compiledIds.lastIndexOf(cut.subjectId) !== index
+          ? [{ id: cut.subjectId, name: cut.name }]
+          : [],
+      );
+  const castFaults = [
+    missingCast.length === 0 ? null : `no committed visual cut for ${castNames(missingCast)}`,
+    strangerCast.length === 0 ? null : `a committed cut for ${castNames(strangerCast)}, whom no reference draws`,
+    duplicateCast.length === 0 ? null : `more than one committed cut for ${castNames(duplicateCast)}`,
+  ].filter((fault): fault is string => fault !== null);
+  const castRefusal = castFaults.length === 0 ? null : castFaults.join("; ");
   if (castRefusal !== null) {
     sink.push(
       diag(
@@ -423,8 +467,9 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         `the render draws ${intendedCast.length} people and compiled ${castCuts.length}: ${castRefusal}`,
         {
           context: {
-            missing: uncompiledCast.map((member) => member.id),
-            missingNames: uncompiledCast.map((member) => member.name),
+            missing: missingCast.map((member) => member.id),
+            extra: strangerCast.map((member) => member.id),
+            duplicated: duplicateCast.map((member) => member.id),
             intended: intendedCast.length,
             compiled: castCuts.length,
           },
@@ -459,16 +504,16 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       );
       return "dropped";
     }
-    // The completeness comparison above, spent on the chain: a rung that would
-    // compile a smaller cast than the render intends says something the payload
-    // contradicts, so it compiles nothing at all. Silent by design — the one
-    // `cast_incomplete` report above names the people, and `rungs_dropped`
-    // below names the rungs it took down.
+    // The cast-integrity comparison above, spent on the chain: a rung whose cast
+    // is not the cast the render draws says something the payload contradicts —
+    // a person short, a person extra, or one person twice — so it compiles
+    // nothing at all. Silent by design: the one `cast_incomplete` report above
+    // names the people, and `rungs_dropped` below names the rungs it took down.
     if (castRefusal !== null) return "dropped";
     // No committed cut for anyone in the cast — the digest this scene's words
     // are made of. Reached only by a render that intends no cast either (a
     // caller with no character reference at all); a cast the render DOES intend
-    // is the completeness refusal above. A render here has people to draw and
+    // is the cast-integrity refusal above. A render here has people to draw and
     // nothing that says what they look like, so it fails rather than describing
     // them from somewhere else.
     if (castCuts.length === 0) {
@@ -517,10 +562,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       // The cast size the render ASSERTS — what arms the single-subject
       // integrity guard on a solo shot and tells the anatomy guards how many
       // bodies to defend on an ensemble one. The compiled cuts and the intended
-      // cast are the same set by the time a rung compiles (the completeness
-      // check above drops every rung otherwise), so this count, the digest's
-      // subjects and the identity references bound to them all describe one
-      // cast rather than three lists that happen to agree.
+      // cast are the same people, once each, by the time a rung compiles (the
+      // integrity check above drops every rung otherwise), so this count, the
+      // digest's subjects and the identity references bound to them all describe
+      // one cast rather than three lists that happen to agree.
       operation: () => characterSceneImageOperation({ subjectCount: castCuts.length, kind }),
       // A scene of named people with a lost identity or morphology anchor draws
       // strangers. This is the ONE place that refusal is decided: the cast seam
@@ -690,8 +735,8 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         },
       },
       // The caller's own refusal — an identity-pack block, an unassemblable cut
-      // — or this render's cast-completeness refusal. At most one is ever set:
-      // the completeness check stands down when the caller has already refused.
+      // — or this render's cast-integrity refusal. At most one is ever set: the
+      // integrity check stands down when the caller has already refused.
       // Either way the row is reserved and failed before any provider is called.
       failedPrecondition: input.failedPrecondition ?? castRefusal,
       afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
