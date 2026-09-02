@@ -2454,11 +2454,19 @@ export const jobs = pgTable(
     createdAt: createdAt(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /**
+     * The conversation this job works for, when it is chat-scoped — the database
+     * relationship that takes the row with its chat (`ON DELETE CASCADE`). Null for
+     * system and library jobs (image sweep, avatars, entity images) that belong to
+     * no conversation; those age out through retention instead.
+     */
+    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
   },
   (t) => [
     index("jobs_queued_idx").on(t.status, t.type),
     /** Backs the per-owner active-job count in the concurrency cap's conditional insert. */
     index("jobs_owner_status_idx").on(t.ownerId, t.status),
+    index("jobs_chat_idx").on(t.chatId),
   ],
 );
 
@@ -2469,8 +2477,15 @@ export const events = pgTable(
     type: text("type").notNull(),
     payload: jsonb("payload").notNull().default({}),
     createdAt: createdAt(),
+    /**
+     * The conversation a chat-scoped event describes, when the writer had it — the
+     * database relationship that takes the row with its chat (`ON DELETE CASCADE`).
+     * Null for events that belong to no conversation (library image work, system
+     * maintenance); those age out through retention instead.
+     */
+    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "cascade" }),
   },
-  (t) => [index("events_type_idx").on(t.type)],
+  (t) => [index("events_type_idx").on(t.type), index("events_chat_idx").on(t.chatId)],
 );
 
 /**

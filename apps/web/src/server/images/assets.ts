@@ -8,6 +8,7 @@ import { characters, db, images, items, jobs, locations, reclaimOrphanedJobs } f
 import { describeProviderError } from "../ai";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
+import { runRetentionPasses } from "@/server/retention";
 import { parseOr } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -1064,15 +1065,21 @@ async function runScheduledSweep(now: Date): Promise<void> {
     // cleanup for superseded crops. It runs AFTER `sweepOrphans` so a crop whose
     // file vanished is already marked failed when the findings look at it.
     const identity = (await identityPackMaintenance?.sweep(now)) ?? {};
-    const summary = { ...result, jobsReclaimed, ...identity };
+    // Database retention rides the same tick (`@/server/retention`): bounded
+    // deletes of expired telemetry, finished jobs, and expired auth rows. Each
+    // pass isolates its own failure, so this call never throws.
+    const retention = await runRetentionPasses(now);
+    const summary = { ...result, jobsReclaimed, ...identity, ...retention };
     const identityTotal = Object.values(identity).reduce((total, value) => total + value, 0);
+    const retentionTotal = Object.values(retention).reduce((total, value) => total + value, 0);
     if (
       result.orphanFilesRemoved +
         result.stalePendingFilesRemoved +
         result.rowsMarkedFailed +
         result.failedRowsRetired +
         jobsReclaimed +
-        identityTotal >
+        identityTotal +
+        retentionTotal >
       0
     ) {
       log.warn("images", "sweep reconciled orphaned rows/files", summary);
