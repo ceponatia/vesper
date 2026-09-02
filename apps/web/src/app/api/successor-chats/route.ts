@@ -8,6 +8,7 @@ import {
   deriveProvisioningStamp,
   provisioningPayloadHash,
   provisioningRequestIdSchema,
+  PROVISIONING_STALE_AFTER_DELETE,
 } from "@vesper/simulation-core/provisioning";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
@@ -96,6 +97,8 @@ interface ProvisioningRecord {
   chatId: string | null;
   response: unknown;
   httpStatus: number | null;
+  /** Operator-facing failure reason; {@link PROVISIONING_STALE_AFTER_DELETE} is read as state. */
+  error: string | null;
 }
 
 /**
@@ -148,6 +151,85 @@ async function updateRecord(
     .update(simProvisioningRequests)
     .set(patch)
     .where(and(eq(simProvisioningRequests.ownerId, ownerId), eq(simProvisioningRequests.requestId, requestId)));
+}
+
+/**
+ * Does the world this record recorded still exist, whole, and still belong to
+ * this owner? The replay guard's question (#197).
+ *
+ * A `ready` record stores the ids it built, but nothing in the schema keeps
+ * those ids honest: `worldId` / `branchId` / `chatId` are SOFT pointers on
+ * purpose, so a failed provision's audit row survives the cleanup that deleted
+ * the graph it names (#283 — no cascade FK here). That same softness means a
+ * later chat delete leaves a `ready` record pointing at three tombstones, and
+ * replaying its stored 201 would hand the client ids for resources that are
+ * gone.
+ *
+ * One join answers all of it: the chat must exist, be owned by this caller, and
+ * still be routed at exactly the branch the record named, and that branch must
+ * still hang off exactly the recorded world. Branch existence implies the world
+ * exists (`sim_branches` cascades from `sim_worlds`), and the `world_id`
+ * equality is what catches a re-pointed chat rather than a deleted one. Any null
+ * id fails: a record that never recorded an id has nothing to prove alive.
+ */
+async function provisionedGraphAlive(record: ProvisioningRecord, ownerId: string): Promise<boolean> {
+  const { chatId, branchId, worldId } = record;
+  if (chatId === null || branchId === null || worldId === null) return false;
+  const [alive] = await db()
+    .select({ id: characterChats.id })
+    .from(characterChats)
+    .innerJoin(simBranches, eq(simBranches.id, characterChats.simBranchId))
+    .where(
+      and(
+        eq(characterChats.id, chatId),
+        eq(characterChats.ownerId, ownerId),
+        eq(characterChats.simBranchId, branchId),
+        eq(simBranches.worldId, worldId),
+      ),
+    )
+    .limit(1);
+  return alive !== undefined;
+}
+
+/**
+ * Retire a record whose world is gone, and answer honestly (#197).
+ *
+ * Deliberately NOT a rebuild in this request. The caller asked to finish a
+ * world they have since deleted; silently minting a second one under the same
+ * key would be a surprise, and the delete is the more recent intent. So the
+ * record is written into the ordinary `failed` shape — the one the failure path
+ * already writes, ids and recorded response nulled — with
+ * {@link PROVISIONING_STALE_AFTER_DELETE} left in `error` so the ledger says
+ * why, and the caller gets a typed refusal.
+ *
+ * A further POST with the SAME key then takes the ordinary failed → retry path
+ * and builds a fresh world from scratch: the record's derived ids are free
+ * again precisely because the world graph died with the chat. That is the
+ * "existing failed/retry behavior" recovery path, reached in one extra tap
+ * rather than by guessing on the player's behalf. Nulling `chatId` here is also
+ * what makes the refusal happen ONCE — see the stale-marked branch in
+ * {@link runProvisioning}.
+ */
+async function retireStaleRecord(ownerId: string, requestId: string, record: ProvisioningRecord): Promise<Response> {
+  await updateRecord(ownerId, requestId, {
+    state: "failed",
+    worldId: null,
+    branchId: null,
+    chatId: null,
+    response: null,
+    httpStatus: null,
+    error: PROVISIONING_STALE_AFTER_DELETE,
+    completedAt: new Date(),
+  });
+  log.warn("engine.sim.provisioning", "a provisioning record named a world that no longer exists; retiring it", {
+    code: "provisioning.replay_stale",
+    ownerId,
+    requestId,
+    worldId: record.worldId,
+    branchId: record.branchId,
+    chatId: record.chatId,
+  });
+  return jsonError("provision_stale", "that world was deleted; create a new one", 409);
 }
 
 /**
@@ -236,6 +318,7 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
       chatId: simProvisioningRequests.chatId,
       response: simProvisioningRequests.response,
       httpStatus: simProvisioningRequests.httpStatus,
+      error: simProvisioningRequests.error,
     })
     .from(simProvisioningRequests)
     .where(and(eq(simProvisioningRequests.ownerId, ownerId), eq(simProvisioningRequests.requestId, requestId)))
@@ -251,6 +334,26 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
   if (record && record.payloadHash !== payloadHash) {
     return jsonError("idempotency_mismatch", "this request id was already used for a different world", 409);
   }
+  // #197 — the ids first, the response second. Both stale paths land here,
+  // ahead of the library lookup, so a deleted world answers the same way whether
+  // or not the character it was born from survived.
+  //
+  //  * A `ready` record is the only state that TRUSTS its stored ids without
+  //    rebuilding anything: the replay below returns them verbatim and the
+  //    `replayUnreadable` resume below resumes ON them, so both are wrong the
+  //    moment the chat and its world have been deleted. One check covers both.
+  //  * A `failed` record still CARRYING ids and marked
+  //    `PROVISIONING_STALE_AFTER_DELETE` is `deleteChat`'s belt: the delete
+  //    already retired the row, and the refusal it implies has not been reported
+  //    to this key's client yet. Retiring it nulls those ids, so the next POST
+  //    with the same key is an ordinary failed → retry and rebuilds.
+  if (record?.state === "ready" && !(await provisionedGraphAlive(record, ownerId))) {
+    return retireStaleRecord(ownerId, requestId, record);
+  }
+  if (record?.state === "failed" && record.error === PROVISIONING_STALE_AFTER_DELETE && record.chatId !== null) {
+    return retireStaleRecord(ownerId, requestId, record);
+  }
+
   let replayUnreadable = false;
   if (record?.state === "ready" && record.httpStatus !== null) {
     // Verbatim replay: one world, one chat, one 201 — no matter how many taps.
