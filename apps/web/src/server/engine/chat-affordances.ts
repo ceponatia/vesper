@@ -141,7 +141,13 @@ import { buildChatGarmentAffordance } from "./chat-garment-affordances";
  * geometric fraction. `0.9` and not `1.0` for an opaque cover because a hat or
  * hood essentially never captures every strand — ends hang out, which is exactly
  * the case the hair domain's ends-only wind read exists for.
+ *
+ * `HAIR_COVERED_FULL` is the unit's saturated value (`AFFORDANCE_UNIT_ONE`): the
+ * wardrobe's resolved `full` occlusion band says every strand is enclosed, so the
+ * free-moving fraction is exactly zero. The mechanics tolerate it — the load floor
+ * sits on the denominator, and a zero numerator is just hair that cannot move.
  */
+const HAIR_COVERED_FULL = 10_000;
 const HAIR_COVERED_OPAQUE = 9_000;
 const HAIR_COVERED_SHEER = 5_000;
 
@@ -399,14 +405,21 @@ type HairPayloadDraft = Partial<Omit<HairLanePayload, "wetness">> & { readonly w
  * worked case sits at 0.6. That is a CALIBRATION question about this constant,
  * not a perception one, and it is deliberately left alone here.
  *
- * Genuinely TOTAL concealment — a wrapped headscarf, a veil, hair tucked
- * entirely inside a hood — is a real state and it should read `hidden`. It needs
- * a finer coverage signal than the wardrobe's per-location boolean can give
- * (fullness, or a garment flag), so no headwear returns `hidden` until that
- * signal exists; guessing which hats are total from opacity alone is what
- * produced this bug.
+ * **Genuinely TOTAL concealment reads `hidden`**, and the wardrobe's resolved
+ * hair-occlusion band is the signal that says so (`wardrobe.hairOcclusion`,
+ * docs/contracts/items/README.md §Hair occlusion). At `full` — a wrapped
+ * headscarf, a hijab, a fully enclosing helmet — the read is `hidden` at
+ * `HAIR_COVERED_FULL` regardless of which row is outermost or how opaque it is:
+ * the band was resolved over the same worn rows, and it is the finer signal the
+ * per-location coverage boolean cannot carry. Every hair observation is then
+ * suppressed by perception (`AFFORDANCE_PERCEPTION_HIDDEN`), which is the truth
+ * of a head nobody can see hair on. `partial` and `none` (and an absent band)
+ * change nothing above: the outermost row's opacity still decides between the
+ * two `hinted` fractions, and a bare head is `visible`. Which hats are total is
+ * never guessed from opacity or from a garment's name.
  */
 function readHairCoverage(wardrobe: ChatAffordanceWardrobe): HairCoverageRead {
+  if (wardrobe.hairOcclusion === "full") return { coveredFraction: HAIR_COVERED_FULL, exposure: "hidden" };
   const worn = [...wardrobe.worn];
   const views = resolveWardrobeVisibility(worn);
   const outermost = views.find((view) => view.visibleAt.includes(HAIR_LOCATION_ID));

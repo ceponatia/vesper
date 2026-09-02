@@ -1,18 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  affordancePerceptionView,
-  affordanceSubjectId,
   AFFORDANCE_INPUT_INVALID,
   AFFORDANCE_INPUT_UNAVAILABLE,
   AFFORDANCE_PERCEPTION_HIDDEN,
+  AFFORDANCE_UNIT_ONE,
   bodySurfaceStateSchema,
-  deriveAffordanceRead,
   emptyBodySurfaceState,
   emptyChatEnvironment,
-  hairAffordanceDomain,
   hairAttributeFixture,
-  HAIR_DOMAIN_ID,
-  resolvedAttributeSnapshot,
   setBodySurfaceWetness,
   BODY_SURFACE_UNIT_ONE,
   type AttributeValue,
@@ -315,6 +310,10 @@ describe("perception uses the wardrobe's own vocabulary", () => {
     // case unreachable in production. `hinted` states the truth instead.
     const result = read({ bodySurface: soaked(), wardrobe: { worn: hat("opaque") } });
     expect(ids(result.read.observations)).toContain("hair.wet_clumping");
+    // The resolved `partial` band says what the opacity mapping already does — some
+    // hair still shows — so it leaves the `hinted` read exactly as it is.
+    const partial = read({ bodySurface: soaked(), wardrobe: { worn: hat("opaque"), hairOcclusion: "partial" } });
+    expect(partial.read).toEqual(result.read);
   });
 
   it("coverage, not perception, is what constrains motion under that hood", () => {
@@ -342,24 +341,17 @@ describe("perception uses the wardrobe's own vocabulary", () => {
     expect(ids(result.read.observations)).toContain("hair.wet_clumping");
   });
 
-  it("a HIDDEN exposure still suppresses — the gate is intact, no chat garment sets it", () => {
-    // Nothing this lane can wear produces `hidden` today (genuinely total
-    // concealment needs a finer coverage signal than the wardrobe's per-location
-    // boolean), so the gate is proved by constructing the view directly.
-    const hidden = deriveAffordanceRead({
-      subjectId: affordanceSubjectId("chr_wren"),
-      storyTime: 0,
-      attributes: resolvedAttributeSnapshot(ATTRIBUTES),
-      perception: affordancePerceptionView({ exposure: { [HAIR]: "hidden" }, channels: { sight: "available" } }),
-      domains: [hairAffordanceDomain],
-      payloads: {
-        [HAIR_DOMAIN_ID]: { wetness: BODY_SURFACE_UNIT_ONE, coveredFraction: 9_000, wind: { force: 0 }, events: [] },
-      },
-    });
-    expect(hidden.observations).toEqual([]);
-    expect(hidden.suppressed.find((entry) => entry.phenomenonId === "hair.wet_clumping")?.code).toBe(
-      AFFORDANCE_PERCEPTION_HIDDEN,
-    );
+  it("`full` hair occlusion reads HIDDEN — every hair observation is suppressed, whatever the outermost row's opacity", () => {
+    // The wardrobe's resolved band is the finer signal total concealment needed
+    // (docs/contracts/items/README.md §Hair occlusion): a sheer row that reads
+    // `hinted` on its own is `hidden` once the band says every strand is enclosed.
+    // Falsified against a read that keeps mapping from opacity alone.
+    const result = read({ bodySurface: soaked(), wardrobe: { worn: hat("sheer"), hairOcclusion: "full" } });
+    expect(result.read.observations).toEqual([]);
+    expect(suppression(result, "hair.wet_clumping")?.code).toBe(AFFORDANCE_PERCEPTION_HIDDEN);
+    // The committed coverage is total, so the physical-guidance coverage fence
+    // sees an enclosed head rather than a hat with ends hanging out.
+    expect(result.committed.coveredFraction).toBe(AFFORDANCE_UNIT_ONE);
   });
 });
 

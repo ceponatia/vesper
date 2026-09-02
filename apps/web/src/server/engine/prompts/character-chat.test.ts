@@ -758,6 +758,71 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
   });
 });
 
+describe("hair occlusion — fully covered hair is withheld from the narrator", () => {
+  // The band is the wardrobe's resolved `state.hairOcclusion` (docs/contracts/items/README.md
+  // §Hair occlusion): the builder consumes it and never infers coverage from a garment.
+  // Falsified against a builder that leaves the hair lines in and appends a "never mind"
+  // instruction (the prefix would still carry "auburn"), and against one that filters by
+  // id prefix but forgets the transient override path (the tail would carry the bun).
+  const withHair = maraProfile({
+    attributes: [...maraProfile().attributes, attr("hair.arrangement", "loose")],
+  });
+  const at = (hairOcclusion?: ChatPromptState["hairOcclusion"], over: Partial<ChatPromptState> = {}) =>
+    promptParts({
+      profile: withHair,
+      player: { name: "Brian" },
+      state: chatState({ ...(hairOcclusion ? { hairOcclusion } : {}), ...over }),
+    });
+  const windblown = {
+    id: "c1",
+    label: "windblown",
+    startedAtMinutes: 0,
+    attributeEffects: [
+      { attributeId: "hair.arrangement" as const, value: "bun" },
+      { attributeId: "presentation.grooming" as const, value: "unkempt" },
+    ],
+  };
+
+  it("at `full`: no hair attribute, gloss, or transient hair override — and the binding covered-hair line", () => {
+    const parts = at("full", { conditions: [windblown] });
+    const full = `${parts.prefix}\n\n${parts.tail}`;
+    expect(full).not.toContain("auburn");
+    expect(full).not.toContain("hanging free"); // the `hair.arrangement` narrator gloss
+    expect(full).not.toContain("coiled and pinned"); // the condition's hair override
+    expect(parts.tail).toContain("unkempt"); // a non-hair override still renders — the filter is hair-scoped
+    expect(parts.prefix).toContain(
+      "Covered hair (binding): Mara, your hair is completely covered by your headwear — none of it is visible to Brian.",
+    );
+    expect(parts.prefix).toContain("not licence to invent them");
+  });
+
+  it("the prefix is keyed on the band: `partial` keeps the hair and matches `none`; `full` re-renders; crossing back restores it", () => {
+    const none = at();
+    const partial = at("partial");
+    const full = at("full");
+    expect(partial.prefix).toBe(none.prefix);
+    expect(partial.prefix).toContain("auburn");
+    expect(full.prefix).not.toBe(partial.prefix);
+    expect(full.prefix).not.toContain("auburn");
+    // An explicit `none` is byte-identical to no band at all, prefix and tail.
+    expect(at("none")).toEqual(none);
+  });
+
+  it("an ensemble member at `full` loses their hair lines and carries their own line; the others keep theirs", () => {
+    const parts = buildChatPromptPartsForRoster(input({ profile: withHair }), [
+      member("Mara", { profile: withHair }),
+      member("Rhett", { profile: withHair, state: chatState({ hairOcclusion: "full" }) }),
+    ]);
+    const [, mara = ""] = parts.prefix.split("## Mara");
+    const [maraSheet = "", rhett = ""] = mara.split("## Rhett");
+    expect(maraSheet).toContain("auburn");
+    expect(rhett).not.toContain("auburn");
+    expect(rhett).toContain(
+      "Covered hair (binding): Rhett's hair is completely covered by their headwear — none of it is visible.",
+    );
+  });
+});
+
 describe("buildCharacterChatPromptParts — prompt-cache layout", () => {
   it("keeps the prefix byte-identical across consecutive turns with unchanged authored inputs", () => {
     const turn1 = promptParts({

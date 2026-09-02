@@ -138,6 +138,11 @@ covers, what it occludes, or how it layers.
   (`state.hairOcclusion`) and the hair-affordance wardrobe input
   (`ChatAffordanceWardrobe.hairOcclusion`) each carry that one value. No consumer reads item rows
   or infers the band from a garment's name.
+- **The narrator withholds fully covered hair.** At `full` the chat prompt drops every
+  `hair`-anchored attribute before its blocks are built and states a binding covered-hair line
+  instead, and the hair affordance read is `hidden`
+  ([../../character-chat/prompts.md](../../character-chat/prompts.md) §Character-chat state as a
+  narration system, [../../character-chat/affordance-cues.md](../../character-chat/affordance-cues.md)).
 - `partial` and `none` are distinct values even where a consumer treats them alike.
 
 ## Object subtypes
