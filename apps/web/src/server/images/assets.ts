@@ -437,6 +437,36 @@ function kindGuard(opts: { kind?: ImageKind; kinds?: readonly ImageKind[] }) {
 export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as const satisfies readonly ImageKind[];
 
 /**
+ * The character-deletion survival rule, stated once: **an image survives its
+ * character iff its kind is Gallery-listable** (`GALLERY_IMAGE_KINDS` above —
+ * scene, portrait_variant, entity). Everything else — `avatar` included, and
+ * every `HIDDEN_IMAGE_KINDS` entry — is hard-deleted with the character, rows
+ * and files alike, by this one `notInArray` predicate.
+ *
+ * `avatar` is neither Gallery-listable nor hidden: it is reachable only through
+ * the character's own portrait studio, which dies with the character, so it is
+ * not Gallery history. Left uncovered, a canonical avatar outlives its character
+ * with no surface left to view or delete it through, while still counting
+ * against the owner's storage quota forever (quota sums every non-hidden
+ * image). Routing `avatar` and every hidden kind through the same predicate as
+ * this one call, rather than two, keeps the rule impossible to state
+ * inconsistently at the two call sites.
+ *
+ * Owner-scoped and guarded by kind AND entity, the same shape every purge here
+ * uses, so a wrong character id can only ever delete nothing.
+ */
+export async function deleteNonGalleryCharacterImages(characterId: string, ownerId: string): Promise<number> {
+  return purgeImagesWhere(
+    and(
+      eq(images.ownerId, ownerId),
+      eq(images.entityKind, "character"),
+      eq(images.entityId, characterId),
+      notInArray(images.kind, [...GALLERY_IMAGE_KINDS]),
+    ),
+  );
+}
+
+/**
  * Kinds that are INTERNAL operational assets, never user-visible ones: the
  * identity face crop, the identity-trial render output, the
  * Advanced Image Lab's control fixtures and experiment renders, and the Image

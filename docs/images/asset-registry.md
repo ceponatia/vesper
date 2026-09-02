@@ -45,8 +45,8 @@ rows are **internal derived assets, not user content**. `HIDDEN_IMAGE_KINDS` kee
 - the per-owner storage quota — the stored sum and the admission reservation alike, since
   `imageRenderRejection` skips its storage leg for a declared hidden `outputKind`.
 
-`identity_face_crop` is hard-deleted with its character
-([identity-packs.md](identity-packs.md)); the two lab kinds belong to the
+`identity_face_crop` is hard-deleted with its character, one case of the Gallery-listable
+survival rule below ([identity-packs.md](identity-packs.md)); the two lab kinds belong to the
 [Advanced Image Lab](../image-lab/README.md) and are deleted with their experiment or by an admin's
 explicit fixture delete; `generator_output` is an
 [Image Generator](../image-generator/README.md) run's render, hard-deleted with its run.
@@ -56,15 +56,19 @@ explicit fixture delete; `generator_output` is an
 Deleting a location or item **hard-deletes** its owned `images` rows and unlinks the files
 immediately — best-effort `fs.unlink`, not a queued job (`deleteEntityImages`).
 
-A **character** is the exception: its Gallery-visible images (avatars, portraits, scenes) are
-deliberately never purged by `deleteEntityImages` — they survive the character as owner-visible
-Gallery history, with `images.entity_id` left dangling by design. Only the character's hidden
-identity assets (`identity_face_crop`, under `HIDDEN_IMAGE_KINDS` above) are hard-deleted, by the
-explicit `deleteCharacterIdentityAssets` call ([identity-packs.md](identity-packs.md)) — internal
-render inputs carry none of the Gallery-retention exception.
+A **character** is the exception, and follows its own rule: **an image survives its character iff
+its kind is Gallery-listable** (`GALLERY_IMAGE_KINDS` — scene, portrait_variant, entity). Those
+kinds are deliberately never purged by `deleteEntityImages` — they survive the character as
+owner-visible Gallery history, with `images.entity_id` left dangling by design. Everything else
+hard-deletes with the character, in one call to `deleteNonGalleryCharacterImages`
+(`images/assets.ts`): every `HIDDEN_IMAGE_KINDS` entry, **and the canonical `avatar`**, which is
+reachable only through the character's own portrait studio and is therefore not Gallery history —
+left uncovered, it would outlive its character with no surface left to view or delete it through,
+while still counting against the owner's storage quota. `identity_face_crop`
+([identity-packs.md](identity-packs.md)) is one case this same call covers, not a separate path.
 
 **Every** delete path — the owned-image helpers, the chat cascades, the entity reclaim, the look
-anchor's keep-latest purge, `deleteCharacterIdentityAssets` — runs the same `purgeImagesWhere(where)`
+anchor's keep-latest purge, `deleteNonGalleryCharacterImages` — runs the same `purgeImagesWhere(where)`
 (`images/assets.ts`): select → delete → best-effort unlink, once. The **caller** supplies the
 predicate and therefore owns every guard (owner id, kind, chat/entity), and the helper adds nothing
 to it, so a purge can never be wider than the call site asked for. Route handlers are barred from
@@ -76,7 +80,7 @@ lost, never a throw, because the sweep below reconciles it.
 A **chat** deletion and a **character** deletion both differ from the location/item rule, in the
 same direction: a chat deletion nulls `images.chat_id` (`SET NULL`) and keeps the asset, which
 survives in the Gallery; a character deletion leaves `images.entity_id` dangling and keeps every
-Gallery-visible asset the same way. The Gallery's own list queries join outward to the character
+Gallery-listable asset the same way. The Gallery's own list queries join outward to the character
 by that id — a LEFT JOIN, not an inner one — so a surviving image still lists once its character is
 gone, with no character id or name (the row lists; nothing links): the DTO carries the JOINED
 character's id, never the image's own dangling `entity_id`, so a gone character can never surface

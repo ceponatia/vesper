@@ -622,41 +622,32 @@ describe.runIf(ready)("DELETE /api/characters/:id — conversations go through d
     expect(await factCount(chat.memoryGroupId)).toBe(0);
   });
 
-  it("keeps a Gallery-visible image with a dangling entity_id and drops the hidden identity asset (#284)", async () => {
+  it("keeps a Gallery-listable image with a dangling entity_id and drops the avatar and hidden identity asset (#284)", async () => {
     // Falsified against the pre-#284 route, which called `deleteEntityImages("character", …)`
     // and hard-deleted every image row filed under the character — Gallery-visible art
-    // included. The fix: leave Gallery-visible kinds alone (dangling `entity_id` is
-    // intentional Gallery history) and purge only the hidden identity assets explicitly.
+    // included; and falsified again against the interim fix that left `avatar` alongside
+    // `portrait_variant`/`scene` as a survivor, when an avatar is reachable only through
+    // the character's own portrait studio (dead with the character) and is not Gallery
+    // history. The rule: an image survives its character iff its kind is Gallery-listable
+    // (`GALLERY_IMAGE_KINDS` — scene, portrait_variant, entity); everything else, avatar
+    // included, is purged by `deleteNonGalleryCharacterImages` in one call.
     const [gwen] = await db().insert(characters).values({ ownerId: authState.user.id, name: "Gwen", profile: {} }).returning();
     if (!gwen) throw new Error("failed to seed character");
     const chat = await createChat(gwen.id, "shared");
     plantedGroups.push(chat.memoryGroupId);
 
-    const [visible] = await db()
-      .insert(images)
-      .values(
-        canonicalImageRow({
-          ownerId: authState.user.id,
-          kind: "avatar" as const,
-          entityKind: "character" as const,
-          entityId: gwen.id,
-          status: "ready" as const,
-        }),
-      )
-      .returning({ id: images.id });
-    const [hidden] = await db()
-      .insert(images)
-      .values(
-        canonicalImageRow({
-          ownerId: authState.user.id,
-          kind: "identity_face_crop" as const,
-          entityKind: "character" as const,
-          entityId: gwen.id,
-          status: "ready" as const,
-        }),
-      )
-      .returning({ id: images.id });
-    if (!visible || !hidden) throw new Error("failed to seed image fixtures");
+    const image = (kind: "portrait_variant" | "avatar" | "identity_face_crop") =>
+      canonicalImageRow({
+        ownerId: authState.user.id,
+        kind,
+        entityKind: "character" as const,
+        entityId: gwen.id,
+        status: "ready" as const,
+      });
+    const [visible] = await db().insert(images).values(image("portrait_variant")).returning({ id: images.id });
+    const [avatar] = await db().insert(images).values(image("avatar")).returning({ id: images.id });
+    const [hidden] = await db().insert(images).values(image("identity_face_crop")).returning({ id: images.id });
+    if (!visible || !avatar || !hidden) throw new Error("failed to seed image fixtures");
 
     const res = await characterDelete(
       apiRequest(`/api/characters/${gwen.id}`, { method: "DELETE" }),
@@ -666,16 +657,20 @@ describe.runIf(ready)("DELETE /api/characters/:id — conversations go through d
 
     expect(await db().select({ id: characterChats.id }).from(characterChats).where(eq(characterChats.id, chat.id))).toHaveLength(0);
 
-    // The Gallery-visible row survives immediately — nothing in the route ever queues
+    // The Gallery-listable row survives immediately — nothing in the route ever queues
     // its removal, so no polling is needed for this half of the assertion.
     const [survivingRow] = await db().select({ entityId: images.entityId }).from(images).where(eq(images.id, visible.id)).limit(1);
     expect(survivingRow?.entityId).toBe(gwen.id); // dangling: the character row is gone, the pointer is not.
 
-    // `deleteCharacterIdentityAssets` runs fire-and-forget (`void … .catch(...)`), so poll
-    // for it to land rather than racing it.
+    // `deleteNonGalleryCharacterImages` runs fire-and-forget (`void … .catch(...)`), so
+    // poll for it to land rather than racing it — one call purges both the avatar and the
+    // hidden identity asset, so both are asserted together.
     await vi.waitFor(async () => {
-      const hiddenRows = await db().select({ id: images.id }).from(images).where(eq(images.id, hidden.id));
-      expect(hiddenRows).toHaveLength(0);
+      const remaining = await db()
+        .select({ id: images.id })
+        .from(images)
+        .where(inArray(images.id, [avatar.id, hidden.id]));
+      expect(remaining).toHaveLength(0);
     });
   });
 
