@@ -4,14 +4,27 @@ import {
   parseImagePromptProgramProvenance,
   type ImageRenderReference,
 } from "@vesper/image-core";
+import {
+  emptyGarmentCueState,
+  visualStateGarmentFixture,
+  visualStateSceneFixture,
+  VISUAL_STATE_SCENE_NPC,
+  VISUAL_STATE_SCENE_PLAYER,
+  type ChatGarmentStore,
+  type VisualStateGarmentInput,
+} from "@/contracts";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
+import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { LANE_PROBE_SUBJECT_ID, laneProbeShadowInput, resolvedImageProfileFixture } from "@/server/test-support";
+import { safeBuildVisualStateShadow } from "@/server/visual-state";
 import {
   activeChatLookProgram,
   buildChatLookCut,
   buildChatPlacePrompt,
+  CHAT_LOOK_CAMERA,
+  CHAT_LOOK_CAMERA_ID,
   chatLookKey,
   type ChatLookVisualCut,
 } from "./chat-look";
@@ -150,6 +163,12 @@ describe("chatLookKey — golden determinism pins", () => {
  * the pack does not suppress. The control assertion — the condition DID reach
  * the assembled subject slice — is what keeps the equality from passing
  * vacuously on a cut that never carried the fact.
+ *
+ * Two facts the pack cannot reach are withheld at the cut instead
+ * (`chatLookSubjectCut`), and the last two cases pin those: a second digest
+ * subject the shared factory files the room or the player under, which
+ * refuses the identity-critical compile outright, and a condition's attribute
+ * overlays, which move the morphology band while the key stands.
  */
 describe("activeChatLookProgram — a function of the look key's inputs alone", () => {
   const SOAKED: ActiveCondition = {
@@ -159,6 +178,8 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
     startedAtMinutes: 0,
     attributeEffects: [],
   };
+  const statesCurrent = (facts: readonly { concept: string }[]) =>
+    facts.some((fact) => fact.concept === "subject.current_state");
   const identity: ImageRenderReference = { role: "identity", buffer: Buffer.from("identity-bytes"), name: "Nyx" };
   const resolved = resolvedImageProfileFixture({
     slug: "qwen/qwen-image-edit-2511",
@@ -195,8 +216,6 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
     const dry = compile({ ...laneProbeShadowInput(), conditions: [] });
     const soaked = compile({ ...laneProbeShadowInput(), conditions: [SOAKED] });
     // Control: the condition reached the slice the compile ran over, and only there.
-    const statesCurrent = (facts: readonly { concept: string }[]) =>
-      facts.some((fact) => fact.concept === "subject.current_state");
     expect(statesCurrent(soaked.subjects[0]?.facts ?? [])).toBe(true);
     expect(statesCurrent(dry.subjects[0]?.facts ?? [])).toBe(false);
     expect(soaked.prompt).toBe(dry.prompt);
@@ -204,6 +223,87 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
     // The omission is provenance-visible: the row names the chat-look pack, not the shared one.
     const provenance = parseImagePromptProgramProvenance(soaked.meta[IMAGE_PROMPT_PROGRAM_META_KEY]);
     expect(provenance?.positivePackVersionId).toBe(qwenImageEdit2511ChatLookPositivePack.id);
+  });
+
+  /**
+   * A garment left at a scene locus files under the shared factory's scene
+   * subject, and the player's recorded posture under the player subject. Each
+   * is a digest subject with nobody's owners behind it, so the compile refuses
+   * on its missing age and coverage anchors: the anchor is not stale but
+   * ABSENT until the coat is picked up. Both cuts are production-shaped —
+   * player subject, scene subject, both participants mapped — so the base
+   * compiling at all kills the player half and the byte-equality kills the
+   * coat half. The control assembles the dropped cut through the shared shadow
+   * WITHOUT the look's narrowing and shows it does file the room and the
+   * player, so neither equality passes on a fixture that never carried them.
+   */
+  it("two cuts that differ only in a garment left in the room compile the same prompt, from one subject", () => {
+    const actorId = `c:${LANE_PROBE_SUBJECT_ID}`;
+    const worn = visualStateGarmentFixture({ id: "g_top", categoryId: "top", locus: { kind: "worn", actorId }, layer: 1 });
+    const coat = visualStateGarmentFixture({
+      id: "g_coat",
+      categoryId: "outerwear",
+      name: "grey wool coat",
+      locus: { kind: "scene", placeName: "the study", anchor: "over the desk chair" },
+    });
+    const store = (garments: readonly VisualStateGarmentInput[]): ChatGarmentStore => ({
+      seeded: true,
+      blueprints: Object.fromEntries(garments.map((garment) => [garment.instance.blueprintHash, garment.blueprint])),
+      instances: garments.map((garment) => garment.instance),
+      cues: emptyGarmentCueState(),
+      coverage: {},
+    });
+    const roomed = (garments: readonly VisualStateGarmentInput[]): ChatLookVisualCut => ({
+      ...laneProbeShadowInput(),
+      garments: { store: store(garments), actorId, layersByGarmentId: new Map([["g_top", 1]]) },
+      playerSubjectId: "player",
+      sceneSubjectId: "scene",
+      sceneRelations: {
+        scene: visualStateSceneFixture(),
+        subjectsByParticipant: new Map([
+          [String(VISUAL_STATE_SCENE_NPC), LANE_PROBE_SUBJECT_ID],
+          [String(VISUAL_STATE_SCENE_PLAYER), "player"],
+        ]),
+      },
+    });
+    const hung = roomed([worn]);
+    const dropped = roomed([worn, coat]);
+    const shared = safeBuildVisualStateShadow({
+      ...dropped,
+      camera: { cameraId: CHAT_LOOK_CAMERA_ID, spec: CHAT_LOOK_CAMERA },
+    });
+    expect(shared?.snapshot.subjects).toEqual(expect.arrayContaining(["player", "scene"]));
+
+    const before = compile(hung);
+    const after = compile(dropped);
+    expect(after.subjects.map((subject) => subject.entityId)).toEqual([LANE_PROBE_SUBJECT_ID]);
+    expect(after.prompt).toBe(before.prompt);
+    expect(after.negativePrompt).toBe(before.negativePrompt);
+  });
+
+  /**
+   * A condition's `attributeEffects` overlay attributes at a precedence the
+   * key never hashes, and the morphology band reads every attribute in its
+   * group: `wings.carriage` is mutable inside the `wings` group, and the
+   * overlay reached the anchor as "wings: membranous, folded" while the key
+   * stood. Two controls keep it honest — the registry admits the overlay (a
+   * fixture the inherent-attribute guard drops would pass vacuously), and the
+   * condition itself still reached the slice, because the cut withholds the
+   * effects and not the condition.
+   */
+  it("two cuts that differ only in a condition that overlays an attribute compile the same prompt", () => {
+    const EXHAUSTED: ActiveCondition = {
+      ...SOAKED,
+      id: "cond-exhausted",
+      label: "exhausted",
+      attributeEffects: [{ attributeId: "wings.carriage", value: "folded" }],
+    };
+    expect(conditionAttributeOverlays([EXHAUSTED]).map((overlay) => overlay.id)).toEqual(["wings.carriage"]);
+    const rested = compile({ ...laneProbeShadowInput(), conditions: [] });
+    const exhausted = compile({ ...laneProbeShadowInput(), conditions: [EXHAUSTED] });
+    expect(statesCurrent(exhausted.subjects[0]?.facts ?? [])).toBe(true);
+    expect(exhausted.prompt).toBe(rested.prompt);
+    expect(exhausted.negativePrompt).toBe(rested.negativePrompt);
   });
 });
 
