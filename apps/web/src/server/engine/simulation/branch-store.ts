@@ -245,10 +245,7 @@ export interface DurableBranchState {
 }
 
 /** Assemble the live typed projection and event stream inside a caller's transaction. */
-export async function assembleBranchState(
-  tx: DbExecutor,
-  ancestry: BranchAncestry,
-): Promise<DurableBranchState> {
+export async function assembleBranchState(tx: SimTx, ancestry: BranchAncestry): Promise<DurableBranchState> {
   const branch = ancestry.rows[0];
   if (!branch) throw new Error("Simulation branch not found");
   const [worldRows, actorRows, itemRows, events] = await Promise.all([

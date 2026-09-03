@@ -42,8 +42,13 @@
   exclusive holding update, branch compare-and-swap advance, and durable command result under one
   `FOR UPDATE OF sim_branches` transaction. The joined world row is metadata, not a
   sibling-branch mutex. No model, network callback, or wall-clock-derived simulation decision is
-  allowed under that lock. The typed branch reader uses a read-only `REPEATABLE READ` transaction
-  so head, projection rows, and events share one snapshot.
+  allowed under that lock.
+- Every public multi-query simulation reader (`readDurable*`, `explainItemPlacement`) owns one
+  read-only `REPEATABLE READ` transaction, so its head, projection rows, and events describe one
+  committed state. A lower-level multi-query loader (`load*Projection`, `assembleBranchState`)
+  requires the caller's transaction and never opens its own — a transaction inside a transaction
+  is a savepoint, not a snapshot. No transaction stays open across a model call or a command
+  submission.
 - `resolveNextDueTrigger` claims a trigger and increments its attempt count in one transaction,
   then resolves it through that same `submitDurableItemTransfer` transaction. Attempts increment
   at **claim** time, not at failure time: a worker that dies mid-resolution never runs its own

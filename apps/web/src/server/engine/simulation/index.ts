@@ -1,4 +1,5 @@
 export {
+  loadActivitiesProjection,
   readDurableActivities,
   seedDurableActionDefinitions,
   submitDurableCancelActivity,
@@ -69,6 +70,7 @@ export {
   legacyUnanchoredEngineTestMode,
 } from "./legacy-test-mode";
 export {
+  loadCommitmentsProjection,
   readDurableCommitments,
   submitDurableCreateCommitment,
   submitDurableRaisePressure,
@@ -76,6 +78,7 @@ export {
   type CommitmentStoreOptions,
 } from "./commitment-store";
 export {
+  loadEngagementsProjection,
   readDurableEngagements,
   submitDurableAcknowledgePressure,
   submitDurableEndEngagement,
@@ -133,6 +136,7 @@ export {
 } from "./knowledge-store";
 export { loadActorBody } from "./body-rows";
 export {
+  loadBodiesProjection,
   readDurableBodies,
   seedDurableBodyRhythms,
   submitDurableApplyBodySource,
@@ -200,6 +204,7 @@ export {
 export {
   insertReplayedKnowledge,
   loadKnowledgeProjection,
+  readDurableKnowledge,
   recordCommandKnowledge,
 } from "./knowledge-recorder";
 export {
