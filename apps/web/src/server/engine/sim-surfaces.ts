@@ -311,13 +311,21 @@ export async function readSimChatMeters(chatId: string): Promise<Record<string, 
   try {
     // The branch clock is the integrate target — a narrower per-actor load
     // (WITH rhythms, unlike the branch projection) is all the strip needs.
-    const [branch] = await db()
-      .select({ storySecond: simBranches.storySecond })
-      .from(simBranches)
-      .where(eq(simBranches.id, branchId));
-    if (!branch) return null;
-    const storySecond = branch.storySecond;
-    const body = await loadActorBody(db(), branchId, primaryActorId);
+    // Clock and body rows come from one snapshot, so a command committing
+    // mid-read cannot integrate stale meters to a newer clock.
+    const snapshot = await db().transaction(
+      async (tx) => {
+        const [branch] = await tx
+          .select({ storySecond: simBranches.storySecond })
+          .from(simBranches)
+          .where(eq(simBranches.id, branchId));
+        if (!branch) return null;
+        return { storySecond: branch.storySecond, body: await loadActorBody(tx, branchId, primaryActorId) };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    if (!snapshot) return null;
+    const { storySecond, body } = snapshot;
     if (body.meters.length === 0) return null;
     const integrated: Record<string, number> = {};
     for (const meter of body.meters) {

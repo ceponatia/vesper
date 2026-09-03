@@ -24,9 +24,7 @@ import {
 import { explainItemPlacement } from "./audit-store";
 import {
   forkBranch,
-  readBranchAncestryEvents,
   readDurableBranchState,
-  loadBranchAncestry,
 } from "./branch-store";
 import { submitDurableTransferItem } from "./material-store";
 import { consumeNextItemTransferOutbox, rebuildItemTransferFeed } from "./outbox-store";
@@ -44,6 +42,7 @@ import {
   expectAccepted,
   LEGACY_ENGINE_TEST_PLAYER_ID,
   playerPrincipal,
+  readBranchEvents,
   seedSimBranch,
   simulationSuiteHarness,
 } from "@/server/test-support";
@@ -338,8 +337,7 @@ describe.runIf(harness.ready)("E2.5 forks, snapshots, and audit", () => {
       containerLocus(ids.sourceId),
     );
 
-    const childBAncestry = await loadBranchAncestry(db(), childB);
-    const childBEvents = await readBranchAncestryEvents(db(), childBAncestry);
+    const childBEvents = await readBranchEvents(childB, { includeAncestry: true });
     expect(childBEvents.map((event) => [event.sequence, event.branchId])).toEqual([
       [1, ids.branchId],
       [2, childB],

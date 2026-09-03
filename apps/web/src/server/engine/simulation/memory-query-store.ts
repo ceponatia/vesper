@@ -20,6 +20,7 @@ import {
 import { loadBranchAncestry } from "./branch-store";
 import { memoryDocumentFromRow, memoryIndexLag } from "./memory-index-store";
 import { softCanonEntryFromRow } from "./soft-canon-recorder";
+import type { SimTx } from "./trigger-projector";
 
 /**
  * E4.4 — the eligibility-before-similarity pipeline. Every gate before
@@ -40,7 +41,7 @@ const liveBeliefStatuses = ["active", "doubted"] as const;
  * Missing rows fail closed — a document without a live source is silence.
  */
 async function narrowByLiveSourceRows(
-  database: Db,
+  tx: SimTx,
   branchId: string,
   viewpointActorId: string,
   atStorySecond: number,
@@ -59,7 +60,7 @@ async function narrowByLiveSourceRows(
 
   const beliefDocIds = candidates.filter((row) => row.sourceKind === "belief");
   if (beliefDocIds.length > 0) {
-    const rows = await database
+    const rows = await tx
       .select({ beliefId: simBeliefs.beliefId })
       .from(simBeliefs)
       .where(
@@ -79,7 +80,7 @@ async function narrowByLiveSourceRows(
   const assertionDocs = candidates.filter((row) => row.sourceKind === "assertion");
   if (assertionDocs.length > 0) {
     const assertionIds = assertionDocs.map((row) => row.sourceId);
-    const activeRows = await database
+    const activeRows = await tx
       .select({ assertionId: simAssertions.assertionId })
       .from(simAssertions)
       .where(
@@ -92,7 +93,7 @@ async function narrowByLiveSourceRows(
     const activeAssertions = new Set(activeRows.map((row) => row.assertionId));
     // visibility=belief_holders: the viewpoint must hold a live belief in the
     // assertion on this branch — knowing OF a claim is what authorizes recall.
-    const heldRows = await database
+    const heldRows = await tx
       .select({ assertionId: simBeliefs.assertionId })
       .from(simBeliefs)
       .where(
@@ -111,7 +112,7 @@ async function narrowByLiveSourceRows(
 
   const softCanonDocs = candidates.filter((row) => row.sourceKind === "soft_canon");
   if (softCanonDocs.length > 0) {
-    const rows = await database
+    const rows = await tx
       .select()
       .from(simSoftCanon)
       .where(
@@ -152,145 +153,153 @@ export async function queryMemoryDocuments(
   const database = options.database ?? db();
   const input = memoryQueryInputSchema.parse(rawInput);
 
-  // Step 1 — authenticate world, branch, and viewpoint. A viewpoint with no
-  // presence on this timeline recalls nothing, by error rather than absence.
-  const [branch] = await database
-    .select({ id: simBranches.id, worldStatus: simWorlds.status })
-    .from(simBranches)
-    .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
-    .where(eq(simBranches.id, input.branchId))
-    .limit(1);
-  if (!branch || branch.worldStatus !== "active") {
-    throw new Error("Memory query requires an active world branch");
-  }
-  const [locus] = await database
-    .select({ actorId: simPhysicalLoci.actorId })
-    .from(simPhysicalLoci)
-    .where(
-      and(
-        eq(simPhysicalLoci.branchId, input.branchId),
-        eq(simPhysicalLoci.actorId, input.viewpointActorId),
-      ),
-    )
-    .limit(1);
-  if (!locus) throw new Error("Memory query viewpoint has no presence on this branch");
+  // Every relational gate and the index-lag diagnostic read one snapshot, so a
+  // command committing mid-query cannot admit a document on the old branch
+  // state and check its source row on the new one. Ranking is pure.
+  return database.transaction(
+    async (tx) => {
+      // Step 1 — authenticate world, branch, and viewpoint. A viewpoint with no
+      // presence on this timeline recalls nothing, by error rather than absence.
+      const [branch] = await tx
+        .select({ id: simBranches.id, worldStatus: simWorlds.status })
+        .from(simBranches)
+        .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
+        .where(eq(simBranches.id, input.branchId))
+        .limit(1);
+      if (!branch || branch.worldStatus !== "active") {
+        throw new Error("Memory query requires an active world branch");
+      }
+      const [locus] = await tx
+        .select({ actorId: simPhysicalLoci.actorId })
+        .from(simPhysicalLoci)
+        .where(
+          and(
+            eq(simPhysicalLoci.branchId, input.branchId),
+            eq(simPhysicalLoci.actorId, input.viewpointActorId),
+          ),
+        )
+        .limit(1);
+      if (!locus) throw new Error("Memory query viewpoint has no presence on this branch");
 
-  // Step 2 — branch ancestry bounds (R4: reference, never copy). Documents on
-  // an ancestor are visible only below the tightest fork boundary crossed.
-  const ancestry = await loadBranchAncestry(database, input.branchId);
-  const rangeConditions = ancestry.ranges.map((range) =>
-    and(
-      eq(simMemoryDocuments.branchId, range.branchId),
-      lte(simMemoryDocuments.firstSequence, range.maxSequence),
-    ),
-  );
+      // Step 2 — branch ancestry bounds (R4: reference, never copy). Documents on
+      // an ancestor are visible only below the tightest fork boundary crossed.
+      const ancestry = await loadBranchAncestry(tx, input.branchId);
+      const rangeConditions = ancestry.ranges.map((range) =>
+        and(
+          eq(simMemoryDocuments.branchId, range.branchId),
+          lte(simMemoryDocuments.firstSequence, range.maxSequence),
+        ),
+      );
 
-  // Steps 2–4 — source kind, validity interval, doc-level supersedence,
-  // visibility, and structured filters, all relational, all before ranking.
-  const conditions: (SQL | undefined)[] = [
-    or(...rangeConditions),
-    lte(simMemoryDocuments.validFromSecond, input.atStorySecond),
-    or(
-      isNull(simMemoryDocuments.validUntilSecond),
-      sql`${simMemoryDocuments.validUntilSecond} >= ${input.atStorySecond}`,
-    ),
-    or(
-      isNull(simMemoryDocuments.supersededAtSecond),
-      sql`${simMemoryDocuments.supersededAtSecond} > ${input.atStorySecond}`,
-    ),
-    or(
-      eq(simMemoryDocuments.visibility, "public"),
-      and(
-        eq(simMemoryDocuments.visibility, "actors"),
-        sql`${simMemoryDocuments.eligibleActorIds} @> ${JSON.stringify([input.viewpointActorId])}::jsonb`,
-      ),
-      // Narrowed to actual belief holders relationally below (fail closed).
-      eq(simMemoryDocuments.visibility, "belief_holders"),
-    ),
-  ];
-  if (input.sourceKinds !== undefined) {
-    conditions.push(inArray(simMemoryDocuments.sourceKind, input.sourceKinds));
-  }
+      // Steps 2–4 — source kind, validity interval, doc-level supersedence,
+      // visibility, and structured filters, all relational, all before ranking.
+      const conditions: (SQL | undefined)[] = [
+        or(...rangeConditions),
+        lte(simMemoryDocuments.validFromSecond, input.atStorySecond),
+        or(
+          isNull(simMemoryDocuments.validUntilSecond),
+          sql`${simMemoryDocuments.validUntilSecond} >= ${input.atStorySecond}`,
+        ),
+        or(
+          isNull(simMemoryDocuments.supersededAtSecond),
+          sql`${simMemoryDocuments.supersededAtSecond} > ${input.atStorySecond}`,
+        ),
+        or(
+          eq(simMemoryDocuments.visibility, "public"),
+          and(
+            eq(simMemoryDocuments.visibility, "actors"),
+            sql`${simMemoryDocuments.eligibleActorIds} @> ${JSON.stringify([input.viewpointActorId])}::jsonb`,
+          ),
+          // Narrowed to actual belief holders relationally below (fail closed).
+          eq(simMemoryDocuments.visibility, "belief_holders"),
+        ),
+      ];
+      if (input.sourceKinds !== undefined) {
+        conditions.push(inArray(simMemoryDocuments.sourceKind, input.sourceKinds));
+      }
 
-  const fetchedRows = await database
-    .select()
-    .from(simMemoryDocuments)
-    .where(and(...conditions))
-    .orderBy(desc(simMemoryDocuments.storySecond), asc(simMemoryDocuments.docId))
-    .limit(input.maxCandidates);
+      const fetchedRows = await tx
+        .select()
+        .from(simMemoryDocuments)
+        .where(and(...conditions))
+        .orderBy(desc(simMemoryDocuments.storySecond), asc(simMemoryDocuments.docId))
+        .limit(input.maxCandidates);
 
-  // A fork child may hold its own re-indexed copy of an ancestor's document
-  // (same doc id, diverged state). The nearest branch in the ancestry wins —
-  // the child's view of its own timeline, never the parent's.
-  const branchRank = new Map(ancestry.ranges.map((range, index) => [range.branchId, index]));
-  const dedupedById = new Map<string, (typeof fetchedRows)[number]>();
-  for (const row of fetchedRows) {
-    const held = dedupedById.get(row.docId);
-    const rowRank = branchRank.get(row.branchId) ?? Number.MAX_SAFE_INTEGER;
-    const heldRank = held === undefined ? Number.MAX_SAFE_INTEGER : (branchRank.get(held.branchId) ?? Number.MAX_SAFE_INTEGER);
-    if (held === undefined || rowRank < heldRank) dedupedById.set(row.docId, row);
-  }
-  const candidateRows = [...dedupedById.values()];
+      // A fork child may hold its own re-indexed copy of an ancestor's document
+      // (same doc id, diverged state). The nearest branch in the ancestry wins —
+      // the child's view of its own timeline, never the parent's.
+      const branchRank = new Map(ancestry.ranges.map((range, index) => [range.branchId, index]));
+      const dedupedById = new Map<string, (typeof fetchedRows)[number]>();
+      for (const row of fetchedRows) {
+        const held = dedupedById.get(row.docId);
+        const rowRank = branchRank.get(row.branchId) ?? Number.MAX_SAFE_INTEGER;
+        const heldRank = held === undefined ? Number.MAX_SAFE_INTEGER : (branchRank.get(held.branchId) ?? Number.MAX_SAFE_INTEGER);
+        if (held === undefined || rowRank < heldRank) dedupedById.set(row.docId, row);
+      }
+      const candidateRows = [...dedupedById.values()];
 
-  const surviving = await narrowByLiveSourceRows(
-    database,
-    input.branchId,
-    input.viewpointActorId,
-    input.atStorySecond,
-    candidateRows,
-  );
-  let eligible = candidateRows.filter((row) => surviving.has(row.docId));
-  if (input.aboutEntityIds !== undefined && input.aboutEntityIds.length > 0) {
-    const wanted = new Set(input.aboutEntityIds);
-    eligible = eligible.filter((row) => row.aboutEntityIds.some((id) => wanted.has(id)));
-  }
+      const surviving = await narrowByLiveSourceRows(
+        tx,
+        input.branchId,
+        input.viewpointActorId,
+        input.atStorySecond,
+        candidateRows,
+      );
+      let eligible = candidateRows.filter((row) => surviving.has(row.docId));
+      if (input.aboutEntityIds !== undefined && input.aboutEntityIds.length > 0) {
+        const wanted = new Set(input.aboutEntityIds);
+        eligible = eligible.filter((row) => row.aboutEntityIds.some((id) => wanted.has(id)));
+      }
 
-  // Steps 5–6 — similarity and diversification inside the eligible set only.
-  const candidates: MemoryRankCandidate[] = eligible.map((row) => ({
-    doc: memoryDocumentFromRow(row),
-    ...(row.embedding === null ? {} : { embedding: row.embedding }),
-  }));
-  const { ranked, unembeddedEligible } = rankMemoryDocuments({
-    candidates,
-    ...(input.queryText === undefined ? {} : { queryText: input.queryText }),
-    ...(input.queryEmbedding === undefined ? {} : { queryEmbedding: input.queryEmbedding }),
-    ...(input.queryEmbeddingModel === undefined
-      ? {}
-      : { queryEmbeddingModel: input.queryEmbeddingModel }),
-    limit: input.limit,
-  });
-
-  // Step 7 — provenance and epistemic label on every result, plus index lag.
-  const lag = await memoryIndexLag(input.branchId, { database });
-  return memoryRecallResponseSchema.parse({
-    branchId: input.branchId,
-    viewpointActorId: input.viewpointActorId,
-    results: ranked
-      .map(({ doc, scoreFixedPoint }) => ({
-        docId: doc.id,
-        sourceKind: doc.sourceKind,
-        sourceId: doc.sourceId,
-        ...(doc.sourceEventId === undefined ? {} : { sourceEventId: doc.sourceEventId }),
-        epistemicLabel: doc.epistemicLabel,
-        ...(doc.confidenceFixedPoint === undefined
+      // Steps 5–6 — similarity and diversification inside the eligible set only.
+      const candidates: MemoryRankCandidate[] = eligible.map((row) => ({
+        doc: memoryDocumentFromRow(row),
+        ...(row.embedding === null ? {} : { embedding: row.embedding }),
+      }));
+      const { ranked, unembeddedEligible } = rankMemoryDocuments({
+        candidates,
+        ...(input.queryText === undefined ? {} : { queryText: input.queryText }),
+        ...(input.queryEmbedding === undefined ? {} : { queryEmbedding: input.queryEmbedding }),
+        ...(input.queryEmbeddingModel === undefined
           ? {}
-          : { confidenceFixedPoint: doc.confidenceFixedPoint }),
-        text: doc.text,
-        storySecond: doc.storySecond,
-        scoreFixedPoint,
-      }))
-      .sort(
-        (left, right) =>
-          right.scoreFixedPoint - left.scoreFixedPoint ||
-          right.storySecond - left.storySecond ||
-          compareStableText(left.docId, right.docId),
-      ),
-    diagnostics: {
-      headSequence: lag.headSequence,
-      indexedThroughSequence: lag.indexedThroughSequence,
-      pendingObligations: lag.pendingObligations,
-      failedObligations: lag.failedObligations,
-      unembeddedEligible,
+          : { queryEmbeddingModel: input.queryEmbeddingModel }),
+        limit: input.limit,
+      });
+
+      // Step 7 — provenance and epistemic label on every result, plus index lag.
+      const lag = await memoryIndexLag(input.branchId, { database: tx });
+      return memoryRecallResponseSchema.parse({
+        branchId: input.branchId,
+        viewpointActorId: input.viewpointActorId,
+        results: ranked
+          .map(({ doc, scoreFixedPoint }) => ({
+            docId: doc.id,
+            sourceKind: doc.sourceKind,
+            sourceId: doc.sourceId,
+            ...(doc.sourceEventId === undefined ? {} : { sourceEventId: doc.sourceEventId }),
+            epistemicLabel: doc.epistemicLabel,
+            ...(doc.confidenceFixedPoint === undefined
+              ? {}
+              : { confidenceFixedPoint: doc.confidenceFixedPoint }),
+            text: doc.text,
+            storySecond: doc.storySecond,
+            scoreFixedPoint,
+          }))
+          .sort(
+            (left, right) =>
+              right.scoreFixedPoint - left.scoreFixedPoint ||
+              right.storySecond - left.storySecond ||
+              compareStableText(left.docId, right.docId),
+          ),
+        diagnostics: {
+          headSequence: lag.headSequence,
+          indexedThroughSequence: lag.indexedThroughSequence,
+          pendingObligations: lag.pendingObligations,
+          failedObligations: lag.failedObligations,
+          unembeddedEligible,
+        },
+      });
     },
-  });
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
 }
