@@ -15,7 +15,7 @@ import { provenanceSourceSchema, resolveProvenance } from "../../registry";
 export const traitValueSchema = z.object({
   id: z.string().min(1),
   value: z.number(),
-  // Leaf-.catch (resilience §3): a malformed source degrades to the low-precedence
+  // Leaf-.catch (docs/resilience.md §3): a malformed source degrades to the low-precedence
   // "creation" instead of rejecting the whole embedding profile at the JSONB boundary.
   source: provenanceSourceSchema.catch("creation"),
   sourceId: z.string().min(1).optional(),

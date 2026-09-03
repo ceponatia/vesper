@@ -84,7 +84,7 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  * which is what the legacy multi-reference builder already sends these
  * endpoints, and never asserts a slot number.
  *
- * That is also why the renumbering hazard #256 §4 names cannot arise here: a
+ * That is also why the renumbering hazard section 4 of #256 names cannot arise here: a
  * prompt that never says "Image 2" cannot say it about the wrong image.
  */
 

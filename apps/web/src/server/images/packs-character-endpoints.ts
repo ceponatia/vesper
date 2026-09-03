@@ -15,7 +15,7 @@ import {
 
 /**
  * The seeded packs and bindings for every character-image endpoint OUTSIDE the
- * two Qwen rows — issue #256 §3, owner ruling 2026-09-01: keep every profile
+ * two Qwen rows — issue #256, section 3, owner ruling 2026-09-01: keep every profile
  * the picker currently offers, give each one a real production compiler, and
  * retire nothing.
  *
@@ -480,7 +480,7 @@ export const sdxlPulidCharacterPacks = seedCharacterEndpoint({
  * lane's `nsfw_test` bench kind (`pairProfileWithNsfwLora`) and the chat scene
  * lane's intimate route (`resolveIntimateSceneLoraRoute`).
  *
- * Binding it is what #256 §3's last paragraph requires. A route that resolves a
+ * Binding it is what the last paragraph of #256's section 3 requires. A route that resolves a
  * profile, swaps the model, and then finds no binding for the model it is about
  * to call would stay on the legacy prompt forever — a hidden exception that
  * blocks #251 from deleting the old builders, and one nothing in the binding

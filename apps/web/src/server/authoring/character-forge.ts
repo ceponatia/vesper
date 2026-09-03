@@ -544,8 +544,8 @@ const CARDS_FORGE_MAX = 2;
  * such a card would be dead weight (`card_trigger_shadowed`). A card left
  * with no label or no triggers drops whole; the set caps at CARDS_FORGE_MAX.
  * Severity clamps to 0–100. Ids derive from the normalized label (contracts
- * mint none; the label-hash keeps demo-mode forges deterministic — resilience
- * §6 — and label-dedup below guarantees uniqueness within the set).
+ * mint none; the label-hash keeps demo-mode forges deterministic —
+ * docs/resilience.md §6 — and label-dedup below guarantees uniqueness within the set).
  */
 export function groundSocialCards(
   raw: ProfileSection["cards"],
