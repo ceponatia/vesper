@@ -22,7 +22,7 @@ export { SOURCE_PRECEDENCE };
 export const attributeValueSchema = z.object({
   id: attributeIdPatternSchema,
   value: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]),
-  // Leaf-.catch (resilience §3): a malformed source degrades to the low-precedence
+  // Leaf-.catch (docs/resilience.md §3): a malformed source degrades to the low-precedence
   // "creation" (it can never escalate to manual/magic authority) instead of
   // rejecting the whole embedding profile at the JSONB boundary.
   source: attributeValueSourceSchema.catch("creation"),

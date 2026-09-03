@@ -104,7 +104,7 @@ const STRATEGY_FOR_TASK = {
 
 describe("character prompt-pack coverage", () => {
   /**
-   * THE §3 ACCEPTANCE CRITERION. Every character-image profile the catalog
+   * THE ACCEPTANCE CRITERION OF #256'S SECTION 3. Every character-image profile the catalog
    * offers resolves an ACTIVE binding for its own model, task and profile key,
    * and that binding is coherent end to end: a strategy matching the profile
    * row's, a dialect with a REGISTERED COMPILER, and two pack versions that

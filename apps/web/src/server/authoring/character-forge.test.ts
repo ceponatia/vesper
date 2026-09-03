@@ -317,7 +317,7 @@ describe("groundSocialCards (forge-gaps gap 2)", () => {
    * GOLDEN DETERMINISM PIN — never "update to fix" a failure here.
    *
    * A card id is `card_<base36 of the normalized label's FNV-1a>`, which is the
-   * forge's reproducibility seam (resilience §6 — the same seed must forge the
+   * forge's reproducibility seam (docs/resilience.md §6 — the same seed must forge the
    * same character). This value was computed from the local `hashSeed` this
    * module carried BEFORE it adopted the shared `@/lib/hash`. If it moves,
    * nothing throws: the forge just quietly stops reproducing. Fix the hash,
