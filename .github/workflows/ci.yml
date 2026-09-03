@@ -21,9 +21,18 @@ name: CI
 # main`) is the deliberate pre-deploy verification and runs every gate.
 # Documentation-only changes run only the `docs` job — the zero-install
 # `pnpm lint:docs` checks — and skip every code gate; database and
-# engine-specific work only runs when affected. `verify` requires every
-# APPLICABLE gate to have succeeded, so a gate that is skipped or cancelled
-# while its classifier output says it should have run fails the aggregate.
+# engine-specific work only runs when affected. A documentation follow-up to
+# a revision that already passed `verify` takes the same docs-only path for
+# that run: `scripts/ci-safe-followup.mjs` confirms the update is a plain
+# ancestor-preserving push touching documentation paths only, that the
+# previous head's CI run for this PR succeeded with its `verify` check green,
+# and that the base did not move — then the new head runs the docs checks and
+# earns its own fresh `verify`. Anything the detector cannot prove (force push,
+# rebase, workflow or other code path, missing or non-green previous result,
+# API error) falls back to the ordinary whole-PR classification. `verify`
+# requires every APPLICABLE gate to have succeeded, so a gate that is skipped
+# or cancelled while its classifier output says it should have run fails the
+# aggregate.
 #
 # Billing shape: CodeBuild bills each workflow job as its own build, so a job's
 # fixed setup (checkout + install) costs as much as its work on short gates.
@@ -46,6 +55,16 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Every job only reads. `actions` and `checks` are what the safe-follow-up
+# detector needs to look up the previous head's workflow run and its `verify`
+# check run; `contents` is checkout; `pull-requests` covers the run lookup's
+# pull-request association.
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+
 jobs:
   changes:
     name: classify changes
@@ -60,11 +79,31 @@ jobs:
       integration: ${{ steps.classify.outputs.integration }}
       engine: ${{ steps.classify.outputs.engine }}
       build: ${{ steps.classify.outputs.build }}
+      safe_followup: ${{ steps.classify.outputs.safe_followup }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Zero-install, like the docs job: the script is plain ESM on Node
+      # built-ins and the global fetch. It always exits 0 — a `false` verdict
+      # is the ordinary path, never a failure — and its reason is printed.
+      - name: Detect safe follow-up
+        id: followup
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_FILE: .github/workflows/ci.yml
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci-safe-followup.mjs
 
       - name: Classify changed paths
         id: classify
@@ -74,6 +113,8 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SAFE_FOLLOWUP: ${{ steps.followup.outputs.safe_followup }}
+          SAFE_FOLLOWUP_REASON: ${{ steps.followup.outputs.reason }}
         run: |
           set -euo pipefail
 
@@ -86,6 +127,26 @@ jobs:
               echo "integration=true"
               echo "engine=true"
               echo "build=true"
+              echo "safe_followup=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A documentation follow-up to an already-green revision: the code
+          # the previous run proved is unchanged, so only the docs job runs
+          # and `verify` is produced fresh from it. The detector has already
+          # excluded prod-bound, force-pushed, rebased and non-documentation
+          # updates, so this is the docs-only verdict for this run.
+          if [[ "$SAFE_FOLLOWUP" == "true" ]]; then
+            echo "Safe documentation follow-up: $SAFE_FOLLOWUP_REASON"
+            {
+              echo "docs_only=true"
+              echo "docs=true"
+              echo "code=false"
+              echo "integration=false"
+              echo "engine=false"
+              echo "build=false"
+              echo "safe_followup=true"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -274,6 +335,7 @@ jobs:
             echo "integration=$integration"
             echo "engine=$engine"
             echo "build=$build"
+            echo "safe_followup=false"
           } >> "$GITHUB_OUTPUT"
 
   docs:
@@ -443,6 +505,7 @@ jobs:
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           BUILD_RESULT: ${{ needs.production-build.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          SAFE_FOLLOWUP: ${{ needs.changes.outputs.safe_followup }}
           DOCS: ${{ needs.changes.outputs.docs }}
           CODE: ${{ needs.changes.outputs.code }}
           INTEGRATION: ${{ needs.changes.outputs.integration }}
@@ -482,7 +545,9 @@ jobs:
             exit 1
           fi
 
-          if [[ "$DOCS_ONLY" == "true" ]]; then
+          if [[ "$SAFE_FOLLOWUP" == "true" ]]; then
+            echo "Safe documentation follow-up: documentation checks passed; previous revision's code gates stand."
+          elif [[ "$DOCS_ONLY" == "true" ]]; then
             echo "Documentation-only change: documentation checks passed; code gates intentionally skipped."
           else
             echo "All applicable CI gates passed."

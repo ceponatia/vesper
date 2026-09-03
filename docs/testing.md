@@ -171,6 +171,21 @@ that job and nothing else; a mixed change runs it alongside the code gates.
 Every ready code PR runs lint, static checks and unit tests; the engine and
 build jobs are path-gated as described below.
 
+A documentation follow-up to a revision that already passed `verify` takes the
+documentation-only path for that run. The classifier's detector
+(`scripts/ci-safe-followup.mjs`, Node built-ins only) accepts an update when
+every condition holds: the event is a pull-request `synchronize` into a branch
+other than `prod`; the previous head is an ancestor of the new head; every
+path changed between them is in the documentation set above; the newest CI
+run for that pull request at the previous head completed with `success`
+against the same base sha; and that run's `verify` check run from GitHub
+Actions concluded `success`. The new head then runs the documentation checks
+and earns its own `verify` — no result is copied forward, and a failing docs
+check fails it. A force push, a rebase, a base that moved, a change to any
+path outside the documentation set (the workflow file included), a missing or
+non-green previous result, or any API error uses whole-PR classification
+instead; the detector fails closed and never fails the job.
+
 **`verify` requires every applicable gate to have succeeded.** A gate the
 classifier enabled must report `success`; `skipped`, `cancelled` or `failure`
 there fails the aggregate, so a job that never ran can never be reported as a
