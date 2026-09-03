@@ -12,7 +12,11 @@ import { Tag } from "@/components/ui/tag";
 export interface IdentityReferencePanelProps {
   characterId: string;
   name: string;
-  avatarImageId: string | null;
+  /**
+   * The character's ACCEPTED portrait — the bytes this pack describes. Not the
+   * candidate in the studio above: an unaccepted portrait derives nothing.
+   */
+  acceptedImageId: string | null;
 }
 
 /**
@@ -27,14 +31,16 @@ export interface IdentityReferencePanelProps {
  * exist, or with the feature off, the portrait studio must look exactly as it did
  * rather than growing an error card about a subsystem the owner never asked for.
  */
-export function IdentityReferencePanel({ characterId, name, avatarImageId }: IdentityReferencePanelProps) {
-  // Keyed on the canonical portrait as well as the character: generating,
-  // uploading or promoting a new portrait replaces the bytes every pack field
-  // describes, and a summary read against the OLD ones would leave this block
-  // claiming "ready" and hand the dialog a crop framed on a portrait that is no
-  // longer on screen. The hook's generation counter still drops the superseded
-  // response, so a fast second promotion cannot land out of order.
-  const pack = useAsyncData(() => identityPacksApi.get(characterId), [characterId, avatarImageId]);
+export function IdentityReferencePanel({ characterId, name, acceptedImageId }: IdentityReferencePanelProps) {
+  // Keyed on the ACCEPTED portrait as well as the character, for the reason it was
+  // once keyed on the portrait at all: accepting a portrait replaces the bytes
+  // every pack field describes, and a summary read against the OLD ones would
+  // leave this block claiming "ready" and hand the dialog a crop framed on a
+  // portrait the renders have moved off. Generating or promoting a candidate
+  // changes no pack field, so it deliberately does not re-read here. The hook's
+  // generation counter still drops the superseded response, so a fast second
+  // acceptance cannot land out of order.
+  const pack = useAsyncData(() => identityPacksApi.get(characterId), [characterId, acceptedImageId]);
   const [open, setOpen] = useState(false);
 
   if (pack.loading || pack.error) return null;
@@ -57,8 +63,8 @@ export function IdentityReferencePanel({ characterId, name, avatarImageId }: Ide
           size="sm"
           className="ml-auto"
           onClick={() => setOpen(true)}
-          disabled={!avatarImageId && !summary?.source.imageId}
-          title={avatarImageId ? undefined : "Generate or upload a canonical portrait first"}
+          disabled={!acceptedImageId && !summary?.source.imageId}
+          title={acceptedImageId ? undefined : "Accept a portrait first — the crop is framed on the accepted one"}
         >
           Adjust face crop
         </Button>
@@ -69,7 +75,7 @@ export function IdentityReferencePanel({ characterId, name, avatarImageId }: Ide
         onClose={() => setOpen(false)}
         characterId={characterId}
         name={name}
-        avatarImageId={avatarImageId}
+        acceptedImageId={acceptedImageId}
         summary={summary}
         onRefresh={() => pack.reload({ silent: true })}
       />

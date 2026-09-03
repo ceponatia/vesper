@@ -37,7 +37,11 @@ type PackTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
  * Take the per-character advisory lock, then re-read whether the character still
- * names this source image. `true` means the compare-and-set may proceed.
+ * ACCEPTS this source image. `true` means the compare-and-set may proceed.
+ *
+ * The pointer read is `accepted_avatar_image_id`, the same one `resolveSource`
+ * derived from: a candidate portrait moving underneath a derivation is no longer
+ * a race at all, and only an acceptance can invalidate one.
  *
  * One copy, deliberately, because the reserve and the finalize are two halves of
  * the SAME compare-and-set: if they ever drifted on what "still ours" means — a
@@ -54,11 +58,11 @@ async function lockAndVerifySource(
 ): Promise<boolean> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${identityPackLockKey(input.characterId)}, 0))`);
   const [character] = await tx
-    .select({ avatarImageId: characters.avatarImageId })
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, input.characterId), eq(characters.ownerId, input.ownerId)))
     .limit(1);
-  return character !== undefined && character.avatarImageId === input.source.imageRow.id;
+  return character !== undefined && character.acceptedAvatarImageId === input.source.imageRow.id;
 }
 
 type ReserveResult =

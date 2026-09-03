@@ -571,6 +571,13 @@ async function invalidateDerivedState(imageIds: readonly string[]): Promise<void
  * verification is still the backstop — this is the belt to its braces, for the
  * paths that bypass the assignment triggers.
  *
+ * The two portrait pointers clear INDEPENDENTLY, because they answer different
+ * questions: deleting the ACCEPTED portrait leaves the character with no
+ * identity source (both accepted columns go together — an acceptance time with
+ * nothing accepted is not a state), while deleting a candidate the owner never
+ * accepted must leave the accepted portrait and its pack exactly where they
+ * were. That separation is the whole point of the second pointer.
+ *
  * The delete paths retire the pack in `purgeImagesWhere`, before the row goes,
  * so for a deleted id this pass usually matches nothing. It stays because the
  * ids a caller hands over are not always the ids that were deleted: the Gallery's
@@ -586,6 +593,13 @@ export async function clearEntityImagePointers(imageIds: readonly string[]): Pro
     db().update(locations).set({ imageId: null }).where(inArray(locations.imageId, ids)),
     db().update(items).set({ imageId: null }).where(inArray(items.imageId, ids)),
   ]);
+  // Sequential, not a fourth entry above: two concurrent statements updating
+  // overlapping rows of the same table is a deadlock waiting for the day a
+  // character's accepted portrait and its candidate are deleted in one call.
+  await db()
+    .update(characters)
+    .set({ acceptedAvatarImageId: null, acceptedAt: null })
+    .where(inArray(characters.acceptedAvatarImageId, ids));
   await identityPackMaintenance?.invalidateForImages(ids);
 }
 

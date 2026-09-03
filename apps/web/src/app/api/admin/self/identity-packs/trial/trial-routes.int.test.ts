@@ -141,7 +141,10 @@ beforeAll(async () => {
   });
   const saved = await saveOwnedImageBuffer(asset.id, ownerId, await testPngBuffer(384, 512));
   if (saved?.status !== "ready") throw new Error("failed to store the trial subject's portrait");
-  await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, subjectId));
+  await db()
+    .update(characters)
+    .set({ avatarImageId: saved.id, acceptedAvatarImageId: saved.id, acceptedAt: new Date() })
+    .where(eq(characters.id, subjectId));
 });
 
 afterEach(() => {

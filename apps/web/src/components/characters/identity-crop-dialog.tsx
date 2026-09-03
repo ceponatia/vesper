@@ -54,8 +54,8 @@ export interface IdentityCropDialogProps {
   onClose: () => void;
   characterId: string;
   name: string;
-  /** The character's canonical portrait — the source when no pack names one yet. */
-  avatarImageId: string | null;
+  /** The character's ACCEPTED portrait — the source when no pack names one yet. */
+  acceptedImageId: string | null;
   /** Latest summary from the owning panel; null while loading or unavailable. */
   summary: IdentityPackSummaryWire | null;
   /** Ask the panel to re-read the summary (its chip mirrors what happens here). */
@@ -125,7 +125,7 @@ export function IdentityCropDialog({
   onClose,
   characterId,
   name,
-  avatarImageId,
+  acceptedImageId,
   summary: summaryProp,
   onRefresh,
 }: IdentityCropDialogProps) {
@@ -153,10 +153,10 @@ export function IdentityCropDialog({
   // current row — so `status` here is one of none|pending|ready|unusable|failed.
   const stale = summary?.stale === true;
   const packSourceImageId = summary?.source.imageId ?? null;
-  // A stale pack's source is no longer canonical, so the editor frames the
-  // character's CURRENT portrait: re-preparing against bytes the renders have
-  // already moved off would only produce another stale crop.
-  const sourceImageId = stale ? (avatarImageId ?? packSourceImageId) : (packSourceImageId ?? avatarImageId);
+  // A stale pack's source is no longer the accepted portrait, so the editor frames
+  // the character's CURRENT accepted one: re-preparing against bytes the renders
+  // have already moved off would only produce another stale crop.
+  const sourceImageId = stale ? (acceptedImageId ?? packSourceImageId) : (packSourceImageId ?? acceptedImageId);
   const natural = loaded && loaded.imageId === sourceImageId ? { width: loaded.width, height: loaded.height } : null;
   // The pack's recorded dimensions describe the pack's source; they are the editor's
   // geometry only while that is what is on screen (a stale pack shows another image).

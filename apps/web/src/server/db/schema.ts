@@ -203,7 +203,32 @@ export const characters = pgTable(
     /** CharacterProfile (contracts/world/profile.ts) */
     profile: jsonb("profile").notNull().default({}),
     tags: jsonb("tags").notNull().default([]),
+    /**
+     * The portrait **candidate** — the picture on screen in the portrait studio,
+     * on the library card, and in the chat strip. Generating, uploading,
+     * promoting or cloning a portrait writes this pointer and nothing else.
+     *
+     * A **soft pointer** (no FK) so deleting an image can never cascade into the
+     * character row; the delete paths null it instead.
+     */
     avatarImageId: text("avatar_image_id"),
+    /**
+     * The **identity source**: the portrait the owner accepted as this
+     * character's face. Every identity-sensitive read — the identity pack and
+     * its crop editor, chat looks, scene cast anchors, the lab's identity
+     * reference — resolves from here, never from the candidate, so trying a new
+     * portrait cannot change how existing renders recognize the character.
+     *
+     * Acceptance is a claim about an image ID, never a boolean: the previous
+     * accepted portrait has to stay nameable while a newer candidate sits
+     * unaccepted. `accepted_at` records when the claim was made. Both are
+     * cleared together — by the owner clearing acceptance, and by the delete of
+     * whatever image this names.
+     *
+     * A **soft pointer** (no FK) for exactly the reason `avatar_image_id` is one.
+     */
+    acceptedAvatarImageId: text("accepted_avatar_image_id"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     /**
      * Cross-account **share scope**. `private` ⇒ owner-only;
      * `public` ⇒ discoverable + copyable by anyone (copy-on-use, no live

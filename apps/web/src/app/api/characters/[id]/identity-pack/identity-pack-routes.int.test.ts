@@ -97,7 +97,11 @@ async function seedSubject(name: string): Promise<string> {
   });
   const saved = await saveOwnedImageBuffer(asset.id, userId, await testPngBuffer(PORTRAIT_WIDTH, PORTRAIT_HEIGHT));
   if (saved?.status !== "ready") throw new Error("failed to store the test portrait");
-  await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, character.id));
+  // Accepted, not merely shown: the pack derives from the accepted pointer.
+  await db()
+    .update(characters)
+    .set({ avatarImageId: saved.id, acceptedAvatarImageId: saved.id, acceptedAt: new Date() })
+    .where(eq(characters.id, character.id));
   return character.id;
 }
 

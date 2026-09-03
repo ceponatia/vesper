@@ -55,6 +55,7 @@ export * from "./images/scene-camera";
 export * from "./images/scene-staging";
 export * from "./images/intimate-scene-lora";
 export * from "./images/portrait-variant";
+export * from "./images/portrait-acceptance";
 export * from "./images/scene-committed";
 export * from "./images/visual-digest";
 export * from "./players/persona-profile";

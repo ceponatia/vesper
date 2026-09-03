@@ -24,7 +24,6 @@ import {
   type CharacterPromptProgramResult,
 } from "./character-prompt-program";
 import { characterPortraitImageOperation } from "@/contracts/images/character-digest";
-import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
 import { type AvatarStyle, type AvatarWardrobeItem, toWornInputs, wardrobeGarmentKey } from "./avatar-wardrobe";
 import { type SceneWornItem, wardrobeOutfitSummary } from "./prompts-scene-composer";
@@ -324,11 +323,12 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt) };
     },
     onReady: async (asset) => {
+      // The CANDIDATE pointer, and nothing else. A generated portrait is a
+      // proposal: it changes what the studio and the library card show, and
+      // changes nothing about the character's identity until the owner accepts
+      // it (`portrait-acceptance.ts`), which is the one trigger for
+      // identity-pack preparation.
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
-      // Strictly AFTER the canonical pointer commits, and strictly best-effort:
-      // identity-pack preparation must never fail or delay a valid portrait.
-      // Returns void, so nothing here can reject.
-      queueIdentityPackPreparation(input.characterId, input.userId);
     },
     onSettled: ({ imageId: id, status, startedMs }) =>
       void logEvent("image.avatar", {

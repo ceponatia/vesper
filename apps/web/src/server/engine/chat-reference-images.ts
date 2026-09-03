@@ -40,7 +40,12 @@ import { registerJobHandler } from "./jobs";
 const lookPayloadSchema = z.object({ chatId: z.string().min(1), characterId: z.string().min(1) });
 const placePayloadSchema = lookPayloadSchema.extend({ placeName: z.string().min(1) });
 
-/** The chat's owner + the participant character's render inputs, or null when anything is missing. */
+/**
+ * The chat's owner + the participant character's render inputs, or null when
+ * anything is missing. The portrait it carries is the character's ACCEPTED one —
+ * the look mint is an identity-bearing render, so it reads the identity source
+ * rather than whatever candidate the portrait studio is showing.
+ */
 async function loadRenderContext(chatId: string, characterId: string) {
   const [chat] = await db()
     .select({ ownerId: characterChats.ownerId })
@@ -48,13 +53,13 @@ async function loadRenderContext(chatId: string, characterId: string) {
     .where(eq(characterChats.id, chatId))
     .limit(1);
   const [character] = await db()
-    .select({ profile: characters.profile, avatarImageId: characters.avatarImageId })
+    .select({ profile: characters.profile, acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(eq(characters.id, characterId))
     .limit(1);
   if (!chat || !character) return null;
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
-  return { ownerId: chat.ownerId, profile, avatarImageId: character.avatarImageId };
+  return { ownerId: chat.ownerId, profile, acceptedAvatarImageId: character.acceptedAvatarImageId };
 }
 
 /** Run one look mint. Exported for tests, which may pass a sink to watch the job's diagnostics. */
@@ -63,7 +68,9 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
   // Image-active gate (ruled): text-only chats never pay for look renders.
   if (!(await chatHasRenders(input.chatId))) return;
   const ctx = await loadRenderContext(input.chatId, input.characterId);
-  if (!ctx?.avatarImageId) return; // no identity source — scenes fall back to text anyway
+  // The ACCEPTED portrait is the identity source; an unaccepted candidate is not
+  // one. No accepted portrait ⇒ no mint, and scenes fall back to text anyway.
+  if (!ctx?.acceptedAvatarImageId) return;
   const stored = await loadChatState(input.chatId, input.characterId);
   if (!stored) return;
   // Detached job, so its own collector drains into the process log (the render

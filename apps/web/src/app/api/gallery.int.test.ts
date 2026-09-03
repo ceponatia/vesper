@@ -361,14 +361,28 @@ describe.skipIf(!ready)("DELETE /api/gallery/:id", () => {
       }))
       .returning();
     if (!row) throw new Error("failed to seed portrait");
-    await db().update(characters).set({ avatarImageId: row.id }).where(eq(characters.id, ids.character));
+    await db()
+      .update(characters)
+      .set({ avatarImageId: row.id, acceptedAvatarImageId: row.id, acceptedAt: new Date() })
+      .where(eq(characters.id, ids.character));
 
     const res = await galleryDelete(apiRequest(`/api/gallery/${row.id}`), ctx(row.id));
     expect(res.status).toBe(200);
     expect(await exists(row.id)).toBe(false);
-    // The soft pointer is nulled, never left dangling (the portrait studio's own rule).
-    const [char] = await db().select({ avatarImageId: characters.avatarImageId }).from(characters).where(eq(characters.id, ids.character));
+    // Both soft pointers are nulled, never left dangling (the portrait studio's own
+    // rule) — deleting the ACCEPTED portrait also leaves the character with no
+    // identity source and no acceptance time standing over nothing.
+    const [char] = await db()
+      .select({
+        avatarImageId: characters.avatarImageId,
+        acceptedAvatarImageId: characters.acceptedAvatarImageId,
+        acceptedAt: characters.acceptedAt,
+      })
+      .from(characters)
+      .where(eq(characters.id, ids.character));
     expect(char?.avatarImageId).toBeNull();
+    expect(char?.acceptedAvatarImageId).toBeNull();
+    expect(char?.acceptedAt).toBeNull();
   });
 });
 

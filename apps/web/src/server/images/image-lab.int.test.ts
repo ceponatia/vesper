@@ -714,7 +714,11 @@ async function seedCharacterWithPortrait(): Promise<string> {
   });
   const saved = await saveImageBuffer(asset.id, await testPngBuffer(384, 512));
   if (saved?.status !== "ready") throw new Error("failed to store the lab canonical portrait");
-  await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, characterId));
+  // The lab's identity reference is the ACCEPTED portrait, so the fixture accepts it.
+  await db()
+    .update(characters)
+    .set({ avatarImageId: saved.id, acceptedAvatarImageId: saved.id, acceptedAt: new Date() })
+    .where(eq(characters.id, characterId));
   return characterId;
 }
 

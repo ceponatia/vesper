@@ -52,6 +52,15 @@ export const DELETE = withAuthorizedResource<Params, OwnedCharacter>(
       .update(characters)
       .set({ avatarImageId: null })
       .where(and(eq(characters.id, id), eq(characters.ownerId, user.id), eq(characters.avatarImageId, imageId)));
+    // Independently guarded: deleting the ACCEPTED portrait leaves the character
+    // with no identity source (both accepted columns go together), while
+    // deleting a candidate it never accepted leaves the accepted one alone.
+    await db()
+      .update(characters)
+      .set({ acceptedAvatarImageId: null, acceptedAt: null })
+      .where(
+        and(eq(characters.id, id), eq(characters.ownerId, user.id), eq(characters.acceptedAvatarImageId, imageId)),
+      );
     await db().delete(images).where(and(eq(images.id, imageId), eq(images.ownerId, user.id)));
     void fs.unlink(absoluteImagePath(row)).catch(() => undefined); // sweep reconciles stragglers
     return jsonOk({ ok: true });

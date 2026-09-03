@@ -2,12 +2,47 @@
 
 A character's **identity pack** records which bytes its face reference came from, how it was cropped, and what was
 measured about it. One **current** pack per character, derived from that
-character's **current canonical portrait** — never a gallery image, never an old avatar — keyed by a **SHA-256 over
+character's **accepted portrait** — never a portrait its owner has not accepted, never a gallery image, never an old
+avatar — keyed by a **SHA-256 over
 the stored normalized WebP bytes**, so bytes that merely *look* the same are a different source. Revisions are **rows**
 in `image_identity_packs` (migration 0101, the `images/identity-pack-*` service modules): a partial unique index enforces one `current`
 row per character, and each revision carries its status (`pending`/`ready`/`unusable`/`failed`/`stale`/`superseded`),
 crop method (`detector`/`heuristic`/`manual`), geometry, measurements, warning codes and review actor. The **pack row,
 not the crop's `images.meta`, is the authority** for which crop is current.
+
+## The source is the ACCEPTED portrait
+
+A character carries two portrait pointers, and only one of them is an identity. `characters.avatar_image_id` is the
+**candidate**: the picture the portrait studio, the library card and the chat strip show, written by every generate,
+upload, promotion and clone. `characters.accepted_avatar_image_id` is the **identity source**, written only when the
+owner accepts the candidate, with `accepted_at` recording when. Acceptance is a claim about an image id, never a
+boolean — the previous accepted portrait has to stay nameable while a newer candidate sits unaccepted. Both are soft
+pointers (no FK), like every other image pointer an entity keeps.
+
+Every consequence follows from that one split:
+
+- **Acceptance is the only trigger.** Preparation is queued fire-and-forget by the accept route and nothing else;
+  generating, uploading, promoting or cloning a portrait moves the candidate and derives nothing. Nothing spends work,
+  or invalidates a working reference, because somebody tried a new picture.
+- **An unaccepted newer candidate changes nothing.** The pack stays `current`, stays usable, and keeps naming the
+  accepted bytes; the studio shows the new portrait beside a *Not accepted* badge, and identity-critical renders keep
+  using the last accepted face.
+- **Accepting invalidates and re-derives.** The previous current revision is marked stale before the dedupe runs, and
+  a revision for the newly accepted bytes is derived, so a character never keeps a `ready` pack for a portrait it no
+  longer accepts.
+- **A stale acceptance can never be applied to the wrong picture.** The accept request names the image id it saw, and
+  the write is guarded on that id still being the candidate; anything else is refused (`portrait_changed`) with the
+  current acceptance. Accepting what is already accepted writes nothing and queues nothing.
+- **No accepted portrait ⇒ no pack.** A null accepted pointer resolves as `source_missing`, exactly as no portrait at
+  all always has, so an identity-critical render gets the existing clear refusal rather than an unaccepted image. A
+  character with no accepted portrait still renders scenes from text, since there is no identity to preserve.
+- **Clearing acceptance and deleting the accepted portrait are the same shape.** Both null `accepted_avatar_image_id`
+  and `accepted_at` together and leave the pack rows alone: every pack read compares against the accepted pointer, so
+  a null one already reads as no usable reference. Deleting a candidate the owner never accepted disturbs neither the
+  pointer nor the pack.
+- **A clone starts unaccepted.** The copy carries the copied portrait as its candidate and no acceptance: pack rows
+  and hidden crops never cross an owner boundary, and whether that face is this character's identity is the new
+  owner's decision.
 
 ## The crop is a hidden asset
 
@@ -67,14 +102,14 @@ reservation instead is a legal write the one-current index cannot catch, and cos
 deleted crop for the loser. Retry backoff is **derived from the revision rows** (their count is the attempt number, the newest
 row's timestamp the clock — 60s doubling to an hour, five attempts per set of source bytes), so no second scheduler
 exists, and expected failure is a value — `blocked` with an actionable code — not an exception. Preparation is queued
-fire-and-forget after avatar generation, variant promotion and library clone as an `identity_pack` job (local lane, one
-live per character); a pack failure never fails the portrait. **That live job converges, which is what makes the dedupe
+fire-and-forget by **portrait acceptance** as an `identity_pack` job (local lane, one
+live per character); a pack failure never fails the acceptance. **That live job converges, which is what makes the dedupe
 safe**: once its `ensure` settles it re-reads the character's canonical pointer and derives again when the current
-revision doesn't cover it — otherwise promoting portrait B mid-derivation left B prepared by nobody (B's trigger
+revision doesn't cover it — otherwise accepting portrait B mid-derivation left B prepared by nobody (B's trigger
 correctly invalidated A's pack and was correctly suppressed by A's job; A's derivation then correctly lost its finalize).
-A pass is only repeated because the pointer MOVED (a recheck naming the source that pass just targeted means the same
-call with the same arguments, so it stops and leaves the retry to the backoff clock); bounded at 3 passes, each
-re-reading the LATEST pointer so a burst of portrait changes collapses onto the final one; another process's live
+A pass is only repeated because the accepted pointer MOVED (a recheck naming the source that pass just targeted means
+the same call with the same arguments, so it stops and leaves the retry to the backoff clock); bounded at 3 passes, each
+re-reading the LATEST accepted pointer so a burst of acceptances collapses onto the final one; another process's live
 reservation for that pointer stops the loop rather than being polled from a job slot; a throw doesn't recheck (it means
 the database is failing, and every recheck read is another one of those). Past the bound it stops with `source_changed`
 and leaves the character to the next trigger or a lazy ensure. The job payload records the source each pass targeted,
@@ -103,19 +138,22 @@ portrait_variant, entity) — carried out by `deleteNonGalleryCharacterImages`
 identity-pack-scoped `deleteCharacterIdentityAssets` (guarded by kind *and* entity) still exists for
 callers that want exactly "this character's hidden identity assets, and nothing else" — the route
 itself does not call it. Copy and publish stay
-isolated: a clone carries no crop, and the destination derives its own pack from its own copied portrait.
+isolated: a clone carries no crop and no acceptance, and the destination derives its own pack once its new owner
+accepts the copied portrait.
 
 ## Surfaces
 
 Owner lane `/api/characters/:id/identity-pack` — `GET` (summary; a pure read that never derives, so
 `none` and `pending` are answers rather than spinners), `POST ensure`, `POST manual-crop` (409 with a fresh summary on
-a stale editor save, 422 on a measured rejection), `POST reset-automatic` (a new automatic revision, not an undo) — all
+a stale editor save, 422 on a measured rejection), `POST reset-automatic` (a new automatic revision, not an undo) —
+plus the acceptance pair `POST`/`DELETE /api/characters/:id/portrait/accept`, all
 authorized from the **character in the URL**, with a body `packId`/`revision`/`sourceContentHash` only as a concurrency
 guard. Every route answers `{ summary }`; the two write routes add an optional `blocked: { code, retryable }` when the
 refusal happened **before** a revision existed (no portrait, source still generating, unreadable bytes, single-flight
 timeout) — that outcome is invisible in the re-read summary, so without it a Prepare click answers with silence. The
-portrait studio shows a quiet `IdentityReferencePanel` (keyed on the character **and** its canonical portrait, so a new
-portrait re-reads instead of showing the previous pack's state; renders nothing if the read fails) opening
+portrait studio shows a quiet `IdentityReferencePanel` (keyed on the character **and** its accepted portrait, so an
+acceptance re-reads instead of showing the previous pack's state; an unaccepted candidate changes no pack field and
+deliberately does not re-read; renders nothing if the read fails) opening
 `identity-crop-dialog.tsx`: a drag/resize square over the canonical source, live preview, plain-language warnings, and
 the `blocked` code in the owner's words when a prepare or reset refuses. The
 **self-scoped** admin lane `/api/admin/self/identity-packs` adds a bounded preparation `batch` (dry run, hard caps,
@@ -136,9 +174,10 @@ the planner, and the provenance list the lane persists on the output row's `meta
 identity-critical lanes consume it — portrait variants, chat looks, and the chat scene cast's look-less-member anchor
 (a minted chat look stays the anchor: it carries current wardrobe/state and is itself downstream of the avatar) — and
 a blocked pack refuses the render, with the actionable correction in the refusal, rather than substituting a Gallery
-image or reading the avatar row directly. A character whose pack cannot be prepared (no canonical portrait, an
-ambiguous source, an undersized crop) gets its identity-critical renders refused until the portrait or crop is fixed;
-a character with no portrait at all still renders scenes from text, since there is no identity to preserve.
+image or reading the avatar row directly. A character whose pack cannot be prepared (no accepted portrait, an
+ambiguous source, an undersized crop) gets its identity-critical renders refused until the portrait is accepted or the
+crop is fixed; a character with no accepted portrait still renders scenes from text, since there is no identity to
+preserve.
 
 ## The fixed-trial harness
 

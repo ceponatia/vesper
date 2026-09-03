@@ -6,6 +6,7 @@ import {
   imageProfilesApi,
   portraitVariantKindLabel,
   portraitVariantKinds,
+  type CharacterPortraitAcceptance,
   type ImageRecord,
   type PortraitVariantKind,
 } from "@/lib/client/api";
@@ -21,15 +22,22 @@ import { Field } from "@/components/ui/field";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tag } from "@/components/ui/tag";
+import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 export interface PortraitStudioProps {
   characterId: string;
   name: string;
+  /** The portrait CANDIDATE — what this studio shows and edits. */
   avatarImageId: string | null;
-  /** Called when the avatar may have changed (generate/promote) — parent refetches. */
+  /**
+   * Which portrait this character's identity is derived from, and whether the
+   * candidate above is it. Owned by the parent, which refetches the character
+   * after every acceptance.
+   */
+  acceptance: CharacterPortraitAcceptance;
+  /** Called when the avatar or its acceptance may have changed — parent refetches. */
   onAvatarChanged: () => void;
 }
 
@@ -38,6 +46,34 @@ const POLL_MS = 2500;
 function generationError(image: ImageRecord): string | null {
   const error = image.meta?.error?.trim();
   return error ? error : null;
+}
+
+/**
+ * The three states the badge has to be able to say out loud. "Not accepted" is
+ * the one that matters: it means renders are still using a DIFFERENT portrait,
+ * which is invisible from the picture on screen and would otherwise look like a
+ * bug in the image lanes.
+ */
+function portraitAcceptanceChip(acceptance: CharacterPortraitAcceptance): {
+  tone: TagTone;
+  label: string;
+  hint: string;
+} {
+  if (acceptance.isCurrent) {
+    return { tone: "ok", label: "Accepted", hint: "This portrait is the character's identity." };
+  }
+  if (acceptance.acceptedImageId) {
+    return {
+      tone: "accent",
+      label: "Not accepted",
+      hint: "Conversations keep rendering the last accepted portrait until you accept this one.",
+    };
+  }
+  return {
+    tone: "default",
+    label: "No accepted portrait",
+    hint: "Accept a portrait to derive its identity reference.",
+  };
 }
 
 function portraitKindLabel(image: ImageRecord): string {
@@ -63,7 +99,13 @@ function portraitKindLabel(image: ImageRecord): string {
  * `modelId` request field is unchanged and now carries a profile id — legacy
  * stored model ids keep resolving through the server's step-2 fallback.
  */
-export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChanged }: PortraitStudioProps) {
+export function PortraitStudio({
+  characterId,
+  name,
+  avatarImageId,
+  acceptance,
+  onAvatarChanged,
+}: PortraitStudioProps) {
   const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
   const toast = useToast();
   const [kind, setKind] = useState<PortraitVariantKind>("pose");
@@ -85,6 +127,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const [busyImageId, setBusyImageId] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [acceptingPortrait, setAcceptingPortrait] = useState(false);
 
   // Once the avatar id changes (a generate finished or a variant was
   // promoted), stop treating the avatar job as pending. Adjusted during
@@ -198,6 +241,42 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     }
   };
 
+  // Accept the candidate BY ID: the id in the request is the picture the owner
+  // is looking at, so a portrait that changed in another tab is refused
+  // (`portrait_changed`) rather than accepted by accident.
+  const acceptPortrait = async () => {
+    if (!avatarImageId) return;
+    setAcceptingPortrait(true);
+    const result = await charactersApi.acceptPortrait(characterId, avatarImageId);
+    setAcceptingPortrait(false);
+    if (result.ok) {
+      toast.push({ title: "Portrait accepted", description: "New images will use this face.", tone: "success" });
+      onAvatarChanged();
+      return;
+    }
+    if (result.error.code === "portrait_changed") {
+      toast.push({
+        title: "The portrait changed — review the new one and accept again",
+        tone: "error",
+      });
+      onAvatarChanged();
+      return;
+    }
+    toast.push({ title: "Accept failed", description: result.error.message, tone: "error" });
+  };
+
+  const clearAcceptance = async () => {
+    setAcceptingPortrait(true);
+    const result = await charactersApi.clearPortraitAcceptance(characterId);
+    setAcceptingPortrait(false);
+    if (result.ok) {
+      toast.push({ title: "Acceptance cleared", description: "This character has no identity portrait." });
+      onAvatarChanged();
+    } else {
+      toast.push({ title: "Could not clear acceptance", description: result.error.message, tone: "error" });
+    }
+  };
+
   const removeVariant = async (imageId: string) => {
     setBusyImageId(imageId);
     const result = await charactersApi.deletePortrait(characterId, imageId);
@@ -222,6 +301,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     canonical && canonical.status === "ready" && canonical.meta?.source !== "upload" && canonical.prompt.trim()
       ? canonical.prompt
       : null;
+  const acceptanceChip = portraitAcceptanceChip(acceptance);
 
   return (
     <div className="flex flex-col gap-6">
@@ -279,9 +359,36 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
         </div>
       ) : null}
 
-      {/* The face crop derived FROM the canonical portrait — sits with it, above the
+      {/* Acceptance first, then the crop derived from what was accepted: the block
+          below is about which portrait the character's identity comes from, and
+          the panel under it is about how that portrait is cropped. */}
+      <div className="flex flex-col gap-3">
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Portrait acceptance</h3>
+        <div className="flex flex-wrap items-center gap-3 rounded-card border border-ink-600 bg-ink-950/40 px-3 py-2">
+          <Tag tone={acceptanceChip.tone}>{acceptanceChip.label}</Tag>
+          <span className="min-w-0 text-xs text-paper-500">{acceptanceChip.hint}</span>
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {acceptance.acceptedImageId ? (
+              <Button size="sm" variant="ghost" busy={acceptingPortrait} onClick={clearAcceptance}>
+                Clear acceptance
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              busy={acceptingPortrait}
+              onClick={acceptPortrait}
+              disabled={!avatarImageId || acceptance.isCurrent}
+              title={avatarImageId ? undefined : "Generate or upload a portrait first"}
+            >
+              Accept this portrait
+            </Button>
+          </span>
+        </div>
+      </div>
+
+      {/* The face crop derived FROM the ACCEPTED portrait — sits with it, above the
           variant machinery it has nothing to do with. */}
-      <IdentityReferencePanel characterId={characterId} name={name} avatarImageId={avatarImageId} />
+      <IdentityReferencePanel characterId={characterId} name={name} acceptedImageId={acceptance.acceptedImageId} />
 
       <div className="flex flex-col gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">New variant</h3>

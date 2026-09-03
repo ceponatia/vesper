@@ -7,7 +7,9 @@ Route handlers in `apps/web/src/app/api/`. Handlers are thin: resolve user → z
 ### Library
 ```
 GET/POST           /api/characters            list (search ?q, ?tag) / create (201)
-GET/PATCH/DELETE   /api/characters/:id        GET returns { character, portraits, mine }
+GET/PATCH/DELETE   /api/characters/:id        GET returns { character, portraits, mine } — plus
+                                              { acceptance: { acceptedImageId, acceptedAt, isCurrent } }
+                                              for the owner, omitted from the public shape
 POST               /api/characters/forge      prose prompt → AI draft (not saved); { prompt, section?, draft? }
                                               regenerates one section against the supplied draft
 POST               /api/characters/:id/avatar          { style: "realistic"|"stylized", modelId? } ⇒ 202 { jobId, characterId }
@@ -20,6 +22,13 @@ GET/POST           /api/characters/:id/portraits       GET lists all images for 
                                                        instruction, modelId? } ⇒ 202 { jobId, characterId }
 GET/DELETE         /api/characters/:id/portraits/:imageId   (+ POST /promote → set as avatar; 409 not_ready
                                                             until the variant leaves pending)
+POST/DELETE        /api/characters/:id/portrait/accept  POST { imageId } accepts that portrait as the
+                                                        character's identity source and prepares its
+                                                        identity pack; 409 portrait_changed (with the
+                                                        current acceptance) when imageId is not the
+                                                        portrait on the row, 200 no-op when it is
+                                                        already accepted. DELETE withdraws acceptance
+                                                        and deletes nothing. Both answer { acceptance }
 GET/POST, GET/PATCH/DELETE        /api/locations, /api/locations/:id
 GET/POST, GET/PATCH/DELETE        /api/items, /api/items/:id   (coverage ids validated against the
                                                                body-locations registry → 400 invalid_coverage)

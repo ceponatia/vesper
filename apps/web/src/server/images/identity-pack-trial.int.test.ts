@@ -418,7 +418,10 @@ async function seedTrialCharacter(name: string): Promise<{ characterId: string; 
   });
   const saved = await saveImageBuffer(asset.id, await testPngBuffer(384, 512));
   if (saved?.status !== "ready") throw new Error("failed to store the trial portrait");
-  await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, character.id));
+  await db()
+    .update(characters)
+    .set({ avatarImageId: saved.id, acceptedAvatarImageId: saved.id, acceptedAt: new Date() })
+    .where(eq(characters.id, character.id));
   return { characterId: character.id, portraitId: saved.id };
 }
 
@@ -1462,7 +1465,7 @@ describe.skipIf(!ready)("trial execution", () => {
     expect(saved?.status).toBe("ready");
     await db()
       .update(characters)
-      .set({ avatarImageId: replacement.id })
+      .set({ avatarImageId: replacement.id, acceptedAvatarImageId: replacement.id, acceptedAt: new Date() })
       .where(eq(characters.id, subject.characterId));
 
     const { renderer, calls } = countingRenderer();

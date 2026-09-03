@@ -173,6 +173,12 @@ the torso reads bare or sheer, never under clothing.
 
 ## The job and the studio
 
+A finished avatar becomes the character's portrait **candidate** and nothing more: it is what the
+studio, the library card and the chat strip show, and it derives no identity reference. The
+character's identity source moves only when its owner accepts the portrait, which is what prepares
+the identity pack
+([../identity-packs.md](../identity-packs.md) §The source is the ACCEPTED portrait).
+
 The avatar runs as an `avatar` job. The pending image row is reserved **inside** the job (after
 the queue route's 202), so `GET /api/characters/:id/portraits` returns the rows plus a
 **`rendering`** flag — a live `avatar`/`portrait_variant` job for the character, via the

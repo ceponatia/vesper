@@ -142,9 +142,10 @@ interface Subject {
 }
 
 /**
- * A character with a canonical portrait. The pointer is written directly rather
- * than through `promoteVariant`, so the background preparation trigger does not
- * fire and each case drives `ensureIdentityPack` itself.
+ * A character whose portrait is ACCEPTED — the pack's source. Both pointers are
+ * written directly rather than through `promoteVariant` + the accept route, so
+ * the background preparation trigger does not fire and each case drives
+ * `ensureIdentityPack` itself.
  */
 async function seedSubject(name: string, width = PORTRAIT_WIDTH, height = PORTRAIT_HEIGHT): Promise<Subject> {
   const [character] = await db()
@@ -153,7 +154,10 @@ async function seedSubject(name: string, width = PORTRAIT_WIDTH, height = PORTRA
     .returning({ id: characters.id });
   if (!character) throw new Error("failed to create the test character");
   const portrait = await storePortrait(character.id, await testPngBuffer(width, height));
-  await db().update(characters).set({ avatarImageId: portrait.id }).where(eq(characters.id, character.id));
+  await db()
+    .update(characters)
+    .set({ avatarImageId: portrait.id, acceptedAvatarImageId: portrait.id, acceptedAt: new Date() })
+    .where(eq(characters.id, character.id));
   return { characterId: character.id, portrait };
 }
 
@@ -265,9 +269,12 @@ async function storedHash(row: ImageRow): Promise<string> {
   return sourceContentHashOf(await fs.readFile(absoluteImagePath(row)));
 }
 
-/** Point the character's canonical portrait at `imageId`, as a promotion would. */
+/** Accept `imageId` as the character's identity source, as the accept route would. */
 async function repoint(characterId: string, imageId: string): Promise<void> {
-  await db().update(characters).set({ avatarImageId: imageId }).where(eq(characters.id, characterId));
+  await db()
+    .update(characters)
+    .set({ avatarImageId: imageId, acceptedAvatarImageId: imageId, acceptedAt: new Date() })
+    .where(eq(characters.id, characterId));
 }
 
 async function avatarImageId(characterId: string): Promise<string | null> {
@@ -545,7 +552,7 @@ describe.skipIf(!ready)("ensureIdentityPack — failure containment", () => {
         onDetect: async () => {
           await db()
             .update(characters)
-            .set({ avatarImageId: replacement.id })
+            .set({ avatarImageId: replacement.id, acceptedAvatarImageId: replacement.id, acceptedAt: new Date() })
             .where(eq(characters.id, subject.characterId));
         },
       }),
@@ -1035,10 +1042,14 @@ describe.skipIf(!ready)("pack reads", () => {
     expect(fresh?.warnings).toEqual<ImageIdentityPackWarningCode[]>(["heuristic_crop"]);
     expect(fresh?.sourceImageId).toBe(subject.portrait.id);
 
-    // Repointing the character at a different portrait makes the pack stale
-    // without touching the row.
+    // ACCEPTING a different portrait makes the pack stale without touching the
+    // row. (Merely showing a new candidate would not: the summary reads the
+    // accepted pointer.)
     const replacement = await storePortrait(subject.characterId, await tintedPng(PORTRAIT_WIDTH, PORTRAIT_HEIGHT, 10));
-    await db().update(characters).set({ avatarImageId: replacement.id }).where(eq(characters.id, subject.characterId));
+    await db()
+      .update(characters)
+      .set({ avatarImageId: replacement.id, acceptedAvatarImageId: replacement.id, acceptedAt: new Date() })
+      .where(eq(characters.id, subject.characterId));
 
     const stale = await getIdentityPackForOwner(subject.characterId, userId);
     expect(stale?.stale).toBe(true);
@@ -1158,8 +1169,8 @@ describe.skipIf(!ready)("background preparation convergence", () => {
     const job = runIdentityPackPreparationForTesting(subject.characterId, userId);
     await waitForReservation(subject.characterId);
 
-    // Portrait B lands and becomes canonical while A's derivation is parked, in
-    // the order a promotion produces it: pointer committed, then preparation
+    // Portrait B lands and is ACCEPTED while A's derivation is parked, in the
+    // order acceptance produces it: pointer committed, then preparation
     // requested.
     const second = await storePortrait(subject.characterId, await tintedPng(PORTRAIT_WIDTH, PORTRAIT_HEIGHT, 200));
     await repoint(subject.characterId, second.id);

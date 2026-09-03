@@ -95,7 +95,7 @@ type ResolveSourceResult = { ok: true; source: ResolvedSource } | { ok: false; c
  *
  * 1–2. Resolve the character from the OWNER (never from a pack or image id — a
  *      client-supplied pack id is a concurrency guard, not authorization), then
- *      read and hash the canonical portrait's stored bytes.
+ *      read and hash the accepted portrait's stored bytes.
  * 3–4. Serialize on the character key, then answer from the current revision
  *      when it already covers these bytes and versions: a ready pack is
  *      returned as-is, a terminal refusal is returned WITHOUT a new attempt, and
@@ -206,11 +206,17 @@ export async function deriveIdentityPackWithoutProcessLockForTesting(
  * image row is theirs AND belongs to this character, it is `ready`, its bytes
  * are readable, and it decodes to real dimensions.
  *
+ * The source is the **accepted** portrait (`accepted_avatar_image_id`), never the
+ * candidate on screen: a portrait the owner has not accepted is an experiment,
+ * and deriving from it would change how every later render recognizes the
+ * character. A null accepted pointer is `source_missing` — the same answer a
+ * character with no portrait at all has always given.
+ *
  * The entity check matters more than it looks. `entity_kind`/`entity_id` are the
  * only link between an image row and the character it depicts, and every writer
- * of `characters.avatar_image_id` maintains it — so a pointer that disagrees is
- * corruption, and deriving a face from it would attach one character's face to
- * another's pack. It fails closed as `source_missing`.
+ * of the character's portrait pointers maintains it — so a pointer that
+ * disagrees is corruption, and deriving a face from it would attach one
+ * character's face to another's pack. It fails closed as `source_missing`.
  */
 export async function resolveSource(
   ownerId: string,
@@ -218,14 +224,14 @@ export async function resolveSource(
   sink: DiagnosticSink | undefined,
 ): Promise<ResolveSourceResult> {
   const [character] = await db()
-    .select({ avatarImageId: characters.avatarImageId })
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .limit(1);
-  const avatarImageId = character?.avatarImageId ?? null;
-  if (avatarImageId === null) {
+  const acceptedImageId = character?.acceptedAvatarImageId ?? null;
+  if (acceptedImageId === null) {
     sink?.push(
-      diag("warn", "images.identity_pack.source_missing", "no canonical portrait for this character", {
+      diag("warn", "images.identity_pack.source_missing", "no accepted portrait for this character", {
         context: { characterId },
       }),
     );
@@ -235,12 +241,12 @@ export async function resolveSource(
   const [row] = await db()
     .select()
     .from(images)
-    .where(and(eq(images.id, avatarImageId), eq(images.ownerId, ownerId)))
+    .where(and(eq(images.id, acceptedImageId), eq(images.ownerId, ownerId)))
     .limit(1);
   if (!row || row.entityKind !== "character" || row.entityId !== characterId) {
     sink?.push(
-      diag("warn", "images.identity_pack.source_missing", "canonical portrait row is missing or not this character's", {
-        context: { characterId, sourceImageId: avatarImageId },
+      diag("warn", "images.identity_pack.source_missing", "accepted portrait row is missing or not this character's", {
+        context: { characterId, sourceImageId: acceptedImageId },
       }),
     );
     return { ok: false, code: "source_missing" };

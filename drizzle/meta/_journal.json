@@ -869,6 +869,13 @@
       "when": 1788366344785,
       "tag": "0123_chat-scoped-jobs-events",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1788436901941,
+      "tag": "0124_portrait-acceptance",
+      "breakpoints": true
     }
   ]
 }

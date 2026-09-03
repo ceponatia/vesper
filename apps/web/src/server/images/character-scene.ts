@@ -37,7 +37,13 @@ export interface SceneCastMember {
   characterId: string;
   name: string;
   profile: CharacterProfile;
-  avatarImageId: string | null;
+  /**
+   * The member's identity source: `characters.accepted_avatar_image_id`, never
+   * the candidate portrait on screen. Null ⇒ nothing accepted, and this member
+   * renders from their textual description exactly as a portrait-less character
+   * does.
+   */
+  identityImageId: string | null;
   outfit?: string;
   outfitExposed?: boolean;
   exposure?: RegionExposure;
@@ -54,9 +60,10 @@ export interface SceneCastMember {
    */
   attributeOverlays?: readonly AttributeValue[];
   /**
-   * This character's look-anchor key. Absent ⇒ anchor on their avatar. Only the
+   * This character's look-anchor key. Absent ⇒ anchor on their accepted
+   * portrait. Only the
    * primary's look is minted today, so a second cast member normally anchors on
-   * their canonical portrait and takes its wardrobe from the prompt's clothing
+   * their accepted portrait and takes its wardrobe from the prompt's clothing
    * authority rather than from the reference.
    */
   lookKey?: string;
@@ -297,7 +304,7 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
   // One anchor per cast member, resolved in roster order: this character's own
   // tracked look when the chat has minted one, else the identity-pack service's
-  // candidate for their canonical portrait (5B ruling — a minted chat look
+  // candidate for their accepted portrait (5B ruling — a minted chat look
   // STAYS the identity reference: it carries current wardrobe/state and is
   // itself downstream of the avatar, so only the member with no fresh look
   // asks the pack). A member with neither renders from the prompt's textual
@@ -315,10 +322,10 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
         anchors.set(member.characterId, { imageId: look.imageId, buffer: look.buffer, source: "generated" });
         continue;
       }
-      // A member with no portrait at all renders from text, exactly as before —
-      // there is no identity source for the pack to measure, so nothing was
-      // substituted and nothing is refused.
-      if (!member.avatarImageId) continue;
+      // A member with no ACCEPTED portrait renders from text, exactly as a
+      // member with no portrait at all does — there is no identity source for
+      // the pack to measure, so nothing was substituted and nothing is refused.
+      if (!member.identityImageId) continue;
       const pack = await identityPackRenderReferences({
         ownerId: input.userId,
         characterId: member.characterId,

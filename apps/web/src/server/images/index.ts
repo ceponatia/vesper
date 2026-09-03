@@ -83,6 +83,7 @@ export {
 } from "./identity-pack-maintenance";
 export * from "./identity-pack-references";
 export * from "./identity-pack-consume";
+export * from "./portrait-acceptance";
 export {
   deleteIdentityPackTrialRun,
   type DeleteIdentityPackTrialRunResult,

@@ -14,7 +14,7 @@ import {
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
-import { characterChatMessages, chatParticipants, db, hasLiveChatJob } from "@/server/db";
+import { characterChatMessages, characters, chatParticipants, db, hasLiveChatJob } from "@/server/db";
 import {
   buildChatGarmentNarration,
   CHAT_CONTACT_PLAYER_SUBJECT,
@@ -43,7 +43,6 @@ export interface QueueChatSceneMember {
   id: string;
   name: string;
   profile: unknown;
-  avatarImageId: string | null;
 }
 
 export interface QueueChatSceneArgs {
@@ -74,6 +73,28 @@ export async function hasLiveChatSceneJob(chatId: string): Promise<boolean> {
  */
 export function memberSceneState(stored: ChatState | null, profile: CharacterProfile): ChatState {
   return stored ?? seedChatState(profile);
+}
+
+/**
+ * Each cast member's ACCEPTED portrait — the render's identity source
+ * (`characters.accepted_avatar_image_id`), never the candidate the portrait
+ * studio is showing. Owner-scoped like every other identity read, so a member
+ * whose row is not this user's simply has no entry.
+ *
+ * A member with nothing accepted maps to null and renders from their textual
+ * description, exactly as a character with no portrait at all does.
+ */
+async function acceptedPortraits(characterIds: readonly string[], ownerId: string): Promise<Map<string, string>> {
+  if (characterIds.length === 0) return new Map();
+  const rows = await db()
+    .select({ id: characters.id, acceptedAvatarImageId: characters.acceptedAvatarImageId })
+    .from(characters)
+    .where(and(inArray(characters.id, [...characterIds]), eq(characters.ownerId, ownerId)));
+  const accepted = new Map<string, string>();
+  for (const row of rows) {
+    if (row.acceptedAvatarImageId !== null) accepted.set(row.id, row.acceptedAvatarImageId);
+  }
+  return accepted;
 }
 
 /** Queue one detached character-chat scene render with its persisted model/provider choice. */
@@ -176,6 +197,10 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // single combined call returns one flat list that the composer would then
     // attach to whichever character it was handed to — dressing one person in
     // another's clothes.
+    const accepted = await acceptedPortraits(
+      cleanCast.map(({ member }) => member.id),
+      args.userId,
+    );
     const castDetail = await Promise.all(
       cleanCast.map(async ({ member, stored }) => {
         const profile = parseOr(
@@ -233,7 +258,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
             characterId: member.id,
             name: member.name,
             profile,
-            avatarImageId: member.avatarImageId,
+            // The ACCEPTED portrait, not the candidate: a portrait the owner is
+            // still trying out never becomes the face this scene renders.
+            identityImageId: accepted.get(member.id) ?? null,
             outfit: wardrobe.garments,
             outfitExposed: wardrobe.exposed,
             exposure: wardrobe.exposure,

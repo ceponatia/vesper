@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { characters, db, images } from "@/server/db";
+import { and, eq, sql } from "drizzle-orm";
+import { characters, db, images, jobs } from "@/server/db";
 import {
   canonicalImageRow,
   endTestPool,
@@ -97,6 +97,23 @@ describe.skipIf(!ready)("promoteVariant ownership", () => {
     const result = await promoteVariant(fixture.character, fixture.variant, ownerA);
     expect(result.ok).toBe(true);
     expect(await avatarOf(fixture.character)).toBe(fixture.variant);
+
+    // Promotion moves the CANDIDATE and nothing else: no acceptance, and no
+    // identity-pack preparation. The lane that promotes the avatar upload runs
+    // through here too, so this covers both writers. Re-adding the old trigger
+    // fails here.
+    const [row] = await db()
+      .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId, acceptedAt: characters.acceptedAt })
+      .from(characters)
+      .where(eq(characters.id, fixture.character))
+      .limit(1);
+    expect(row?.acceptedAvatarImageId).toBeNull();
+    expect(row?.acceptedAt).toBeNull();
+    const packJobs = await db()
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.type, "identity_pack"), sql`${jobs.payload} ->> 'characterId' = ${fixture.character}`));
+    expect(packJobs).toHaveLength(0);
   });
 
   it("another user passing the same ids is rejected and the character is unchanged", async () => {

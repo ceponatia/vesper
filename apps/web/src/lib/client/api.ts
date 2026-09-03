@@ -9,7 +9,7 @@ import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
-import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
+import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, type CharacterPortraitAcceptance, characterPortraitAcceptanceSchema, emptyCharacterPortraitAcceptance, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
 import {
   type IdentityPackAdminOverrideRequest,
   type IdentityPackAdminRevision,
@@ -300,8 +300,20 @@ export const characterDetailSchema = characterSummarySchema.extend({
   chatModel: textOr(""),
   /** Viewer owns it — false renders the read-only preview + duplicate CTA (item/location pattern). */
   mine: z.boolean().catch(true),
+  /**
+   * Which portrait is this character's identity source, and whether the one on
+   * screen is it. Owner-only on the wire — a public preview carries no
+   * acceptance at all, which degrades here to "nothing accepted" rather than
+   * failing the read, because no foreign viewer surface asks about it.
+   */
+  acceptance: characterPortraitAcceptanceSchema.catch(() => emptyCharacterPortraitAcceptance()),
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
+
+/** `{ acceptance }` — the body both portrait-acceptance writes answer with. */
+const portraitAcceptanceResponseSchema = z.object({ acceptance: characterPortraitAcceptanceSchema });
+
+export type { CharacterPortraitAcceptance };
 
 /**
  * `PATCH /api/characters/:id` — the saved row's profile plus the save's own
@@ -1157,6 +1169,16 @@ export const charactersApi = {
   promotePortrait: (id: string, imageId: string) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits/${imageId}/promote`, {}),
   deletePortrait: (id: string, imageId: string) => apiDelete(`/api/characters/${id}/portraits/${imageId}`),
+  /**
+   * Accept the portrait on screen as this character's identity source. The image
+   * id travels in the body so a stale studio cannot accept a portrait its owner
+   * never looked at: the server answers 409 `portrait_changed` instead, and the
+   * caller refetches the character.
+   */
+  acceptPortrait: (id: string, imageId: string) =>
+    apiPost(portraitAcceptanceResponseSchema, `/api/characters/${id}/portrait/accept`, { imageId }),
+  /** Withdraw acceptance — deletes no image and no crop; the character simply has no identity source. */
+  clearPortraitAcceptance: (id: string) => apiDelete(`/api/characters/${id}/portrait/accept`),
 };
 
 // ---------------------------------------------------------------------------

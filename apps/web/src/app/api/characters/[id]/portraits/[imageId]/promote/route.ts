@@ -15,8 +15,11 @@ const ownedCharacter = async (user: { id: string }, params: Params) =>
  *
  * Defense in depth: the wrapper authorizes the parent character (and is what
  * `pnpm lint:authz` requires of a resource-ID route), and `promoteVariant`
- * re-verifies both rows against the same owner. It also queues identity-pack
- * preparation for the new canonical source, so this route does not.
+ * re-verifies both rows against the same owner.
+ *
+ * Promotion moves the portrait CANDIDATE only. The character's identity source
+ * and its identity pack stay on the last accepted portrait until the owner
+ * accepts this one (`POST /api/characters/:id/portrait/accept`).
  */
 export const POST = withAuthorizedResource<Params, OwnedCharacter>(
   "character",

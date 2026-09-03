@@ -23,7 +23,7 @@ describe("buildCharacterSceneContext", () => {
     characterId: `${name.toLowerCase()}-id`,
     name,
     profile: makeProfile({ attributes: [attr("hair.color", hair, "base")] }),
-    avatarImageId: null,
+    identityImageId: null,
     outfit: `${name}'s coat`,
     outfitExposed: false,
     ...overrides,
@@ -150,7 +150,7 @@ describe("applySceneSubjectVisual", () => {
       characterId: "mira-id",
       name: "Mira",
       profile: makeProfile({ attributes: [attr("hair.color", "red", "base")] }),
-      avatarImageId: null,
+      identityImageId: null,
       outfit: "Mira's coat",
       attributeOverlays: [attr("hair.color", "silver", "narrative")],
       conditions: [soaked],
@@ -178,7 +178,7 @@ describe("applySceneSubjectVisual", () => {
       characterId: "mira-id",
       name: "Mira",
       profile: makeProfile({ attributes: [attr("hair.color", "red", "base")] }),
-      avatarImageId: null,
+      identityImageId: null,
     };
     const sink = new DiagnosticCollector();
     const applied = applySceneSubjectVisual({

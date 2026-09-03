@@ -8,10 +8,21 @@ The grids, editors and pickers behind `/characters`, `/personas`, `/locations`, 
 `components/characters/portrait-studio.tsx` generates the canonical avatar from attributes,
 accumulates pose/outfit/expression/setting variants, and promotes any variant to canonical.
 
-Between the avatar prompt and the variant controls sits the **Identity reference** block
+Between the avatar prompt and the variant controls sit two blocks, in the order the decisions are
+made. **Portrait acceptance** states whether the portrait on screen is the one the character's
+identity comes from, in three badge states — *Accepted* (it is), *Not accepted* ("Conversations
+keep rendering the last accepted portrait until you accept this one", the state a newly generated,
+uploaded or promoted portrait lands in), and *No accepted portrait* ("Accept a portrait to derive
+its identity reference") — beside **Accept this portrait**, disabled when there is no portrait or
+it is already accepted, and a quiet **Clear acceptance** shown only when something is accepted.
+Accepting names the image on screen, so a portrait that changed in another tab is refused with
+"The portrait changed — review the new one and accept again" and the studio refetches instead of
+accepting a picture nobody looked at.
+
+Under it, the **Identity reference** block
 (`identity-reference-panel.tsx`): a status chip for the character's identity pack plus **Adjust
 face crop**, which opens `identity-crop-dialog.tsx` — a draggable, resizable square over the
-canonical portrait with live preview, plain-language warnings, save/retry/reset actions, and (for
+**accepted** portrait with live preview, plain-language warnings, save/retry/reset actions, and (for
 admins) the lazily-loaded revision-history and override inspector
 (`identity-pack-inspector.tsx`; [../images/identity-packs.md](../images/identity-packs.md)).
 
