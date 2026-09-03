@@ -124,24 +124,24 @@ studio's grid displays them.
 
 ## Routes
 
-| Route                                                            | What it does                                                        |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `GET /api/characters/:id/reference-views`                        | `{ set, planned }` — every slot, `missing` where no row exists       |
-| `POST /api/characters/:id/reference-views/build`                 | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted` |
-| `POST …/reference-views/:angle/:wardrobe/regenerate`             | Rebuilds one slot, a rejected one included                          |
-| `POST …/reference-views/:angle/:wardrobe/upload`                 | `{ dataUrl }` ⇒ the settled slot, synchronously                     |
-| `POST …/reference-views/:angle/:wardrobe/review`                 | `{ verdict: approve \| reject }` ⇒ the settled slot                  |
+| Route                                                | What it does                                                         |
+| ---------------------------------------------------- | -------------------------------------------------------------------- |
+| `GET /api/characters/:id/reference-views`            | `{ set, planned }` — every slot, `missing` where no row exists       |
+| `POST /api/characters/:id/reference-views/build`     | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted` |
+| `POST …/reference-views/:angle/:wardrobe/regenerate` | Rebuilds one slot, a rejected one included                           |
+| `POST …/reference-views/:angle/:wardrobe/upload`     | `{ dataUrl }` ⇒ the settled slot, synchronously                      |
+| `POST …/reference-views/:angle/:wardrobe/review`     | `{ verdict: approve \| reject }` ⇒ the settled slot                  |
 
 All five are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
 
 ## Diagnostic codes
 
-| Code                                     | Meaning                                                        |
-| ---------------------------------------- | -------------------------------------------------------------- |
-| `images.reference_views.build_failed`     | One view's render failed; the rest of the build continues      |
-| `images.reference_views.not_accepted`     | The build ran against a character with no accepted portrait    |
-| `images.reference_views.source_unreadable` | The accepted portrait's bytes could not be read                |
-| `images.reference_views.visual_cut_failed` | A view's cut would not assemble; the row fails before spend    |
-| `images.reference_views.provider_unavailable` | No image provider is configured, so nothing was rendered    |
-| `images.reference_views.unknown_view`     | A stored row names an angle or wardrobe the registry dropped   |
-| `images.reference_views.budget_refused`   | Admission refused the build; the acceptance still stands       |
+| Code                                          | Meaning                                                      |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| `images.reference_views.build_failed`         | One view's render failed; the rest of the build continues    |
+| `images.reference_views.not_accepted`         | The build ran against a character with no accepted portrait  |
+| `images.reference_views.source_unreadable`    | The accepted portrait's bytes could not be read              |
+| `images.reference_views.visual_cut_failed`    | A view's cut would not assemble; the row fails before spend  |
+| `images.reference_views.provider_unavailable` | No image provider is configured, so nothing was rendered     |
+| `images.reference_views.unknown_view`         | A stored row names an angle or wardrobe the registry dropped |
+| `images.reference_views.budget_refused`       | Admission refused the build; the acceptance still stands     |
