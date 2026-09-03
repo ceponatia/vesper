@@ -4,7 +4,9 @@ import {
   reviewedImageQualityControlFields,
   reviewedImageQualityInputs,
   reviewedImageQualityPolicy,
+  reviewedImageQualityPolicyDefects,
   reviewedImageQualitySlugs,
+  type ReviewedImageQualityPolicy,
 } from "./reviewed-profile-controls";
 
 /**
@@ -44,22 +46,46 @@ describe("the reviewed policy in both vocabularies", () => {
     }
   });
 
-  it("expresses every reviewed provider field through exactly one profile channel", () => {
+  it("accounts for the whole reviewed effect across the two profile channels", () => {
     for (const slug of reviewedImageQualitySlugs) {
       const policy = reviewedImageQualityPolicy(slug);
       expect(policy, slug).not.toBeNull();
       if (!policy) continue;
-      const mappedFields = reviewedImageQualityControlFields(policy);
-      const overrideFields = Object.keys(policy.providerOverrides);
-      // No field may be claimed by both a normalized control and a raw override —
-      // that is the shape where a value moves in one place and not the other, and
-      // whichever layer merged last would silently win.
-      expect(mappedFields.filter((field) => overrideFields.includes(field)), slug).toEqual([]);
-      // And together they must account for the whole reviewed effect.
-      expect([...mappedFields, ...overrideFields].sort(), slug).toEqual(
+      expect([...reviewedImageQualityControlFields(policy), ...Object.keys(policy.providerOverrides)].sort(), slug).toEqual(
         Object.keys(SPEC_EFFECTIVE_VALUES[slug] ?? {}).sort(),
       );
     }
+  });
+
+  // The two shapes in which the one table can still say two different things,
+  // each fed a real instance. The live table is held to both at module load, so
+  // a contradictory row fails the import rather than a render; these cases prove
+  // the check can actually fail, which the assertion it replaced could not —
+  // it compared the mapped fields against the overrides after defining the
+  // former as everything that was NOT an override.
+  it("refuses a row whose default the overlay would never write", () => {
+    // Live in the profile representation, invisible to the overlay, and cancelled
+    // out by a parity probe synthesized from `controlFields` — the one-way drift
+    // no fixture comparison can see.
+    const unmapped: ReviewedImageQualityPolicy = {
+      controlDefaults: { guidance: 7, resolution: "custom", width: 832, height: 1216 },
+      providerOverrides: {},
+      controlFields: { width: "width", height: "height" },
+    };
+    expect(reviewedImageQualityPolicyDefects(unmapped)).toEqual([{ kind: "unmapped_default", control: "guidance" }]);
+  });
+
+  it("refuses a row where a control and a raw override claim one provider field", () => {
+    // The overrides spread last, so the mapped 7 would leave as a 3 with nothing
+    // recording that the reviewed judgment had said otherwise.
+    const colliding: ReviewedImageQualityPolicy = {
+      controlDefaults: { guidance: 7 },
+      providerOverrides: { cfg: 3 },
+      controlFields: { guidance: "cfg" },
+    };
+    expect(reviewedImageQualityPolicyDefects(colliding)).toEqual([
+      { kind: "field_collision", control: "guidance", field: "cfg" },
+    ]);
   });
 
   it("gates every pinned dimension pair behind the custom resolution tier", () => {

@@ -17,6 +17,7 @@ import {
   imagePromptDialect,
   lintImagePromptCollisions,
   parseImagePromptProgramProvenance,
+  registerImagePromptDialect,
   PROSE_FAMILY_IDENTITY_LOCK,
   PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED,
   qwenImage2512Bindings,
@@ -618,6 +619,39 @@ describe("compiling a prompt program", () => {
     const result = compileImagePromptProgram(input());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.refusal.code).toBe(code);
+  });
+
+  /**
+   * Falsified against a compile that guarded the claim LIST and never the text.
+   * A dialect whose every wording comes out blank hands the fitter segments that
+   * `normalizeImagePromptSegments` drops without recording a dropped claim, so
+   * the mandatory-claim refusal stays quiet and the compile returns `ok` with an
+   * empty prompt — which the transport then posts as the empty string.
+   *
+   * No registered dialect words nothing (each states the subject count), so the
+   * case stands in for one: the item binding's own id is re-registered with a
+   * compiler that renders whitespace, and the real compiler is put back after.
+   */
+  it("refuses a compile that worded nothing rather than sending a blank prompt", () => {
+    const real = imagePromptDialect(itemBinding.promptDialectId);
+    if (real === null) throw new Error("the item binding names an unregistered dialect");
+    registerImagePromptDialect({
+      ...real,
+      compilePositive: (input) =>
+        compileDialectClaims({
+          claims: input.claims,
+          render: (claim) => ({ kind: claim.segmentKind, text: "   ", mandatory: claim.required, priority: claim.priority }),
+          surfaces: createSceneStagingSurfaceLog(),
+          budget: input.budget,
+        }),
+    });
+    try {
+      const result = compileImagePromptProgram(compileInput(itemWorld()));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.refusal.code).toBe("image_prompt_program.prompt_empty");
+    } finally {
+      registerImagePromptDialect(real);
+    }
   });
 
   /**

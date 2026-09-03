@@ -112,6 +112,7 @@ export {
   reviewedImageQualityControlFields,
   reviewedImageQualityInputs,
   reviewedImageQualityPolicy,
+  reviewedImageQualityPolicyDefects,
   reviewedImageQualitySlugs,
   validateImageProfileConfiguration,
   withReviewedImageQuality,
@@ -140,6 +141,7 @@ export type {
   ResolvedImageProfile,
   ReviewedImageControlDefaults,
   ReviewedImageQualityPolicy,
+  ReviewedImageQualityPolicyDefect,
 } from "./models";
 export {
   IMAGE_LORA_INCOMPATIBLE,

@@ -471,6 +471,11 @@ function joinedLength(segments: readonly ImagePromptSegment[]): number {
  * that `source` never reaches a provider — provenance cannot leak through a
  * function that does not look at it. `tagText` is likewise untouched: emitting
  * tag syntax into prose would corrupt the very models this dialect serves.
+ *
+ * It can return the empty string — a list the fitter emptied, or one whose
+ * every segment was blank — and does not judge that: the prompt program refuses
+ * a blank compile (`image_prompt_program.prompt_empty`), at the one point that
+ * knows the text is about to become a payload.
  */
 export function joinImagePromptSegments(segments: readonly ImagePromptSegment[]): string {
   return segments
