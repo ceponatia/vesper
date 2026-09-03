@@ -311,13 +311,21 @@ export async function readSimChatMeters(chatId: string): Promise<Record<string, 
   try {
     // The branch clock is the integrate target — a narrower per-actor load
     // (WITH rhythms, unlike the branch projection) is all the strip needs.
-    const [branch] = await db()
-      .select({ storySecond: simBranches.storySecond })
-      .from(simBranches)
-      .where(eq(simBranches.id, branchId));
-    if (!branch) return null;
-    const storySecond = branch.storySecond;
-    const body = await loadActorBody(db(), branchId, primaryActorId);
+    // Clock and body rows come from one snapshot, so a command committing
+    // mid-read cannot integrate stale meters to a newer clock.
+    const snapshot = await db().transaction(
+      async (tx) => {
+        const [branch] = await tx
+          .select({ storySecond: simBranches.storySecond })
+          .from(simBranches)
+          .where(eq(simBranches.id, branchId));
+        if (!branch) return null;
+        return { storySecond: branch.storySecond, body: await loadActorBody(tx, branchId, primaryActorId) };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    if (!snapshot) return null;
+    const { storySecond, body } = snapshot;
     if (body.meters.length === 0) return null;
     const integrated: Record<string, number> = {};
     for (const meter of body.meters) {
@@ -381,22 +389,31 @@ export async function readSimChatRelationship(chatId: string): Promise<SimChatRe
   const playerActorId = authority.simPlayerActorId;
   const primaryActorId = authority.simPrimaryActorId;
   try {
-    const [branch] = await db()
-      .select({ storySecond: simBranches.storySecond })
-      .from(simBranches)
-      .where(eq(simBranches.id, branchId));
-    if (!branch) return null;
-    const [towardPrimary, towardPlayer] = await Promise.all([
-      loadDyadLedgerEntries(db(), branchId, playerActorId, primaryActorId),
-      loadDyadLedgerEntries(db(), branchId, primaryActorId, playerActorId),
-    ]);
-    if (towardPrimary.length === 0 && towardPlayer.length === 0) return null;
-    const authoredPriorWeights = await loadAuthoredPriorWeights(db(), branchId, towardPrimary);
+    // Clock, both ledger directions, and the authored priors come from one
+    // snapshot, so a command committing mid-read cannot leave the read
+    // straddling two ledger states.
+    const snapshot = await db().transaction(
+      async (tx) => {
+        const [branch] = await tx
+          .select({ storySecond: simBranches.storySecond })
+          .from(simBranches)
+          .where(eq(simBranches.id, branchId));
+        if (!branch) return null;
+        const towardPrimary = await loadDyadLedgerEntries(tx, branchId, playerActorId, primaryActorId);
+        const towardPlayer = await loadDyadLedgerEntries(tx, branchId, primaryActorId, playerActorId);
+        if (towardPrimary.length === 0 && towardPlayer.length === 0) return null;
+        const authoredPriorWeights = await loadAuthoredPriorWeights(tx, branchId, towardPrimary);
+        return { storySecond: branch.storySecond, towardPrimary, towardPlayer, authoredPriorWeights };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    if (!snapshot) return null;
+    const { storySecond, towardPrimary, towardPlayer, authoredPriorWeights } = snapshot;
     const read = deriveRelationshipRead({
       entries: towardPrimary,
       subjectActorId: primaryActorId,
       aboutActorId: playerActorId,
-      atStorySecond: branch.storySecond,
+      atStorySecond: storySecond,
       authoredPriorWeights,
     });
     const priorCount =

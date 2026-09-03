@@ -121,8 +121,6 @@ import {
 } from "./space-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
-type DbExecutor = Db | SimTx;
-
 /**
  * A pathological fork chain lengthens every ancestry walk; snapshots blunt the
  * cost but a hard ceiling keeps a runaway chain a loud error instead of a slow
@@ -144,7 +142,7 @@ export interface BranchAncestry {
 
 /** Walk the parent chain (R4). Every branch-scoped read starts here. */
 export async function loadBranchAncestry(
-  executor: DbExecutor,
+  executor: SimTx,
   rawBranchId: string,
 ): Promise<BranchAncestry> {
   const branchId = worldBranchIdSchema.parse(rawBranchId);
@@ -212,7 +210,7 @@ export interface ReadBranchAncestryEventsOptions {
  * bound because the bound is not theirs to supply.
  */
 export async function readBranchAncestryEvents(
-  executor: DbExecutor,
+  executor: SimTx,
   ancestry: BranchAncestry,
   options: ReadBranchAncestryEventsOptions = {},
 ): Promise<SimulationBranchEvent[]> {
@@ -245,48 +243,43 @@ export interface DurableBranchState {
 }
 
 /** Assemble the live typed projection and event stream inside a caller's transaction. */
-export async function assembleBranchState(
-  tx: DbExecutor,
-  ancestry: BranchAncestry,
-): Promise<DurableBranchState> {
+export async function assembleBranchState(tx: SimTx, ancestry: BranchAncestry): Promise<DurableBranchState> {
   const branch = ancestry.rows[0];
   if (!branch) throw new Error("Simulation branch not found");
-  const [worldRows, actorRows, itemRows, events] = await Promise.all([
-    tx
-      .select({ rulesetVersion: simWorlds.rulesetVersion })
-      .from(simWorlds)
-      .where(eq(simWorlds.id, ancestry.worldId))
-      .limit(1),
-    tx
-      .select()
-      .from(simCharacters)
-      .where(eq(simCharacters.branchId, branch.id))
-      .orderBy(asc(simCharacters.characterId)),
-    tx
-      .select({
-        itemId: simItems.itemId,
-        name: simItems.name,
-        materialKindKey: simItems.materialKindKey,
-        ownerActorId: simItems.ownerActorId,
-        containerCapacityCount: simItems.containerCapacityCount,
-        containerAccess: simItems.containerAccess,
-        conditionTracked: simItems.conditionTracked,
-        locusKind: simItemHoldings.locusKind,
-        locusActorId: simItemHoldings.actorId,
-        slotKey: simItemHoldings.slotKey,
-        containerItemId: simItemHoldings.containerItemId,
-        zoneId: simItemHoldings.zoneId,
-        goneBasis: simItemHoldings.goneBasis,
-      })
-      .from(simItems)
-      .innerJoin(
-        simItemHoldings,
-        and(eq(simItemHoldings.branchId, simItems.branchId), eq(simItemHoldings.itemId, simItems.itemId)),
-      )
-      .where(eq(simItems.branchId, branch.id))
-      .orderBy(asc(simItems.itemId)),
-    readBranchAncestryEvents(tx, ancestry),
-  ]);
+  const worldRows = await tx
+    .select({ rulesetVersion: simWorlds.rulesetVersion })
+    .from(simWorlds)
+    .where(eq(simWorlds.id, ancestry.worldId))
+    .limit(1);
+  const actorRows = await tx
+    .select()
+    .from(simCharacters)
+    .where(eq(simCharacters.branchId, branch.id))
+    .orderBy(asc(simCharacters.characterId));
+  const itemRows = await tx
+    .select({
+      itemId: simItems.itemId,
+      name: simItems.name,
+      materialKindKey: simItems.materialKindKey,
+      ownerActorId: simItems.ownerActorId,
+      containerCapacityCount: simItems.containerCapacityCount,
+      containerAccess: simItems.containerAccess,
+      conditionTracked: simItems.conditionTracked,
+      locusKind: simItemHoldings.locusKind,
+      locusActorId: simItemHoldings.actorId,
+      slotKey: simItemHoldings.slotKey,
+      containerItemId: simItemHoldings.containerItemId,
+      zoneId: simItemHoldings.zoneId,
+      goneBasis: simItemHoldings.goneBasis,
+    })
+    .from(simItems)
+    .innerJoin(
+      simItemHoldings,
+      and(eq(simItemHoldings.branchId, simItems.branchId), eq(simItemHoldings.itemId, simItems.itemId)),
+    )
+    .where(eq(simItems.branchId, branch.id))
+    .orderBy(asc(simItems.itemId));
+  const events = await readBranchAncestryEvents(tx, ancestry);
 
   const world = worldRows[0];
   if (!world) throw new Error("Simulation world not found");

@@ -135,13 +135,21 @@ export function pressureRowInsert(
   };
 }
 
-/** Load the current typed commitments projection without a write lock. */
+/** Load the current typed commitments projection without a write lock, from one snapshot. */
 export async function readDurableCommitments(
   rawBranchId: string,
   database: Db = db(),
 ): Promise<CommitmentsProjection> {
   const branchId = worldBranchIdSchema.parse(rawBranchId);
-  const [branch] = await database
+  return database.transaction((tx) => loadCommitmentsProjection(tx, branchId), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
+}
+
+/** Assemble the typed commitments projection inside a caller's transaction. */
+export async function loadCommitmentsProjection(tx: SimTx, branchId: string): Promise<CommitmentsProjection> {
+  const [branch] = await tx
     .select({
       headSequence: simBranches.headSequence,
       version: simBranches.version,
@@ -151,18 +159,16 @@ export async function readDurableCommitments(
     .where(eq(simBranches.id, branchId))
     .limit(1);
   if (!branch) throw new Error("Simulation branch not found");
-  const [commitmentRows, pressureRows] = await Promise.all([
-    database
-      .select()
-      .from(simCommitments)
-      .where(eq(simCommitments.branchId, branchId))
-      .orderBy(asc(simCommitments.commitmentId)),
-    database
-      .select()
-      .from(simTemporalPressures)
-      .where(eq(simTemporalPressures.branchId, branchId))
-      .orderBy(asc(simTemporalPressures.pressureId)),
-  ]);
+  const commitmentRows = await tx
+    .select()
+    .from(simCommitments)
+    .where(eq(simCommitments.branchId, branchId))
+    .orderBy(asc(simCommitments.commitmentId));
+  const pressureRows = await tx
+    .select()
+    .from(simTemporalPressures)
+    .where(eq(simTemporalPressures.branchId, branchId))
+    .orderBy(asc(simTemporalPressures.pressureId));
   return commitmentsProjectionSchema.parse({
     branchId,
     headSequence: branch.headSequence,

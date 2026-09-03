@@ -31,8 +31,8 @@ import {
   bodyModifierFromRow,
   bodyRhythmFromRow,
   loadActorBody,
-  type DbExecutor,
 } from "./body-rows";
+import type { SimTx } from "./trigger-projector";
 
 // ---------------------------------------------------------------------------
 // E5.2 — the durable read surface
@@ -54,30 +54,42 @@ export interface DurableEnergyRead {
 export async function readDurableBodyReads(
   rawBranchId: string,
   database: Db = db(),
-): Promise<{ branchId: string; storySecond: number; energy: DurableEnergyRead[] }> {
+): Promise<DurableBodyReads> {
   const branchId = worldBranchIdSchema.parse(rawBranchId);
-  const [branch] = await database
+  return database.transaction((tx) => loadBodyReads(tx, branchId), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
+}
+
+export interface DurableBodyReads {
+  branchId: string;
+  storySecond: number;
+  energy: DurableEnergyRead[];
+}
+
+/** Assemble the per-actor energy reads inside a caller's transaction. */
+export async function loadBodyReads(tx: SimTx, branchId: string): Promise<DurableBodyReads> {
+  const [branch] = await tx
     .select({ storySecond: simBranches.storySecond })
     .from(simBranches)
     .where(eq(simBranches.id, branchId))
     .limit(1);
   if (!branch) throw new Error("Simulation branch not found");
-  const [meterRows, modifierRows, rhythmRows, conditionRows] = await Promise.all([
-    database
-      .select()
-      .from(simBodyMeters)
-      .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.meterKey, "energy")))
-      .orderBy(asc(simBodyMeters.actorId)),
-    database
-      .select()
-      .from(simBodyModifiers)
-      .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.meterKey, "energy"))),
-    database.select().from(simBodyRhythms).where(eq(simBodyRhythms.branchId, branchId)),
-    database
-      .select()
-      .from(simBodyConditions)
-      .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.key, "asleep"))),
-  ]);
+  const meterRows = await tx
+    .select()
+    .from(simBodyMeters)
+    .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.meterKey, "energy")))
+    .orderBy(asc(simBodyMeters.actorId));
+  const modifierRows = await tx
+    .select()
+    .from(simBodyModifiers)
+    .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.meterKey, "energy")));
+  const rhythmRows = await tx.select().from(simBodyRhythms).where(eq(simBodyRhythms.branchId, branchId));
+  const conditionRows = await tx
+    .select()
+    .from(simBodyConditions)
+    .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.key, "asleep")));
   const energy: DurableEnergyRead[] = [];
   for (const meterRow of meterRows) {
     const state = bodyMeterFromRow(meterRow);
@@ -122,10 +134,11 @@ export async function readDurableBodyReads(
  * E5.2 — the cut's body surface (`bodilyReads`): the viewpoint's own
  * energy read and intimacy pulse, plus each co-present actor's perceivable
  * signs at engaged-attention tier. Pure over loaded rows; empty when bodies
- * are uninitialized, so pre-Gate-5 worlds compile identical cuts.
+ * are uninitialized, so pre-Gate-5 worlds compile identical cuts. Reads
+ * inside the caller's transaction: the cut assembler owns the snapshot.
  */
 export async function computeEngagementBodilyReads(
-  executor: DbExecutor,
+  tx: SimTx,
   input: {
     branchId: string;
     storySecond: number;
@@ -137,7 +150,7 @@ export async function computeEngagementBodilyReads(
   const bodies = new Map(
     await Promise.all(
       actorIds.map(
-        async (actorId) => [actorId, await loadActorBody(executor, input.branchId, actorId)] as const,
+        async (actorId) => [actorId, await loadActorBody(tx, input.branchId, actorId)] as const,
       ),
     ),
   );

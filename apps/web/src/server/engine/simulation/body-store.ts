@@ -89,7 +89,7 @@ import {
   retirePendingThresholdTriggers,
   upsertMeterRow,
 } from "./body-rows";
-import { applyTriggerScheduledEvent } from "./trigger-projector";
+import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
  * E5.1 durable body authority. Meter rows persist only at MATERIAL boundaries
@@ -139,13 +139,9 @@ export async function seedDurableBodyRhythms(
   });
 }
 
-/** Load the current typed bodies projection without a write lock. */
-export async function readDurableBodies(
-  rawBranchId: string,
-  database: Db = db(),
-): Promise<BodiesProjection> {
-  const branchId = worldBranchIdSchema.parse(rawBranchId);
-  const [branch] = await database
+/** Assemble the typed bodies projection inside a caller's transaction. */
+export async function loadBodiesProjection(tx: SimTx, branchId: string): Promise<BodiesProjection> {
+  const [branch] = await tx
     .select({
       headSequence: simBranches.headSequence,
       version: simBranches.version,
@@ -155,23 +151,21 @@ export async function readDurableBodies(
     .where(eq(simBranches.id, branchId))
     .limit(1);
   if (!branch) throw new Error("Simulation branch not found");
-  const [meterRows, conditionRows, modifierRows] = await Promise.all([
-    database
-      .select()
-      .from(simBodyMeters)
-      .where(eq(simBodyMeters.branchId, branchId))
-      .orderBy(asc(simBodyMeters.actorId), asc(simBodyMeters.meterKey)),
-    database
-      .select()
-      .from(simBodyConditions)
-      .where(eq(simBodyConditions.branchId, branchId))
-      .orderBy(asc(simBodyConditions.conditionId)),
-    database
-      .select()
-      .from(simBodyModifiers)
-      .where(eq(simBodyModifiers.branchId, branchId))
-      .orderBy(asc(simBodyModifiers.modifierId)),
-  ]);
+  const meterRows = await tx
+    .select()
+    .from(simBodyMeters)
+    .where(eq(simBodyMeters.branchId, branchId))
+    .orderBy(asc(simBodyMeters.actorId), asc(simBodyMeters.meterKey));
+  const conditionRows = await tx
+    .select()
+    .from(simBodyConditions)
+    .where(eq(simBodyConditions.branchId, branchId))
+    .orderBy(asc(simBodyConditions.conditionId));
+  const modifierRows = await tx
+    .select()
+    .from(simBodyModifiers)
+    .where(eq(simBodyModifiers.branchId, branchId))
+    .orderBy(asc(simBodyModifiers.modifierId));
   return bodiesProjectionSchema.parse({
     branchId,
     headSequence: branch.headSequence,
@@ -180,6 +174,18 @@ export async function readDurableBodies(
     meters: meterRows.map(bodyMeterFromRow),
     conditions: conditionRows.map(bodyConditionFromRow),
     modifiers: modifierRows.map(bodyModifierFromRow),
+  });
+}
+
+/** Load the current typed bodies projection without a write lock, from one snapshot. */
+export async function readDurableBodies(
+  rawBranchId: string,
+  database: Db = db(),
+): Promise<BodiesProjection> {
+  const branchId = worldBranchIdSchema.parse(rawBranchId);
+  return database.transaction((tx) => loadBodiesProjection(tx, branchId), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
   });
 }
 

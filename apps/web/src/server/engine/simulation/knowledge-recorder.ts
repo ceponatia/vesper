@@ -7,6 +7,7 @@ import {
   type Belief,
   type KnowledgeProjection,
 } from "@vesper/simulation-core/contracts/knowledge";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import { observationSchema, type Observation } from "@vesper/simulation-core/contracts/perception";
 import {
   applyDisclosureEvent,
@@ -314,18 +315,14 @@ export async function recordCommandKnowledge(
   return written;
 }
 
-/** The full knowledge projection of one branch, id-ordered for parity checks. */
-export async function loadKnowledgeProjection(
-  branchId: string,
-  options: { database?: Db | SimTx } = {},
-): Promise<KnowledgeProjection> {
-  const database = options.database ?? db();
-  const assertionRows = await database
+/** The full knowledge projection of one branch, id-ordered for parity checks, inside a caller's transaction. */
+export async function loadKnowledgeProjection(tx: SimTx, branchId: string): Promise<KnowledgeProjection> {
+  const assertionRows = await tx
     .select()
     .from(simAssertions)
     .where(eq(simAssertions.branchId, branchId))
     .orderBy(asc(simAssertions.assertionId));
-  const beliefRows = await database
+  const beliefRows = await tx
     .select()
     .from(simBeliefs)
     .where(eq(simBeliefs.branchId, branchId))
@@ -334,6 +331,18 @@ export async function loadKnowledgeProjection(
     branchId,
     assertions: assertionRows.map(assertionFromRow),
     beliefs: beliefRows.map(beliefFromRow),
+  });
+}
+
+/** Load the current typed knowledge projection without a write lock, from one snapshot. */
+export async function readDurableKnowledge(
+  rawBranchId: string,
+  database: Db = db(),
+): Promise<KnowledgeProjection> {
+  const branchId = worldBranchIdSchema.parse(rawBranchId);
+  return database.transaction((tx) => loadKnowledgeProjection(tx, branchId), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
   });
 }
 

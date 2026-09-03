@@ -1,10 +1,18 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { narrativeCutSchema } from "@vesper/simulation-core/contracts/narrative";
 import { newId } from "@/lib/ids";
 import { deriveCommitmentId } from "@vesper/simulation-core/commitments";
 import { deriveEngagementId } from "@vesper/simulation-core/engagements";
-import { db, simBeliefs, simEvents, simNarrativeCuts, simTemporalPressures } from "@/server/db";
+import {
+  db,
+  simBeliefs,
+  simBranches,
+  simEvents,
+  simNarrativeCuts,
+  simTemporalPressures,
+  type Db,
+} from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,
   expectAccepted,
@@ -25,13 +33,15 @@ import { submitDurableOpenEngagement } from "./engagement-store";
 import { loadPersistedCut, NarrativeCutVersionError, persistNarrativeCut } from "./narrative-cut-store";
 import { loadSoftCanonProjection } from "./soft-canon-recorder";
 import { submitDurableDemoteSoftCanon } from "./soft-canon-store";
+import { readDurableSpaceBranch, submitDurableMoveActor } from "./space-store";
 
 /**
  * E4.3 integration: persisted cuts (immutable, addressable, retryable),
  * narrator confirmation against the persisted row, the armed-disclosure
  * knowledge bridge, ruling-14 soft canon (record → reuse → audited
- * auto-promotion → storyteller demotion), fork replay parity, and the
- * deliberator seam driven by stubs — zero model calls anywhere.
+ * auto-promotion → storyteller demotion), fork replay parity, the
+ * deliberator seam driven by stubs — zero model calls anywhere — and the
+ * one-snapshot law: every cut input loads inside one read-only transaction.
  */
 
 const SEED_SECOND = 100_000;
@@ -133,16 +143,24 @@ async function openChat(ids: NarrativeCase): Promise<string> {
   return deriveEngagementId(ids.branchId, `cmd-chat-${ids.branchId}`);
 }
 
-function prepare(ids: NarrativeCase, engagementId: string, overrides: Record<string, unknown> = {}) {
-  return prepareEngagementTurn({
-    branchId: ids.branchId,
-    engagementId,
-    viewpointActorId: ids.player,
-    spanSeconds: TURN_SPAN,
-    horizonSeconds: HORIZON,
-    workerId: "w-e4-3",
-    ...overrides,
-  });
+function prepare(
+  ids: NarrativeCase,
+  engagementId: string,
+  overrides: Record<string, unknown> = {},
+  options: { database?: Db } = {},
+) {
+  return prepareEngagementTurn(
+    {
+      branchId: ids.branchId,
+      engagementId,
+      viewpointActorId: ids.player,
+      spanSeconds: TURN_SPAN,
+      horizonSeconds: HORIZON,
+      workerId: "w-e4-3",
+      ...overrides,
+    },
+    options,
+  );
 }
 
 function confirm(
@@ -179,6 +197,51 @@ async function tableCounts(branchId: string): Promise<{ events: number; cuts: nu
   const events = await db().select().from(simEvents).where(eq(simEvents.branchId, branchId));
   const cuts = await db().select().from(simNarrativeCuts).where(eq(simNarrativeCuts.branchId, branchId));
   return { events: events.length, cuts: cuts.length };
+}
+
+interface PreparedStatement {
+  execute: (...args: unknown[]) => Promise<unknown>;
+}
+
+interface StatementSession {
+  prepareQuery: (query: { sql: string }, ...rest: unknown[]) => PreparedStatement;
+}
+
+/**
+ * Report every statement an executor runs, once it resolves, with its SQL.
+ * Drizzle routes each builder and `execute` call through the executor's
+ * session `prepareQuery`, so overriding it on a prototype-chained copy
+ * observes statements without touching the real client or its connection.
+ */
+function observeStatements<T extends object>(executor: T, onStatement: (sql: string) => Promise<void>): T {
+  const realSession = (executor as unknown as { session: StatementSession }).session;
+  const session = Object.create(realSession) as StatementSession;
+  session.prepareQuery = (query, ...rest) => {
+    const prepared = realSession.prepareQuery(query, ...rest);
+    const execute = prepared.execute.bind(prepared);
+    prepared.execute = async (...args) => {
+      const rows = await execute(...args);
+      await onStatement(query.sql);
+      return rows;
+    };
+    return prepared;
+  };
+  return Object.assign(Object.create(executor) as T, { session });
+}
+
+/**
+ * A `Db` whose bare statements and read-only transactions report their SQL,
+ * so a test can interleave a real command at one exact point of a read
+ * sequence. Write transactions pass through untouched.
+ */
+function snapshotProbe(real: Db, onStatement: (sql: string) => Promise<void>): Db {
+  const probed = observeStatements(real, onStatement);
+  const transaction: Db["transaction"] = (fn, config) =>
+    config?.accessMode === "read only"
+      ? real.transaction((tx) => fn(observeStatements(tx, onStatement)), config)
+      : real.transaction(fn, config);
+  probed.transaction = transaction;
+  return probed;
 }
 
 describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", () => {
@@ -476,5 +539,64 @@ describe.runIf(harness.ready)("E4.3 persisted cuts and narrator integration", ()
       admissionReasonCode: "lod_too_low",
     });
     expect(fallbackTurn.departures[0]?.destinationZoneId).toBe(fallbackIds.zoneShop);
+  });
+
+  it("assembles every cut input from one committed snapshot: a command landing mid-assembly is wholly before or wholly after the cut, never across it", async () => {
+    const ids = await seedNarrativeCase();
+    const engagementId = await openChat(ids);
+
+    // The moment the cut's head read resolves — the snapshot's first
+    // statement, before its event, space, observation, and body reads — Mara
+    // walks off to the annex on the bare db: the departure appends events,
+    // flips her locus to in_transit, interrupts the chat, and bumps the
+    // version. Falsified against the old assembler, whose separate reads let
+    // the cut claim the pre-departure version while carrying the departure's
+    // own events and post-departure loci.
+    let departure: { branchVersion: number; firstSequence: number; eventIds: string[] } | undefined;
+    const database = snapshotProbe(db(), async (sql) => {
+      if (departure || !(sql.includes('"sim_branches"') && sql.includes('"sim_worlds"'))) return;
+      const moved = await submitDurableMoveActor(
+        simCommand({
+          branchId: ids.branchId,
+          name: "mid-cut-departure",
+          type: "move_actor",
+          principal: npcPrincipal(ids.mara),
+          payload: { actorId: ids.mara, destinationZoneId: ids.zoneAnnex, travelMode: "walk" },
+        }),
+        ADMIT_AT_LOCKED_VERSION,
+      );
+      expectAccepted(moved, "mid-assembly departure");
+      departure = moved;
+    });
+
+    const turn = await prepare(ids, engagementId, {}, { database });
+    if (!departure) throw new Error("The cut assembler never read the branch head");
+
+    // Wholly before: version, range, story time, loci, and every compiled
+    // fact describe the branch as it stood when the head was read.
+    expect(turn.cut.branchVersion).toBe(departure.branchVersion - 1);
+    expect(turn.cut.throughSequence).toBe(departure.firstSequence - 1);
+    expect(turn.cut.throughStorySecond).toBe(turn.advance.storySecond);
+    expect(turn.cut.currentLoci).toEqual(
+      [ids.mara, ids.player].sort().map((actorId) => ({ actorId, kind: "at", zoneId: ids.zoneCafe })),
+    );
+    const serialized = JSON.stringify(turn.cut);
+    for (const eventId of departure.eventIds) expect(serialized).not.toContain(eventId);
+
+    // The same reads on the bare db now show the departure, so the cut's
+    // pre-departure picture is the snapshot's doing, not a quiet branch.
+    const [head] = await db()
+      .select({ version: simBranches.version })
+      .from(simBranches)
+      .where(eq(simBranches.id, ids.branchId));
+    expect(head?.version).toBe(departure.branchVersion);
+    const space = await readDurableSpaceBranch(ids.branchId);
+    expect(space.loci.find((locus) => locus.actorId === ids.mara)?.kind).toBe("in_transit");
+    const eventRows = await db()
+      .select({ id: simEvents.id })
+      .from(simEvents)
+      .where(and(eq(simEvents.branchId, ids.branchId), gt(simEvents.sequence, turn.cut.throughSequence)));
+    expect(eventRows.map((row) => row.id)).toEqual(expect.arrayContaining(departure.eventIds));
+    expect(await loadPersistedCut(ids.branchId, turn.cut.id)).toEqual(turn.cut);
   });
 });

@@ -63,8 +63,6 @@ import { enqueueMemoryIndexObligations } from "./memory-index-store";
 import { recordCommandObservations } from "./observation-store";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
-type DbExecutor = Db | SimTx;
-
 /**
  * E3.1 durable space authority. Topology rows are branch-scoped seeded
  * statics; loci and journeys are event-projected state maintained in the same
@@ -97,13 +95,17 @@ interface SpaceRows {
   journeys: (typeof simJourneys.$inferSelect)[];
 }
 
-export async function loadSpaceRows(executor: DbExecutor, branchId: string): Promise<SpaceRows> {
+/**
+ * The five space tables of one branch, read inside the caller's transaction so
+ * a snapshot-owning reader (a cut, a projection) sees one committed state.
+ */
+export async function loadSpaceRows(tx: SimTx, branchId: string): Promise<SpaceRows> {
   const [locations, zones, links, loci, journeys] = await Promise.all([
-    executor.select().from(simLocations).where(eq(simLocations.branchId, branchId)).orderBy(asc(simLocations.locationId)),
-    executor.select().from(simZones).where(eq(simZones.branchId, branchId)).orderBy(asc(simZones.zoneId)),
-    executor.select().from(simLinks).where(eq(simLinks.branchId, branchId)).orderBy(asc(simLinks.linkId)),
-    executor.select().from(simPhysicalLoci).where(eq(simPhysicalLoci.branchId, branchId)).orderBy(asc(simPhysicalLoci.actorId)),
-    executor.select().from(simJourneys).where(eq(simJourneys.branchId, branchId)).orderBy(asc(simJourneys.journeyId)),
+    tx.select().from(simLocations).where(eq(simLocations.branchId, branchId)).orderBy(asc(simLocations.locationId)),
+    tx.select().from(simZones).where(eq(simZones.branchId, branchId)).orderBy(asc(simZones.zoneId)),
+    tx.select().from(simLinks).where(eq(simLinks.branchId, branchId)).orderBy(asc(simLinks.linkId)),
+    tx.select().from(simPhysicalLoci).where(eq(simPhysicalLoci.branchId, branchId)).orderBy(asc(simPhysicalLoci.actorId)),
+    tx.select().from(simJourneys).where(eq(simJourneys.branchId, branchId)).orderBy(asc(simJourneys.journeyId)),
   ]);
   return { locations, zones, links, loci, journeys };
 }

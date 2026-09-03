@@ -179,13 +179,9 @@ export function activityRowInsert(
   };
 }
 
-/** Load the current typed activities projection without a write lock. */
-export async function readDurableActivities(
-  rawBranchId: string,
-  database: Db = db(),
-): Promise<ActivitiesProjection> {
-  const branchId = worldBranchIdSchema.parse(rawBranchId);
-  const [branch] = await database
+/** Assemble the typed activities projection inside a caller's transaction. */
+export async function loadActivitiesProjection(tx: SimTx, branchId: string): Promise<ActivitiesProjection> {
+  const [branch] = await tx
     .select({
       id: simBranches.id,
       headSequence: simBranches.headSequence,
@@ -196,7 +192,7 @@ export async function readDurableActivities(
     .where(eq(simBranches.id, branchId))
     .limit(1);
   if (!branch) throw new Error("Simulation branch not found");
-  const rows = await database
+  const rows = await tx
     .select()
     .from(simActivities)
     .where(eq(simActivities.branchId, branchId))
@@ -207,6 +203,18 @@ export async function readDurableActivities(
     version: branch.version,
     storySecond: branch.storySecond,
     activities: rows.map(activityFromRow),
+  });
+}
+
+/** Load the current typed activities projection without a write lock, from one snapshot. */
+export async function readDurableActivities(
+  rawBranchId: string,
+  database: Db = db(),
+): Promise<ActivitiesProjection> {
+  const branchId = worldBranchIdSchema.parse(rawBranchId);
+  return database.transaction((tx) => loadActivitiesProjection(tx, branchId), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
   });
 }
 

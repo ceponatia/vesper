@@ -46,8 +46,13 @@ export async function readBranchEvents(
 ): Promise<SimulationBranchEvent[]> {
   const { types } = options;
   if (options.includeAncestry) {
-    const ancestry = await loadBranchAncestry(db(), branchId);
-    return readBranchAncestryEvents(db(), ancestry, types === undefined ? {} : { types });
+    return db().transaction(
+      async (tx) => {
+        const ancestry = await loadBranchAncestry(tx, branchId);
+        return readBranchAncestryEvents(tx, ancestry, types === undefined ? {} : { types });
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
   }
   const rows = await db()
     .select()
