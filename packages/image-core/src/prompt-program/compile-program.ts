@@ -371,12 +371,13 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     );
   }
   // The compiled TEXT, not the claim list. The check above sees a claim the
-  // dialect declined to word; it does not see a segment list that fitted down
-  // to nothing — every optional segment removed by a budget, or every rendered
-  // segment blank, which `normalizeImagePromptSegments` drops without naming a
-  // claim as dropped. A blank prompt is a valid payload as far as the transport
-  // is concerned (`emptyPrompt: "send"` posts the empty string), so this is the
-  // last point at which anything can notice.
+  // dialect declined to word — by rendering null or by rendering blank text,
+  // which `compileDialectClaims` records the same way. It does not see a render
+  // with no mandatory claim whose every optional segment a budget removed, or a
+  // dialect that compiled outside `compileDialectClaims` and produced nothing
+  // without recording a drop. A blank prompt is a valid payload as far as the
+  // transport is concerned (`emptyPrompt: "send"` posts the empty string), so
+  // this is the last point at which anything can notice.
   if (positiveCompiled.text.trim().length === 0) {
     return refuse("image_prompt_program.prompt_empty", "this render compiled to a blank prompt", {
       dialect: dialect.id,
