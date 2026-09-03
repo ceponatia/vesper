@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import {
+  emptyCharacterPortraitAcceptance,
   heritagesForSpecies,
   isPersonalityAttributeId,
   speciesById,
   speciesCatalog,
+  type CharacterPortraitAcceptance,
   type Diagnostic,
 } from "@/contracts";
 import type { CharacterDraft, CharacterForgeSection, CharacterSheetScope } from "@/lib/client/api";
@@ -64,7 +66,10 @@ export interface CharacterEditorProps {
   derivingPortrait?: boolean;
   /** Saved characters get the portrait studio; drafts don't exist yet. */
   characterId?: string;
+  /** The portrait candidate on screen. */
   avatarImageId?: string | null;
+  /** Which portrait is the character's identity source (owner read; absent ⇒ none). */
+  acceptance?: CharacterPortraitAcceptance;
   onAvatarChanged?: () => void;
   diagnostics?: readonly Diagnostic[];
   /**
@@ -88,6 +93,7 @@ export function CharacterEditor({
   derivingPortrait = false,
   characterId,
   avatarImageId = null,
+  acceptance = emptyCharacterPortraitAcceptance(),
   onAvatarChanged,
   diagnostics = [],
   chatModel,
@@ -396,6 +402,7 @@ export function CharacterEditor({
             characterId={characterId}
             name={draft.name || "Untitled"}
             avatarImageId={avatarImageId}
+            acceptance={acceptance}
             onAvatarChanged={onAvatarChanged ?? (() => {})}
           />
         ) : (

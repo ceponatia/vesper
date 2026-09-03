@@ -314,6 +314,24 @@ document no numbering convention, so the prose family names each reference by
 its role and the person or place it shows, and asserts no slot number. A prompt
 that never says "Image 2" cannot say it about the wrong image.
 
+### Reference slots
+
+A slot's sentence is built from three things: its role, the entity it depicts
+(`subjectRef`, resolved to a label), and an optional lane-supplied
+**description** — a short clause saying what the image IS, woven into the same
+sentence ("Image 2 shows Mira, seen from behind, the same person").
+
+The description exists because `subjectRef` runs out of answers the moment a lane
+sends TWO images of one person: both slots say "this is Mira", and the honest
+reading of two photographs is two people. It is the lane's own words — the
+vocabulary that produced the image is the only thing that can describe it
+honestly — and it rides on the SLOT rather than the claim, so it cannot be paired
+with the wrong image whatever order the claims resolve in. Unset, every dialect
+compiles byte-identically to what it did before the field existed; the two
+families that name no slots at all ignore it. Today one lane supplies it: a scene
+sending a character's reference view
+([pipelines/reference-views.md](pipelines/reference-views.md) §Consumption and reference ordering).
+
 ## Packs and bindings
 
 Positive and negative packs are separate products with separate versions,

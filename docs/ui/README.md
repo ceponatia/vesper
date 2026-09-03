@@ -15,4 +15,4 @@ owned primitives in `apps/web/src/components/ui/`.
 | [transcript.md](transcript.md)     | Message actions, takes, world beats, markup rendering, scrolling, pagination |
 | [world-card.md](world-card.md)     | The successor lane's "Where you are" panel: travel, handoffs, activities     |
 | [mobile.md](mobile.md)             | One responsive tree: breakpoints, nav modes, the `Sheet` primitive, touch    |
-| [conventions.md](conventions.md)   | Data flow, drafts, polling, modal sizing, contrast, model dropdowns          |
+| [conventions.md](conventions.md)   | Data flow, drafts, polling, modal sizing, contrast, the lightbox, dropdowns  |

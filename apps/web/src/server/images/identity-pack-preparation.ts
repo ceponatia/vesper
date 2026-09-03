@@ -15,7 +15,7 @@ import { invalidateIdentityPackForSource } from "./identity-pack-maintenance";
 import { currentPackRow, errorMessage, isLiveReservation } from "./identity-pack-store";
 
 /**
- * Preparation ahead of demand: the fire-and-forget job a canonical portrait
+ * Preparation ahead of demand: the fire-and-forget job portrait ACCEPTANCE
  * triggers, and the bounded admin batch.
  *
  * Both are wrappers around {@link ensureIdentityPack} — they add a job row, a
@@ -27,20 +27,23 @@ import { currentPackRow, errorMessage, isLiveReservation } from "./identity-pack
  * ------------------------------------------------------------------------ */
 
 /**
- * Fire-and-forget pack preparation after a canonical portrait lands.
+ * Fire-and-forget pack preparation after a portrait is ACCEPTED — the one
+ * production trigger, called by `portrait-acceptance.ts` and nothing else.
+ * Generating, uploading, promoting or cloning a portrait moves the candidate
+ * pointer and derives nothing.
  *
  * Returns void immediately and swallows everything: preparation does NOT
- * participate in the transaction that made the portrait canonical, so no
- * detector, crop, measurement or file-write failure can roll back a perfectly
- * good portrait. The ordering it completes is `source row ready → canonical
- * pointer committed → preparation requested`.
+ * participate in the transaction that recorded the acceptance, so no detector,
+ * crop, measurement or file-write failure can roll back a perfectly good
+ * acceptance. The ordering it completes is `source row ready → accepted pointer
+ * committed → preparation requested`.
  *
- * It also owns the invalidation half of the assignment: the previous current pack
+ * It also owns the invalidation half of the acceptance: the previous current pack
  * is marked stale before the dedupe runs, so a character never keeps a `ready`
- * pack for a portrait it no longer has (see {@link prepareIdentityPackJob}).
+ * pack for a portrait it no longer accepts (see {@link prepareIdentityPackJob}).
  *
  * Being deduped away is not being dropped. A trigger suppressed by the live job
- * is answered by that job, which re-reads the canonical pointer once its
+ * is answered by that job, which re-reads the accepted pointer once its
  * derivation settles and derives again if the pointer moved (see
  * {@link convergeIdentityPackPreparation}) — so the caller's contract is "the
  * character will have a pack for whatever portrait it ends up pointing at", not
@@ -261,7 +264,7 @@ type ConvergenceCheck =
   | { kind: "unconverged"; sourceImageId: string };
 
 /**
- * Whether the current revision covers the character's canonical pointer AS OF NOW
+ * Whether the current revision covers the character's accepted pointer AS OF NOW
  * — re-read, never carried over from the top of the pass, because the pointer
  * moving is the entire condition being tested.
  *
@@ -274,7 +277,7 @@ type ConvergenceCheck =
  * settle-and-recheck, or the next trigger, converges.
  *
  * A pointer of null is `converged` rather than a failure: a character with no
- * canonical portrait has nothing to converge ON, and another pass would only
+ * accepted portrait has nothing to converge ON, and another pass would only
  * re-earn `source_missing`.
  */
 async function preparationConvergence(characterId: string, ownerId: string): Promise<ConvergenceCheck> {
@@ -293,18 +296,19 @@ async function preparationConvergence(characterId: string, ownerId: string): Pro
 }
 
 /**
- * The character's canonical pointer, read through the OWNER like every other pack
- * operation — the authorization root. A character that vanished
- * or changed hands mid-job reads as no pointer, which ends the loop rather than
- * letting a detached job keep working on somebody else's row.
+ * The character's ACCEPTED pointer — the pack's source — read through the OWNER
+ * like every other pack operation: the authorization root. A character that
+ * vanished or changed hands mid-job reads as no pointer, which ends the loop
+ * rather than letting a detached job keep working on somebody else's row. So
+ * does one whose acceptance was cleared while the job ran.
  */
 async function canonicalSourceId(characterId: string, ownerId: string): Promise<string | null> {
   const [character] = await db()
-    .select({ avatarImageId: characters.avatarImageId })
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .limit(1);
-  return character?.avatarImageId ?? null;
+  return character?.acceptedAvatarImageId ?? null;
 }
 
 /**
@@ -501,7 +505,7 @@ async function prepareOneForBatch(
   characterId: string,
 ): Promise<IdentityPackBatchOutcome> {
   const [character] = await db()
-    .select({ avatarImageId: characters.avatarImageId })
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, input.ownerId)))
     .limit(1);
@@ -513,7 +517,7 @@ async function prepareOneForBatch(
       input.regenerate !== true &&
       current !== undefined &&
       current.status === "ready" &&
-      current.sourceImageId === character.avatarImageId &&
+      current.sourceImageId === character.acceptedAvatarImageId &&
       current.schemaVersion === IDENTITY_PACK_SCHEMA_VERSION &&
       current.derivationVersion === IDENTITY_PACK_DERIVATION_VERSION;
     return { characterId, outcome: upToDate ? "up_to_date" : "would_prepare" };

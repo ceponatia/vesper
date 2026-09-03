@@ -102,7 +102,14 @@ in [../asset-registry.md](../asset-registry.md). Rejections return `{ ok: false,
 foreign row reported as a plain "not found" (no not-yours signal) and a `log.warn` diagnostic
 (`images.promote.*`).
 
-Variants are single-reference edits only: re-roll from the canonical portrait rather than
+Promotion moves the portrait **candidate** and nothing else: the character's identity source and
+its identity pack stay on the last accepted portrait until the owner accepts the promoted one,
+which is what prepares the pack
+([../identity-packs.md](../identity-packs.md) §The source is the ACCEPTED portrait).
+So a promoted variant is visible everywhere the portrait is shown, while the
+face every identity-critical render receives is unchanged until it is accepted.
+
+Variants are single-reference edits only: re-roll from the accepted portrait rather than
 chaining edits, because drift compounds.
 
 ## The `nsfw test` anatomy bench

@@ -1,0 +1,537 @@
+import { and, asc, desc, eq, inArray, isNotNull, lt } from "drizzle-orm";
+import { parseOr, parseOrNull } from "@/lib/parse";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import {
+  allReferenceViews,
+  characterProfileSchema,
+  emptyCharacterProfile,
+  plannedReferenceViews,
+  emptyReferenceViewSetSummary,
+  isConsumableReferenceView,
+  projectReferenceViewState,
+  REFERENCE_VIEW_GENERATION_VERSION,
+  referenceViewAngleIdSchema,
+  referenceViewWardrobeSchema,
+  type ReferenceView,
+  type ReferenceViewMethod,
+  type ReferenceViewSetSummary,
+  type ReferenceViewSummary,
+} from "@/contracts";
+import { characterReferenceViews, characters, db, hasLiveCharacterJob, images } from "../db";
+import { readImageBytes } from "./assets";
+import { sourceContentHashOf } from "./identity-pack-store";
+
+/**
+ * The reference view SET's storage and its read-time projection — every write to
+ * `character_reference_views`, and the one place a stored row becomes a state
+ * the studio and the render lanes can act on.
+ *
+ * ## Why the projection lives here and only here
+ *
+ * A stored `status` says what the last writer did; it does not say whether the
+ * view is still true. A `ready` row goes on saying `ready` after its portrait is
+ * replaced, after its asset is deleted, and after the instruction wording it was
+ * rendered under changes. Comparing those things at read time — rather than
+ * chasing them with background writes — is what lets the set survive a portrait
+ * being accepted, un-accepted, and accepted again: nothing was rewritten, so
+ * re-accepting the earlier portrait makes exactly the views rendered from it
+ * current again.
+ *
+ * The rule itself is pure (`contracts/images/reference-views.ts`); this module
+ * supplies it with rows.
+ *
+ * ## Refusals are values
+ *
+ * Nothing here throws for a schema-legal request. A slot that has no row is
+ * `missing`, a row whose angle or wardrobe left the registry is dropped with a
+ * diagnostic, and a character that is not the caller's reads as a character with
+ * no views — the same not-yours ≡ gone indistinguishability every character
+ * surface keeps.
+ */
+
+/** A row whose stored ids no longer resolve against the registry. Dropped, never guessed at. */
+export const REFERENCE_VIEW_UNKNOWN = "images.reference_views.unknown_view";
+
+export type ReferenceViewRow = typeof characterReferenceViews.$inferSelect;
+
+/**
+ * The slot key as one comparable string — the map key the projection groups
+ * on. A visible separator: registry ids carry no colon, and a key nobody can
+ * read in a debugger or a log is a key nobody can debug.
+ */
+function slotKey(view: ReferenceView): string {
+  return `${view.angle}:${view.wardrobe}`;
+}
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+
+/** The character's accepted portrait, or null when the character is not this owner's. */
+async function readAcceptedPortrait(characterId: string, ownerId: string): Promise<string | null | undefined> {
+  const [row] = await db()
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
+    .limit(1);
+  return row === undefined ? undefined : row.acceptedAvatarImageId;
+}
+
+/**
+ * The views an accept or a build would actually render for this character — the
+ * age gate applied to the stored profile.
+ *
+ * Exported because the accept route charges the daily budget for exactly this
+ * count and the studio shows it on the button. Two counts derived separately
+ * would drift, and the direction they drift in is billing for renders that were
+ * never made.
+ */
+export async function plannedReferenceViewsForCharacter(
+  characterId: string,
+  ownerId: string,
+  sink?: DiagnosticSink,
+): Promise<readonly ReferenceView[]> {
+  const [row] = await db()
+    .select({ profile: characters.profile })
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
+    .limit(1);
+  if (row === undefined) return [];
+  return plannedReferenceViews(
+    parseOr(characterProfileSchema, row.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile"),
+  );
+}
+
+/**
+ * The accepted portrait every attempt in the set derives from: its id, its row,
+ * and the SHA-256 of the bytes actually on disk.
+ *
+ * Hashed rather than trusted by id, on `image_identity_packs.source_content_hash`'s
+ * rule — a byte-level change invalidates the sheet even when the portrait looks
+ * identical, and nothing may claim a derivation from bytes it did not read.
+ *
+ * Every refusal is a value: not this owner's character, nothing accepted, an
+ * asset that is not `ready`, or bytes that would not read.
+ */
+export type AcceptedPortraitSource =
+  | { ok: true; imageId: string; contentHash: string }
+  | { ok: false; reason: "not_found" | "not_accepted" | "source_unreadable" };
+
+export async function readAcceptedPortraitSource(characterId: string, ownerId: string): Promise<AcceptedPortraitSource> {
+  const accepted = await readAcceptedPortrait(characterId, ownerId);
+  if (accepted === undefined) return { ok: false, reason: "not_found" };
+  if (accepted === null) return { ok: false, reason: "not_accepted" };
+
+  const [row] = await db()
+    .select()
+    .from(images)
+    .where(and(eq(images.id, accepted), eq(images.ownerId, ownerId)))
+    .limit(1);
+  if (!row || row.status !== "ready") return { ok: false, reason: "source_unreadable" };
+  const bytes = await readImageBytes(row);
+  if (bytes === null) return { ok: false, reason: "source_unreadable" };
+  return { ok: true, imageId: accepted, contentHash: sourceContentHashOf(bytes) };
+}
+
+/** Every current row for this character, whatever slot it belongs to. */
+export async function currentReferenceViewRows(characterId: string): Promise<readonly ReferenceViewRow[]> {
+  return db()
+    .select()
+    .from(characterReferenceViews)
+    .where(and(eq(characterReferenceViews.characterId, characterId), eq(characterReferenceViews.current, true)));
+}
+
+/** One slot's current row, or undefined when the slot has never been built. */
+export async function currentReferenceViewRow(
+  characterId: string,
+  view: ReferenceView,
+): Promise<ReferenceViewRow | undefined> {
+  const [row] = await db()
+    .select()
+    .from(characterReferenceViews)
+    .where(
+      and(
+        eq(characterReferenceViews.characterId, characterId),
+        eq(characterReferenceViews.angleId, view.angle),
+        eq(characterReferenceViews.wardrobe, view.wardrobe),
+        eq(characterReferenceViews.current, true),
+      ),
+    )
+    .limit(1);
+  return row;
+}
+
+/**
+ * One slot's attempts, newest first — what was tried, what was rejected, what
+ * replaced it. Backed by `character_reference_views_slot_idx`.
+ */
+export async function referenceViewHistory(
+  characterId: string,
+  view: ReferenceView,
+  limit = 20,
+): Promise<readonly ReferenceViewRow[]> {
+  return db()
+    .select()
+    .from(characterReferenceViews)
+    .where(
+      and(
+        eq(characterReferenceViews.characterId, characterId),
+        eq(characterReferenceViews.angleId, view.angle),
+        eq(characterReferenceViews.wardrobe, view.wardrobe),
+      ),
+    )
+    .orderBy(desc(characterReferenceViews.createdAt))
+    .limit(limit);
+}
+
+/** The asset statuses of every image a set's rows point at, by image id. */
+async function readViewImageStatuses(rows: readonly ReferenceViewRow[]): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.flatMap((row) => (row.imageId === null ? [] : [row.imageId])))];
+  if (ids.length === 0) return new Map();
+  const assets = await db().select({ id: images.id, status: images.status }).from(images).where(inArray(images.id, ids));
+  return new Map(assets.map((asset) => [asset.id, asset.status]));
+}
+
+/** One row plus the joined facts the projection needs, as one summary. */
+function summarizeRow(
+  view: ReferenceView,
+  row: ReferenceViewRow | undefined,
+  acceptedImageId: string | null,
+  imageStatus: string | null,
+): ReferenceViewSummary {
+  if (row === undefined) {
+    return {
+      angle: view.angle,
+      wardrobe: view.wardrobe,
+      state: "missing",
+      imageId: null,
+      method: null,
+      reviewedAt: null,
+      failureCode: null,
+      failureMessage: null,
+      updatedAt: null,
+      consumable: false,
+    };
+  }
+  const projection = {
+    current: row.current,
+    status: row.status,
+    sourceImageId: row.sourceImageId,
+    imageId: row.imageId,
+    imageStatus,
+    generationVersion: row.generationVersion,
+    reviewedAt: row.reviewedAt,
+    acceptedImageId,
+  };
+  return {
+    angle: view.angle,
+    wardrobe: view.wardrobe,
+    state: projectReferenceViewState(projection),
+    // The asset id rides even on a stale or rejected row: the studio shows the
+    // owner what it is calling stale, which is the difference between a state
+    // they can act on and one they have to take on faith.
+    imageId: row.imageId,
+    method: row.method,
+    reviewedAt: row.reviewedAt === null ? null : row.reviewedAt.toISOString(),
+    failureCode: row.failureCode,
+    failureMessage: row.failureMessage,
+    updatedAt: row.updatedAt.toISOString(),
+    consumable: isConsumableReferenceView(projection),
+  };
+}
+
+/**
+ * The whole sheet for one character, as the studio and slice 3's consumers read
+ * it: every `angles × wardrobes` slot, always, `missing` where no row exists.
+ *
+ * A character that is not this owner's reads as an empty set rather than an
+ * error — the surface is additive, and a foreign id must not be distinguishable
+ * from an unbuilt one.
+ */
+export async function getReferenceViewSet(
+  characterId: string,
+  ownerId: string,
+  sink?: DiagnosticSink,
+): Promise<ReferenceViewSetSummary> {
+  const accepted = await readAcceptedPortrait(characterId, ownerId);
+  if (accepted === undefined) return emptyReferenceViewSetSummary();
+
+  const rows = await currentReferenceViewRows(characterId);
+  const statuses = await readViewImageStatuses(rows);
+
+  const bySlot = new Map<string, ReferenceViewRow>();
+  for (const row of rows) {
+    // A stored id the registry no longer knows describes a view nothing can
+    // render, review or consume. It is dropped rather than surfaced: the slot it
+    // used to fill reads `missing`, which is an action the owner can take.
+    const angle = parseOrNull(referenceViewAngleIdSchema, row.angleId);
+    const wardrobe = parseOrNull(referenceViewWardrobeSchema, row.wardrobe);
+    if (angle === null || wardrobe === null) {
+      sink?.push(
+        diag("warn", REFERENCE_VIEW_UNKNOWN, "a stored reference view names an angle or wardrobe the registry dropped", {
+          context: { characterId, viewId: row.id, angleId: row.angleId, wardrobe: row.wardrobe },
+        }),
+      );
+      continue;
+    }
+    bySlot.set(slotKey({ angle, wardrobe }), row);
+  }
+
+  return {
+    acceptedImageId: accepted,
+    building: await hasLiveCharacterJob("reference_views", characterId),
+    views: allReferenceViews().map((view) => {
+      const row = bySlot.get(slotKey(view));
+      const imageStatus = row === undefined || row.imageId === null ? null : (statuses.get(row.imageId) ?? null);
+      return summarizeRow(view, row, accepted, imageStatus);
+    }),
+  };
+}
+
+/** One slot's summary, read fresh — what every per-view write answers with. */
+export async function getReferenceViewSummary(
+  characterId: string,
+  ownerId: string,
+  view: ReferenceView,
+  sink?: DiagnosticSink,
+): Promise<ReferenceViewSummary> {
+  const set = await getReferenceViewSet(characterId, ownerId, sink);
+  return (
+    set.views.find((entry) => entry.angle === view.angle && entry.wardrobe === view.wardrobe) ??
+    summarizeRow(view, undefined, set.acceptedImageId, null)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Writes
+// ---------------------------------------------------------------------------
+
+export interface ReserveReferenceViewInput {
+  characterId: string;
+  view: ReferenceView;
+  /** The accepted portrait this attempt renders from. */
+  sourceImageId: string;
+  sourceContentHash: string;
+}
+
+/**
+ * Claim the slot for a new attempt: retire whatever was current and insert a
+ * `pending` row in its place, in ONE transaction.
+ *
+ * One statement, not two, because the partial unique index means a retire that
+ * commits without its insert leaves a slot with no current row and an insert
+ * without its retire fails outright. Retiring to `superseded` rather than
+ * deleting is the lifecycle's whole shape: the previous attempt stays readable
+ * as history, and its asset is collected by the sweep a week later rather than
+ * the instant the owner asked for a retry.
+ */
+export async function reserveReferenceView(input: ReserveReferenceViewInput): Promise<string> {
+  const { characterId, view } = input;
+  return db().transaction(async (tx) => {
+    await tx
+      .update(characterReferenceViews)
+      // `updated_at` is bumped by the column's own `$onUpdate`, and it is what the
+      // retention window is measured from: the clock on a retired view's bytes
+      // starts when it was retired, not when it was made.
+      .set({ current: false, status: "superseded" })
+      .where(
+        and(
+          eq(characterReferenceViews.characterId, characterId),
+          eq(characterReferenceViews.angleId, view.angle),
+          eq(characterReferenceViews.wardrobe, view.wardrobe),
+          eq(characterReferenceViews.current, true),
+        ),
+      );
+    const [row] = await tx
+      .insert(characterReferenceViews)
+      .values({
+        characterId,
+        angleId: view.angle,
+        wardrobe: view.wardrobe,
+        current: true,
+        status: "pending",
+        sourceImageId: input.sourceImageId,
+        sourceContentHash: input.sourceContentHash,
+        generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+      })
+      .returning({ id: characterReferenceViews.id });
+    if (!row) throw new Error("character_reference_views insert returned no row");
+    return row.id;
+  });
+}
+
+export interface FinalizeReferenceViewInput {
+  viewId: string;
+  characterId: string;
+  ownerId: string;
+  imageId: string;
+  method: ReferenceViewMethod;
+  /** Owner id to stamp as the reviewer, for a view that arrives already reviewed (an upload). */
+  reviewedByUserId?: string;
+}
+
+/** What a finalize concluded — `ready` or the honest `stale` when the portrait moved under it. */
+export type FinalizeReferenceViewResult = "ready" | "stale";
+
+/**
+ * Settle a reserved row with the bytes it produced.
+ *
+ * A compare-and-set on the character's accepted pointer, INSIDE the transaction:
+ * a render takes tens of seconds, and the owner can accept a different portrait
+ * in the middle of one. If the pointer still names the portrait this attempt
+ * rendered from, the row is `ready`; if it moved, the row is `stale` and stays
+ * current, because the owner is better served by a tile that says "this was made
+ * from the portrait you replaced" than by a slot that silently reads `missing`.
+ * (Read-time projection would call it stale regardless — writing it is what
+ * lets the row say so without a join.)
+ *
+ * An upload arrives already reviewed: an owner who supplies a view has, by
+ * supplying it, performed the review the render path asks them for.
+ */
+export async function finalizeReferenceView(input: FinalizeReferenceViewInput): Promise<FinalizeReferenceViewResult> {
+  return db().transaction(async (tx) => {
+    const [row] = await tx
+      .select({ sourceImageId: characterReferenceViews.sourceImageId })
+      .from(characterReferenceViews)
+      .where(eq(characterReferenceViews.id, input.viewId))
+      .limit(1);
+    const [character] = await tx
+      .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
+      .from(characters)
+      .where(and(eq(characters.id, input.characterId), eq(characters.ownerId, input.ownerId)))
+      .limit(1);
+    const stale =
+      row === undefined ||
+      row.sourceImageId === null ||
+      character === undefined ||
+      character.acceptedAvatarImageId !== row.sourceImageId;
+    const reviewed = input.reviewedByUserId;
+    await tx
+      .update(characterReferenceViews)
+      .set({
+        status: stale ? "stale" : "ready",
+        imageId: input.imageId,
+        method: input.method,
+        ...(reviewed === undefined ? {} : { reviewedByUserId: reviewed, reviewedAt: new Date() }),
+      })
+      .where(eq(characterReferenceViews.id, input.viewId));
+    return stale ? "stale" : "ready";
+  });
+}
+
+/**
+ * Mark a reserved row failed with the reason.
+ *
+ * A failed view is an ordinary outcome, not an incident: the expected instance
+ * is a `bare` view a provider's moderation refused, and the row records the
+ * refusal so the studio can offer an upload instead. The row stays current —
+ * there is nothing better to be current — and a regenerate makes a new one.
+ */
+export async function failReferenceView(viewId: string, failureCode: string, failureMessage: string): Promise<void> {
+  await db()
+    .update(characterReferenceViews)
+    .set({
+      status: "failed",
+      imageId: null,
+      failureCode,
+      failureMessage: failureMessage.slice(0, 500),
+    })
+    .where(eq(characterReferenceViews.id, viewId));
+}
+
+export type ReferenceViewVerdict = "approve" | "reject";
+
+export type ReviewReferenceViewResult =
+  | { status: "reviewed"; view: ReferenceViewSummary }
+  /** Nothing current and `ready` to rule on — an empty slot, a pending render, an already-failed one. */
+  | { status: "not_ready" }
+  | { status: "not_found" };
+
+/**
+ * Record the owner's eye on one view.
+ *
+ * Approving is what makes a view consumable — a rendered back nobody looked at
+ * is a guess, and a guess that anchors every later scene is worse than no anchor
+ * at all. Rejecting is TERMINAL for that row: it keeps its bytes and its
+ * history, it is never sent anywhere, and the way back is a regenerate, which
+ * supersedes it with a new attempt rather than reviving this one.
+ */
+export async function reviewReferenceView(input: {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  verdict: ReferenceViewVerdict;
+  sink?: DiagnosticSink;
+}): Promise<ReviewReferenceViewResult> {
+  const accepted = await readAcceptedPortrait(input.characterId, input.ownerId);
+  if (accepted === undefined) return { status: "not_found" };
+
+  const row = await currentReferenceViewRow(input.characterId, input.view);
+  if (row === undefined || row.status !== "ready") return { status: "not_ready" };
+
+  await db()
+    .update(characterReferenceViews)
+    .set({
+      ...(input.verdict === "reject" ? { status: "rejected" as const } : {}),
+      reviewedByUserId: input.ownerId,
+      reviewedAt: new Date(),
+    })
+    .where(eq(characterReferenceViews.id, row.id));
+
+  return {
+    status: "reviewed",
+    view: await getReferenceViewSummary(input.characterId, input.ownerId, input.view, input.sink),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Which slots want building
+// ---------------------------------------------------------------------------
+
+/**
+ * The slots a "build what is missing" request should render: every planned view
+ * whose projected state is `missing`, `failed` or `stale`.
+ *
+ * Deliberately NOT `rejected` — the owner said no to that view, and a bulk build
+ * must not quietly re-render something they turned down. A rejected slot is
+ * rebuilt one at a time, through its own regenerate.
+ */
+export function referenceViewsToRebuild(
+  set: ReferenceViewSetSummary,
+  planned: readonly ReferenceView[],
+): readonly ReferenceView[] {
+  const wanted = new Set(planned.map((view) => slotKey(view)));
+  return set.views
+    .filter((view) => wanted.has(slotKey(view)))
+    .filter((view) => view.state === "missing" || view.state === "failed" || view.state === "stale")
+    .map((view) => ({ angle: view.angle, wardrobe: view.wardrobe }));
+}
+
+/**
+ * Retired rows whose assets have outlived their diagnostic window — the sweep's
+ * input. Never a `current` row, whatever its status: a stale or failed current
+ * row is what the studio is showing the owner right now.
+ */
+export async function retiredReferenceViewAssets(before: Date, limit: number): Promise<readonly ReferenceViewRow[]> {
+  return db()
+    .select()
+    .from(characterReferenceViews)
+    .where(
+      and(
+        eq(characterReferenceViews.current, false),
+        isNotNull(characterReferenceViews.imageId),
+        lt(characterReferenceViews.updatedAt, before),
+      ),
+    )
+    .orderBy(asc(characterReferenceViews.updatedAt))
+    .limit(limit);
+}
+
+/** Drop the collected assets' pointers. The rows stay: they are the slot's history. */
+export async function clearReferenceViewAssetPointers(viewIds: readonly string[]): Promise<void> {
+  if (viewIds.length === 0) return;
+  await db()
+    .update(characterReferenceViews)
+    .set({ imageId: null })
+    .where(inArray(characterReferenceViews.id, [...viewIds]));
+}

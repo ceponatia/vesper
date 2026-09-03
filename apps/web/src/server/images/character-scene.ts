@@ -19,7 +19,9 @@ import { identityPackRenderReferences } from "./identity-pack-consume";
 import { latestChatLook } from "./chat-look";
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
-import { composeSceneSpec, renderResolvedScene } from "./scene";
+import { composeSceneSpec, renderResolvedScene, type SceneRenderReferenceView } from "./scene";
+import { loadConsumableReferenceView } from "./reference-view-consume";
+import { referenceViewAngleById, selectReferenceView } from "@/contracts";
 import type { SceneLoweringViewer } from "./scene-lowering";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
 import { applySceneCastVisual, type SceneCastVisualSubject, type SceneSubjectVisualSlice } from "./scene-subject-visual";
@@ -37,7 +39,13 @@ export interface SceneCastMember {
   characterId: string;
   name: string;
   profile: CharacterProfile;
-  avatarImageId: string | null;
+  /**
+   * The member's identity source: `characters.accepted_avatar_image_id`, never
+   * the candidate portrait on screen. Null ⇒ nothing accepted, and this member
+   * renders from their textual description exactly as a portrait-less character
+   * does.
+   */
+  identityImageId: string | null;
   outfit?: string;
   outfitExposed?: boolean;
   exposure?: RegionExposure;
@@ -54,9 +62,10 @@ export interface SceneCastMember {
    */
   attributeOverlays?: readonly AttributeValue[];
   /**
-   * This character's look-anchor key. Absent ⇒ anchor on their avatar. Only the
+   * This character's look-anchor key. Absent ⇒ anchor on their accepted
+   * portrait. Only the
    * primary's look is minted today, so a second cast member normally anchors on
-   * their canonical portrait and takes its wardrobe from the prompt's clothing
+   * their accepted portrait and takes its wardrobe from the prompt's clothing
    * authority rather than from the reference.
    */
   lookKey?: string;
@@ -135,6 +144,12 @@ export interface RenderCharacterSceneInput {
    */
   subjectVisuals?: ReadonlyMap<string, Omit<VisualStateShadowInput, "sink" | "camera">>;
   sink?: DiagnosticSink;
+}
+
+/** One selected reference view beside the bytes the render will send for it. */
+interface SelectedReferenceView {
+  readonly view: SceneRenderReferenceView;
+  readonly buffer: Buffer;
 }
 
 /**
@@ -297,7 +312,7 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
   // One anchor per cast member, resolved in roster order: this character's own
   // tracked look when the chat has minted one, else the identity-pack service's
-  // candidate for their canonical portrait (5B ruling — a minted chat look
+  // candidate for their accepted portrait (5B ruling — a minted chat look
   // STAYS the identity reference: it carries current wardrobe/state and is
   // itself downstream of the avatar, so only the member with no fresh look
   // asks the pack). A member with neither renders from the prompt's textual
@@ -315,10 +330,10 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
         anchors.set(member.characterId, { imageId: look.imageId, buffer: look.buffer, source: "generated" });
         continue;
       }
-      // A member with no portrait at all renders from text, exactly as before —
-      // there is no identity source for the pack to measure, so nothing was
-      // substituted and nothing is refused.
-      if (!member.avatarImageId) continue;
+      // A member with no ACCEPTED portrait renders from text, exactly as a
+      // member with no portrait at all does — there is no identity source for
+      // the pack to measure, so nothing was substituted and nothing is refused.
+      if (!member.identityImageId) continue;
       const pack = await identityPackRenderReferences({
         ownerId: input.userId,
         characterId: member.characterId,
@@ -358,12 +373,99 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   if (placeRef) referenceBuffers.set(placeRef.imageId, placeRef.buffer);
   const imageBearing = anchors.size + (placeRef ? 1 : 0);
 
+  // Each member's coverage as the PROGRAM already computed it — the realized
+  // cut's own `exposure`, not a second derivation. "Is this character undressed
+  // in this scene" has one answer per render, and a view selected from a second
+  // reading of the wardrobe is a reference that argues with the prompt beside it.
+  // A member with no realized cut has no entry, and no render: the cast-integrity
+  // check refuses a scene whose people have no committed cuts.
+  const exposureBySubject = new Map(appliedVisuals.map((visual) => [visual.subjectId, visual.exposure]));
+
+  /**
+   * The matching reference views for one attempt, selected from the shot that
+   * attempt will actually render under and the permission it will render with.
+   *
+   * PER ATTEMPT, for the same reason the LoRA route is: a content-rejected
+   * selfie retries with `allowIntimate` cleared, and re-asking here is what keeps
+   * a bare view off the sanitized retry without a second rule saying so.
+   *
+   * `allowIntimate` is the ARGUMENT rather than a fact re-derived here: it is
+   * what every character reference below is built with, so it is exactly what the
+   * multi-reference rung's own gate (`every character ref allowForIntimate`)
+   * would compute. A lane that may not carry intimate content therefore never
+   * receives a bare view, whatever the fiction says about the wardrobe.
+   *
+   * A shot with no matching angle selects nothing and says nothing: three of the
+   * five orientations have no view in a four-angle sheet, and the front anchor
+   * is the right answer rather than a fallback. A view that WAS wanted and could
+   * not be sent — nothing built, unreviewed, rejected, stale, unreadable — is an
+   * INFO line. Either way the render is the front-anchored one it has always
+   * been.
+   */
+  const selectReferenceViews = async (
+    attemptPlan: SceneRenderPlan,
+    allowIntimate: boolean,
+  ): Promise<SelectedReferenceView[]> => {
+    if (!referenceRoute || identityRefusal !== null || visualRefusal !== null) return [];
+    const selected: SelectedReferenceView[] = [];
+    for (const member of cast) {
+      // No accepted portrait, no sheet: a view is only ever consumable while it
+      // was rendered from the portrait this character has accepted right now.
+      if (!member.identityImageId) continue;
+      const selection = selectReferenceView({
+        // The RESOLVED camera. Every evidence gate has already been spent on it,
+        // and a surviving staging entry has already overwritten it, so this is
+        // the shot — not a proposal anything downstream may still move.
+        camera: attemptPlan.camera,
+        exposure: exposureBySubject.get(member.characterId) ?? null,
+        allowIntimate,
+        // One character keeps ONE side for a whole conversation. Outside a chat
+        // the id alone still fixes it per character.
+        sideKey: `${member.characterId}${input.chatId ?? ""}`,
+      });
+      // No matching angle is not a degradation: nothing was wanted, and the
+      // front-anchored render this produces is exactly the picture the shot
+      // asked for. Silent by ruling — a line on every ordinary chat scene would
+      // drown the misses that ARE worth reading.
+      if (selection.view === null) continue;
+      const loaded = await loadConsumableReferenceView({
+        ownerId: input.userId,
+        characterId: member.characterId,
+        view: selection.view,
+        sink,
+      });
+      if (!loaded.ok) continue;
+      const angle = referenceViewAngleById(selection.view.angle);
+      if (angle === undefined) continue;
+      selected.push({
+        buffer: loaded.buffer,
+        view: {
+          characterId: member.characterId,
+          imageId: loaded.imageId,
+          sourceImageId: loaded.sourceImageId,
+          angle: selection.view.angle,
+          wardrobe: selection.view.wardrobe,
+          faceVisibility: loaded.faceVisibility,
+          name: member.name,
+          description: angle.sceneBinding,
+          // The member's own anchor permission, so the multi rung's gate reads
+          // exactly what it read before the sheet existed.
+          allowForIntimate: allowIntimate,
+        },
+      });
+    }
+    return selected;
+  };
+
   // Resolved PER ATTEMPT rather than once for the render, because the trigger is
   // a fact about the attempt: the content-rejection retry strips the staging from
   // its plan and clears `allowIntimate`, and re-asking here is what makes that
   // retry render LoRA-free without a second rule saying so. Off the trigger it
   // reads nothing and reports nothing, so an ordinary scene pays one comparison.
   const renderOnce = async (attemptPlan: SceneRenderPlan, allowIntimate: boolean): Promise<string> => {
+    const picked = await selectReferenceViews(attemptPlan, allowIntimate);
+    for (const entry of picked) referenceBuffers.set(entry.view.imageId, entry.buffer);
+    const referenceViews = picked.map((entry) => entry.view);
     // The scene queue is a detached job and passes no sink, so the route's own
     // diagnostics would have nowhere to land — and "the LoRA was skipped" is
     // exactly the line an operator needs when the pictures go back to being
@@ -409,7 +511,11 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
           : []),
       ],
       referenceBuffers,
-      mode: imageBearing >= 2 ? "multi" : "single",
+      // The views count: an extra image-bearing reference is what routes the
+      // multi-reference rung, and a single-anchor scene that just gained a
+      // matching back view has two images to compose rather than one.
+      mode: imageBearing + referenceViews.length >= 2 ? ("multi" as const) : ("single" as const),
+      ...(referenceViews.length === 0 ? {} : { referenceViews }),
       // The route's profile IS the lane's profile with the LoRA wrapper in place
       // of the scene model; off the route it is the resolved object itself, so a
       // LoRA-free render is unchanged down to the reference.

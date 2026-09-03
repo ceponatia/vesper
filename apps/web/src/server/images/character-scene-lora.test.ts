@@ -126,7 +126,7 @@ const member: SceneCastMember = {
   characterId: "chr-mira",
   name: "Mira",
   profile: emptyCharacterProfile(),
-  avatarImageId: "img-avatar",
+  identityImageId: "img-avatar",
   lookKey: "look-1",
 };
 

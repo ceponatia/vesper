@@ -40,11 +40,14 @@ import {
 export interface IdentityPackSummary {
   /** Null until this character has any revision at all. */
   pack: ImageIdentityPackV1 | null;
-  /** The character's canonical portrait right now, whatever the pack says. */
+  /**
+   * The character's ACCEPTED portrait right now, whatever the pack says — the
+   * identity source, not the candidate the studio is showing.
+   */
   sourceImageId: string | null;
   current: boolean;
   /**
-   * The revision no longer describes the character's canonical source. Computed
+   * The revision no longer describes the character's accepted source. Computed
    * from ids and versions only — byte-level staleness costs a file read and a
    * hash, so it is confirmed by `ensureIdentityPack`, not by a status poll.
    */
@@ -71,7 +74,7 @@ export async function getIdentityPackForOwner(
   sink?: DiagnosticSink,
 ): Promise<IdentityPackSummary | null> {
   const [character] = await db()
-    .select({ avatarImageId: characters.avatarImageId })
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .limit(1);
@@ -81,7 +84,7 @@ export async function getIdentityPackForOwner(
   if (!row) {
     return {
       pack: null,
-      sourceImageId: character.avatarImageId,
+      sourceImageId: character.acceptedAvatarImageId,
       current: false,
       stale: false,
       pending: false,
@@ -99,17 +102,17 @@ export async function getIdentityPackForOwner(
   const failureCode = pack.failureCode;
   return {
     pack,
-    sourceImageId: character.avatarImageId,
+    sourceImageId: character.acceptedAvatarImageId,
     current: row.current,
     stale:
       row.status === "stale" ||
       row.status === "superseded" ||
-      // A revision that LOST its source describes no canonical portrait at all,
+      // A revision that LOST its source describes no accepted portrait at all,
       // and the id comparison below cannot say so on its own: with the character's
-      // pointer cleared by the same delete, null equals null and the summary would
-      // report a fresh pack over bytes that are gone.
+      // accepted pointer cleared by the same delete, null equals null and the
+      // summary would report a fresh pack over bytes that are gone.
       row.sourceImageId === null ||
-      row.sourceImageId !== character.avatarImageId ||
+      row.sourceImageId !== character.acceptedAvatarImageId ||
       row.schemaVersion !== IDENTITY_PACK_SCHEMA_VERSION ||
       row.derivationVersion !== IDENTITY_PACK_DERIVATION_VERSION,
     pending: pack.status === "pending",
@@ -131,7 +134,7 @@ export async function getIdentityPackForOwner(
  * failure code already says whether asking again could help, and shipping both
  * invites a client that trusts the boolean over the code).
  *
- * With no revision at all the source names the character's CURRENT canonical
+ * With no revision at all the source names the character's CURRENT accepted
  * portrait with null dimensions — there is no measured source yet. With a
  * revision, every source field comes from that revision, so `crop`, `source`,
  * and `sourceContentHash` describe one set of bytes even when the character has

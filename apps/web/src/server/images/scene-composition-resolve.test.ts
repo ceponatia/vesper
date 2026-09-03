@@ -297,7 +297,7 @@ describe("committed facts outrank the composer (slice 3)", () => {
 
 describe("the chat lane threads the two new corpora into the composer context", () => {
   const cast = [
-    { characterId: "mira-id", name: "Mira", profile: makeProfile({}), avatarImageId: null },
+    { characterId: "mira-id", name: "Mira", profile: makeProfile({}), identityImageId: null },
   ];
   const base = { cast, room: "a rain-streaked library", recentChat: ["Mira turned the page."] };
 

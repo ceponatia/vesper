@@ -388,6 +388,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         }}
         characterId={characterId}
         avatarImageId={detail.data?.avatarImageId ?? null}
+        {...(detail.data ? { acceptance: detail.data.acceptance } : {})}
         onAvatarChanged={() => detail.reload({ silent: true })}
         chatModel={chatModel}
         onChatModelChange={(modelId) => void saveChatModel(modelId)}

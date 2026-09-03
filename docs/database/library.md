@@ -13,7 +13,10 @@ The owner-scoped definition rows: who the account is, and the reusable entities 
   ([../auth/README.md](../auth/README.md)).
 - **`characters`** — `owner_id`, `name`, `profile` JSONB (`CharacterProfile`: bio, personality,
   voice, speciesId, bodyPlanId, `attributes` (`AttributeValue[]`), aliases, defaultOutfit item
-  ids, schedule), `tags` JSONB, `avatar_image_id`, `chat_model` (persisted character-chat
+  ids, schedule), `tags` JSONB, `avatar_image_id` (the portrait **candidate**),
+  `accepted_avatar_image_id` + `accepted_at` (the **identity source** every identity-bearing render
+  derives from, moved only by portrait acceptance —
+  [../images/identity-packs.md](../images/identity-packs.md)), `chat_model` (persisted character-chat
   narrator-model override; empty ⇒ default), **`visibility` (`private`/`public`) — the
   cross-account share scope ([../auth/README.md](../auth/README.md))**, `cloned_from_id?` (soft
   remix provenance), `search_embedding` vector.

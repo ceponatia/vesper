@@ -68,7 +68,7 @@ describe("runChatLookImage over a degraded wardrobe resolve", () => {
     // the digest cut's `memoryGroupId` comes from.
     const rows = [
       [{ ownerId: "owner-1" }],
-      [{ profile: {}, avatarImageId: "img-avatar" }],
+      [{ profile: {}, acceptedAvatarImageId: "img-avatar" }],
       [{ memoryGroupId: "mg-1" }],
     ];
     vi.mocked(db).mockImplementation(

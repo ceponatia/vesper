@@ -27,6 +27,11 @@ depth, since the client already cropped — saves through the normal row-before-
 (`kind: "avatar"`, `meta.source: "upload"`), and **promotes it to the avatar** in one
 synchronous request.
 
+It promotes through `promoteVariant`, so — like every other portrait writer — it sets the
+**candidate** only and derives nothing. An uploaded portrait becomes the character's identity
+source when its owner accepts it, which is what prepares the identity pack
+([../identity-packs.md](../identity-packs.md) §The source is the ACCEPTED portrait).
+
 The new id returns in the response, so the studio refetches immediately rather than polling.
 An uploaded avatar carries no generation prompt, which is why the studio's prompt box reads
 null for one ([avatars.md](avatars.md) §The job and the studio).

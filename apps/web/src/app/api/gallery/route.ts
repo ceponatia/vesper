@@ -131,6 +131,12 @@ export const GET = withUser(async (user, req: NextRequest) => {
       characterId: characters.id,
       characterName: characters.name,
       prompt: images.prompt,
+      // The scene tab is the only one whose rows record a shot: the resolved
+      // camera, the staged arrangement and the reference views that anchored it.
+      // The lightbox's admin-only panel is the reader, and reading it back off
+      // the picture is guesswork — a graded back-view render and a graded
+      // front-anchored one look alike until the row says which was which.
+      meta: images.meta,
       favorite: images.favorite,
       createdAt: images.createdAt,
     })

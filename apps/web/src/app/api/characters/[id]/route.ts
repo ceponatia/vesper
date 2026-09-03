@@ -3,6 +3,7 @@ import {
   characterProfileSchema,
   emptyCharacterProfile,
   materializeBodyDefaults,
+  projectPortraitAcceptance,
   withItemsInDefaultOutfit,
 } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
@@ -56,7 +57,17 @@ export const GET = withAuthorizedResource(
     // pattern items and locations use; edits would 404 server-side anyway). A
     // foreign viewer gets the allow-listed public representation, not the row.
     const mine = row.ownerId === user.id;
-    return jsonOk({ character: mine ? row : toPublicCharacter(row), portraits, mine });
+    // Acceptance is the OWNER's editing state — which portrait is this
+    // character's identity source, and whether the one on screen is it. A public
+    // viewer sees the portrait and nothing about how its author is working, so
+    // the field is omitted from the public shape rather than nulled in it.
+    const acceptance = mine ? projectPortraitAcceptance(row) : undefined;
+    return jsonOk({
+      character: mine ? row : toPublicCharacter(row),
+      portraits,
+      mine,
+      ...(acceptance === undefined ? {} : { acceptance }),
+    });
   },
 );
 

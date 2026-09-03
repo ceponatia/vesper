@@ -1,4 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { characters, db, imageIdentityLoraBindings, imageIdentityPacks, imageLoras, images } from "@/server/db";
 import { isUniqueViolation } from "@/server/api";
@@ -312,5 +314,53 @@ describe.skipIf(!ready)("image_identity_lora_bindings constraints", () => {
     expect(await bindingIds(packId)).toEqual([]);
 
     await seedLoras();
+  });
+});
+
+
+/**
+ * The 0124 backfill, run from the migration file itself rather than a copy of
+ * it: deploying portrait acceptance must leave every existing character's
+ * identity source exactly where it was, which means every character that already
+ * had a portrait comes out of the migration with that portrait ACCEPTED. A
+ * backfill that missed them would silently strip every character of its identity
+ * pack on deploy — the packs read the accepted pointer.
+ */
+describe.skipIf(!ready)("migration 0124 — portrait acceptance backfill", () => {
+  /** The UPDATE statements the shipped migration file carries, in order. */
+  async function backfillStatements(): Promise<string[]> {
+    const file = path.join(process.cwd(), "drizzle", "0124_portrait-acceptance.sql");
+    const sqlText = await readFile(file, "utf8");
+    return sqlText
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.toUpperCase().includes("UPDATE "));
+  }
+
+  it("accepts the portrait every character already had, and invents none", async () => {
+    const withPortrait = await seedCharacter("backfill-with-portrait");
+    const withoutPortrait = await seedCharacter("backfill-without-portrait");
+    const portraitId = await seedImage();
+    // The pre-migration shape: a candidate pointer and nothing else.
+    await db().update(characters).set({ avatarImageId: portraitId }).where(eq(characters.id, withPortrait));
+
+    const statements = await backfillStatements();
+    expect(statements).toHaveLength(1);
+    for (const statement of statements) await db().execute(sql.raw(statement));
+
+    const [accepted] = await db()
+      .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId, acceptedAt: characters.acceptedAt })
+      .from(characters)
+      .where(eq(characters.id, withPortrait));
+    expect(accepted?.acceptedAvatarImageId).toBe(portraitId);
+    expect(accepted?.acceptedAt).not.toBeNull();
+
+    // Nothing to accept, so nothing is claimed — not an acceptance of null.
+    const [untouched] = await db()
+      .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId, acceptedAt: characters.acceptedAt })
+      .from(characters)
+      .where(eq(characters.id, withoutPortrait));
+    expect(untouched?.acceptedAvatarImageId).toBeNull();
+    expect(untouched?.acceptedAt).toBeNull();
   });
 });

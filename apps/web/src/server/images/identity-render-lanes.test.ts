@@ -299,7 +299,7 @@ describe("scene (chat cast) lane", () => {
     characterId: "charaaaaaaaaaaaaaaaaaaaa",
     name: "Mira",
     profile: makeProfile(),
-    avatarImageId: "imgavatar" as string | null,
+    identityImageId: "imgavatar" as string | null,
     ...overrides,
   });
 
@@ -336,10 +336,12 @@ describe("scene (chat cast) lane", () => {
     expect(input?.failedPrecondition).toBeNull();
   });
 
-  it("a member with no portrait renders from text — nothing to refuse", async () => {
+  it("a member with no ACCEPTED portrait renders from text — nothing to refuse", async () => {
     mockResolve.mockResolvedValue(resolved("scene"));
 
-    await run([member({ avatarImageId: null })]);
+    // The cast carries the accepted pointer, so this is equally the character
+    // whose newest portrait nobody has accepted: neither substitutes an image.
+    await run([member({ identityImageId: null })]);
     expect(mockConsume).not.toHaveBeenCalled();
     const input = sceneInput();
     expect(input?.referenceBuffers.size).toBe(0);

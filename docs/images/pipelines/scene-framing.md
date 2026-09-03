@@ -20,6 +20,17 @@ reaches the prompt a provider receives. The lane itself — cast, composer, atte
 The lowering runs **per rung**, not per plan: the ladder's rungs disagree about
 `allowIntimate`, and the plan commits its decisions once.
 
+## The camera also picks a reference
+
+The resolved camera is read once more after the plan commits: it decides which of the focal
+character's **reference views** — back, side, or full-length front — the render anchors on
+beside their identity portrait ([reference-views.md](reference-views.md) §Selection). `away` and
+`away_glance_back` take the back view, `profile` takes a deterministic side, and a `toward_viewer`
+shot takes the full-length view only when the frame actually holds the whole body. A
+`three_quarter` turn matches no view and falls through to the front anchor, which is what every
+shot did before the sheet existed. Nothing about the framing changes: this decides which extra
+image travels, never what the shot line says.
+
 ## Whose eyes the shot is through
 
 Every chat scene image is composed from the player's eyes unless the route says otherwise.

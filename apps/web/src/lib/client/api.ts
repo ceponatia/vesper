@@ -9,7 +9,7 @@ import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
-import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
+import { referenceViewQueueOutcomeSchema, referenceViewSetSummarySchema, referenceViewSummarySchema, type ReferenceViewAngleId, type ReferenceViewQueueOutcome, type ReferenceViewSetSummary, type ReferenceViewState, type ReferenceViewSummary, type ReferenceViewWardrobe, portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, type CharacterPortraitAcceptance, characterPortraitAcceptanceSchema, emptyCharacterPortraitAcceptance, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
 import {
   type IdentityPackAdminOverrideRequest,
   type IdentityPackAdminRevision,
@@ -300,8 +300,31 @@ export const characterDetailSchema = characterSummarySchema.extend({
   chatModel: textOr(""),
   /** Viewer owns it — false renders the read-only preview + duplicate CTA (item/location pattern). */
   mine: z.boolean().catch(true),
+  /**
+   * Which portrait is this character's identity source, and whether the one on
+   * screen is it. Owner-only on the wire — a public preview carries no
+   * acceptance at all, which degrades here to "nothing accepted" rather than
+   * failing the read, because no foreign viewer surface asks about it.
+   */
+  acceptance: characterPortraitAcceptanceSchema.catch(() => emptyCharacterPortraitAcceptance()),
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
+
+/**
+ * `{ acceptance, views }` — the body the accept write answers with.
+ *
+ * `views` reports what the accept did about the character's reference view set,
+ * and it is deliberately forgiving: an accept whose views could not be queued is
+ * still an accept, so a body that omits or malforms the field degrades to
+ * "queued nothing, no reason given" rather than failing a request whose real
+ * work succeeded.
+ */
+const portraitAcceptanceResponseSchema = z.object({
+  acceptance: characterPortraitAcceptanceSchema,
+  views: referenceViewQueueOutcomeSchema.catch({ queued: false, reason: null, planned: 0 }),
+});
+
+export type { CharacterPortraitAcceptance };
 
 /**
  * `PATCH /api/characters/:id` — the saved row's profile plus the save's own
@@ -745,6 +768,60 @@ export const socialCardDetailSchema = socialCardSummarySchema.extend({
 });
 export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 
+/**
+ * One image row's `meta`, as every client surface reads it.
+ *
+ * Shared between the image DTO and the Gallery's, because the lightbox's
+ * admin-only provenance panel is one component reading one shape: a second
+ * spelling here would be a panel that shows the shot on one page and not on the
+ * other. Every member is optional and every branch `catch`es — a row written by
+ * a newer deploy must degrade to "that field is absent", never to an image the
+ * client cannot parse.
+ */
+export const imageRowMetaSchema = z
+  .object({
+    source: z.string().optional().catch(undefined),
+    model: z.string().optional().catch(undefined),
+    error: z.string().optional().catch(undefined),
+    /** "selfie" marks a character-sent photo message. */
+    flavor: z.string().optional().catch(undefined),
+    variantKind: z.string().optional().catch(undefined),
+    /** The attempt provenance the lanes record (`ResolvedImageAttempt`) — kept
+     * loose: the Gallery only carries it, and a strict shape here would strip
+     * a record written by a newer deploy. */
+    render: z.record(z.string(), z.unknown()).optional().catch(undefined),
+    /** The visual-state provenance a digest-fed lane records at reserve time
+     * (`VisualImageProvenance`) — loose for the same reason as `render`. */
+    visualState: z.record(z.string(), z.unknown()).optional().catch(undefined),
+    /** The RESOLVED shot a scene render was composed under — ids only, the
+     * registries own the phrasing. Read by the lightbox's admin panel. */
+    camera: z
+      .object({
+        orientation: z.string().catch(""),
+        distance: z.string().catch(""),
+        height: z.string().catch(""),
+      })
+      .optional()
+      .catch(undefined),
+    /** The staged arrangement's registry id, when the shot carried one. */
+    staging: z.string().optional().catch(undefined),
+    /** Which matching reference view anchored which person on this render. */
+    referenceViews: z
+      .array(
+        z.object({
+          characterId: z.string().catch(""),
+          angle: z.string().catch(""),
+          wardrobe: z.string().catch(""),
+          imageId: z.string().catch(""),
+          sourceImageId: z.string().catch(""),
+          substitutedAnchor: z.boolean().catch(false),
+        }),
+      )
+      .optional()
+      .catch(undefined),
+  })
+  .catch({});
+
 /** The Gallery hub's tabs. */
 export type GalleryTab = "scenes" | "portraits" | "entity";
 
@@ -765,6 +842,8 @@ export const galleryImageSchema = z.object({
   prompt: textOr(""),
   favorite: z.boolean().catch(false),
   createdAt: optionalText,
+  /** The row's own meta. Populated for scenes, where the shot provenance lives. */
+  meta: imageRowMetaSchema,
 });
 export type GalleryImage = z.infer<typeof galleryImageSchema>;
 
@@ -783,23 +862,7 @@ export const imageRecordSchema = z.object({
   chatId: optionalId,
   anchorMessageId: optionalId,
   /** Row meta — `source: "upload"` marks uploads; failed rows carry `error`. */
-  meta: z
-    .object({
-      source: z.string().optional().catch(undefined),
-      model: z.string().optional().catch(undefined),
-      error: z.string().optional().catch(undefined),
-      /** "selfie" marks a character-sent photo message. */
-      flavor: z.string().optional().catch(undefined),
-      variantKind: z.string().optional().catch(undefined),
-      /** The attempt provenance the lanes record (`ResolvedImageAttempt`) — kept
-       * loose: the Gallery only carries it, and a strict shape here would strip
-       * a record written by a newer deploy. */
-      render: z.record(z.string(), z.unknown()).optional().catch(undefined),
-      /** The visual-state provenance a digest-fed lane records at reserve time
-       * (`VisualImageProvenance`) — loose for the same reason as `render`. */
-      visualState: z.record(z.string(), z.unknown()).optional().catch(undefined),
-    })
-    .catch({}),
+  meta: imageRowMetaSchema,
 });
 export type ImageRecord = z.infer<typeof imageRecordSchema>;
 
@@ -1157,6 +1220,72 @@ export const charactersApi = {
   promotePortrait: (id: string, imageId: string) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits/${imageId}/promote`, {}),
   deletePortrait: (id: string, imageId: string) => apiDelete(`/api/characters/${id}/portraits/${imageId}`),
+  /**
+   * Accept the portrait on screen as this character's identity source. The image
+   * id travels in the body so a stale studio cannot accept a portrait its owner
+   * never looked at: the server answers 409 `portrait_changed` instead, and the
+   * caller refetches the character.
+   */
+  acceptPortrait: (id: string, imageId: string) =>
+    apiPost(portraitAcceptanceResponseSchema, `/api/characters/${id}/portrait/accept`, { imageId }),
+  /** Withdraw acceptance — deletes no image and no crop; the character simply has no identity source. */
+  clearPortraitAcceptance: (id: string) => apiDelete(`/api/characters/${id}/portrait/accept`),
+};
+
+// ---------------------------------------------------------------------------
+// Reference views
+// ---------------------------------------------------------------------------
+
+export type { ReferenceViewAngleId, ReferenceViewQueueOutcome, ReferenceViewSetSummary, ReferenceViewState, ReferenceViewSummary, ReferenceViewWardrobe };
+
+/**
+ * `{ set, planned }` — the studio's whole read of a character's reference views.
+ *
+ * Forgiving to the bone, because the panel is ADDITIVE: a body it cannot read
+ * degrades to an empty set and the studio looks exactly as it did before the
+ * feature existed, rather than growing an error card about a subsystem the owner
+ * never asked for.
+ */
+const referenceViewSetResponseSchema = z
+  .object({
+    set: referenceViewSetSummarySchema,
+    /** How many views a full build would render for this character, after the age gate. */
+    planned: z.number().catch(0),
+  })
+  .catch({ set: { acceptedImageId: null, building: false, views: [] }, planned: 0 });
+
+/** `{ views }` — what a build or regenerate request decided. Never a failure. */
+const referenceViewQueueResponseSchema = z.object({
+  views: referenceViewQueueOutcomeSchema.catch({ queued: false, reason: null, planned: 0 }),
+});
+
+/** `{ view }` — one settled slot, the body every per-view write answers with. */
+const referenceViewResponseSchema = z.object({ view: referenceViewSummarySchema });
+
+/** The slot path segment pair, spelled once so no call site builds a URL by hand. */
+function referenceViewPath(characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe): string {
+  return `/api/characters/${characterId}/reference-views/${angle}/${wardrobe}`;
+}
+
+export const referenceViewsApi = {
+  get: (characterId: string) =>
+    apiGet(referenceViewSetResponseSchema, `/api/characters/${characterId}/reference-views`),
+  /** Build every slot that is missing, failed or stale for the current accepted portrait. */
+  build: (characterId: string) =>
+    apiPost(referenceViewQueueResponseSchema, `/api/characters/${characterId}/reference-views/build`, {}),
+  /** Rebuild one slot, whatever state it is in — including a rejected one. */
+  regenerate: (characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe) =>
+    apiPost(referenceViewQueueResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/regenerate`, {}),
+  /** Replace one slot with an owner-supplied image. Synchronous — no polling. */
+  upload: (characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe, dataUrl: string) =>
+    apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/upload`, { dataUrl }),
+  /** Approve (making the view consumable) or reject (terminal for that attempt). */
+  review: (
+    characterId: string,
+    angle: ReferenceViewAngleId,
+    wardrobe: ReferenceViewWardrobe,
+    verdict: "approve" | "reject",
+  ) => apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/review`, { verdict }),
 };
 
 // ---------------------------------------------------------------------------

@@ -19,7 +19,6 @@ import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest"
 import { HIDDEN_IMAGE_KINDS, runImagePipeline, type ImageKind } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
-import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
@@ -511,11 +510,11 @@ export async function promoteVariant(characterId: string, imageId: string, owner
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .returning({ id: characters.id });
   if (updated.length === 0) return { ok: false, error: "character not found" };
-  // The canonical pointer is committed; prepare the identity pack for the new
-  // source, best-effort. This is the trigger for BOTH the studio's promote and
-  // the avatar upload, which promotes through here rather than writing the
-  // pointer itself — so neither needs its own call.
-  queueIdentityPackPreparation(characterId, ownerId);
+  // The CANDIDATE pointer moved, and nothing else did. Promotion — the studio's
+  // own promote and the avatar upload, which promotes through here rather than
+  // writing the pointer itself — puts a portrait on screen; the character's
+  // identity source moves only when the owner accepts it
+  // (`portrait-acceptance.ts`), which is what prepares the pack.
   return { ok: true };
 }
 

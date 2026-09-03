@@ -156,25 +156,28 @@ async function resolveBaselineSubject(
 }
 
 /**
- * The variant lane's reference choice: the canonical avatar, always re-rolled
- * from rather than chained off a previous edit.
+ * The variant lane's reference choice: the character's ACCEPTED portrait, always
+ * re-rolled from rather than chained off a previous edit. The bench measures the
+ * identity the rest of the app renders, so it reads the identity source, not the
+ * candidate in the portrait studio.
  */
 async function portraitBaselineReferences(row: ImageLabExperimentRow): Promise<ImageRenderReference[]> {
   if (row.characterId === null) return [];
   const [character] = await db()
-    .select({ avatarImageId: characters.avatarImageId })
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, row.characterId), eq(characters.ownerId, row.ownerId)))
     .limit(1);
-  if (!character?.avatarImageId) return [];
-  const bytes = await readOwnedImageBytes(character.avatarImageId, row.ownerId);
+  const acceptedImageId = character?.acceptedAvatarImageId ?? null;
+  if (acceptedImageId === null) return [];
+  const bytes = await readOwnedImageBytes(acceptedImageId, row.ownerId);
   if (!bytes) return [];
-  return [{ role: "identity", required: true, buffer: bytes, sourceImageId: character.avatarImageId }];
+  return [{ role: "identity", required: true, buffer: bytes, sourceImageId: acceptedImageId }];
 }
 
 /**
  * The scene lane's reference choice: the chat's current look anchor, falling
- * back to the character's canonical avatar, plus the chat's place shot when one
+ * back to the character's accepted portrait, plus the chat's place shot when one
  * exists — the same `chat_look` → avatar → `+ chat_place` ladder
  * `renderCharacterSceneImage` climbs.
  *
@@ -203,16 +206,20 @@ async function sceneBaselineReferences(row: ImageLabExperimentRow): Promise<Imag
   return references;
 }
 
-/** The character a scene baseline is about: the experiment's, else the chat's first. */
+/**
+ * The character a scene baseline is about: the experiment's, else the chat's
+ * first — and their ACCEPTED portrait, the same identity source the chat lane
+ * anchors on.
+ */
 async function baselineChatAvatarId(row: ImageLabExperimentRow): Promise<string | null> {
   const characterId = row.characterId ?? (row.chatId === null ? null : await primaryChatCharacterId(row.chatId));
   if (!characterId) return null;
   const [character] = await db()
-    .select({ avatarImageId: characters.avatarImageId })
+    .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, row.ownerId)))
     .limit(1);
-  return character?.avatarImageId ?? null;
+  return character?.acceptedAvatarImageId ?? null;
 }
 
 

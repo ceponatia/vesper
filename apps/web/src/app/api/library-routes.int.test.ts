@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { characters, db, images, items, jobs, locations } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
@@ -705,6 +705,15 @@ describe.skipIf(!ready)("images: avatar job, portraits, serving", () => {
     expect((imageRow?.meta as { demo?: boolean }).demo).toBe(true);
     const [charRow] = await db().select().from(characters).where(eq(characters.id, characterId)).limit(1);
     expect(charRow?.avatarImageId).toBe(avatarImageId);
+    // A generated portrait is a CANDIDATE: it is not accepted, and it starts no
+    // identity-pack preparation. Acceptance is the only trigger, so re-adding the
+    // old post-generation queue call fails here.
+    expect(charRow?.acceptedAvatarImageId).toBeNull();
+    const packJobs = await db()
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.type, "identity_pack"), sql`${jobs.payload} ->> 'characterId' = ${characterId}`));
+    expect(packJobs).toHaveLength(0);
 
     const file = await imageFileRoute(apiRequest(`/api/images/${avatarImageId}/file`), routeCtx({ id: avatarImageId }));
     expect(file.status).toBe(200);

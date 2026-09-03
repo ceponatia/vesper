@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import sharp from "sharp";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
@@ -23,10 +23,10 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { characters, db, imageIdentityPacks, images } from "../db";
+import { characters, db, imageIdentityPacks, images, jobs } from "../db";
 import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageKind, type ImageRow } from "./assets";
 import { evaluateIdentityPackForProfile, identityReferenceProvenanceFor } from "./identity-pack-references";
-import { ensureIdentityPack } from "./identity-pack-ensure";
+import { ensureIdentityPack, resolveSource } from "./identity-pack-ensure";
 import {
   cleanupIdentityPackRevisions,
   deleteCharacterIdentityAssets,
@@ -35,6 +35,7 @@ import {
 import { resetIdentityPackToAutomatic, saveManualIdentityCrop } from "./identity-pack-manual";
 import { prepareIdentityPacksBatch } from "./identity-pack-preparation";
 import { getIdentityPackForOwner } from "./identity-pack-read";
+import { acceptPortrait, clearPortraitAcceptance } from "./portrait-acceptance";
 import { setIdentityIntrinsicPolicyForTesting, type IdentityPackRow } from "./identity-pack-store";
 
 /**
@@ -47,6 +48,8 @@ const authState = vi.hoisted(() => ({
 }));
 
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
+
+import { cloneToLibrary } from "@/server/api";
 
 import { DELETE as portraitStudioDelete } from "@/app/api/characters/[id]/portraits/[imageId]/route";
 import { DELETE as galleryDeleteOne } from "@/app/api/gallery/[id]/route";
@@ -124,7 +127,9 @@ async function storeImage(characterId: string, kind: ImageKind, buffer: Buffer):
 }
 
 /**
- * A character whose canonical pointer is written directly, so no trigger fires.
+ * A character whose portrait pointers are written directly — candidate AND
+ * accepted, the state a portrait the owner accepted leaves behind — so no
+ * trigger fires.
  *
  * `kind` exists for the Gallery cases: those routes are guarded to
  * `GALLERY_IMAGE_KINDS`, which excludes `avatar`, so the canonical portrait a
@@ -143,7 +148,10 @@ async function seedSubject(
     .returning({ id: characters.id });
   if (!character) throw new Error("failed to create the test character");
   const portrait = await storeImage(character.id, kind, await testPngBuffer(width, height));
-  await db().update(characters).set({ avatarImageId: portrait.id }).where(eq(characters.id, character.id));
+  await db()
+    .update(characters)
+    .set({ avatarImageId: portrait.id, acceptedAvatarImageId: portrait.id, acceptedAt: new Date() })
+    .where(eq(characters.id, character.id));
   return { characterId: character.id, portraitId: portrait.id };
 }
 
@@ -538,10 +546,18 @@ describe.skipIf(!ready)("canonical source deletion", () => {
    */
   async function expectSourceRetired(subject: Subject): Promise<void> {
     const [character] = await db()
-      .select({ avatarImageId: characters.avatarImageId })
+      .select({
+        avatarImageId: characters.avatarImageId,
+        acceptedAvatarImageId: characters.acceptedAvatarImageId,
+        acceptedAt: characters.acceptedAt,
+      })
       .from(characters)
       .where(eq(characters.id, subject.characterId));
     expect(character?.avatarImageId).toBeNull();
+    // Deleting the ACCEPTED portrait leaves the character with no identity
+    // source, and no acceptance time standing over nothing.
+    expect(character?.acceptedAvatarImageId).toBeNull();
+    expect(character?.acceptedAt).toBeNull();
 
     const [portrait] = await db().select({ id: images.id }).from(images).where(eq(images.id, subject.portraitId));
     expect(portrait).toBeUndefined();
@@ -648,7 +664,10 @@ describe.skipIf(!ready)("canonical source deletion", () => {
     // arrives: the portrait row goes and the soft avatar pointer is cleared, the
     // foreign key nulls the pack's source — and nothing retires the revision, so
     // it is left exactly as the old delete ordering used to leave it.
-    await db().update(characters).set({ avatarImageId: null }).where(eq(characters.id, subject.characterId));
+    await db()
+      .update(characters)
+      .set({ avatarImageId: null, acceptedAvatarImageId: null, acceptedAt: null })
+      .where(eq(characters.id, subject.characterId));
     await db().delete(images).where(eq(images.id, subject.portraitId));
     const bypassed = await packRows(subject.characterId);
     expect(bypassed[0]?.current).toBe(true);
@@ -692,6 +711,171 @@ describe.skipIf(!ready)("canonical source deletion", () => {
   });
 });
 
+/**
+ * Portrait ACCEPTANCE — the decision that turns a portrait into the character's
+ * identity source (docs/images/identity-packs.md §The source is the ACCEPTED
+ * portrait).
+ *
+ * These cases kill the implementation this feature replaced, where the identity
+ * pack followed `avatar_image_id`: there, a newly generated or promoted portrait
+ * silently invalidated a working reference, a stale Accept would have moved the
+ * source to whatever was current, and a clone arrived with somebody else's face
+ * already adopted.
+ */
+describe.skipIf(!ready)("portrait acceptance", () => {
+  /** The preparation jobs one character's acceptances left behind. */
+  async function packJobs(characterId: string): Promise<{ id: string; status: string }[]> {
+    return db()
+      .select({ id: jobs.id, status: jobs.status })
+      .from(jobs)
+      .where(and(eq(jobs.type, "identity_pack"), sql`${jobs.payload} ->> 'characterId' = ${characterId}`));
+  }
+
+  /**
+   * Preparation is fire-and-forget, so the row it inserts and settles is what a
+   * caller can observe. Polls rather than sleeps: the derivation is local work on
+   * a small PNG and normally lands in a few milliseconds.
+   */
+  async function settledPackJob(characterId: string): Promise<{ id: string; status: string }> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      const [row] = await packJobs(characterId);
+      if (row && row.status !== "running") return row;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("the acceptance never settled an identity_pack job");
+  }
+
+  /** A character showing a portrait it has NOT accepted — the state every writer leaves. */
+  async function candidateSubject(name: string): Promise<Subject> {
+    const subject = await seedSubject(name);
+    await clearPortraitAcceptance(subject.characterId, userId);
+    return subject;
+  }
+
+  async function pointers(characterId: string): Promise<{ avatarImageId: string | null; acceptedAvatarImageId: string | null }> {
+    const [row] = await db()
+      .select({ avatarImageId: characters.avatarImageId, acceptedAvatarImageId: characters.acceptedAvatarImageId })
+      .from(characters)
+      .where(eq(characters.id, characterId))
+      .limit(1);
+    if (!row) throw new Error("the subject character vanished");
+    return row;
+  }
+
+  it("accepting the candidate derives its pack, and accepting it again does nothing", async () => {
+    const subject = await candidateSubject("Accept Subject");
+
+    const accepted = await acceptPortrait({
+      ownerId: userId,
+      characterId: subject.characterId,
+      imageId: subject.portraitId,
+    });
+    expect(accepted.status).toBe("accepted");
+    if (accepted.status !== "accepted") return;
+    expect(accepted.acceptance).toMatchObject({ acceptedImageId: subject.portraitId, isCurrent: true });
+    expect(accepted.acceptance.acceptedAt).not.toBeNull();
+
+    expect((await settledPackJob(subject.characterId)).status).toBe("done");
+    const rows = await packRows(subject.characterId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.current).toBe(true);
+    expect(rows[0]?.status).toBe("ready");
+    // Derived from the ACCEPTED bytes, which is the whole claim.
+    expect(rows[0]?.sourceImageId).toBe(subject.portraitId);
+
+    // The same portrait again: no write, no second job, no second revision.
+    const again = await acceptPortrait({
+      ownerId: userId,
+      characterId: subject.characterId,
+      imageId: subject.portraitId,
+    });
+    expect(again.status).toBe("unchanged");
+    expect(await packJobs(subject.characterId)).toHaveLength(1);
+    expect(await packRows(subject.characterId)).toHaveLength(1);
+  });
+
+  it("a stale accept cannot move the identity source to the portrait that replaced it", async () => {
+    const subject = await seedSubject("Stale Accept Subject");
+    const replacement = await storeImage(subject.characterId, "avatar", await testPngBuffer(SOURCE_WIDTH, SOURCE_HEIGHT));
+    // A promotion, as the studio performs it: the candidate moves, acceptance does not.
+    await db()
+      .update(characters)
+      .set({ avatarImageId: replacement.id })
+      .where(eq(characters.id, subject.characterId));
+
+    // The request still names the portrait the owner was looking at.
+    const conflict = await acceptPortrait({
+      ownerId: userId,
+      characterId: subject.characterId,
+      imageId: subject.portraitId,
+    });
+    expect(conflict.status).toBe("conflict");
+    if (conflict.status !== "conflict") return;
+    // What the studio re-renders from: still the old portrait, and no longer current.
+    expect(conflict.acceptance).toMatchObject({ acceptedImageId: subject.portraitId, isCurrent: false });
+    expect(await pointers(subject.characterId)).toEqual({
+      avatarImageId: replacement.id,
+      acceptedAvatarImageId: subject.portraitId,
+    });
+    expect(await packJobs(subject.characterId)).toHaveLength(0);
+  });
+
+  it("an unaccepted candidate leaves the accepted pack current, usable and resolvable", async () => {
+    const subject = await preparedSubject("Unaccepted Candidate Subject");
+    const candidate = await storeImage(subject.characterId, "avatar", await testPngBuffer(SOURCE_WIDTH, SOURCE_HEIGHT));
+    await db().update(characters).set({ avatarImageId: candidate.id }).where(eq(characters.id, subject.characterId));
+
+    const summary = await getIdentityPackForOwner(subject.characterId, userId);
+    expect(summary?.current).toBe(true);
+    // Not stale: a candidate nobody accepted describes nothing about this pack.
+    expect(summary?.stale).toBe(false);
+    expect(summary?.sourceImageId).toBe(subject.portraitId);
+
+    const resolved = await resolveSource(userId, subject.characterId, undefined);
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(resolved.source.imageRow.id).toBe(subject.portraitId);
+  });
+
+  it("deleting an unaccepted candidate leaves the acceptance and its pack alone", async () => {
+    const subject = await preparedSubject("Candidate Delete Subject");
+    const candidate = await storeImage(subject.characterId, "avatar", await testPngBuffer(SOURCE_WIDTH, SOURCE_HEIGHT));
+    await db().update(characters).set({ avatarImageId: candidate.id }).where(eq(characters.id, subject.characterId));
+
+    const res = await portraitStudioDelete(
+      apiRequest(`/api/characters/${subject.characterId}/portraits/${candidate.id}`, { method: "DELETE" }),
+      routeCtx({ id: subject.characterId, imageId: candidate.id }),
+    );
+    expect(res.status).toBe(200);
+
+    // The candidate pointer went with the row it named; the identity source did not.
+    expect(await pointers(subject.characterId)).toEqual({
+      avatarImageId: null,
+      acceptedAvatarImageId: subject.portraitId,
+    });
+    const rows = await packRows(subject.characterId);
+    expect(rows[0]?.current).toBe(true);
+    expect(rows[0]?.status).toBe("ready");
+    expect(rows[0]?.sourceImageId).toBe(subject.portraitId);
+  });
+
+  it("a clone copies the portrait as an unaccepted candidate and prepares nothing", async () => {
+    const subject = await preparedSubject("Clone Source Subject");
+
+    const clone = await cloneToLibrary("character", subject.characterId, userId);
+    expect(clone.ok).toBe(true);
+    if (!clone.ok) return;
+
+    const copy = await pointers(clone.id);
+    // The picture came across; the decision that it IS this character did not.
+    expect(copy.avatarImageId).not.toBeNull();
+    expect(copy.avatarImageId).not.toBe(subject.portraitId);
+    expect(copy.acceptedAvatarImageId).toBeNull();
+    expect(await packJobs(clone.id)).toHaveLength(0);
+    expect(await packRows(clone.id)).toHaveLength(0);
+  });
+});
+
 describe.skipIf(!ready)("prepareIdentityPacksBatch", () => {
   it("reports what a dry run would do without deriving anything", async () => {
     const prepared = await preparedSubject("Batch Prepared");
@@ -715,7 +899,6 @@ describe.skipIf(!ready)("prepareIdentityPacksBatch", () => {
     const usable = await seedSubject("Batch Usable");
     // Landscape: the heuristic is not eligible, so this one fails closed.
     const unusable = await seedSubject("Batch Landscape", 512, 384);
-
     const result = await prepareIdentityPacksBatch({
       ownerId: userId,
       characterIds: [usable.characterId, unusable.characterId],

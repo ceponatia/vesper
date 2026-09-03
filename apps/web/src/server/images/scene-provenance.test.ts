@@ -17,6 +17,7 @@ import {
   LANE_PROBE_SECOND_IMAGE_ID,
   LANE_PROBE_SECOND_NAME,
   LANE_PROBE_SECOND_SUBJECT_ID,
+  LANE_PROBE_SUBJECT_ID,
   LANE_PROBE_THIRD_NAME,
   LANE_PROBE_THIRD_SUBJECT_ID,
   laneProbeCastSceneRender,
@@ -62,7 +63,7 @@ import { classifyImageFailure, isDemoMode } from "../ai";
 import { db } from "../db";
 import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult, type ImageRow } from "./assets";
 import { renderImageIntent } from "./render-intent";
-import { renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
+import { renderResolvedScene, type RenderResolvedSceneInput, type SceneRenderReferenceView } from "./scene";
 
 const mockPipeline = vi.mocked(runImagePipeline);
 const mockIntent = vi.mocked(renderImageIntent);
@@ -564,5 +565,118 @@ describe("renderResolvedScene cast integrity", () => {
       extra: [],
       duplicated: [LANE_PROBE_SECOND_SUBJECT_ID],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reference views
+// ---------------------------------------------------------------------------
+
+/** The accepted portrait Nyx's views are derived from, and the back view itself. */
+const NYX_PORTRAIT_ID = "img-probe-nyx-portrait";
+const NYX_BACK_VIEW_ID = "img-probe-nyx-back";
+
+function backView(overrides: Partial<SceneRenderReferenceView> = {}): SceneRenderReferenceView {
+  return {
+    characterId: LANE_PROBE_SUBJECT_ID,
+    imageId: NYX_BACK_VIEW_ID,
+    sourceImageId: NYX_PORTRAIT_ID,
+    angle: "back_full",
+    wardrobe: "clothed",
+    faceVisibility: "hidden",
+    name: LANE_PROBE_NAME,
+    description: "seen from behind, the same person",
+    allowForIntimate: true,
+    ...overrides,
+  };
+}
+
+/** The probe scene plus one selected view and its bytes. */
+function withReferenceView(view: SceneRenderReferenceView): Partial<RenderResolvedSceneInput> {
+  const scene = laneProbeCastSceneRender();
+  return {
+    referenceViews: [view],
+    referenceBuffers: new Map([...scene.referenceBuffers, [view.imageId, Buffer.from("back")]]),
+  };
+}
+
+/** The `sourceImageId` of every image one rung actually handed the provider, in send order. */
+function sentImageIds(call: number): (string | undefined)[] {
+  const intent = mockIntent.mock.calls[call]?.[0];
+  return (intent?.references ?? []).map((reference) => reference.sourceImageId);
+}
+
+/**
+ * **Reference views under scarcity** (#316).
+ *
+ * The selection rule is pure and owned by
+ * `contracts/images/reference-views.test.ts`; the consumability gate is owned by
+ * `reference-view-consume.test.ts`. What only this layer can prove is what
+ * happens to a selected view once it has to share a payload with the identity
+ * anchors it stands beside: where it sits in the send order, when it may take an
+ * anchor's slot, and whether the row's record of it survives a fallback.
+ *
+ * Every case is also the no-regression anchor: the render is the render it
+ * always was, with one more image and one more meta key.
+ */
+describe("renderResolvedScene reference views", () => {
+  it("sends the view BEHIND the identity anchors and records what it sent", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+
+    await renderResolvedScene(baseInput({ profile: sceneProfile(3), ...withReferenceView(backView()) }));
+
+    // Anchors first — identity is what the cast ruling protects — then the view,
+    // which is a second image of somebody the anchors already carry.
+    expect(sentImageIds(0)).toEqual([LANE_PROBE_IMAGE_ID, LANE_PROBE_SECOND_IMAGE_ID, NYX_BACK_VIEW_ID]);
+    expect(pipelineCalls[0]?.asset.meta?.referenceViews).toEqual([
+      {
+        characterId: LANE_PROBE_SUBJECT_ID,
+        angle: "back_full",
+        wardrobe: "clothed",
+        imageId: NYX_BACK_VIEW_ID,
+        sourceImageId: NYX_PORTRAIT_ID,
+        substitutedAnchor: false,
+      },
+    ]);
+  });
+
+  /**
+   * Owner ruling: on a one-slot model a HIDDEN-face view takes the anchor's
+   * place rather than losing to it. The anchor is a portrait, and a shot taken
+   * from behind has no face in the frame for its face to lock — keeping it would
+   * spend the only slot on the half of the person this picture does not contain.
+   *
+   * Falsified against the ordering alone: a view appended behind the anchors and
+   * trimmed at capacity 1 sends `LANE_PROBE_IMAGE_ID` here, and records nothing.
+   */
+  it("a hidden-face view replaces the anchor when there is only one slot", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+
+    await renderResolvedScene(baseInput({ profile: sceneProfile(1), ...withReferenceView(backView()) }));
+
+    expect(sentImageIds(0)).toEqual([NYX_BACK_VIEW_ID]);
+    expect(pipelineCalls[0]?.asset.meta?.referenceViews).toEqual([
+      expect.objectContaining({ imageId: NYX_BACK_VIEW_ID, substitutedAnchor: true }),
+    ]);
+  });
+
+  /**
+   * The same honesty rule `meta.identityReferences` keeps: the row records the
+   * views the WINNING rung sent. A single-reference fallback carries the anchor
+   * alone, so the reserve-time claim about the view has to go — `meta` is what
+   * the grading trial reads, and a claim about an image no provider saw poisons
+   * a grade rather than merely misleading a reader.
+   */
+  it("a fallback rung that dropped the view removes it from the row", async () => {
+    mockIntent
+      .mockResolvedValueOnce({ ok: false, error: "multi boom" })
+      .mockResolvedValueOnce({ ok: true, image: Buffer.from("rendered") });
+    rowQueue.push([{ meta: { model: `replicate/${MODEL_SLUG}` } }]);
+
+    await renderResolvedScene(baseInput({ profile: sceneProfile(3), ...withReferenceView(backView()) }));
+
+    expect(pipelineCalls[0]?.asset.meta?.referenceViews).toHaveLength(1);
+    const correctedMeta = updateCalls[0]?.meta as Record<string, unknown>;
+    expect("referenceViews" in correctedMeta).toBe(false);
   });
 });

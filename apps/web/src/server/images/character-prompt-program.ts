@@ -141,6 +141,18 @@ export interface CharacterPromptReference {
   readonly reference: ImageRenderReference;
   /** The cast member this image depicts. Required in practice for `identity`. */
   readonly subjectId?: string;
+  /**
+   * A short clause qualifying what this image IS, woven into the sentence that
+   * introduces its slot — "seen from behind, the same person".
+   *
+   * Beside `subjectId` rather than inside it because the two answer different
+   * questions, and only the second one has an answer when a lane sends TWO
+   * images of one person: `subjectId` says both show Mira, and this says why the
+   * second one exists. A reference-view send is that case
+   * (`contracts/images/reference-views.ts` owns the clauses); every other lane
+   * leaves it unset and compiles byte-identically.
+   */
+  readonly description?: string;
 }
 
 export interface CharacterPromptProgramInput {
@@ -376,14 +388,17 @@ function referenceFacts(
 /** The dialect's slots, over the PRIMARY field's images in send order. */
 function dialectReferences(
   subjectOf: (reference: ImageRenderReference) => string | undefined,
+  describe: (reference: ImageRenderReference) => string | undefined,
   references: readonly ImageRenderReference[],
 ): ImageDialectReference[] {
   return references.map((reference, index) => {
     const subjectId = reference.role === "identity" ? subjectOf(reference) : undefined;
+    const description = describe(reference);
     return {
       position: index + 1,
       role: reference.role,
       ...(subjectId === undefined ? {} : { subjectRef: `subject.${subjectId}` }),
+      ...(description === undefined ? {} : { description }),
     };
   });
 }
@@ -504,10 +519,15 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // than by re-deriving it from a role and a position — which on an ensemble
   // render is exactly the guess that binds the wrong face to the wrong person.
   const subjectByReference = new Map<ImageRenderReference, string>();
+  const descriptionByReference = new Map<ImageRenderReference, string>();
   for (const entry of input.references) {
     if (entry.subjectId !== undefined) subjectByReference.set(entry.reference, entry.subjectId);
+    if (entry.description !== undefined) descriptionByReference.set(entry.reference, entry.description);
   }
   const subjectOf = (reference: ImageRenderReference): string | undefined => subjectByReference.get(reference);
+  // Recovered by object identity for the same reason the subject is: planning
+  // returns the same objects, so nothing has to re-derive which slot was which.
+  const describe = (reference: ImageRenderReference): string | undefined => descriptionByReference.get(reference);
   const supplied = input.references.map((entry) => entry.reference);
   const planned = planIntentReferences(profile.model, profile.profile.referencePolicy, supplied);
   const sentReferences = [...planned.primary, ...planned.dedicated.flatMap((field) => field.references)];
@@ -583,7 +603,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     binding,
     positivePack,
     negativePack,
-    references: dialectReferences(subjectOf, planned.primary),
+    references: dialectReferences(subjectOf, describe, planned.primary),
     budget: imagePromptBudgetFromBinding(profile.model.advancedCapabilities.prompt),
     // The probed negative binding is the only honest source for whether this
     // version has a field at all. An empty `advancedCapabilities` means nobody
