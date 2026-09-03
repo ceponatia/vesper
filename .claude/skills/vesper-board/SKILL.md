@@ -136,7 +136,10 @@ Transition rules that pair with fields:
 - **Blocked must name its blocker**: a native blocked-by relation on the exact
   child, or the `decision-needed` label. Never prose, never row order.
 - Parents (label `initiative`) aggregate; per-slice truth lives on sub-issues.
-  Iterations hold execution items only, never parents.
+  When a sub-issue enters an iteration, put its parent in the same iteration
+  too — the Current Iteration view (`is:open iteration:@current`) only nests
+  slices under a parent that is itself in the iteration (owner decision
+  2026-09-03).
 
 ## Labels
 
