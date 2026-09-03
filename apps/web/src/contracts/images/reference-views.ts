@@ -528,7 +528,7 @@ function angleFor(camera: SceneCameraSpec, sideKey: string): ReferenceViewAngleI
       return profileAngleFor(sideKey);
     case "toward_viewer":
       return camera.distance === "full_figure" || camera.distance === "wide" ? "front_full" : null;
-    default:
+    case "three_quarter":
       return null;
   }
 }

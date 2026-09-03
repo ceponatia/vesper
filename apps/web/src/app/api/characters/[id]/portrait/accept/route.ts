@@ -1,6 +1,12 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { acceptPortrait, clearPortraitAcceptance, plannedReferenceViewsForCharacter } from "@/server/images";
+import {
+  acceptPortrait,
+  clearPortraitAcceptance,
+  getReferenceViewSet,
+  plannedReferenceViewsForCharacter,
+  referenceViewsToRebuild,
+} from "@/server/images";
 import { jsonError, jsonOk, readBody, withAuthorizedResource } from "@/server/api";
 import { queueReferenceViewBuild } from "../../reference-views/shared";
 import { findOwnedCharacter } from "../../owned";
@@ -36,11 +42,12 @@ const acceptBodySchema = z.object({ imageId: z.string().min(1) });
  * and the reference views built from them are already the current ones. That is
  * what makes re-accepting free.
  *
- * A REAL accept also queues the character's reference view set
- * (docs/images/pipelines/reference-views.md) and charges the daily image budget
- * for exactly the views it will render — the registry's cross product after the
- * age gate, counted by the same pure helper the build job plans from, so the
- * charge and the work can never be two different numbers.
+ * A REAL accept also queues the reference-view slots that actually need work.
+ * The age-gated registry still decides the complete planned set, but the current
+ * post-acceptance projection decides which of those slots are missing, failed or
+ * stale. This matters when an owner cleared acceptance and later accepts the same
+ * portrait again: already-valid reviewed views become current again and are
+ * reused rather than charged for and superseded by fresh unreviewed renders.
  *
  * **A refused build never un-accepts.** The pointer is committed before any of
  * this is decided, so a budget denial, a saturated queue or a build already in
@@ -81,12 +88,14 @@ export const POST = withAuthorizedResource<Params, OwnedCharacter>(
     // The acceptance is already committed. Everything below can only decide
     // whether the views are built NOW — never whether the portrait was accepted.
     const planned = await plannedReferenceViewsForCharacter(id, user.id);
+    const set = await getReferenceViewSet(id, user.id);
+    const targets = referenceViewsToRebuild(set, planned);
     const views = await queueReferenceViewBuild({
       characterId: id,
       ownerId: user.id,
       req,
       user,
-      targets: planned,
+      targets,
       planned: planned.length,
     });
     return jsonOk({ acceptance: result.acceptance, views });

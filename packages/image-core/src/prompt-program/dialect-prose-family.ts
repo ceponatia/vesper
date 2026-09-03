@@ -186,7 +186,7 @@ function claimSlot(
   state: RenderState,
   role: ImageReferenceRole,
   subjectRef: string | undefined,
-): { readonly role: ImageReferenceRole } | null {
+): ImageDialectPositiveInput["references"][number] | null {
   for (const slot of input.references) {
     if (state.takenSlots.has(slot.position)) continue;
     if (slot.role !== role || slot.subjectRef !== subjectRef) continue;

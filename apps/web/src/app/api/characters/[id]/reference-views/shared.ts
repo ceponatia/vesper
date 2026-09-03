@@ -7,7 +7,7 @@ import {
   type ReferenceViewQueueOutcome,
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
-import { imageRenderRejection, startJob } from "@/server/api";
+import { imageRenderRejection, startJobAfterAdmission } from "@/server/api";
 import { hasLiveCharacterJob } from "@/server/db";
 import { buildReferenceViews, plannedReferenceViewsForCharacter } from "@/server/images";
 import { log } from "@/server/log";
@@ -94,11 +94,15 @@ export interface QueueReferenceViewBuildInput {
  *    (`hasLiveCharacterJob`, which is staleness-bounded so a deploy that kills a
  *    build cannot wedge the character forever). Refused as `busy` — the work the
  *    caller wants is already happening.
- * 3. **Admission.** `imageRenderRejection` for exactly `targets.length` renders,
- *    declaring the hidden output kind so the storage leg is skipped: these bytes
- *    are excluded from the owner's quota, so their admission must not spend the
- *    visible headroom either. Backpressure and the daily provider budget still
- *    apply, because they are about spend and queue depth rather than disk.
+ * 3. **Capacity, then admission.** `startJobAfterAdmission` atomically claims the
+ *    per-user job slot BEFORE `imageRenderRejection` can consume the daily
+ *    provider budget. The claimed row is only a reservation until admission
+ *    passes; a refusal deletes it and starts no provider work. Admission charges
+ *    exactly `targets.length` renders and declares the hidden output kind so the
+ *    storage leg is skipped: these bytes are excluded from the owner's quota, so
+ *    their admission must not spend visible headroom either. Backpressure and
+ *    the daily provider budget still apply, because they are about spend and
+ *    queue depth rather than disk.
  *
  * A refusal is a VALUE. The caller — the accept route above all — reports it in
  * the response body and leaves everything else exactly as it was.
@@ -113,32 +117,39 @@ export async function queueReferenceViewBuild(
     return { queued: false, reason: "busy", planned };
   }
 
-  const refused = await imageRenderRejection(input.user, input.req, {
-    count: targets.length,
-    outputKind: "reference_view",
-  });
-  if (refused) {
-    // The refusal's own code says which guard fired. `storage` cannot arise for a
-    // hidden kind, but it is in the vocabulary because the copy map is
-    // exhaustive and a future non-hidden sibling would need it.
-    log.warn("images", "reference view build refused before it started", {
-      code: "images.reference_views.budget_refused",
-      characterId,
-      requested: targets.length,
-      status: refused.status,
-    });
-    return { queued: false, reason: "budget", planned };
-  }
+  const started = await startJobAfterAdmission<"budget">(
+    {
+      type: "reference_views",
+      ownerId,
+      payload: { characterId, targets: targets.map((view) => `${view.angle}:${view.wardrobe}`) },
+      run: () =>
+        buildReferenceViews({ characterId, ownerId, targets }).then((result) => ({ ...result })),
+    },
+    async () => {
+      const refused = await imageRenderRejection(input.user, input.req, {
+        count: targets.length,
+        outputKind: "reference_view",
+      });
+      if (!refused) return null;
 
-  const started = await startJob({
-    type: "reference_views",
-    ownerId,
-    payload: { characterId, targets: targets.map((view) => `${view.angle}:${view.wardrobe}`) },
-    run: () =>
-      buildReferenceViews({ characterId, ownerId, targets }).then((result) => ({ ...result })),
-  });
-  // The per-user job cap refused the slot. Same answer as the single-flight
-  // guard from the caller's point of view: work is already in flight, try later.
-  if (!started.ok) return { queued: false, reason: "busy", planned };
+      // The refusal's own code says which guard fired. `storage` cannot arise for
+      // a hidden kind, but the route-level vocabulary intentionally collapses
+      // every spend/backpressure refusal to the existing `budget` outcome.
+      log.warn("images", "reference view build refused before it started", {
+        code: "images.reference_views.budget_refused",
+        characterId,
+        requested: targets.length,
+        status: refused.status,
+      });
+      return "budget";
+    },
+  );
+
+  if (!started.ok) {
+    if ("admission" in started) return { queued: false, reason: started.admission, planned };
+    // The per-user job cap refused the reservation. The admission callback did
+    // not run, so no daily provider budget was consumed.
+    return { queued: false, reason: "busy", planned };
+  }
   return { queued: true, reason: null, planned };
 }

@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { jsonError, jsonOk, readBody, withAuthorizedResource } from "@/server/api";
-import { uploadReferenceView } from "@/server/images";
+import { plannedReferenceViewsForCharacter, uploadReferenceView } from "@/server/images";
 import {
   ownedCharacter,
   parseSlot,
@@ -20,6 +20,10 @@ import {
  * The row it writes is a fully ordinary one, already reviewed: an owner who
  * supplies a view has, by supplying it, performed the review the render path
  * asks them for.
+ *
+ * The same age gate as generation applies here. Upload is a second way to fill
+ * an allowed slot, never a door around the set planner's refusal of intimate
+ * slots for a character whose image age is minor or unresolved.
  */
 export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharacter>(
   "character",
@@ -28,6 +32,11 @@ export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharact
     const params = await ctx.params;
     const slot = parseSlot(params);
     if (slot === null) return jsonError("not_found", "no such reference view", 404);
+
+    const planned = await plannedReferenceViewsForCharacter(params.id, user.id);
+    if (!planned.some((view) => view.angle === slot.angle && view.wardrobe === slot.wardrobe)) {
+      return jsonError("not_found", "no such reference view", 404);
+    }
 
     const body = await readBody(req, referenceViewUploadBodySchema);
     if (!body.ok) return body.response;

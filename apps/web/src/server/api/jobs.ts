@@ -125,6 +125,13 @@ export type StartJobResult =
   | { readonly ok: true; readonly jobId: string }
   | { readonly ok: false; readonly active: number; readonly limit: number };
 
+/**
+ * Result for a job whose caller has an admission guard that must run only after
+ * concurrency capacity is secured. An admission refusal never starts the job and
+ * carries the caller's own refusal value back unchanged.
+ */
+export type StartJobAfterAdmissionResult<T> = StartJobResult | { readonly ok: false; readonly admission: T };
+
 /** Returns the new job id, or the refusal to hand back to the caller. */
 async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<StartJobResult, { ok: false }>> {
   if (opts.ownerId !== undefined) {
@@ -153,27 +160,12 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
 }
 
 /**
- * Fire-and-forget job runner for library-side work (avatar, portrait_variant,
- * embed_refresh): inserts a running `jobs` row, kicks off the work, records
- * done/failed when it settles. The route returns the job id immediately; the
- * UI polls the affected rows (e.g. the image row status, docs/images/asset-registry.md).
- * Failures never propagate to the caller.
- *
- * When `ownerId` is set the insert goes through the per-user concurrency cap
- * and may be refused. The background work is
- * **not** started in that case, so callers must branch on the result rather
- * than assume a job exists.
- *
- * The settled promise is what feeds this type's provider lane by default —
- * resolved reports a working provider, thrown a failing one. A run that knows
- * better overrides it through {@link JobRunContext}, including with "say
- * nothing", which is the only way a job that reached no provider can avoid
- * reporting health nobody probed.
+ * Run work for a job row that has already been inserted. Keeping the runner
+ * separate from admission lets a caller reserve an atomic per-user slot, run a
+ * spend guard, and only then release provider work — without claiming a second
+ * slot or charging for a job the cap subsequently refuses.
  */
-export async function startJob(opts: StartJobOptions): Promise<StartJobResult> {
-  const jobId = await insertJobRow(opts);
-  if (typeof jobId !== "string") return jobId;
-
+function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
   const lane = providerLaneFor(opts.type);
   // `undefined` while the run has said nothing, which is what keeps every lane
   // that never took the channel on the settled-promise rule below.
@@ -211,6 +203,64 @@ export async function startJob(opts: StartJobOptions): Promise<StartJobResult> {
         log.error("api.jobs", "failed to record job failure", { jobId, error: errorText(updateErr) });
       }
     });
+}
 
+/**
+ * Claim capacity first, then run a caller-owned admission guard before provider
+ * work is released.
+ *
+ * The claimed row is a short-lived reservation. If admission refuses, it is
+ * deleted before this function returns; the job body never runs and no provider
+ * outcome is recorded. If the guard throws, the reservation is likewise removed
+ * and the original failure propagates. This is the ordering needed by guards
+ * that CHARGE on success: a saturated per-user queue must be known before that
+ * charge is consumed.
+ */
+export async function startJobAfterAdmission<T>(
+  opts: StartJobOptions,
+  admit: () => Promise<T | null>,
+): Promise<StartJobAfterAdmissionResult<T>> {
+  const jobId = await insertJobRow(opts);
+  if (typeof jobId !== "string") return jobId;
+
+  let admission: T | null;
+  try {
+    admission = await admit();
+  } catch (err) {
+    await db().delete(jobs).where(eq(jobs.id, jobId));
+    throw err;
+  }
+
+  if (admission !== null) {
+    await db().delete(jobs).where(eq(jobs.id, jobId));
+    return { ok: false, admission };
+  }
+
+  launchInsertedJob(jobId, opts);
+  return { ok: true, jobId };
+}
+
+/**
+ * Fire-and-forget job runner for library-side work (avatar, portrait_variant,
+ * embed_refresh): inserts a running `jobs` row, kicks off the work, records
+ * done/failed when it settles. The route returns the job id immediately; the
+ * UI polls the affected rows (e.g. the image row status, docs/images/asset-registry.md).
+ * Failures never propagate to the caller.
+ *
+ * When `ownerId` is set the insert goes through the per-user concurrency cap
+ * and may be refused. The background work is
+ * **not** started in that case, so callers must branch on the result rather
+ * than assume a job exists.
+ *
+ * The settled promise is what feeds this type's provider lane by default —
+ * resolved reports a working provider, thrown a failing one. A run that knows
+ * better overrides it through {@link JobRunContext}, including with "say
+ * nothing", which is the only way a job that reached no provider can avoid
+ * reporting health nobody probed.
+ */
+export async function startJob(opts: StartJobOptions): Promise<StartJobResult> {
+  const jobId = await insertJobRow(opts);
+  if (typeof jobId !== "string") return jobId;
+  launchInsertedJob(jobId, opts);
   return { ok: true, jobId };
 }

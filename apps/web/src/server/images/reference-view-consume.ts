@@ -83,7 +83,11 @@ function reasonOf(state: ReferenceViewState): ReferenceViewUnavailableReason {
       // `stale` anyway, because a slot projecting `approved` with nothing behind
       // it is a row the owner repairs by building it again.
       return "stale";
-    default:
+    case "stale":
+    case "rejected":
+    case "unreviewed":
+    case "pending":
+    case "failed":
       return state;
   }
 }
