@@ -169,9 +169,13 @@ lane queries the `reference_view` kind by hand.
   the same person" — because two identity images bound to one subject otherwise say only that
   both show her, and two photographs of one person read as two people
   ([../prompt-programs.md](../prompt-programs.md) §Reference slots).
-- **A missing view is never an error.** No matching rule, nothing built, unreviewed, rejected,
-  stale, unreadable bytes, no capacity: every one of them degrades to the front-anchored render
-  with an INFO diagnostic. The feature may not turn a missing reference into a missing image.
+- **A missing view is never an error.** Nothing built, unreviewed, rejected, stale, unreadable
+  bytes, no capacity: every one of them degrades to the front-anchored render with an INFO
+  diagnostic. The feature may not turn a missing reference into a missing image.
+- **A shot with no matching angle degrades silently.** Nothing was wanted, so nothing is
+  reported: a three-quarter turn, a medium front shot and every other unmatched shot are the
+  ordinary case, and a line on each would bury the misses that are worth reading. Only a view
+  that was WANTED and could not be sent is diagnosed.
 
 Every scene render that sent one records `images.meta.referenceViews` at reserve time, beside
 the camera and staging that asked for it: one entry per view carrying `characterId`, `angle`,
@@ -200,14 +204,14 @@ All five are owner-only and rooted at the character. A slot the registry has no 
 
 ## Diagnostic codes
 
-| Code                                          | Meaning                                                      |
-| --------------------------------------------- | ------------------------------------------------------------ |
-| `images.reference_views.build_failed`         | One view's render failed; the rest of the build continues    |
-| `images.reference_views.not_accepted`         | The build ran against a character with no accepted portrait  |
-| `images.reference_views.source_unreadable`    | The accepted portrait's bytes could not be read              |
-| `images.reference_views.visual_cut_failed`    | A view's cut would not assemble; the row fails before spend  |
-| `images.reference_views.provider_unavailable` | No image provider is configured, so nothing was rendered     |
-| `images.reference_views.unknown_view`         | A stored row names an angle or wardrobe the registry dropped |
-| `images.reference_views.budget_refused`       | Admission refused the build; the acceptance still stands     |
-| `images.reference_views.view_unavailable`     | A view was wanted and none could be sent; the render goes on |
-| `images.reference_views.dropped_for_capacity` | A consumable view did not fit the model's reference capacity |
+| Code                                          | Meaning                                                       |
+| --------------------------------------------- | ------------------------------------------------------------- |
+| `images.reference_views.build_failed`         | One view's render failed; the rest of the build continues     |
+| `images.reference_views.not_accepted`         | The build ran against a character with no accepted portrait   |
+| `images.reference_views.source_unreadable`    | The accepted portrait's bytes could not be read               |
+| `images.reference_views.visual_cut_failed`    | A view's cut would not assemble; the row fails before spend   |
+| `images.reference_views.provider_unavailable` | No image provider is configured, so nothing was rendered      |
+| `images.reference_views.unknown_view`         | A stored row names an angle or wardrobe the registry dropped  |
+| `images.reference_views.budget_refused`       | Admission refused the build; the acceptance still stands      |
+| `images.reference_views.view_unavailable`     | A wanted view could not be sent; the render goes on unchanged |
+| `images.reference_views.dropped_for_capacity` | A consumable view did not fit the model's reference capacity  |

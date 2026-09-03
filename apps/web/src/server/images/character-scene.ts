@@ -20,7 +20,7 @@ import { latestChatLook } from "./chat-look";
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene, type SceneRenderReferenceView } from "./scene";
-import { loadConsumableReferenceView, REFERENCE_VIEW_UNAVAILABLE } from "./reference-view-consume";
+import { loadConsumableReferenceView } from "./reference-view-consume";
 import { referenceViewAngleById, selectReferenceView } from "@/contracts";
 import type { SceneLoweringViewer } from "./scene-lowering";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
@@ -395,9 +395,12 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
    * would compute. A lane that may not carry intimate content therefore never
    * receives a bare view, whatever the fiction says about the wardrobe.
    *
-   * Every miss — no rule for this shot, nothing built, unreviewed, rejected,
-   * stale, unreadable — is an INFO line and an empty list. The render that
-   * follows is the front-anchored one it has always been.
+   * A shot with no matching angle selects nothing and says nothing: three of the
+   * five orientations have no view in a four-angle sheet, and the front anchor
+   * is the right answer rather than a fallback. A view that WAS wanted and could
+   * not be sent — nothing built, unreviewed, rejected, stale, unreadable — is an
+   * INFO line. Either way the render is the front-anchored one it has always
+   * been.
    */
   const selectReferenceViews = async (
     attemptPlan: SceneRenderPlan,
@@ -420,14 +423,11 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
         // the id alone still fixes it per character.
         sideKey: `${member.characterId}${input.chatId ?? ""}`,
       });
-      if (selection.view === null) {
-        sink.push(
-          diag("info", REFERENCE_VIEW_UNAVAILABLE, `no reference view matches this shot for ${member.name}`, {
-            context: { characterId: member.characterId, reason: selection.reason, camera: attemptPlan.camera },
-          }),
-        );
-        continue;
-      }
+      // No matching angle is not a degradation: nothing was wanted, and the
+      // front-anchored render this produces is exactly the picture the shot
+      // asked for. Silent by ruling — a line on every ordinary chat scene would
+      // drown the misses that ARE worth reading.
+      if (selection.view === null) continue;
       const loaded = await loadConsumableReferenceView({
         ownerId: input.userId,
         characterId: member.characterId,

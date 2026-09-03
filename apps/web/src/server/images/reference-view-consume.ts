@@ -24,6 +24,13 @@ import { getReferenceViewSet } from "./reference-view-store";
  * whose bytes will not read — all of them mean the render proceeds exactly as it
  * does today, anchored on the front-facing portrait, with an INFO diagnostic
  * naming which of them it was. A missing view may never become a missing image.
+ *
+ * **Only a WANTED view is ever reported.** A shot whose angle the sheet has no
+ * view for never reaches this module: nothing was wanted, the front anchor is
+ * the right answer rather than a fallback, and a line on every ordinary chat
+ * scene would bury the misses that are worth reading. What is reported here is
+ * the narrower and more useful claim — this render asked for a view and could
+ * not have it.
  */
 
 /** A view was wanted and there was none to send. INFO: this is the ordinary path, not a fault. */
