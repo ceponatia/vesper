@@ -154,10 +154,11 @@ don't add them to new work.
 
 ## Iterations and milestones
 
-- Iterations are two-week cycles (Iteration 1 closed early on 2026-09-01;
-  Iteration 2 = 2026-09-02 → 2026-09-15, then every 14 days). At a boundary: accept or carry over the closing iteration's
-  items, then pull the next execution issues in. Set via `item-edit` with
-  `--iteration-id`.
+- Iterations are two-week Wednesday-start cycles. Iteration 1 (2026-08-31 →
+  09-01) and Iteration 2 (2026-09-02, one day) were both closed early;
+  Iteration 3 = 2026-09-03 → 2026-09-15, then every 14 days. At a boundary:
+  accept or carry over the closing iteration's items, then pull the next
+  execution issues in. Set via `item-edit` with `--iteration-id`.
 - Milestones per the README: **sparingly** — only when several issues
   collectively form a recognizable release or acceptance target; the project
   handles ordinary grouping. None exist today. `gh api
@@ -180,7 +181,17 @@ don't add them to new work.
   dates, but it **recreates every iteration with a new id and clears the
   Iteration value on every item**. Snapshot `item-list` (number → iterationId)
   first, run the mutation, then re-`item-edit --iteration-id` each item onto
-  the new ids (verified 2026-09-02: 47 items cleared, all restored).
+  the new ids (verified 2026-09-02 and 2026-09-03: 47 and 58 items cleared,
+  all restored). The input is `{ startDate, duration, iterations: [{ title,
+  startDate, duration }] }` — no `id`, no `startDay`; list completed
+  iterations too or they vanish. The weekday of the top-level `startDate`
+  becomes the field's start day, and an iteration that **overlaps** the one
+  before it is **silently dropped** from the result — read the returned
+  configuration back before restoring items.
+- Bulk `item-edit` runs are GraphQL calls against the shared 5,000-point hourly
+  budget; a paginated relations query over every issue can exhaust it, after
+  which every edit fails with "API rate limit already exceeded". Labels,
+  assignees, sub-issues, blocked-by, comments, and closes still work over REST.
 - New issues auto-add to the board within minutes; `gh project item-add` only
   when fields must be set immediately. PRs are **not** auto-added — step 4 is
   what puts them there.
