@@ -42,9 +42,13 @@ body itself.
 
 Attributes flagged `coreVisual` in the registry (gender, hair and eye color, skin tone, height,
 frame, apparent age) **or `renderVisual`** — the render-consistency tier of ~19 silhouette and
-face-structure enums (face, nose, brow and lip shape, hair length and texture, chest, waist, hips,
-arm and leg build…) that a scene render would otherwise re-invent per image — are always filled.
-Leaving them sparse is not sparseness, it is cross-scene drift.
+face-structure enums (face, nose, brow and lip shape, hair length and texture, chest build or
+breast size, waist, hips, arm and leg build…) that a scene render would otherwise re-invent per
+image — are always filled. Leaving them sparse is not sparseness, it is cross-scene drift. The
+fill runs against the body the draft will carry — its body-config seeded from the grounded gender
+(`activatesGroups`), then realized once more after the fill in case the fill invented the gender
+— so an anatomy-gated pair fills for the owner that body applies: a body with the breasts region
+receives `breasts.size`, one without receives `chest.size`, never both.
 
 1. **Definite values** — where the concept states or strongly implies a value, the model emits it
    directly. A definite value always beats a range or a species default for the same id.

@@ -526,12 +526,22 @@ describe("fillVisualDefaults", () => {
     }
   });
 
-  it("fills every unset render-visual attribute alongside the core set", () => {
-    const filled = fillVisualDefaults([], "a night-market tattoo artist");
+  it("fills every unset render-visual attribute the realized body applies, for the anatomy it configures", () => {
+    // Kills a fill that iterates the everyday vocabulary regardless of body
+    // (breasts.size never seeded) or one that seeds the superseded owner too
+    // (a chest build stored beside a breast size).
+    const female = realizeBody({ intimateRegions: ["vulva", "breasts"] });
+    const filled = fillVisualDefaults([], "a night-market tattoo artist", undefined, undefined, female);
     const ids = filled.map((v) => v.id);
-    for (const def of attributeRegistry.definitions.filter((d) => d.renderVisual)) {
+    for (const def of attributeRegistry.definitions.filter((d) => d.renderVisual && female.isAttributeApplicable(d))) {
       expect(ids).toContain(def.id);
     }
+    expect(ids).toContain("breasts.size");
+    expect(ids).not.toContain("chest.size");
+    const male = realizeBody({ intimateRegions: ["penis", "testicles"] });
+    const maleIds = fillVisualDefaults([], "a night-market tattoo artist", undefined, undefined, male).map((v) => v.id);
+    expect(maleIds).toContain("chest.size");
+    expect(maleIds).not.toContain("breasts.size");
   });
 
   it("fills every unset core attribute with a registry-valid value, deterministically", () => {

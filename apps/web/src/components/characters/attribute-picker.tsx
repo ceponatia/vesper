@@ -86,6 +86,9 @@ const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATE
  * through the realized body (species/realize.ts): intimate groups appear only
  * when the body-config switches their region on, and the explicit anatomy
  * nests under its anatomical area (Chest / Pelvis) rather than at the top.
+ * The realized body is the ONLY visibility rule — no gender special-casing —
+ * so toggling the breasts region swaps the Chest section's field set in place
+ * (chest build ↔ breast size) whatever the gender label says.
  */
 export function AttributePicker({
   values,

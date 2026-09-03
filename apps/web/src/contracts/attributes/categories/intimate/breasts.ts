@@ -2,9 +2,11 @@ import { defineAttributeGroup } from "../../types";
 import { SYNTHETIC_SENSITIVITY_VALUES, SYNTHETIC_SENSITIVITY_GUIDANCE } from "../../shared-values";
 
 /**
- * Breasts — intimate region, gated by the body-config group "breasts" (distinct
- * from the always-present `chest` silhouette). Clinical values; prose promptHints.
- * Surfaces only as far as wardrobe exposure + the exposure mask allow.
+ * Breasts — intimate region, gated by the body-config group "breasts". When the
+ * region is on, `breasts.size` is the one silhouette owner and the everyday
+ * `chest.size` (chest build) drops out of the realized body. Clinical values;
+ * prose promptHints. Surfaces only as far as wardrobe exposure + the exposure
+ * mask allow.
  */
 export const breastsGroup = defineAttributeGroup("breasts", [
   {
@@ -15,6 +17,10 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     valueType: "enum",
     description: "Breast size as it reads unclothed.",
     mutability: "inherent",
+    // Autofill metadata only (the forge's render-consistency fill supplies a
+    // size for a body with breasts, as chest build gets without them); it is
+    // not image-projection policy — `imageReveal` and the reveal path own that.
+    renderVisual: true,
     allowedValues: [
       "flat",
       "nearly_flat",

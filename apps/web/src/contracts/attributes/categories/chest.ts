@@ -2,17 +2,24 @@ import { defineAttributeGroup } from "../types";
 
 export const chestGroup = defineAttributeGroup("chest", [
   {
+    // Chest BUILD: the visible upper-torso / ribcage / pectoral silhouette of a
+    // body WITHOUT the breasts region. When the body-config switches `breasts`
+    // on, `breasts.size` owns the silhouette and this attribute is inapplicable
+    // (`supersededByIntimateRegions`) — a prompt never carries both size facts.
+    // Not owned here: shoulder width (`shoulders.width`), whole-body frame
+    // (`build.frame`), or muscular definition (`build.musculature`).
     id: "chest.size",
-    label: "Chest",
+    label: "Chest build",
     kind: "physical",
     category: "chest",
     valueType: "enum",
-    description: "Chest or bust as it visibly reads, any gender.",
+    description: "Upper-torso and ribcage structure as it visibly reads on a body without breasts.",
     mutability: "inherent",
     renderVisual: true,
-    allowedValues: ["flat", "slight", "modest", "average", "full", "very_full", "broad", "barrel"],
+    allowedValues: ["flat", "narrow", "slight", "average", "broad", "barrel"],
     bodyLocationId: "chest",
-    aliases: ["chest", "bust"],
+    supersededByIntimateRegions: ["breasts"],
+    aliases: ["chest", "chest build", "ribcage"],
     promptHints: ["Describe the chest only as far as wardrobe exposure and the exposure mask allow."],
   },
   {
