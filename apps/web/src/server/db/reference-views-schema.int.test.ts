@@ -85,7 +85,7 @@ afterAll(async () => {
 
 beforeAll(async () => {
   if (!ready) return;
-  ownerId = await seedTestUser("reference-views-schema");
+  ownerId = (await seedTestUser("reference-views-schema")).id;
 });
 
 describe.skipIf(!ready)("character_reference_views constraints", () => {

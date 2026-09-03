@@ -771,6 +771,7 @@ describe.skipIf(!ready)("portrait acceptance", () => {
       imageId: subject.portraitId,
     });
     expect(accepted.status).toBe("accepted");
+    if (accepted.status !== "accepted") return;
     expect(accepted.acceptance).toMatchObject({ acceptedImageId: subject.portraitId, isCurrent: true });
     expect(accepted.acceptance.acceptedAt).not.toBeNull();
 
@@ -809,6 +810,7 @@ describe.skipIf(!ready)("portrait acceptance", () => {
       imageId: subject.portraitId,
     });
     expect(conflict.status).toBe("conflict");
+    if (conflict.status !== "conflict") return;
     // What the studio re-renders from: still the old portrait, and no longer current.
     expect(conflict.acceptance).toMatchObject({ acceptedImageId: subject.portraitId, isCurrent: false });
     expect(await pointers(subject.characterId)).toEqual({
@@ -897,7 +899,6 @@ describe.skipIf(!ready)("prepareIdentityPacksBatch", () => {
     const usable = await seedSubject("Batch Usable");
     // Landscape: the heuristic is not eligible, so this one fails closed.
     const unusable = await seedSubject("Batch Landscape", 512, 384);
-
     const result = await prepareIdentityPacksBatch({
       ownerId: userId,
       characterIds: [usable.characterId, unusable.characterId],
