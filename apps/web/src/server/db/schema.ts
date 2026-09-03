@@ -79,6 +79,7 @@ import { inferenceLods } from "@vesper/simulation-core/contracts/deliberation";
 import { simulationLods } from "@vesper/simulation-core/contracts/lod";
 import { newId } from "@/lib/ids";
 import { imageGeneratorRunStatuses } from "@/contracts/images/image-generator";
+import { referenceViewMethods, referenceViewStatuses } from "@/contracts/images/reference-views";
 import {
   visualExtractionProposalStatuses,
   visualExtractionRunStatuses,
@@ -1449,7 +1450,14 @@ export const images = pgTable(
     // `generator_output`: an Image
     // Generator run's render — admin bench evidence with no entity/chat association,
     // hidden exactly like `lab_output` and deleted with its run.
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output", "generator_output"] }).notNull(),
+    // `reference_view`: one slot of a character's reference view SET — the accepted
+    // portrait re-rendered from another angle, in one of two wardrobe states
+    // (`character_reference_views`). Hidden exactly like `identity_face_crop`: an
+    // owner-reviewed render INPUT, never a Gallery asset, absent from the portrait
+    // strip, from clones, from the public file widening and from the storage quota,
+    // and deleted with its character. Its owner reads it through the ordinary owner
+    // file route, which is how the studio's view grid displays it.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output", "generator_output", "reference_view"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     /**
@@ -1887,6 +1895,93 @@ export const imageIdentityPacks = pgTable(
       t.derivationVersion,
       t.revision,
     ),
+  ],
+);
+
+/**
+ * One slot of a character's **reference view set** — the accepted portrait
+ * re-rendered from another angle, in one wardrobe state.
+ *
+ * A table rather than `images.meta` for the reasons `image_identity_packs` gives
+ * and one more of its own: a slot has a REVIEW, and a review is a relational
+ * fact about a person and a moment, not a note on a file. The row is
+ * authoritative; the hidden `reference_view` asset's `images.meta` is diagnostic
+ * provenance only and must never be used to DISCOVER a slot's current view.
+ *
+ * **Attempts are rows.** A render, a retry, a rejection and an owner upload are
+ * distinct claims about the same slot, so each takes its own row and the
+ * previous one is marked `superseded`. Rejections stay auditable, an owner can
+ * see what was replaced, and — the point of keeping them — nothing is ever
+ * deleted when the portrait changes. Staleness is decided at READ time by
+ * comparing `source_image_id` against the character's accepted pointer, so
+ * re-accepting the earlier portrait revives exactly the views that were rendered
+ * from it.
+ *
+ * Exactly one row per (character, angle, wardrobe) may carry `current`, enforced
+ * below by a partial unique index rather than by application discipline — the
+ * same device as `image_identity_packs_one_current_per_character`.
+ *
+ * `image_id` is a `set null` safety net, not the integrity story: a view whose
+ * asset went null is not consumable (the read-time projection refuses it), and
+ * it may not keep anchoring renders just because the row survives. Deleting the
+ * character deletes the row outright — this is operational data, and it does not
+ * inherit the Gallery-retention exception that keeps user-visible images.
+ */
+export const characterReferenceViews = pgTable(
+  "character_reference_views",
+  {
+    id: id(),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** A `referenceViewAngleIds` member. Text, not an enum: the angle registry is an
+     * extension point, and a row whose id left the registry is dropped at read time
+     * with a diagnostic rather than made unstorable. */
+    angleId: text("angle_id").notNull(),
+    /** A `referenceViewWardrobes` member, on the same registry-not-enum rule as the angle. */
+    wardrobe: text("wardrobe").notNull(),
+    current: boolean("current").notNull().default(false),
+    /** The accepted portrait this view was rendered from. */
+    sourceImageId: text("source_image_id").references(() => images.id, { onDelete: "set null" }),
+    /**
+     * SHA-256 over the STORED normalized webp bytes of that portrait, not the
+     * upload — `image_identity_packs.source_content_hash`'s rule, for its reason:
+     * a byte-level change invalidates the view even when the new portrait looks
+     * identical, and the system must never claim a view was derived from bytes it
+     * did not read.
+     */
+    sourceContentHash: text("source_content_hash").notNull(),
+    /** The produced asset. Null while pending, and after a failure. */
+    imageId: text("image_id").references(() => images.id, { onDelete: "set null" }),
+    status: text("status", { enum: referenceViewStatuses }).notNull().default("pending"),
+    /** Null until a row has actually produced a view (a `pending` or failed row). */
+    method: text("method", { enum: referenceViewMethods }),
+    /** `REFERENCE_VIEW_GENERATION_VERSION` at build time — a row behind it reads stale. */
+    generationVersion: integer("generation_version").notNull(),
+    /** A stable `classifyImageFailure` bucket; the human copy is produced at the UI boundary. */
+    failureCode: text("failure_code"),
+    failureMessage: text("failure_message"),
+    /** The owner whose eye approved or rejected this view, or who uploaded it (an
+     * owner-supplied view is the owner's own review). No cascade, for the same reason
+     * as `image_identity_packs.reviewed_by_user_id`: an audit trail that erases itself
+     * when the reviewer's account goes is not one. */
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // At most ONE current row per slot, held at the storage layer so a lost
+    // reservation race fails loudly instead of leaving two "current" views for the
+    // studio to pick between. Bare column name inside sql`` for the reason the pack
+    // index gives: the predicate is written into the index definition, where a bound
+    // parameter cannot go.
+    uniqueIndex("character_reference_views_one_current_per_slot")
+      .on(t.characterId, t.angleId, t.wardrobe)
+      .where(sql`current`),
+    // The per-slot history read, newest first — and its leading column doubles as the
+    // per-character lookup index (the house ruling recorded on `personas`).
+    index("character_reference_views_slot_idx").on(t.characterId, t.angleId, t.wardrobe, t.createdAt),
   ],
 );
 
@@ -2462,7 +2557,7 @@ export const jobs = pgTable(
       // the image lane in `providerLaneFor`.
       // `generator_image`: one Image Generator run — an image-provider render,
       // so it maps to the image lane as well.
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract", "generator_image"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract", "generator_image", "reference_views"],
     }).notNull(),
     /**
      * Who the work is being done for — the key the

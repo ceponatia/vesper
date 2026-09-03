@@ -7,8 +7,10 @@
 // it into a module is a lint error), so the registration is an import edge in the
 // diff instead of a side effect of whichever pack module happened to load first.
 import { installIdentityPackMaintenance } from "./identity-pack-maintenance";
+import { installReferenceViewMaintenance } from "./reference-view-maintenance";
 
 installIdentityPackMaintenance();
+installReferenceViewMaintenance();
 
 // Four services are split across modules that import each other directly, so they
 // export helpers no caller outside this folder may use. Those four are re-exported
@@ -84,6 +86,40 @@ export {
 export * from "./identity-pack-references";
 export * from "./identity-pack-consume";
 export * from "./portrait-acceptance";
+export {
+  clearReferenceViewAssetPointers,
+  currentReferenceViewRow,
+  currentReferenceViewRows,
+  failReferenceView,
+  finalizeReferenceView,
+  getReferenceViewSet,
+  getReferenceViewSummary,
+  plannedReferenceViewsForCharacter,
+  readAcceptedPortraitSource,
+  REFERENCE_VIEW_UNKNOWN,
+  referenceViewHistory,
+  referenceViewsToRebuild,
+  reserveReferenceView,
+  retiredReferenceViewAssets,
+  reviewReferenceView,
+  type AcceptedPortraitSource,
+  type ReferenceViewRow,
+  type ReferenceViewVerdict,
+  type ReviewReferenceViewResult,
+} from "./reference-view-store";
+export {
+  buildReferenceViews,
+  REFERENCE_VIEW_BUILD_FAILED,
+  referenceViewInstruction,
+  type BuildReferenceViewsInput,
+  type ReferenceViewBuildReport,
+} from "./reference-view-build";
+export {
+  uploadReferenceView,
+  type UploadReferenceViewInput,
+  type UploadReferenceViewResult,
+} from "./reference-view-upload";
+export { REFERENCE_VIEW_RETENTION_MS, referenceViewSweepPass } from "./reference-view-maintenance";
 export {
   deleteIdentityPackTrialRun,
   type DeleteIdentityPackTrialRunResult,

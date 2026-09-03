@@ -9,7 +9,7 @@ import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
-import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, type CharacterPortraitAcceptance, characterPortraitAcceptanceSchema, emptyCharacterPortraitAcceptance, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
+import { referenceViewQueueOutcomeSchema, referenceViewSetSummarySchema, referenceViewSummarySchema, type ReferenceViewAngleId, type ReferenceViewQueueOutcome, type ReferenceViewSetSummary, type ReferenceViewState, type ReferenceViewSummary, type ReferenceViewWardrobe, portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, type CharacterPortraitAcceptance, characterPortraitAcceptanceSchema, emptyCharacterPortraitAcceptance, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
 import {
   type IdentityPackAdminOverrideRequest,
   type IdentityPackAdminRevision,
@@ -310,8 +310,19 @@ export const characterDetailSchema = characterSummarySchema.extend({
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
-/** `{ acceptance }` — the body both portrait-acceptance writes answer with. */
-const portraitAcceptanceResponseSchema = z.object({ acceptance: characterPortraitAcceptanceSchema });
+/**
+ * `{ acceptance, views }` — the body the accept write answers with.
+ *
+ * `views` reports what the accept did about the character's reference view set,
+ * and it is deliberately forgiving: an accept whose views could not be queued is
+ * still an accept, so a body that omits or malforms the field degrades to
+ * "queued nothing, no reason given" rather than failing a request whose real
+ * work succeeded.
+ */
+const portraitAcceptanceResponseSchema = z.object({
+  acceptance: characterPortraitAcceptanceSchema,
+  views: referenceViewQueueOutcomeSchema.catch({ queued: false, reason: null, planned: 0 }),
+});
 
 export type { CharacterPortraitAcceptance };
 
@@ -1179,6 +1190,62 @@ export const charactersApi = {
     apiPost(portraitAcceptanceResponseSchema, `/api/characters/${id}/portrait/accept`, { imageId }),
   /** Withdraw acceptance — deletes no image and no crop; the character simply has no identity source. */
   clearPortraitAcceptance: (id: string) => apiDelete(`/api/characters/${id}/portrait/accept`),
+};
+
+// ---------------------------------------------------------------------------
+// Reference views
+// ---------------------------------------------------------------------------
+
+export type { ReferenceViewAngleId, ReferenceViewQueueOutcome, ReferenceViewSetSummary, ReferenceViewState, ReferenceViewSummary, ReferenceViewWardrobe };
+
+/**
+ * `{ set, planned }` — the studio's whole read of a character's reference views.
+ *
+ * Forgiving to the bone, because the panel is ADDITIVE: a body it cannot read
+ * degrades to an empty set and the studio looks exactly as it did before the
+ * feature existed, rather than growing an error card about a subsystem the owner
+ * never asked for.
+ */
+const referenceViewSetResponseSchema = z
+  .object({
+    set: referenceViewSetSummarySchema,
+    /** How many views a full build would render for this character, after the age gate. */
+    planned: z.number().catch(0),
+  })
+  .catch({ set: { acceptedImageId: null, building: false, views: [] }, planned: 0 });
+
+/** `{ views }` — what a build or regenerate request decided. Never a failure. */
+const referenceViewQueueResponseSchema = z.object({
+  views: referenceViewQueueOutcomeSchema.catch({ queued: false, reason: null, planned: 0 }),
+});
+
+/** `{ view }` — one settled slot, the body every per-view write answers with. */
+const referenceViewResponseSchema = z.object({ view: referenceViewSummarySchema });
+
+/** The slot path segment pair, spelled once so no call site builds a URL by hand. */
+function referenceViewPath(characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe): string {
+  return `/api/characters/${characterId}/reference-views/${angle}/${wardrobe}`;
+}
+
+export const referenceViewsApi = {
+  get: (characterId: string) =>
+    apiGet(referenceViewSetResponseSchema, `/api/characters/${characterId}/reference-views`),
+  /** Build every slot that is missing, failed or stale for the current accepted portrait. */
+  build: (characterId: string) =>
+    apiPost(referenceViewQueueResponseSchema, `/api/characters/${characterId}/reference-views/build`, {}),
+  /** Rebuild one slot, whatever state it is in — including a rejected one. */
+  regenerate: (characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe) =>
+    apiPost(referenceViewQueueResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/regenerate`, {}),
+  /** Replace one slot with an owner-supplied image. Synchronous — no polling. */
+  upload: (characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe, dataUrl: string) =>
+    apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/upload`, { dataUrl }),
+  /** Approve (making the view consumable) or reject (terminal for that attempt). */
+  review: (
+    characterId: string,
+    angle: ReferenceViewAngleId,
+    wardrobe: ReferenceViewWardrobe,
+    verdict: "approve" | "reject",
+  ) => apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/review`, { verdict }),
 };
 
 // ---------------------------------------------------------------------------

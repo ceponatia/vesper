@@ -14,6 +14,8 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { IdentityReferencePanel } from "./identity-reference-panel";
+import { referenceViewRefusalCopy } from "./reference-view-copy";
+import { ReferenceViewsPanel } from "./reference-views-panel";
 import { ImageProfileSelect, pickedProfileId } from "./image-profile-select";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -250,7 +252,24 @@ export function PortraitStudio({
     const result = await charactersApi.acceptPortrait(characterId, avatarImageId);
     setAcceptingPortrait(false);
     if (result.ok) {
-      toast.push({ title: "Portrait accepted", description: "New images will use this face.", tone: "success" });
+      // The acceptance ALWAYS stands. `views` only says whether its reference
+      // sheet started building, so a refused build reports as an accept that
+      // carries a caveat, never as a failed accept.
+      const views = result.data.views;
+      toast.push(
+        views.queued
+          ? {
+              title: "Portrait accepted",
+              description: `New images will use this face. Building ${String(views.planned)} reference views…`,
+              tone: "success",
+            }
+          : views.reason === null
+            ? { title: "Portrait accepted", description: "New images will use this face.", tone: "success" }
+            : {
+                title: "Accepted, but the views were not built",
+                description: `${referenceViewRefusalCopy[views.reason]} Build them later from the reference views panel.`,
+              },
+      );
       onAvatarChanged();
       return;
     }
@@ -386,9 +405,13 @@ export function PortraitStudio({
         </div>
       </div>
 
-      {/* The face crop derived FROM the ACCEPTED portrait — sits with it, above the
-          variant machinery it has nothing to do with. */}
+      {/* Everything derived FROM the ACCEPTED portrait sits with it, above the
+          variant machinery none of it has anything to do with: the face crop
+          identity-critical renders receive, then the sheet of views that says
+          what the rest of this body looks like. */}
       <IdentityReferencePanel characterId={characterId} name={name} acceptedImageId={acceptance.acceptedImageId} />
+
+      <ReferenceViewsPanel characterId={characterId} acceptance={acceptance} onChanged={onAvatarChanged} />
 
       <div className="flex flex-col gap-3">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">New variant</h3>

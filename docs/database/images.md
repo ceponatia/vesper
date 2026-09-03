@@ -76,6 +76,18 @@ the two admin bench run records.
   durable identity reference per character: revisions are rows, and exactly one may be `current`
   (a partial unique index). See
   [../images/identity-packs.md](../images/identity-packs.md).
+- **`character_reference_views`** — `character_id` (→ `characters`, **FK-cascade** — operational
+  character data, which dies with the character), `angle_id` / `wardrobe` (registry ids as text, so
+  a vocabulary edit is a data edit and an unknown id is dropped at read time rather than made
+  unstorable), `current`, `source_image_id?` (→ `images`, SET NULL) with `source_content_hash`
+  (SHA-256 over the accepted portrait's stored bytes), `image_id?` (→ `images`, SET NULL — the
+  hidden `reference_view` asset), `status`
+  (`pending`/`ready`/`rejected`/`failed`/`stale`/`superseded`), `method?` (`rendered`/`uploaded`),
+  `generation_version`, `failure_code?` / `failure_message?`, `reviewed_by_user_id?` (→ `users`, no
+  cascade — the audit survives the reviewer), `reviewed_at?`. One slot of a character's reference
+  view set: attempts are rows, and exactly one per (character, angle, wardrobe) may be `current`
+  (a partial unique index). See
+  [../images/pipelines/reference-views.md](../images/pipelines/reference-views.md).
 - **`image_identity_lora_bindings`** — `identity_pack_id` (→ `image_identity_packs`,
   **FK-cascade**), `lora_id` (→ `image_loras`, **FK-cascade**), `base_checkpoint`,
   `dataset_fingerprint`, `dataset_image_count`, `training_recipe_id`, `training_recipe_revision`,

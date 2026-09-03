@@ -42,6 +42,10 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
     // own failures too, so it reports through `reportProviderOutcome` —
     // including "nothing happened here" for pre-spend refusals.
     case "generator_image":
+    // The reference-view build: every view it makes is a provider render, so a
+    // failed build is evidence about the same upstream — unlike `identity_pack`
+    // below, whose work is local decode/crop/measure/write.
+    case "reference_views":
       return "image";
     case "embed_refresh":
       return "embedding";

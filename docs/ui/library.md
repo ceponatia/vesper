@@ -8,7 +8,7 @@ The grids, editors and pickers behind `/characters`, `/personas`, `/locations`, 
 `components/characters/portrait-studio.tsx` generates the canonical avatar from attributes,
 accumulates pose/outfit/expression/setting variants, and promotes any variant to canonical.
 
-Between the avatar prompt and the variant controls sit two blocks, in the order the decisions are
+Between the avatar prompt and the variant controls sit three blocks, in the order the decisions are
 made. **Portrait acceptance** states whether the portrait on screen is the one the character's
 identity comes from, in three badge states — *Accepted* (it is), *Not accepted* ("Conversations
 keep rendering the last accepted portrait until you accept this one", the state a newly generated,
@@ -25,6 +25,22 @@ face crop**, which opens `identity-crop-dialog.tsx` — a draggable, resizable s
 **accepted** portrait with live preview, plain-language warnings, save/retry/reset actions, and (for
 admins) the lazily-loaded revision-history and override inspector
 (`identity-pack-inspector.tsx`; [../images/identity-packs.md](../images/identity-packs.md)).
+
+Under that, the **Reference views** panel (`reference-views-panel.tsx`;
+[../images/pipelines/reference-views.md](../images/pipelines/reference-views.md)): a grid grouped by
+wardrobe state, one tile per angle, always showing every slot the registry defines. Each tile carries
+the view or a placeholder, a state chip and one line of copy from the exhaustive state map in
+`reference-view-copy.ts` — *not built*, *building…*, *needs your eye*, *approved*, *rejected*,
+*failed*, *out of date* — plus the actions that state allows: **Approve** / **Reject** on an
+unreviewed view, **Regenerate** on anything already attempted, and **Upload** always. A **Build N
+reference views** button appears when a portrait is accepted and any slot is missing, stale or
+failed, labelled with the count the server will actually render. The panel polls while a build is
+live or any slot is pending, and — like the identity-reference block — renders **nothing** while
+loading or on error, so the studio is unchanged when the surface is unavailable.
+
+Accepting a portrait reports what happened to the views in the accept toast: *Building N reference
+views…*, or *Accepted, but the views were not built* with the reason and an invitation to build them
+later. The acceptance always stands.
 
 Its **Portrait history** grid keeps non-canonical avatar attempts and variants visible; failed
 rows render as error cards using `images.meta.error` so provider failures do not vanish after

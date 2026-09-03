@@ -28,7 +28,25 @@ POST/DELETE        /api/characters/:id/portrait/accept  POST { imageId } accepts
                                                         current acceptance) when imageId is not the
                                                         portrait on the row, 200 no-op when it is
                                                         already accepted. DELETE withdraws acceptance
-                                                        and deletes nothing. Both answer { acceptance }
+                                                        and deletes nothing. Both answer { acceptance };
+                                                        a real accept also queues the character's
+                                                        reference views and answers with
+                                                        views { queued, reason, planned } — a refused
+                                                        build never un-accepts
+GET                /api/characters/:id/reference-views  { set, planned } — every angle × wardrobe slot,
+                                                        missing where nothing is built
+                                                        (images/pipelines/reference-views.md)
+POST               /api/characters/:id/reference-views/build   builds every missing/failed/stale slot;
+                                                               409 not_accepted; ⇒ { views }
+POST               /api/characters/:id/reference-views/:angle/:wardrobe/regenerate   one slot ⇒ { views }
+POST               /api/characters/:id/reference-views/:angle/:wardrobe/upload   { dataUrl } ⇒ { view },
+                                                                                 synchronous, 404 for an
+                                                                                 angle/wardrobe the
+                                                                                 registry has no entry for
+POST               /api/characters/:id/reference-views/:angle/:wardrobe/review   { verdict:
+                                                                                 approve|reject } ⇒ { view };
+                                                                                 409 not_ready unless the
+                                                                                 current row is ready
 GET/POST, GET/PATCH/DELETE        /api/locations, /api/locations/:id
 GET/POST, GET/PATCH/DELETE        /api/items, /api/items/:id   (coverage ids validated against the
                                                                body-locations registry → 400 invalid_coverage)

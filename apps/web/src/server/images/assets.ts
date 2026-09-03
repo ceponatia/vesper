@@ -469,11 +469,11 @@ export async function deleteNonGalleryCharacterImages(characterId: string, owner
 /**
  * Kinds that are INTERNAL operational assets, never user-visible ones: the
  * identity face crop, the identity-trial render output, the
- * Advanced Image Lab's control fixtures and experiment renders, and the Image
- * Generator's run outputs.
- * Their owner may read one — the crop editor, the trial review UI and the lab's
- * fixtures panel have to display them — but they must be absent from every
- * listing, copy, cross-owner read and quota sum:
+ * Advanced Image Lab's control fixtures and experiment renders, the Image
+ * Generator's run outputs, and a character's reference views.
+ * Their owner may read one — the crop editor, the trial review UI, the lab's
+ * fixtures panel and the studio's reference-view grid have to display them — but
+ * they must be absent from every listing, copy, cross-owner read and quota sum:
  *
  * - the character read's portrait strip (`api/characters/[id]/route.ts` GET);
  * - `cloneEntityImages` — a copied or published character DERIVES its own pack
@@ -497,6 +497,7 @@ export const HIDDEN_IMAGE_KINDS = [
   "lab_control",
   "lab_output",
   "generator_output",
+  "reference_view",
 ] as const satisfies readonly ImageKind[];
 
 /**
@@ -540,6 +541,29 @@ let identityPackMaintenance: IdentityPackMaintenanceHooks | null = null;
 /** Called once, from the folder barrel (`./index.ts`). `null` restores the no-op (tests). */
 export function registerIdentityPackMaintenance(hooks: IdentityPackMaintenanceHooks | null): void {
   identityPackMaintenance = hooks;
+}
+
+/**
+ * The reference-view set's half of the same arrangement, and registered the same
+ * way for the same reason: the view store imports this module for
+ * `purgeImagesWhere`, so an import back would close a cycle.
+ *
+ * One hook only. A view is never a pack's source and never an entity pointer, so
+ * there is nothing for a delete to invalidate — the read-time projection already
+ * refuses a row whose asset went null. What it does own is retention: a
+ * superseded view's bytes have no future consumer, and nothing else would ever
+ * collect them.
+ */
+export interface ReferenceViewMaintenanceHooks {
+  /** Bounded retention cleanup of retired views' assets, run inside the scheduled sweep. */
+  sweep(now: Date): Promise<Record<string, number>>;
+}
+
+let referenceViewMaintenance: ReferenceViewMaintenanceHooks | null = null;
+
+/** Called once, from the folder barrel (`./index.ts`). `null` restores the no-op (tests). */
+export function registerReferenceViewMaintenance(hooks: ReferenceViewMaintenanceHooks | null): void {
+  referenceViewMaintenance = hooks;
 }
 
 /**
@@ -1109,12 +1133,18 @@ async function runScheduledSweep(now: Date): Promise<void> {
     // cleanup for superseded crops. It runs AFTER `sweepOrphans` so a crop whose
     // file vanished is already marked failed when the findings look at it.
     const identity = (await identityPackMaintenance?.sweep(now)) ?? {};
+    // The reference-view set's retired assets, on the same tick and the same
+    // 7-day window. Contained inside its own hook, like the pack pass: a sweep
+    // that cannot collect superseded views must still report everything else.
+    const referenceViews = (await referenceViewMaintenance?.sweep(now)) ?? {};
     // Database retention rides the same tick (`@/server/retention`): bounded
     // deletes of expired telemetry, finished jobs, and expired auth rows. Each
     // pass isolates its own failure, so this call never throws.
     const retention = await runRetentionPasses(now);
-    const summary = { ...result, jobsReclaimed, ...identity, ...retention };
-    const identityTotal = Object.values(identity).reduce((total, value) => total + value, 0);
+    const summary = { ...result, jobsReclaimed, ...identity, ...referenceViews, ...retention };
+    const identityTotal =
+      Object.values(identity).reduce((total, value) => total + value, 0) +
+      Object.values(referenceViews).reduce((total, value) => total + value, 0);
     const retentionTotal = Object.values(retention).reduce((total, value) => total + value, 0);
     if (
       result.orphanFilesRemoved +

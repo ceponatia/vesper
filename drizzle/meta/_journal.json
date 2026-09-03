@@ -876,6 +876,13 @@
       "when": 1788436901941,
       "tag": "0124_portrait-acceptance",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1788438424958,
+      "tag": "0125_character-reference-views",
+      "breakpoints": true
     }
   ]
 }

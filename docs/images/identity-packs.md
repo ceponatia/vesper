@@ -43,6 +43,13 @@ Every consequence follows from that one split:
 - **A clone starts unaccepted.** The copy carries the copied portrait as its candidate and no acceptance: pack rows
   and hidden crops never cross an owner boundary, and whether that face is this character's identity is the new
   owner's decision.
+- **The reference view set is a sibling derivation, not a pack revision.** Accepting a portrait derives two things from
+  the same bytes: this pack, which is what the character's face looks like, and the reference view set
+  ([pipelines/reference-views.md](pipelines/reference-views.md)), which is what the rest of the body looks like from
+  the other sides. They share the accepted pointer, the source content hash and the "hidden asset, deleted with the
+  character" rule, and nothing else: a view is never a pack revision, a pack revision is never a view, and neither
+  invalidates the other. A view render consumes this pack as its identity reference like any other identity-critical
+  lane.
 
 ## The crop is a hidden asset
 

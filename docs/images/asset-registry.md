@@ -35,8 +35,8 @@ portrait studio's full rows come from the owner-strict `GET /api/characters/:id/
 
 ## Hidden kinds
 
-`identity_face_crop`, `identity_trial_output`, `lab_control`, `lab_output`, and `generator_output`
-rows are **internal derived assets, not user content**. `HIDDEN_IMAGE_KINDS` keeps them out of:
+`identity_face_crop`, `identity_trial_output`, `lab_control`, `lab_output`, `generator_output`, and
+`reference_view` rows are **internal derived assets, not user content**. `HIDDEN_IMAGE_KINDS` keeps them out of:
 
 - the portrait strip and the portrait studio's routes;
 - the Gallery;
@@ -49,7 +49,11 @@ rows are **internal derived assets, not user content**. `HIDDEN_IMAGE_KINDS` kee
 survival rule below ([identity-packs.md](identity-packs.md)); the two lab kinds belong to the
 [Advanced Image Lab](../image-lab/README.md) and are deleted with their experiment or by an admin's
 explicit fixture delete; `generator_output` is an
-[Image Generator](../image-generator/README.md) run's render, hard-deleted with its run.
+[Image Generator](../image-generator/README.md) run's render, hard-deleted with its run;
+`reference_view` is one slot of a character's reference view set
+([pipelines/reference-views.md](pipelines/reference-views.md)), hard-deleted with its character by
+the same Gallery-listable survival rule, and read by its owner through the ordinary owner file
+route, which is how the portrait studio's view grid displays it.
 
 ## Deletes
 
@@ -103,6 +107,14 @@ doubles under a second instance, while a kick off work the app is already doing 
 infrastructure and runs precisely when orphans are being created. It is deliberately kicked BEFORE
 the generation — a render that dies mid-flight is the row a later sweep must reclaim, so the kick
 must not depend on reaching the end.
+
+**Derived-asset passes ride the same tick.** The identity-pack service contributes its consistency
+findings and its bounded retired-crop cleanup, and the reference view set contributes its own
+retired-asset pass: assets belonging to a **superseded** view older than **7 days** are purged and
+their pointers nulled, while a `current` row's asset is never touched whatever its status — a stale
+or failed current view is what the studio is showing its owner right now. Both passes are registered
+into the sweep rather than imported by it, contain their own failures, and report plain counters into
+the `image_sweep` job row's payload.
 
 **Safety rail:** if the images table has NO rows while files exist on disk, the file side is skipped
 entirely and logged. That reading means the database and the volume disagree — a fresh or branched

@@ -49,7 +49,8 @@ is optional there.
 
 - **`jobs`** — `type`
   (`chat_summary` / `chat_scene_sketch` / `chat_meanwhile` / `chat_scene_image` / `avatar` /
-  `portrait_variant` / `entity_image` / `embed_refresh` / `image_sweep` / `identity_pack` / … —
+  `portrait_variant` / `entity_image` / `embed_refresh` / `image_sweep` / `identity_pack` /
+  `reference_views` / … —
   see the schema enum for the full list), `status` (`queued` / `running` / `done` / `failed`),
   `runner_id?` (atomic claim), `heartbeat_at`, `payload` JSONB, `error?`, `attempts`, timestamps,
   and `chat_id?` — an indexed foreign key to `character_chats` with `ON DELETE CASCADE`, written by

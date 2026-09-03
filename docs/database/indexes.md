@@ -18,6 +18,11 @@
   `image_identity_packs(character_id, revision)` unique doubles as the per-character lookup, and
   `image_identity_packs(character_id, source_content_hash, schema_version, derivation_version, revision)`
   is the derivation-key coalescing and diagnostic lookup.
+- `character_reference_views(character_id, angle_id, wardrobe) WHERE current` — the same
+  partial-unique device, holding the one-current-view-per-slot invariant at the storage layer, so a
+  lost reservation race fails loudly instead of leaving a slot with two views the studio must choose
+  between. `character_reference_views(character_id, angle_id, wardrobe, created_at)` is the per-slot
+  history read, and its leading column doubles as the per-character lookup.
 - `image_identity_lora_bindings(identity_pack_id) WHERE state = 'active'` — the same
   partial-unique device, so promoting a second character LoRA for one pack fails loudly instead of
   leaving two rows that both claim to be the character's likeness. The composite
