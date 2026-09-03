@@ -62,6 +62,25 @@ modals.
 so the caller's cap and the base cap both land on the element and stylesheet order picks the
 winner: a `className="max-w-lg"` override silently renders at `max-w-md`.
 
+## Image lightbox
+
+`ImageLightbox` (`components/ui/image-lightbox.tsx`) is the one full-screen viewer: darkened
+backdrop, image scaled to fit, Escape and backdrop close, Tab trapped inside. Every surface that
+enlarges an image opens the same component, and a page mounts one instance rather than one per
+thumbnail.
+
+Beside the image it renders an **admin-and-desktop-only side panel** — gated by `useIsAdmin` and
+hidden below the `md` breakpoint so it never crowds the picture on a phone. It holds the
+generation prompt and, under it, the row's **provenance**: the resolved camera as
+`orientation · distance · height`, the staged arrangement's id, and one line per reference view
+the render sent (`back_full · clothed · replaced anchor`). Ids verbatim — the registries own the
+phrasing, and a second wording here would be a panel disagreeing with the prompt beside it.
+
+Callers pass `prompt` and `meta` freely; the gates decide whether either renders, and a row
+carrying neither renders no panel at all. Both travel on the image DTO
+([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Consumption
+and reference ordering owns what the view entries mean).
+
 ## Model dropdowns
 
 Curated model dropdowns (narrator, agent, chat) render through `ModelSelect`

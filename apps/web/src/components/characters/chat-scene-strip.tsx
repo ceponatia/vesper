@@ -61,7 +61,9 @@ export function SceneStrip({
   const toast = useToast();
   const sceneProfiles = useAsyncData(() => imageProfilesApi.list("scene"), []);
   const [generating, setGenerating] = useState(false);
-  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
+  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null; meta: ImageRecord["meta"] } | null>(
+    null,
+  );
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const baselineRef = useRef(0);
@@ -172,7 +174,7 @@ export function SceneStrip({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
+                    onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null, meta: img.meta })}
                     aria-label="Enlarge scene image"
                     className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600 transition-colors hover:border-accent-500/60"
                   >
@@ -202,6 +204,7 @@ export function SceneStrip({
         imageId={enlarged?.id ?? null}
         alt={name}
         prompt={enlarged?.prompt ?? null}
+        meta={enlarged?.meta ?? null}
         onClose={() => setEnlarged(null)}
       />
 

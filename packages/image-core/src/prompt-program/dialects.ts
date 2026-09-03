@@ -109,6 +109,23 @@ export interface ImageDialectReference {
   readonly role: ImageReferenceRole;
   /** The entity ref this image depicts, when naming it keeps two slots apart. */
   readonly subjectRef?: string;
+  /**
+   * A short clause qualifying WHAT THIS IMAGE IS, woven into the sentence that
+   * introduces the slot — "seen from behind, the same person".
+   *
+   * `subjectRef` answers who an image shows; two images of one person answer
+   * that identically, and a lane sending both is telling the model twice that
+   * one image is Mira with nothing saying why there are two. That is exactly the
+   * ambiguity a reference sheet creates: a second identity image is not a second
+   * face to compose, it is the same face from an angle the first one cannot
+   * show, and a model that reads it as a second person paints one.
+   *
+   * Supplied by the lane, in the lane's own words: the vocabulary that produced
+   * the image is the only thing that can describe it honestly, and a dialect
+   * inventing the clause from a role would be guessing. Unset, every dialect
+   * compiles byte-identically to what it did before this field existed.
+   */
+  readonly description?: string;
 }
 
 /** Everything a positive compile may read. Notably NOT the world digest. */

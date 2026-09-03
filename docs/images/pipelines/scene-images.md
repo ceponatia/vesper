@@ -120,6 +120,14 @@ portrait ([../identity-packs.md](../identity-packs.md)). A blocked pack **refuse
 scene** rather than substituting another image, and a member with no portrait at all is
 described textually.
 
+**A matching reference view rides behind the anchors.** When the resolved camera names a shot the
+character's reference sheet has a view for — a back, a side, a full length — that view enters the
+list as an optional identity reference for its member, after every anchor and before the place
+([reference-views.md](reference-views.md) §Selection). It is never load-bearing: no matching
+rule, no built view, an unreviewed or stale one, or no capacity all leave the render exactly
+front-anchored. A three-quarter shot has no matching angle and always falls through to the front
+anchor.
+
 **Two reference modes** (`SceneGenState.referenceMode`): **single** (default) sends ONE anchor;
 **multi** feeds every member's anchor in roster order up to the model's reference cap to the
 multi-reference rung, identity-locking each. Either way the other or overflow characters are
@@ -298,6 +306,10 @@ render-input superset) versus `SceneReference` (the Gallery DTO the table projec
 - **`?tab=portraits`** lists `portrait_variant` rows LEFT-joined to their character the same way —
   a deleted character's portraits survive the same way, with no character id or name; and
 - **`?tab=entity`** lists `entity` art with the source location or item name resolved.
+
+The scenes tab carries each row's `meta` — the only tab whose rows record a shot — so the
+lightbox's admin-only panel can name the camera, the staging and the reference views the render
+sent ([../../ui/conventions.md](../../ui/conventions.md) §Image lightbox).
 
 Every tab pages by the **keyset cursor** `?cursor=<createdAtMs>_<id>` plus `?limit` (default
 100, cap 500; a garbage cursor degrades to page 1) with a client-side "Load more" button, and

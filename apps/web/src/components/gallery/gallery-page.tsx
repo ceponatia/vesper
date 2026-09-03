@@ -132,7 +132,12 @@ export function GalleryPage() {
   const [characterFilter, setCharacterFilter] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [enlarged, setEnlarged] = useState<{ id: string; caption: string; prompt: string | null } | null>(null);
+  const [enlarged, setEnlarged] = useState<{
+    id: string;
+    caption: string;
+    prompt: string | null;
+    meta: GalleryImage["meta"];
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ ids: string[]; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -456,7 +461,7 @@ export function GalleryPage() {
                           onClick={() =>
                             selectMode
                               ? toggleSelected(image.id)
-                              : setEnlarged({ id: image.id, caption, prompt: image.prompt || null })
+                              : setEnlarged({ id: image.id, caption, prompt: image.prompt || null, meta: image.meta })
                           }
                           aria-label={selectMode ? (picked ? "Deselect image" : "Select image") : "Enlarge image"}
                           className={cx(
@@ -533,6 +538,7 @@ export function GalleryPage() {
         alt="Gallery image"
         caption={enlarged?.caption ?? null}
         prompt={enlarged?.prompt ?? null}
+        meta={enlarged?.meta ?? null}
         onClose={() => setEnlarged(null)}
       />
 

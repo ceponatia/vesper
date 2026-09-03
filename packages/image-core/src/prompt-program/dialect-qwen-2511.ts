@@ -230,10 +230,19 @@ function claimSlot(
  * not have. The null drops the claim, and the operation kind's mandatory floor
  * turns that into a refusal before provider spend.
  */
-function referenceAssignment(role: ImageReferenceRole, position: number, subjectLabel: string | null): string | null {
+function referenceAssignment(
+  role: ImageReferenceRole,
+  position: number,
+  subjectLabel: string | null,
+  description: string | undefined,
+): string | null {
+  // The slot's own qualifier, when the lane supplied one — what keeps a second
+  // image of one person from reading as a second person. Appended rather than
+  // substituted so an undescribed slot compiles the sentence it always did.
+  const qualified = (subject: string): string => (description === undefined ? subject : `${subject}, ${description}`);
   switch (role) {
     case "identity":
-      return `Image ${position} shows ${subjectLabel ?? "the subject"}.`;
+      return `Image ${position} shows ${qualified(subjectLabel ?? "the subject")}.`;
     case "before":
       return `Image ${position} is the image to edit.`;
     case "location":
@@ -336,7 +345,7 @@ function renderClaim(
     case "operation.reference_role": {
       const slot = claimSlot(input, state, claim.value as ImageReferenceRole, claim.subjectRef);
       if (slot === null) return null;
-      const assignment = referenceAssignment(slot.role, slot.position, subject);
+      const assignment = referenceAssignment(slot.role, slot.position, subject, slot.description);
       return assignment === null ? null : say(assignment, DELTA_PRIORITY.reference);
     }
 

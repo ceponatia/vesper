@@ -115,6 +115,70 @@ build job plans from, so the charge and the work can never be two numbers.
   slot's current row, `ready` under the current generation version, rendered from the portrait
   accepted right now, with a `ready` asset, reviewed.
 
+## Selection — which view a render sends
+
+A scene render asks the sheet for the view that matches the shot it is about to make. The
+question is pure (`selectReferenceView`, `contracts/images/reference-views.ts`) and resolves
+two axes independently: the angle from the camera, the wardrobe from the subject's coverage.
+Neither vetoes the other.
+
+The **angle** comes from the RESOLVED camera — `SceneRenderPlan.camera`, after the plan has
+spent every evidence gate and a surviving staging entry has already overwritten it:
+
+| Resolved shot                                        | Angle           |
+| ----------------------------------------------------- | --------------- |
+| orientation `away`                                    | `back_full`     |
+| orientation `away_glance_back`                        | `back_full`     |
+| orientation `profile`                                 | a side, below   |
+| orientation `three_quarter`                           | none            |
+| `toward_viewer` at `full_figure` or `wide`            | `front_full`    |
+| anything else                                         | none            |
+
+"None" is today's behavior, unchanged: the front-facing portrait keeps anchoring the shot.
+A three-quarter turn is deliberately none — there are **four angles, not six** (owner ruling),
+and neither the front nor a side depicts an oblique turn honestly.
+
+**Which side a profile shot takes is decided from a key, not picked.** `profile` says side-on
+and nothing about handedness, so a random choice would flip a character between her left and
+her right in two consecutive images of one conversation. The side is the parity of
+`fnv1a32(sideKey)` — even is `side_left`, odd is `side_right` — and the caller passes the
+character id joined to the chat id, so one character keeps one side for a whole conversation.
+
+The **wardrobe** comes from the subject's own computed coverage — the same `RegionExposure` the
+prompt derives its exposure claims from, never a manual flag. `bare` requires the torso AND the
+pelvis both reading `bare` and the lane's intimate allowance; everything else is `clothed`.
+**Default-shut in both directions**: a partial undress, a sheer region, coverage nobody computed,
+and a lane without intimate allowance all take the clothed view. The threshold lives in that one
+function.
+
+## Consumption and reference ordering
+
+`loadConsumableReferenceView` (`server/images/reference-view-consume.ts`) is the only way a
+render gets a view's bytes. It is owner-scoped, it reads the store's own `consumable` verdict
+rather than recomputing it, and it reads the asset through the shared owned-image reader. No
+lane queries the `reference_view` kind by hand.
+
+- A view enters the render's reference list as an **optional identity reference** for the member
+  it depicts, ordered after the required identity anchors and before the place, then cut to the
+  model's reference capacity like everything else.
+- **One exception:** on a model with a single reference slot, a view whose angle hides the face
+  replaces its member's anchor instead of losing to it (owner ruling). A portrait's face locks
+  nothing in a shot taken from behind, and the substitute is derived from that same accepted
+  portrait.
+- The prompt introduces the extra image in the angle registry's own words — "seen from behind,
+  the same person" — because two identity images bound to one subject otherwise say only that
+  both show her, and two photographs of one person read as two people
+  ([../prompt-programs.md](../prompt-programs.md) §Reference slots).
+- **A missing view is never an error.** No matching rule, nothing built, unreviewed, rejected,
+  stale, unreadable bytes, no capacity: every one of them degrades to the front-anchored render
+  with an INFO diagnostic. The feature may not turn a missing reference into a missing image.
+
+Every scene render that sent one records `images.meta.referenceViews` at reserve time, beside
+the camera and staging that asked for it: one entry per view carrying `characterId`, `angle`,
+`wardrobe`, `imageId`, `sourceImageId` and `substitutedAnchor`. It follows the identity
+provenance's honesty rule exactly — a fallback rung that dropped the view records none — and the
+lightbox's admin-only panel renders it ([../../ui/conventions.md](../../ui/conventions.md) §Image lightbox).
+
 ## Hidden everywhere
 
 `reference_view` is a `HIDDEN_IMAGE_KINDS` member ([../asset-registry.md](../asset-registry.md)): it
@@ -145,3 +209,5 @@ All five are owner-only and rooted at the character. A slot the registry has no 
 | `images.reference_views.provider_unavailable` | No image provider is configured, so nothing was rendered     |
 | `images.reference_views.unknown_view`         | A stored row names an angle or wardrobe the registry dropped |
 | `images.reference_views.budget_refused`       | Admission refused the build; the acceptance still stands     |
+| `images.reference_views.view_unavailable`     | A view was wanted and none could be sent; the render goes on |
+| `images.reference_views.dropped_for_capacity` | A consumable view did not fit the model's reference capacity |

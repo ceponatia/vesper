@@ -108,6 +108,14 @@ export {
   type ReviewReferenceViewResult,
 } from "./reference-view-store";
 export {
+  loadConsumableReferenceView,
+  REFERENCE_VIEW_DROPPED_FOR_CAPACITY,
+  REFERENCE_VIEW_UNAVAILABLE,
+  type LoadConsumableReferenceViewInput,
+  type LoadConsumableReferenceViewResult,
+  type ReferenceViewUnavailableReason,
+} from "./reference-view-consume";
+export {
   buildReferenceViews,
   REFERENCE_VIEW_BUILD_FAILED,
   referenceViewInstruction,

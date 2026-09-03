@@ -768,6 +768,60 @@ export const socialCardDetailSchema = socialCardSummarySchema.extend({
 });
 export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 
+/**
+ * One image row's `meta`, as every client surface reads it.
+ *
+ * Shared between the image DTO and the Gallery's, because the lightbox's
+ * admin-only provenance panel is one component reading one shape: a second
+ * spelling here would be a panel that shows the shot on one page and not on the
+ * other. Every member is optional and every branch `catch`es — a row written by
+ * a newer deploy must degrade to "that field is absent", never to an image the
+ * client cannot parse.
+ */
+export const imageRowMetaSchema = z
+  .object({
+    source: z.string().optional().catch(undefined),
+    model: z.string().optional().catch(undefined),
+    error: z.string().optional().catch(undefined),
+    /** "selfie" marks a character-sent photo message. */
+    flavor: z.string().optional().catch(undefined),
+    variantKind: z.string().optional().catch(undefined),
+    /** The attempt provenance the lanes record (`ResolvedImageAttempt`) — kept
+     * loose: the Gallery only carries it, and a strict shape here would strip
+     * a record written by a newer deploy. */
+    render: z.record(z.string(), z.unknown()).optional().catch(undefined),
+    /** The visual-state provenance a digest-fed lane records at reserve time
+     * (`VisualImageProvenance`) — loose for the same reason as `render`. */
+    visualState: z.record(z.string(), z.unknown()).optional().catch(undefined),
+    /** The RESOLVED shot a scene render was composed under — ids only, the
+     * registries own the phrasing. Read by the lightbox's admin panel. */
+    camera: z
+      .object({
+        orientation: z.string().catch(""),
+        distance: z.string().catch(""),
+        height: z.string().catch(""),
+      })
+      .optional()
+      .catch(undefined),
+    /** The staged arrangement's registry id, when the shot carried one. */
+    staging: z.string().optional().catch(undefined),
+    /** Which matching reference view anchored which person on this render. */
+    referenceViews: z
+      .array(
+        z.object({
+          characterId: z.string().catch(""),
+          angle: z.string().catch(""),
+          wardrobe: z.string().catch(""),
+          imageId: z.string().catch(""),
+          sourceImageId: z.string().catch(""),
+          substitutedAnchor: z.boolean().catch(false),
+        }),
+      )
+      .optional()
+      .catch(undefined),
+  })
+  .catch({});
+
 /** The Gallery hub's tabs. */
 export type GalleryTab = "scenes" | "portraits" | "entity";
 
@@ -788,6 +842,8 @@ export const galleryImageSchema = z.object({
   prompt: textOr(""),
   favorite: z.boolean().catch(false),
   createdAt: optionalText,
+  /** The row's own meta. Populated for scenes, where the shot provenance lives. */
+  meta: imageRowMetaSchema,
 });
 export type GalleryImage = z.infer<typeof galleryImageSchema>;
 
@@ -806,23 +862,7 @@ export const imageRecordSchema = z.object({
   chatId: optionalId,
   anchorMessageId: optionalId,
   /** Row meta — `source: "upload"` marks uploads; failed rows carry `error`. */
-  meta: z
-    .object({
-      source: z.string().optional().catch(undefined),
-      model: z.string().optional().catch(undefined),
-      error: z.string().optional().catch(undefined),
-      /** "selfie" marks a character-sent photo message. */
-      flavor: z.string().optional().catch(undefined),
-      variantKind: z.string().optional().catch(undefined),
-      /** The attempt provenance the lanes record (`ResolvedImageAttempt`) — kept
-       * loose: the Gallery only carries it, and a strict shape here would strip
-       * a record written by a newer deploy. */
-      render: z.record(z.string(), z.unknown()).optional().catch(undefined),
-      /** The visual-state provenance a digest-fed lane records at reserve time
-       * (`VisualImageProvenance`) — loose for the same reason as `render`. */
-      visualState: z.record(z.string(), z.unknown()).optional().catch(undefined),
-    })
-    .catch({}),
+  meta: imageRowMetaSchema,
 });
 export type ImageRecord = z.infer<typeof imageRecordSchema>;
 

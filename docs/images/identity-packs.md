@@ -50,6 +50,10 @@ Every consequence follows from that one split:
   character" rule, and nothing else: a view is never a pack revision, a pack revision is never a view, and neither
   invalidates the other. A view render consumes this pack as its identity reference like any other identity-critical
   lane.
+- **A view may stand in for the pack's anchor only when the shot hides the face**, and only on a model with a single
+  reference slot: a portrait's face locks nothing in a render taken from behind, and the substitute is derived from the
+  same accepted portrait, so the pack remains the only identity source
+  ([pipelines/reference-views.md](pipelines/reference-views.md) §Consumption and reference ordering).
 
 ## The crop is a hidden asset
 

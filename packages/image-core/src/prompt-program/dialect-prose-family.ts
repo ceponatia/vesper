@@ -206,12 +206,20 @@ function claimSlot(
  * null drops the claim, which the operation's mandatory floor turns into a
  * refusal before provider spend.
  */
-function referenceIntroduction(role: ImageReferenceRole, subjectLabel: string | null): string | null {
+function referenceIntroduction(
+  role: ImageReferenceRole,
+  subjectLabel: string | null,
+  description: string | undefined,
+): string | null {
+  // The slot's own qualifier, when the lane supplied one. This family names no
+  // positions, so two undescribed identity slots compile the same sentence
+  // twice; a description is what makes the second one say something.
+  const qualified = (subject: string): string => (description === undefined ? subject : `${subject}, ${description}`);
   switch (role) {
     case "identity":
       return subjectLabel === null
-        ? "A reference photograph of the person to depict is provided."
-        : `A reference photograph of ${subjectLabel} is provided.`;
+        ? `A reference photograph of ${qualified("the person to depict")} is provided.`
+        : `A reference photograph of ${qualified(subjectLabel)} is provided.`;
     case "before":
       return "A reference image is provided as this render's starting point.";
     case "location":
@@ -314,7 +322,7 @@ function renderClaim(
       if (spec.referenceSyntax === "none") return null;
       const slot = claimSlot(input, state, claim.value as ImageReferenceRole, claim.subjectRef);
       if (slot === null) return null;
-      const introduction = referenceIntroduction(slot.role, subject);
+      const introduction = referenceIntroduction(slot.role, subject, slot.description);
       return introduction === null ? null : say(introduction, PROSE_PRIORITY.reference);
     }
 

@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { fnv1a32 } from "@vesper/contracts";
 import type { SceneFaceVisibility } from "@vesper/image-core";
+import type { RegionExposure } from "../items/visibility";
 import type { CharacterProfile } from "../world/profile";
 import { imageApparentAgeValue } from "./character-adapter";
 import { VISUAL_IMAGE_AGE_ATTRIBUTE_ID } from "./visual-digest";
@@ -81,6 +83,23 @@ export interface ReferenceViewAngle {
   readonly cameraId: string;
   /** The edit asked of the model. A `{name}` template, bound at assembly. */
   readonly instruction: string;
+  /**
+   * How a SCENE that sends this view introduces it — the clause appended to the
+   * sentence that already names whose image it is ("Image 2 shows Mira, seen
+   * from behind, the same person").
+   *
+   * Separate from {@link instruction}, which asks a model to MAKE the view. This
+   * one tells a later render what the extra image already is, and it exists
+   * because a second identity image of one person is otherwise a second person:
+   * the model is told twice that an image shows Mira, and the honest reading of
+   * two photographs is two women.
+   *
+   * No `{name}` template here, unlike every other phrase in this file: the
+   * sentence it joins has already named the subject, so there is no unowned
+   * region word for a possessive to bind. The other two rules still hold — no
+   * limb nouns, positive phrasing only.
+   */
+  readonly sceneBinding: string;
   /** The studio tile's label. */
   readonly label: string;
 }
@@ -98,6 +117,7 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     id: "front_full",
     camera: { orientation: "toward_viewer", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_front_full",
+    sceneBinding: "seen at full length, the same person",
     instruction: "{name} standing squarely facing the camera, the whole of {name} inside the frame",
     label: "Front, full length",
   },
@@ -105,6 +125,7 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     id: "back_full",
     camera: { orientation: "away", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_back_full",
+    sceneBinding: "seen from behind, the same person",
     instruction:
       "{name} standing with {name}'s back to the camera, {name}'s head turned away from the lens, the whole of {name} inside the frame",
     label: "Back, full length",
@@ -115,6 +136,7 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     id: "side_left",
     camera: { orientation: "profile", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_side_left",
+    sceneBinding: "seen in profile, the same person",
     instruction:
       "{name} standing turned a quarter-turn so the left side of {name}'s body faces the camera, {name}'s head side-on to the lens, the whole of {name} inside the frame",
     label: "Left side",
@@ -123,6 +145,7 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     id: "side_right",
     camera: { orientation: "profile", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_side_right",
+    sceneBinding: "seen in profile, the same person",
     instruction:
       "{name} standing turned a quarter-turn so the right side of {name}'s body faces the camera, {name}'s head side-on to the lens, the whole of {name} inside the frame",
     label: "Right side",
@@ -418,3 +441,141 @@ export const referenceViewQueueOutcomeSchema = z.object({
   planned: z.number(),
 });
 export type ReferenceViewQueueOutcome = z.infer<typeof referenceViewQueueOutcomeSchema>;
+
+// ---------------------------------------------------------------------------
+// Selection — which view a resolved shot wants
+// ---------------------------------------------------------------------------
+
+/**
+ * The two axes a render resolves independently, and the caller's tie-breaker.
+ *
+ * The camera is the RESOLVED one (`SceneRenderPlan.camera`, after
+ * `resolveScenePlan` has spent every evidence gate), never a proposal: a
+ * staging entry that survived has already overwritten it, so nothing else needs
+ * to be consulted about where the shot is taken from.
+ *
+ * `exposure` is the subject's OWN computed coverage — the same `RegionExposure`
+ * the prompt derives its exposure claims from — because "is this character
+ * undressed in this scene" is a fact about their worn items, never a flag
+ * somebody set. Null (a lane that computes no coverage) counts as covered.
+ */
+export interface ReferenceViewSelectionInput {
+  readonly camera: SceneCameraSpec;
+  readonly exposure: RegionExposure | null;
+  /** The lane's intimate permission — the gate `bare` may never cross. */
+  readonly allowIntimate: boolean;
+  /**
+   * What the side of a profile shot is decided from. The caller passes
+   * `characterId + chatId` (or the character id alone outside a chat) so one
+   * character keeps ONE side for a whole conversation — see
+   * {@link selectReferenceView}.
+   */
+  readonly sideKey: string;
+}
+
+/**
+ * Which view this shot wants, or why none does.
+ *
+ * `no_rule` is the ordinary answer, not a failure: three of the five
+ * orientations and most distances have no exact match in a four-angle sheet,
+ * and the front-facing portrait keeps anchoring all of them.
+ */
+export type ReferenceViewSelection =
+  | { readonly view: ReferenceView; readonly faceVisibility: SceneFaceVisibility }
+  | { readonly view: null; readonly reason: "no_rule" };
+
+const NO_RULE: ReferenceViewSelection = { view: null, reason: "no_rule" };
+
+/**
+ * Which side of a profile shot this character shows, decided from the caller's
+ * key rather than picked.
+ *
+ * The camera vocabulary says `profile` and stops — side-on, with no handedness —
+ * so something has to choose, and a random choice flips the same character
+ * between her left and her right in two consecutive scenes of one conversation.
+ * A hash parity over a key the caller keeps stable is the cheapest thing that
+ * cannot flip: the same character in the same chat resolves to the same side
+ * forever, and two different characters land on the two sides independently.
+ *
+ * Even ⇒ `side_left`, odd ⇒ `side_right`. The mapping is pinned by golden
+ * values in this file's test, because both halves of the promise — stability
+ * and the actual side — are invisible until someone compares two renders.
+ */
+function profileAngleFor(sideKey: string): ReferenceViewAngleId {
+  return fnv1a32(sideKey) % 2 === 0 ? "side_left" : "side_right";
+}
+
+/**
+ * The angle a resolved shot wants, or null when the sheet has no exact match.
+ *
+ * FOUR angles, not six (owner ruling): a three-quarter turn is a shot the sheet
+ * cannot answer honestly — neither the front nor a side depicts it — and
+ * anchoring it on an approximation would make the render argue with itself.
+ * It falls through to the front-facing portrait, exactly as it does today.
+ *
+ * `away_glance_back` takes the back view with `away`: the body is turned away in
+ * both, and the glance is a fact about the head that the scene's own camera
+ * phrase states. The full-length front view is claimed only by a shot that
+ * actually frames the whole body — a medium or close front shot is what the
+ * portrait already is.
+ */
+function angleFor(camera: SceneCameraSpec, sideKey: string): ReferenceViewAngleId | null {
+  switch (camera.orientation) {
+    case "away":
+    case "away_glance_back":
+      return "back_full";
+    case "profile":
+      return profileAngleFor(sideKey);
+    case "toward_viewer":
+      return camera.distance === "full_figure" || camera.distance === "wide" ? "front_full" : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The wardrobe state this scene has the character in.
+ *
+ * **Default-shut in both directions.** `bare` needs the torso AND the pelvis
+ * both reading `bare` on the subject's own coverage readout, and it needs the
+ * lane's intimate permission; anything else — a partial undress, a `sheer`
+ * region, coverage nobody computed, or a route that may not carry intimate
+ * content — is `clothed`. Missing coverage counts as covered, which is the
+ * conservative direction: an undressed scene anchored on the clothed view is a
+ * render that under-states, and a clothed scene anchored on the bare view is a
+ * render nobody asked for.
+ *
+ * The partial-undress threshold lives HERE and nowhere else, so moving it is one
+ * edit rather than an archaeology exercise.
+ */
+function wardrobeFor(exposure: RegionExposure | null, allowIntimate: boolean): ReferenceViewWardrobe {
+  if (!allowIntimate || exposure === null) return "clothed";
+  return exposure.torso === "bare" && exposure.pelvis === "bare" ? "bare" : "clothed";
+}
+
+/**
+ * The view a resolved shot wants, PURE.
+ *
+ * The two axes resolve independently — the angle from the camera, the wardrobe
+ * from the subject's coverage — and neither can veto the other: a back shot of
+ * an undressed character asks for the bare back view, and the same shot on a
+ * lane without intimate permission asks for the clothed one.
+ *
+ * Selecting a view is not the same as having one. Whether the selected slot has
+ * been built, reviewed and is still current is the store's question
+ * ({@link isConsumableReferenceView}), and every answer but yes degrades to the
+ * front-anchored render this function's `no_rule` already produces.
+ */
+export function selectReferenceView(input: ReferenceViewSelectionInput): ReferenceViewSelection {
+  const angleId = angleFor(input.camera, input.sideKey);
+  if (angleId === null) return NO_RULE;
+  const angle = referenceViewAngleById(angleId);
+  // Unreachable while `angleFor` names registry ids, and written as a degrade
+  // anyway: an angle the registry dropped is a view nothing can consume, which
+  // is the same outcome as no rule at all.
+  if (angle === undefined) return NO_RULE;
+  return {
+    view: { angle: angle.id, wardrobe: wardrobeFor(input.exposure, input.allowIntimate) },
+    faceVisibility: referenceViewFaceVisibility(angle),
+  };
+}

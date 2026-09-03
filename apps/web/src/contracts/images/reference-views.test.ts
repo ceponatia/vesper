@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allReferenceViews,
+  selectReferenceView,
   isConsumableReferenceView,
   plannedReferenceViews,
   projectReferenceViewState,
@@ -12,9 +13,16 @@ import {
   referenceViewFaceVisibility,
   referenceViewWardrobeEntries,
   referenceViewWardrobes,
+  type ReferenceViewAngleId,
   type ReferenceViewProjectionInput,
 } from "./reference-views";
-import { sceneSubjectOrientationById } from "./scene-camera";
+import { FULLY_COVERED, type RegionExposure } from "../items/visibility";
+import {
+  sceneShotDistanceIds,
+  sceneSubjectOrientationById,
+  sceneSubjectOrientationIds,
+  type SceneCameraSpec,
+} from "./scene-camera";
 import { VISUAL_IMAGE_AGE_ATTRIBUTE_ID } from "./visual-digest";
 import type { AttributeValue } from "../attributes/value";
 
@@ -187,5 +195,141 @@ describe("what a stored row projects to, and what may be sent to a render", () =
   // would happily re-render.
   it("keeps a rejection visible even when the portrait also moved on", () => {
     expect(projectReferenceViewState({ ...base, status: "rejected", acceptedImageId: "portrait-b" })).toBe("rejected");
+  });
+});
+
+/** `fnv1a32("char-b")` is even — a golden value; see the side-parity test below. */
+const EVEN_KEY = "char-b";
+/** `fnv1a32("char-a")` is odd. */
+const ODD_KEY = "char-a";
+
+/**
+ * **Which view a shot asks for.** Three rules, each of which fails silently in a
+ * render: a wrong angle anchors a back shot on a face, a wrong wardrobe dresses
+ * a scene the story undressed, and an unstable side flips a character between
+ * her left and her right in two consecutive images of one conversation.
+ *
+ * The angle table is exercised over the FULL orientation × distance product
+ * rather than over hand-picked pairs, because the one case that matters is the
+ * one nobody thought to write: an orientation added to `scene-camera.ts` that
+ * silently starts claiming a view. The expectation below is the rule restated
+ * independently — it kills an implementation that, say, gives `three_quarter` a
+ * side, or lets a `close` front shot claim the full-length view.
+ */
+describe("selectReferenceView", () => {
+  const camera = (orientation: string, distance: string): SceneCameraSpec =>
+    ({ orientation, distance, height: "eye_level" }) as SceneCameraSpec;
+
+  /** The table this slice implements, written out once and compared everywhere. */
+  const expectedAngle = (orientation: string, distance: string, sideKey: string): ReferenceViewAngleId | null => {
+    if (orientation === "away" || orientation === "away_glance_back") return "back_full";
+    if (orientation === "profile") return sideKey === EVEN_KEY ? "side_left" : "side_right";
+    if (orientation === "toward_viewer") return distance === "full_figure" || distance === "wide" ? "front_full" : null;
+    return null;
+  };
+
+  const pairs = sceneSubjectOrientationIds.flatMap((orientation) =>
+    sceneShotDistanceIds.map((distance) => [orientation, distance] as const),
+  );
+
+  it.each(pairs)("%s at %s picks the angle the table names", (orientation, distance) => {
+    const selection = selectReferenceView({
+      camera: camera(orientation, distance),
+      exposure: FULLY_COVERED,
+      allowIntimate: true,
+      sideKey: EVEN_KEY,
+    });
+    const expected = expectedAngle(orientation, distance, EVEN_KEY);
+    expect(selection.view === null ? null : selection.view.angle).toBe(expected);
+  });
+
+  // Not merely "some orientation returns nothing": the three-quarter turn is the
+  // owner's four-angles ruling in code. A sheet with no oblique view must fall
+  // through to the front-facing portrait rather than approximating with a side.
+  it("a three-quarter turn selects nothing, at every distance", () => {
+    for (const distance of sceneShotDistanceIds) {
+      const selection = selectReferenceView({
+        camera: camera("three_quarter", distance),
+        exposure: FULLY_COVERED,
+        allowIntimate: true,
+        sideKey: EVEN_KEY,
+      });
+      expect(selection).toEqual({ view: null, reason: "no_rule" });
+    }
+  });
+
+  // The face visibility is what earns a view the anchor's slot under a one-slot
+  // capacity, so it has to come from the camera vocabulary rather than from a
+  // second opinion about which angles have faces in them.
+  it("reports the angle's own face visibility", () => {
+    const back = selectReferenceView({
+      camera: camera("away", "medium"),
+      exposure: FULLY_COVERED,
+      allowIntimate: true,
+      sideKey: EVEN_KEY,
+    });
+    expect(back.view === null ? null : back.faceVisibility).toBe("hidden");
+    const side = selectReferenceView({
+      camera: camera("profile", "medium"),
+      exposure: FULLY_COVERED,
+      allowIntimate: true,
+      sideKey: EVEN_KEY,
+    });
+    expect(side.view === null ? null : side.faceVisibility).toBe("partial");
+  });
+
+  /**
+   * The wardrobe rule, default-shut in both directions. The row that matters
+   * most is the partial undress: a torso bare over a covered pelvis reads
+   * `clothed`, which is the conservative arm — an implementation using
+   * `intimateRegionsBare` (torso OR pelvis) would pass every other row here and
+   * fail this one, and would put the bare view into half-dressed scenes.
+   */
+  const exposure = (patch: Partial<RegionExposure>): RegionExposure => ({ ...FULLY_COVERED, ...patch });
+  const wardrobeCases: ReadonlyArray<[string, RegionExposure | null, boolean, string]> = [
+    ["fully covered", FULLY_COVERED, true, "clothed"],
+    ["torso and pelvis bare", exposure({ torso: "bare", pelvis: "bare" }), true, "bare"],
+    ["torso bare, pelvis covered", exposure({ torso: "bare" }), true, "clothed"],
+    ["pelvis bare, torso covered", exposure({ pelvis: "bare" }), true, "clothed"],
+    ["both regions sheer", exposure({ torso: "sheer", pelvis: "sheer" }), true, "clothed"],
+    ["legs and feet bare only", exposure({ legs: "bare", feet: "bare" }), true, "clothed"],
+    ["no coverage computed at all", null, true, "clothed"],
+    ["bare, on a lane without intimate allowance", exposure({ torso: "bare", pelvis: "bare" }), false, "clothed"],
+  ];
+
+  it.each(wardrobeCases)("%s ⇒ %s", (_name, regions, allowIntimate, wardrobe) => {
+    const selection = selectReferenceView({
+      camera: camera("away", "medium"),
+      exposure: regions,
+      allowIntimate,
+      sideKey: EVEN_KEY,
+    });
+    expect(selection.view === null ? null : selection.view.wardrobe).toBe(wardrobe);
+  });
+
+  /**
+   * The side parity, pinned by GOLDEN keys.
+   *
+   * `profile` says side-on and nothing about handedness, so something has to
+   * choose — and the choice has to be the same one next turn, or one character
+   * shows her left side in this scene and her right in the next. The literals
+   * are deliberate: they are `fnv1a32` parities, and a test that recomputed the
+   * hash would agree with any implementation, including one that moved.
+   */
+  it("resolves one side per key, and keeps it", () => {
+    const side = (sideKey: string) => {
+      const selection = selectReferenceView({
+        camera: camera("profile", "medium"),
+        exposure: FULLY_COVERED,
+        allowIntimate: true,
+        sideKey,
+      });
+      return selection.view === null ? null : selection.view.angle;
+    };
+    expect(side(EVEN_KEY)).toBe("side_left");
+    expect(side(ODD_KEY)).toBe("side_right");
+    // Stability is the whole point: the same key answers the same way however
+    // often a conversation asks.
+    expect(side(EVEN_KEY)).toBe("side_left");
   });
 });

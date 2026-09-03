@@ -25,6 +25,7 @@ import {
   type ResolvedImageProfile,
   routeSceneAttempts,
   type SceneAttemptId,
+  type SceneFaceVisibility,
   type SceneReferenceMode,
   type SceneRenderRequest,
   type SceneVisualReference,
@@ -40,6 +41,8 @@ import {
   type CharacterPromptTransport,
 } from "./character-prompt-program";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
+import type { ReferenceViewAngleId, ReferenceViewWardrobe } from "@/contracts";
+import { REFERENCE_VIEW_DROPPED_FOR_CAPACITY, REFERENCE_VIEW_UNAVAILABLE } from "./reference-view-consume";
 import { monogramSvg } from "./monogram";
 import type { SceneSubjectVisualSlice } from "./scene-subject-visual";
 import {
@@ -173,6 +176,46 @@ function castNames(members: readonly IntendedCastMember[]): string {
   return members.map((member) => member.name).join(", ");
 }
 
+/**
+ * One reference view the caller selected for a cast member, resolved and loaded
+ * (`reference-view-consume.ts`) before the render was asked for.
+ *
+ * Travels BESIDE `references` rather than in it. That list is the render's
+ * account of WHO it draws — the cast-integrity comparison, the intimate gate and
+ * the `image_references` rows all read it, and every one of them means one entry
+ * per person. A view is a second image of somebody already in it, so putting it
+ * there would say the scene draws that character twice.
+ */
+export interface SceneRenderReferenceView {
+  /** The cast member this view depicts — the same id their character reference carries. */
+  readonly characterId: string;
+  /** The view asset itself; its bytes ride in `referenceBuffers` like every other reference's. */
+  readonly imageId: string;
+  /** The accepted portrait the view was derived from — provenance, never sent. */
+  readonly sourceImageId: string;
+  readonly angle: ReferenceViewAngleId;
+  readonly wardrobe: ReferenceViewWardrobe;
+  /** `hidden` is what earns the anchor substitution under a one-slot capacity. */
+  readonly faceVisibility: SceneFaceVisibility;
+  /** The member's display name, for the reference's diagnostic label. */
+  readonly name: string;
+  /** The clause the prompt introduces this slot with — the angle registry's own words. */
+  readonly description: string;
+  /** Copied from the member's own anchor, so the intimate gate is unchanged. */
+  readonly allowForIntimate: boolean;
+}
+
+/** What `meta.referenceViews` records: which view anchored which person, and how. */
+export interface SceneReferenceViewProvenance {
+  readonly characterId: string;
+  readonly angle: ReferenceViewAngleId;
+  readonly wardrobe: ReferenceViewWardrobe;
+  readonly imageId: string;
+  readonly sourceImageId: string;
+  /** The view was sent IN PLACE OF the identity anchor (the one-slot hidden-face ruling). */
+  readonly substitutedAnchor: boolean;
+}
+
 export interface SceneAssetLinkage {
   ownerId: string;
   entityKind?: ImageEntityKind;
@@ -214,6 +257,16 @@ export interface RenderResolvedSceneInput {
    * reached the provider.
    */
   identityProvenance?: IdentityReferenceProvenance[];
+  /**
+   * The matching reference views the caller selected for this shot, already
+   * consumability-checked and loaded.
+   *
+   * Optional in the strongest sense: absent — and present-but-unsendable — leaves
+   * the render byte-identical to the front-anchored one it has always been. A
+   * view that cannot be selected, cannot be read, or cannot be fitted is never
+   * an error and never a refusal; it is an INFO line and today's picture.
+   */
+  referenceViews?: readonly SceneRenderReferenceView[];
   /**
    * The app-owned `meta.visualState` fragment from the visual image digest
    * (image-lane-consolidation Stages 3–4) — `{ visualState: <provenance> }`. One
@@ -292,9 +345,6 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
   const profile = input.profile ?? null;
   const model = profile?.model ?? null;
-  const request: SceneRenderRequest = { references, demo, mode, model };
-  const chain = routeSceneAttempts(request);
-
   // Ordered reference SPECS, not bare buffers: the chain's rungs send different
   // subsets, and a subset of anonymous buffers cannot say whether the one it
   // kept is the character or the room. The role travels with the bytes from here
@@ -308,27 +358,138 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   // read rather than a guess — and on an ensemble render a guess is the claim
   // that both photographs show the same woman.
   const subjectByReference = new Map<ImageRenderReference, string>();
-  const orderedReferences = imageRefs.flatMap((reference): ImageRenderReference[] => {
+  // What each slot's prompt sentence says the image IS. Only a reference view
+  // ever carries one: it is the second image of somebody the payload already
+  // shows, and a slot that says nothing but "this is Mira" twice is a slot the
+  // model may read as a second woman.
+  const describeByReference = new Map<ImageRenderReference, string>();
+  // Each member's identity anchor, by library entity id — what a hidden-face
+  // view stands in for when there is only one slot to have.
+  const anchorByCharacter = new Map<string, ImageRenderReference>();
+  // Split at build time rather than trusted from the caller's order, because the
+  // scarcity rule is stated over these bands: people first, then the views that
+  // depict them, then the place. Callers already order people before the place —
+  // identity is what the cast ruling protects — and this holds them to it.
+  const castReferences: ImageRenderReference[] = [];
+  const settingReferences: ImageRenderReference[] = [];
+  for (const reference of imageRefs) {
     const buffer = reference.imageId ? input.referenceBuffers.get(reference.imageId) : undefined;
-    if (!buffer) return [];
+    if (!buffer) continue;
     const rendered: ImageRenderReference = {
       role: sceneReferenceRole(reference.kind),
       buffer,
       ...(reference.imageId ? { sourceImageId: reference.imageId } : {}),
       ...(reference.name ? { name: reference.name } : {}),
     };
-    if (reference.kind === "character" && reference.entityId !== undefined) {
-      subjectByReference.set(rendered, reference.entityId);
+    if (reference.kind === "character") {
+      if (reference.entityId !== undefined) {
+        subjectByReference.set(rendered, reference.entityId);
+        anchorByCharacter.set(reference.entityId, rendered);
+      }
+      castReferences.push(rendered);
+      continue;
     }
-    return [rendered];
-  });
-  const primaryReference = orderedReferences[0] ?? null;
+    settingReferences.push(rendered);
+  }
+
   // The model's own capacity, not a literal 3: a two-character cast plus a place
   // is three references on Qwen Edit 2511 and would have been silently trimmed to
   // the old constant on any model that takes more. Callers order people before
   // the place, so a short capacity drops the setting rather than a character.
   const multiCapacity = model ? referenceCapacity(model).max : 1;
+
+  // -------------------------------------------------------------------------
+  // The matching reference views
+  // -------------------------------------------------------------------------
+  //
+  // A view enters as an OPTIONAL identity reference for the member it depicts:
+  // `required: false`, so the render-intent planner drops it silently under a
+  // squeeze rather than refusing the plan, and behind every anchor, so the faces
+  // the cast ruling protects take the slots first.
+  //
+  // ONE exception, and it is the whole reason the face visibility travels: on a
+  // model with a single reference slot, a view whose angle HIDES the face
+  // replaces its member's anchor instead of losing to it. The anchor is a
+  // portrait; on a shot taken from behind there is no face in the frame for its
+  // face to lock, so keeping it spends the only slot on the half of the person
+  // this picture does not contain. The substitute is derived from that same
+  // accepted portrait, so the pack remains the only identity source either way.
+  const viewReferences: ImageRenderReference[] = [];
+  const referenceViews: SceneReferenceViewProvenance[] = [];
+  for (const view of input.referenceViews ?? []) {
+    const buffer = input.referenceBuffers.get(view.imageId);
+    if (!buffer) {
+      // The caller loaded the bytes and then did not hand them over. Degrades
+      // like every other miss: this render is the one it always was.
+      sink.push(
+        diag("info", REFERENCE_VIEW_UNAVAILABLE, `the ${view.angle} reference view carried no bytes to send`, {
+          context: { characterId: view.characterId, angle: view.angle, wardrobe: view.wardrobe, reason: "missing_bytes" },
+        }),
+      );
+      continue;
+    }
+    const rendered: ImageRenderReference = {
+      role: "identity",
+      required: false,
+      buffer,
+      sourceImageId: view.imageId,
+      ...(view.name ? { name: view.name } : {}),
+    };
+    subjectByReference.set(rendered, view.characterId);
+    describeByReference.set(rendered, view.description);
+    const anchor = anchorByCharacter.get(view.characterId);
+    const substitutes = multiCapacity <= 1 && view.faceVisibility === "hidden" && anchor !== undefined;
+    if (substitutes && anchor !== undefined) {
+      castReferences.splice(castReferences.indexOf(anchor), 1, rendered);
+    } else {
+      viewReferences.push(rendered);
+    }
+    referenceViews.push({
+      characterId: view.characterId,
+      angle: view.angle,
+      wardrobe: view.wardrobe,
+      imageId: view.imageId,
+      sourceImageId: view.sourceImageId,
+      substitutedAnchor: substitutes,
+    });
+  }
+
+  const orderedReferences = [...castReferences, ...viewReferences, ...settingReferences];
+  const primaryReference = orderedReferences[0] ?? null;
   const multiReferences = orderedReferences.slice(0, multiCapacity);
+  // A view that did not fit is not sent, and that is the end of it — never a
+  // refusal, never a retry, never a different picture than the one this render
+  // would have made without the sheet at all.
+  const fitted = new Set(multiReferences.flatMap((reference) => (reference.sourceImageId ? [reference.sourceImageId] : [])));
+  for (const view of referenceViews) {
+    if (fitted.has(view.imageId)) continue;
+    sink.push(
+      diag("info", REFERENCE_VIEW_DROPPED_FOR_CAPACITY, `the ${view.angle} reference view did not fit this model's reference capacity`, {
+        context: { characterId: view.characterId, angle: view.angle, wardrobe: view.wardrobe, capacity: multiCapacity },
+      }),
+    );
+  }
+
+  // Routed over the references this render will actually OFFER — the caller's
+  // own list plus each view that took a slot of its own. A view that replaced an
+  // anchor changes no count, which is why the substitutes are absent here.
+  const request: SceneRenderRequest = {
+    references: [
+      ...references,
+      ...(input.referenceViews ?? [])
+        .filter((view) => viewReferences.some((reference) => reference.sourceImageId === view.imageId))
+        .map((view): SceneVisualReference => ({
+          kind: "character",
+          name: view.name,
+          imageId: view.imageId,
+          allowForIntimate: view.allowForIntimate,
+        })),
+    ],
+    demo,
+    mode,
+    model,
+  };
+  const chain = routeSceneAttempts(request);
 
   // The row's `sourceImageId` and `meta.referenceName` — which stored image this
   // render was anchored on. A provenance read, not a prompt one: the prompt's
@@ -575,7 +736,15 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       read: { kind: "committed_cut", token: castReadToken },
       references: offered.map((reference): CharacterPromptReference => {
         const subjectId = subjectByReference.get(reference);
-        return { reference, ...(subjectId === undefined ? {} : { subjectId }) };
+        // Only a reference view carries one, and only because it has to: two
+        // identity images bound to one subject say "this is Mira" twice, and a
+        // model reading two photographs of one person as two people paints two.
+        const description = describeByReference.get(reference);
+        return {
+          reference,
+          ...(subjectId === undefined ? {} : { subjectId }),
+          ...(description === undefined ? {} : { description }),
+        };
       }),
       // The cast size the render ASSERTS — what arms the single-subject
       // integrity guard on a solo shot and tells the anatomy guards how many
@@ -683,6 +852,20 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     return planned.filter((entry) => sent.has(entry.imageId));
   };
   const reservedProvenance = provenanceFor(primary);
+  /**
+   * The views one rung actually SENT — the same honesty rule
+   * {@link provenanceFor} keeps, over the same send list. A refused render
+   * records none, and a fallback rung that dropped the view records none for
+   * it, because `meta.referenceViews` is what slice-4 grading reads and a claim
+   * about an image the provider never saw would poison the grade rather than
+   * merely mislead a reader.
+   */
+  const referenceViewsFor = (id: SceneAttemptId | undefined): SceneReferenceViewProvenance[] => {
+    if (referenceViews.length === 0 || id === undefined || (input.failedPrecondition ?? null) !== null) return [];
+    const sent = new Set(sentReferencesFor(id).map((reference) => reference.sourceImageId));
+    return referenceViews.filter((entry) => sent.has(entry.imageId));
+  };
+  const reservedReferenceViews = referenceViewsFor(primary);
 
   // The PRIMARY rung's compiled program — the render the reserve-time row
   // describes. Rung-specific, so a fallback rung winning replaces it in the
@@ -740,6 +923,11 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           ...(input.resolvedLora ? { lora: input.resolvedLora.id } : {}),
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
+          // Which matching view anchored which person — beside the camera that
+          // asked for it and the identity provenance it rode with. Rung-specific
+          // like the program, and re-stamped by the correction pass below when a
+          // fallback rung wins with a different send list.
+          ...(reservedReferenceViews.length > 0 ? { referenceViews: reservedReferenceViews } : {}),
           // The compiled program's own provenance, beside the visual provenance
           // it was compiled from. Written at reserve time against the PRIMARY
           // rung; unlike the camera and the visual provenance it IS
@@ -784,6 +972,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
             transportFor(outcome.attemptId).prompt,
             modelFor(outcome.attemptId),
             provenanceFor(outcome.attemptId),
+            referenceViewsFor(outcome.attemptId),
             compiledFor(outcome.attemptId)?.meta,
           );
         }
@@ -977,19 +1166,25 @@ async function recordImageReferences(
  * provenance follows the same rule: when the reserve recorded one, the winning
  * rung's own fragment replaces it wholesale (its keys overwrite the stale
  * record), so the row never carries the primary rung's world state and program
- * fingerprint beside this rung's prompt and model.
+ * fingerprint beside this rung's prompt and model. `meta.referenceViews` follows
+ * the identity rule exactly: an empty set REMOVES it, because a view the winning
+ * rung did not send is a view this image was not anchored on.
  */
 async function correctProviderMeta(
   assetId: string,
   prompt: string,
   model: string,
   identityReferences: IdentityReferenceProvenance[],
+  referenceViews: SceneReferenceViewProvenance[],
   program?: Record<string, unknown>,
 ): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
   const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model, ...(program ?? {}) };
   if (identityReferences.length > 0) meta.identityReferences = identityReferences;
   else delete meta.identityReferences;
+  // Same rule, same reason: a rung that dropped the view claims none.
+  if (referenceViews.length > 0) meta.referenceViews = referenceViews;
+  else delete meta.referenceViews;
   await db().update(images).set({ prompt, meta }).where(eq(images.id, assetId));
 }
 
