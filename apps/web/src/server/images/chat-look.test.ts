@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
+import {
+  IMAGE_PROMPT_PROGRAM_META_KEY,
+  parseImagePromptProgramProvenance,
+  type ImageRenderReference,
+} from "@vesper/image-core";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
-import { buildChatPlacePrompt, chatLookKey } from "./chat-look";
+import { LANE_PROBE_SUBJECT_ID, laneProbeShadowInput, resolvedImageProfileFixture } from "@/server/test-support";
+import {
+  activeChatLookProgram,
+  buildChatLookCut,
+  buildChatPlacePrompt,
+  chatLookKey,
+  type ChatLookVisualCut,
+} from "./chat-look";
+import { isCharacterPromptCompiled } from "./character-prompt-program";
+import { qwenImageEdit2511ChatLookPositivePack } from "./packs-qwen-2511";
 
 describe("chatLookKey (chat-wardrobe-parity — structured key)", () => {
   const bare: RegionExposure = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" };
@@ -113,6 +129,81 @@ describe("chatLookKey — golden determinism pins", () => {
     expect(
       chatLookKey({ wornItemIds: ["item-b", "item-a"], overlay: "", exposure: FULLY_COVERED, attributeOverlays: [] }),
     ).toBe("7a2348c8");
+  });
+});
+
+/**
+ * THE LOOK PROGRAM STATES ONLY WHAT ITS CACHE KEY HASHES.
+ *
+ * The anchor is minted once under `chatLookKey` and reused until the key
+ * moves, but the committed cut it compiles from carries the current layer —
+ * wetness, garment condition, active conditions — and body language, none of
+ * which the key sees. A program that stated them would send two prompts under
+ * one key: the cached anchor goes stale for a fact that never moved the key,
+ * or a transient state is baked into the reference every later scene composes
+ * from. The omission is the chat-look binding's own positive pack, so the
+ * row's provenance names it.
+ *
+ * Kills a binding edit that points the chat-look row back at the shared 2511
+ * pack, a pack edit that drops either suppressed concept, and a dialect or
+ * adapter change that starts routing a current-layer fact through a concept
+ * the pack does not suppress. The control assertion — the condition DID reach
+ * the assembled subject slice — is what keeps the equality from passing
+ * vacuously on a cut that never carried the fact.
+ */
+describe("activeChatLookProgram — a function of the look key's inputs alone", () => {
+  const SOAKED: ActiveCondition = {
+    id: "cond-soaked",
+    label: "soaked",
+    severity: "moderate",
+    startedAtMinutes: 0,
+    attributeEffects: [],
+  };
+  const identity: ImageRenderReference = { role: "identity", buffer: Buffer.from("identity-bytes"), name: "Nyx" };
+  const resolved = resolvedImageProfileFixture({
+    slug: "qwen/qwen-image-edit-2511",
+    task: "chat_look",
+    key: "chat-look-standard",
+    referencePolicy: { requiredRoles: ["identity"] },
+  });
+
+  /** The mint's own path: `buildChatLookCut` → `activeChatLookProgram`, over one committed cut. */
+  function compile(visual: ChatLookVisualCut) {
+    const sink = new DiagnosticCollector();
+    const cut = buildChatLookCut({ cut: visual, outfitExposed: false, exposure: FULLY_COVERED, sink });
+    if (cut === null) throw new Error("the probe cut did not assemble");
+    const program = activeChatLookProgram(
+      {
+        chatId: "chat1",
+        userId: "user1",
+        characterId: LANE_PROBE_SUBJECT_ID,
+        lookKey: "key1",
+        outfit: "a linen sundress",
+        outfitExposed: false,
+        visual,
+      },
+      cut,
+      resolved,
+      [identity],
+      sink,
+    );
+    if (!isCharacterPromptCompiled(program)) throw new Error(`expected a compiled program, got ${program.kind}`);
+    return program;
+  }
+
+  it("two cuts that differ only in a current-layer fact compile the same prompt", () => {
+    const dry = compile({ ...laneProbeShadowInput(), conditions: [] });
+    const soaked = compile({ ...laneProbeShadowInput(), conditions: [SOAKED] });
+    // Control: the condition reached the slice the compile ran over, and only there.
+    const statesCurrent = (facts: readonly { concept: string }[]) =>
+      facts.some((fact) => fact.concept === "subject.current_state");
+    expect(statesCurrent(soaked.subjects[0]?.facts ?? [])).toBe(true);
+    expect(statesCurrent(dry.subjects[0]?.facts ?? [])).toBe(false);
+    expect(soaked.prompt).toBe(dry.prompt);
+    expect(soaked.negativePrompt).toBe(dry.negativePrompt);
+    // The omission is provenance-visible: the row names the chat-look pack, not the shared one.
+    const provenance = parseImagePromptProgramProvenance(soaked.meta[IMAGE_PROMPT_PROGRAM_META_KEY]);
+    expect(provenance?.positivePackVersionId).toBe(qwenImageEdit2511ChatLookPositivePack.id);
   });
 });
 

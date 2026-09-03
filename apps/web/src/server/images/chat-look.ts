@@ -376,8 +376,21 @@ async function chatLookIdentity(
  * subject slices, so the identity, morphology and age anchors the change does
  * not name survive the edit by derivation rather than by a blanket "preserve
  * everything".
+ *
+ * For a fixed look key the compiled prompt is a function of the key's inputs
+ * alone. The committed cut states more than `chatLookKey` hashes — the current
+ * layer (wetness, garment condition, active conditions) and body language —
+ * and two mints under one key must not send two prompts, or the cached anchor
+ * goes stale for a fact that never moved the key and bakes a transient state
+ * into the reference every later scene composes from. The omission is the
+ * chat-look binding's own positive pack (`packs-qwen-2511.ts`,
+ * `pack-qwen-2511-positive-chat-look-v1`), which suppresses
+ * `subject.current_state` and `subject.body_language`, so the row's program
+ * provenance shows the anchor was compiled without them; this function passes
+ * the whole cut and filters nothing itself. Exported for the lane's test,
+ * which pins that invariant.
  */
-function activeChatLookProgram(
+export function activeChatLookProgram(
   input: RenderChatLookInput,
   cut: ChatLookCut,
   resolved: ResolvedImageProfile,

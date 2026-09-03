@@ -56,9 +56,23 @@ Like its sibling edit lane ([portrait-variants.md](portrait-variants.md)) the mi
 identity descriptors: it gains the digest's body-shape anchors — horns, wings, tail — and the
 seam's identity anchor, while hair, eye and skin color come off the reference photograph.
 
-**Current state is deliberately suppressed** — active conditions, body-surface wetness, garment
-condition. The anchor is cached under `chatLookKey`, which cannot see transient body state, so a
-"skin damp" clause would bake a wet character into an asset whose key never moves again.
+**For a fixed look key the compiled prompt is a function of the key's inputs alone.** The
+committed cut carries more than `chatLookKey` hashes — the current layer (body-surface wetness,
+garment condition and arrangement, active conditions) and body language — and a program that
+stated them would send two prompts under one key: the cached anchor goes stale for a fact that
+never moved the key, or a transient state (wet hair, a slouch) is baked into the reference every
+later scene composes from. The omission is a **pack suppression, not a lane-side filter**: the
+chat-look binding (`binding-qwen-2511-chat-look-v1`) compiles through its own positive pack,
+`pack-qwen-2511-positive-chat-look-v1`, which is the endpoint's shared pack with
+`subject.current_state` and `subject.body_language` suppressed and nothing else changed, so the
+row's `promptProgram.positivePackVersionId` names what the anchor was compiled without. The
+mint passes the whole cut and filters nothing itself. Presentation-layer facts — hairstyle,
+makeup, grooming, nails, cosmetic marks — project as `subject.current_state` too and leave with
+it; the key does not hash them either, and the scene lane states the current cut over the anchor
+at render time. What the anchor states is the identity, age and morphology anchors, the
+wardrobe band with its hair-concealment fact, and the coverage statement — the outfit-true,
+identity-locked reference the scene lane wants from it. Neither suppressed concept is ever
+mandatory, so the suppression never refuses a mint.
 
 Every refusal happens **before reserving a row**, so an ineligible chat accumulates no failed
 rows and simply retries on the next outfit or appearance change. A caller with no committed
@@ -71,8 +85,11 @@ with `images.chat_look.program_unbound`, naming the row to add. What a successfu
 `characterPromptTransport(compiled)`: the compiled prompt plus the compiled exclusions on the
 normalized `controls.negativePrompt`.
 
-`chatLookKey` is outfit + exposed + appearance overlays + the resolved hair-occlusion band (a
-`partial` or `full` band adds a term; `none` keys exactly as a chat with no band), keep-latest
+`chatLookKey` is the sorted worn item ids + the outfit overlay + the coverage fingerprint +
+appearance overlays + the garment fingerprint (worn instances, presentation bands, wetness,
+deposit and damage presence — appended only when the actor is modelled) + the resolved
+hair-occlusion band (a `partial` or `full` band adds a term; `none` keys exactly as a chat with
+no band), keep-latest
 **per character** — the
 loader, the freshness check and the purge all scope on `entityId`, because a chat-wide read
 hands one roster member's look to another and a chat-wide purge makes two cast members evict

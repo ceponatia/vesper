@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   qwenImageEdit2511Bindings,
+  qwenImageEdit2511ChatLookPositivePack,
   qwenImageEdit2511NegativePack,
   qwenImageEdit2511PositivePack,
 } from "./packs-qwen-2511";
@@ -194,6 +195,7 @@ describe("character prompt-pack coverage", () => {
   it("computes every seeded content hash from its own manifest", () => {
     const packs = [
       qwenImageEdit2511PositivePack,
+      qwenImageEdit2511ChatLookPositivePack,
       qwenImageEdit2511NegativePack,
       qwenImage2512PortraitPositivePack,
       qwenImage2512PortraitNegativePack,
@@ -209,14 +211,26 @@ describe("character prompt-pack coverage", () => {
    * pack fork, which would make promoting an endpoint's wording an N-row edit
    * that a later lane silently misses.
    *
+   * The one thing a lane MAY own is a concept suppression — the chat-look row
+   * compiles through a positive pack that omits what its cache key cannot see
+   * — so a lane's positive pack is allowed to differ from the endpoint's shared
+   * pack in `suppressedConcepts` and in nothing else: the wording variant, the
+   * priority adjustments and the rendering intent stay one edit per endpoint.
+   * A fork that moved any of those is the defect this pin still kills.
+   *
    * Stated over the 2512 portrait rows and the 2511 edit rows because those two
    * seeds build their bindings by hand; the shared factory in
    * `packs-character-endpoints.ts` cannot fork a pair by construction.
    */
-  it("pins one pack pair per endpoint across its lanes", () => {
+  it("pins one pack pair per endpoint across its lanes, suppressions aside", () => {
     for (const rows of [qwenImage2512PortraitBindings, qwenImageEdit2511Bindings]) {
-      expect(new Set(rows.map((binding) => binding.positivePackVersionId)).size).toBe(1);
       expect(new Set(rows.map((binding) => binding.negativePackVersionId)).size).toBe(1);
+      const manifests = rows.map((binding) => {
+        const pack = imagePositivePack(binding.positivePackVersionId);
+        if (pack === null) throw new Error(`unregistered positive pack ${binding.positivePackVersionId}`);
+        return { ...pack.manifest, suppressedConcepts: [] };
+      });
+      for (const manifest of manifests) expect(manifest).toEqual(manifests[0]);
     }
     expect(new Set(qwenImage2512PortraitBindings.map((binding) => binding.profileKey))).toEqual(
       new Set(["portrait-standard", "portrait-fast", "portrait-quality"]),

@@ -96,6 +96,56 @@ export const qwenImageEdit2511PositivePack: ImagePositivePackVersion = {
   supersedesVersionId: null,
 };
 
+/**
+ * The chat-look lane's positive pack: the shared v1 above with the two
+ * concepts a CACHE-KEYED anchor may not state suppressed.
+ *
+ * The look anchor is minted once and reused under `chatLookKey` (worn item
+ * ids, the outfit overlay, the coverage fingerprint, appearance overlays, the
+ * garment fingerprint, the hair-occlusion band) until that key moves. The
+ * committed cut it compiles from carries more than the key hashes — the
+ * current layer (body-surface wetness, garment condition and arrangement,
+ * active conditions) and the body-language layer (posture, gaze, hands).
+ * Stated, those facts either go stale for a change that never moves the key
+ * or bake a transient state — wet hair, a slouch — into the reference every
+ * later scene composes from. So for this lane the prompt is a function of the
+ * key's inputs alone, and it is a PACK suppression rather than a lane-side
+ * filter so the row's `promptProgram.positivePackVersionId` shows which
+ * concepts the anchor was compiled without.
+ *
+ * `subject.current_state` is the concept both the presentation layer
+ * (hairstyle, makeup, grooming, nails, cosmetic marks) and the current layer
+ * project as, so presentation detail leaves the anchor with them — none of it
+ * is key-hashed either, and the scene lane states the current cut over the
+ * anchor at render time. Neither concept is ever mandatory (no current-state
+ * or body-language kind is a mandatory fact), so the suppression never trips
+ * `mandatory_concept_suppressed`; the wardrobe, exposure, hair-concealment,
+ * identity, age and morphology bands compile exactly as the shared pack does.
+ *
+ * Its own pack id, and deliberately only `suppressedConcepts` away from the
+ * shared pack: wording variant, priority adjustments and rendering intent stay
+ * the endpoint's, so promoting a 2511 wording finding is still one edit per
+ * field (`packs-character.test.ts` pins that).
+ */
+const chatLookPositiveManifest = imagePositivePackManifestSchema.parse({
+  ...positiveManifest,
+  suppressedConcepts: ["subject.body_language", "subject.current_state"],
+});
+
+export const qwenImageEdit2511ChatLookPositivePack: ImagePositivePackVersion = {
+  id: "pack-qwen-2511-positive-chat-look-v1",
+  packId: "pack-qwen-2511-positive-chat-look",
+  channel: "positive",
+  slug: "qwen-2511-delta-edit-chat-look",
+  version: 1,
+  dialectId: DIALECT_ID,
+  manifest: chatLookPositiveManifest,
+  contentHash: imagePromptPackContentHash(chatLookPositiveManifest),
+  status: "active",
+  evidence: EVIDENCE.filter((entry) => entry.id === "E-QWEN2511-2"),
+  supersedesVersionId: null,
+};
+
 // ---------------------------------------------------------------------------
 // Negative pack
 // ---------------------------------------------------------------------------
@@ -156,8 +206,9 @@ export const qwenImageEdit2511NegativePack: ImageNegativePackVersion = {
 // ---------------------------------------------------------------------------
 
 /**
- * The three character edit lanes, each pinning the same pack pair — all
- * `active` since the #256 cutover (owner ruling 2026-09-01).
+ * The three character edit lanes, each pinning the same negative pack and —
+ * the chat-look row aside, see {@link POSITIVE_PACK_BY_BINDING} — the same
+ * positive pack; all `active` since the #256 cutover (owner ruling 2026-09-01).
  *
  * They were registered as `candidate` while the rollout was staged behind
  * accumulated shadow evidence. That sequence is retired: shadowing is optional
@@ -194,6 +245,16 @@ const EDIT_LANES = [
   ["binding-qwen-2511-chat-look-v1", "chat-look-standard", "chat_look", "instruction_edit", "active"],
 ] as const;
 
+/**
+ * The rows that compile through a positive pack of their own rather than the
+ * shared one. A lane earns an entry here only for a concept SUPPRESSION its
+ * cache or contract requires; everything else about the pack stays the
+ * endpoint's, so an absent entry means the shared pack.
+ */
+const POSITIVE_PACK_BY_BINDING: Partial<Record<(typeof EDIT_LANES)[number][0], ImagePositivePackVersion>> = {
+  "binding-qwen-2511-chat-look-v1": qwenImageEdit2511ChatLookPositivePack,
+};
+
 export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task, promptStrategy, status]) => ({
   id,
   profileKey,
@@ -204,11 +265,12 @@ export const qwenImageEdit2511Bindings = EDIT_LANES.map(([id, profileKey, task, 
   task,
   promptStrategy,
   promptDialectId: DIALECT_ID,
-  positivePackVersionId: qwenImageEdit2511PositivePack.id,
+  positivePackVersionId: (POSITIVE_PACK_BY_BINDING[id] ?? qwenImageEdit2511PositivePack).id,
   negativePackVersionId: qwenImageEdit2511NegativePack.id,
   status,
 }));
 
 registerImagePositivePack(qwenImageEdit2511PositivePack);
+registerImagePositivePack(qwenImageEdit2511ChatLookPositivePack);
 registerImageNegativePack(qwenImageEdit2511NegativePack);
 for (const binding of qwenImageEdit2511Bindings) registerImagePromptBinding(binding);
