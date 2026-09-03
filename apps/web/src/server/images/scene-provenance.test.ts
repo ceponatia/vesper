@@ -447,6 +447,39 @@ describe("renderResolvedScene intimate reveal", () => {
 });
 
 /**
+ * A scene states no apparent age: its cast inherit their visible age from
+ * their identity references, and the narrative/visual age split keeps
+ * `identity.apparent_age` out of a scene prompt the way `profile.age` is kept
+ * out of it (`age-context-separation.test.ts`). Applied on the compiled path
+ * by the seam's lane policy (`CHARACTER_LANE_APPARENT_AGE.scene`), so it holds
+ * on EVERY rung of one render — proved over a failing primary and its winning
+ * fallback, the two rungs' prompts read side by side.
+ *
+ * Falsified against the compiled path before the policy, which synthesized the
+ * adapter's age anchor for every lane: the same render read "Nyx appears in
+ * the late twenties. Ilsa appears in the forties." on both rungs. The positive
+ * control pins that the omission cost nobody their place in the prompt.
+ */
+describe("renderResolvedScene apparent age", () => {
+  it("states no cast member's apparent age on any rung of one render", async () => {
+    mockIntent
+      .mockResolvedValueOnce({ ok: false, error: "multi boom" })
+      .mockResolvedValueOnce({ ok: true, image: Buffer.from("rendered") });
+    rowQueue.push([{ meta: { model: `replicate/${MODEL_SLUG}` } }]);
+    await renderResolvedScene(baseInput({}));
+    const prompts = [pipelineCalls[0]?.asset.prompt as string, updateCalls[0]?.prompt as string];
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) {
+      // The two fixtures' bands, in the image vocabulary's words, and the
+      // dialect's age clause itself — a rung that stated either would fail.
+      expect(prompt).not.toMatch(/late twenties|forties|\bappears in\b/);
+      expect(prompt).toContain(LANE_PROBE_NAME);
+      expect(prompt).toContain(LANE_PROBE_SECOND_NAME);
+    }
+  });
+});
+
+/**
  * Cast integrity: the cast a render compiles IS the cast it draws — the same
  * people, once each. The two lists arrive from different places (the cuts from
  * the visual assembly, the references from the lane's roster) and everything

@@ -27,6 +27,7 @@ import { IMAGE_CHARACTER_HAIR_CONCEALED } from "./hair-concealment";
 import {
   characterSemanticValueResolver,
   projectCharacterWorldSlices,
+  IMAGE_CHARACTER_AGE_OMITTED,
   IMAGE_CHARACTER_AGE_UNRESOLVED,
   IMAGE_CHARACTER_AGE_WITHHELD,
   IMAGE_CHARACTER_ATTRIBUTE_OWNER,
@@ -705,6 +706,34 @@ describe("projectCharacterWorldSlices", () => {
       attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "adult" }],
     });
     expect(malformed.subjects[0]?.missingRequired).toContain(`${SUBJECT}/face/apparent_age`);
+  });
+
+  /**
+   * The lane's `omit` policy (a scene inherits visible age from its identity
+   * references) withholds the anchor ahead of the band, on both anchor paths,
+   * as a designed suppression: no `subject.apparent_age` fact, and never a
+   * `missingRequired` key. Falsified two ways — against the adapter that
+   * synthesized the anchor for every lane (the compiled two-person scene read
+   * "Nyx appears in the late twenties. Ilsa appears in the forties."), and
+   * against an omit that fails the mandatory age closed instead, which would
+   * refuse every `refuseOnMissingRequired` scene rung.
+   */
+  it.each([
+    ["synthesized", characterDigest(), `subject.${SUBJECT}.apparent_age`],
+    ["projected", characterDigest([ageAnchorFeature()]), `${SUBJECT}/face/apparent_age`],
+  ])("withholds a %s age anchor under the omit policy without losing it", (_, digest, ageKey) => {
+    for (const attributes of [[...crookedNoseAttributes(), ADULT_AGE_VALUE], crookedNoseAttributes()]) {
+      const omitted = projectCharacterWorldSlices({
+        digest,
+        sources: { [SUBJECT]: fixtureSources({ attributes }) },
+        apparentAge: "omit",
+      });
+      expect(omitted.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
+      expect(omitted.subjects[0]?.missingRequired).toEqual([]);
+      expect(omitted.suppressions.filter((entry) => entry.key === ageKey)).toEqual([
+        { key: ageKey, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_AGE_OMITTED },
+      ]);
+    }
   });
 
   /**

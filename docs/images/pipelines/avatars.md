@@ -88,7 +88,9 @@ reconcile with the pack's rendering intent.
 
 Apparent age is the adapter's own **required** `subject.apparent_age` claim, made from the
 `identity.apparent_age` attribute through the image age vocabulary (`imageAgeBandPhrases`)
-on every character lane the seam compiles. The **image age floor** and the narrative/visual
+on every lane whose policy states it — the avatar, the variant and the chat look; a scene
+omits it ([../character-prompts.md](../character-prompts.md) §Apparent age per lane). The
+**image age floor** and the narrative/visual
 age split are owned by [../../contracts/attributes.md](../../contracts/attributes.md)
 §Starter vocabulary: an adult band states explicit adult wording; a minor band the registry
 recognizes states **nothing** — a designed suppression, never a missing anchor; an absent or

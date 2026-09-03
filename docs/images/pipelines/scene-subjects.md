@@ -203,6 +203,16 @@ descriptors, so nothing in the prompt invites the model to repaint what it shoul
 `ScenePresentCharacter` and `SceneCharacterSpec` carry no appearance or anchor text at all —
 the cut is the only description of a person a scene render has.
 
+**A scene states no apparent age.** Visible age is the identity reference's to carry, the
+same way the face is, and the narrative/visual age split keeps both age fields out of a scene:
+`profile.age` never leaves the narrator, and `identity.apparent_age` — the adapter's own
+anchor on a portrait — is withheld on the compiled path by the character seam's lane policy
+(`CHARACTER_LANE_APPARENT_AGE.scene` is `omit`;
+[../character-prompts.md](../character-prompts.md) §Apparent age per lane). The adapter
+records it as the designed suppression `character.apparent_age.omitted` for every cast
+member, never as a missing anchor, so the omission refuses no rung; every rung of the chain
+compiles the same age-silent cast, the bare-prompt fallback included.
+
 **Setting from scene memory:** `queueChatScene` derives the `room` from the chat's scene memory
 — the current place's background **sketch** when the `chat_scene_sketch` agent has written one,
 else its established name and details — and threads `sceneMemory.timeOfDay` through. An empty

@@ -27,7 +27,7 @@ import {
   mergeVisualImageCastDigests,
   type VisualImageCastMergeRefusal,
 } from "@/contracts/images/visual-digest";
-import type { CharacterSubjectSources } from "@/contracts/images/character-adapter";
+import type { CharacterApparentAgePolicy, CharacterSubjectSources } from "@/contracts/images/character-adapter";
 import { subjectIntimateRevealFacts } from "@/contracts/images/subject-reveal";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -106,6 +106,25 @@ export type CharacterPromptTask = "portrait" | "variant" | "chat_look" | "scene"
 
 /** The lane label a diagnostic and a reference fact's source key carry. */
 export type CharacterPromptLane = "avatar" | "variant" | "chat_look" | "scene";
+
+/**
+ * Whether each lane's compiled prompt states its subjects' apparent age — the
+ * one place that policy is decided, keyed by lane so no caller can set it.
+ *
+ * The standalone and reference-edit lanes state it: a portrait has nothing
+ * else to take the age from, and on an edit the text anchor is deliberately
+ * authoritative beside the reference (docs/images/pipelines/avatars.md
+ * §Apparent age). A scene states none: its cast inherit their visible age
+ * from their identity references, so the adapter withholds every subject's
+ * anchor as a designed suppression on every rung, and the age is never a
+ * missing anchor a `refuseOnMissingRequired` rung would refuse on.
+ */
+export const CHARACTER_LANE_APPARENT_AGE: Readonly<Record<CharacterPromptLane, CharacterApparentAgePolicy>> = {
+  avatar: "state",
+  variant: "state",
+  chat_look: "state",
+  scene: "omit",
+};
 
 /**
  * One subject's realized cut, in the vocabulary every lane already exposes
@@ -583,6 +602,8 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // depend on and the second replaces it wholesale.
   const assembly = {
     ...cast,
+    // The lane's own age policy, decided by the table above and never by input.
+    apparentAge: CHARACTER_LANE_APPARENT_AGE[lane],
     references: referenceFacts(lane, subjectOf, sentReferences),
   };
   const preview = assembleCharacterWorldDigest({ ...assembly, operation: characterPortraitImageOperation() });
