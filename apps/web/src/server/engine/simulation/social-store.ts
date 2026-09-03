@@ -58,11 +58,9 @@ import { InjectedSimulationCrash } from "./material-store";
 import { relationshipLedgerEntryFromRow } from "./social-recorder";
 import type { SimTx } from "./trigger-projector";
 
-/** Read helpers below run BOTH unlocked (pre-transaction, for the
+/** Read helpers below run BOTH unlocked (inside a read-only snapshot, for the
  * deliberator seam — see `submitDurableAttemptConsentEscalation`) and locked
- * (inside a command's `execute`) — same pattern as `body-store.ts`/
- * `space-store.ts`'s `DbExecutor`. */
-type DbExecutor = Db | SimTx;
+ * (inside a command's `execute`); either way the caller owns the transaction. */
 
 /**
  * E5.5 slice 1 durable relationship-ledger authority:
@@ -122,7 +120,7 @@ function rejectedResult<TCode extends string>(commandId: string, code: TCode, pu
 // households, means, or the ledger itself.
 // ---------------------------------------------------------------------------
 
-async function loadRelationshipActorIds(tx: DbExecutor, branchId: string): Promise<Set<string>> {
+async function loadRelationshipActorIds(tx: SimTx, branchId: string): Promise<Set<string>> {
   const rows = await tx
     .select({ characterId: simCharacters.characterId })
     .from(simCharacters)
@@ -270,7 +268,7 @@ export async function submitDurableRecordRelationshipChange(
  * any kind — the utility score needs the full trust/attraction/
  * resentment read, not just consent-scoped entries. */
 export async function loadDyadLedgerEntries(
-  tx: DbExecutor,
+  tx: SimTx,
   branchId: string,
   fromActorId: string,
   toActorId: string,
@@ -299,7 +297,7 @@ export async function loadDyadLedgerEntries(
  * the `authored_prior_missing_weight` diagnostic.
  */
 export async function loadAuthoredPriorWeights(
-  tx: DbExecutor,
+  tx: SimTx,
   branchId: string,
   entries: readonly RelationshipLedgerEntry[],
 ): Promise<RelationshipReadWeightOverride[]> {
@@ -471,12 +469,22 @@ export async function submitDurableAttemptConsentEscalation(
       .where(and(eq(simCommands.branchId, branchId), eq(simCommands.idempotencyKey, idempotencyKey)))
       .limit(1);
     if (!cached) {
-      const [branchRow] = await database
-        .select({ storySecond: simBranches.storySecond })
-        .from(simBranches)
-        .where(eq(simBranches.id, branchId))
-        .limit(1);
-      const atStorySecond = branchRow?.storySecond ?? 0;
+      // The clock, the ledger, and the authored priors come from one snapshot
+      // (the model call below stays outside it, like every other read).
+      const snapshot = await database.transaction(
+        async (tx) => {
+          const [branchRow] = await tx
+            .select({ storySecond: simBranches.storySecond })
+            .from(simBranches)
+            .where(eq(simBranches.id, branchId))
+            .limit(1);
+          const entries = await loadDyadLedgerEntries(tx, branchId, actorId, targetActorId);
+          const authoredPriorWeights = await loadAuthoredPriorWeights(tx, branchId, entries);
+          return { atStorySecond: branchRow?.storySecond ?? 0, entries, authoredPriorWeights };
+        },
+        { isolationLevel: "repeatable read", accessMode: "read only" },
+      );
+      const { atStorySecond, entries, authoredPriorWeights } = snapshot;
 
       // The score must reflect how much the TARGET trusts/is-
       // attracted-to/resents the ACTOR — the target is the one deciding.
@@ -489,8 +497,6 @@ export async function submitDurableAttemptConsentEscalation(
       // (caught by an integration test exercising a real `authored_prior`
       // override; the read's own re-applied filter would otherwise mask a
       // direction mistake here as "no evidence" rather than a loud failure).
-      const entries = await loadDyadLedgerEntries(database, branchId, actorId, targetActorId);
-      const authoredPriorWeights = await loadAuthoredPriorWeights(database, branchId, entries);
       const read = deriveRelationshipRead({
         entries,
         subjectActorId: targetActorId,

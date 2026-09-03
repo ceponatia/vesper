@@ -26,7 +26,6 @@ import {
   simBodyRhythms,
   simPhysicalLoci,
   simTriggers,
-  type Db,
 } from "@/server/db";
 import type { LockedBranchView } from "./command-runner";
 import type { SimTx } from "./trigger-projector";
@@ -42,8 +41,6 @@ import type { SimTx } from "./trigger-projector";
  * substrate instead of the local duplicates they used to carry to dodge the
  * `material-store → body-store → activity-store` cycle.
  */
-
-export type DbExecutor = Db | SimTx;
 
 export function bodyMeterFromRow(row: typeof simBodyMeters.$inferSelect): BodyMeterState {
   return bodyMeterStateSchema.parse({
@@ -175,7 +172,7 @@ export interface ActorBodyRows {
 }
 
 /** Exported for the E6.2 routine controller (routine-store.ts). */
-export async function loadActorBody(tx: DbExecutor, branchId: string, actorId: string): Promise<ActorBodyRows> {
+export async function loadActorBody(tx: SimTx, branchId: string, actorId: string): Promise<ActorBodyRows> {
   const [meterRows, conditionRows, modifierRows, rhythmRows] = await Promise.all([
     tx
       .select()
