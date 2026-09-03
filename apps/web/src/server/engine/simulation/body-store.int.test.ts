@@ -49,6 +49,14 @@ import {
 
 const harness = await simulationSuiteHarness({ suite: "body-store.int.test", table: "sim_body_meters" });
 
+/** The cut's body surface, read the way the arbiter reads it: inside one snapshot. */
+function bodilyReadsAt(input: Parameters<typeof computeEngagementBodilyReads>[1]) {
+  return db().transaction((tx) => computeEngagementBodilyReads(tx, input), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
+}
+
 const SEED_SECOND = 50_000;
 // Registry v1: hygiene 9 000 → 2 500 at 150/h = 156 000s after seeding.
 const HYGIENE_CROSSING = SEED_SECOND + 156_000;
@@ -350,7 +358,7 @@ describe.runIf(harness.ready)("E5.1 durable body substrate", () => {
     expectAccepted(arouse, "raise arousal by 7 000");
 
     // The witness sees graded surface signs at engaged attention — never a meter.
-    const before = await computeEngagementBodilyReads(db(), {
+    const before = await bodilyReadsAt({
       branchId: ids.branchId,
       storySecond: SEED_SECOND,
       viewpointActorId: ids.witnessId,
@@ -390,7 +398,7 @@ describe.runIf(harness.ready)("E5.1 durable body substrate", () => {
     );
     expect(expiry?.dueStorySecond).toBe(SEED_SECOND + 1_800);
 
-    const after = await computeEngagementBodilyReads(db(), {
+    const after = await bodilyReadsAt({
       branchId: ids.branchId,
       storySecond: SEED_SECOND,
       viewpointActorId: ids.witnessId,
@@ -399,7 +407,7 @@ describe.runIf(harness.ready)("E5.1 durable body substrate", () => {
     expect(after.observed).toEqual([{ actorId: ids.actorId, signs: ["afterglow_softness"] }]);
 
     // The subject's own surface: settled pulse, bright afternoon energy.
-    const selfView = await computeEngagementBodilyReads(db(), {
+    const selfView = await bodilyReadsAt({
       branchId: ids.branchId,
       storySecond: SEED_SECOND,
       viewpointActorId: ids.actorId,

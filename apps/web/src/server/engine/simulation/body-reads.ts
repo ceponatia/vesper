@@ -31,7 +31,6 @@ import {
   bodyModifierFromRow,
   bodyRhythmFromRow,
   loadActorBody,
-  type DbExecutor,
 } from "./body-rows";
 import type { SimTx } from "./trigger-projector";
 
@@ -135,10 +134,11 @@ export async function loadBodyReads(tx: SimTx, branchId: string): Promise<Durabl
  * E5.2 — the cut's body surface (`bodilyReads`): the viewpoint's own
  * energy read and intimacy pulse, plus each co-present actor's perceivable
  * signs at engaged-attention tier. Pure over loaded rows; empty when bodies
- * are uninitialized, so pre-Gate-5 worlds compile identical cuts.
+ * are uninitialized, so pre-Gate-5 worlds compile identical cuts. Reads
+ * inside the caller's transaction: the cut assembler owns the snapshot.
  */
 export async function computeEngagementBodilyReads(
-  executor: DbExecutor,
+  tx: SimTx,
   input: {
     branchId: string;
     storySecond: number;
@@ -150,7 +150,7 @@ export async function computeEngagementBodilyReads(
   const bodies = new Map(
     await Promise.all(
       actorIds.map(
-        async (actorId) => [actorId, await loadActorBody(executor, input.branchId, actorId)] as const,
+        async (actorId) => [actorId, await loadActorBody(tx, input.branchId, actorId)] as const,
       ),
     ),
   );

@@ -110,6 +110,20 @@ attempt; action incompatible with activity or body claims; speech or action
 attributed to the player's own actor without player authorization; disclosure
 of a private denial cause; and a future event stated as already completed.
 
+### One snapshot
+
+A cut is a picture of one committed branch state. The turn's own commands —
+advancing story time, deliberation, departures — commit first, outside any
+read transaction. Every input the compiler then consumes (the branch head,
+the interval's events, space, observations, activities, beliefs, pressures,
+soft canon, body reads) is loaded inside one read-only repeatable-read
+transaction, so the cut's `branchVersion`, sequence range end, story time,
+events, and projections all describe the same committed state: a command
+that commits while those reads run lands wholly before or wholly after the
+cut, never across it. The loaders the assembler calls take that transaction
+rather than opening reads of their own. Persisting the cut and acknowledging
+pressures happen after the transaction closes.
+
 ### Stability
 
 A NarrativeCut is immutable and addressable: recompiling the same cut ID
@@ -377,6 +391,8 @@ the original armed effects, so they can't be delivered twice.
   is treated as unknown rather than trusted.
 - A cut confirms its presentation at most once; a retake changes what is
   shown, never which effects were armed.
+- A cut's metadata, events, and projections describe one committed branch
+  state; no command commits partway through its inputs.
 
 ## Degradation
 

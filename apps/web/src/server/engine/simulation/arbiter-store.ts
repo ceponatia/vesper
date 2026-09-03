@@ -322,125 +322,146 @@ export async function prepareEngagementTurn(
     attempted.push({ ...departure, result: result.status === "rejected" ? result.code : result.status });
   }
 
-  // Compile one immutable perspective-safe cut.
-  const [after] = await database
-    .select({
-      headSequence: simBranches.headSequence,
-      version: simBranches.version,
-      storySecond: simBranches.storySecond,
-      rulesetVersion: simWorlds.rulesetVersion,
-    })
-    .from(simBranches)
-    .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
-    .where(eq(simBranches.id, branchId))
-    .limit(1);
-  if (!after) throw new Error("Simulation branch vanished during turn preparation");
-  const eventRows = await database
-    .select()
-    .from(simEvents)
-    .where(and(eq(simEvents.branchId, branchId), gt(simEvents.sequence, fromSequence)))
-    .orderBy(asc(simEvents.sequence));
-  const events = eventRows.map(branchEventFromRow);
-  const space = spaceProjectionFromRows(
-    {
-      worldId: start.worldId,
-      branchId,
-      rulesetVersion: after.rulesetVersion,
-      version: after.version,
-      headSequence: after.headSequence,
-      storySecond: after.storySecond,
+  // Compile one immutable perspective-safe cut. Every input is loaded inside
+  // ONE read-only repeatable-read transaction, so the cut's version, sequence
+  // range, story time, events, and every projection describe the same
+  // committed branch state: a command that commits while these reads run
+  // lands wholly before or wholly after the cut, never across it. The turn's
+  // own commands above and the persistence below stay outside it.
+  const snapshot = await database.transaction(
+    async (tx) => {
+      const [after] = await tx
+        .select({
+          headSequence: simBranches.headSequence,
+          version: simBranches.version,
+          storySecond: simBranches.storySecond,
+          rulesetVersion: simWorlds.rulesetVersion,
+        })
+        .from(simBranches)
+        .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
+        .where(eq(simBranches.id, branchId))
+        .limit(1);
+      if (!after) throw new Error("Simulation branch vanished during turn preparation");
+      const eventRows = await tx
+        .select()
+        .from(simEvents)
+        .where(and(eq(simEvents.branchId, branchId), gt(simEvents.sequence, fromSequence)))
+        .orderBy(asc(simEvents.sequence));
+      const space = spaceProjectionFromRows(
+        {
+          worldId: start.worldId,
+          branchId,
+          rulesetVersion: after.rulesetVersion,
+          version: after.version,
+          headSequence: after.headSequence,
+          storySecond: after.storySecond,
+        },
+        await loadSpaceRows(tx, branchId),
+      );
+      const viewpointPressureRows = await tx
+        .select()
+        .from(simTemporalPressures)
+        .where(
+          and(
+            eq(simTemporalPressures.branchId, branchId),
+            isNull(simTemporalPressures.resolvedAt),
+            eq(simTemporalPressures.actorId, input.viewpointActorId),
+          ),
+        )
+        .orderBy(asc(simTemporalPressures.pressureId));
+      // E4.1: what the viewpoint perceived this interval comes from the committed
+      // observation log — the compiler re-decides nothing about witnessing.
+      const viewpointObservations = await loadViewpointObservations(
+        {
+          branchId,
+          witnessActorId: input.viewpointActorId,
+          fromSequence,
+          throughSequence: after.headSequence,
+        },
+        { database: tx },
+      );
+      const activityRows = await tx
+        .select()
+        .from(simActivities)
+        .where(eq(simActivities.branchId, branchId))
+        .orderBy(asc(simActivities.activityInstanceId));
+      // E4.2: the viewpoint's own live beliefs, joined to what each one claims —
+      // the speaker may voice them even when they are wrong.
+      const beliefRows = await tx
+        .select({ belief: simBeliefs, assertion: simAssertions })
+        .from(simBeliefs)
+        .innerJoin(
+          simAssertions,
+          and(
+            eq(simAssertions.branchId, simBeliefs.branchId),
+            eq(simAssertions.assertionId, simBeliefs.assertionId),
+          ),
+        )
+        .where(
+          and(
+            eq(simBeliefs.branchId, branchId),
+            eq(simBeliefs.holderActorId, input.viewpointActorId),
+            inArray(simBeliefs.status, ["active", "doubted"]),
+          ),
+        )
+        .orderBy(desc(simBeliefs.believedFrom), asc(simBeliefs.beliefId))
+        .limit(MAX_BELIEF_ROWS);
+      const softCanon = await loadSoftCanonProjection(branchId, { database: tx });
+      // E5.2: the layer-3 body surface — the viewpoint's own reads plus the
+      // perceivable signs of everyone sharing their zone. Empty for worlds with
+      // no initialized bodies, so pre-Gate-5 scenarios compile identical cuts.
+      const viewpointLocus = space.loci.find((locus) => locus.actorId === input.viewpointActorId);
+      const viewpointZoneId =
+        viewpointLocus && viewpointLocus.kind === "at" ? viewpointLocus.zoneId : undefined;
+      const coPresentActorIds = space.loci
+        .filter(
+          (locus) =>
+            locus.kind === "at" &&
+            viewpointZoneId !== undefined &&
+            locus.zoneId === viewpointZoneId &&
+            locus.actorId !== input.viewpointActorId,
+        )
+        .map((locus) => locus.actorId)
+        .sort();
+      const bodilyReads = await computeEngagementBodilyReads(tx, {
+        branchId,
+        storySecond: after.storySecond,
+        viewpointActorId: input.viewpointActorId,
+        coPresentActorIds,
+      });
+      return {
+        after,
+        events: eventRows.map(branchEventFromRow),
+        space,
+        viewpointPressureRows,
+        viewpointObservations,
+        activityRows,
+        beliefRows,
+        softCanon,
+        bodilyReads,
+      };
     },
-    await loadSpaceRows(database, branchId),
+    { isolationLevel: "repeatable read", accessMode: "read only" },
   );
-  const viewpointPressureRows = await database
-    .select()
-    .from(simTemporalPressures)
-    .where(
-      and(
-        eq(simTemporalPressures.branchId, branchId),
-        isNull(simTemporalPressures.resolvedAt),
-        eq(simTemporalPressures.actorId, input.viewpointActorId),
-      ),
-    )
-    .orderBy(asc(simTemporalPressures.pressureId));
-  // E4.1: what the viewpoint perceived this interval comes from the committed
-  // observation log — the compiler re-decides nothing about witnessing.
-  const viewpointObservations = await loadViewpointObservations(
-    {
-      branchId,
-      witnessActorId: input.viewpointActorId,
-      fromSequence,
-      throughSequence: after.headSequence,
-    },
-    { database },
-  );
-  const activityRows = await database
-    .select()
-    .from(simActivities)
-    .where(eq(simActivities.branchId, branchId))
-    .orderBy(asc(simActivities.activityInstanceId));
-  // E4.2: the viewpoint's own live beliefs, joined to what each one claims —
-  // the speaker may voice them even when they are wrong.
-  const beliefRows = await database
-    .select({ belief: simBeliefs, assertion: simAssertions })
-    .from(simBeliefs)
-    .innerJoin(
-      simAssertions,
-      and(
-        eq(simAssertions.branchId, simBeliefs.branchId),
-        eq(simAssertions.assertionId, simBeliefs.assertionId),
-      ),
-    )
-    .where(
-      and(
-        eq(simBeliefs.branchId, branchId),
-        eq(simBeliefs.holderActorId, input.viewpointActorId),
-        inArray(simBeliefs.status, ["active", "doubted"]),
-      ),
-    )
-    .orderBy(desc(simBeliefs.believedFrom), asc(simBeliefs.beliefId))
-    .limit(MAX_BELIEF_ROWS);
-  const softCanon = await loadSoftCanonProjection(branchId, { database });
-  // E5.2: the layer-3 body surface — the viewpoint's own reads plus the
-  // perceivable signs of everyone sharing their zone. Empty for worlds with
-  // no initialized bodies, so pre-Gate-5 scenarios compile identical cuts.
-  const viewpointLocus = space.loci.find((locus) => locus.actorId === input.viewpointActorId);
-  const viewpointZoneId =
-    viewpointLocus && viewpointLocus.kind === "at" ? viewpointLocus.zoneId : undefined;
-  const coPresentActorIds = space.loci
-    .filter(
-      (locus) =>
-        locus.kind === "at" &&
-        viewpointZoneId !== undefined &&
-        locus.zoneId === viewpointZoneId &&
-        locus.actorId !== input.viewpointActorId,
-    )
-    .map((locus) => locus.actorId)
-    .sort();
-  const bodilyReads = await computeEngagementBodilyReads(database, {
-    branchId,
-    storySecond: after.storySecond,
-    viewpointActorId: input.viewpointActorId,
-    coPresentActorIds,
-  });
+  const { after } = snapshot;
 
   const cut = compileNarrativeCut({
     branchVersion: after.version,
     engagement,
     viewpointActorId: input.viewpointActorId,
-    events,
+    events: snapshot.events,
     fromSequence,
     throughSequence: after.headSequence,
     fromStorySecond,
     throughStorySecond: after.storySecond,
-    space,
-    activities: activityRows.map(activityFromRow),
-    viewpointObservations,
-    viewpointBeliefs: beliefRows.map((row) => ({
+    space: snapshot.space,
+    activities: snapshot.activityRows.map(activityFromRow),
+    viewpointObservations: snapshot.viewpointObservations,
+    viewpointBeliefs: snapshot.beliefRows.map((row) => ({
       belief: beliefFromRow(row.belief),
       assertion: assertionFromRow(row.assertion),
     })),
-    viewpointPressures: viewpointPressureRows.map((row) =>
+    viewpointPressures: snapshot.viewpointPressureRows.map((row) =>
       temporalPressureSchema.parse({
         id: row.pressureId,
         actorId: row.actorId,
@@ -454,9 +475,9 @@ export async function prepareEngagementTurn(
       }),
     ),
     failurePresentations: input.failurePresentations ?? [],
-    softCanonEntries: softCanon.entries,
+    softCanonEntries: snapshot.softCanon.entries,
     proposedArmedEffects: input.proposedArmedEffects ?? [],
-    bodilyReads,
+    bodilyReads: snapshot.bodilyReads,
   });
 
   // The cut becomes an immutable, addressable row. Rerender and

@@ -264,6 +264,14 @@ function command(
   return simCommand({ branchId: ids.branchId, name, type, principal, payload });
 }
 
+/** The cut's body surface, read the way the arbiter reads it: inside one snapshot. */
+function bodilyReadsAt(input: Parameters<typeof computeEngagementBodilyReads>[1]) {
+  return db().transaction((tx) => computeEngagementBodilyReads(tx, input), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
+}
+
 async function pendingTriggers(branchId: string, kind: SimulationTriggerKind) {
   return db()
     .select({
@@ -1192,7 +1200,7 @@ describe.runIf(harness.ready)(
       // so reading it directly at one fixed second is the apples-to-apples
       // comparison, mirroring the noor negative control just below).
       const atSecond = playerTurn.cut.throughStorySecond;
-      const maraSelfView = await computeEngagementBodilyReads(db(), {
+      const maraSelfView = await bodilyReadsAt({
         branchId: ids.branchId,
         storySecond: atSecond,
         viewpointActorId: ids.mara,
@@ -1212,7 +1220,7 @@ describe.runIf(harness.ready)(
 
       // Iris, co-located, is a close-range witness and gets exactly the same
       // perceivable tier as the player — never a richer or a numeric read.
-      const irisView = await computeEngagementBodilyReads(db(), {
+      const irisView = await bodilyReadsAt({
         branchId: ids.branchId,
         storySecond: atSecond,
         viewpointActorId: ids.iris,
@@ -1227,7 +1235,7 @@ describe.runIf(harness.ready)(
       // all — a direct check of the SAME pure seam a cut compiles from proves
       // the absence is structural (no co-presence -> no `observed` entry),
       // not merely an empty result from an unrelated cut.
-      const noorView = await computeEngagementBodilyReads(db(), {
+      const noorView = await bodilyReadsAt({
         branchId: ids.branchId,
         storySecond: SEED_SECOND,
         viewpointActorId: ids.noor,
