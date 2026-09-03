@@ -151,11 +151,15 @@ jobs:
             exit 0
           fi
 
+          # `--no-renames`: with rename detection a file moved from a code
+          # path into a documentation path is listed only at its destination,
+          # which would classify a code removal as documentation-only. Both
+          # sides of every rename must face the path rules below.
           zero_sha="0000000000000000000000000000000000000000"
           if [[ -z "$BASE_SHA" || "$BASE_SHA" == "$zero_sha" ]]; then
-            git diff-tree --no-commit-id --name-only -r "$HEAD_SHA" > changed-files.txt
+            git diff-tree --no-commit-id --name-only --no-renames -r "$HEAD_SHA" > changed-files.txt
           else
-            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
+            git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
           fi
 
           echo "Changed files:"

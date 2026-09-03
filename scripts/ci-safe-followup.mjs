@@ -17,10 +17,13 @@
 //   2. HISTORY — the previous head is an ancestor of the new head. A force
 //      push or a rebase breaks that, and so does a previous head the checkout
 //      no longer has: both fall back.
-//   3. PATHS — every path in `git diff --name-only PREVIOUS NEW` is in the
-//      documentation set the classifier's whole-PR rule uses (`docs/*`,
-//      `*.md`, `.github/ISSUE_TEMPLATE/*`, `.github/PULL_REQUEST_TEMPLATE*`).
-//      An empty diff falls back. The workflow file is outside the set, so a
+//   3. PATHS — every path in `git diff --name-only --no-renames PREVIOUS NEW`
+//      is in the documentation set the classifier's whole-PR rule uses
+//      (`docs/*`, `*.md`, `.github/ISSUE_TEMPLATE/*`,
+//      `.github/PULL_REQUEST_TEMPLATE*`). Rename detection is off so a code
+//      file moved into a documentation path shows up as its deleted source
+//      too, not only as its documentation destination. An empty diff falls
+//      back. The workflow file is outside the set, so a
 //      workflow change falls back like any other code path.
 //   4. PREVIOUS RESULT — the newest CI workflow run for this pull request at
 //      the previous head completed with `success`, and the pull request's base
@@ -176,22 +179,35 @@ function pullRequestOnRun(run, prNumber) {
 // Real adapters
 // ---------------------------------------------------------------------------
 
-const realGit = {
-  isAncestor(ancestor, descendant) {
-    try {
-      execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], { stdio: "pipe" });
-      return true;
-    } catch {
-      // Exit 1 is "not an ancestor"; anything else (128: unknown object) is
-      // history the checkout cannot vouch for. Both fall back.
-      return false;
-    }
-  },
-  changedFiles(from, to) {
-    const output = execFileSync("git", ["diff", "--name-only", from, to], { encoding: "utf8", stdio: "pipe" });
-    return output.split(/\r?\n/).filter((line) => line !== "");
-  },
-};
+/**
+ * The real git adapter over the checkout at `cwd`.
+ * @param {string} [cwd]
+ */
+export function gitAdapter(cwd = process.cwd()) {
+  return {
+    isAncestor(ancestor, descendant) {
+      try {
+        execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], { cwd, stdio: "pipe" });
+        return true;
+      } catch {
+        // Exit 1 is "not an ancestor"; anything else (128: unknown object) is
+        // history the checkout cannot vouch for. Both fall back.
+        return false;
+      }
+    },
+    changedFiles(from, to) {
+      // `--no-renames`: with git's default rename detection a rename reports
+      // only its destination, so moving `apps/web/x.ts` to `docs/x.md` would
+      // look documentation-only. Both sides must face the path predicate.
+      const output = execFileSync("git", ["diff", "--name-only", "--no-renames", from, to], {
+        cwd,
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      return output.split(/\r?\n/).filter((line) => line !== "");
+    },
+  };
+}
 
 function githubApi({ apiUrl, repo, token, workflowFile }) {
   async function get(route) {
@@ -247,7 +263,7 @@ async function main(env) {
       baseSha: env.BASE_SHA ?? "",
       prNumber: Number(env.PR_NUMBER),
     },
-    git: realGit,
+    git: gitAdapter(),
     api: githubApi({
       apiUrl: (env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, ""),
       repo,

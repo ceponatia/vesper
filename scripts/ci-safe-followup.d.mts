@@ -47,6 +47,9 @@ export interface SafeFollowupVerdict {
 
 export function isDocumentationPath(file: string): boolean;
 
+/** The real git adapter over the checkout at `cwd`: `merge-base --is-ancestor` and a rename-blind `diff --name-only`. */
+export function gitAdapter(cwd?: string): SafeFollowupGit;
+
 export function decideSafeFollowup(input: {
   event: SafeFollowupEvent;
   git: SafeFollowupGit;

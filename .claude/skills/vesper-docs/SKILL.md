@@ -221,9 +221,11 @@ Before finishing any change this skill governed:
 
   - **Every relative link in `docs/` resolves.** A `BROKEN LINK` hit names a
     target that no longer exists at that path — repoint it, or delete it.
-  - **Every `<file>.md §<Heading>` citation names a heading that file actually
-    has.** The link check proves only that the file exists, which is exactly how
-    a citation survives the section it names moving to a sibling page. A cited
+  - **Every `<file>.md §<Heading>` citation names a file that exists and a
+    heading that file actually has.** A `NO DOCUMENT` hit cites a file no
+    reader can open. The link check proves only that a linked file exists,
+    which is exactly how a citation survives the section it names moving to a
+    sibling page. A cited
     heading has no closing delimiter in prose, so the check takes the text after
     `§` up to the first `)`, `.`, `,`, `;`, `:` or backtick and accepts a heading
     that is a prefix of it, or it of a heading. A `NO SECTION` hit is real:

@@ -6,7 +6,7 @@
 //
 //   1. LINKS — every relative `.md` link in `docs/**/*.md` resolves to a file.
 //   2. SECTIONS — every `<file>.md §<Heading>` citation in `docs/` names a
-//      heading that file actually has. A link proves only that the file
+//      file that exists and a heading that file actually has. A link proves only that the file
 //      exists, which is exactly how a citation survives the section it names
 //      moving to a sibling page. A cited heading has no closing delimiter in
 //      prose, so the cited text runs to the first `)`, `.`, `,`, `;`, `:` or
@@ -125,8 +125,12 @@ function checkSectionCitations(root, docFiles, headingCache) {
     for (const match of text.matchAll(CITATION_PATTERN)) {
       const target = match[1];
       const section = match[2].trim();
+      if (!section) continue;
       const cited = [path.normalize(path.join(path.dirname(file), target)), path.join(root, target)].find(isFile);
-      if (!section || cited === undefined) continue;
+      if (cited === undefined) {
+        findings.push({ check: "NO DOCUMENT", file: display(root, file), target: `${target} §${section}` });
+        continue;
+      }
       const known = readHeadings(cited, headingCache).some(
         ({ heading, base }) => heading.startsWith(section) || section.startsWith(base),
       );
@@ -235,7 +239,7 @@ function main(argv) {
   const count = (check) => findings.filter((finding) => finding.check === check).length;
   const summary =
     `docs checks: ${docFiles} docs, ${count("BROKEN LINK")} broken links, ` +
-    `${count("NO SECTION")} bad section citations, ` +
+    `${count("NO DOCUMENT") + count("NO SECTION")} bad section citations, ` +
     `${count("RETIRED DOCUMENT") + count("RETIRED SECTION")} retired-document references`;
   if (findings.length > 0) {
     console.error(`FAIL ${summary}`);

@@ -81,6 +81,14 @@ describe("check-docs", () => {
       "BROKEN LINK docs/README.md -> sub/missing.md",
     ],
     [
+      "a section citation naming a document that does not exist",
+      { "docs/guide.md": `# Guide
+
+See recovery.md ${SECTION}Ladder.
+` },
+      `NO DOCUMENT docs/guide.md -> recovery.md ${SECTION}Ladder`,
+    ],
+    [
       "a section citation naming a heading the file does not have",
       { "docs/guide.md": `# Guide\n\nSee resilience.md ${SECTION}Recovery ladder.\n` },
       `NO SECTION docs/guide.md -> resilience.md ${SECTION}Recovery ladder`,

@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { decideSafeFollowup } from "./ci-safe-followup.mjs";
+import { decideSafeFollowup, gitAdapter } from "./ci-safe-followup.mjs";
 import type { CheckRunLike, SafeFollowupEvent, WorkflowRunLike } from "./ci-safe-followup.mjs";
 
 /**
@@ -115,6 +115,37 @@ describe("ci-safe-followup", () => {
     const verdict = await decide(scenario);
     expect(verdict.safe).toBe(false);
     expect(verdict.reason).toMatch(reason);
+  });
+});
+
+describe("ci-safe-followup git adapter", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Git's default rename detection lists a rename only at its destination, so
+  // a code file moved under docs/ would read as documentation-only. The
+  // adapter must report both sides.
+  it("lists both sides of a rename from a code path into a documentation path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "vesper-safe-followup-git-"));
+    dirs.push(dir);
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: "pipe" }).trim();
+    git("init", "-q");
+    git("config", "user.email", "ci@vesper.local");
+    git("config", "user.name", "ci");
+    mkdirSync(join(dir, "apps", "web"), { recursive: true });
+    writeFileSync(join(dir, "apps", "web", "x.ts"), "export const x = 1;\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "code");
+    const before = git("rev-parse", "HEAD");
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    renameSync(join(dir, "apps", "web", "x.ts"), join(dir, "docs", "x.md"));
+    git("add", "-A");
+    git("commit", "-q", "-m", "move");
+    const head = git("rev-parse", "HEAD");
+    expect(gitAdapter(dir).changedFiles(before, head).sort()).toEqual(["apps/web/x.ts", "docs/x.md"]);
   });
 });
 
