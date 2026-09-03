@@ -212,62 +212,33 @@ page. Most owner rulings never become ADRs.
 
 Before finishing any change this skill governed:
 
-- **Every relative link in `docs/` resolves** — run it, don't eyeball it:
+- **Run the documentation gate — `pnpm lint:docs`** (`scripts/check-docs.mjs`,
+  Node built-ins only, no install needed). It is the one owner of the three
+  mechanical checks; CI runs the same script in its `documentation checks` job
+  on every change that touches a documentation path, and `verify` fails when it
+  fails. It prints one line per finding naming the file and the target, and
+  proves:
 
-  ```bash
-  python3 -c "
-  import re,os,glob
-  n=0
-  for f in glob.glob('docs/**/*.md',recursive=True):
-      d=os.path.dirname(f)
-      for m in re.finditer(r'\]\(([^)#]+\.md)(?:#[^)]*)?\)',open(f,encoding='utf-8').read()):
-          t=m.group(1)
-          if not t.startswith('http') and not os.path.exists(os.path.normpath(os.path.join(d,t))):
-              n+=1; print('BROKEN',f,'->',t)
-  print('broken:',n)"
-  ```
-
-- **Every `<file>.md §<Heading>` citation names a heading that file actually
-  has.** The link check above proves only that the file exists, which is exactly
-  how a citation survives the section it names moving to a sibling page:
-
-  ```bash
-  python3 -c '
-  import re,os,glob
-  cache={}
-  def heads(p):
-      if p not in cache:
-          hs=[re.sub(r"\s+"," ",l).strip("# ").strip() for l in open(p,encoding="utf-8") if l.startswith("#")]
-          cache[p]=[(h,re.sub(r"\s*\(.*","",h)) for h in hs]
-      return cache[p]
-  n=0
-  for f in glob.glob("docs/**/*.md",recursive=True):
-      text=re.sub(r"\s+"," ",open(f,encoding="utf-8").read())
-      for t,sec in re.findall(r"([\w./-]+\.md)[`)]* §([^).,;:`]+)",text):
-          sec=sec.strip()
-          p=next((c for c in (os.path.normpath(os.path.join(os.path.dirname(f),t)),t) if os.path.exists(c)),None)
-          if not sec or p is None: continue
-          if not any(h.startswith(sec) or sec.startswith(b) for h,b in heads(p)):
-              n+=1; print("NO SECTION",f,"->",t,"§"+sec)
-  print("bad section citations:",n)'
-  ```
-
-  A cited heading has no closing delimiter in prose, so the check takes the text
-  after `§` up to the first `)`, `.`, `,`, `;`, `:` or backtick and accepts a
-  heading that is a prefix of it, or it of a heading. A hit is real: repoint the
-  citation at the page that owns the section, or drop the `§` and name the file
-  alone.
-
-- **No reference to a retired working document survives, in any form** — the
-  rule, its rationale, and the `§N` clause it carries are stated once, in
-  `docs/README.md`'s documentation rules. Enforce it here:
-
-  ```bash
-  git grep -nE "[a-z0-9-]+\.(plan|spec|trial|audit|deferred|research|followups)\.md|§[0-9]" -- apps packages scripts docs
-  ```
-
-  Every hit must name a file that exists under `docs/`, or be a doc's reference
-  to its own numbered sections.
+  - **Every relative link in `docs/` resolves.** A `BROKEN LINK` hit names a
+    target that no longer exists at that path — repoint it, or delete it.
+  - **Every `<file>.md §<Heading>` citation names a heading that file actually
+    has.** The link check proves only that the file exists, which is exactly how
+    a citation survives the section it names moving to a sibling page. A cited
+    heading has no closing delimiter in prose, so the check takes the text after
+    `§` up to the first `)`, `.`, `,`, `;`, `:` or backtick and accepts a heading
+    that is a prefix of it, or it of a heading. A `NO SECTION` hit is real:
+    repoint the citation at the page that owns the section, or drop the `§` and
+    name the file alone.
+  - **No reference to a retired working document survives, in any form**, in
+    `apps`, `packages`, `scripts` or `docs` — the rule, its rationale, and the
+    `§N` clause it carries are stated once, in `docs/README.md`'s documentation
+    rules. A `RETIRED DOCUMENT` hit names a `<name>.{plan,spec,trial,audit,
+    deferred,research,followups}.md` that does not exist under `docs/`: state
+    the rule it carried instead of naming it. A `RETIRED SECTION` hit is a bare
+    `§N` whose line names no still-existing document under `docs/` with a
+    numbered section N (a doc citing its own numbered section is allowed): put
+    the document's path on the same line, as in `docs/resilience.md §2`, or
+    write the section out in words.
 
 - **No dynamic state in any durable doc you touched** — check against the
   banned list above, and search touched files for `Status:`, `slice`,
@@ -277,5 +248,5 @@ Before finishing any change this skill governed:
 - Tables you touched are aligned or converted to lists; no residue phrases in
   anything you wrote.
 
-Documentation-only changes run no code gates (root `CLAUDE.md`); these checks
-are the review.
+Documentation-only changes run no code gates (root `CLAUDE.md`): CI runs
+`pnpm lint:docs` and nothing else, so the rest of this list is the review.

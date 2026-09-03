@@ -49,7 +49,7 @@
 
 - **CI is the gate:** GitHub Actions on AWS CodeBuild managed runners (`.github/workflows/ci.yml`, `runs-on: codebuild-vesper-ci-…`; owner decision 2026-08-21). There are **no local git hooks** — commits and pushes run nothing. The aggregate `verify` status check is **required on `main` and `prod`**; a PR merges only when it is green.
 - Milestone-gated per the workflow header: draft PRs run nothing, ready PRs run the applicable gates, and `gh workflow run CI --ref main` is the deliberate full run. CodeBuild bills per job-minute, so keep PRs draft while iterating.
-- For documentation-only changes, review Markdown rendering, links, and consistency instead of running code gates.
+- For documentation-only changes, run `pnpm lint:docs` (the check CI's `documentation checks` job runs) and review Markdown rendering and consistency instead of running code gates.
 - Two workflows exist: `ci.yml` (the CI suite) and `promote.yml` (manually opens the `main` → `prod` PR). Do not add another without an explicit owner decision.
 
 ## Git & delivery

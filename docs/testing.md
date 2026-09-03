@@ -150,13 +150,33 @@ The gate is CI: GitHub Actions on AWS CodeBuild managed runners
 mark a PR ready to run the applicable gates, and `gh workflow run CI --ref main`
 is the deliberate full pre-deploy run (engine and build included).
 
-| Job                | Runs                                                           |
-| ------------------ | -------------------------------------------------------------- |
-| lint               | type-aware ESLint at `--max-warnings 0`                        |
-| static checks      | cycles, authz, package boundaries/resolution, typecheck, jscpd |
-| unit tests         | the pure Vitest suite (no database)                            |
-| engine integration | `pnpm test:engine` (strict) + the Gate 1 benchmark             |
-| production build   | the Next production build, heap-pinned to 4096 MB              |
+| Job                  | Runs                                                           |
+| -------------------- | -------------------------------------------------------------- |
+| documentation checks | `pnpm lint:docs` — links, section citations, retired documents |
+| lint                 | type-aware ESLint at `--max-warnings 0`                        |
+| static checks        | cycles, authz, package boundaries/resolution, typecheck, jscpd |
+| unit tests           | the pure Vitest suite (no database)                            |
+| engine integration   | `pnpm test:engine` (strict) + the Gate 1 benchmark             |
+| production build     | the Next production build, heap-pinned to 4096 MB              |
+
+The classifier decides which jobs a PR runs from its changed paths. Every
+change that touches a documentation path (`docs/`, any `.md`, the issue and PR
+templates) runs the **documentation checks** job: `pnpm lint:docs`
+(`scripts/check-docs.mjs`, Node built-ins only, so the job checks out the tree
+and runs it with no install), which fails on a relative link in `docs/` that
+does not resolve, a `<file>.md §Heading` citation naming a heading the file
+does not have, or a reference to a retired working document — the rules the
+`vesper-docs` skill states. A PR that changes documentation paths only runs
+that job and nothing else; a mixed change runs it alongside the code gates.
+Every ready code PR runs lint, static checks and unit tests; the engine and
+build jobs are path-gated as described below.
+
+**`verify` requires every applicable gate to have succeeded.** A gate the
+classifier enabled must report `success`; `skipped`, `cancelled` or `failure`
+there fails the aggregate, so a job that never ran can never be reported as a
+pass. A gate the classifier did not enable is expected to be skipped, and any
+other result fails `verify` too. A failed classifier leaves every output empty
+and every gate skipped, which the same rule turns red.
 
 The **engine job** is the only one that needs Docker, so it is also the only one
 billed on an EC2 runner rather than Lambda. On an ordinary PR into `main` it is

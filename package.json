@@ -16,6 +16,7 @@
     "lint:authz": "tsx scripts/check-route-authz.ts",
     "lint:package-boundaries": "tsx scripts/check-workspace-imports.ts",
     "lint:package-resolution": "tsx scripts/check-package-resolution.ts",
+    "lint:docs": "node scripts/check-docs.mjs",
     "typecheck": "tsc -p tsconfig.json && pnpm -r --workspace-concurrency=1 run typecheck",
     "jscpd": "jscpd",
     "jscpd:clones": "jscpd --reporters console",
