@@ -14,7 +14,12 @@ import {
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
-import { referenceViewRefusalCopy, referenceViewStateCopy } from "./reference-view-copy";
+import {
+  referenceViewRebuildQueuedTitle,
+  referenceViewRefusalCopy,
+  referenceViewSelectionActionLabel,
+  referenceViewStateCopy,
+} from "./reference-view-copy";
 import { ReferenceViewHistory, type ReferenceViewHistorySlot } from "./reference-view-history";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -43,9 +48,27 @@ import { useToast } from "@/components/ui/toast";
  * every tile, and the thumbnail is its own button beside the review buttons
  * rather than around them, so opening or closing it can neither reach nor be
  * reached by Approve, Reject, Regenerate or Upload.
+ *
+ * A tile's **History** opens that slot's past attempts in their own read-only
+ * overlay (`reference-view-history.tsx`), mounted last and only while open.
+ *
+ * **Regeneration is a selection, not a queue the owner works through.** Every
+ * attempted tile carries a checkbox, and the selection submits as ONE request
+ * that the server admits, charges and runs as one batch. Nothing here waits for
+ * one rebuild to finish before the next may be asked for: what a rebuild costs
+ * is the image budget's question, and the studio must not invent a second,
+ * quieter limit by making the owner click eight times.
  */
 
 const POLL_MS = 3000;
+
+/** The empty selection, shared so clearing one twice is not two renders. */
+const NO_SLOTS: ReadonlySet<string> = new Set<string>();
+
+/** One tile's identity, spelled once. */
+function slotKey(view: { angle: string; wardrobe: string }): string {
+  return `${view.angle} ${view.wardrobe}`;
+}
 
 export interface ReferenceViewsPanelProps {
   characterId: string;
@@ -68,6 +91,16 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   const toast = useToast();
   const [busySlot, setBusySlot] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
+  /** The slots the owner has ticked, waiting to be submitted together. */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(NO_SLOTS);
+  /**
+   * The slots the server has accepted a rebuild for but whose rows have not
+   * caught up yet. It replaces the old character-wide lock: a live batch marks
+   * ITS OWN targets busy and leaves every other tile — and the checkboxes —
+   * usable, so the next selection can be assembled while this one runs.
+   */
+  const [submitted, setSubmitted] = useState<ReadonlySet<string>>(NO_SLOTS);
+  const [submitting, setSubmitting] = useState(false);
   const [enlarged, setEnlarged] = useState<{ imageId: string; label: string } | null>(null);
   const [historySlot, setHistorySlot] = useState<ReferenceViewHistorySlot | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -78,11 +111,31 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   // A build is live server-side, or a slot is still holding a pending row. Both
   // arm the poll: the job row covers the stretch before the first row is
   // reserved, where the rows alone say nothing is happening.
-  const inFlight = (set?.building ?? false) || (set?.views.some((view) => view.state === "pending") ?? false) || building;
+  const inFlight =
+    (set?.building ?? false) ||
+    (set?.views.some((view) => view.state === "pending") ?? false) ||
+    building ||
+    // The optimistic marks a submit placed keep the poll alive until a tick has
+    // pruned them, so a batch that settles before the first tick cannot leave a
+    // tile busy forever.
+    submitted.size > 0;
 
   usePollWhile(
     inFlight,
     () => {
+      // The optimistic marks are dropped as the rows catch up: a slot the set
+      // now reports `pending` has its own "building…" chip to carry it, and a
+      // set with nothing live has settled everything it was going to.
+      setSubmitted((prev) => {
+        const current = views.data?.set;
+        if (prev.size === 0 || !current) return prev;
+        if (!current.building && !current.views.some((view) => view.state === "pending")) return NO_SLOTS;
+        const next = new Set(prev);
+        for (const view of current.views) {
+          if (view.state === "pending") next.delete(slotKey(view));
+        }
+        return next.size === prev.size ? prev : next;
+      });
       views.reload({ silent: true });
       onChanged();
     },
@@ -91,10 +144,13 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
 
   if (views.loading || views.error || set === null) return null;
 
-  const bySlot = new Map(set.views.map((view) => [`${view.angle} ${view.wardrobe}`, view]));
+  const bySlot = new Map(set.views.map((view) => [slotKey(view), view]));
   const buildable = set.views.some(
     (view) => view.state === "missing" || view.state === "stale" || view.state === "failed",
   );
+  // Read back off the set rather than out of the checkbox state, so a slot that
+  // vanished between tick and submit cannot inflate the count the owner is shown.
+  const selectedViews = set.views.filter((view) => selected.has(slotKey(view)));
 
   const refetch = () => {
     views.reload({ silent: true });
@@ -129,21 +185,53 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     refetch();
   };
 
-  const regenerate = async (view: ReferenceViewSummary) => {
-    const slot = `${view.angle} ${view.wardrobe}`;
-    setBusySlot(slot);
-    const result = await referenceViewsApi.regenerate(characterId, view.angle, view.wardrobe);
-    setBusySlot(null);
+  const unmark = (keys: readonly string[]) => {
+    setSubmitted((prev) => {
+      const next = new Set(prev);
+      for (const key of keys) next.delete(key);
+      return next;
+    });
+  };
+
+  /**
+   * Rebuild every named slot in ONE request — the single card's Regenerate is
+   * this call with one target, so both paths are charged, admitted and run the
+   * same way.
+   *
+   * The selection survives a refusal. A batch the server would not take (a live
+   * build, a spent budget) is work the owner still wants, and clearing their
+   * ticks would make them reassemble it.
+   */
+  const regenerate = async (targets: readonly ReferenceViewSummary[]) => {
+    if (targets.length === 0) return;
+    const keys = targets.map(slotKey);
+    setSubmitting(true);
+    setSubmitted((prev) => new Set([...prev, ...keys]));
+    const result = await referenceViewsApi.regenerate(
+      characterId,
+      targets.map((view) => ({ angle: view.angle, wardrobe: view.wardrobe })),
+    );
+    setSubmitting(false);
     if (!result.ok) {
-      toast.push({ title: "Could not rebuild that view", description: result.error.message, tone: "error" });
+      unmark(keys);
+      toast.push({
+        title: keys.length === 1 ? "Could not rebuild that view" : "Could not rebuild those views",
+        description: result.error.message,
+        tone: "error",
+      });
       return;
     }
-    reportQueue(result.data.views, "Rebuilding that view…");
+    if (result.data.views.queued) {
+      setSelected(NO_SLOTS);
+    } else {
+      unmark(keys);
+    }
+    reportQueue(result.data.views, referenceViewRebuildQueuedTitle(keys.length));
     refetch();
   };
 
   const review = async (view: ReferenceViewSummary, verdict: "approve" | "reject") => {
-    const slot = `${view.angle} ${view.wardrobe}`;
+    const slot = slotKey(view);
     setBusySlot(slot);
     const result = await referenceViewsApi.review(characterId, view.angle, view.wardrobe, verdict);
     setBusySlot(null);
@@ -163,7 +251,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     const target = uploadTarget.current;
     uploadTarget.current = null;
     if (!file || !target) return;
-    const slot = `${target.angle} ${target.wardrobe}`;
+    const slot = slotKey(target);
     setBusySlot(slot);
     const dataUrl = await readAsDataUrl(file);
     if (dataUrl === null) {
@@ -196,17 +284,38 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
         ) : null}
       </div>
 
+      {selectedViews.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-card border border-ink-600 bg-ink-950/40 p-2">
+          <Button
+            size="sm"
+            variant="primary"
+            busy={submitting}
+            disabled={set.building}
+            title={set.building ? referenceViewRefusalCopy.busy : undefined}
+            onClick={() => void regenerate(selectedViews)}
+          >
+            {referenceViewSelectionActionLabel(selectedViews.length)}
+          </Button>
+          <Button size="sm" variant="quiet" onClick={() => setSelected(NO_SLOTS)}>
+            Clear selection
+          </Button>
+        </div>
+      ) : null}
+
       {referenceViewWardrobeEntries.map((wardrobe) => (
         <div key={wardrobe.id} className="flex flex-col gap-2">
           <h4 className="text-xs text-paper-500">{wardrobe.label}</h4>
           <div className="flex flex-wrap gap-3">
             {referenceViewAngles.map((angle) => {
-              const view = bySlot.get(`${angle.id} ${wardrobe.id}`);
+              const view = bySlot.get(slotKey({ angle: angle.id, wardrobe: wardrobe.id }));
               if (!view) return null;
               const copy = referenceViewStateCopy[view.state];
-              const slot = `${view.angle} ${view.wardrobe}`;
+              const slot = slotKey(view);
               const busy = busySlot === slot;
               const label = `${angle.label}, ${wardrobe.label}`;
+              // A slot is selectable once something has been attempted in it —
+              // there is nothing to REbuild in an empty or still-rendering one.
+              const attempted = view.state !== "missing" && view.state !== "pending";
               return (
                 <div
                   key={angle.id}
@@ -227,6 +336,21 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {attempted ? (
+                      <input
+                        type="checkbox"
+                        className="accent-accent-500"
+                        checked={selected.has(slot)}
+                        aria-label={`Select ${label} for regeneration`}
+                        onChange={() =>
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (!next.delete(slot)) next.add(slot);
+                            return next;
+                          })
+                        }
+                      />
+                    ) : null}
                     <span className="text-xs text-paper-300">{angle.label}</span>
                     <Tag tone={copy.tone}>{copy.label}</Tag>
                   </div>
@@ -244,17 +368,16 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                         </Button>
                       </>
                     ) : null}
-                    {view.state === "missing" || view.state === "pending" ? null : (
+                    {attempted ? (
                       <Button
                         size="sm"
                         variant="ghost"
-                        busy={busy}
-                        disabled={set.building}
-                        onClick={() => void regenerate(view)}
+                        busy={submitted.has(slot)}
+                        onClick={() => void regenerate([view])}
                       >
                         Regenerate
                       </Button>
-                    )}
+                    ) : null}
                     <Button size="sm" variant="ghost" busy={busy} onClick={() => pickUpload(view)}>
                       Upload
                     </Button>

@@ -9,7 +9,7 @@ import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
-import { referenceViewHistoryEntrySchema, referenceViewQueueOutcomeSchema, referenceViewSetSummarySchema, referenceViewSummarySchema, type ReferenceViewAngleId, type ReferenceViewHistoryEntry, type ReferenceViewHistoryVerdict, type ReferenceViewQueueOutcome, type ReferenceViewSetSummary, type ReferenceViewState, type ReferenceViewSummary, type ReferenceViewWardrobe, portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, type CharacterPortraitAcceptance, characterPortraitAcceptanceSchema, emptyCharacterPortraitAcceptance, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
+import { referenceViewHistoryEntrySchema, referenceViewQueueOutcomeSchema, referenceViewSetSummarySchema, referenceViewSummarySchema, type ReferenceView, type ReferenceViewAngleId, type ReferenceViewHistoryEntry, type ReferenceViewHistoryVerdict, type ReferenceViewQueueOutcome, type ReferenceViewSetSummary, type ReferenceViewState, type ReferenceViewSummary, type ReferenceViewWardrobe, portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, type CharacterPortraitAcceptance, characterPortraitAcceptanceSchema, emptyCharacterPortraitAcceptance, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, hairOcclusionSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
 import {
   type IdentityPackAdminOverrideRequest,
   type IdentityPackAdminRevision,
@@ -1236,7 +1236,7 @@ export const charactersApi = {
 // Reference views
 // ---------------------------------------------------------------------------
 
-export type { ReferenceViewAngleId, ReferenceViewHistoryEntry, ReferenceViewHistoryVerdict, ReferenceViewQueueOutcome, ReferenceViewSetSummary, ReferenceViewState, ReferenceViewSummary, ReferenceViewWardrobe };
+export type { ReferenceView, ReferenceViewAngleId, ReferenceViewHistoryEntry, ReferenceViewHistoryVerdict, ReferenceViewQueueOutcome, ReferenceViewSetSummary, ReferenceViewState, ReferenceViewSummary, ReferenceViewWardrobe };
 
 /**
  * `{ set, planned }` — the studio's whole read of a character's reference views.
@@ -1288,9 +1288,15 @@ export const referenceViewsApi = {
   /** Build every slot that is missing, failed or stale for the current accepted portrait. */
   build: (characterId: string) =>
     apiPost(referenceViewQueueResponseSchema, `/api/characters/${characterId}/reference-views/build`, {}),
-  /** Rebuild one slot, whatever state it is in — including a rejected one. */
-  regenerate: (characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe) =>
-    apiPost(referenceViewQueueResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/regenerate`, {}),
+  /**
+   * Rebuild the named slots — any state, a rejected one included — as ONE batch:
+   * one admission, one charge, one job, every target started together. A single
+   * card's Regenerate is this call with one target.
+   */
+  regenerate: (characterId: string, targets: readonly ReferenceView[]) =>
+    apiPost(referenceViewQueueResponseSchema, `/api/characters/${characterId}/reference-views/regenerate`, {
+      targets,
+    }),
   /** Replace one slot with an owner-supplied image. Synchronous — no polling. */
   upload: (characterId: string, angle: ReferenceViewAngleId, wardrobe: ReferenceViewWardrobe, dataUrl: string) =>
     apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/upload`, { dataUrl }),

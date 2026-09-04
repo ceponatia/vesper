@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import {
   characterProfileSchema,
   emptyCharacterProfile,
+  normalizeReferenceViewTargets,
   outfitItems,
   plannedReferenceViews,
   referenceViewAngleById,
@@ -84,10 +85,6 @@ const SCOPE = "images.reference_views";
 /** A view's render failed. The expected instance is a moderated bare view. */
 export const REFERENCE_VIEW_BUILD_FAILED = `${SCOPE}.build_failed`;
 
-/** How many views render at once. Two: enough to hide latency, small enough that a
- * background sheet never crowds out the render the owner is watching. */
-const BUILD_CONCURRENCY = 2;
-
 export interface BuildReferenceViewsInput {
   characterId: string;
   ownerId: string;
@@ -154,6 +151,11 @@ interface BuildContext {
  * way `renderChatLookImage` does: a background job has no request sink, and a
  * refusal that pushed a diagnostic into nothing is a sheet that silently never
  * appears.
+ *
+ * One pass reads the character, the accepted portrait's bytes and the wardrobe
+ * ONCE, and then starts every target it was given at the same moment
+ * ({@link runReferenceViewBuilds}). The batch is one job, admitted and charged
+ * once by whoever queued it.
  */
 export async function buildReferenceViews(input: BuildReferenceViewsInput): Promise<ReferenceViewBuildReport> {
   const collected = new DiagnosticCollector();
@@ -195,9 +197,9 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
   // The age gate, before anything is reserved: a bare slot the ruling refuses is
   // never a row, never a charge and never a failed tile.
   const planned = plannedReferenceViews(profile);
-  const targets = (input.targets ?? planned).filter((target) =>
-    planned.some((entry) => entry.angle === target.angle && entry.wardrobe === target.wardrobe),
-  );
+  // Normalized rather than merely filtered: a caller that named one slot twice
+  // gets one attempt, so no batch can supersede its own render mid-flight.
+  const { targets } = normalizeReferenceViewTargets(input.targets ?? planned, planned);
   if (targets.length === 0) return report("built", planned.length);
 
   if (isDemoMode() || !hasReplicate()) {
@@ -235,25 +237,43 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
     sink,
   };
 
-  let built = 0;
-  let failed = 0;
-  // Bounded parallelism as a shared cursor over the target list: two workers
-  // pull the next slot until there are none, so a slow view delays the sheet
-  // rather than the whole pass.
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const index = next++;
-      const target = targets[index];
-      if (target === undefined) return;
-      const ok = await buildOneReferenceView(context, target);
-      if (ok) built += 1;
-      else failed += 1;
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(BUILD_CONCURRENCY, targets.length) }, worker));
+  const { built, failed } = await runReferenceViewBuilds(targets, (target) =>
+    buildOneReferenceView(context, target),
+  );
 
   return report("built", planned.length, built, failed);
+}
+
+/**
+ * Every target in one admitted batch, started together.
+ *
+ * The batch was admitted once, charged once and runs as one background job; the
+ * only thing the old two-worker cursor bought was rendering an eight-view sheet
+ * in four waves, which is latency the owner watches for no gain. Spend is
+ * governed where spend is decided — the daily image budget, backpressure and the
+ * per-user job cap — never by an arithmetic limit here.
+ *
+ * `buildOne` MUST NOT throw. That is what keeps settlement per-slot: each target
+ * reserves, renders and settles its own row, so a moderated bare view fails
+ * exactly one tile and the other seven finish. `buildOneReferenceView` is
+ * written to that contract, and a throw from it is a defect that fails the whole
+ * pass loudly rather than being counted as a refusal.
+ *
+ * Extracted so the concurrency promise can be exercised on its own: the claim is
+ * about the fan-out, not about the database underneath one view.
+ */
+export async function runReferenceViewBuilds(
+  targets: readonly ReferenceView[],
+  buildOne: (target: ReferenceView) => Promise<boolean>,
+): Promise<{ built: number; failed: number }> {
+  const settled = await Promise.all(targets.map((target) => buildOne(target)));
+  let built = 0;
+  let failed = 0;
+  for (const ok of settled) {
+    if (ok) built += 1;
+    else failed += 1;
+  }
+  return { built, failed };
 }
 
 // ---------------------------------------------------------------------------
