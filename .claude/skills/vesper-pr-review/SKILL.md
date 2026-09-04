@@ -42,8 +42,9 @@ exactly the message that would have exposed the last silent 30-minute loop.
 
 `ci-failure.sh <pr>` prints the jobs and the failed steps' logs. Fix from the
 log and the code, commit by pathspec, push, wait again. **Do not** run
-`pnpm lint`, `pnpm test`, `pnpm typecheck` or `scripts/verify.sh` locally to
-"reproduce" — owner ruling 2026-08-22, tightened 2026-08-24 after a local
+`pnpm lint`, `pnpm test`, `pnpm typecheck`, `scripts/verify.sh`, or any
+`vitest` invocation locally to "reproduce" — owner ruling 2026-08-22,
+tightened 2026-08-24 and again 2026-09-04 (no narrow vitest runs) after a local
 `lint:package-resolution` coincided with the desktop crashing. The project's
 permission deny list enforces this; CodeBuild is the only gate that counts.
 

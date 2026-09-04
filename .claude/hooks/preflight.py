@@ -37,9 +37,10 @@ ACK_INDEX = "VESPER_INDEX_OK=1"
 # The settings deny list catches the bare families; this catches every
 # `pnpm test:*` / `pnpm lint:*` sub-script, `pnpm run …`, and scripts/verify.sh,
 # which the deny syntax (space-star prefixes only) cannot express.
-GATE_SCRIPT = re.compile(r"^(test|lint|typecheck|verify)(?::[\w.-]+)?$")
+GATE_SCRIPT = re.compile(r"^(test|lint|typecheck|verify|vitest)(?::[\w.-]+)?$")
 GATE_ALLOWED = {"lint:docs"}  # sanctioned for documentation-only changes (CLAUDE.md)
-PNPM_PASSTHROUGH = {"run", "-r", "--recursive", "-w", "--workspace-root", "--stream", "--parallel"}
+PNPM_PASSTHROUGH = {"run", "exec", "dlx", "-r", "--recursive", "-w", "--workspace-root", "--stream", "--parallel"}
+RUNNERS = {"npx", "pnpx", "bunx"}  # `npx vitest …` — owner ruling 2026-09-04: no local vitest either
 SEPARATORS = {"&&", "||", ";", "|", "&"}
 COMMIT_VALUE_OPTS = {
     "-m", "--message", "-F", "--file", "-C", "--reuse-message", "-c",
@@ -156,6 +157,10 @@ def gate_violation(seg: list[str]) -> str | None:
     invoked = seg[0] if seg[0] not in ("bash", "sh", "zsh", "source", ".") else (seg[1] if len(seg) > 1 else "")
     if invoked.endswith("scripts/verify.sh"):
         return "scripts/verify.sh"
+    if os.path.basename(seg[0]) == "vitest":
+        return "vitest"
+    if seg[0] in RUNNERS and len(seg) > 1 and seg[1] == "vitest":
+        return f"{seg[0]} vitest"
     if seg[0] != "pnpm":
         return None
     i = 1
@@ -291,7 +296,7 @@ def main() -> int:
     if payload.get("tool_name") != "Bash":
         return 0
     command = (payload.get("tool_input") or {}).get("command") or ""
-    if not any(k in command for k in ("fly", "git", "pnpm", "verify.sh")):
+    if not any(k in command for k in ("fly", "git", "pnpm", "verify.sh", "vitest")):
         return 0
     start = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 

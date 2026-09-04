@@ -52,7 +52,8 @@ the smaller option or nothing.>
 
 - Do NOT run lint, typecheck, tests, builds, or any `pnpm` script
   (`pnpm lint*`, `pnpm test*`, `pnpm typecheck`, `pnpm verify`,
-  `scripts/verify.sh`). CI on CodeBuild validates when the owner readies the
+  `scripts/verify.sh`) — and not `vitest` in any form, not even one file
+  under one project. CI on CodeBuild validates when the owner readies the
   PR; local gate runs are wasted minutes on a memory-fragile machine and are
   denied by project settings. Diagnose by reading code.
 - Do NOT push, open a PR, edit the board, or comment on GitHub. Commit on
