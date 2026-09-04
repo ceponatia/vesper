@@ -49,30 +49,39 @@ export interface AttributePickerProps {
   speciesId?: string;
   heritageId?: string;
   bodyPlanId?: string;
+  /**
+   * Section expanded on first render; the accordion otherwise starts fully
+   * collapsed. Section ids are the attribute category (`"chest"`) or the
+   * synthetic areas (`"pelvis-area"`, `"body-config"`, `"body-features"`).
+   */
+  defaultOpenSection?: string;
 }
 
 /**
- * Explicit / below-waist attribute categories that render *nested inside* an
- * anatomical area rather than as their own top-level section, so they read as
- * part of the body region they belong to instead of floating loose at the top:
+ * Explicit / below-waist attribute categories that render inside an anatomical
+ * area rather than as their own top-level section, so they read as part of the
+ * body region they belong to instead of floating loose at the top:
  *
- *  - `breasts` nests inside the everyday **Chest** section.
+ *  - `breasts` renders as rows of the everyday **Chest** section, peers of the
+ *    chest fields — no sub-heading, rail, or indent. The realized body already
+ *    swapped the field set (chest build + chest hair ↔ `breasts.*`), so the
+ *    section only ever shows one owner of each fact.
  *  - the universal `buttocks` / `anus` / `perineum` and the gated `vulva` /
- *    `penis` / `testicles` nest inside a synthetic **Pelvis** area (there is no
- *    everyday `pelvis` attribute group to host them).
+ *    `penis` / `testicles` nest as sub-groups inside a synthetic **Pelvis** area
+ *    (there is no everyday `pelvis` attribute group to host them).
  *
  * `buttocks`, `anus`, and `perineum` are universal anatomy (present on every
  * body, like hips) so they always show; the genital categories appear only when
  * the body-config switches their region on.
  */
-const NESTED_UNDER_CHEST = ["breasts"] as const;
+const FLATTENED_INTO_CHEST = ["breasts"] as const;
 // Universal pelvis anatomy (always present) vs gated genitals (present only when
 // the body-config switches the region on). The genital list drives the
 // "configure a region" hint; the universal categories render regardless.
 const PELVIS_UNIVERSAL_CATEGORIES = ["buttocks", "anus", "perineum"] as const;
 const PELVIS_GENITAL_CATEGORIES = ["vulva", "penis", "testicles"] as const;
 const PELVIS_CATEGORIES = [...PELVIS_UNIVERSAL_CATEGORIES, ...PELVIS_GENITAL_CATEGORIES] as const;
-const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATEGORIES]);
+const HOSTED_CATEGORIES = new Set<string>([...FLATTENED_INTO_CHEST, ...PELVIS_CATEGORIES]);
 
 /**
  * Registry-driven attribute editor (docs/authoring/manual-editing.md §The
@@ -85,10 +94,11 @@ const NESTED_CATEGORIES = new Set<string>([...NESTED_UNDER_CHEST, ...PELVIS_CATE
  * stays sparse without an "add attribute" select. Attributes are filtered
  * through the realized body (species/realize.ts): intimate groups appear only
  * when the body-config switches their region on, and the explicit anatomy
- * nests under its anatomical area (Chest / Pelvis) rather than at the top.
- * The realized body is the ONLY visibility rule — no gender special-casing —
- * so toggling the breasts region swaps the Chest section's field set in place
- * (chest build ↔ breast size) whatever the gender label says.
+ * renders under its anatomical area (breast rows inside Chest, genital
+ * sub-groups inside Pelvis) rather than at the top. The realized body is the
+ * ONLY visibility rule — no gender special-casing — so toggling the breasts
+ * region swaps the Chest section's field set in place (chest build + chest
+ * hair ↔ the `breasts.*` rows) whatever the gender label says.
  */
 export function AttributePicker({
   values,
@@ -101,6 +111,7 @@ export function AttributePicker({
   speciesId,
   heritageId,
   bodyPlanId,
+  defaultOpenSection,
 }: AttributePickerProps) {
   const byId = useMemo(() => attributeValueMap(values), [values]);
   const body = useMemo(
@@ -111,7 +122,7 @@ export function AttributePicker({
 
   // Single-open accordion: at most one section id expanded; opening another
   // collapses the current one, clicking the open header collapses it.
-  const [openSection, setOpenSection] = useState<string | null>(null);
+  const [openSection, setOpenSection] = useState<string | null>(defaultOpenSection ?? null);
   const sectionToggle = (id: string) => () => setOpenSection((current) => (current === id ? null : id));
 
   // `identity.natal_sex` is a scaffold surfaced only for an androgynous / nonbinary
@@ -148,16 +159,16 @@ export function AttributePicker({
       {attributeGroups.map((group) => {
         // Each tab owns a disjoint slice of the vocabulary (PERSONALITY_ATTRIBUTE_CATEGORIES).
         if (isPersonalityAttributeCategory(group.category) !== (scope === "personality")) return null;
-        if (NESTED_CATEGORIES.has(group.category)) return null; // rendered nested below
-        const definitions = group.definitions.filter((d) => isVisible(d));
-        const nested = group.category === "chest" ? nestedGroupsFor(NESTED_UNDER_CHEST) : [];
-        if (definitions.length === 0 && nested.length === 0) return null; // gated off
+        if (HOSTED_CATEGORIES.has(group.category)) return null; // rendered inside its area below
+        // Chest hosts the breast rows after its own — one flat list, registry order.
+        const hosted = group.category === "chest" ? FLATTENED_INTO_CHEST.flatMap((c) => definitionsFor(c)) : [];
+        const definitions = [...group.definitions.filter((d) => isVisible(d)), ...hosted];
+        if (definitions.length === 0) return null; // gated off
         return (
           <Fragment key={group.category}>
             <AttributeGroupSection
               category={group.category}
               definitions={definitions}
-              nested={nested}
               byId={byId}
               onSet={onSet}
               onRemove={onRemove}
@@ -349,7 +360,7 @@ interface GroupProps {
   body: RealizedBody;
 }
 
-/** A category rendered nested inside an anatomical area (e.g. breasts → chest). */
+/** A category rendered as a sub-group of the Pelvis area (e.g. vulva). */
 interface NestedGroup {
   category: string;
   definitions: readonly AttributeDefinition[];
@@ -430,7 +441,7 @@ function CategoryFields({ definitions, byId, onSet, onRemove, body }: GroupProps
   );
 }
 
-/** A nested anatomical sub-group (e.g. Breasts under Chest) — indented, no card. */
+/** A Pelvis-area sub-group (e.g. Vulva under Pelvis) — headed and indented, no card. */
 function NestedCategory({ category, definitions, byId, onSet, onRemove, body }: GroupProps) {
   return (
     <div className="flex flex-col gap-3 border-l border-ink-600 pl-3">
@@ -450,20 +461,15 @@ function NestedCategory({ category, definitions, byId, onSet, onRemove, body }: 
 function AttributeGroupSection({
   category,
   definitions,
-  nested = [],
   byId,
   onSet,
   onRemove,
   body,
   open,
   onToggle,
-}: GroupProps & { nested?: readonly NestedGroup[]; open: boolean; onToggle: () => void }) {
-  const nestedSet = nested.reduce((n, g) => n + setCountOf(g.definitions, byId), 0);
-  const totalSet = setCountOf(definitions, byId) + nestedSet;
-  const preview = [
-    ...setValueWords(definitions, byId),
-    ...nested.flatMap((g) => setValueWords(g.definitions, byId)),
-  ].join(", ");
+}: GroupProps & { open: boolean; onToggle: () => void }) {
+  const totalSet = setCountOf(definitions, byId);
+  const preview = setValueWords(definitions, byId).join(", ");
 
   return (
     <section className="rounded-card border border-ink-600 bg-ink-800">
@@ -486,17 +492,6 @@ function AttributeGroupSection({
             onRemove={onRemove}
             body={body}
           />
-          {nested.map((g) => (
-            <NestedCategory
-              key={g.category}
-              category={g.category}
-              definitions={g.definitions}
-              byId={byId}
-              onSet={onSet}
-              onRemove={onRemove}
-              body={body}
-            />
-          ))}
         </div>
       ) : null}
     </section>

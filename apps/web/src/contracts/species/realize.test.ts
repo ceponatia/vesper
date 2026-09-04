@@ -160,11 +160,13 @@ describe("realizeBody — anatomy gating", () => {
   });
 });
 
-describe("realizeBody — chest build vs breast size follow configured anatomy", () => {
-  // The invariant: exactly one silhouette owner applies to any body. Kills an
-  // implementation that keys the pair off the gender label (a male body given
-  // breasts would keep chest.size and never expose breasts.size) or one that
-  // drops chest.hair along with chest.size.
+describe("realizeBody — the chest fields vs the breast fields follow configured anatomy", () => {
+  // The invariant: exactly one owner of the chest applies to any body — the
+  // `chest.*` pair (build, hair) with the breasts region off, the `breasts.*`
+  // fields with it on. Kills an implementation that keys the swap off the
+  // gender label (a male body given breasts would keep chest.size and never
+  // expose breasts.size) or one that leaves chest.hair behind on a body whose
+  // chest the breast fields now own.
   const chestSize = def("chest.size");
   const breastSize = def("breasts.size");
   const chestHair = def("chest.hair");
@@ -185,7 +187,7 @@ describe("realizeBody — chest build vs breast size follow configured anatomy",
     const female = bodyFor("female");
     expect(female.isAttributeApplicable(breastSize)).toBe(true);
     expect(female.isAttributeApplicable(chestSize)).toBe(false);
-    expect(female.isAttributeApplicable(chestHair)).toBe(true);
+    expect(female.isAttributeApplicable(chestHair)).toBe(false);
   });
 
   it("the breasts toggle swaps the pair regardless of gender (anatomy owns the rule)", () => {
@@ -194,9 +196,11 @@ describe("realizeBody — chest build vs breast size follow configured anatomy",
     const maleWithBreasts = bodyFor("male", ["penis", "testicles", "breasts"]);
     expect(maleWithBreasts.isAttributeApplicable(breastSize)).toBe(true);
     expect(maleWithBreasts.isAttributeApplicable(chestSize)).toBe(false);
-    // …and a female character with the region switched off gets chest build back.
+    expect(maleWithBreasts.isAttributeApplicable(chestHair)).toBe(false);
+    // …and a female character with the region switched off gets the chest pair back.
     const femaleWithout = bodyFor("female", ["vulva"]);
     expect(femaleWithout.isAttributeApplicable(chestSize)).toBe(true);
+    expect(femaleWithout.isAttributeApplicable(chestHair)).toBe(true);
     expect(femaleWithout.isAttributeApplicable(breastSize)).toBe(false);
   });
 
