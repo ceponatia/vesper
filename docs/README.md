@@ -29,6 +29,7 @@ implementation neither may re-fork.
 | [auth/](auth/README.md)                           | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam                                        |
 | [images/](images/README.md)                       | Image suite: providers, asset registry, pipelines, identity packs, vision input                                                               |
 | [image-models/](image-models/README.md)           | Image-model behavior package: semantic features, Qwen family adapters, composer/registry, plus provider-model reference                       |
+| [text-models/](text-models/README.md)             | Text-model behavior package: sampling vocabulary, host dialects, composer/registry, execution hints and quirks                                |
 | [image-generator/](image-generator/README.md)     | The Image Generator: admin raw prompt/model bench — one-off runs against any registered model, immutable run records, hidden outputs          |
 | [image-lab/](image-lab/README.md)                 | The Advanced Image Lab: evidence-bearing experiment kinds, control fixtures, and lab constraints                                              |
 | [authoring/](authoring/README.md)                 | AI-first character forge and manual-override editors                                                                                          |
