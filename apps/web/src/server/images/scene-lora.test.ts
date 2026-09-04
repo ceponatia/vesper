@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  emptyImageModelAdvancedCapabilities,
   evaluateImageLoraForRender,
   type ImageLora,
   type ImageModel,
@@ -216,6 +217,37 @@ describe("resolveIntimateSceneLoraRoute", () => {
     const routed = sink.items.find((item) => item.code === SCENE_LORA_ROUTE_CODE);
     expect(routed?.severity).toBe("info");
     expect(routed?.context).toMatchObject({ lora: INTIMATE_SCENE_LORA_ID, scale: 1, staging: "lying_beneath_viewer" });
+  });
+
+  it("pairs the row spelled exactly as the constant, even when a pinned duplicate sorts ahead of it", async () => {
+    // Registry uniqueness is on the FULL slug and `sort` is an admin-editable
+    // column, so an added `…-2511:<version>` row can legitimately arrive ahead of
+    // the built-in bare one. A base-slug-only lookup pairs THAT row: a different
+    // provider version, and — as here — a capability record declaring none of the
+    // LoRA control bindings the weights are evaluated and sent against.
+    const pinnedVersion = "c9bb0b52b1c7d0b4ff5f2c8e0a4d1e6f37c9a0d5b8e2f1a3c4d5e6f708192a3b";
+    mockModels.mockResolvedValue([
+      intimateModel({
+        id: "imgmdlqwen2511pinnedaaaa",
+        slug: `${INTIMATE_SCENE_LORA_MODEL_SLUG}:${pinnedVersion}`,
+        probedVersionId: pinnedVersion,
+        advancedCapabilities: emptyImageModelAdvancedCapabilities(),
+      }),
+      intimateModel(),
+    ]);
+
+    const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile: sceneProfile() });
+    expect(route?.profile.model.id).toBe("imgmdlqwen2511aaaaaaaaaa");
+    // And the weights were resolved against that row's version, not the duplicate's.
+    expect(mockResolveLora.mock.calls[0]?.[1]).toMatchObject({ versionId: PROBED_VERSION });
+  });
+
+  it("still pairs the pinned spelling when it is the deployment's only 2511 row", async () => {
+    // The base-slug match is a FALLBACK, not dead code: a deployment whose row is
+    // stored with its version suffix has no exact match to find.
+    mockModels.mockResolvedValue([intimateModel({ slug: `${INTIMATE_SCENE_LORA_MODEL_SLUG}:${PROBED_VERSION}` })]);
+    const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile: sceneProfile() });
+    expect(route?.binding).toEqual(binding);
   });
 
   it("reports no scale of its own, so an admin retuning the row's default is followed", async () => {

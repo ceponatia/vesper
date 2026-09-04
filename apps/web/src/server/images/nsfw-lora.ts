@@ -61,7 +61,16 @@ export async function pairProfileWithNsfwLora(
   sink?: DiagnosticSink,
 ): Promise<NsfwLoraPairing> {
   const models = await loadImageModels(sink);
-  const intimateModel = models.find((model) => baseImageModelSlug(model.slug) === INTIMATE_SCENE_LORA_MODEL_SLUG);
+  // Exact spelling first, base slug only as a fallback — the same two steps
+  // `resolveLabModel` takes. Registry uniqueness is on the FULL slug and the
+  // sort is an admin-editable field, so a pinned `…-2511:<version>` row sitting
+  // ahead of the built-in bare row would otherwise win a base-slug-only lookup
+  // and hand this route a different version and capability record than the one
+  // the constant names. The fallback still keeps a deployment whose only 2511
+  // row is stored in its pinned spelling working.
+  const intimateModel =
+    models.find((model) => model.slug === INTIMATE_SCENE_LORA_MODEL_SLUG) ??
+    models.find((model) => baseImageModelSlug(model.slug) === INTIMATE_SCENE_LORA_MODEL_SLUG);
   if (!intimateModel) {
     return { ok: false, leg: "model", message: `no registered image model matches ${INTIMATE_SCENE_LORA_MODEL_SLUG}` };
   }
