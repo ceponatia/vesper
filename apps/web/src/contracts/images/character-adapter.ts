@@ -70,7 +70,11 @@ import { visualExposureReads } from "./visual-segments";
  *    anchor. An absent, unreadable, or registry-unrecognized value fails closed
  *    instead: the `age` segment kind is mandatory, so the key lands in
  *    `missingRequired` and an identity-critical lane refuses before provider
- *    spend.
+ *    spend. All of that is under the caller's apparent-age POLICY
+ *    ({@link CharacterApparentAgePolicy}): a lane whose renders inherit their
+ *    visible age from an identity reference says `omit`, and the adapter then
+ *    states no age at all — a designed suppression, never a missing anchor —
+ *    whatever the band.
  * 2. **Exposure and coverage** are stated by this adapter as authoritative
  *    `subject.exposure` claims over the caller-supplied garment coverage readout
  *    — the composition read the scaffold must never fake. The wording and the
@@ -122,6 +126,8 @@ export const IMAGE_CHARACTER_COVERAGE_OWNER = "character.wardrobe_coverage";
 export const IMAGE_CHARACTER_AGE_WITHHELD = "character.apparent_age.withheld";
 /** No usable apparent-age value from the canonical owner — fail-closed, lands in `missingRequired`. */
 export const IMAGE_CHARACTER_AGE_UNRESOLVED = "character.apparent_age.unresolved";
+/** Apparent age withheld by the lane's policy: this render inherits its visible age from the reference. */
+export const IMAGE_CHARACTER_AGE_OMITTED = "character.apparent_age.omitted";
 /** No coverage readout was joined for this subject — fail-closed, lands in `missingRequired`. */
 export const IMAGE_CHARACTER_COVERAGE_UNRESOLVED = "character.wardrobe_coverage.unresolved";
 /** A record value with no readable member left after ids were stripped. */
@@ -215,12 +221,24 @@ export interface CharacterSubjectSources {
   readonly realizedBody?: RealizedBody;
 }
 
+/**
+ * Whether a render STATES each subject's apparent age or leaves it to the
+ * picture. A lane decides this once for every subject it draws, never per
+ * person: `state` is the standalone and reference-edit lanes' answer — the
+ * text anchor is authoritative beside a portrait — and `omit` is a scene's,
+ * whose cast inherits their visible age from their identity references and
+ * whose prompt therefore carries no age sentence for anyone.
+ */
+export type CharacterApparentAgePolicy = "state" | "omit";
+
 export interface CharacterWorldSlicesInput {
   readonly digest: VisualImageDigest;
   /** Display names by subject id — the one field a compiled sentence may name somebody by. */
   readonly labels?: Readonly<Record<string, string>>;
   /** Canonical owners by subject id. A subject with no entry fails its opaque anchors closed. */
   readonly sources: Readonly<Record<string, CharacterSubjectSources>>;
+  /** The caller's apparent-age policy for every subject. Absent reads `state`. */
+  readonly apparentAge?: CharacterApparentAgePolicy;
 }
 
 /** The completed subject slices plus everything the join lost, ready for `buildImageWorldDigest`. */
@@ -492,6 +510,15 @@ function exposureFacts(
   }));
 }
 
+/** Whether a selected fact is the projected apparent-age anchor — the age attribute's own feature. */
+function isAgeAnchorFact(fact: Pick<VisualImageFact, "sourceRef">): boolean {
+  return (
+    fact.sourceRef.kind === "appearance" &&
+    fact.sourceRef.ref.kind === "attribute" &&
+    fact.sourceRef.ref.attributeId === VISUAL_IMAGE_AGE_ATTRIBUTE_ID
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The join
 // ---------------------------------------------------------------------------
@@ -522,6 +549,7 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     for (const fact of [...subject.required, ...subject.optional]) sourceFactByKey.set(fact.key, fact);
   }
   const digestSubjectById = new Map(digest.subjects.map((subject) => [subject.subjectId, subject]));
+  const ageOmitted = input.apparentAge === "omit";
 
   const subjects = base.subjects.map((slice): ImageSubjectDigest => {
     const sources = input.sources[slice.entityId];
@@ -552,6 +580,9 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
         suppressions.push({ key: fact.key, owner: fact.source.owner, reason: IMAGE_CHARACTER_HAIR_CONCEALED });
         continue;
       }
+      // A projected age anchor under the omit policy is dropped here and
+      // recorded once, below, with the synthesized anchor's own bookkeeping.
+      if (ageOmitted && isAgeAnchorFact(source)) continue;
       let next = fact;
       if (sources !== undefined && source.sourceRef.kind === "appearance" && source.sourceRef.ref.kind === "anatomy") {
         const state = anatomyStateFor(source.sourceRef.ref.locusKey, sources, digest.atMinutes);
@@ -583,15 +614,27 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     // --- gap 1: the apparent-age anchor ---------------------------------------
     const ref = slice.ref;
     const ageBand = sources?.attributes?.find((entry) => entry.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value;
-    const digestAgeFact = [...(digestSubject?.required ?? []), ...(digestSubject?.optional ?? [])].find(
-      (fact) =>
-        fact.sourceRef.kind === "appearance" &&
-        fact.sourceRef.ref.kind === "attribute" &&
-        fact.sourceRef.ref.attributeId === VISUAL_IMAGE_AGE_ATTRIBUTE_ID,
-    );
+    const digestAgeFact = [...(digestSubject?.required ?? []), ...(digestSubject?.optional ?? [])].find(isAgeAnchorFact);
     const bandWithheld = isWithheldImageAgeBand(ageBand);
 
-    if (digestAgeFact !== undefined) {
+    if (ageOmitted) {
+      // The lane's policy, ahead of the band: a render whose subjects inherit
+      // their visible age from a reference states none, whatever the sheet
+      // says. A designed suppression like the minor-band ruling — so the
+      // scaffold's fail-closed record for a projected anchor is rewritten, a
+      // synthesized anchor is recorded as withheld, and `missingRequired`
+      // never names the key: an omitted age must not refuse a rung.
+      const ageKey = digestAgeFact?.key ?? `${ref}.apparent_age`;
+      const omitted: ImageWorldSuppression = {
+        key: ageKey,
+        owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+        reason: IMAGE_CHARACTER_AGE_OMITTED,
+      };
+      const index = suppressions.findIndex((entry) => entry.key === ageKey);
+      if (index === -1) suppressions.push(omitted);
+      else suppressions[index] = omitted;
+      missingRequired = missingRequired.filter((key) => key !== ageKey);
+    } else if (digestAgeFact !== undefined) {
       // Visual state projected the anchor; the resolver already valued an adult
       // band. A minor band was refused BY RULING, which is a designed absence:
       // reclassify the scaffold's fail-closed record so the lane renders

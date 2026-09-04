@@ -55,6 +55,17 @@ export const attributeDefinitionSchema = z.object({
   bodyLocationId: z.string().min(1).optional(),
   appliesToBodyPlans: z.array(z.string().min(1)).readonly().optional(),
   excludesBodyPlans: z.array(z.string().min(1)).readonly().optional(),
+  /**
+   * Intimate region groups whose presence makes this attribute INAPPLICABLE:
+   * when any listed group is switched on in the character's body-config, the
+   * region's own attributes own the fact and this one drops out of the
+   * realized body (`realizeBody(...).isAttributeApplicable`). The everyday
+   * `chest.size` (chest build) lists `breasts` — a body with the breasts region
+   * carries `breasts.size` instead, and no consumer ever sees both. Anatomy,
+   * not the gender label, decides: the region toggle swaps the pair either way.
+   * Group ids are validated against INTIMATE_REGION_GROUPS by a contracts test.
+   */
+  supersededByIntimateRegions: z.array(z.string().min(1)).readonly().optional(),
   appliesToEntityKinds: z.array(attributeEntityKindSchema).readonly().optional(),
   aliases: z.array(z.string().min(1)).readonly().optional(),
   promptHints: z.array(z.string().min(1)).readonly().optional(),

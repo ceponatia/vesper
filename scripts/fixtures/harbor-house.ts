@@ -450,7 +450,7 @@ const maya: SeedCharacter = {
     base("neck.throat_prominence", "smooth"),
     base("shoulders.width", "broad"),
     base("shoulders.slope", "square"),
-    base("chest.size", "modest"),
+    base("chest.size", "slight"),
     base("chest.hair", "none"),
     base("waist.definition", "defined"),
     base("hips.width", "average"),

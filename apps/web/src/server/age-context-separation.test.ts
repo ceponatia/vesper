@@ -9,8 +9,11 @@ import { buildCanonBlock, buildCharacterChatSystemPrompt } from "@/server/engine
  * - `profile.age` is chronological/story truth and belongs to narrative models.
  * - `identity.apparent_age` is a visual authoring field and belongs to portrait generation.
  *
- * Scene-image coverage lives in `images/character-scene.test.ts`: scene renders get
- * neither field and inherit visible age from the portrait reference.
+ * Scene-image coverage lives beside the scene lane: `images/character-scene.test.ts`
+ * proves the composer context carries neither field, and
+ * `images/scene-provenance.test.ts` proves the compiled scene prompt states no
+ * apparent age on any rung — scene renders inherit visible age from the identity
+ * reference, by the seam's lane policy (`CHARACTER_LANE_APPARENT_AGE`).
  */
 describe("age context separation", () => {
   const profile = makeProfile({

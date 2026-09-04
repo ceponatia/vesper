@@ -14,7 +14,9 @@ import type { ImageControlDefaults } from "./image-model-profiles";
  * after parity is demonstrated for it. Two hand-maintained copies of the same
  * numbers is exactly how a "parity" migration ships a silent difference, so this
  * module is the single table and the overlay is DERIVED from it. A value can no
- * longer move in one representation without moving in the other, and
+ * longer move in one representation without moving in the other: the table is
+ * checked at module load for the two shapes in which it still could
+ * ({@link reviewedImageQualityPolicyDefects}), and
  * `reviewed-profile-controls.test.ts` pins the equivalence besides.
  *
  * What lives here is the reviewed judgment only. Which provider field a control
@@ -55,12 +57,81 @@ export interface ReviewedImageQualityPolicy {
    * The provider field each normalized control above corresponds to on THIS
    * model — what the transitional overlay writes directly into `extraInput`.
    *
-   * A control with no entry here is one the overlay never wrote and the profile
-   * vocabulary needs anyway: `resolution: "custom"` is the whole list, and it is
-   * the GATE that makes `width`/`height` a request rather than a leftover
-   * (`compileProfileRenderPlan`), not a field anything sends.
+   * Every control set in `controlDefaults` has an entry here, with ONE
+   * exception the load-time check knows about: `resolution: "custom"` is the
+   * GATE that makes `width`/`height` a request rather than a leftover
+   * (`compileProfileRenderPlan`), not a field anything sends. Any other default
+   * without a mapping is live in the profile representation and invisible to the
+   * overlay — the drift this module exists to make impossible — and a mapping
+   * naming a field `providerOverrides` also claims would lose its value to the
+   * override spread. Both refuse to load.
    */
   controlFields: Readonly<Partial<Record<keyof ReviewedImageControlDefaults, string>>>;
+}
+
+/**
+ * One way a reviewed row can contradict itself.
+ *
+ * - `unmapped_default` — a `controlDefaults` entry other than `resolution` with
+ *   no `controlFields` mapping. The profile carries the value and the overlay
+ *   never writes it. The parity test cannot see this one: its probe is
+ *   synthesized FROM `controlFields`, so a control missing there is missing on
+ *   both arms and they agree.
+ * - `field_collision` — a `controlFields` mapping naming a provider field that a
+ *   `providerOverrides` entry also claims. {@link reviewedImageQualityProviderInputs}
+ *   spreads the overrides last, so the mapped value would be silently replaced,
+ *   and the effective-values fixture would still match whichever number the
+ *   override held.
+ */
+export type ReviewedImageQualityPolicyDefect =
+  | { kind: "unmapped_default"; control: string }
+  | { kind: "field_collision"; control: string; field: string };
+
+/**
+ * The ways one policy contradicts itself, or an empty list.
+ *
+ * Read off the objects' own keys rather than a typed list of control names, so a
+ * key the type does not know about is caught rather than skipped — the drift
+ * being guarded against is exactly a table edit the types could not object to.
+ */
+export function reviewedImageQualityPolicyDefects(
+  policy: ReviewedImageQualityPolicy,
+): ReviewedImageQualityPolicyDefect[] {
+  const defects: ReviewedImageQualityPolicyDefect[] = [];
+  const mappings = Object.entries(policy.controlFields).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  const mapped = new Set(mappings.map(([control]) => control));
+  for (const [control, value] of Object.entries(policy.controlDefaults)) {
+    if (control === "resolution" || value === undefined || mapped.has(control)) continue;
+    defects.push({ kind: "unmapped_default", control });
+  }
+  for (const [control, field] of mappings) {
+    if (Object.hasOwn(policy.providerOverrides, field)) defects.push({ kind: "field_collision", control, field });
+  }
+  return defects;
+}
+
+/**
+ * Definition-time proof, run once at module load and throwing on a violation.
+ *
+ * A throw rather than a diagnostic because this is a programmer error in a
+ * hand-maintained constant (docs/resilience.md: exceptions are for those, and
+ * nothing else): no render-time fallback could make the two spellings agree,
+ * and the only fix is an edit to this file. Failing the import is what keeps a
+ * contradictory row from being discovered as a silently different payload.
+ */
+function assertReviewedImageQualityTable(table: Readonly<Record<string, ReviewedImageQualityPolicy>>): void {
+  for (const [slug, policy] of Object.entries(table)) {
+    const defects = reviewedImageQualityPolicyDefects(policy);
+    if (defects.length === 0) continue;
+    const described = defects.map((defect) =>
+      defect.kind === "unmapped_default"
+        ? `${defect.control} has a reviewed default but no controlFields mapping`
+        : `${defect.control} maps to ${defect.field}, which providerOverrides also claims`,
+    );
+    throw new Error(`[reviewed-profile-controls] ${slug}: ${described.join("; ")}`);
+  }
 }
 
 /**
@@ -131,6 +202,8 @@ const REVIEWED_IMAGE_QUALITY: Readonly<Record<string, ReviewedImageQualityPolicy
     controlFields: { guidance: "cfg", width: "width", height: "height" },
   },
 };
+
+assertReviewedImageQualityTable(REVIEWED_IMAGE_QUALITY);
 
 /** Every base slug the reviewed policy covers, for tests and admin diagnostics. */
 export const reviewedImageQualitySlugs: readonly string[] = Object.keys(REVIEWED_IMAGE_QUALITY);

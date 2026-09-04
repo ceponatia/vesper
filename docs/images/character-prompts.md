@@ -18,8 +18,9 @@ reference list it must send.
 ## Owns / does not own
 
 - **Owns:** the character projection into world facts, the cast, reference
-  planning and slot numbering, the reference-anchored identity anchor, and the
-  refusals the seam adds to the layer's own.
+  planning and slot numbering, the reference-anchored identity anchor, the
+  per-lane apparent-age policy, and the refusals the seam adds to the layer's
+  own.
 - **Does not own:** the compile itself, dialects, packs and bindings
   ([prompt-programs.md](prompt-programs.md)); how a cast's per-person cuts are
   produced and folded ([pipelines/scene-subjects.md](pipelines/scene-subjects.md));
@@ -54,7 +55,9 @@ and states what translation alone cannot:
   adult (owner ruling 2026-07-29): a minor band the registry recognizes states
   nothing — a designed suppression, never a missing anchor — while an absent
   value, or one outside the registry's vocabulary, fails the mandatory age
-  segment closed.
+  segment closed. All of it under the lane's apparent-age policy
+  ([§Apparent age per lane](#apparent-age-per-lane)): a lane that omits age
+  states none, whatever the band.
 - **Exposure** is the adapter's own authoritative `subject.exposure` claims over
   the garment coverage readout, worded by `visual-segments.ts`'s one canonical
   table — in its predicate-fragment inflection, since dialects wrap exposure
@@ -77,6 +80,31 @@ under `server/images` turns an attribute into words (`formatAttribute`,
 name beyond the reviewed residue — the identity-free `chat_place` shot and the
 composer's own instruction builder, neither of which describes a character from
 attributes.
+
+## Apparent age per lane
+
+Whether a compiled prompt states its subjects' apparent age is the lane's
+policy, decided once in the seam (`CHARACTER_LANE_APPARENT_AGE`, keyed by lane
+and settable by no caller) and applied by the adapter
+(`CharacterWorldSlicesInput.apparentAge`) for every subject of the render:
+
+| Lane                       | Policy  | Why                                                         |
+| -------------------------- | ------- | ----------------------------------------------------------- |
+| avatar, variant, chat look | `state` | the text anchor is authoritative beside the portrait        |
+| scene                      | `omit`  | the cast inherit visible age from their identity references |
+
+- **`state`** is the projection above, floor and all: an adult band becomes the
+  required `subject.apparent_age` claim
+  ([pipelines/avatars.md](pipelines/avatars.md) §Apparent age).
+- **`omit`** withholds every subject's anchor ahead of the band, on both anchor
+  paths — the one the adapter synthesizes from the sheet and a projected
+  age fact — as the designed suppression `character.apparent_age.omitted`.
+  `missingRequired` never names the key, so an omitted age cannot refuse a
+  `refuseOnMissingRequired` rung; the cut, the coverage and every other anchor
+  compile exactly as they do under `state`. A scene prompt therefore carries no
+  age sentence for anyone, on every rung of its chain
+  ([pipelines/scene-subjects.md](pipelines/scene-subjects.md) §Identity anchors
+  and the setting).
 
 ## Hair the headwear conceals
 

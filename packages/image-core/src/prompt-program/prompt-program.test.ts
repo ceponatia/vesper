@@ -17,6 +17,7 @@ import {
   imagePromptDialect,
   lintImagePromptCollisions,
   parseImagePromptProgramProvenance,
+  registerImagePromptDialect,
   PROSE_FAMILY_IDENTITY_LOCK,
   PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED,
   qwenImage2512Bindings,
@@ -35,6 +36,7 @@ import {
   type ImageNegativePackVersion,
   type ImageOperationContract,
   type ImagePositivePackVersion,
+  type ImagePromptDialectDefinition,
   type ImagePromptProfileBinding,
   type ImageWorldDigest,
   type ImageWorldDigestInput,
@@ -158,6 +160,27 @@ function compileInput(digest: ImageWorldDigest, overrides: Partial<CompileImageP
     refuseOnMissingRequired: false,
     ...overrides,
   } satisfies CompileImagePromptProgramInput;
+}
+
+/**
+ * Run `run` with the item binding's dialect re-registered under a stand-in
+ * positive compiler, and the real compiler put back after. No registered dialect
+ * words nothing (each states the subject count), so the blank-wording cases
+ * below each stand one in; `standIn` receives the real definition so a case can
+ * wrap it rather than replace it.
+ */
+function withItemPositiveCompiler<T>(
+  standIn: (real: ImagePromptDialectDefinition) => ImagePromptDialectDefinition["compilePositive"],
+  run: () => T,
+): T {
+  const real = imagePromptDialect(itemBinding.promptDialectId);
+  if (real === null) throw new Error("the item binding names an unregistered dialect");
+  registerImagePromptDialect({ ...real, compilePositive: standIn(real) });
+  try {
+    return run();
+  } finally {
+    registerImagePromptDialect(real);
+  }
 }
 
 /**
@@ -618,6 +641,63 @@ describe("compiling a prompt program", () => {
     const result = compileImagePromptProgram(input());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.refusal.code).toBe(code);
+  });
+
+  /**
+   * Falsified against a compile that guarded the claim LIST and never the text.
+   * A dialect that reports every claim as kept and still hands back blank text
+   * leaves the mandatory-claim refusal nothing to see, so the compile returned
+   * `ok` with an empty prompt — which the transport then posts as the empty
+   * string. The stand-in wraps the real compiler and blanks only its text, so
+   * the drop record is honest and the text guard is the one thing that can fire.
+   */
+  it("refuses a compile that worded nothing rather than sending a blank prompt", () => {
+    const result = withItemPositiveCompiler(
+      (real) => (input) => ({ ...real.compilePositive(input), text: "   " }),
+      () => compileImagePromptProgram(compileInput(itemWorld())),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.refusal.code).toBe("image_prompt_program.prompt_empty");
+  });
+
+  /**
+   * Falsified against `compileDialectClaims` as it stood behind the blank-prompt
+   * guard: a claim rendered as whitespace was pushed as a segment, the segment
+   * layer dropped it with an info diagnostic, and no claim id was recorded — so a
+   * mandatory claim worded to nothing escaped `mandatory_claim_dropped`, and the
+   * compile sent a prompt that described the compass without the identity claim
+   * that makes it that compass. Blank text and a null render are the same
+   * statement; the optional half pins that what changed is the RECORD, not the
+   * drop — an optional claim worded blank still leaves the prompt, and says so.
+   */
+  it("treats a claim worded as whitespace as a dropped claim, refusing when it is mandatory", () => {
+    const wordingBlank =
+      (blankId: string): ImagePromptDialectDefinition["compilePositive"] =>
+      (input) =>
+        compileDialectClaims({
+          claims: input.claims,
+          render: (claim) => ({
+            kind: claim.segmentKind,
+            text: claim.id === blankId ? "   " : "worded.",
+            mandatory: claim.required,
+            priority: claim.priority,
+          }),
+          surfaces: createSceneStagingSurfaceLog(),
+          budget: input.budget,
+        });
+    const compile = () => compileImagePromptProgram(compileInput(itemWorld()));
+
+    const mandatory = withItemPositiveCompiler(() => wordingBlank("i1.identity"), compile);
+    expect(mandatory.ok).toBe(false);
+    if (!mandatory.ok) {
+      expect(mandatory.refusal.code).toBe("image_prompt_program.mandatory_claim_dropped");
+      expect(mandatory.refusal.context.claims).toEqual([{ id: "i1.identity", concept: "item.identity" }]);
+    }
+
+    const optional = withItemPositiveCompiler(() => wordingBlank("i1.form"), compile);
+    if (!optional.ok) throw new Error(`unexpected refusal: ${optional.refusal.code}`);
+    expect(optional.compiled.droppedClaimIds).toEqual(["i1.form"]);
+    expect(optional.compiled.program.positive.map((claim) => claim.id)).not.toContain("i1.form");
   });
 
   /**

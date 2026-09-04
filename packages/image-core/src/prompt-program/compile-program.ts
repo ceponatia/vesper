@@ -113,7 +113,8 @@ export type ImagePromptProgramRefusalCode =
   | "image_prompt_program.mandatory_concept_suppressed"
   | "image_prompt_program.mandatory_claim_dropped"
   | "image_prompt_program.required_exclusion_unexpressible"
-  | "image_prompt_program.post_merge_collision";
+  | "image_prompt_program.post_merge_collision"
+  | "image_prompt_program.prompt_empty";
 
 export interface ImagePromptProgramRefusal {
   readonly code: ImagePromptProgramRefusalCode;
@@ -368,6 +369,21 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
       "this endpoint could not express a claim the render may not lose",
       { claims: droppedMandatory.map((claim) => ({ id: claim.id, concept: claim.concept })) },
     );
+  }
+  // The compiled TEXT, not the claim list. The check above sees a claim the
+  // dialect declined to word — by rendering null or by rendering blank text,
+  // which `compileDialectClaims` records the same way. It does not see a render
+  // with no mandatory claim whose every optional segment a budget removed, or a
+  // dialect that compiled outside `compileDialectClaims` and produced nothing
+  // without recording a drop. A blank prompt is a valid payload as far as the
+  // transport is concerned (`emptyPrompt: "send"` posts the empty string), so
+  // this is the last point at which anything can notice.
+  if (positiveCompiled.text.trim().length === 0) {
+    return refuse("image_prompt_program.prompt_empty", "this render compiled to a blank prompt", {
+      dialect: dialect.id,
+      claims: mergedClaims.length,
+      dropped: positiveCompiled.droppedClaimIds,
+    });
   }
 
   // --- 12–14. Program, fingerprint, provenance -------------------------------

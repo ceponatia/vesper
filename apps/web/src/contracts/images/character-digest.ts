@@ -17,7 +17,11 @@ import type {
   ImageWorldRelation,
 } from "@vesper/image-core";
 import { AFFORDANCE_UNIT_ONE } from "../affordances/core/fixed-point";
-import { projectCharacterWorldSlices, type CharacterSubjectSources } from "./character-adapter";
+import {
+  projectCharacterWorldSlices,
+  type CharacterApparentAgePolicy,
+  type CharacterSubjectSources,
+} from "./character-adapter";
 import { entityReadToken } from "./entity-digest";
 import { projectCameraFacts, standaloneCharacterSourceRevision } from "./subject-digest";
 import type { VisualImageDigest } from "./visual-digest";
@@ -276,6 +280,12 @@ export interface CharacterWorldDigestAssemblyInput {
   readonly labels?: Readonly<Record<string, string>>;
   /** Canonical owners by subject id. A subject with no entry fails its anchors closed. */
   readonly sources: Readonly<Record<string, CharacterSubjectSources>>;
+  /**
+   * The lane's apparent-age policy, handed to the projection untouched: `omit`
+   * states no subject's age (a scene inherits it from the references), absent
+   * or `state` anchors it from the sheet ({@link CharacterApparentAgePolicy}).
+   */
+  readonly apparentAge?: CharacterApparentAgePolicy;
   readonly operation: ImageOperationContract;
   readonly read: CharacterWorldReadInput;
   readonly location?: ImageLocationDigest | null;
@@ -470,6 +480,7 @@ export function assembleCharacterWorldDigest(
     digest: input.digest,
     ...(input.labels === undefined ? {} : { labels: input.labels }),
     sources: input.sources,
+    ...(input.apparentAge === undefined ? {} : { apparentAge: input.apparentAge }),
   });
   const { read, sourceRevisions, camera } = characterWorldRead(input);
   const routeFacts = input.subjectFacts ?? {};

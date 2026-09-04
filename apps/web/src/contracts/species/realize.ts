@@ -150,6 +150,11 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
     if (isIntimateRegionGroup(def.category) && !intimateRegions.has(def.category)) {
       return false;
     }
+    // Anatomy-owned mutual exclusion: an everyday attribute superseded by a
+    // present region (chest build ↔ breast size) drops out when that region is
+    // switched on, so exactly one owner of the fact applies to any body. Keyed
+    // on the body-config, never the gender label.
+    if (def.supersededByIntimateRegions?.some((group) => intimateRegions.has(group))) return false;
     if (isFeatureAttributeCategory(def.category) && !bodyFeatures.has(def.category)) return false;
     // An attribute bound to a body location that isn't realized is dropped.
     if (def.bodyLocationId && !locationIds.has(def.bodyLocationId)) return false;

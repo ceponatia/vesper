@@ -242,7 +242,8 @@ export function implementedImagePromptDialectIds(): readonly ImagePromptDialectI
  * So a dialect supplies `render` — one claim to one segment, or null to say it
  * has no wording for that concept — and this does the rest.
  *
- * A claim a dialect cannot render is REPORTED rather than silently skipped. That
+ * A claim a dialect cannot render is REPORTED rather than silently skipped —
+ * whether the dialect says so with null or by wording it as blank text. That
  * is the honest failure for a new concept meeting an old dialect, and the
  * compile step turns a dropped MANDATORY claim into a refusal.
  *
@@ -303,7 +304,19 @@ export function compileDialectClaims(input: {
     // on every optional claim that happens to sit in a protected kind.
     else segments.push({ ...segment, mandatory: isMandatoryImagePositiveClaim(claim), source: claim.id });
   }
-  const fitted = fitImagePromptSegments(normalizeImagePromptSegments(segments, input.sink), input.budget);
+  // Normalization drops a segment whose text is blank, and a claim whose wording
+  // came back as whitespace is a claim the dialect did not word — the same fact
+  // a null render states, spelled differently. It is reconciled here rather than
+  // caught in the loop above so blankness has one definition (normalization's
+  // trim) and so the drop is named against the CLAIM: left to the segment
+  // layer's own diagnostic, a mandatory claim worded as spaces would vanish
+  // behind an info line while the compile went on to send a prompt without it.
+  const normalized = normalizeImagePromptSegments(segments, input.sink);
+  const worded = new Set(normalized.map((segment) => segment.source));
+  for (const segment of segments) {
+    if (segment.source !== undefined && !worded.has(segment.source)) droppedClaimIds.push(segment.source);
+  }
+  const fitted = fitImagePromptSegments(normalized, input.budget);
   reportImagePromptFitting(fitted, input.budget, input.sink);
   for (const removed of fitted.removed) {
     if (removed.source !== undefined) droppedClaimIds.push(removed.source);

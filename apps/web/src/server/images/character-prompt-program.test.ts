@@ -519,6 +519,11 @@ describe("what a variant render actually sends", () => {
       result.prompt.lastIndexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
     );
     expect(result.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+
+    // The lock preserves a likeness; the age anchor beside it is the lane's
+    // own text-authoritative claim (`CHARACTER_LANE_APPARENT_AGE.variant`), and
+    // a reference-edit that lost it would preserve the model's over-estimate.
+    expect(result.prompt).toContain(`${LANE_PROBE_NAME} appears in the late twenties.`);
   });
 
   /**

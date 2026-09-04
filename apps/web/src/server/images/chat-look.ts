@@ -1,6 +1,5 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import {
-  conditionAttributeOverlays,
   exposedRegions,
   FULLY_COVERED,
   HAIR_OCCLUSION_NONE,
@@ -213,7 +212,11 @@ export type ChatLookVisualCut = Omit<VisualStateShadowInput, "sink" | "camera">;
 /** The realized cut the mint's program compiles from, plus its row provenance. */
 export interface ChatLookCut {
   readonly digest: VisualImageDigest;
-  /** The three-layer resolve the adapter values facts from. */
+  /**
+   * The resolve the adapter values facts from: authored base → persisted
+   * narrative overlays, the layer `chatLookKey` hashes. The condition layer is
+   * deliberately absent ({@link chatLookSubjectCut}).
+   */
   readonly attributes: readonly AttributeValue[];
   readonly realizedBody: RealizedBody;
   /** The canonical coverage readout the exposure claims are made over. */
@@ -240,6 +243,55 @@ export interface ChatLookCutInput {
 }
 
 /**
+ * The committed cut, narrowed to what a CACHE-KEYED studio anchor may compile
+ * from: one subject, resolved over the layers the key hashes.
+ *
+ * `chatLookKey` hashes one person's worn set, coverage, appearance overlays,
+ * garment fingerprint and hair band, and the shared cut carries two things
+ * beyond that which no pack suppression can reach — each either refuses the
+ * mint or moves the prompt for a fact the key never saw:
+ *
+ * - **A second subject.** The shared factory files the player's worn garments
+ *   and recorded body language under the player subject, and a garment left in
+ *   the room under the scene subject. Each becomes a digest subject with no
+ *   owners behind it, and the identity-critical compile refuses on its missing
+ *   age and coverage anchors — so a coat over a chair, or the player's posture,
+ *   would leave the chat with no anchor at all until it changed. The look cut
+ *   carries no player subject and no scene subject, and its scene map keeps
+ *   only this subject's own participant, so the snapshot names one person. The
+ *   subject's own body language still projects; the pack suppresses it.
+ * - **The condition layer's attribute overlays.** A condition's
+ *   `attributeEffects` resolve at a precedence above the narrative overlays the
+ *   key hashes, and the morphology band reads every attribute in its group, so
+ *   a wing carriage or a grooming standard overlaid by a condition moves the
+ *   prompt while the key stands. The conditions keep their own current-layer
+ *   facts (the pack suppresses those) but hand the assembly no effects, so the
+ *   projection and {@link ChatLookCut.attributes} both resolve base → persisted
+ *   narrative overlays and nothing further.
+ */
+function chatLookSubjectCut(cut: ChatLookVisualCut): ChatLookVisualCut {
+  const { sceneRelations, conditions } = cut;
+  return {
+    ...cut,
+    playerSubjectId: undefined,
+    sceneSubjectId: undefined,
+    ...(sceneRelations === undefined
+      ? {}
+      : {
+          sceneRelations: {
+            scene: sceneRelations.scene,
+            subjectsByParticipant: new Map(
+              [...sceneRelations.subjectsByParticipant].filter(([, subjectId]) => subjectId === cut.subjectId),
+            ),
+          },
+        }),
+    ...(conditions === undefined
+      ? {}
+      : { conditions: conditions.map((condition) => ({ ...condition, attributeEffects: [] })) }),
+  };
+}
+
+/**
  * Realize the look mint's cut from a committed chat cut. One shadow assembly,
  * ONE camera-bound selection pass, one digest realized from that exact
  * selection — never a re-select (`image-digest.ts` §Reuse the selection). The
@@ -247,7 +299,8 @@ export interface ChatLookCutInput {
  * shared chat factory (`chatVisualStateShadowInput`) — the same one the scene
  * queue and the visual-state inspector use, so a look anchor and the scene
  * that anchors on it can never assemble two different cuts of one
- * conversation.
+ * conversation. This lane then narrows it to the look subject alone
+ * ({@link chatLookSubjectCut}) before anything is assembled.
  *
  * Null when the shadow assembly threw ({@link CHAT_LOOK_VISUAL_DIGEST_UNAVAILABLE}
  * is on the sink); the caller mints nothing. Deterministic over its inputs.
@@ -256,7 +309,7 @@ export function buildChatLookCut(input: ChatLookCutInput): ChatLookCut | null {
   const { cut, sink } = input;
   const build = safeBuildVisualStateShadow(
     {
-      ...cut,
+      ...chatLookSubjectCut(cut),
       // The look mint's own studio viewpoint, bound into the ONE selection pass.
       camera: { cameraId: CHAT_LOOK_CAMERA_ID, spec: CHAT_LOOK_CAMERA },
       ...(sink === undefined ? {} : { sink }),
@@ -281,14 +334,11 @@ export function buildChatLookCut(input: ChatLookCutInput): ChatLookCut | null {
     ...(sink === undefined ? {} : { sink }),
   });
 
-  // The same three-layer resolve the projection was taken over (base →
-  // persisted narrative overlays → condition overlays), read back off the cut
-  // so the adapter can never disagree with the digest about a recorded haircut
-  // or dye.
-  const attributes = resolveAttributes(cut.attributes, [
-    ...(cut.attributeOverlays ?? []),
-    ...conditionAttributeOverlays([...(cut.conditions ?? [])]),
-  ]);
+  // The same resolve the projection was taken over — base → persisted
+  // narrative overlays, the condition layer withheld (`chatLookSubjectCut`) —
+  // read back off the cut so the adapter can never disagree with the digest
+  // about a recorded haircut or dye.
+  const attributes = resolveAttributes(cut.attributes, [...(cut.attributeOverlays ?? [])]);
   return {
     digest: realized.digest,
     attributes,
@@ -376,8 +426,23 @@ async function chatLookIdentity(
  * subject slices, so the identity, morphology and age anchors the change does
  * not name survive the edit by derivation rather than by a blanket "preserve
  * everything".
+ *
+ * For a fixed look key the compiled prompt is a function of the key's inputs
+ * alone. The committed cut states more than `chatLookKey` hashes — the current
+ * layer (wetness, garment condition, active conditions) and body language —
+ * and two mints under one key must not send two prompts, or the cached anchor
+ * goes stale for a fact that never moved the key and bakes a transient state
+ * into the reference every later scene composes from. The omission is the
+ * chat-look binding's own positive pack (`packs-qwen-2511.ts`,
+ * `pack-qwen-2511-positive-chat-look-v1`), which suppresses
+ * `subject.current_state` and `subject.body_language`, so the row's program
+ * provenance shows the anchor was compiled without them; this function passes
+ * the realized cut and filters nothing itself. What the pack cannot reach —
+ * a second digest subject, the condition layer's attribute overlays — never
+ * enters the cut ({@link chatLookSubjectCut}). Exported for the lane's test,
+ * which pins that invariant.
  */
-function activeChatLookProgram(
+export function activeChatLookProgram(
   input: RenderChatLookInput,
   cut: ChatLookCut,
   resolved: ResolvedImageProfile,

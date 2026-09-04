@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { realizeBody } from "./realize";
+import { seedBodyConfigFromAttributes } from "./seed";
 import { attributeRegistry } from "../attributes";
 import { attributeCategories } from "../attributes/category-ids";
 import {
@@ -156,6 +157,57 @@ describe("realizeBody — anatomy gating", () => {
     expect(body.hasFeature("wings")).toBe(true);
     expect(body.hasFeature("mandibles")).toBe(false);
     expect(body.isLocationPresent("wings")).toBe(true);
+  });
+});
+
+describe("realizeBody — chest build vs breast size follow configured anatomy", () => {
+  // The invariant: exactly one silhouette owner applies to any body. Kills an
+  // implementation that keys the pair off the gender label (a male body given
+  // breasts would keep chest.size and never expose breasts.size) or one that
+  // drops chest.hair along with chest.size.
+  const chestSize = def("chest.size");
+  const breastSize = def("breasts.size");
+  const chestHair = def("chest.hair");
+  const bodyFor = (gender: string, override?: readonly string[]) =>
+    realizeBody({
+      intimateRegions:
+        override ?? seedBodyConfigFromAttributes([{ id: "identity.gender", value: gender, source: "creation" }]).intimateRegions,
+    });
+
+  it("a default male seed exposes chest.size, not breasts.size", () => {
+    const male = bodyFor("male");
+    expect(male.isAttributeApplicable(chestSize)).toBe(true);
+    expect(male.isAttributeApplicable(breastSize)).toBe(false);
+    expect(male.isAttributeApplicable(chestHair)).toBe(true);
+  });
+
+  it("a default female seed exposes breasts.size, not chest.size", () => {
+    const female = bodyFor("female");
+    expect(female.isAttributeApplicable(breastSize)).toBe(true);
+    expect(female.isAttributeApplicable(chestSize)).toBe(false);
+    expect(female.isAttributeApplicable(chestHair)).toBe(true);
+  });
+
+  it("the breasts toggle swaps the pair regardless of gender (anatomy owns the rule)", () => {
+    // A male character given breasts in the editor — the gender seed was
+    // penis/testicles; the configured anatomy decides.
+    const maleWithBreasts = bodyFor("male", ["penis", "testicles", "breasts"]);
+    expect(maleWithBreasts.isAttributeApplicable(breastSize)).toBe(true);
+    expect(maleWithBreasts.isAttributeApplicable(chestSize)).toBe(false);
+    // …and a female character with the region switched off gets chest build back.
+    const femaleWithout = bodyFor("female", ["vulva"]);
+    expect(femaleWithout.isAttributeApplicable(chestSize)).toBe(true);
+    expect(femaleWithout.isAttributeApplicable(breastSize)).toBe(false);
+  });
+
+  it("every supersededByIntimateRegions entry names a real region group", () => {
+    // A typo here would silently never fire — the attribute would stay
+    // applicable alongside the region's own owner.
+    for (const d of attributeRegistry.definitions) {
+      for (const group of d.supersededByIntimateRegions ?? []) {
+        expect((INTIMATE_REGION_GROUPS as readonly string[]).includes(group), `${d.id} → ${group}`).toBe(true);
+      }
+    }
   });
 });
 

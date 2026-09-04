@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   diag,
+  isIntimateAttributeCategory,
   isPersonalityAttributeCategory,
   realizeBody,
   type AttributeDefinition,
@@ -50,11 +51,16 @@ export function portraitAttributeDefinitions(
   draft: CharacterDraft,
   realizedBody = realizedBodyFor(draft),
 ): readonly AttributeDefinition[] {
-  // characterAttributeDefinitions already excludes intimate categories and
-  // gates feature categories on the realized body; the portrait additionally
-  // excludes the personality-tab categories (not visible in a still image).
+  // characterAttributeDefinitions gates feature categories on the realized body
+  // and admits the render-visual intimate size (breasts.size) so a concept can
+  // state it; the portrait excludes everything intimate — the avatar pipeline
+  // never renders it — and the personality-tab categories (not visible in a
+  // still image).
   return characterAttributeDefinitions({ prompt: "", userId: "", draft }).filter(
-    (d) => !isPersonalityAttributeCategory(d.category) && realizedBody.isAttributeApplicable(d),
+    (d) =>
+      !isIntimateAttributeCategory(d.category) &&
+      !isPersonalityAttributeCategory(d.category) &&
+      realizedBody.isAttributeApplicable(d),
   );
 }
 

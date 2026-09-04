@@ -10,6 +10,7 @@ export * from "./registry";
 export * from "./value";
 export * from "./shared-values";
 export { attributeGroups } from "./categories";
+export { BUST_SCALE_TO_BREAST_SIZE } from "./categories/chest";
 
 export const attributeRegistry = buildRegistry(attributeGroups);
 

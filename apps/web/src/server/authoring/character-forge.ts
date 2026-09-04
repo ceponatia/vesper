@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   attributeRegistry,
   bodyLocationRegistry,
+  BUST_SCALE_TO_BREAST_SIZE,
   DEFAULT_SPECIES_ID,
   heritageFor,
   inferHeritageFromText,
@@ -182,14 +183,23 @@ function heritageForForgeContext(context: CharacterForgeContext): HeritageDefini
   return inferHeritageFromText(species.id, context.prompt) ?? heritageFor(species.id, undefined);
 }
 
-function realizedBodyForForgeContext(context: CharacterForgeContext) {
+/**
+ * The realized body the forge grounds against. A prompt that names no species
+ * realizes the default one — the body's anatomy gating (chest build vs breast
+ * size) has to hold for a plain human concept too, and the default species
+ * carries no rules or feature groups, so nothing else moves. `intimateRegions`
+ * overrides the draft's stored body-config: the attribute section passes the
+ * config its own grounded values SEED (gender's `activatesGroups`), so
+ * anatomy-gated fills land on the body the draft will actually carry rather
+ * than the empty config a fresh forge starts from.
+ */
+function realizedBodyForForgeContext(context: CharacterForgeContext, intimateRegions?: readonly string[]): RealizedBody {
   const species = speciesForForgeContext(context);
-  if (!species) return undefined;
   return realizeBody({
-    speciesId: species.id,
+    speciesId: species?.id,
     heritageId: heritageForForgeContext(context)?.id,
-    bodyPlanId: context.draft?.profile.bodyPlanId ?? species.bodyPlanId,
-    intimateRegions: context.draft?.profile.intimateRegions,
+    bodyPlanId: context.draft?.profile.bodyPlanId ?? species?.bodyPlanId,
+    intimateRegions: intimateRegions ?? context.draft?.profile.intimateRegions,
     bodyFeatures: context.draft?.profile.bodyFeatures,
   });
 }
@@ -770,14 +780,18 @@ export interface AttributeSection {
 
 export function characterAttributeDefinitions(context?: CharacterForgeContext): readonly AttributeDefinition[] {
   const realizedBody = context ? realizedBodyForForgeContext(context) : undefined;
-  // Anatomy-specific attributes are excluded from the forge vocabulary until
-  // the forge can also infer the body-config that realizes them. Intimate
-  // regions are seeded from gender below; additive feature groups enter only
-  // when the prompt/draft resolves a feature-bearing species.
+  // Anatomy-specific attributes stay out of the forge vocabulary: the body-config
+  // that realizes them is seeded from the answer itself (gender's
+  // activatesGroups), so the model cannot be shown a body it has yet to decide.
+  // The one exception is the render-visual intimate size (breasts.size): the
+  // model may state the size a concept gives rather than have the fill invent
+  // one, and the realized body drops the value when the region ends up off
+  // (conformAttributesToBody). Additive feature groups enter only when the
+  // prompt/draft resolves a feature-bearing species.
   return attributeRegistry.definitions.filter(
     (d) =>
       (d.appliesToEntityKinds ?? ["character"]).includes("character") &&
-      !isIntimateAttributeCategory(d.category) &&
+      (!isIntimateAttributeCategory(d.category) || d.renderVisual === true) &&
       (!isFeatureAttributeCategory(d.category) || (realizedBody?.isAttributeApplicable(d) ?? false)),
   );
 }
@@ -960,12 +974,13 @@ export function describeConstraint(def: AttributeDefinition, allowedValues?: rea
 function attributesPrompt(context: CharacterForgeContext): string {
   const realizedBody = realizedBodyForForgeContext(context);
   let hasSpeciesTrait = false;
-  const vocabulary = characterAttributeDefinitions(context)
+  const definitions = characterAttributeDefinitions(context);
+  const vocabulary = definitions
     .map((def) => {
-      const allowed = realizedBody?.allowedValuesFor(def);
-      const required = realizedBody?.isAttributeRequired(def) ?? false;
+      const allowed = realizedBody.allowedValuesFor(def);
+      const required = realizedBody.isAttributeRequired(def);
       if (required) hasSpeciesTrait = true;
-      const speciesDefault = realizedBody?.defaultValueFor(def);
+      const speciesDefault = realizedBody.defaultValueFor(def);
       const defaultHint =
         required && typeof speciesDefault === "string" ? ` (species default: ${speciesDefault})` : "";
       const tags = `${def.coreVisual ? " [CORE]" : ""}${def.renderVisual ? " [RENDER]" : ""}${def.identityAnchor ? " [ANCHOR]" : ""}${required ? " [SPECIES]" : ""}`;
@@ -999,6 +1014,15 @@ function attributesPrompt(context: CharacterForgeContext): string {
     "",
     "Infer the [ANCHOR] attributes first. Emit definite values where the concept supports them; for each [CORE] or [RENDER] enum attribute left without a definite value, emit a ranges entry with the plausible subset of its allowed values given the anchors. Fill the others only where the concept supports them; omit the rest.",
   );
+  // The admitted anatomy-gated ids, named plainly: the contract says
+  // breasts.size; any model-specific wording belongs to an adapter.
+  const anatomyIds = definitions.filter((def) => isIntimateAttributeCategory(def.category)).map((def) => def.id);
+  if (anatomyIds.length > 0) {
+    lines.push(
+      "",
+      `Attributes of configurable anatomy (${anatomyIds.join(", ")}) apply only to a body that carries that anatomy: emit a definite value where the concept states one, a range where the anchors suggest one, and omit it for a body without the anatomy.`,
+    );
+  }
   return lines.join("\n");
 }
 
@@ -1019,26 +1043,39 @@ async function forgeAttributesSection(context: CharacterForgeContext): Promise<C
   // Species-required defaults first (e.g. elf ears.shape = "pointed") so the
   // core-visual pass treats them as already present, then the core-visual fill.
   const seeded = fillSpeciesRequiredDefaults(grounded, realizedBody, context.sink);
-  const filled = fillVisualDefaults(seeded, context.prompt, context.sink, ranges, realizedBody);
+  // The fills run against the body the draft WILL carry: its body-config is
+  // seeded from the values so far (gender's activatesGroups — a SEED, overridable
+  // in the editor), so an anatomy-gated visual fills for the right owner (a body
+  // with breasts gets breasts.size, one without gets chest.size; never both).
+  // Each pass first conforms the values to that body — a size the body does not
+  // apply is translated to its successor or dropped BEFORE the fill can seed
+  // the competing owner beside it — so the draft never stores both sizes.
+  const bodyFor = (values: readonly AttributeValue[]) =>
+    realizedBodyForForgeContext(context, seedBodyConfigFromAttributes(values).intimateRegions);
+  const conformAndFill = (values: readonly AttributeValue[]) => {
+    const body = bodyFor(values);
+    const conformed = conformAttributesToBody(values, body, context.sink);
+    return { body, values: fillVisualDefaults(conformed, context.prompt, context.sink, ranges, body) };
+  };
+  const first = conformAndFill(seeded);
+  // gender is itself a core visual: when the model omitted it, the fill above
+  // invented one and thereby moved the seeded body-config. Realize once more
+  // against the final config, conform to it, and fill whatever that body still
+  // lacks (a no-op when the config didn't move — present ids are never refilled).
+  const { body: forgedBody, values: filled } = conformAndFill(first.values);
   // Persisted-baseline facts (materializeDefault) ground here too, so a forged
   // draft shows them in the editor rather than acquiring them silently on save.
   // Fill-only — anything the model inferred (a prompt that mentioned her feet)
   // wins; the fixed default is the point for these, unlike the concept-varied
   // core-visual fills above.
-  const attributes = materializeRegistryDefaults(
-    filled,
-    realizedBody === undefined
-      ? {}
-      : {
-          isApplicable: (def) => realizedBody.isAttributeApplicable(def),
-          allowedValuesFor: (def) => realizedBody.allowedValuesFor(def),
-          ruleDefaultFor: (def) => realizedBody.defaultValueFor(def),
-        },
-  );
-  // Seed the body-config declaratively from the attribute values' activatesGroups
-  // (e.g. identity.gender) — a SEED, overridable in the editor. gender is now
-  // coreVisual, so it is always present and the seed is reliable. Intimate
-  // attribute values stay empty; the human authors them.
+  const attributes = materializeRegistryDefaults(filled, {
+    isApplicable: (def) => forgedBody.isAttributeApplicable(def),
+    allowedValuesFor: (def) => forgedBody.allowedValuesFor(def),
+    ruleDefaultFor: (def) => forgedBody.defaultValueFor(def),
+  });
+  // The stored body-config is the same seed the fills realized against. Intimate
+  // attribute values beyond the render-consistency fill stay empty; the human
+  // authors them.
   const { intimateRegions } = seedBodyConfigFromAttributes(attributes);
   return { profile: { attributes, intimateRegions } };
 }
@@ -1099,6 +1136,13 @@ export function fillSpeciesRequiredDefaults(
  * docs/resilience.md §6). A definite value always beats a range for the same
  * id — present ids are never filled. Enum-only: a default we can't pick from
  * a closed list isn't a default worth inventing.
+ *
+ * With a realized body the candidate set is every registry attribute that body
+ * says applies — so an anatomy-gated flagged attribute (breasts.size on a body
+ * with breasts; chest.size on one without) fills for exactly the owner the
+ * body realizes, and a superseded one is never seeded. Without a body it is the
+ * everyday forge vocabulary minus intimate anatomy: no body means no region to
+ * gate a breast size on, so none is ever invented.
  */
 export function fillVisualDefaults(
   values: readonly AttributeValue[],
@@ -1111,7 +1155,10 @@ export function fillVisualDefaults(
   const filled = [...values];
   const added: string[] = [];
   const unconstrained: string[] = [];
-  for (const def of characterAttributeDefinitions()) {
+  const candidates = realizedBody
+    ? attributeRegistry.definitions.filter((def) => realizedBody.isAttributeApplicable(def))
+    : characterAttributeDefinitions().filter((def) => !isIntimateAttributeCategory(def.category));
+  for (const def of candidates) {
     if ((!def.coreVisual && !def.renderVisual) || present.has(def.id)) continue;
     if (def.valueType !== "enum" || !def.allowedValues || def.allowedValues.length === 0) continue;
     // Pick within the resolved species' narrowed set when one applies, so a
@@ -1158,6 +1205,64 @@ export function fillVisualDefaults(
     );
   }
   return filled;
+}
+
+/**
+ * Conform grounded values to the body the draft will carry: a value whose
+ * definition that body does not apply is never stored (the fills are fill-only
+ * and would otherwise leave it beside the owner they seed). Scoped to what the
+ * realized body says CANNOT apply — a model-emitted value and a fill are
+ * indistinguishable here (both carry source "creation"), so nothing the body
+ * applies is ever second-guessed. The one translation is the anatomy-split
+ * size pair: a `chest.size` the breasts region supersedes becomes
+ * `breasts.size` through the contract's bust-scale table when it is the only
+ * size given, so the one size signal survives as its successor instead of
+ * yielding to a hash pick (`forge.character.attributes.size_translated`);
+ * with `breasts.size` already present it drops (breasts.size wins), as does a
+ * structural chest build with no breast-size reading. Every other inapplicable
+ * value drops with `forge.character.attributes.inapplicable_for_body`.
+ */
+export function conformAttributesToBody(
+  values: readonly AttributeValue[],
+  body: RealizedBody,
+  sink?: DiagnosticSink,
+): AttributeValue[] {
+  const present = new Set(values.map((v) => v.id));
+  const kept: AttributeValue[] = [];
+  const dropped: string[] = [];
+  for (const value of values) {
+    const def = attributeRegistry.byId(value.id);
+    // An unregistered id is not ours to judge — never drop what we don't understand.
+    if (!def || body.isAttributeApplicable(def)) {
+      kept.push(value);
+      continue;
+    }
+    if (value.id === "chest.size" && !present.has("breasts.size") && typeof value.value === "string") {
+      const successor = attributeRegistry.byId("breasts.size");
+      const translated = BUST_SCALE_TO_BREAST_SIZE[value.value];
+      if (successor && translated !== undefined && (body.allowedValuesFor(successor)?.includes(translated) ?? false)) {
+        present.add("breasts.size");
+        kept.push({ ...value, id: "breasts.size", value: translated });
+        sink?.push(
+          diag(
+            "info",
+            "forge.character.attributes.size_translated",
+            `translated chest.size=${value.value} to breasts.size=${translated}: the body carries the breasts region`,
+          ),
+        );
+        continue;
+      }
+    }
+    dropped.push(`${value.id}=${String(value.value)}`);
+  }
+  if (dropped.length > 0) {
+    sink?.push(
+      diag("info", "forge.character.attributes.inapplicable_for_body", `dropped ${dropped.join(", ")}: not applicable to the realized body`, {
+        context: { ids: dropped },
+      }),
+    );
+  }
+  return kept;
 }
 
 // ---------------------------------------------------------------------------
@@ -1525,6 +1630,11 @@ export function demoCharacterAttributeSection(): AttributeSection {
     { id: "build.frame", value: "sturdy" },
     { id: "skin.tone", value: "tan" },
     { id: "skin.texture", value: "weathered" },
+    // The bust filed under chest build — the slip a model makes before the
+    // grounded gender activates the breasts region. The demo path carries it so
+    // the forge's body conform step (chest.size → breasts.size) is exercised on
+    // every demo forge, not only where a live model happens to make the slip.
+    { id: "chest.size", value: "slight" },
   ];
   // A weathered dockworker reads as solidly built; the unset core visual gets
   // a range so the demo path exercises the range-constrained seeded fill.

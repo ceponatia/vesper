@@ -406,6 +406,7 @@ Every refusal happens before provider spend, and each has its own code:
 | `image_prompt_program.mandatory_claim_dropped`          | the endpoint cannot express a protected claim         |
 | `image_prompt_program.required_exclusion_unexpressible` | a required exclusion is contradicted by world truth   |
 | `image_prompt_program.post_merge_collision`             | a replacement claim contradicts a surviving exclusion |
+| `image_prompt_program.prompt_empty`                     | the dialect's compiled prompt text is blank           |
 
 Softer degradation is reported and carries on: a narrowed or dropped optional
 constraint, a trimmed optional claim, a version with no negative field, and a
