@@ -305,13 +305,13 @@ When you change Vesper code:
 - **F.** If yes, design the smallest high-value test at the owning layer.
 - **G.** Reuse existing fixtures and helpers.
 - **H.** Do not mirror the coverage at a higher or lower layer.
-- **I.** Run the narrow suite while developing — name the project, so you are not
-  also collecting the half that needs Postgres:
-  - pure app test — `pnpm vitest run --project=app <path>`
-  - integration test — `pnpm vitest run --project=app-int --no-file-parallelism <path>`
-  - package test — `pnpm --filter @vesper/simulation-core exec vitest run <path>`
-- **J.** Let CI on the PR handle broad validation. Do not run the full gate set
-  locally.
+- **I.** Do not run the suite locally — not even the narrow single-project
+  form (owner ruling 2026-09-04: no `pnpm vitest` on this machine; the
+  project deny list and the preflight hook refuse it, as they refuse every
+  other gate). Write the test, commit, push the branch.
+- **J.** CI on the PR is the only validation. Read a red run from its logs
+  (`.claude/skills/vesper-pr-review/ci-failure.sh <pr>`) and fix from the
+  code; never reproduce it with a local run.
 
 ## A note for autonomous agents
 
