@@ -26,6 +26,18 @@ import { clearReferenceViewAssetPointers, retiredReferenceViewAssets } from "./r
  */
 export const REFERENCE_VIEW_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
+/**
+ * The window in whole days, for the one sentence the studio's history list owes
+ * its reader: a list bounded by a sweep the owner cannot see is a list that
+ * silently lies about what a slot has produced.
+ *
+ * Derived here rather than typed as a number at the UI boundary, so moving the
+ * window moves the promise with it.
+ */
+export function referenceViewRetentionDays(): number {
+  return Math.round(REFERENCE_VIEW_RETENTION_MS / (24 * 60 * 60_000));
+}
+
 /** Rows touched per pass. Maintenance rides a render; it never becomes one. */
 const REFERENCE_VIEW_CLEANUP_LIMIT = 200;
 

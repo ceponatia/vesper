@@ -483,7 +483,7 @@ function ImageLoraForm({
             label="Label"
             hint="What this LoRA is, in the words a picker should show."
             value={label}
-            placeholder="Photo to anime (Qwen 2509)"
+            placeholder="Photo to anime (Qwen Image Edit 2511)"
             maxLength={200}
             onChange={setLabel}
           />

@@ -22,8 +22,10 @@ import {
  */
 
 const HF_LOCATOR = "flymy-ai/qwen-image-edit-2509-inscene-lora";
-const MODEL_SLUG = "qwen/qwen-image-edit-plus-lora";
-const VERSION = "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200";
+const MODEL_SLUG = "qwen/qwen-image-edit-2511";
+/** A registered model the fixture LoRA is NOT trained against: the generator arm of the same family. */
+const OTHER_MODEL_SLUG = "qwen/qwen-image-2512";
+const VERSION = "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729";
 
 function lora(over: Record<string, unknown> = {}): ImageLora {
   return imageLoraSchema.parse({
@@ -320,10 +322,10 @@ describe("evaluateImageLoraForRender", () => {
   });
 
   it("refuses a model the LoRA was not trained against", () => {
-    const result = evaluate({ modelSlug: "qwen/qwen-image-edit-2511" });
+    const result = evaluate({ modelSlug: OTHER_MODEL_SLUG });
     expect(result).toMatchObject({ ok: false, code: "image_lora.incompatible" });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.message).toContain("qwen/qwen-image-edit-2511");
+    if (!result.ok) expect(result.message).toContain(OTHER_MODEL_SLUG);
   });
 
   it("refuses every model when the compatibility list is empty", () => {
@@ -382,7 +384,7 @@ describe("evaluateImageLoraForRender", () => {
 
     // Mechanical compatibility is unchanged by the context: the same row still
     // refuses on the model, the scale and the version's own bindings.
-    expect(evaluate({ context: bench, modelSlug: "qwen/qwen-image-edit-2511" })).toMatchObject({
+    expect(evaluate({ context: bench, modelSlug: OTHER_MODEL_SLUG })).toMatchObject({
       ok: false,
       code: "image_lora.incompatible",
     });

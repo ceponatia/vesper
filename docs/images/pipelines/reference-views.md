@@ -22,11 +22,19 @@ itself, which is the trigger.
 - The four angles are `front_full`, `back_full`, `side_left`, `side_right`. Each carries its own
   `SceneCameraSpec` and a camera id the digest selection fingerprints. All four are `full_figure` at
   `eye_level`: below-waist morphology is exactly what a later render must stop inventing, and a
-  waist-up frame would cut it.
+  waist-up frame would cut it. Every angle clause ends with the **same shared full-length clause**,
+  which names the body's two ends as places — the top of the head, the floor underfoot — because the
+  camera's framing line alone leaves an edit model free to return the portrait crop it started from.
 - **Side handedness is subject-relative.** `side_left` turns the character's own left side toward
   the camera. The camera vocabulary has no left or right — `profile` says side-on and stops — so the
   instruction fixes it, and it fixes it against the body, because a mark on the character's left
   shoulder is on the character's left in both the sheet and the scene that anchors to it.
+- **A side instruction states that handedness twice**: subject-relative first, then the
+  camera-relative consequence it forces — a subject whose own left side is toward the lens faces the
+  frame's left edge, with the own right side turned away from the camera, and `side_right` is that
+  geometry mirrored. A model resolves a frame direction more reliably than a possessive one, and
+  stating both means either half alone still lands the same picture. The two side entries are
+  therefore exact left/right mirrors of each other, each naming its own side before the frame's.
 - The two wardrobe states are `clothed` (as the portrait is dressed) and `bare` (undressed).
   `bare` carries `intimate: true`, and that flag is the single gate for three things: the age
   refusal, the intimate reveal, and eligibility to be sent to a lane running without intimate
@@ -83,6 +91,15 @@ build job plans from, so the charge and the work can never be two numbers.
   nothing.
 - **One build per character at a time**, staleness-bounded like every other job dedupe, so a deploy
   that kills a build cannot wedge that character forever.
+- **A batch is one job, one admission and one charge — and every target in it starts together.**
+  The character, the accepted portrait's bytes and the wardrobe are read once; from there every
+  admitted target's provider request begins without waiting for another target in the same batch to
+  settle. There is no render-count limit inside the job. What a sheet may cost is the daily image
+  budget's question, and how many batches may run at all is the per-user job cap's.
+- **Duplicate slots converge to one attempt.** A request naming the same slot twice is normalized
+  (`normalizeReferenceViewTargets`) before admission, so it is charged once and rendered once: two
+  simultaneous attempts on one slot would supersede each other mid-render, and the second render's
+  only product would be a charge.
 - A view render that fails — a moderated `bare` view is the expected instance — fails its own row
   with a classified failure code and the provider's words, and the other views carry on.
 
@@ -99,6 +116,10 @@ build job plans from, so the charge and the work can never be two numbers.
 - Rows are never deleted. A retired row's **asset** is purged by the scheduled sweep seven days
   after it was retired — the same window the identity pack's retired crops use, and never for a
   `current` row, whatever its status. The whole set is deleted with the character.
+- **A row keeps its `verdict` through supersession.** Retiring a row overwrites its `status` with
+  `superseded`, so the status of every attempt but the newest says nothing about what the owner
+  decided; the stored verdict is the one review fact that outlives the retirement, and a slot's
+  history is read from it.
 
 ## Review
 
@@ -111,6 +132,14 @@ build job plans from, so the charge and the work can never be two numbers.
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
   supplying it. It runs no model, charges no render budget, and re-fits the image to the canonical
   3:4 portrait under the avatar upload's decode guards.
+- **The `verdict` column is written by a review and by an upload, and never cleared.** A review
+  writes `approved` or `rejected`; an upload writes `approved`, because supplying a view is the
+  owner's own review. Nothing else writes it, supersession leaves it alone, and no row's verdict is
+  ever overturned by a later attempt on the same slot.
+- **What a past attempt reads as is one pure function**, `referenceViewHistoryVerdict`: the stored
+  verdict where there is one, otherwise a `rejected` status or a `ready` row's review stamp, and
+  `unreviewed` for an attempt nobody ruled on. Rows retired before the column existed have no
+  recoverable verdict and read as `unreviewed`.
 - **Consumable** is one function, `isConsumableReferenceView`, and nothing else recomputes it: the
   slot's current row, `ready` under the current generation version, rendered from the portrait
   accepted right now, with a `ready` asset, reviewed.
@@ -125,7 +154,7 @@ Neither vetoes the other.
 The **angle** comes from the RESOLVED camera — `SceneRenderPlan.camera`, after the plan has
 spent every evidence gate and a surviving staging entry has already overwritten it:
 
-| Resolved shot                                        | Angle           |
+| Resolved shot                                         | Angle           |
 | ----------------------------------------------------- | --------------- |
 | orientation `away`                                    | `back_full`     |
 | orientation `away_glance_back`                        | `back_full`     |
@@ -192,15 +221,19 @@ studio's grid displays them.
 
 ## Routes
 
-| Route                                                | What it does                                                         |
-| ---------------------------------------------------- | -------------------------------------------------------------------- |
-| `GET /api/characters/:id/reference-views`            | `{ set, planned }` — every slot, `missing` where no row exists       |
-| `POST /api/characters/:id/reference-views/build`     | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted` |
-| `POST …/reference-views/:angle/:wardrobe/regenerate` | Rebuilds one slot, a rejected one included                           |
-| `POST …/reference-views/:angle/:wardrobe/upload`     | `{ dataUrl }` ⇒ the settled slot, synchronously                      |
-| `POST …/reference-views/:angle/:wardrobe/review`     | `{ verdict: approve \| reject }` ⇒ the settled slot                  |
+| Route                                                 | What it does                                                                  |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot, `missing` where no row exists                |
+| `POST /api/characters/:id/reference-views/build`      | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted`          |
+| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — rebuilds the named slots as one batch, rejected ones included |
+| `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                  |
+| `POST …/reference-views/:angle/:wardrobe/upload`      | `{ dataUrl }` ⇒ the settled slot, synchronously                               |
+| `POST …/reference-views/:angle/:wardrobe/review`      | `{ verdict: approve \| reject }` ⇒ the settled slot                           |
+| `GET …/reference-views/:angle/:wardrobe/history`      | `{ entries, retentionDays }` — that slot's past images                        |
 
-All five are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
+All seven are owner-only and rooted at the character. A slot the registry has no entry for is a 404,
+and so is a slot the plan withholds — a regeneration naming one is refused whole, before anything is
+charged, rather than silently building the rest.
 
 ## Diagnostic codes
 

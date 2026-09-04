@@ -304,7 +304,7 @@ its own forks out without disturbing its former siblings.
 | Family     | Positive syntax  | References   | Endpoints                                                        |
 | ---------- | ---------------- | ------------ | ---------------------------------------------------------------- |
 | Qwen 2512  | natural language | none         | the description generator                                        |
-| Qwen edit  | natural language | numbered     | the delta editor, and the legacy 2509 comparison endpoint        |
+| Qwen edit  | natural language | numbered     | the delta editor                                                 |
 | Prose      | natural language | role labels  | Seedream, Wan, SD 3.5 Large, FLUX Dev, P-Image                   |
 | Tag        | comma tags       | none         | LikeReality Pony (Compel weights), SDXL PuLID                    |
 

@@ -37,14 +37,13 @@ The registry keys adapters by the model's **base slug**, so a reproducibility pi
 | Model                                                                   | Role                                                                    | Composed features                                                                                                      | Family behavior                                                          |
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | none — the family's prompt wording is an `@vesper/image-core` dialect    |
-| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor; separate legacy comparison endpoint | same edit feature set as 2511                                                                                          | eight-minute startup hint; one startup retry                             |
 | [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait           | `prompt`, `aspectRatio`, `seed`, `guidance`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle`               | no edit dialect; no execution hint                                       |
 
 One absence is deliberate:
 
 - **Qwen Image 2512 does not compose `negativePrompt`.** The endpoint declares a negative-prompt field, but Vesper's measured behavior shows that it does not steer output. The package therefore does not advertise the field as a behavioral capability merely because the schema contains it.
 
-Both edit adapters compose `lora`. Composing it states that the endpoint family can load a custom LoRA; the probed model record remains authoritative for whether the version Vesper actually runs exposes the provider bindings. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
+The edit adapter composes `lora`. Composing it states that the endpoint family can load a custom LoRA; the probed model record remains authoritative for whether the version Vesper actually runs exposes the provider bindings. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
 
 ## Features
 
@@ -112,7 +111,7 @@ Adapters may state provider-neutral timing knowledge:
 
 An absent hint means the caller's lane default governs. Hints are claims about observed endpoint behavior, not default values that every adapter must fill.
 
-Only `qwen/qwen-image-edit-plus-lora` supplies hints: an eight-minute startup budget and one startup retry. Its render budget is intentionally unset because the adapter has no model-specific render-time measurement that justifies overriding the bench default.
+No shipped adapter supplies hints. The hook exists for an endpoint whose timing has actually been watched — a queue long enough to abort a prediction before it began earns a startup budget and a startup retry — and an adapter states a field only where a measurement backs it, leaving the rest to the lane.
 
 The web application's Image Generator and Image Lab combine adapter hints with their bench budgets. Production keeps its own execution policy rather than inheriting bench timing.
 

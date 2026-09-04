@@ -3,6 +3,7 @@ import {
   allReferenceViews,
   selectReferenceView,
   isConsumableReferenceView,
+  normalizeReferenceViewTargets,
   plannedReferenceViews,
   projectReferenceViewState,
   REFERENCE_VIEW_BACKGROUND_CLAUSE,
@@ -11,10 +12,14 @@ import {
   referenceViewAngleIds,
   referenceViewAngles,
   referenceViewFaceVisibility,
+  referenceViewHistoryVerdict,
   referenceViewWardrobeEntries,
   referenceViewWardrobes,
   type ReferenceViewAngleId,
+  type ReferenceViewHistoryVerdict,
   type ReferenceViewProjectionInput,
+  type ReferenceViewStatus,
+  type ReferenceViewVerdict,
 } from "./reference-views";
 import { FULLY_COVERED, type RegionExposure } from "../items/visibility";
 import {
@@ -96,13 +101,25 @@ describe("the reference view registry", () => {
   // Two `profile` cameras with one instruction between them would be one view
   // rendered twice and billed twice — the camera vocabulary has no left/right,
   // so the handedness lives in the words or nowhere.
+  //
+  // Each side instruction names BOTH hands of the geometry — the own side toward
+  // the camera, the other side turned away, and the frame edge that follows — so
+  // "mentions the word left" says nothing: an entry stating every one of those
+  // backwards still contains both words. The contract is that the entry names its
+  // OWN side first and that the two entries are exact mirrors, and those two
+  // assertions kill the edits that can realistically ship a wrong sheet: a
+  // half-applied rewording of one side, and a rewording that inverts both at once.
   it("distinguishes the two side views in their instructions, not in their cameras", () => {
     const left = referenceViewAngleById("side_left");
     const right = referenceViewAngleById("side_right");
     expect(left?.camera).toEqual(right?.camera);
     expect(left?.instruction).not.toBe(right?.instruction);
-    expect(left?.instruction).toMatch(/\bleft\b/);
-    expect(right?.instruction).toMatch(/\bright\b/);
+    // The first hand named is the subject's own, per the registry's header: the
+    // sheet is subject-relative, and the camera-relative consequence follows it.
+    expect(left?.instruction.match(/\b(left|right)\b/)?.[1]).toBe("left");
+    expect(right?.instruction.match(/\b(left|right)\b/)?.[1]).toBe("right");
+    const mirrored = left?.instruction.replaceAll(/\b(left|right)\b/g, (word) => (word === "left" ? "right" : "left"));
+    expect(mirrored).toBe(right?.instruction);
   });
 
   it("is the cross product of its two axes", () => {
@@ -134,11 +151,11 @@ describe("the phrasing rules that keep a view from painting a second person", ()
   });
 });
 
-describe("the age gate", () => {
-  const withBand = (band: string): { attributes: AttributeValue[] } => ({
-    attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: band, source: "creation" }],
-  });
+const withBand = (band: string): { attributes: AttributeValue[] } => ({
+  attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: band, source: "creation" }],
+});
 
+describe("the age gate", () => {
   it("keeps the whole sheet for a recognized adult band", () => {
     expect(plannedReferenceViews(withBand("eighteen"))).toHaveLength(allReferenceViews().length);
   });
@@ -153,6 +170,45 @@ describe("the age gate", () => {
 
   it("drops every undressed view when no age band resolves at all", () => {
     expect(plannedReferenceViews({ attributes: [] }).every((view) => view.wardrobe === "clothed")).toBe(true);
+  });
+});
+
+/**
+ * What a request for "rebuild these" resolves to before anything is admitted.
+ *
+ * Both halves are money. A duplicate slot that survives is charged twice and
+ * rendered twice, and the second attempt supersedes the first mid-render — the
+ * bill is real and the picture is not. A slot outside the plan that is quietly
+ * dropped rather than refused turns the age gate into something a client can
+ * discover by counting renders.
+ *
+ * The implementation this kills is `requested.filter(inPlan)`, which passes
+ * every happy-path check.
+ */
+describe("normalizeReferenceViewTargets", () => {
+  const ADULT = plannedReferenceViews(withBand("eighteen"));
+  const CLOTHED_ONLY = plannedReferenceViews(withBand("teen"));
+  const FRONT_CLOTHED = { angle: "front_full", wardrobe: "clothed" } as const;
+  const FRONT_BARE = { angle: "front_full", wardrobe: "bare" } as const;
+  const BACK_CLOTHED = { angle: "back_full", wardrobe: "clothed" } as const;
+
+  it("keeps one attempt per slot, in the order the caller first named it", () => {
+    expect(normalizeReferenceViewTargets([BACK_CLOTHED, FRONT_CLOTHED, BACK_CLOTHED], ADULT)).toEqual({
+      targets: [BACK_CLOTHED, FRONT_CLOTHED],
+      refused: [],
+    });
+  });
+
+  it("refuses a slot the plan withheld rather than dropping it quietly", () => {
+    expect(normalizeReferenceViewTargets([FRONT_CLOTHED, FRONT_BARE, FRONT_BARE], CLOTHED_ONLY)).toEqual({
+      // Deduplicated on both sides, so a repeat cannot pad the refusal either.
+      targets: [FRONT_CLOTHED],
+      refused: [FRONT_BARE],
+    });
+  });
+
+  it("passes a whole plan through unchanged — an accept builds exactly what it planned", () => {
+    expect(normalizeReferenceViewTargets(ADULT, ADULT)).toEqual({ targets: ADULT, refused: [] });
   });
 });
 
@@ -331,5 +387,39 @@ describe("selectReferenceView", () => {
     // Stability is the whole point: the same key answers the same way however
     // often a conversation asks.
     expect(side(EVEN_KEY)).toBe("side_left");
+  });
+});
+
+/**
+ * **What a past attempt says the owner decided about it.**
+ *
+ * The invariant: a ruling survives supersession. `reserveReferenceView` retires
+ * the previous row by overwriting its `status` with `superseded`, so the status
+ * of every attempt but the newest says nothing about whether the owner approved
+ * it, rejected it, or never looked — which is the entire reason the `verdict`
+ * column exists and the entire reason a slot's history is worth showing.
+ *
+ * Falsified against the two implementations somebody would actually write: one
+ * that reads `status` alone (every retired attempt reads `unreviewed`, and the
+ * history lies about every ruling the owner made) and one that reads `verdict`
+ * alone (rows written before the column existed lose theirs, so a rejection the
+ * backfill could not reach reads as never reviewed).
+ */
+describe("what a past attempt's verdict reads as", () => {
+  type Row = { status: ReferenceViewStatus; verdict: ReferenceViewVerdict | null; reviewedAt: Date | string | null };
+  const REVIEWED = new Date("2026-01-01T00:00:00Z");
+
+  const cases: ReadonlyArray<[string, Row, ReferenceViewHistoryVerdict]> = [
+    ["a rejection the next attempt superseded", { status: "superseded", verdict: "rejected", reviewedAt: REVIEWED }, "rejected"],
+    ["an approval the next attempt superseded", { status: "superseded", verdict: "approved", reviewedAt: REVIEWED }, "approved"],
+    ["a row replaced before anybody ruled on it", { status: "superseded", verdict: null, reviewedAt: null }, "unreviewed"],
+    ["a pre-column rejection, recoverable from its status", { status: "rejected", verdict: null, reviewedAt: REVIEWED }, "rejected"],
+    ["a pre-column approval, recoverable from its review stamp", { status: "ready", verdict: null, reviewedAt: REVIEWED }, "approved"],
+    ["a finished render nobody has looked at", { status: "ready", verdict: null, reviewedAt: null }, "unreviewed"],
+    ["a render that never produced bytes", { status: "failed", verdict: null, reviewedAt: null }, "unreviewed"],
+  ];
+
+  it.each(cases)("%s ⇒ %s", (_name, row, expected) => {
+    expect(referenceViewHistoryVerdict(row)).toBe(expected);
   });
 });

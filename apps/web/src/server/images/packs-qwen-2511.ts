@@ -253,8 +253,7 @@ const EDIT_LANES = [
   // profile and pairs it with this model, so a chat that picked any of those
   // three arrives here under its own key. Binding resolution runs on the FINAL
   // model, task and profile key, and `unbound` drops the rung, so a missing row
-  // here would silently delete the scene from a staged intimate render. (This is
-  // what the 2509 LoRA wrapper's rows carried while the route ran on it.) Both
+  // here would silently delete the scene from a staged intimate render. Both
   // strategies each, for the same reason `scene-standard` has both: the bare
   // prompt rung states `text_to_image_description`, and a binding pins one
   // strategy.

@@ -98,13 +98,14 @@ export {
   readAcceptedPortraitSource,
   REFERENCE_VIEW_UNKNOWN,
   referenceViewHistory,
+  referenceViewHistoryEntries,
   referenceViewsToRebuild,
   reserveReferenceView,
   retiredReferenceViewAssets,
   reviewReferenceView,
   type AcceptedPortraitSource,
+  type ReferenceViewReviewVerdict,
   type ReferenceViewRow,
-  type ReferenceViewVerdict,
   type ReviewReferenceViewResult,
 } from "./reference-view-store";
 export {
@@ -127,7 +128,7 @@ export {
   type UploadReferenceViewInput,
   type UploadReferenceViewResult,
 } from "./reference-view-upload";
-export { REFERENCE_VIEW_RETENTION_MS, referenceViewSweepPass } from "./reference-view-maintenance";
+export { REFERENCE_VIEW_RETENTION_MS, referenceViewRetentionDays, referenceViewSweepPass } from "./reference-view-maintenance";
 export {
   deleteIdentityPackTrialRun,
   type DeleteIdentityPackTrialRunResult,

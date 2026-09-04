@@ -47,12 +47,6 @@ import type { ImageOperationContract } from "./world-digest";
 export const imagePromptDialectIds = [
   "qwen_2512_description",
   "qwen_2511_delta_edit",
-  // The LoRA-capable Qwen edit wrapper the intimate-scene and NSFW-bench routes
-  // swap onto after profile resolution. Its own id, delegating to the 2511
-  // implementation: same instruction-edit family and same numbered-slot
-  // convention, but a separate endpoint whose trial verdicts and pack bindings
-  // must be able to move without touching 2511's.
-  "qwen_edit_plus_lora_delta_edit",
   "seedream_45_prose",
   "seedream_5_lite_prose",
   "wan_27_prose",

@@ -15,11 +15,11 @@ import { QWEN_IMAGE_FAMILY, qwenEditFeatures } from "./shared";
  * composing {@link loraFeature} here states the semantic capability without
  * inventing provider field names.
  *
- * This corrects an older adapter assumption that 2511's "integrated LoRAs"
- * referred only to built-in acceleration. Replicate's current 2511 API and the
- * pinned-version probe both expose loadable LoRA controls, so treating the older
- * 2509 plus-LoRA wrapper as the only Qwen edit endpoint with runtime LoRA support
- * made the Image Generator hide a control the selected model can genuinely use.
+ * "Integrated LoRAs" in the endpoint's own copy names built-in acceleration
+ * rather than a loadable adapter, and reading that as the whole story is what
+ * makes the Image Generator hide a control the selected model can genuinely
+ * use: Replicate's current 2511 API and the pinned-version probe both expose
+ * loadable LoRA controls.
  *
  * The accelerated sampling path remains a reviewed QUALITY decision in
  * `@vesper/image-core`, not a family quirk here: production keeps it off,

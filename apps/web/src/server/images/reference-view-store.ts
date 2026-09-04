@@ -11,8 +11,10 @@ import {
   projectReferenceViewState,
   REFERENCE_VIEW_GENERATION_VERSION,
   referenceViewAngleIdSchema,
+  referenceViewHistoryVerdict,
   referenceViewWardrobeSchema,
   type ReferenceView,
+  type ReferenceViewHistoryEntry,
   type ReferenceViewMethod,
   type ReferenceViewSetSummary,
   type ReferenceViewSummary,
@@ -190,6 +192,70 @@ async function readViewImageStatuses(rows: readonly ReferenceViewRow[]): Promise
   if (ids.length === 0) return new Map();
   const assets = await db().select({ id: images.id, status: images.status }).from(images).where(inArray(images.id, ids));
   return new Map(assets.map((asset) => [asset.id, asset.status]));
+}
+
+/**
+ * One slot's attempts as the studio's history list reads them, newest first —
+ * every image the slot has produced, rendered and uploaded alike, each with the
+ * ruling the owner gave it.
+ *
+ * Owner-scoped through the CHARACTER, exactly as {@link getReferenceViewSet} is,
+ * and refused the same way: a character that is not this owner's reads as a
+ * character with no history rather than as an error, keeping the not-yours ≡
+ * gone indistinguishability every character surface holds. A character with no
+ * accepted portrait still has a history — the sheet's rows outlive the pointer.
+ *
+ * Two filters, and both mean "there is nothing to look at": a row with no
+ * `image_id` never produced bytes (a failed render) or had them collected by the
+ * retention sweep, and a row whose asset is not `ready` points at a file that
+ * was reserved and never written. The list is evidence for a wording comparison;
+ * a row with no picture is not evidence.
+ *
+ * The first filter is the query's, and there is no row cap on top of it: the
+ * retention sweep is the list's ONLY bound, and the studio states that bound in
+ * words. A window of N attempts would be a second, unstated bound — a slot that
+ * spent N attempts on refused `bare` renders would read as empty while an older
+ * approved image still sat within the window with its bytes intact.
+ */
+export async function referenceViewHistoryEntries(
+  characterId: string,
+  ownerId: string,
+  view: ReferenceView,
+): Promise<readonly ReferenceViewHistoryEntry[]> {
+  const accepted = await readAcceptedPortrait(characterId, ownerId);
+  if (accepted === undefined) return [];
+
+  const rows = await db()
+    .select()
+    .from(characterReferenceViews)
+    .where(
+      and(
+        eq(characterReferenceViews.characterId, characterId),
+        eq(characterReferenceViews.angleId, view.angle),
+        eq(characterReferenceViews.wardrobe, view.wardrobe),
+        isNotNull(characterReferenceViews.imageId),
+      ),
+    )
+    .orderBy(desc(characterReferenceViews.createdAt));
+  const statuses = await readViewImageStatuses(rows);
+
+  return rows.flatMap((row) => {
+    const imageId = row.imageId;
+    if (imageId === null || statuses.get(imageId) !== "ready") return [];
+    return [
+      {
+        id: row.id,
+        imageId,
+        method: row.method,
+        verdict: referenceViewHistoryVerdict(row),
+        current: row.current,
+        createdAt: row.createdAt.toISOString(),
+        reviewedAt: row.reviewedAt === null ? null : row.reviewedAt.toISOString(),
+        generationVersion: row.generationVersion,
+        sourceImageId: row.sourceImageId,
+      },
+    ];
+  });
 }
 
 /** One row plus the joined facts the projection needs, as one summary. */
@@ -412,7 +478,12 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
         status: stale ? "stale" : "ready",
         imageId: input.imageId,
         method: input.method,
-        ...(reviewed === undefined ? {} : { reviewedByUserId: reviewed, reviewedAt: new Date() }),
+        // An upload arrives reviewed, so it arrives with a verdict: supplying a
+        // view IS the approval, and the row has to say so in the one column
+        // that outlives its own supersession.
+        ...(reviewed === undefined
+          ? {}
+          : { verdict: "approved" as const, reviewedByUserId: reviewed, reviewedAt: new Date() }),
       })
       .where(eq(characterReferenceViews.id, input.viewId));
     return stale ? "stale" : "ready";
@@ -439,7 +510,11 @@ export async function failReferenceView(viewId: string, failureCode: string, fai
     .where(eq(characterReferenceViews.id, viewId));
 }
 
-export type ReferenceViewVerdict = "approve" | "reject";
+/**
+ * The review REQUEST's verb — what the owner just clicked. Distinct from the
+ * contract's `ReferenceViewVerdict`, which is the noun this write stores.
+ */
+export type ReferenceViewReviewVerdict = "approve" | "reject";
 
 export type ReviewReferenceViewResult =
   | { status: "reviewed"; view: ReferenceViewSummary }
@@ -460,7 +535,7 @@ export async function reviewReferenceView(input: {
   characterId: string;
   ownerId: string;
   view: ReferenceView;
-  verdict: ReferenceViewVerdict;
+  verdict: ReferenceViewReviewVerdict;
   sink?: DiagnosticSink;
 }): Promise<ReviewReferenceViewResult> {
   const accepted = await readAcceptedPortrait(input.characterId, input.ownerId);
@@ -473,6 +548,12 @@ export async function reviewReferenceView(input: {
     .update(characterReferenceViews)
     .set({
       ...(input.verdict === "reject" ? { status: "rejected" as const } : {}),
+      // The ruling, stored where supersession cannot reach it. `status` records
+      // a rejection only until the next attempt overwrites it with
+      // `superseded`, and records an approval nowhere at all — so a history
+      // built on `status` would forget what the owner already decided about
+      // every replaced attempt, which is the one thing it exists to show.
+      verdict: input.verdict === "reject" ? ("rejected" as const) : ("approved" as const),
       reviewedByUserId: input.ownerId,
       reviewedAt: new Date(),
     })

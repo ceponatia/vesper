@@ -118,20 +118,6 @@ Of those last four, only SDXL PuLID takes a reference image, which is why it is
 the only one on the variant and scene surfaces — the other three cannot hold a
 character's face across a render at all.
 
-Registered by admin, rated, and deliberately on **no ordinary player picker**:
-
-- [Qwen Image Edit Plus LoRA](qwen-image-edit-plus-lora.md) —
-  `qwen/qwen-image-edit-plus-lora`. Generate **no**, edit yes, 3 references,
-  plus runtime `lora_weights`/`lora_scale`. `instruction_edit` · `moderate`.
-  This older 2509-generation wrapper is a legacy comparison endpoint, addressable
-  from the Image Generator and Image Lab; no production route runs on it. Production
-  intimate scenes and the anatomy bench run on the 2511 endpoint instead. Any
-  registered/enabled model row is selectable in the admin Image Generator; LoRA
-  bindings only determine whether the Generator exposes LoRA controls for that
-  row. The wrapper is **not** offered by an ordinary portrait/variant/scene
-  picker. See the [2511 page](qwen-image-edit-2511.md) for that endpoint's
-  version-specific API.
-
 Documented but not seeded — no row, and therefore no reviewed rating:
 
 - [FLUX.1 dev](flux-dev.md) — `black-forest-labs/flux-dev`. Generate yes, edit yes

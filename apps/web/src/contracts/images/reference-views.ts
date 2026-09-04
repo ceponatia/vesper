@@ -49,6 +49,16 @@ import { sceneSubjectOrientationById, type SceneCameraSpec } from "./scene-camer
  * consumer is a body: a scar on the character's left shoulder is on the
  * character's left in both the reference sheet and the scene that anchors to it.
  *
+ * The instruction states the same handedness twice, subject-relative first and
+ * then the camera-relative consequence it forces, because an edit model resolves
+ * a frame direction far more reliably than a possessive one: a subject who
+ * starts facing the lens and turns until that own left side is toward it ends up
+ * facing the frame's LEFT edge, with the own right side turned away from the
+ * camera — and `side_right` is that geometry mirrored. Both halves are stated so
+ * a model that reads only one of them still lands the same picture, and each
+ * side entry is the other's exact left/right mirror so a half-finished edit to
+ * one of them is visible rather than silently self-contradictory.
+ *
  * PURE. Tuning a phrase is a data edit here; adding an angle is one entry.
  */
 
@@ -112,13 +122,28 @@ export interface ReferenceViewAngle {
  */
 export const REFERENCE_VIEW_FRAMING = "full_figure" as const;
 
+/**
+ * The head-to-ground clause every angle ends with, stated once.
+ *
+ * The camera vocabulary already asks for `full_figure`, and the compiler already
+ * emits a framing line from it — yet a delta-edit model handed a portrait-shaped
+ * reference will happily return another portrait-shaped crop, because the
+ * strongest thing in the picture it is editing is a head. So the edit itself
+ * names the two ends of the body it must keep, and it names them as places (the
+ * top of the head, the floor underfoot) rather than as parts, since a limb noun
+ * summons a limb. Positive throughout, like every line in this file: "uncropped"
+ * would anchor on cropping.
+ */
+export const REFERENCE_VIEW_FULL_LENGTH_CLAUSE =
+  "the whole of {name} inside the frame, from the top of {name}'s head down to the floor {name} stands on, with clear space above and below";
+
 export const referenceViewAngles: readonly ReferenceViewAngle[] = [
   {
     id: "front_full",
     camera: { orientation: "toward_viewer", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_front_full",
     sceneBinding: "seen at full length, the same person",
-    instruction: "{name} standing squarely facing the camera, the whole of {name} inside the frame",
+    instruction: `{name} standing squarely facing the camera, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Front, full length",
   },
   {
@@ -126,19 +151,24 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     camera: { orientation: "away", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_back_full",
     sceneBinding: "seen from behind, the same person",
-    instruction:
-      "{name} standing with {name}'s back to the camera, {name}'s head turned away from the lens, the whole of {name} inside the frame",
+    instruction: `{name} standing with {name}'s back to the camera, {name}'s head turned away from the lens, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Back, full length",
   },
   {
     // The handedness is stated in the instruction because the camera vocabulary
-    // cannot state it — see this file's header, under "Which side is which".
+    // cannot state it, and it is stated subject-relative AND camera-relative
+    // because a model resolves a frame direction more reliably than a possessive
+    // one — see this file's header, under "Which side is which". The two side
+    // entries are exact left/right mirrors of each other; the registry's test
+    // suite is the pin.
     id: "side_left",
     camera: { orientation: "profile", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_side_left",
     sceneBinding: "seen in profile, the same person",
     instruction:
-      "{name} standing turned a quarter-turn so the left side of {name}'s body faces the camera, {name}'s head side-on to the lens, the whole of {name} inside the frame",
+      "{name} standing in a full side-on profile, {name}'s own left side toward the camera and " +
+      "{name}'s own right side turned away from it, {name} facing toward the left edge of the frame, " +
+      `{name}'s head side-on to the lens and turned the same way as {name}'s body, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Left side",
   },
   {
@@ -147,7 +177,9 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     cameraId: "reference_view_side_right",
     sceneBinding: "seen in profile, the same person",
     instruction:
-      "{name} standing turned a quarter-turn so the right side of {name}'s body faces the camera, {name}'s head side-on to the lens, the whole of {name} inside the frame",
+      "{name} standing in a full side-on profile, {name}'s own right side toward the camera and " +
+      "{name}'s own left side turned away from it, {name} facing toward the right edge of the frame, " +
+      `{name}'s head side-on to the lens and turned the same way as {name}'s body, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Right side",
   },
 ];
@@ -221,9 +253,10 @@ export const REFERENCE_VIEW_BACKGROUND_CLAUSE =
   "set against a plain, even, neutral studio backdrop, an empty seamless surface behind {name}";
 
 /**
- * Bumped when instruction wording, the background clause, or the way the three
- * are assembled changes. A stored row whose version is behind the current one
- * projects `stale`: it depicts an edit this code no longer asks for.
+ * Bumped when instruction wording, the shared full-length clause, the background
+ * clause, or the way the parts are assembled changes. A stored row whose version
+ * is behind the current one projects `stale`: it depicts an edit this code no
+ * longer asks for.
  */
 export const REFERENCE_VIEW_GENERATION_VERSION = 1;
 
@@ -265,6 +298,58 @@ export function plannedReferenceViews(profile: Pick<CharacterProfile, "attribute
     if (!intimateAllowed) return referenceViewWardrobeById(view.wardrobe)?.intimate !== true;
     return true;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Target normalization
+// ---------------------------------------------------------------------------
+
+/** One slot as a comparable string. Private: the wire spellings are the pair, never this. */
+function slotKey(view: ReferenceView): string {
+  return `${view.angle}:${view.wardrobe}`;
+}
+
+/** What a requested list of slots actually resolves to. */
+export interface NormalizedReferenceViewTargets {
+  /** The slots to build: deduplicated, restricted to the plan, in the order they were first named. */
+  readonly targets: readonly ReferenceView[];
+  /** The requested slots the plan has no entry for — age-gated or unknown — deduplicated the same way. */
+  readonly refused: readonly ReferenceView[];
+}
+
+/**
+ * The slots a request may actually build, and the ones nothing can.
+ *
+ * PURE, and the single normalization every caller shares: the routes decide what
+ * to answer a client with, and the build job runs it again over whatever it was
+ * handed, so a duplicate slot cannot be charged twice by one path and rendered
+ * twice by another.
+ *
+ * Two rules, both of which are silent money when they break:
+ *
+ * 1. **One attempt per slot.** A request naming the same slot twice is one
+ *    target. Two simultaneous attempts on one slot would supersede each other
+ *    mid-render, so the second render's only product is a charge.
+ * 2. **The plan is the boundary.** {@link plannedReferenceViews} has already
+ *    spent the age gate, so a slot outside it is refused here rather than
+ *    dropped quietly: an owner who asked for a view by name is told it does not
+ *    exist, and nothing about the character's age reaches a model.
+ */
+export function normalizeReferenceViewTargets(
+  requested: readonly ReferenceView[],
+  planned: readonly ReferenceView[],
+): NormalizedReferenceViewTargets {
+  const allowed = new Set(planned.map(slotKey));
+  const seen = new Set<string>();
+  const targets: ReferenceView[] = [];
+  const refused: ReferenceView[] = [];
+  for (const view of requested) {
+    const key = slotKey(view);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    (allowed.has(key) ? targets : refused).push({ angle: view.angle, wardrobe: view.wardrobe });
+  }
+  return { targets, refused };
 }
 
 // ---------------------------------------------------------------------------
@@ -579,3 +664,79 @@ export function selectReferenceView(input: ReferenceViewSelectionInput): Referen
     faceVisibility: referenceViewFaceVisibility(angle),
   };
 }
+
+// ---------------------------------------------------------------------------
+// The recorded verdict, and one slot's history
+// ---------------------------------------------------------------------------
+
+/**
+ * The owner's ruling on one attempt, STORED — a fact about a moment, not a
+ * status.
+ *
+ * `status` cannot carry it. A retired row's status is overwritten with
+ * `superseded` the instant the next attempt claims the slot, so a rejection and
+ * an approval read identically the moment either is replaced, and a history
+ * built from `status` would tell the owner nothing about what they already
+ * ruled. The verdict is written once, by a review or an upload, and nothing —
+ * supersession included — ever clears it.
+ */
+export const referenceViewVerdicts = ["approved", "rejected"] as const;
+export const referenceViewVerdictSchema = z.enum(referenceViewVerdicts);
+export type ReferenceViewVerdict = z.infer<typeof referenceViewVerdictSchema>;
+
+/**
+ * What a history entry says happened to one attempt: the stored verdict, or
+ * `unreviewed` for an attempt that was replaced before anybody ruled on it.
+ *
+ * A third member rather than a nullable verdict, because "nobody looked at this
+ * one" is a real and common outcome — a regenerate fired the moment a render
+ * landed — and a hole in a list reads as missing data rather than as an answer.
+ */
+export const referenceViewHistoryVerdicts = ["approved", "rejected", "unreviewed"] as const;
+export const referenceViewHistoryVerdictSchema = z.enum(referenceViewHistoryVerdicts);
+export type ReferenceViewHistoryVerdict = z.infer<typeof referenceViewHistoryVerdictSchema>;
+
+/**
+ * **The one history-verdict rule.** PURE, and read by every surface that shows a
+ * past attempt.
+ *
+ * Two sources, because rows written before the verdict column existed have only
+ * the status: a `rejected` status IS a rejection, and a `ready` row with a
+ * review stamp IS an approval. The stored verdict wins wherever it is present,
+ * and it is the only source that survives supersession — which is exactly why a
+ * reading built on `status` alone is wrong for every retired row.
+ */
+export function referenceViewHistoryVerdict(row: {
+  readonly status: ReferenceViewStatus;
+  readonly verdict: ReferenceViewVerdict | null;
+  readonly reviewedAt: Date | string | null;
+}): ReferenceViewHistoryVerdict {
+  if (row.verdict === "rejected" || row.status === "rejected") return "rejected";
+  if (row.verdict === "approved" || (row.status === "ready" && row.reviewedAt !== null)) return "approved";
+  return "unreviewed";
+}
+
+/**
+ * One attempt as the studio's history list reads it.
+ *
+ * Only attempts that still HAVE something to look at reach this shape: a row
+ * whose render failed never had bytes, and a retired row whose asset the
+ * retention sweep collected no longer does. Both are dropped rather than listed
+ * as blanks — the list exists to compare pictures, and a row with no picture is
+ * not evidence.
+ */
+export const referenceViewHistoryEntrySchema = z.object({
+  id: z.string(),
+  /** Never null: an entry with no readable asset is not listed at all. */
+  imageId: z.string(),
+  method: referenceViewMethodSchema.nullable(),
+  verdict: referenceViewHistoryVerdictSchema,
+  /** This attempt is the slot's current one — what the studio tile shows. */
+  current: z.boolean(),
+  createdAt: z.string(),
+  reviewedAt: z.string().nullable(),
+  generationVersion: z.number(),
+  /** The accepted portrait this attempt was rendered from. */
+  sourceImageId: z.string().nullable(),
+});
+export type ReferenceViewHistoryEntry = z.infer<typeof referenceViewHistoryEntrySchema>;

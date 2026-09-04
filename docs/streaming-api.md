@@ -38,7 +38,12 @@ GET                /api/characters/:id/reference-views  { set, planned } — eve
                                                         (images/pipelines/reference-views.md)
 POST               /api/characters/:id/reference-views/build   builds every missing/failed/stale slot;
                                                                409 not_accepted; ⇒ { views }
-POST               /api/characters/:id/reference-views/:angle/:wardrobe/regenerate   one slot ⇒ { views }
+POST               /api/characters/:id/reference-views/regenerate   { targets: [{ angle, wardrobe }] } ⇒
+                                                                    { views }; one batch, duplicates
+                                                                    collapsed, 404 for a slot the plan
+                                                                    withholds, 409 not_accepted
+POST               /api/characters/:id/reference-views/:angle/:wardrobe/regenerate   the one-target form
+                                                                                     of the batch above
 POST               /api/characters/:id/reference-views/:angle/:wardrobe/upload   { dataUrl } ⇒ { view },
                                                                                  synchronous, 404 for an
                                                                                  angle/wardrobe the
@@ -47,6 +52,11 @@ POST               /api/characters/:id/reference-views/:angle/:wardrobe/review  
                                                                                  approve|reject } ⇒ { view };
                                                                                  409 not_ready unless the
                                                                                  current row is ready
+GET                /api/characters/:id/reference-views/:angle/:wardrobe/history   { entries,
+                                                                                  retentionDays } — every
+                                                                                  image the slot still has,
+                                                                                  newest first, each with
+                                                                                  its verdict; read-only
 GET/POST, GET/PATCH/DELETE        /api/locations, /api/locations/:id
 GET/POST, GET/PATCH/DELETE        /api/items, /api/items/:id   (coverage ids validated against the
                                                                body-locations registry → 400 invalid_coverage)

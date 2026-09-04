@@ -28,9 +28,9 @@ Everything starts unset: the provider's own defaults rule until the admin explic
   reproducing the route does not re-pick the row. It is a default, not a lock — the select stays
   free to change or clear, a manual clear survives, leaving and returning re-arms it, and a
   duplicated run carries whatever its source recorded, including a deliberate none. The pairing is a
-  named UI preference rather than a derived one: the row's `compatibleModelSlugs` names both Qwen
-  edit endpoints, so "the only compatible row" would arm the default on the 2509 legacy comparison
-  endpoint too.
+  named UI preference rather than a derived one: compatibility is a curated library fact that widens
+  whenever a row is added or edited, so "the only compatible row" would arm the default wherever that
+  arithmetic happened to land rather than where the production route actually pairs.
 - **Advanced model inputs** render from the probed `providerInputs` descriptors: non-reserved fields
   of a type the bag can express become typed inputs, while reserved fields — owned by the prompt,
   reference, aspect, control and dedicated plumbing — are listed but not editable. A model
