@@ -32,11 +32,14 @@ wardrobe state, one tile per angle, always showing every slot the registry defin
 the view or a placeholder, a state chip and one line of copy from the exhaustive state map in
 `reference-view-copy.ts` — *not built*, *building…*, *needs your eye*, *approved*, *rejected*,
 *failed*, *out of date* — plus the actions that state allows: **Approve** / **Reject** on an
-unreviewed view, **Regenerate** on anything already attempted, and **Upload** always. A **Build N
-reference views** button appears when a portrait is accepted and any slot is missing, stale or
-failed, labelled with the count the server will actually render. The panel polls while a build is
-live or any slot is pending, and — like the identity-reference block — renders **nothing** while
-loading or on error, so the studio is unchanged when the surface is unavailable.
+unreviewed view, **Regenerate** on anything already attempted, and **Upload** always. Clicking a
+tile's image opens it in the shared `ImageLightbox` ([conventions.md](conventions.md)
+§Image lightbox), captioned with its angle and wardrobe; opening or closing the viewer changes no
+review state. A **Build N reference views** button appears when a portrait is accepted and any
+slot is missing, stale or failed, labelled with the count the server will actually render. The
+panel polls while a build is live or any slot is pending, and — like the identity-reference block —
+renders **nothing** while loading or on error, so the studio is unchanged when the surface is
+unavailable.
 
 Accepting a portrait reports what happened to the views in the accept toast: *Building N reference
 views…*, or *Accepted, but the views were not built* with the reason and an invitation to build them
