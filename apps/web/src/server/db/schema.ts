@@ -243,10 +243,10 @@ export const characters = pgTable(
     /**
      * The narrator model the owner last picked in the character-chat tab's dropdown
      * (a curated `NARRATIVE_MODELS` id), persisted so the choice survives leaving the
-     * tab. Mirrors `worlds.narrativeModel`: a per-entity scalar, not part of the
-     * resettable `character_chat_state` row (so chat resets never clear it) and not in
-     * the `profile` jsonb the editor's SaveBar rewrites (so an immediate save can't be
-     * clobbered). Empty ⇒ the chat default (`DEFAULT_CHARACTER_CHAT_MODEL_ID`).
+     * tab. A per-entity scalar, not part of the resettable `character_chat_state` row
+     * (so chat resets never clear it) and not in the `profile` jsonb the editor's
+     * SaveBar rewrites (so an immediate save can't be clobbered). Empty ⇒ the chat
+     * default (`DEFAULT_CHARACTER_CHAT_MODEL_ID`).
      */
     chatModel: text("chat_model").notNull().default(""),
     searchEmbedding: vector("search_embedding", { dimensions: 1536 }),

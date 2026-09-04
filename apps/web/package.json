@@ -17,6 +17,7 @@
     "@vesper/image-replicate": "workspace:*",
     "@vesper/image-sd": "workspace:*",
     "@vesper/simulation-core": "workspace:*",
+    "@vesper/text-models": "workspace:*",
     "ai": "^6.0.201",
     "better-auth": "^1.6.20",
     "drizzle-orm": "^0.45.2",

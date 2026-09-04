@@ -452,11 +452,11 @@ export function textModel(modelId: string): ChatLanguageModel {
 }
 
 // Text-model selection is **code or UI only** — there is no env override layer.
-// The narrator + in-session agent models come from the curated code defaults
-// (lib/narrative-models.ts, lib/agent-models.ts) or a per-world UI choice (world
-// creation + World tab); embeddings + the tool model default purely in code. A
-// retired/typo'd env value can no longer silently shadow these (it once pinned the
-// agent model to the pulled `openrouter/owl-alpha` stealth slug).
+// The narrator model comes from the curated code default (lib/narrative-models.ts)
+// or the chat model dropdown's per-chat pick; in-session agent models, embeddings,
+// and the tool model default purely in code. A retired/typo'd env value can no
+// longer silently shadow these (it once pinned the agent model to the pulled
+// `openrouter/owl-alpha` stealth slug).
 //
 // Both resolvers are STRICT (codebase-review B3): a stored/over-the-wire id must be
 // on its curated list, else it coerces to the default with a warning. Without this,
@@ -576,13 +576,6 @@ export function composerDisablesReasoning(modelId: string): boolean {
 }
 
 /**
- * Resolver for the **in-session, non-narrator text agents** (intake + the four
- * post-turn agents): the world's per-session override (set from the World tab),
- * else the curated default (lib/agent-models.ts). The authoring agents and the
- * image pipeline deliberately do NOT call this — they stay on the plain
- * `stateModelId`/`toolModelId` defaults, outside the session switch.
- */
-/**
  * The composer ladder's SECOND rung — the approved refusal fallback
  * (`composeSceneSpec`): a model already trusted with this repo's most explicit text,
  * asked once when the primary degrades.
@@ -603,6 +596,15 @@ export function composerFallbackModelId(primaryModelId: string): string {
   return SCENE_COMPOSER_MODELS.find((option) => option.id !== primaryModelId)?.id ?? primaryModelId;
 }
 
+/**
+ * Resolver for the **in-session, non-narrator text agents** (intake + the four
+ * post-turn agents): the curated default (lib/agent-models.ts). STRICT like the
+ * other resolvers above — an unrecognized id coerces to the default with a
+ * warning rather than reaching a provider — but no caller passes one today, so
+ * there is no UI or env value that actually overrides it. The authoring agents
+ * and the image pipeline deliberately do NOT call this; they stay on the plain
+ * `stateModelId`/`toolModelId` defaults, outside this switch.
+ */
 export function agentModelId(worldAgentModel?: string | null): string {
   return resolveCurated(AGENT_MODELS, worldAgentModel, MODEL_DEFAULTS.state, "ai.agent_model");
 }

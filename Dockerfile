@@ -35,6 +35,7 @@ COPY packages/image-models/package.json ./packages/image-models/
 COPY packages/image-replicate/package.json ./packages/image-replicate/
 COPY packages/image-sd/package.json ./packages/image-sd/
 COPY packages/simulation-core/package.json ./packages/simulation-core/
+COPY packages/text-models/package.json ./packages/text-models/
 RUN pnpm install --frozen-lockfile
 COPY . .
 # NODE_OPTIONS raises V8's old-space ceiling for the build only (inline, so the

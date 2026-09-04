@@ -46,7 +46,7 @@ elif [ "$SLICE" = 1 ]; then
   git -C "$ROOT" worktree add -b "$BRANCH" "$DIR" "origin/$BASE"
   echo "slice branch $BRANCH (local only, not linked — the PR says 'Part of #$ISSUE')"
 else
-  gh issue develop "$ISSUE" --repo "$REPO" --base "$BASE" --name "$BRANCH" --worktree "$DIR"
+  gh issue develop "$ISSUE" --repo "$REPO" --base "$BASE" --name "$BRANCH" --checkout --worktree "$DIR"
   echo "linked branch $BRANCH registered on #$ISSUE (a PR from it closes the issue)"
 fi
 

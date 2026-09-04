@@ -1,0 +1,19 @@
+{
+  "name": "@vesper/text-models",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Text-model adapters: the semantic sampling vocabulary, per-host wire dialects, the adapter composer, execution hints, and the adapter registry.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
+  }
+}
