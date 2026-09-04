@@ -57,9 +57,11 @@ import { createHash } from "node:crypto";
  *   completion the plain greedy anchors also produced is the field doing nothing, and a
  *   completion outside that set is a candidate that must survive a confirmation call before
  *   it is called an effect. That is what keeps pool variation from being read as a result.
- * - **Budget and stop control** (`max_tokens`, `min_tokens`, `stop`,
- *   `include_stop_str_in_output`, `stop_token_ids`) are read off the counts and the finish
- *   reason, which is where their effect actually lands.
+ * - **Budget and stop control** (`max_tokens`, `min_tokens`, `stop`, `stop_token_ids`) are
+ *   read off the counts and the finish reason, which is where their effect actually lands.
+ *   `include_stop_str_in_output` is read off the completion's TAIL — whether it ends with
+ *   the stop string — because that is a property of the one completion under test rather
+ *   than a comparison against a second, independently sampled call.
  * - **`seed`** is reproducibility, so it is the one field still measured as a pair: the
  *   same seed twice at `temperature: 1`, against a temperature-1 control proving those two
  *   calls could have differed.
@@ -75,12 +77,48 @@ import { createHash } from "node:crypto";
 /** The exact model under test. Any id is accepted so the next narrator reuses this harness. */
 const MODEL_ID = process.env.PROBE_MODEL?.trim() || "DarkArtsForge/Asmodeus-24B-v3";
 
-/** Optional comma-separated filter, for iterating on one field without re-billing the sweep. */
+/**
+ * What one `PROBE_FIELDS` name must ALSO run. Two kinds of entry, and both exist because
+ * exact-membership filtering would otherwise skip the very call a verdict is read from and
+ * bill the always-on baselines for nothing:
+ *
+ * - **Grouped fields** are probed under one synthetic name (`dry_*`), because a single
+ *   member is meaningless on its own. Naming any member selects the group.
+ * - **Dependent fields** are decided against another field's call, so selecting one alone
+ *   could only ever report `unmeasured`.
+ *
+ * A new grouped or dependent field is registered HERE and nowhere else.
+ */
+const FIELD_EXPANSIONS: Readonly<Record<string, readonly string[]>> = {
+  dry_multiplier: ["dry_*"],
+  dry_base: ["dry_*"],
+  dry_allowed_length: ["dry_*"],
+  dry_sequence_breakers: ["dry_*"],
+  xtc_threshold: ["xtc_*"],
+  xtc_probability: ["xtc_*"],
+  mirostat_mode: ["mirostat_*"],
+  mirostat_tau: ["mirostat_*"],
+  mirostat_eta: ["mirostat_*"],
+  smoothing_factor: ["smoothing_*"],
+  smoothing_curve: ["smoothing_*"],
+  dynatemp_min: ["dynatemp_*"],
+  dynatemp_max: ["dynatemp_*"],
+  dynatemp_exponent: ["dynatemp_*"],
+  include_stop_str_in_output: ["stop"],
+  repetition_penalty_range: ["repetition_penalty"],
+};
+
+/**
+ * Optional comma-separated filter, for iterating on one field without re-billing the sweep.
+ * Expanded through {@link FIELD_EXPANSIONS} at parse time, so naming one field always runs
+ * the calls its verdict is read from.
+ */
 const ONLY = new Set(
   (process.env.PROBE_FIELDS ?? "")
     .split(",")
     .map((name) => name.trim())
-    .filter((name) => name.length > 0),
+    .filter((name) => name.length > 0)
+    .flatMap((name) => [name, ...(FIELD_EXPANSIONS[name] ?? [])]),
 );
 
 const COMPLETIONS_URL = "https://api.featherless.ai/v1/chat/completions";
@@ -174,6 +212,13 @@ interface CallResult {
   cleanRatio: number | null;
   /** Characters shared as a common prefix with the greedy baseline. Null for the baseline itself. */
   prefixVsGreedy: number | null;
+  /**
+   * The completion ends with {@link STOP_STRING} once trailing whitespace is trimmed; null
+   * when the call returned no completion. This is how `include_stop_str_in_output` is
+   * judged, because it is a property of the ONE completion under test — unlike a length
+   * compared against a second pooled call, it cannot be moved by which server answered.
+   */
+  tailIsStop: boolean | null;
   /** The host's own words on a 4xx, truncated. An API error message, never prose. */
   errorMessage: string | null;
   /** 503 `capacity_exhausted` rounds slept through before this call landed. */
@@ -209,12 +254,14 @@ function measure(text: string, greedyText: string | null): {
   textLength: number;
   cleanRatio: number;
   prefixVsGreedy: number | null;
+  tailIsStop: boolean;
 } {
   return {
     textHash: createHash("sha256").update(text).digest("hex"),
     textLength: text.length,
     cleanRatio: cleanRatioOf(text),
     prefixVsGreedy: greedyText === null ? null : commonPrefix(text, greedyText),
+    tailIsStop: text.trimEnd().endsWith(STOP_STRING),
   };
 }
 
@@ -269,6 +316,7 @@ const empty = (status: number, errorMessage: string | null, coldStarts: number, 
   textLength: null,
   cleanRatio: null,
   prefixVsGreedy: null,
+  tailIsStop: null,
   errorMessage,
   coldStarts,
   latencyMs,
@@ -632,9 +680,12 @@ async function main(): Promise<void> {
     note: `stop on "${STOP_STRING}": expects fewer completion tokens than the shortest greedy anchor (${n(minGreedyTokens)})`,
   });
 
-  // Compared against the `stop` call rather than the baseline: the only difference between
-  // the two is whether the matched stop string survives into the text, so a one-character
-  // longer completion is the effect itself.
+  // Judged by this completion's own TAIL, never by its length against the unflagged `stop`
+  // call. Those are two independent draws from a multi-server pool, so the text before the
+  // first period can legitimately differ between them, and an exact one-character comparison
+  // would be decided by pool variation — labelling an honored flag ignored, or passing by
+  // coincidence. Whether THIS completion ends with the stop string is a property of this
+  // completion alone.
   if (wanted("include_stop_str_in_output")) {
     const fields = { stop: [STOP_STRING], include_stop_str_in_output: true };
     const result = await call(token, GREEDY_BASE, fields);
@@ -642,18 +693,26 @@ async function main(): Promise<void> {
       record("include_stop_str_in_output", short(fields), result, "rejected", result.errorMessage ?? "4xx");
     } else if (result.status !== 200) {
       record("include_stop_str_in_output", short(fields), result, "call-failed", result.errorMessage ?? `status ${result.status}`);
-    } else if (stopResult === null || stopResult.status !== 200 || stopResult.textLength === null) {
-      record("include_stop_str_in_output", short(fields), result, "accepted+unmeasured", "the `stop` reference call did not return a completion to compare against");
+    } else if (result.tailIsStop === null) {
+      record("include_stop_str_in_output", short(fields), result, "accepted+unmeasured", "the flagged call returned no completion to read a tail from");
     } else {
-      const grew = (result.textLength ?? 0) === stopResult.textLength + STOP_STRING.length;
+      // Corroboration only: with the flag off the host should STRIP the matched stop string,
+      // so the unflagged call is expected NOT to end with it.
+      const referenceTail = stopResult !== null && stopResult.status === 200 ? stopResult.tailIsStop : null;
+      const corroboration =
+        referenceTail === null
+          ? "no unflagged `stop` call was available to corroborate against"
+          : referenceTail
+            ? "though the unflagged `stop` call ends with it too, so the contrast is inconclusive"
+            : "and the unflagged `stop` call does not, which is the expected contrast";
       record(
         "include_stop_str_in_output",
         short(fields),
         result,
-        grew ? "accepted+effective" : "accepted+ignored",
-        grew
-          ? `text is exactly ${STOP_STRING.length} character longer than the same call without the flag — the stop string was retained`
-          : `text length ${n(result.textLength)} vs ${n(stopResult.textLength)} without the flag — the stop string was not retained`,
+        result.tailIsStop ? "accepted+effective" : "accepted+ignored",
+        result.tailIsStop
+          ? `the flagged completion ends with the stop string — it was retained; ${corroboration}`
+          : `the flagged completion does not end with the stop string — it was not retained; ${corroboration}`,
       );
     }
   }
