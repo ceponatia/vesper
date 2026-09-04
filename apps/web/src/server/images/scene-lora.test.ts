@@ -379,8 +379,9 @@ describe("the row 0108 seeds", () => {
     // applied in production, so its literals are frozen history. It is NOT a
     // description of the live row, and must not be read as one — later data
     // migrations have moved three of these fields on purpose (0114 widened
-    // `allowed_tasks`, 0118 added the 2511 slug, 0120 widened the scale band to
-    // 0–2), and no single file in a chain can state what the chain produces.
+    // `allowed_tasks`, 0118 and 0127 rewrote the compatible slugs, 0120 widened
+    // the scale band to 0–2), and no single file in a chain can state what the
+    // chain produces.
     // What the migrated database actually holds is asserted against a real one
     // in `qwen-2511-lora.int.test.ts`. The identity literals are what earns this
     // case: a changed id, label or locator points every intimate render at
@@ -396,12 +397,13 @@ describe("the row 0108 seeds", () => {
   });
 
   it("resolves for a scene render on the intimate model — the compatibility fields agree", () => {
-    // The row as 0118 leaves it: that migration added the 2511 slug beside
-    // 0108's, which is what lets the route's pairing resolve at all. Restated on
+    // The row as the migration chain leaves it: 0118 added the intimate model's
+    // slug and 0127 dropped the retired one, so the list is the route's own
+    // pairing and nothing else, which is what lets it resolve at all. Restated on
     // top of the 0108 fixture rather than asserted from the database — what the
     // MIGRATED row really holds is `qwen-2511-lora.int.test.ts`'s claim, against
     // a real one.
-    const migrated: ImageLora = { ...SEEDED_ROW, compatibleModelSlugs: [SLUG_0108, INTIMATE_SCENE_LORA_MODEL_SLUG] };
+    const migrated: ImageLora = { ...SEEDED_ROW, compatibleModelSlugs: [INTIMATE_SCENE_LORA_MODEL_SLUG] };
     const evaluated = evaluateImageLoraForRender({
       lora: migrated,
       modelSlug: intimateModel().slug,

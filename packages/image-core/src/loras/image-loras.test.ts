@@ -22,8 +22,8 @@ import {
  */
 
 const HF_LOCATOR = "flymy-ai/qwen-image-edit-2509-inscene-lora";
-const MODEL_SLUG = "qwen/qwen-image-edit-plus-lora";
-const VERSION = "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200";
+const MODEL_SLUG = "qwen/qwen-image-edit-2511";
+const VERSION = "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729";
 
 function lora(over: Record<string, unknown> = {}): ImageLora {
   return imageLoraSchema.parse({

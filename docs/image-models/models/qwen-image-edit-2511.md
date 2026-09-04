@@ -127,8 +127,8 @@ Vesper words that contract in the Qwen 2511 delta-edit dialect
 `subject.identity` claim into the family's identity lock, chosen by reference
 count. The dialect is the only source of the wording — no adapter in
 `@vesper/image-models` touches prompt text, so a prompt reaches this endpoint
-exactly as it was compiled and hashed — and 2511 and the older plus-LoRA wrapper
-share the implementation as two dialect ids with their own bindings and packs.
+exactly as it was compiled and hashed — under the dialect id
+`qwen_2511_delta_edit`, which carries this endpoint's own bindings and packs.
 
 With one reference (`QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`):
 

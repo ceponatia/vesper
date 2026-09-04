@@ -40,7 +40,7 @@ export const QWEN_IMAGE_FAMILY = "qwen-image";
  * references, which is exactly what an instruction editor means.
  *
  * A function rather than a shared array so each adapter composes its own
- * feature objects. Handing both editors the same array would make a later
+ * feature objects. Handing two endpoints the same array would make a later
  * per-endpoint tweak (a narrower reference cap, an extra check) look local
  * while changing the other one too.
  */

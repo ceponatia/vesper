@@ -75,28 +75,28 @@ needs a home:
 | Adapter | What it is |
 | --- | --- |
 | `qwen/qwen-image-edit-2511` | Current instruction editor. Numbered references and one runtime custom LoRA when the active probed version exposes `lora_weights`/`lora_scale`. |
-| `qwen/qwen-image-edit-plus-lora` | Older 2509-generation LoRA wrapper, kept as a legacy comparison endpoint. No production route runs on it — intimate scenes render on 2511 with the curated LoRA. |
 | `qwen/qwen-image-2512` | Text-to-image generator arm. Takes guidance; **ignores its negative field**. |
 
-All three share the family's reference conventions; the two editors share its
-prompt dialect, which rewrites Vesper's provider-neutral identity sentence into
-Qwen's numbered form. The rewrite is **idempotent**, and that is load-bearing:
-the render plan hashes the prepared prompt and the transport prepares again on
-the way out, so a second pass that changed the text would make a render refuse
-against its own compiled prompt.
+Both share the family's reference conventions, and the editor speaks its prompt
+dialect, which words Vesper's provider-neutral identity sentence in Qwen's
+numbered form. Any prompt preparation an adapter contributes is **idempotent**,
+and that is load-bearing: the render plan hashes the prepared prompt and the
+transport prepares again on the way out, so a second pass that changed the text
+would make a render refuse against its own compiled prompt.
 
-Both edit adapters compose the semantic LoRA feature. The probed registry row is
+The edit adapter composes the semantic LoRA feature. The probed registry row is
 still the authority on the actual provider fields: if a future version drops or
 renames the bindings, the feature's `isBound`/validation fails rather than the
 adapter inventing a field name. Migration 0118 repairs the long-lived built-in
 2511 row whose capability snapshot predates LoRA-binding derivation, which is
 what makes the Image Generator's capability-driven LoRA picker appear for 2511.
 
-The older plus-LoRA wrapper is also the family's one carrier of execution hints
-— an eight minute startup budget and a single startup retry, because a bench run
-sat in a cold start past its whole five-minute budget and was aborted before it
-began. Its render budget is deliberately unset: nobody has measured one, and the
-lane's default beats an invented number.
+No shipped adapter carries execution hints. The hook stays because a hint is a
+claim about an endpoint somebody watched misbehave — a startup budget for a
+queue long enough to abort a run before it began, a retry count for that abort
+— and an adapter states one only once such behavior has been observed. An
+absent hint means the caller's lane default governs, so leaving the hook
+unclaimed is the honest answer rather than a gap.
 
 ## Boundary
 

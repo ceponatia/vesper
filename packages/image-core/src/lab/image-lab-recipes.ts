@@ -607,9 +607,9 @@ function imageLabStagedScenePolicy(): ImageReferencePolicy {
  *
  * `imageModelId` leads the parameter list, matching the two-character and
  * finishing recipes: the second argument selects the arm rather than the kind.
- * The model it is pointed at is the LoRA wrapper the chat lane resolves by slug,
- * and the LoRA itself rides the experiment's `settings.controls.lora` — a recipe
- * fixes the SHAPE of the request, never the weights.
+ * The model it is pointed at is the endpoint the chat scene lane resolves by
+ * slug, and the LoRA itself rides the experiment's `settings.controls.lora` — a
+ * recipe fixes the SHAPE of the request, never the weights.
  */
 export function imageLabStagedSceneRecipeProfile(imageModelId: string, stagingId: string): ImageModelProfile {
   const key = imageLabStagedSceneRecipeKey(stagingId);

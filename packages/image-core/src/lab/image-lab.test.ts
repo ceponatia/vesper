@@ -267,7 +267,7 @@ describe("imageLabExperimentSchema", () => {
     const loraOnly = imageLabExperimentSchema.parse({
       id: "exp_lora_only",
       kind: "finishing_pass",
-      modelSlug: "qwen/qwen-image-edit-plus-lora",
+      modelSlug: "qwen/qwen-image-edit-2511",
       status: "succeeded",
       sourceExperimentId: "exp_controlled",
       finishingVariant: "lora_only",
@@ -1008,7 +1008,7 @@ describe("imageLabExperimentSchema — the staged row", () => {
     const parsed = imageLabExperimentSchema.parse({
       id: "exp_staged",
       kind: "staged_scene",
-      modelSlug: "qwen/qwen-image-edit-plus-lora",
+      modelSlug: "qwen/qwen-image-edit-2511",
       status: "succeeded",
       characterId: "chr_sabrina",
       staging: { id: "astride_viewer_facing", setting: "a dim hotel room" },
@@ -1034,7 +1034,7 @@ describe("imageLabExperimentSchema — the staged row", () => {
     const parsed = imageLabExperimentSchema.parse({
       id: "exp_staged_bad",
       kind: "staged_scene",
-      modelSlug: "qwen/qwen-image-edit-plus-lora",
+      modelSlug: "qwen/qwen-image-edit-2511",
       status: "succeeded",
       staging: { id: "" },
       createdAt: "2026-08-15T12:00:00.000Z",

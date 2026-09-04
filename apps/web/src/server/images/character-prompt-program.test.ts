@@ -56,10 +56,9 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
  *   nothing. A key without the PROFILE key lets a second `variant` profile
  *   inherit a binding nobody wired it into. And the `nsfw_test` bench route
  *   replaces the MODEL while keeping the key, so resolution must run on the
- *   FINAL one; four registry rows carry a `:version` pin in their slug — the
- *   three community checkpoints and the legacy Qwen edit wrapper — so
- *   resolution that failed to strip it would fail every render on them with
- *   nothing in the binding table showing why.
+ *   FINAL one; the three community checkpoints carry a `:version` pin in their
+ *   slug, so resolution that failed to strip it would fail every render on them
+ *   with nothing in the binding table showing why.
  * - **`unbound` degraded into `refused`.** Both fail a render, but they name
  *   different things: a refusal is a fault on a lane that IS bound, `unbound`
  *   is the row an operator has to add. The distinction still carries a
@@ -88,8 +87,9 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
 const QWEN_2511_SLUG = "qwen/qwen-image-edit-2511";
 const VARIANT_KEY = "variant-standard";
 const QWEN_2511_VARIANT_BINDING = "binding-qwen-2511-variant-v1";
-/** The legacy LoRA-capable Qwen editor: registered, version-pinned, on no picker. */
-const QWEN_EDIT_PLUS_LORA_SLUG = "qwen/qwen-image-edit-plus-lora";
+/** A community checkpoint: its registry row is stored under a `:version` pin (drizzle 0104). */
+const SDXL_PULID_SLUG = "nsfw-api/sdxl-pulid";
+const SDXL_PULID_VERSION = "83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5";
 
 /** A promoted (`active`) row, so resolution has something to answer. */
 const PROMOTED_SLUG = "test-only/character-prompt-seam-promoted";
@@ -233,13 +233,13 @@ describe("binding resolution through the seam", () => {
     {
       // A registry row whose slug carries a `:version` pin — resolution strips
       // it, because a binding names an ENDPOINT and pinning a provider version
-      // is `versionId`'s separate job. This endpoint and the three community
-      // checkpoints all carry such a pin, so without the strip every render on
-      // any of them would answer `unbound` and fail with nothing in the binding
-      // table showing why.
-      name: "a version-pinned endpoint an admin can still address by hand",
-      slug: `${QWEN_EDIT_PLUS_LORA_SLUG}:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`,
-      binding: "binding-qwen-edit-plus-lora-variant-variant-standard-instruction_edit-v1",
+      // is `versionId`'s separate job. Every community checkpoint carries such a
+      // pin, because the bare-slug endpoint is official-models-only, so without
+      // the strip every render on any of them would answer `unbound` and fail
+      // with nothing in the binding table showing why.
+      name: "a version-pinned community checkpoint",
+      slug: `${SDXL_PULID_SLUG}:${SDXL_PULID_VERSION}`,
+      binding: "binding-sdxl-pulid-variant-variant-standard-instruction_edit-v1",
     },
   ])("resolves $name to its own endpoint's row", ({ slug, binding }) => {
     const input = programInput({ profile: programProfile({ slug }) });

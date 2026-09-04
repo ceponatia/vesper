@@ -713,7 +713,7 @@ function reportWeights(training: Training, outDir: string, zipPath: string): voi
   console.log("The file to re-host and register in the LoRA library is:");
   console.log(`  ${primary}`);
   console.log(
-    "The plus-lora endpoint most likely refuses a zip URL, so upload that .safetensors somewhere public " +
+    "A runtime-LoRA endpoint most likely refuses a zip URL, so upload that .safetensors somewhere public " +
       "(or push it to a Hugging Face repo) and curate THAT address — a library row pointing at the zip is a row " +
       "every render will refuse.",
   );
