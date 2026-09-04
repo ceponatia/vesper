@@ -1,15 +1,17 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
+  normalizeReferenceViewTargets,
   referenceViewAngleIdSchema,
+  referenceViewSchema,
   referenceViewWardrobeSchema,
   type ReferenceView,
   type ReferenceViewQueueOutcome,
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
-import { imageRenderRejection, startJobAfterAdmission } from "@/server/api";
+import { imageRenderRejection, jsonError, jsonOk, startJobAfterAdmission } from "@/server/api";
 import { hasLiveCharacterJob } from "@/server/db";
-import { buildReferenceViews, plannedReferenceViewsForCharacter } from "@/server/images";
+import { buildReferenceViews, getReferenceViewSet, plannedReferenceViewsForCharacter } from "@/server/images";
 import { log } from "@/server/log";
 import { findOwnedCharacter } from "../owned";
 
@@ -65,6 +67,18 @@ export const referenceViewUploadBodySchema = z.object({
 });
 
 export const referenceViewReviewBodySchema = z.object({ verdict: z.enum(["approve", "reject"]) });
+
+/**
+ * `{ targets }` — the slots an explicit regeneration names.
+ *
+ * Bounded well above the sheet's own size so a registry that grows an angle
+ * needs no edit here, and far below anything that could turn one request into a
+ * denial of service: the cap is a parse guard, not the spend rule. What may
+ * actually be built is decided by the plan and the admission that follows.
+ */
+export const referenceViewRegenerateBodySchema = z.object({
+  targets: z.array(referenceViewSchema).min(1).max(32),
+});
 
 /** How many views this character's next full build would render. */
 export function plannedCount(characterId: string, ownerId: string): Promise<number> {
@@ -152,4 +166,55 @@ export async function queueReferenceViewBuild(
     return { queued: false, reason: "busy", planned };
   }
   return { queued: true, reason: null, planned };
+}
+
+/**
+ * The one explicit-regeneration path: validate the named slots against the
+ * character's plan, then hand the surviving list to {@link queueReferenceViewBuild}
+ * as ONE batch.
+ *
+ * Both regenerate routes are callers — the per-slot route passes a single-element
+ * list — so there is exactly one implementation of what "rebuild these" means and
+ * exactly one place the age gate is re-checked at the door.
+ *
+ * Unlike the bulk build this will happily re-render a `rejected` slot: the owner
+ * asked for these views by name, which is the difference between reviving a
+ * verdict they gave and honoring one. It adds nothing they did not name.
+ *
+ * **A refused slot refuses the whole request, with nothing charged.** Naming a
+ * slot the plan has no entry for — unknown, or intimate on a character the age
+ * gate withholds them from — is a 404 the way an unknown character id is: the
+ * resource does not exist. Building the rest and staying quiet about the refusal
+ * would let a client discover the age gate by counting renders.
+ */
+export async function regenerateReferenceViews(input: {
+  characterId: string;
+  ownerId: string;
+  req: NextRequest;
+  user: { id: string };
+  /** The slots as asked for, in the client's order. Deduplicated here. */
+  requested: readonly ReferenceView[];
+}): Promise<Response> {
+  const { characterId, ownerId } = input;
+  const set = await getReferenceViewSet(characterId, ownerId);
+  if (set.acceptedImageId === null) {
+    return jsonError("not_accepted", "accept a portrait before building its reference views", 409);
+  }
+
+  const planned = await plannedReferenceViewsForCharacter(characterId, ownerId);
+  const { targets, refused } = normalizeReferenceViewTargets(input.requested, planned);
+  if (refused.length > 0) {
+    const named = refused.map((view) => `${view.angle}/${view.wardrobe}`).join(", ");
+    return jsonError("not_found", `no such reference view: ${named}`, 404);
+  }
+
+  const outcome = await queueReferenceViewBuild({
+    characterId,
+    ownerId,
+    req: input.req,
+    user: input.user,
+    targets,
+    planned: planned.length,
+  });
+  return jsonOk({ views: outcome });
 }

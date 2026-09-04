@@ -73,3 +73,21 @@ export const referenceViewRefusalCopy: Record<ReferenceViewQueueRefusal, string>
   storage: "there is no image storage headroom left. Delete some images to free space.",
   busy: "a build for this character is already running.",
 };
+
+/**
+ * The counted copy of a regeneration, in the two places a count is spoken: the
+ * action that submits a selection, and the toast that confirms the server took
+ * it.
+ *
+ * Functions rather than `Record`s because the axis is a NUMBER, not a member of
+ * a vocabulary — but they live here for the same reason the maps do: the count
+ * comes from the registries and the character's plan, and no surface may spell
+ * "eight" or invent its own phrasing for the same event.
+ */
+export function referenceViewSelectionActionLabel(count: number): string {
+  return count === 1 ? "Regenerate 1 selected view" : `Regenerate ${String(count)} selected views`;
+}
+
+export function referenceViewRebuildQueuedTitle(count: number): string {
+  return count === 1 ? "Rebuilding that view…" : `Rebuilding ${String(count)} reference views…`;
+}

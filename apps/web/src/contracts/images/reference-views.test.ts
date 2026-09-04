@@ -3,6 +3,7 @@ import {
   allReferenceViews,
   selectReferenceView,
   isConsumableReferenceView,
+  normalizeReferenceViewTargets,
   plannedReferenceViews,
   projectReferenceViewState,
   REFERENCE_VIEW_BACKGROUND_CLAUSE,
@@ -134,11 +135,11 @@ describe("the phrasing rules that keep a view from painting a second person", ()
   });
 });
 
-describe("the age gate", () => {
-  const withBand = (band: string): { attributes: AttributeValue[] } => ({
-    attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: band, source: "creation" }],
-  });
+const withBand = (band: string): { attributes: AttributeValue[] } => ({
+  attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: band, source: "creation" }],
+});
 
+describe("the age gate", () => {
   it("keeps the whole sheet for a recognized adult band", () => {
     expect(plannedReferenceViews(withBand("eighteen"))).toHaveLength(allReferenceViews().length);
   });
@@ -153,6 +154,45 @@ describe("the age gate", () => {
 
   it("drops every undressed view when no age band resolves at all", () => {
     expect(plannedReferenceViews({ attributes: [] }).every((view) => view.wardrobe === "clothed")).toBe(true);
+  });
+});
+
+/**
+ * What a request for "rebuild these" resolves to before anything is admitted.
+ *
+ * Both halves are money. A duplicate slot that survives is charged twice and
+ * rendered twice, and the second attempt supersedes the first mid-render — the
+ * bill is real and the picture is not. A slot outside the plan that is quietly
+ * dropped rather than refused turns the age gate into something a client can
+ * discover by counting renders.
+ *
+ * The implementation this kills is `requested.filter(inPlan)`, which passes
+ * every happy-path check.
+ */
+describe("normalizeReferenceViewTargets", () => {
+  const ADULT = plannedReferenceViews(withBand("eighteen"));
+  const CLOTHED_ONLY = plannedReferenceViews(withBand("teen"));
+  const FRONT_CLOTHED = { angle: "front_full", wardrobe: "clothed" } as const;
+  const FRONT_BARE = { angle: "front_full", wardrobe: "bare" } as const;
+  const BACK_CLOTHED = { angle: "back_full", wardrobe: "clothed" } as const;
+
+  it("keeps one attempt per slot, in the order the caller first named it", () => {
+    expect(normalizeReferenceViewTargets([BACK_CLOTHED, FRONT_CLOTHED, BACK_CLOTHED], ADULT)).toEqual({
+      targets: [BACK_CLOTHED, FRONT_CLOTHED],
+      refused: [],
+    });
+  });
+
+  it("refuses a slot the plan withheld rather than dropping it quietly", () => {
+    expect(normalizeReferenceViewTargets([FRONT_CLOTHED, FRONT_BARE, FRONT_BARE], CLOTHED_ONLY)).toEqual({
+      // Deduplicated on both sides, so a repeat cannot pad the refusal either.
+      targets: [FRONT_CLOTHED],
+      refused: [FRONT_BARE],
+    });
+  });
+
+  it("passes a whole plan through unchanged — an accept builds exactly what it planned", () => {
+    expect(normalizeReferenceViewTargets(ADULT, ADULT)).toEqual({ targets: ADULT, refused: [] });
   });
 });
 

@@ -41,6 +41,17 @@ panel polls while a build is live or any slot is pending, and — like the ident
 renders **nothing** while loading or on error, so the studio is unchanged when the surface is
 unavailable.
 
+**Regeneration is a selection, not a queue the owner works through.** Every already-attempted tile
+carries a checkbox; ticking any of them raises **Regenerate N selected views** and **Clear
+selection** above the grid, and that action submits the whole selection as one request. The per-card
+**Regenerate** is the same request with one target, so both paths are admitted, charged and run
+identically. The submit action is disabled while a build is live for the character, hinted with the
+busy-refusal line from the same copy map the tiles read, but the selection can still be assembled
+meanwhile, and only the slots a batch actually claimed read busy. A queued batch clears the
+selection; a refused one keeps it, so the owner never has to tick the same slots twice. N is the size
+of the selection, and every other count on this panel comes from the reference-view registries and
+the character's plan.
+
 Accepting a portrait reports what happened to the views in the accept toast: *Building N reference
 views…*, or *Accepted, but the views were not built* with the reason and an invitation to build them
 later. The acceptance always stands.

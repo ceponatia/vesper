@@ -268,6 +268,58 @@ export function plannedReferenceViews(profile: Pick<CharacterProfile, "attribute
 }
 
 // ---------------------------------------------------------------------------
+// Target normalization
+// ---------------------------------------------------------------------------
+
+/** One slot as a comparable string. Private: the wire spellings are the pair, never this. */
+function slotKey(view: ReferenceView): string {
+  return `${view.angle}:${view.wardrobe}`;
+}
+
+/** What a requested list of slots actually resolves to. */
+export interface NormalizedReferenceViewTargets {
+  /** The slots to build: deduplicated, restricted to the plan, in the order they were first named. */
+  readonly targets: readonly ReferenceView[];
+  /** The requested slots the plan has no entry for — age-gated or unknown — deduplicated the same way. */
+  readonly refused: readonly ReferenceView[];
+}
+
+/**
+ * The slots a request may actually build, and the ones nothing can.
+ *
+ * PURE, and the single normalization every caller shares: the routes decide what
+ * to answer a client with, and the build job runs it again over whatever it was
+ * handed, so a duplicate slot cannot be charged twice by one path and rendered
+ * twice by another.
+ *
+ * Two rules, both of which are silent money when they break:
+ *
+ * 1. **One attempt per slot.** A request naming the same slot twice is one
+ *    target. Two simultaneous attempts on one slot would supersede each other
+ *    mid-render, so the second render's only product is a charge.
+ * 2. **The plan is the boundary.** {@link plannedReferenceViews} has already
+ *    spent the age gate, so a slot outside it is refused here rather than
+ *    dropped quietly: an owner who asked for a view by name is told it does not
+ *    exist, and nothing about the character's age reaches a model.
+ */
+export function normalizeReferenceViewTargets(
+  requested: readonly ReferenceView[],
+  planned: readonly ReferenceView[],
+): NormalizedReferenceViewTargets {
+  const allowed = new Set(planned.map(slotKey));
+  const seen = new Set<string>();
+  const targets: ReferenceView[] = [];
+  const refused: ReferenceView[] = [];
+  for (const view of requested) {
+    const key = slotKey(view);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    (allowed.has(key) ? targets : refused).push({ angle: view.angle, wardrobe: view.wardrobe });
+  }
+  return { targets, refused };
+}
+
+// ---------------------------------------------------------------------------
 // Stored vocabulary
 // ---------------------------------------------------------------------------
 

@@ -83,6 +83,15 @@ build job plans from, so the charge and the work can never be two numbers.
   nothing.
 - **One build per character at a time**, staleness-bounded like every other job dedupe, so a deploy
   that kills a build cannot wedge that character forever.
+- **A batch is one job, one admission and one charge — and every target in it starts together.**
+  The character, the accepted portrait's bytes and the wardrobe are read once; from there every
+  admitted target's provider request begins without waiting for another target in the same batch to
+  settle. There is no render-count limit inside the job. What a sheet may cost is the daily image
+  budget's question, and how many batches may run at all is the per-user job cap's.
+- **Duplicate slots converge to one attempt.** A request naming the same slot twice is normalized
+  (`normalizeReferenceViewTargets`) before admission, so it is charged once and rendered once: two
+  simultaneous attempts on one slot would supersede each other mid-render, and the second render's
+  only product would be a charge.
 - A view render that fails — a moderated `bare` view is the expected instance — fails its own row
   with a classified failure code and the provider's words, and the other views carry on.
 
@@ -192,15 +201,18 @@ studio's grid displays them.
 
 ## Routes
 
-| Route                                                | What it does                                                         |
-| ---------------------------------------------------- | -------------------------------------------------------------------- |
-| `GET /api/characters/:id/reference-views`            | `{ set, planned }` — every slot, `missing` where no row exists       |
-| `POST /api/characters/:id/reference-views/build`     | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted` |
-| `POST …/reference-views/:angle/:wardrobe/regenerate` | Rebuilds one slot, a rejected one included                           |
-| `POST …/reference-views/:angle/:wardrobe/upload`     | `{ dataUrl }` ⇒ the settled slot, synchronously                      |
-| `POST …/reference-views/:angle/:wardrobe/review`     | `{ verdict: approve \| reject }` ⇒ the settled slot                  |
+| Route                                                 | What it does                                                                  |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot, `missing` where no row exists                |
+| `POST /api/characters/:id/reference-views/build`      | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted`          |
+| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — rebuilds the named slots as one batch, rejected ones included |
+| `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                  |
+| `POST …/reference-views/:angle/:wardrobe/upload`      | `{ dataUrl }` ⇒ the settled slot, synchronously                               |
+| `POST …/reference-views/:angle/:wardrobe/review`      | `{ verdict: approve \| reject }` ⇒ the settled slot                           |
 
-All five are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
+All six are owner-only and rooted at the character. A slot the registry has no entry for is a 404,
+and so is a slot the plan withholds — a regeneration naming one is refused whole, before anything is
+charged, rather than silently building the rest.
 
 ## Diagnostic codes
 
