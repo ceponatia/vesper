@@ -96,13 +96,25 @@ describe("the reference view registry", () => {
   // Two `profile` cameras with one instruction between them would be one view
   // rendered twice and billed twice — the camera vocabulary has no left/right,
   // so the handedness lives in the words or nowhere.
+  //
+  // Each side instruction names BOTH hands of the geometry — the own side toward
+  // the camera, the other side turned away, and the frame edge that follows — so
+  // "mentions the word left" says nothing: an entry stating every one of those
+  // backwards still contains both words. The contract is that the entry names its
+  // OWN side first and that the two entries are exact mirrors, and those two
+  // assertions kill the edits that can realistically ship a wrong sheet: a
+  // half-applied rewording of one side, and a rewording that inverts both at once.
   it("distinguishes the two side views in their instructions, not in their cameras", () => {
     const left = referenceViewAngleById("side_left");
     const right = referenceViewAngleById("side_right");
     expect(left?.camera).toEqual(right?.camera);
     expect(left?.instruction).not.toBe(right?.instruction);
-    expect(left?.instruction).toMatch(/\bleft\b/);
-    expect(right?.instruction).toMatch(/\bright\b/);
+    // The first hand named is the subject's own, per the registry's header: the
+    // sheet is subject-relative, and the camera-relative consequence follows it.
+    expect(left?.instruction.match(/\b(left|right)\b/)?.[1]).toBe("left");
+    expect(right?.instruction.match(/\b(left|right)\b/)?.[1]).toBe("right");
+    const mirrored = left?.instruction.replaceAll(/\b(left|right)\b/g, (word) => (word === "left" ? "right" : "left"));
+    expect(mirrored).toBe(right?.instruction);
   });
 
   it("is the cross product of its two axes", () => {

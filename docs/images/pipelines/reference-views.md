@@ -22,11 +22,19 @@ itself, which is the trigger.
 - The four angles are `front_full`, `back_full`, `side_left`, `side_right`. Each carries its own
   `SceneCameraSpec` and a camera id the digest selection fingerprints. All four are `full_figure` at
   `eye_level`: below-waist morphology is exactly what a later render must stop inventing, and a
-  waist-up frame would cut it.
+  waist-up frame would cut it. Every angle clause ends with the **same shared full-length clause**,
+  which names the body's two ends as places — the top of the head, the floor underfoot — because the
+  camera's framing line alone leaves an edit model free to return the portrait crop it started from.
 - **Side handedness is subject-relative.** `side_left` turns the character's own left side toward
   the camera. The camera vocabulary has no left or right — `profile` says side-on and stops — so the
   instruction fixes it, and it fixes it against the body, because a mark on the character's left
   shoulder is on the character's left in both the sheet and the scene that anchors to it.
+- **A side instruction states that handedness twice**: subject-relative first, then the
+  camera-relative consequence it forces — a subject whose own left side is toward the lens faces the
+  frame's left edge, with the own right side turned away from the camera, and `side_right` is that
+  geometry mirrored. A model resolves a frame direction more reliably than a possessive one, and
+  stating both means either half alone still lands the same picture. The two side entries are
+  therefore exact left/right mirrors of each other, each naming its own side before the frame's.
 - The two wardrobe states are `clothed` (as the portrait is dressed) and `bare` (undressed).
   `bare` carries `intimate: true`, and that flag is the single gate for three things: the age
   refusal, the intimate reveal, and eligibility to be sent to a lane running without intimate
