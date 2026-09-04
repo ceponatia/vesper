@@ -98,7 +98,7 @@ primary_region = 'iad'
    ```
    fly volumes create vesper_data --region iad --size 3 -a vesper
    ```
-3. **Secrets** (these also silence the Better Auth build-time warnings):
+3. **Secrets** (runtime-only — the Docker build never sees them):
    ```
    fly secrets set \
      BETTER_AUTH_SECRET="$(openssl rand -base64 32)" \
