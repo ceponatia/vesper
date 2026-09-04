@@ -32,7 +32,7 @@ an issue: a diagnostic that carried content would be a transcript.
 | `PROBE_MODEL` | both | The model to measure. The runtime probe requires a curated `NARRATIVE_MODELS` row and defaults to Fable Fusion 711; the field probe accepts any id the host serves. |
 | `PROBE_ATTEMPTS` | runtime | Calls per case (default 3). One call cannot establish an intermittent empty reply. |
 | `PROBE_LONG_HISTORY` | runtime | `1` adds the two context-edge calls. Off by default — they carry ~32K input tokens each and are the most expensive calls here. |
-| `PROBE_FIELDS` | fields | Comma-separated field filter, for iterating on one field without re-billing the sweep. The baselines always run, because every verdict is a comparison against one of them. |
+| `PROBE_FIELDS` | fields | Comma-separated field filter, for iterating on one field without re-billing the sweep. A name is expanded to the calls its verdict is read from, so naming a grouped member selects its whole group and a dependent field pulls in its prerequisite. The baselines always run, because every verdict is a comparison against one of them. |
 
 ## Adding a model
 
