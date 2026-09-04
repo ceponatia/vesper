@@ -24,7 +24,6 @@ import {
   heightSentence,
   label,
   lightingSentence,
-  listOf,
   listWords,
   possessionOwners,
   possessionSentence,

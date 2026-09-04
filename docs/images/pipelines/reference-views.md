@@ -154,7 +154,7 @@ Neither vetoes the other.
 The **angle** comes from the RESOLVED camera — `SceneRenderPlan.camera`, after the plan has
 spent every evidence gate and a surviving staging entry has already overwritten it:
 
-| Resolved shot                                        | Angle           |
+| Resolved shot                                         | Angle           |
 | ----------------------------------------------------- | --------------- |
 | orientation `away`                                    | `back_full`     |
 | orientation `away_glance_back`                        | `back_full`     |
