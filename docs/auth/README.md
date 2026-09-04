@@ -94,7 +94,10 @@ the reference. Two auth-specific behaviors are stated here rather than there:
 - **`BETTER_AUTH_SECRET` missing in production is a boot-time error**, since Better Auth would
   otherwise fall back to a forgeable built-in dev secret.
 - **`next build` sees no variables at all**: the repository `.env` is dockerignored and Fly secrets
-  are runtime-only. The auth instance therefore skips its production secret check during the build
-  phase and substitutes an unresolvable `baseURL` placeholder, so an image build and CI's
-  production-build job neither fail nor log a missing-base-URL warning. Both exemptions key off
-  `NEXT_PHASE`, which `next start` leaves unset — a running server always enforces the real values.
+  are runtime-only. The auth instance therefore substitutes a throwaway random secret and an
+  unresolvable `baseURL` placeholder during the build phase — Better Auth initializes eagerly at
+  import and refuses its built-in default under `NODE_ENV=production`, so an exempt empty secret
+  would surface as a default-secret warning on every image build — and an image build and CI's
+  production-build job neither fail nor log an auth warning. The build serves no request and signs
+  nothing. Both substitutions key off `NEXT_PHASE`, which `next start` leaves unset — a running
+  server always enforces the real values.

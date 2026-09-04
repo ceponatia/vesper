@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, magicLink } from "better-auth/plugins";
@@ -78,21 +79,33 @@ function isNextBuildPhase(): boolean {
 
 /**
  * Hard-fail at init when the secret is missing in production (codebase-review B2):
- * Better Auth otherwise falls back to its built-in dev secret with only a console
- * warning, which would make every session cookie forgeable. Dev keeps the warning
- * (a fixed local secret is a non-issue and zero-config matters there).
+ * Better Auth otherwise substitutes its built-in dev secret, which would make
+ * every session cookie forgeable. This guard throws synchronously with a message
+ * that names the fix; Better Auth's own refusal arrives later, as the rejection
+ * of the context promise `betterAuth()` starts eagerly at import time. Dev keeps
+ * the built-in secret (a fixed local secret is a non-issue and zero-config
+ * matters there).
  *
- * The `next build` phase is exempt (see `isNextBuildPhase`) — enforcing there
- * breaks every production image build. The guard still fires the moment the built
- * server actually starts, so no production process can ever run on the forgeable
+ * The `next build` phase gets a throwaway random secret instead (see
+ * `isNextBuildPhase`), for the same reason `configuredBaseURL` hands it a
+ * placeholder: the variable is absent during `next build`, and with
+ * NODE_ENV=production Better Auth refuses its default secret — so an exempt
+ * `undefined` here made every image build and CI production-build job print
+ * "You are using the default secret" as an unhandled rejection, a warning that
+ * reads as though the deployment runs on the forgeable secret. The build serves
+ * no request and signs nothing, so a value generated per build and discarded
+ * with the process weakens nothing. The guard still fires the moment the built
+ * server actually starts, so no production process can ever run on the
  * fallback secret.
  */
 function requiredSecret(): string | undefined {
   const secret = process.env.BETTER_AUTH_SECRET;
-  if (!secret && !isNextBuildPhase() && process.env.NODE_ENV === "production") {
+  if (secret) return secret;
+  if (isNextBuildPhase()) return randomBytes(32).toString("base64");
+  if (process.env.NODE_ENV === "production") {
     throw new Error("BETTER_AUTH_SECRET is required in production — set it (e.g. `fly secrets set BETTER_AUTH_SECRET=…`)");
   }
-  return secret;
+  return undefined;
 }
 
 /**
