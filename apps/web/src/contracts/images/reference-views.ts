@@ -49,6 +49,16 @@ import { sceneSubjectOrientationById, type SceneCameraSpec } from "./scene-camer
  * consumer is a body: a scar on the character's left shoulder is on the
  * character's left in both the reference sheet and the scene that anchors to it.
  *
+ * The instruction states the same handedness twice, subject-relative first and
+ * then the camera-relative consequence it forces, because an edit model resolves
+ * a frame direction far more reliably than a possessive one: a subject who
+ * starts facing the lens and turns until that own left side is toward it ends up
+ * facing the frame's LEFT edge, with the own right side turned away from the
+ * camera — and `side_right` is that geometry mirrored. Both halves are stated so
+ * a model that reads only one of them still lands the same picture, and each
+ * side entry is the other's exact left/right mirror so a half-finished edit to
+ * one of them is visible rather than silently self-contradictory.
+ *
  * PURE. Tuning a phrase is a data edit here; adding an angle is one entry.
  */
 
@@ -112,13 +122,28 @@ export interface ReferenceViewAngle {
  */
 export const REFERENCE_VIEW_FRAMING = "full_figure" as const;
 
+/**
+ * The head-to-ground clause every angle ends with, stated once.
+ *
+ * The camera vocabulary already asks for `full_figure`, and the compiler already
+ * emits a framing line from it — yet a delta-edit model handed a portrait-shaped
+ * reference will happily return another portrait-shaped crop, because the
+ * strongest thing in the picture it is editing is a head. So the edit itself
+ * names the two ends of the body it must keep, and it names them as places (the
+ * top of the head, the floor underfoot) rather than as parts, since a limb noun
+ * summons a limb. Positive throughout, like every line in this file: "uncropped"
+ * would anchor on cropping.
+ */
+export const REFERENCE_VIEW_FULL_LENGTH_CLAUSE =
+  "the whole of {name} inside the frame, from the top of {name}'s head down to the floor {name} stands on, with clear space above and below";
+
 export const referenceViewAngles: readonly ReferenceViewAngle[] = [
   {
     id: "front_full",
     camera: { orientation: "toward_viewer", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_front_full",
     sceneBinding: "seen at full length, the same person",
-    instruction: "{name} standing squarely facing the camera, the whole of {name} inside the frame",
+    instruction: `{name} standing squarely facing the camera, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Front, full length",
   },
   {
@@ -126,19 +151,24 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     camera: { orientation: "away", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_back_full",
     sceneBinding: "seen from behind, the same person",
-    instruction:
-      "{name} standing with {name}'s back to the camera, {name}'s head turned away from the lens, the whole of {name} inside the frame",
+    instruction: `{name} standing with {name}'s back to the camera, {name}'s head turned away from the lens, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Back, full length",
   },
   {
     // The handedness is stated in the instruction because the camera vocabulary
-    // cannot state it — see this file's header, under "Which side is which".
+    // cannot state it, and it is stated subject-relative AND camera-relative
+    // because a model resolves a frame direction more reliably than a possessive
+    // one — see this file's header, under "Which side is which". The two side
+    // entries are exact left/right mirrors of each other; the registry's test
+    // suite is the pin.
     id: "side_left",
     camera: { orientation: "profile", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_side_left",
     sceneBinding: "seen in profile, the same person",
     instruction:
-      "{name} standing turned a quarter-turn so the left side of {name}'s body faces the camera, {name}'s head side-on to the lens, the whole of {name} inside the frame",
+      "{name} standing in a full side-on profile, {name}'s own left side toward the camera and " +
+      "{name}'s own right side turned away from it, {name} facing toward the left edge of the frame, " +
+      `{name}'s head side-on to the lens and turned the same way as {name}'s body, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Left side",
   },
   {
@@ -147,7 +177,9 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     cameraId: "reference_view_side_right",
     sceneBinding: "seen in profile, the same person",
     instruction:
-      "{name} standing turned a quarter-turn so the right side of {name}'s body faces the camera, {name}'s head side-on to the lens, the whole of {name} inside the frame",
+      "{name} standing in a full side-on profile, {name}'s own right side toward the camera and " +
+      "{name}'s own left side turned away from it, {name} facing toward the right edge of the frame, " +
+      `{name}'s head side-on to the lens and turned the same way as {name}'s body, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Right side",
   },
 ];
@@ -221,9 +253,10 @@ export const REFERENCE_VIEW_BACKGROUND_CLAUSE =
   "set against a plain, even, neutral studio backdrop, an empty seamless surface behind {name}";
 
 /**
- * Bumped when instruction wording, the background clause, or the way the three
- * are assembled changes. A stored row whose version is behind the current one
- * projects `stale`: it depicts an edit this code no longer asks for.
+ * Bumped when instruction wording, the shared full-length clause, the background
+ * clause, or the way the parts are assembled changes. A stored row whose version
+ * is behind the current one projects `stale`: it depicts an edit this code no
+ * longer asks for.
  */
 export const REFERENCE_VIEW_GENERATION_VERSION = 1;
 
