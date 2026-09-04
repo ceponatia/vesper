@@ -452,11 +452,11 @@ export function textModel(modelId: string): ChatLanguageModel {
 }
 
 // Text-model selection is **code or UI only** — there is no env override layer.
-// The narrator + in-session agent models come from the curated code defaults
-// (lib/narrative-models.ts, lib/agent-models.ts) or a per-world UI choice (world
-// creation + World tab); embeddings + the tool model default purely in code. A
-// retired/typo'd env value can no longer silently shadow these (it once pinned the
-// agent model to the pulled `openrouter/owl-alpha` stealth slug).
+// The narrator model comes from the curated code default (lib/narrative-models.ts)
+// or the chat model dropdown's per-chat pick; in-session agent models, embeddings,
+// and the tool model default purely in code. A retired/typo'd env value can no
+// longer silently shadow these (it once pinned the agent model to the pulled
+// `openrouter/owl-alpha` stealth slug).
 //
 // Both resolvers are STRICT (codebase-review B3): a stored/over-the-wire id must be
 // on its curated list, else it coerces to the default with a warning. Without this,
