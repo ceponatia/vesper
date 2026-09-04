@@ -63,13 +63,15 @@ afterEach(() => {
 });
 
 /**
- * The registered LoRA-capable Qwen wrapper, with the bindings the probe records
- * for it (`probe.test.ts` pins the same two against the published schema).
+ * The registered Qwen Image Edit 2511 row — the model production intimate
+ * scenes render on — carrying the LoRA bindings migration 0118 put on the
+ * built-in row (`probe.test.ts` pins the same normalization against a published
+ * Qwen edit schema).
  */
-const WRAPPER: ImageModel = imageModelSchema.parse({
-  id: "imgmdlqwenlorawrapperaaa",
-  slug: "qwen/qwen-image-edit-plus-lora",
-  label: "Qwen Image Edit Plus LoRA",
+const QWEN_2511: ImageModel = imageModelSchema.parse({
+  id: "imgmdlqwenedit2511aaaaaa",
+  slug: "qwen/qwen-image-edit-2511",
+  label: "Qwen Image Edit 2511",
   canGenerate: false,
   canEdit: true,
   editKind: "instruction_edit",
@@ -85,7 +87,8 @@ const WRAPPER: ImageModel = imageModelSchema.parse({
   },
 });
 
-const WRAPPER_VERSION_ID = "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200";
+/** The pinned 2511 version the built-in row is probed against (migration 0118). */
+const VERSION_ID = "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729";
 
 /**
  * The Image Generator's synthetic profile, as `imageGeneratorProfile` builds it.
@@ -95,7 +98,7 @@ const WRAPPER_VERSION_ID = "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537
  */
 const BENCH_PROFILE: ImageModelProfile = imageModelProfileSchema.parse({
   id: "image-generator/run",
-  imageModelId: WRAPPER.id,
+  imageModelId: QWEN_2511.id,
   key: "image-generator",
   label: "Image Generator",
   task: "item",
@@ -109,16 +112,18 @@ const BENCH_PROFILE: ImageModelProfile = imageModelProfileSchema.parse({
 const REFERENCE_URI = "https://replicate.delivery/pbxt/bench-reference.webp";
 
 /**
- * The seeded intimate-scene row (migrations 0108 and 0114), parsed through the
- * real schema rather than hand-built: a fixture that could not be stored would
- * prove nothing about a render.
+ * The seeded intimate-scene row (migrations 0108, 0114 and 0118), parsed through
+ * the real schema rather than hand-built: a fixture that could not be stored
+ * would prove nothing about a render. Its compatibility list is the one 0118
+ * leaves behind — the legacy 2509 endpoint kept, 2511 added — so the row this
+ * suite drives is the row production drives.
  */
 const LIBRARY_ROW: ImageLora = imageLoraSchema.parse({
   id: "imglorqwennsfwallinclv20",
   label: "Qwen Image Edit 2511 NSFW all inclusive v2.0",
   locatorType: "https_url",
   locator: "https://civitai.com/api/download/models/3160956?type=Model&format=SafeTensor",
-  compatibleModelSlugs: ["qwen/qwen-image-edit-plus-lora"],
+  compatibleModelSlugs: ["qwen/qwen-image-edit-plus-lora", "qwen/qwen-image-edit-2511"],
   compatibleVersionIds: [],
   defaultScale: 1,
   minimumScale: 0.5,
@@ -132,14 +137,14 @@ const LIBRARY_ROW: ImageLora = imageLoraSchema.parse({
 function resolveBinding(row: ImageLora): ImageLoraRenderBinding {
   const evaluation = evaluateImageLoraForRender({
     lora: row,
-    modelSlug: WRAPPER.slug,
-    versionId: WRAPPER_VERSION_ID,
+    modelSlug: QWEN_2511.slug,
+    versionId: VERSION_ID,
     // The Generator renders nothing a player sees, so the row's production task
     // curation does not apply here. This one argument is the whole defect: with a
     // borrowed `production` task the row is refused, and every payload that
     // follows carries no weights at all.
     context: { kind: "generator_bench" },
-    bindings: WRAPPER.advancedCapabilities.controls,
+    bindings: QWEN_2511.advancedCapabilities.controls,
   });
   if (!evaluation.ok) {
     throw new Error(`[lora-final-wire] the row was refused: ${evaluation.code} — ${evaluation.message}`);
@@ -150,7 +155,7 @@ function resolveBinding(row: ImageLora): ImageLoraRenderBinding {
 /** Step 2: the intent the bench builds, compiled into a plan. */
 function planned(binding?: ImageLoraRenderBinding): PlannedImageRender {
   const intent: ImageRenderIntent = {
-    profile: { model: WRAPPER, profile: BENCH_PROFILE },
+    profile: { model: QWEN_2511, profile: BENCH_PROFILE },
     prompt: "a bench render",
     references: [{ role: "reference", buffer: Buffer.from("bench-reference"), required: true }],
     target: { aspectRatio: null },

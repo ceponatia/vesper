@@ -8,7 +8,7 @@
 export const INTIMATE_SCENE_LORA_ID = "imglorqwennsfwallinclv20";
 
 /** Base model the automatic intimate-scene route pairs with the curated LoRA. */
-export const INTIMATE_SCENE_LORA_WRAPPER_SLUG = "qwen/qwen-image-edit-plus-lora";
+export const INTIMATE_SCENE_LORA_MODEL_SLUG = "qwen/qwen-image-edit-2511";
 
 /** Model selection that pre-fills the curated LoRA in the Image Generator. */
-export const INTIMATE_SCENE_LORA_PREFILL_SLUG = INTIMATE_SCENE_LORA_WRAPPER_SLUG;
+export const INTIMATE_SCENE_LORA_PREFILL_SLUG = INTIMATE_SCENE_LORA_MODEL_SLUG;

@@ -1,6 +1,6 @@
 import type { ImageLoraRenderBinding, ResolvedImageProfile } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
+import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { pairProfileWithNsfwLora, type NsfwLoraMissingLeg } from "./nsfw-lora";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 
@@ -8,26 +8,25 @@ import type { SceneRenderPlan } from "./prompts-scene-plan";
  * The intimate-scene LoRA route.
  *
  * ~45 owner-graded probe renders settled two things at once: the staged prompts
- * are right, and the stock scene model is the ceiling. `qwen-image-edit-2511`
- * follows every compositional instruction and cannot draw explicit anatomy, so
- * a chat that stages an act gets a picture of a near-miss. One LoRA — run
- * through Replicate's LoRA-capable Qwen edit wrapper — rendered every acceptance
- * act on the same prompts.
+ * are right, and the base editor cannot draw explicit anatomy on its own. It
+ * follows every compositional instruction, so a chat that stages an act gets a
+ * picture of a near-miss — until one curated LoRA rides along, which rendered
+ * every acceptance act on the same prompts.
  *
  * This module owns WHICH chat renders take the LoRA and what a missing piece of
- * the configuration costs them. Assembling the pairing itself — wrapper model,
- * library row, credential — is `nsfw-lora.ts`, shared with the portrait studio's
- * `nsfw_test` variant. The answer is a MODEL SWAP plus a binding rather than a
- * flag, because the LoRA lives on a different endpoint than the scene default:
- * the wrapper is a generation behind 2511 and off every picker, which is why
- * only these two routes may reach it.
+ * the configuration costs them. Assembling the pairing itself — the intimate
+ * model, the library row, the credential — is `nsfw-lora.ts`, shared with the
+ * portrait studio's `nsfw_test` variant. The answer is a BINDING on the intimate
+ * model rather than a flag, because weights are resolved against the model that
+ * will load them: the library row states which endpoints and versions it may
+ * reach, and only a resolved pairing can be checked against that.
  *
  * Three properties are load-bearing:
  *
  * 1. **The trigger reads the render's own facts, never a parallel guess.** The
  *    same staging, route and anchor that decide whether the explicit sentence is
  *    emitted decide whether the LoRA rides — see {@link intimateSceneLoraApplies}.
- * 2. **Every miss degrades to today.** A missing wrapper row, an unresolvable
+ * 2. **Every miss degrades to today.** A missing model row, an unresolvable
  *    library row, a deployment with no Civitai credential: each renders exactly
  *    as it does now, on the stock profile, with one info diagnostic naming the
  *    leg. Nothing here can fail a render.
@@ -37,16 +36,16 @@ import type { SceneRenderPlan } from "./prompts-scene-plan";
  */
 
 /**
- * The row and the endpoint this route asks for are defined in contracts
+ * The row and the model this route asks for are defined in contracts
  * (`@/contracts/images/intimate-scene-lora`) and re-exported here, because the
  * lab's staged-scene form needs the same two names and cannot import
  * `server/*`. Re-exported rather than moved outright so every existing
  * `from "./scene-lora"` import — the probe's `lora` arm included, which
  * `scene-lora.test.ts` pins against production — keeps resolving.
  */
-export { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_WRAPPER_SLUG };
+export { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG };
 
-/** An intimate staged render is going out through the LoRA wrapper. */
+/** An intimate staged render is going out carrying the anatomy LoRA. */
 export const SCENE_LORA_ROUTE_CODE = "images.scene_render.lora_route";
 
 /** The LoRA route was wanted and could not be assembled — this render is today's. */
@@ -55,17 +54,19 @@ export const SCENE_LORA_UNAVAILABLE_CODE = "images.scene_render.lora_unavailable
 /** Which leg of the route was missing, for the degrade diagnostic's context. */
 export type SceneLoraMissingLeg = NsfwLoraMissingLeg;
 
-/** What the render path does differently when the route is on: a model, and a LoRA. */
+/** What the render path does differently when the route is on: a resolved model, and a LoRA. */
 export interface IntimateSceneLoraRoute {
   /**
-   * The lane's own scene profile paired with the WRAPPER model.
+   * The lane's own scene profile paired with the intimate model — today the
+   * same base model most scene profiles already resolve to.
    *
    * The profile row is unchanged — same task, same prompt strategy, same
    * reference policy, same control defaults — because the render is the same
-   * render; only the endpoint that can draw it differs. Pairing a stored profile
-   * with another model is the image lab's established shape
-   * (`runRecipeIntent`), and it is why no wrapper-specific profile row has to
-   * exist for this route to work.
+   * render. The pairing still goes through the registry rather than keeping the
+   * lane's copy, so the row that carries the LoRA control bindings is the one
+   * the weights are evaluated and sent against. Pairing a stored profile with a
+   * named model is the image lab's established shape (`runRecipeIntent`), and it
+   * is why no route-specific profile row has to exist for this route to work.
    */
   profile: ResolvedImageProfile;
   binding: ImageLoraRenderBinding;
@@ -105,16 +106,16 @@ export interface ResolveIntimateSceneLoraInput extends IntimateSceneLoraFacts {
  * - `allowIntimate` — the rung's own uncensored flag, which the moderated
  *   fallback clears and the content-rejection retry clears with it.
  * - `referenceRoute` + `anchored` — the proven route is a reference EDIT of the
- *   character's own anchor; a bare text render on a LoRA-loaded wrapper is a
+ *   character's own anchor; a bare text render on a LoRA-loaded model is a
  *   composition nobody graded.
  *
  * Deliberately NOT re-derived here: the staging's per-part coverage gate. That
  * rule decides the sentence's WORDING against the player's exposure inside the
  * builder, and a second copy of it out here would be exactly the parallel guess
- * that drifts. A staged plan whose parts fall out of frame renders on the
- * wrapper with the sentence suppressed — the same picture the stock model would
- * have produced, one generation older, which is a cost worth paying to keep one
- * owner of that rule.
+ * that drifts. A staged plan whose parts fall out of frame renders on the same
+ * model as any other scene, with the sentence suppressed — so it is the picture
+ * the stock render would have produced anyway, and keeping one owner of that
+ * rule costs nothing.
  */
 export function intimateSceneLoraApplies(facts: IntimateSceneLoraFacts): boolean {
   if (facts.plan.staging?.intimate !== true) return false;

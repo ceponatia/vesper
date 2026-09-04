@@ -25,7 +25,7 @@ convenience range. The two gates are independent, so widening a row's band never
 reaches the provider.
 
 The built-in intimate-scene row ships at **0–2 around a default of 1**, inside the 0–4 both Qwen
-wrappers declare: wide enough on purpose to reach the strengths the provider documents as the
+edit endpoints declare: wide enough on purpose to reach the strengths the provider documents as the
 strong ones, so a scale sweep can find the too-strong edge and not only the too-weak one. Seeded
 rows are ordinary rows — an admin may retune any band, and the retuned value is the one every
 later render is judged against.
@@ -37,8 +37,8 @@ any trigger word not already present are woven into the compiled prompt, so the 
 prompt is the sent prompt. The record keeps `{ id, scale }` while the locator goes to the
 provider payload and nowhere else, with URL query strings redacted from diagnostics.
 
-**One LoRA per render** — that is what the tested binding supports. For Qwen's current wrappers,
-prefer a Hugging Face repo slug (or a documented direct `.safetensors` URL) over
+**One LoRA per render** — that is what the tested binding supports. For Qwen's current edit
+endpoints, prefer a Hugging Face repo slug (or a documented direct `.safetensors` URL) over
 credential-bearing or expiring download URLs.
 
 ## Identity-LoRA bindings

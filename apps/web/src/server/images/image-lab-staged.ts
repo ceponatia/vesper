@@ -554,11 +554,11 @@ export function stagedSceneProgram(input: StagedSceneProgramInput): StagedSceneP
  * staged recipe profile (`staged_scene/<id>`) carries no row — it is a request
  * shape, not an endpoint the binding table authorizes words for. The honest key
  * is the one a chat scene would compile this model under: the pinned model's
- * own offered scene profile, and where it has none — the LoRA wrapper, which
- * sits on no picker — the scene task's default profile, exactly the row
- * `resolveIntimateSceneLoraRoute` keeps when it swaps a chat render onto the
- * wrapper (`pairProfileWithNsfwLora`). Null when the deployment offers the
- * scene task no profile at all, which is the chat lane's own `none_offered`
+ * own offered scene profile, and where it has none — an endpoint the bench can
+ * address but no picker offers — the scene task's default profile, exactly the
+ * row `resolveIntimateSceneLoraRoute` keeps when it pairs a chat render with the
+ * intimate model (`pairProfileWithNsfwLora`). Null when the deployment offers
+ * the scene task no profile at all, which is the chat lane's own `none_offered`
  * failure.
  */
 async function stagedSceneBindingProfileKey(model: ImageModel, sink?: DiagnosticSink): Promise<string | null> {

@@ -10,7 +10,7 @@ import { emptyCharacterProfile } from "@/contracts/world/profile";
 
 /**
  * The chat lane's half of the intimate-scene LoRA route: which renders leave
- * `renderCharacterSceneImage` on the wrapper carrying a binding, and — just as
+ * `renderCharacterSceneImage` carrying a resolved binding, and — just as
  * load-bearing — which leave EXACTLY as they did before this route existed.
  *
  * `renderResolvedScene` is mocked so each case reads the request the lane
@@ -57,14 +57,12 @@ import { resolveImageProfileForTask } from "./model-profiles";
 import { loadImageModels } from "./models";
 import { emptySceneRenderPlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
-import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "./scene-lora";
+import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "./scene-lora";
 
 const mockRender = vi.mocked(renderResolvedScene);
 const mockCompose = vi.mocked(composeSceneSpec);
 const mockModels = vi.mocked(loadImageModels);
 const mockResolveLora = vi.mocked(resolveImageLoraForRender);
-
-const WRAPPER_SLUG = `${INTIMATE_SCENE_LORA_WRAPPER_SLUG}:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`;
 
 const binding = {
   id: INTIMATE_SCENE_LORA_ID,
@@ -76,19 +74,23 @@ const binding = {
   triggerWords: [],
 };
 
-function wrapperModel(): ImageModel {
+/**
+ * The intimate model's REGISTERED row — the same base model the picker offers,
+ * but the copy that declares the two LoRA controls the weights resolve against.
+ */
+function intimateModel(): ImageModel {
   return imageModelSchema.parse({
-    id: "imgmdlqwenlorawrapperaaa",
-    slug: WRAPPER_SLUG,
-    label: "Qwen Image Edit Plus LoRA",
+    id: "imgmdlqwen2511aaaaaaaaaa",
+    slug: INTIMATE_SCENE_LORA_MODEL_SLUG,
+    label: "Qwen Image Edit 2511",
     canGenerate: false,
     canEdit: true,
     editKind: "instruction_edit",
-    identityPreservation: "moderate",
+    identityPreservation: "strong",
     referenceField: "image",
     referenceArity: "array",
     maxReferences: 3,
-    probedVersionId: "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200",
+    probedVersionId: "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729",
     advancedCapabilities: {
       controls: {
         loraWeights: { field: "lora_weights", type: "string" },
@@ -194,18 +196,20 @@ beforeEach(() => {
   vi.mocked(latestChatLook).mockResolvedValue({ imageId: "img-look", buffer: Buffer.from("look") });
   mockCompose.mockResolvedValue(plan("lying_beneath_viewer"));
   mockRender.mockResolvedValue("img-scene");
-  mockModels.mockResolvedValue([wrapperModel()]);
+  mockModels.mockResolvedValue([intimateModel()]);
   mockResolveLora.mockResolvedValue({ ok: true, binding });
 });
 
 describe("the intimate staged render", () => {
-  it("runs on the LoRA wrapper, carrying the resolved binding", async () => {
+  it("runs on the intimate model, carrying the resolved binding", async () => {
     await render({});
     const request = requestAt(0);
-    expect(request.profile?.model.slug).toBe(WRAPPER_SLUG);
+    expect(request.profile?.model.slug).toBe(INTIMATE_SCENE_LORA_MODEL_SLUG);
     // The lane's own profile row rides unchanged — same task, same policy, same
-    // strategy; only the endpoint that can draw the act differs.
+    // strategy; the pairing replaces only the model object, with the registry
+    // row that declares the LoRA controls.
     expect(request.profile?.profile).toBe(stockProfile.profile);
+    expect(request.profile?.model.advancedCapabilities.controls.loraWeights).toBeDefined();
     expect(request.resolvedLora).toEqual(binding);
     // The queue passes no sink, so the lane replays the route's diagnostics
     // itself — otherwise nothing would record which renders took the LoRA.
@@ -213,8 +217,9 @@ describe("the intimate staged render", () => {
   });
 
   it("still renders on the stock model when a leg is missing", async () => {
-    // One leg stands for all four: the wrapper row is absent. The point of the
-    // case is the FALLBACK — the request is the stock one, not a failure.
+    // One leg stands for all four: the model row is absent from the registry.
+    // The point of the case is the FALLBACK — the request is the stock one, with
+    // the lane's own resolved profile and no weights, not a failure.
     mockModels.mockResolvedValue([]);
     await render({});
     const request = requestAt(0);
@@ -234,9 +239,10 @@ describe("the intimate staged render", () => {
 
 describe("every other render is what it was", () => {
   it("leaves an unstaged scene byte-identical whether or not the LoRA exists", async () => {
-    // Rendered TWICE — once with the wrapper and the library row present, once
-    // with neither — and the two requests must be indistinguishable. That is the
-    // pin: the route's machinery may not change a render it does not claim.
+    // Rendered TWICE — once with the registered model and the library row
+    // present, once with neither — and the two requests must be
+    // indistinguishable. That is the pin: the route's machinery may not change a
+    // render it does not claim.
     mockCompose.mockResolvedValue(plan());
     await render({});
     const withLibrary = comparable(requestAt(0));

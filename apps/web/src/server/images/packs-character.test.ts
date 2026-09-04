@@ -159,31 +159,53 @@ describe("character prompt-pack coverage", () => {
   );
 
   /**
-   * The LoRA wrapper the intimate-scene route and the NSFW variant bench swap
-   * onto AFTER profile resolution. It is not in the profile catalog — no picker
-   * offers it — so the coverage list above cannot see it, and it is precisely the
-   * hidden legacy exception #256 forbids: a route that resolves a profile, swaps
-   * the model, and finds no binding for the model it is about to call would stay
-   * on the legacy prompt forever with nothing in the binding table showing it.
+   * The keys the intimate-scene route and the NSFW variant bench can arrive
+   * under. Both pair the PICKED profile with the intimate model (#457) and
+   * replace only the model, so the render's binding is resolved on
+   * `qwen/qwen-image-edit-2511` under a profile key that model has no profile
+   * row of its own for — three of the four scene keys belong to Seedream 4.5,
+   * Seedream 5 Lite and Wan 2.7.
    *
-   * The pairing keeps the PICKED profile and replaces only its model, so every
-   * variant and scene key a swapped render can arrive with needs a row.
+   * The coverage list above cannot see those pairs: it walks the profile
+   * CATALOG, and the catalog never offers 2511 under another model's scene tier.
+   * A missing row here is invisible in exactly the way #256 forbids — the seam
+   * answers `unbound`, the scene lane drops the rung, and a staged intimate
+   * render silently loses its picture.
    */
   it.each([
-    { task: "variant" as const, profileKey: "variant-standard", strategy: "instruction_edit" as const },
-    { task: "scene" as const, profileKey: "scene-standard", strategy: "instruction_edit" as const },
-    { task: "scene" as const, profileKey: "ensemble-scene-2k", strategy: "instruction_edit" as const },
-    { task: "scene" as const, profileKey: "quality-scene-3k", strategy: "instruction_edit" as const },
-    { task: "scene" as const, profileKey: "multi-reference-edit-2k", strategy: "instruction_edit" as const },
-  ])("binds the LoRA wrapper for $task/$profileKey", ({ task, profileKey, strategy }) => {
-    expect(
-      activeImagePromptBinding({
-        modelSlug: "qwen/qwen-image-edit-plus-lora",
-        task,
-        profileKey,
-        promptStrategy: strategy,
-      }),
-    ).not.toBeNull();
+    { task: "variant" as const, profileKey: "variant-standard", strategies: ["instruction_edit"] as const },
+    // Every scene key states BOTH job shapes: the chain's bare-prompt rung
+    // states `text_to_image_description` where the two reference rungs state
+    // `instruction_edit`, a binding pins one strategy, and the compile refuses a
+    // mismatched pair — so a paired render that lost its references would REFUSE
+    // instead of degrading.
+    {
+      task: "scene" as const,
+      profileKey: "scene-standard",
+      strategies: ["instruction_edit", "text_to_image_description"] as const,
+    },
+    {
+      task: "scene" as const,
+      profileKey: "ensemble-scene-2k",
+      strategies: ["instruction_edit", "text_to_image_description"] as const,
+    },
+    {
+      task: "scene" as const,
+      profileKey: "quality-scene-3k",
+      strategies: ["instruction_edit", "text_to_image_description"] as const,
+    },
+    {
+      task: "scene" as const,
+      profileKey: "multi-reference-edit-2k",
+      strategies: ["instruction_edit", "text_to_image_description"] as const,
+    },
+  ])("binds the intimate model for $task/$profileKey", ({ task, profileKey, strategies }) => {
+    for (const promptStrategy of strategies) {
+      expect(
+        activeImagePromptBinding({ modelSlug: "qwen/qwen-image-edit-2511", task, profileKey, promptStrategy }),
+        `${profileKey} ${promptStrategy}`,
+      ).not.toBeNull();
+    }
   });
 
   /**

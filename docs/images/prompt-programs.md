@@ -304,7 +304,7 @@ its own forks out without disturbing its former siblings.
 | Family     | Positive syntax  | References   | Endpoints                                                        |
 | ---------- | ---------------- | ------------ | ---------------------------------------------------------------- |
 | Qwen 2512  | natural language | none         | the description generator                                        |
-| Qwen edit  | natural language | numbered     | the delta editor, and the LoRA-capable wrapper                   |
+| Qwen edit  | natural language | numbered     | the delta editor, and the legacy 2509 comparison endpoint        |
 | Prose      | natural language | role labels  | Seedream, Wan, SD 3.5 Large, FLUX Dev, P-Image                   |
 | Tag        | comma tags       | none         | LikeReality Pony (Compel weights), SDXL PuLID                    |
 
@@ -370,10 +370,10 @@ Every dimension is load-bearing:
 
 Resolution runs on a lane's **final** resolved profile, after any model swap. The
 variant bench kind and the intimate scene route both pair their picked profile
-with a LoRA wrapper model, so the wrapper carries bindings of its own — resolving
-from the pre-swap profile would bind a program to a model the render does not run
-on, and leaving the wrapper unbound would be a legacy exception no binding table
-shows.
+with the 2511 model, so 2511 carries a binding for every scene and variant
+profile key the picker offers — resolving from the pre-swap profile would bind a
+program to a model the render does not run on, and leaving any of those profile
+keys unbound on 2511 would be a legacy exception no binding table shows.
 
 A pack manifest says which named blocks are enabled, their order and priority,
 which reviewed wording variant to use, and which evidence backs each choice. It

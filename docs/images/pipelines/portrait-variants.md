@@ -115,16 +115,15 @@ chaining edits, because drift compounds.
 ## The `nsfw test` anatomy bench
 
 `nsfw test` (`NSFW_TEST_VARIANT_KIND`) is the studio's anatomy bench, and the only variant kind
-that chooses its own model. It pairs the picked variant profile with the LoRA-capable wrapper
-`qwen/qwen-image-edit-plus-lora` and the same builtin `image_loras` row the chat scene lane
+that chooses its own model. It pairs the picked variant profile with the registered
+`qwen/qwen-image-edit-2511` row and the same builtin `image_loras` row the chat scene lane
 uses, at that row's curated scale (`server/images/nsfw-lora.ts` assembles the pairing for both
-lanes; the row's `allowedTasks` covers `scene` and `variant`). The swap is decided **before**
+lanes; the row's `allowedTasks` covers `scene` and `variant`). The pairing is decided **before**
 the row is reserved, so the row records the model it runs on, and binding resolution runs on
-the wrapper — which carries a binding and a delta-edit dialect of its own rather than borrowing
-2511's row.
+the final resolved profile.
 
-Unlike the chat lane it **fails rather than degrades**: a missing wrapper row, LoRA row or
+Unlike the chat lane it **fails rather than degrades**: a missing model row, LoRA row or
 Civitai credential fails the image row with the leg's own message, because a tame render
 silently substituted for an explicit one is exactly what the bench is testing against. A
 failed bench route compiles no program either — the fallback profile is not the model the
-render would have run on. The row records the wrapper slug and the resolved LoRA id in `meta`.
+render would have run on. The row records the model slug and the resolved LoRA id in `meta`.

@@ -516,9 +516,9 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // matching back view has two images to compose rather than one.
       mode: imageBearing + referenceViews.length >= 2 ? ("multi" as const) : ("single" as const),
       ...(referenceViews.length === 0 ? {} : { referenceViews }),
-      // The route's profile IS the lane's profile with the LoRA wrapper in place
-      // of the scene model; off the route it is the resolved object itself, so a
-      // LoRA-free render is unchanged down to the reference.
+      // The route's profile IS the lane's profile paired with the intimate
+      // model's registered row; off the route it is the resolved object itself,
+      // so a LoRA-free render is unchanged down to the reference.
       profile: lora?.profile ?? imageProfile,
       ...(lora ? { resolvedLora: lora.binding } : {}),
       flavor: input.flavor,

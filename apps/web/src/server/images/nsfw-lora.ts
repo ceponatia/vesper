@@ -7,15 +7,15 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
-import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
+import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { resolveImageLoraForRender } from "./image-loras";
 import { civitaiApiToken, loraLocatorNeedsCivitaiToken } from "./lora-credentials";
 import { loadImageModels } from "./models";
 
 /**
- * Pairing a lane's own profile with the anatomy LoRA and the one endpoint that
- * can load it — the shared half of the intimate-scene route, used by the chat
- * scene lane and by the portrait studio's `nsfw_test` variant.
+ * Pairing a lane's own profile with the anatomy LoRA and the model that loads
+ * it — the shared half of the intimate-scene route, used by the chat scene lane
+ * and by the portrait studio's `nsfw_test` variant.
  *
  * The four legs and their order are the design: the model registry is one read,
  * the library row is a second, and the credential is an environment lookup that
@@ -28,19 +28,22 @@ import { loadImageModels } from "./models";
  */
 
 /** Which leg was missing, for the caller's own diagnostic context. */
-export type NsfwLoraMissingLeg = "wrapper_model" | "wrapper_eligibility" | "library_row" | "credential";
+export type NsfwLoraMissingLeg = "model" | "model_eligibility" | "library_row" | "credential";
 
-/** The lane's profile on the wrapper model, plus the weights it may send. */
+/** The lane's profile on the intimate model, plus the weights it may send. */
 export type NsfwLoraPairing =
   | {
       ok: true;
       /**
        * The caller's own profile row — same task, prompt strategy, reference
-       * policy and control defaults — paired with the WRAPPER model, because the
-       * render is the same render and only the endpoint that can draw it differs.
-       * Pairing a stored profile with another model is the image lab's
-       * established shape (`runRecipeIntent`), which is why no wrapper-specific
-       * profile row has to exist.
+       * policy and control defaults — paired with the intimate model, which is
+       * the base model most character lanes already resolve to. The pairing
+       * still goes through the registry rather than trusting the caller's copy,
+       * because the registered row is the one that carries the LoRA control
+       * bindings a weights-bearing render is evaluated against. Pairing a stored
+       * profile with a named model is the image lab's established shape
+       * (`runRecipeIntent`), which is why no route-specific profile row has to
+       * exist.
        */
       profile: ResolvedImageProfile;
       binding: ImageLoraRenderBinding;
@@ -48,7 +51,7 @@ export type NsfwLoraPairing =
   | { ok: false; leg: NsfwLoraMissingLeg; message: string };
 
 /**
- * Resolve the wrapper + weights for one render, or the leg that stopped it.
+ * Resolve the intimate model + weights for one render, or the leg that stopped it.
  *
  * Nothing here throws and nothing here reports: every refusal is a value, so the
  * caller decides between degrading and failing with the same information.
@@ -58,32 +61,42 @@ export async function pairProfileWithNsfwLora(
   sink?: DiagnosticSink,
 ): Promise<NsfwLoraPairing> {
   const models = await loadImageModels(sink);
-  const wrapper = models.find((model) => baseImageModelSlug(model.slug) === INTIMATE_SCENE_LORA_WRAPPER_SLUG);
-  if (!wrapper) {
-    return { ok: false, leg: "wrapper_model", message: `no registered image model matches ${INTIMATE_SCENE_LORA_WRAPPER_SLUG}` };
+  // Exact spelling first, base slug only as a fallback — the same two steps
+  // `resolveLabModel` takes. Registry uniqueness is on the FULL slug and the
+  // sort is an admin-editable field, so a pinned `…-2511:<version>` row sitting
+  // ahead of the built-in bare row would otherwise win a base-slug-only lookup
+  // and hand this route a different version and capability record than the one
+  // the constant names. The fallback still keeps a deployment whose only 2511
+  // row is stored in its pinned spelling working.
+  const intimateModel =
+    models.find((model) => model.slug === INTIMATE_SCENE_LORA_MODEL_SLUG) ??
+    models.find((model) => baseImageModelSlug(model.slug) === INTIMATE_SCENE_LORA_MODEL_SLUG);
+  if (!intimateModel) {
+    return { ok: false, leg: "model", message: `no registered image model matches ${INTIMATE_SCENE_LORA_MODEL_SLUG}` };
   }
 
   // The same gate the lab applies before a recipe run: a profile paired with a
   // model that cannot mechanically or safely do the job would be refused one
   // layer down anyway, and refusing here costs a render rather than a prediction.
-  const eligibility = profileEligibility(profile.profile, wrapper);
+  const eligibility = profileEligibility(profile.profile, intimateModel);
   if (!eligibility.ok) {
     return {
       ok: false,
-      leg: "wrapper_eligibility",
-      message: `${wrapper.slug} cannot run the ${profile.profile.key} profile: ${eligibility.reason}`,
+      leg: "model_eligibility",
+      message: `${intimateModel.slug} cannot run the ${profile.profile.key} profile: ${eligibility.reason}`,
     };
   }
 
   // No `scale` on the selection: the row's own curated default is the proven
   // strength (1), and stating a number here would outrank an admin who retuned
-  // the band. The version asked about is whatever pins the wrapper row, the same
-  // rule `renderImageIntent` uses for a caller that did not resolve its own LoRA.
+  // the band. The version asked about is whatever pins the registered row, the
+  // same rule `renderImageIntent` uses for a caller that did not resolve its own
+  // LoRA.
   const resolved = await resolveImageLoraForRender(
     { id: INTIMATE_SCENE_LORA_ID },
     {
-      model: wrapper,
-      versionId: pinnedImageModelVersion(wrapper),
+      model: intimateModel,
+      versionId: pinnedImageModelVersion(intimateModel),
       // A player-facing render on both callers — the chat scene lane and the
       // portrait studio's test variant — so the row's `allowedTasks` curation
       // applies, exactly as it did before contexts existed.
@@ -104,5 +117,5 @@ export async function pairProfileWithNsfwLora(
     };
   }
 
-  return { ok: true, profile: { profile: profile.profile, model: wrapper }, binding };
+  return { ok: true, profile: { profile: profile.profile, model: intimateModel }, binding };
 }

@@ -20,7 +20,7 @@ import {
   isImageLabFinishableKind,
   pinnedImageModelVersion,
 } from "@vesper/image-core";
-import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
+import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { sceneStagingList, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { DaylightBand } from "@/lib/clock";
 import {
@@ -149,23 +149,21 @@ const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
  * A staged scene's default model, and the one kind whose blank Model box IS
  * sent rather than left to the runner.
  *
- * The ordinary default cannot carry a LoRA at all — `qwen-image-edit-2511`
- * exposes no `lora_weights` input, which is the entire reason the wrapper row
- * exists (docs/image-models/models/qwen-image-edit-plus-lora.md). A staged run seeds
- * the builtin intimate LoRA below, so defaulting the model the way every other
- * kind does would pair weights with a model that cannot load them and settle
- * the run `image_lora.incompatible` before rendering — a form that queues a
- * request it knows will fail.
+ * Every other kind leaves its blank Model box to the runner, which resolves
+ * "the plan's model" — whatever the deployment's scene default happens to be.
+ * A staged scene is evidence ABOUT the intimate route, so it cannot afford
+ * that: on a deployment whose scene default is another endpoint, the bench
+ * would render a different model than production and still read as production.
  *
- * So the staged kind defaults its own model and SENDS it. An admin who names
- * another slug still overrides it; this only fills the blank.
+ * So the staged kind names the production intimate model and SENDS it. An admin
+ * who names another slug still overrides it; this only fills the blank.
  *
  * It is the SAME constant the chat render route resolves, imported rather than
- * retyped: a second spelling here would drift the day the wrapper is
- * re-registered, and a bench that ran a different model than production would
+ * retyped: a second spelling here would drift the day the pairing moves to
+ * another model, and a bench that ran a different model than production would
  * quietly stop being evidence about production.
  */
-const STAGED_DEFAULT_MODEL_SLUG = INTIMATE_SCENE_LORA_WRAPPER_SLUG;
+const STAGED_DEFAULT_MODEL_SLUG = INTIMATE_SCENE_LORA_MODEL_SLUG;
 
 /**
  * The Model select's two options that are not a registered slug.
@@ -523,11 +521,13 @@ export function ImageLabExperimentForm({
     setLoraScale(selectedLora === null ? "" : String(selectedLora.defaultScale));
     setLoraOnly(false);
   }
-  // A staged scene ARRIVES with the intimate builtin already chosen, at its own
+  // A staged scene ARRIVES with the intimate LoRA already chosen, at its own
   // curated default — the chat lane sends those weights on every intimate staged
   // render, and a bench that started at none would answer a question the lane
-  // never asks. `builtin` is what names it: a seeded row is the one the migration
-  // wrote for this route, where anything hand-curated is somebody's own arm.
+  // never asks. It is found by the PRODUCTION row's id, not by being the first
+  // `builtin` row: builtin only means "seeded by a migration", so a second
+  // seeded row landing ahead of it would silently displace the weights this
+  // bench exists to measure.
   //
   // Seeded ONCE (render-adjust with a latch, never a setState inside an effect),
   // so an admin who clears it back to none — the no-weights control arm, and a
@@ -537,7 +537,9 @@ export function ImageLabExperimentForm({
   // a pick this form made on the admin's behalf must not ride into a finishing
   // pass as if it had been chosen there. A row they picked themselves is left
   // alone, like every other field that survives a change of kind.
-  const stagedDefaultLora = isStaged ? (offerableLoras.find((lora) => lora.builtin) ?? null) : null;
+  const stagedDefaultLora = isStaged
+    ? (offerableLoras.find((lora) => lora.id === INTIMATE_SCENE_LORA_ID) ?? null)
+    : null;
   const [seededLoraId, setSeededLoraId] = useState<string | null>(null);
   if (isStaged && seededLoraId === null && loraId === "" && stagedDefaultLora !== null) {
     setSeededLoraId(stagedDefaultLora.id);
@@ -549,7 +551,8 @@ export function ImageLabExperimentForm({
   }
   // The model the run will actually resolve — what the admin named, or the
   // kind's own default when the box is blank. A staged scene's default is the
-  // LoRA wrapper, because its seeded weights have nowhere else to load.
+  // production intimate-scene model, so the bench spends on the pairing the
+  // chat lane actually renders.
   const blankModelDefault = isStaged ? STAGED_DEFAULT_MODEL_SLUG : DEFAULT_MODEL_SLUG;
   const effectiveModelSlug = modelSlug.trim() === "" ? blankModelDefault : modelSlug.trim();
   // The registry's rows, in the order the registry sorts them. A fetch that is
@@ -568,7 +571,7 @@ export function ImageLabExperimentForm({
     null;
   const modelHint = ((): string => {
     const base = isStaged
-      ? `Default runs the LoRA wrapper (${STAGED_DEFAULT_MODEL_SLUG}) — the only Qwen edit model that loads weights.`
+      ? `Default runs the production intimate-scene model (${STAGED_DEFAULT_MODEL_SLUG}) with the same LoRA the chat lane sends.`
       : `Default runs the plan's model (${DEFAULT_MODEL_SLUG}).`;
     if (models.error !== null) {
       return `${base} The registered list could not be loaded — name a model with Other to run one.`;
@@ -918,9 +921,10 @@ export function ImageLabExperimentForm({
     const sendsCharacter = kind === "control_probe" || kind === "baseline_portrait" || kind === "controlled_portrait";
     // Blank normally means "let the runner resolve the plan's model". The staged
     // kind is the exception and fills its own blank (STAGED_DEFAULT_MODEL_SLUG):
-    // its seeded LoRA cannot load on the ordinary default, so a blank box there
-    // would queue a run whose only outcome is `image_lora.incompatible`. A
-    // baseline sends NO slug at all, whatever the (hidden) model state holds:
+    // it must NAME the production intimate model, because a deployment whose
+    // scene default is another endpoint would otherwise bench a model the
+    // intimate route does not run. A baseline sends NO slug at all, whatever
+    // the (hidden) model state holds:
     // the runner resolves the production profile and overwrites a requested
     // slug anyway, and a stored value the run discarded would read as a choice.
     const namedModel =
@@ -1105,7 +1109,7 @@ export function ImageLabExperimentForm({
                 ? "No enabled library row allows scene renders, so there are no weights to offer. Curate one under Settings → Image models → LoRA library — without them the act is drawn by the stock model, which is the thing this bench measures the absence of."
                 : "None in the library yet. Curate one under Settings → Image models → LoRA library; only enabled rows are offered here."
               : isStaged
-                ? "The weights the act is rendered with. The intimate builtin is chosen for you because it is what the chat lane sends on every intimate staged render — clear it to none to see the same act without them."
+                ? "The weights the act is rendered with. The production intimate-scene LoRA is chosen for you because it is what the chat lane sends on every intimate staged render — clear it to none to see the same act without them."
                 : "Optional. Blends a curated weights file into this pass — the library row decides which models, versions, and strengths it may run at."
           }
         >

@@ -75,7 +75,7 @@ needs a home:
 | Adapter | What it is |
 | --- | --- |
 | `qwen/qwen-image-edit-2511` | Current instruction editor. Numbered references and one runtime custom LoRA when the active probed version exposes `lora_weights`/`lora_scale`. |
-| `qwen/qwen-image-edit-plus-lora` | Older 2509-generation LoRA wrapper. Still useful as a separate comparison/legacy endpoint, not the only Qwen editor that can load a LoRA. |
+| `qwen/qwen-image-edit-plus-lora` | Older 2509-generation LoRA wrapper, kept as a legacy comparison endpoint. No production route runs on it — intimate scenes render on 2511 with the curated LoRA. |
 | `qwen/qwen-image-2512` | Text-to-image generator arm. Takes guidance; **ignores its negative field**. |
 
 All three share the family's reference conventions; the two editors share its

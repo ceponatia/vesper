@@ -362,12 +362,13 @@ function renderClaim(
       const form = imageSceneStagingForm(claim.value);
       if (form === null) return null;
       // ADOPTS the registry's wording, and this is the endpoint with the strongest
-      // claim on it: the intimate scene route runs on the LoRA-capable wrapper
-      // that shares this implementation, and the templates were tuned against
-      // exactly those renders — one of them is written to sit nine characters
-      // under the edit lane's own ceiling. The measured residue is model behavior
-      // rather than scene meaning, so no typed semantics could regenerate it and
-      // a rival sentence here would throw away the only evidence there is.
+      // claim on it: the intimate scene route renders on 2511, and the templates
+      // were tuned against exactly those renders on the sibling 2509 endpoint
+      // that shares this implementation — one of them is written to sit nine
+      // characters under the edit lane's own ceiling. The measured residue is
+      // model behavior rather than scene meaning, so no typed semantics could
+      // regenerate it and a rival sentence here would throw away the only
+      // evidence there is.
       //
       // The budget it was tuned against is gone: a program budgets from the model
       // binding rather than from the legacy 1500-character clamp, so a
@@ -649,25 +650,26 @@ export const qwenImageEdit2511Dialect: ImagePromptDialectDefinition = {
 registerImagePromptDialect(qwenImageEdit2511Dialect);
 
 /**
- * `qwen/qwen-image-edit-plus-lora` — the LoRA-capable Qwen edit wrapper the
- * intimate-scene route and the NSFW variant bench swap onto AFTER profile
- * resolution.
+ * `qwen/qwen-image-edit-plus-lora` — the legacy 2509-generation LoRA endpoint's
+ * OWN dialect id. Production routes, the intimate-scene render included, run on
+ * 2511; this endpoint stays addressable as a legacy and comparison arm.
  *
  * A separate registry entry delegating to this module's compilers, which is the
  * registry's own sanctioned shape ("two entries may delegate to one
  * implementation without becoming permanently coupled"). It earns its own id
  * rather than reusing 2511's for the reason that rule exists: the two are
  * different endpoints on different generations, so a wording finding promoted
- * for 2511 must not silently change what the LoRA route sends, and vice versa.
+ * for 2511 must never change what the 2509 endpoint sends, and vice versa —
+ * which is exactly what makes a comparison arm on it still mean something.
  *
- * Everything the definition states is true of BOTH: the wrapper is the same
- * instruction-edit family, takes the same numbered `image` array (capped at 3
- * rather than 2511's own cap — a transport fact the reference planner already
+ * Everything the definition states is true of BOTH: the 2509 endpoint is the
+ * same instruction-edit family, takes the same numbered `image` array (capped at
+ * 3 rather than 2511's own cap — a transport fact the reference planner already
  * enforces, not a prompt one), and publishes no negative input.
  *
- * It exists because #256 forbids a hidden legacy-prompt exception: an active
- * production route that swaps models after resolution must either bind the model
- * it ACTUALLY runs on or be retired, or #251 cannot delete the old builders.
+ * It exists because #256 forbids a hidden legacy-prompt exception: every model
+ * Vesper can still address must bind a dialect of its own rather than fall
+ * through to the old builders, or #251 cannot delete them.
  */
 export const qwenImageEditPlusLoraDialect: ImagePromptDialectDefinition = {
   ...qwenImageEdit2511Dialect,

@@ -25,6 +25,14 @@ The same fields are compatible with Vesper's normalized LoRA control vocabulary
 (`loraWeights` / `loraScale`). The probe already derives those bindings whenever
 it sees them.
 
+The production intimate-scene route, the portrait studio's `nsfw_test` variant
+bench, and the bare reference view all run on this endpoint, pairing their
+picked profile with the curated NSFW `image_loras` library row through these
+same `lora_weights`/`lora_scale` fields rather than swapping onto a different
+model ([scene-framing.md](../../images/pipelines/scene-framing.md) §Staging adds
+the LoRA, [portrait-variants.md](../../images/pipelines/portrait-variants.md)
+§The `nsfw test` anatomy bench).
+
 The long-lived built-in 2511 registry row was originally probed before LoRA
 binding derivation shipped, so its stored `advancedCapabilities` could remain
 stale even though the provider version exposes the inputs. Migration 0118

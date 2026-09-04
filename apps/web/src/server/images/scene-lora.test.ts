@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  emptyImageModelAdvancedCapabilities,
   evaluateImageLoraForRender,
   type ImageLora,
   type ImageModel,
@@ -40,7 +41,7 @@ import { loadImageModels } from "./models";
 import { emptySceneRenderPlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import {
   INTIMATE_SCENE_LORA_ID,
-  INTIMATE_SCENE_LORA_WRAPPER_SLUG,
+  INTIMATE_SCENE_LORA_MODEL_SLUG,
   intimateSceneLoraApplies,
   resolveIntimateSceneLoraRoute,
   SCENE_LORA_ROUTE_CODE,
@@ -52,25 +53,32 @@ const mockResolveLora = vi.mocked(resolveImageLoraForRender);
 
 const CIVITAI_LOCATOR = "https://civitai.com/api/download/models/3160956?type=Model&format=SafeTensor";
 
+const PROBED_VERSION = "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729";
+
 /**
- * The LoRA wrapper as its registered row stands (docs/image-models/models/qwen-image-edit-plus-lora.md):
- * pinned community slug, edit-only, three references, and the two probed LoRA
- * bindings that make it the only endpoint this route can use.
+ * The intimate model's REGISTERED row as it stands (docs/image-models/models/qwen-image-edit-2511.md):
+ * unpinned slug, edit-only, three references, and the two probed LoRA controls
+ * (drizzle 0118, backfilled by 0119) that let weights resolve against it.
+ *
+ * Deliberately a distinct object from {@link sceneProfile}'s copy of the same
+ * model: the pairing reads the registry instead of keeping the lane's object
+ * precisely so the row carrying these control bindings is the one the weights
+ * are evaluated and sent against.
  */
-function wrapperModel(overrides: Partial<ImageModel> = {}): ImageModel {
+function intimateModel(overrides: Partial<ImageModel> = {}): ImageModel {
   return imageModelSchema.parse({
-    id: "imgmdlqwenlorawrapperaaa",
-    slug: `${INTIMATE_SCENE_LORA_WRAPPER_SLUG}:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`,
-    label: "Qwen Image Edit Plus LoRA",
+    id: "imgmdlqwen2511aaaaaaaaaa",
+    slug: INTIMATE_SCENE_LORA_MODEL_SLUG,
+    label: "Qwen Image Edit 2511",
     canGenerate: false,
     canEdit: true,
     editKind: "instruction_edit",
-    identityPreservation: "moderate",
+    identityPreservation: "strong",
     referenceField: "image",
     referenceArity: "array",
     maxReferences: 3,
     supportedAspects: ["1:1", "3:4", "16:9"],
-    probedVersionId: "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200",
+    probedVersionId: PROBED_VERSION,
     advancedCapabilities: {
       controls: {
         loraWeights: { field: "lora_weights", type: "string" },
@@ -82,12 +90,12 @@ function wrapperModel(overrides: Partial<ImageModel> = {}): ImageModel {
   });
 }
 
-/** The lane's resolved scene profile, on the stock scene model. */
+/** The lane's resolved scene profile, as the picker hands it to the route. */
 function sceneProfile(): ResolvedImageProfile {
   return {
     model: imageModelSchema.parse({
       id: "imgmdlqwen2511aaaaaaaaaa",
-      slug: "qwen/qwen-image-edit-2511",
+      slug: INTIMATE_SCENE_LORA_MODEL_SLUG,
       label: "Qwen Image Edit 2511",
       canGenerate: false,
       canEdit: true,
@@ -136,7 +144,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   savedToken = process.env.CIVITAI_API_TOKEN;
   process.env.CIVITAI_API_TOKEN = "civitai-test-token-value";
-  mockModels.mockResolvedValue([wrapperModel()]);
+  mockModels.mockResolvedValue([intimateModel()]);
   mockResolveLora.mockResolvedValue({ ok: true, binding });
 });
 
@@ -180,21 +188,27 @@ describe("intimateSceneLoraApplies", () => {
 });
 
 describe("resolveIntimateSceneLoraRoute", () => {
-  it("routes an intimate staged render onto the wrapper with the library binding", async () => {
+  it("routes an intimate staged render onto the intimate model with the library binding", async () => {
     const sink = new DiagnosticCollector();
     const profile = sceneProfile();
     const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile, sink });
 
     expect(route?.binding).toEqual(binding);
-    // The lane's own profile ROW, paired with the wrapper model.
+    // The lane's own profile ROW, paired with the intimate model.
     expect(route?.profile.profile).toBe(profile.profile);
-    expect(route?.profile.model.slug).toContain(INTIMATE_SCENE_LORA_WRAPPER_SLUG);
-    // Asked for by id, against the wrapper's pin and the profile's own task.
+    expect(route?.profile.model.slug).toBe(INTIMATE_SCENE_LORA_MODEL_SLUG);
+    // The REGISTERED row rather than the picker's copy of the same model — only
+    // the registry row carries the LoRA controls the weights resolve against, so
+    // a pairing that kept the caller's object would evaluate against a row that
+    // declares none.
+    expect(route?.profile.model.advancedCapabilities.controls.loraWeights).toBeDefined();
+    // Asked for by id, against the registered row's probed version and the
+    // profile's own task.
     expect(mockResolveLora).toHaveBeenCalledWith(
       { id: INTIMATE_SCENE_LORA_ID },
       {
-        model: expect.objectContaining({ id: "imgmdlqwenlorawrapperaaa" }),
-        versionId: "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200",
+        model: expect.objectContaining({ id: "imgmdlqwen2511aaaaaaaaaa" }),
+        versionId: PROBED_VERSION,
         // A player-facing render, so the row's `allowedTasks` curation applies.
         execution: { kind: "production", task: "scene" },
       },
@@ -203,6 +217,37 @@ describe("resolveIntimateSceneLoraRoute", () => {
     const routed = sink.items.find((item) => item.code === SCENE_LORA_ROUTE_CODE);
     expect(routed?.severity).toBe("info");
     expect(routed?.context).toMatchObject({ lora: INTIMATE_SCENE_LORA_ID, scale: 1, staging: "lying_beneath_viewer" });
+  });
+
+  it("pairs the row spelled exactly as the constant, even when a pinned duplicate sorts ahead of it", async () => {
+    // Registry uniqueness is on the FULL slug and `sort` is an admin-editable
+    // column, so an added `…-2511:<version>` row can legitimately arrive ahead of
+    // the built-in bare one. A base-slug-only lookup pairs THAT row: a different
+    // provider version, and — as here — a capability record declaring none of the
+    // LoRA control bindings the weights are evaluated and sent against.
+    const pinnedVersion = "c9bb0b52b1c7d0b4ff5f2c8e0a4d1e6f37c9a0d5b8e2f1a3c4d5e6f708192a3b";
+    mockModels.mockResolvedValue([
+      intimateModel({
+        id: "imgmdlqwen2511pinnedaaaa",
+        slug: `${INTIMATE_SCENE_LORA_MODEL_SLUG}:${pinnedVersion}`,
+        probedVersionId: pinnedVersion,
+        advancedCapabilities: emptyImageModelAdvancedCapabilities(),
+      }),
+      intimateModel(),
+    ]);
+
+    const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile: sceneProfile() });
+    expect(route?.profile.model.id).toBe("imgmdlqwen2511aaaaaaaaaa");
+    // And the weights were resolved against that row's version, not the duplicate's.
+    expect(mockResolveLora.mock.calls[0]?.[1]).toMatchObject({ versionId: PROBED_VERSION });
+  });
+
+  it("still pairs the pinned spelling when it is the deployment's only 2511 row", async () => {
+    // The base-slug match is a FALLBACK, not dead code: a deployment whose row is
+    // stored with its version suffix has no exact match to find.
+    mockModels.mockResolvedValue([intimateModel({ slug: `${INTIMATE_SCENE_LORA_MODEL_SLUG}:${PROBED_VERSION}` })]);
+    const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile: sceneProfile() });
+    expect(route?.binding).toEqual(binding);
   });
 
   it("reports no scale of its own, so an admin retuning the row's default is followed", async () => {
@@ -223,24 +268,24 @@ describe("resolveIntimateSceneLoraRoute", () => {
     expect(mockResolveLora).not.toHaveBeenCalled();
   });
 
-  it("degrades when no wrapper model is registered", async () => {
+  it("degrades when the intimate model is not registered", async () => {
     mockModels.mockResolvedValue([]);
     const sink = new DiagnosticCollector();
     const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile: sceneProfile(), sink });
     expect(route).toBeNull();
     expect(mockResolveLora).not.toHaveBeenCalled();
-    expectUnavailable(sink, "wrapper_model");
+    expectUnavailable(sink, "model");
   });
 
-  it("degrades when the wrapper cannot run the lane's profile", async () => {
+  it("degrades when the intimate model cannot run the lane's profile", async () => {
     // A row re-rated `weak` fails the identity-critical gate a scene profile
     // carries; refusing here turns a would-be refused render into a fallback.
-    mockModels.mockResolvedValue([wrapperModel({ identityPreservation: "weak" })]);
+    mockModels.mockResolvedValue([intimateModel({ identityPreservation: "weak" })]);
     const sink = new DiagnosticCollector();
     const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile: sceneProfile(), sink });
     expect(route).toBeNull();
     expect(mockResolveLora).not.toHaveBeenCalled();
-    expectUnavailable(sink, "wrapper_eligibility");
+    expectUnavailable(sink, "model_eligibility");
   });
 
   it("degrades when the library refuses the row, keeping the library's own code", async () => {
@@ -299,13 +344,23 @@ const repoFile = (relative: string): string => readFileSync(path.join(process.cw
 
 const MIGRATION = "drizzle/0108_intimate-scene-lora.sql";
 
+/**
+ * The compatible slug 0108 wrote, as a LOCAL literal.
+ *
+ * Frozen history, deliberately not the route's constant: 0108 is applied in
+ * production and its text can never change, while the constant names whichever
+ * model the route pairs with today. Importing it here would make this pin follow
+ * the route and stop describing the migration.
+ */
+const SLUG_0108 = "qwen/qwen-image-edit-plus-lora";
+
 /** The seeded row as `drizzle/0108_intimate-scene-lora.sql` writes it. */
 const SEEDED_ROW: ImageLora = imageLoraSchema.parse({
   id: INTIMATE_SCENE_LORA_ID,
   label: "Qwen Image Edit 2511 NSFW all inclusive v2.0",
   locatorType: "https_url",
   locator: CIVITAI_LOCATOR,
-  compatibleModelSlugs: [INTIMATE_SCENE_LORA_WRAPPER_SLUG],
+  compatibleModelSlugs: [SLUG_0108],
   compatibleVersionIds: [],
   defaultScale: 1,
   minimumScale: 0.5,
@@ -334,19 +389,25 @@ describe("the row 0108 seeds", () => {
     expect(sql).toContain(`'${SEEDED_ROW.id}'`);
     expect(sql).toContain(`'${SEEDED_ROW.label}'`);
     expect(sql).toContain(`'${SEEDED_ROW.locator}'`);
-    expect(sql).toContain(`'["${INTIMATE_SCENE_LORA_WRAPPER_SLUG}"]'::jsonb`);
+    expect(sql).toContain(`'["${SLUG_0108}"]'::jsonb`);
     expect(sql).toContain(`'["scene"]'::jsonb`);
     expect(sql).toContain("1, 0.5, 1.5");
     expect(sql).toContain("ON CONFLICT");
   });
 
-  it("resolves for a scene render on the wrapper — the compatibility fields agree", () => {
+  it("resolves for a scene render on the intimate model — the compatibility fields agree", () => {
+    // The row as 0118 leaves it: that migration added the 2511 slug beside
+    // 0108's, which is what lets the route's pairing resolve at all. Restated on
+    // top of the 0108 fixture rather than asserted from the database — what the
+    // MIGRATED row really holds is `qwen-2511-lora.int.test.ts`'s claim, against
+    // a real one.
+    const migrated: ImageLora = { ...SEEDED_ROW, compatibleModelSlugs: [SLUG_0108, INTIMATE_SCENE_LORA_MODEL_SLUG] };
     const evaluated = evaluateImageLoraForRender({
-      lora: SEEDED_ROW,
-      modelSlug: wrapperModel().slug,
-      versionId: "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200",
+      lora: migrated,
+      modelSlug: intimateModel().slug,
+      versionId: PROBED_VERSION,
       context: { kind: "production", task: "scene" },
-      bindings: wrapperModel().advancedCapabilities.controls,
+      bindings: intimateModel().advancedCapabilities.controls,
     });
     expect(evaluated.ok).toBe(true);
     expect(evaluated.ok && evaluated.binding.scale).toBe(1);

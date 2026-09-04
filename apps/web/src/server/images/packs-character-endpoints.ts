@@ -22,8 +22,8 @@ import {
  * Nine endpoints land here: the six prose ones (Seedream 4.5, Seedream 5 Lite,
  * Wan 2.7 Image Pro, Stable Diffusion 3.5 Large, NSFW FLUX Dev, P-Image), the
  * two tag ones (LikeReality Pony v1, SDXL PuLID) and the LoRA-capable Qwen edit
- * wrapper the intimate-scene and NSFW-bench routes swap onto after profile
- * resolution.
+ * wrapper, which no production route picks but an admin can still address by
+ * hand.
  *
  * CODE-owned exactly like the two Qwen seeds: a pack that lives in code is its
  * own known active version, its content hash is computed the way a stored row's
@@ -471,23 +471,23 @@ export const sdxlPulidCharacterPacks = seedCharacterEndpoint({
 });
 
 // ---------------------------------------------------------------------------
-// The LoRA wrapper
+// The LoRA-capable Qwen edit wrapper
 // ---------------------------------------------------------------------------
 
 /**
- * `qwen/qwen-image-edit-plus-lora` — the model two production routes ACTUALLY
- * run on after swapping away from the profile the picker resolved: the variant
- * lane's `nsfw_test` bench kind (`pairProfileWithNsfwLora`) and the chat scene
- * lane's intimate route (`resolveIntimateSceneLoraRoute`).
+ * `qwen/qwen-image-edit-plus-lora` — a registered endpoint no production route
+ * chooses. The intimate-scene route and the `nsfw_test` bench both run their
+ * weights on `qwen/qwen-image-edit-2511` (#457), which loads the same LoRA a
+ * generation newer, so nothing swaps onto this row any more.
  *
- * Binding it is what the last paragraph of #256's section 3 requires. A route that resolves a
- * profile, swaps the model, and then finds no binding for the model it is about
- * to call would stay on the legacy prompt forever — a hidden exception that
- * blocks #251 from deleting the old builders, and one nothing in the binding
- * table would show.
+ * Its rows stay because the endpoint stays addressable by hand: an admin can
+ * still pick it in the Image Generator or drive it from the Image Lab, and a
+ * render there arrives under a scene or variant profile like any other. An
+ * endpoint that is reachable but unbound would compile no program and quietly
+ * keep the legacy prompt — the hidden exception #256 forbids, and one nothing in
+ * the binding table would show.
  *
- * The profile keys are the ones a swapped render can arrive with, because the
- * pairing keeps the PICKED profile and replaces only its model: `variant-standard`
+ * The profile keys are every key such a render can arrive under: `variant-standard`
  * is the single key every variant profile carries, and the four scene keys are
  * every scene profile the picker offers.
  */

@@ -238,10 +238,11 @@ export interface RenderResolvedSceneInput {
    * route, and the only source of one today).
    *
    * Passed rather than resolved here for the reason the lab passes its own: the
-   * decision to take the LoRA route is also the decision to swap the model, and
-   * both have to be made before the row is reserved, because the row records the
-   * model it will run on. Resolving again inside the render would read the
-   * library twice and could disagree with the profile that was already chosen.
+   * decision to take the LoRA route is also the decision about which model it
+   * pairs with, and both have to be made before the row is reserved, because the
+   * row records the model it will run on. Resolving again inside the render would
+   * read the library twice and could disagree with the profile that was already
+   * chosen.
    *
    * Absent — every render but an intimate staged one — leaves the intent
    * byte-identical to what it was before this field existed.
@@ -712,10 +713,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       ...(input.viewer === undefined ? {} : { viewer: input.viewer }),
       sink,
     });
-    // The intimate route swapped this render onto the LoRA wrapper before the
-    // profile arrived here, so `profile.model.slug` is already the model the
-    // provider will be called with and resolution needs no special case: the
-    // wrapper carries its own binding and its own delta-edit dialect.
+    // The intimate route resolved this render's model before the profile arrived
+    // here, so `profile.model.slug` is already the model the provider will be
+    // called with and resolution needs no special case: whichever scene profile
+    // key the picker settled on, the intimate model carries a row for it.
     const kind = id === "generate" ? "generate" : "edit";
     const offered = offeredReferencesFor(id);
     const program = buildCharacterPromptProgram({
@@ -916,7 +917,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           // refused or failed row.
           ...(input.visualStateMeta ?? {}),
           // The LoRA that drew it, by library id — the other half of the
-          // provenance `meta.model` starts (the wrapper slug lands there through
+          // provenance `meta.model` starts (the model slug lands there through
           // `modelFor`). The id, never the locator: a locator is completed with a
           // credential on its way to the provider, and an image row is exactly
           // the kind of long-lived record that must never carry one.

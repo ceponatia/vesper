@@ -14,7 +14,6 @@ import {
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { expectDiagnostic } from "@/test/diagnostics";
 import {
   LANE_PROBE_NAME,
@@ -56,10 +55,11 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
  *   wrong packs, and a Qwen-numbered identity lock on endpoints that number
  *   nothing. A key without the PROFILE key lets a second `variant` profile
  *   inherit a binding nobody wired it into. And the `nsfw_test` bench route
- *   swaps the MODEL while keeping the key, onto a wrapper whose registry slug
- *   carries a `:version` pin — so resolution that failed to strip it would fail
- *   that route, and the three version-pinned community checkpoints, on every
- *   render with nothing in the binding table showing why.
+ *   replaces the MODEL while keeping the key, so resolution must run on the
+ *   FINAL one; four registry rows carry a `:version` pin in their slug — the
+ *   three community checkpoints and the legacy Qwen edit wrapper — so
+ *   resolution that failed to strip it would fail every render on them with
+ *   nothing in the binding table showing why.
  * - **`unbound` degraded into `refused`.** Both fail a render, but they name
  *   different things: a refusal is a fault on a lane that IS bound, `unbound`
  *   is the row an operator has to add. The distinction still carries a
@@ -88,6 +88,8 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
 const QWEN_2511_SLUG = "qwen/qwen-image-edit-2511";
 const VARIANT_KEY = "variant-standard";
 const QWEN_2511_VARIANT_BINDING = "binding-qwen-2511-variant-v1";
+/** The legacy LoRA-capable Qwen editor: registered, version-pinned, on no picker. */
+const QWEN_EDIT_PLUS_LORA_SLUG = "qwen/qwen-image-edit-plus-lora";
 
 /** A promoted (`active`) row, so resolution has something to answer. */
 const PROMOTED_SLUG = "test-only/character-prompt-seam-promoted";
@@ -229,14 +231,14 @@ describe("binding resolution through the seam", () => {
       binding: "binding-seedream-45-variant-variant-standard-instruction_edit-v1",
     },
     {
-      // The `nsfw_test` bench route swaps the MODEL and keeps the profile key,
-      // and the wrapper's registry row carries a `:version` pin — resolution
-      // strips it, because a binding names an ENDPOINT and pinning a provider
-      // version is `versionId`'s separate job. Without the strip this endpoint
-      // and the three version-pinned community checkpoints would all answer
-      // `unbound` and fail every render.
-      name: "the bench route's version-pinned LoRA wrapper",
-      slug: `${INTIMATE_SCENE_LORA_WRAPPER_SLUG}:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`,
+      // A registry row whose slug carries a `:version` pin — resolution strips
+      // it, because a binding names an ENDPOINT and pinning a provider version
+      // is `versionId`'s separate job. This endpoint and the three community
+      // checkpoints all carry such a pin, so without the strip every render on
+      // any of them would answer `unbound` and fail with nothing in the binding
+      // table showing why.
+      name: "a version-pinned endpoint an admin can still address by hand",
+      slug: `${QWEN_EDIT_PLUS_LORA_SLUG}:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`,
       binding: "binding-qwen-edit-plus-lora-variant-variant-standard-instruction_edit-v1",
     },
   ])("resolves $name to its own endpoint's row", ({ slug, binding }) => {

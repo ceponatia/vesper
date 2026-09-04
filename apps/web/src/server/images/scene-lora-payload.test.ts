@@ -11,8 +11,9 @@ import { laneProbeCastSceneRender } from "@/server/test-support";
  * is where the model and the shot are already written.
  *
  * Every case renders a real two-person scene over a compiled program — the
- * wrapper's base slug is bound for the scene task — because a rung that compiles
- * no program is dropped from the chain and never reaches the intent at all.
+ * intimate model's slug is bound for the scene task — because a rung that
+ * compiles no program is dropped from the chain and never reaches the intent at
+ * all.
  */
 
 vi.mock("../ai", async (importOriginal) => {
@@ -56,16 +57,16 @@ const binding = {
   triggerWords: [],
 };
 
-/** The LoRA wrapper paired with the lane's scene profile — what the route hands back. */
-const wrapperProfile: ResolvedImageProfile = {
+/** The intimate model paired with the lane's scene profile — what the route hands back. */
+const intimateProfile: ResolvedImageProfile = {
   model: imageModelSchema.parse({
-    id: "imgmdlqwenlorawrapperaaa",
-    slug: "qwen/qwen-image-edit-plus-lora:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200",
-    label: "Qwen Image Edit Plus LoRA",
+    id: "imgmdlqwen2511aaaaaaaaaa",
+    slug: "qwen/qwen-image-edit-2511",
+    label: "Qwen Image Edit 2511",
     canGenerate: false,
     canEdit: true,
     editKind: "instruction_edit",
-    identityPreservation: "moderate",
+    identityPreservation: "strong",
     referenceField: "image",
     referenceArity: "array",
     maxReferences: 3,
@@ -85,7 +86,7 @@ function input(overrides: Partial<RenderResolvedSceneInput> = {}): RenderResolve
   return {
     ...laneProbeCastSceneRender(),
     mode: "multi",
-    profile: wrapperProfile,
+    profile: intimateProfile,
     linkage: { ownerId: "usr-1" },
     logResult: vi.fn(),
     ...overrides,
@@ -125,7 +126,7 @@ describe("a scene render carrying a resolved LoRA", () => {
   it("hands the binding to the provider intent", async () => {
     await renderResolvedScene(loraInput());
     expect(mockIntent.mock.calls[0]?.[0].resolvedLora).toEqual(binding);
-    expect(mockIntent.mock.calls[0]?.[0].profile.model.slug).toContain("qwen-image-edit-plus-lora");
+    expect(mockIntent.mock.calls[0]?.[0].profile.model.slug).toBe("qwen/qwen-image-edit-2511");
   });
 
   it("keeps it on the fallback rung — the chain is one model's ladder", async () => {
@@ -137,10 +138,12 @@ describe("a scene render carrying a resolved LoRA", () => {
     expect(mockIntent.mock.calls[1]?.[0].resolvedLora).toEqual(binding);
   });
 
-  it("records the wrapper model and the LoRA id on the row, and never the locator", async () => {
+  it("records the model and the LoRA id on the row, and never the locator", async () => {
     await renderResolvedScene(loraInput());
     const meta = pipelineCalls[0]?.asset.meta;
-    expect(meta?.model).toBe("replicate/qwen/qwen-image-edit-plus-lora:b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200");
+    // `modelFor` writes `replicate/<the row's own slug>`, and the intimate
+    // model's registry slug carries no `:version` pin.
+    expect(meta?.model).toBe("replicate/qwen/qwen-image-edit-2511");
     expect(meta?.lora).toBe("imglorqwennsfwallinclv20");
     expect(JSON.stringify(meta)).not.toContain("civitai.com");
   });
