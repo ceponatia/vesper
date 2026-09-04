@@ -345,8 +345,7 @@ async function main(): Promise<void> {
       // a token target without a tokenizer in this repo.
       const perFiller = fillerTokenRate(rows);
       if (perFiller === null) {
-        rows.push(await runCall({ label: "long-history", call: 0, system: tiny, history: opener, wire: capture.last }));
-        console.log("long-history: skipped — the tiny and vesper-sized cases did not both report input tokens to calibrate from.");
+        console.log("long-history: skipped, no edge call made — the tiny and vesper-sized cases did not both report input tokens to calibrate from.");
       } else {
         const underTurns = fillerPerTurn(rows, perFiller, UNDER_TARGET_TOKENS);
         const under = await runCall({

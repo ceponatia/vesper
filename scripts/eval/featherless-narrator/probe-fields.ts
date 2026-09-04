@@ -383,7 +383,13 @@ async function call(
       parsed = null;
     }
     const { text, ...rest } = readCompletion(parsed);
-    if (text === null) return { ...empty(status, "no completion content in a 200 body", coldStarts, Date.now() - started), ...rest };
+    // An empty completion is a FAILED call, not a measurable one. Hashing "" would give every
+    // empty answer the same identity, so two empties would read as "reproduced each other"
+    // and an empty would match another field's empty as evidence. Status 0 routes it through
+    // the same `call-failed` branches a network failure takes.
+    if (text === null || text.trim().length === 0) {
+      return empty(0, "empty completion on a 200", coldStarts, Date.now() - started);
+    }
     if (options.captureAsGreedy === true) greedyText = text;
     return {
       status,
@@ -538,6 +544,11 @@ async function main(): Promise<void> {
       record(field, short(fields), result, "call-failed", result.errorMessage ?? `status ${result.status}`);
       return result;
     }
+    // Membership is only meaningful against anchors that actually returned something.
+    if (greedyHashes.size === 0) {
+      record(field, short(fields), result, "accepted+unmeasured", `no greedy anchor returned a completion to compare against; ${note}`);
+      return result;
+    }
     // Inside the greedy set means the decoder did exactly what it does with no field at
     // all — the strongest possible "ignored", and the one this model's undocumented fields
     // land on byte for byte.
@@ -555,13 +566,17 @@ async function main(): Promise<void> {
     }
     const confirmedOutside = confirm.textHash !== null && !greedyHashes.has(confirm.textHash);
     const reproduced = confirm.textHash === result.textHash;
+    // Both calls must leave the greedy set AND agree with each other. Two divergent
+    // completions are what pool variation looks like, so they cannot carry an effect verdict.
     record(
       field,
       short(fields),
       confirm,
-      confirmedOutside ? "accepted+effective" : "accepted+unmeasured",
+      confirmedOutside && reproduced ? "accepted+effective" : "accepted+unmeasured",
       confirmedOutside
-        ? `two calls both produced a completion no greedy anchor produced${reproduced ? ", identical to each other" : ""}; ${note}`
+        ? reproduced
+          ? `two calls produced the same completion, and no greedy anchor produced it; ${note}`
+          : `both calls left the greedy set but differ from each other — pool variation cannot be excluded; ${note}`
         : `the first call left the greedy set but the confirmation landed back inside it — pool variation, not the field; ${note}`,
     );
     return result;
@@ -695,25 +710,35 @@ async function main(): Promise<void> {
       record("include_stop_str_in_output", short(fields), result, "call-failed", result.errorMessage ?? `status ${result.status}`);
     } else if (result.tailIsStop === null) {
       record("include_stop_str_in_output", short(fields), result, "accepted+unmeasured", "the flagged call returned no completion to read a tail from");
+    } else if (verdicts.get("stop")?.verdict !== "accepted+effective") {
+      // The flag only means anything on top of a stop that demonstrably cut the completion.
+      record("include_stop_str_in_output", short(fields), result, "accepted+unmeasured", "stop itself was not measurably effective, so a retained tail cannot be attributed to the flag");
     } else {
-      // Corroboration only: with the flag off the host should STRIP the matched stop string,
-      // so the unflagged call is expected NOT to end with it.
+      // The unflagged `stop` call is the NEGATIVE CONTROL, not decoration: with the flag off
+      // the host should strip the matched stop string, so a tail that ends with it in BOTH
+      // calls means the host keeps it regardless and the flag's effect is not separable.
       const referenceTail = stopResult !== null && stopResult.status === 200 ? stopResult.tailIsStop : null;
-      const corroboration =
-        referenceTail === null
-          ? "no unflagged `stop` call was available to corroborate against"
-          : referenceTail
-            ? "though the unflagged `stop` call ends with it too, so the contrast is inconclusive"
-            : "and the unflagged `stop` call does not, which is the expected contrast";
-      record(
-        "include_stop_str_in_output",
-        short(fields),
-        result,
-        result.tailIsStop ? "accepted+effective" : "accepted+ignored",
-        result.tailIsStop
-          ? `the flagged completion ends with the stop string — it was retained; ${corroboration}`
-          : `the flagged completion does not end with the stop string — it was not retained; ${corroboration}`,
-      );
+      if (result.tailIsStop && referenceTail === false) {
+        record("include_stop_str_in_output", short(fields), result, "accepted+effective", "the flagged completion ends with the stop string and the unflagged `stop` call does not — the flag retained it");
+      } else if (result.tailIsStop) {
+        record(
+          "include_stop_str_in_output",
+          short(fields),
+          result,
+          "accepted+unmeasured",
+          referenceTail === null
+            ? "no unflagged `stop` call was available as the negative control, so a retained tail cannot be attributed to the flag"
+            : "the host retains the stop string with the flag off too, so the flag's effect is not separable",
+        );
+      } else {
+        record(
+          "include_stop_str_in_output",
+          short(fields),
+          result,
+          "accepted+ignored",
+          `the flagged completion does not end with the stop string — it was not retained${referenceTail === false ? "; the unflagged `stop` call does not either, which is the expected contrast" : ""}`,
+        );
+      }
     }
   }
 
@@ -727,9 +752,13 @@ async function main(): Promise<void> {
       record("stop_token_ids", short(fields), result, "rejected", result.errorMessage ?? "4xx");
     } else if (result.status !== 200) {
       record("stop_token_ids", short(fields), result, "call-failed", result.errorMessage ?? `status ${result.status}`);
+    } else if (minGreedyTokens === null || greedyHashes.size === 0) {
+      // Without a successful anchor there is no token count to be "short of", and the old
+      // ?? fallbacks would have decided the verdict silently.
+      record("stop_token_ids", short(fields), result, "accepted+unmeasured", "no greedy anchor returned a completion to compare against");
     } else {
       const insideGreedy = result.textHash !== null && greedyHashes.has(result.textHash);
-      const cut = !insideGreedy && (result.completionTokens ?? 99) < (minGreedyTokens ?? 0);
+      const cut = !insideGreedy && result.completionTokens !== null && result.completionTokens < minGreedyTokens;
       record(
         "stop_token_ids",
         short(fields),
@@ -791,7 +820,9 @@ async function main(): Promise<void> {
           .filter((hash): hash is string => hash !== null),
       );
       const outside = result.textHash !== null && !penaltyHashes.has(result.textHash);
-      if (!outside) {
+      if (penaltyHashes.size === 0) {
+        record("repetition_penalty_range", short(fields), result, "accepted+unmeasured", "no greedy anchor returned a completion to compare against");
+      } else if (!outside) {
         record(
           "repetition_penalty_range",
           short(fields),
