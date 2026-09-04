@@ -87,9 +87,15 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
 const QWEN_2511_SLUG = "qwen/qwen-image-edit-2511";
 const VARIANT_KEY = "variant-standard";
 const QWEN_2511_VARIANT_BINDING = "binding-qwen-2511-variant-v1";
-/** A community checkpoint: its registry row is stored under a `:version` pin (drizzle 0104). */
-const SDXL_PULID_SLUG = "nsfw-api/sdxl-pulid";
-const SDXL_PULID_VERSION = "83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5";
+/**
+ * A `:version` pin as a registry row stores one — every community checkpoint's
+ * row carries one (drizzle 0104). It is a slug SHAPE resolution must survive,
+ * and it rides the default editor here so the case exercises the strip and
+ * nothing else: the shared fixture sends an identity reference, which the Qwen
+ * dialect expresses and a face-input endpoint such as SDXL PuLID refuses as a
+ * dropped mandatory claim.
+ */
+const PINNED_VERSION = "2ef4a1e6dbbd5b8f0d8f3cbbd3a1cbee0b1d4c0f6ee1c8ad5b7f2e0c9a3d4b1e";
 
 /** A promoted (`active`) row, so resolution has something to answer. */
 const PROMOTED_SLUG = "test-only/character-prompt-seam-promoted";
@@ -236,10 +242,11 @@ describe("binding resolution through the seam", () => {
       // is `versionId`'s separate job. Every community checkpoint carries such a
       // pin, because the bare-slug endpoint is official-models-only, so without
       // the strip every render on any of them would answer `unbound` and fail
-      // with nothing in the binding table showing why.
-      name: "a version-pinned community checkpoint",
-      slug: `${SDXL_PULID_SLUG}:${SDXL_PULID_VERSION}`,
-      binding: "binding-sdxl-pulid-variant-variant-standard-instruction_edit-v1",
+      // with nothing in the binding table showing why. The pin rides the
+      // default editor so that only the strip is under test (`PINNED_VERSION`).
+      name: "a version-pinned slug",
+      slug: `${QWEN_2511_SLUG}:${PINNED_VERSION}`,
+      binding: QWEN_2511_VARIANT_BINDING,
     },
   ])("resolves $name to its own endpoint's row", ({ slug, binding }) => {
     const input = programInput({ profile: programProfile({ slug }) });

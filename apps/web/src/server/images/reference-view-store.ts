@@ -195,18 +195,6 @@ async function readViewImageStatuses(rows: readonly ReferenceViewRow[]): Promise
 }
 
 /**
- * How many attempts one history read looks back over.
- *
- * Higher than the raw `referenceViewHistory` default because the filter below
- * runs AFTER the query: a slot whose `bare` renders kept being refused by the
- * provider holds a run of rows that never had bytes, and a window of 20 could
- * be spent entirely on them and return an empty list for a slot with plenty to
- * show. Nothing paginates past this — the retention window is the real bound,
- * and it retires the bytes long before an owner runs out of scroll.
- */
-const REFERENCE_VIEW_HISTORY_WINDOW = 40;
-
-/**
  * One slot's attempts as the studio's history list reads them, newest first —
  * every image the slot has produced, rendered and uploaded alike, each with the
  * ruling the owner gave it.
@@ -222,6 +210,12 @@ const REFERENCE_VIEW_HISTORY_WINDOW = 40;
  * retention sweep, and a row whose asset is not `ready` points at a file that
  * was reserved and never written. The list is evidence for a wording comparison;
  * a row with no picture is not evidence.
+ *
+ * The first filter is the query's, and there is no row cap on top of it: the
+ * retention sweep is the list's ONLY bound, and the studio states that bound in
+ * words. A window of N attempts would be a second, unstated bound — a slot that
+ * spent N attempts on refused `bare` renders would read as empty while an older
+ * approved image still sat within the window with its bytes intact.
  */
 export async function referenceViewHistoryEntries(
   characterId: string,
@@ -231,7 +225,18 @@ export async function referenceViewHistoryEntries(
   const accepted = await readAcceptedPortrait(characterId, ownerId);
   if (accepted === undefined) return [];
 
-  const rows = await referenceViewHistory(characterId, view, REFERENCE_VIEW_HISTORY_WINDOW);
+  const rows = await db()
+    .select()
+    .from(characterReferenceViews)
+    .where(
+      and(
+        eq(characterReferenceViews.characterId, characterId),
+        eq(characterReferenceViews.angleId, view.angle),
+        eq(characterReferenceViews.wardrobe, view.wardrobe),
+        isNotNull(characterReferenceViews.imageId),
+      ),
+    )
+    .orderBy(desc(characterReferenceViews.createdAt));
   const statuses = await readViewImageStatuses(rows);
 
   return rows.flatMap((row) => {
