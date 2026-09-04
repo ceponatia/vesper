@@ -133,13 +133,17 @@ All in this directory; call them by path from the repo root.
 .claude/skills/vesper-board/board-set.sh 254 Iteration @current
 ```
 
-The script resolves names to ids live, so the table below is a reference
-for reading `item-list` output and for hand-written `gh project item-edit`
-calls, not something to retype:
+The scripts resolve names to ids live over small direct GraphQL queries and
+explicit mutations (`updateProjectV2ItemFieldValue`, `addProjectV2ItemById`,
+`clearProjectV2ItemFieldValue`), never `gh project item-list` /
+`field-list` / `item-edit`: those subcommands issue large queries and were
+refused with "API rate limit exceeded" on 2026-09-04 while the same account's
+direct GraphQL and REST calls kept working. The table below is a reference
+for reading board output, not something to retype:
 
 ```bash
 gh project item-edit --project-id PVT_kwHOARzdw84BhlWR --id <item-id> \
-  --field-id <field-id> --single-select-option-id <option-id>
+  --field-id <field-id> --single-select-option-id <option-id>   # hand form; prefer board-set.sh
 ```
 
 | Field | Field id | Options |
@@ -223,6 +227,10 @@ don't add them to new work.
   budget; a paginated relations query over every issue can exhaust it, after
   which every edit fails with "API rate limit already exceeded". Labels,
   assignees, sub-issues, blocked-by, comments, and closes still work over REST.
+  Separately, the `gh project …` subcommands can be refused with the same
+  message while `gh api rate_limit` still shows the full budget and direct
+  `gh api graphql` queries and mutations succeed (2026-09-04) — the scripts
+  here use the direct form for that reason; do not "fix" a refusal by waiting.
 - New issues auto-add to the board within minutes; `gh project item-add` only
   when fields must be set immediately. PRs are **not** auto-added — step 4 is
   what puts them there.

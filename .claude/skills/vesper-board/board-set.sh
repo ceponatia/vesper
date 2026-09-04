@@ -19,11 +19,14 @@
 # looked up as an Issue unless --pr is given. An issue missing from the board is
 # added; a PR missing from the board is an error — use link-pr.sh, which also
 # mirrors the issue's classification onto the PR row.
+#
+# Everything goes through `gh api graphql` (small queries, explicit mutations)
+# and REST — never `gh project …`, whose calls are large and have been refused
+# with "API rate limit exceeded" while direct GraphQL still worked.
 set -euo pipefail
 
 REPO=ceponatia/vesper
 OWNER=ceponatia
-PROJECT=7
 PROJECT_ID=PVT_kwHOARzdw84BhlWR
 ASSIGNEE=ceponatia
 
@@ -49,20 +52,20 @@ done
 
 run() { if [ "$DRY" = 1 ]; then echo "  (dry-run) $*"; else "$@"; fi; }
 
-# --- item id -------------------------------------------------------------------
-# A one-point GraphQL lookup, not a 500-item board dump: item-list queries share
-# the 5,000-point hourly budget and have exhausted it mid-session before.
+# --- item id (one small query; adds the issue to the board if absent) ---------------
 kind=issue; [ "$TYPE" = PullRequest ] && kind=pullRequest
-item_id=$(gh api graphql -F n="$NUMBER" -f query="query(\$n:Int!) { repository(owner:\"$OWNER\", name:\"vesper\") {
-    $kind(number:\$n) { projectItems(first:20) { nodes { id project { id } } } } } }" \
-  | jq -r --arg p "$PROJECT_ID" '[.data.repository[] | .projectItems.nodes[] | select(.project.id == $p) | .id][0] // empty')
+content=$(gh api graphql -F n="$NUMBER" -f query="query(\$n:Int!) { repository(owner:\"$OWNER\", name:\"vesper\") {
+    $kind(number:\$n) { id projectItems(first:20) { nodes { id project { id } } } } } }")
+content_id=$(jq -r '.data.repository[] | .id' <<<"$content")
+item_id=$(jq -r --arg p "$PROJECT_ID" '[.data.repository[] | .projectItems.nodes[] | select(.project.id == $p) | .id][0] // empty' <<<"$content")
 if [ -z "$item_id" ]; then
   if [ "$TYPE" = Issue ]; then
     if [ "$DRY" = 1 ]; then
       echo "  (dry-run) would add issue #$NUMBER to the board"; item_id=DRY
     else
-      item_id=$(gh project item-add "$PROJECT" --owner "$OWNER" \
-        --url "https://github.com/$REPO/issues/$NUMBER" --format json --jq .id)
+      item_id=$(gh api graphql -f project="$PROJECT_ID" -f content="$content_id" -f query='mutation($project:ID!, $content:ID!) {
+          addProjectV2ItemById(input:{projectId:$project, contentId:$content}) { item { id } } }' \
+        --jq .data.addProjectV2ItemById.item.id)
       echo "added issue #$NUMBER to the board ($item_id)"
     fi
   else
@@ -73,51 +76,60 @@ else
   echo "#$NUMBER ($TYPE) is board item $item_id"
 fi
 
-# --- fields --------------------------------------------------------------------
+# --- fields ----------------------------------------------------------------------------
 if [ ${#PAIRS[@]} -gt 0 ]; then
-  fields=$(gh project field-list "$PROJECT" --owner "$OWNER" --format json)
+  fields=$(gh api graphql -f project="$PROJECT_ID" -f query='query($project:ID!) { node(id:$project) { ... on ProjectV2 {
+      fields(first:40) { nodes {
+        ... on ProjectV2Field { id name dataType }
+        ... on ProjectV2SingleSelectField { id name dataType options { id name } }
+        ... on ProjectV2IterationField { id name dataType
+          configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } }
+      } } } } }' --jq '.data.node.fields.nodes')
   today=$(date -I)
 
+  set_single() {  # item field option
+    run gh api graphql -f project="$PROJECT_ID" -f item="$1" -f field="$2" -f opt="$3" -f query='mutation($project:ID!, $item:ID!, $field:ID!, $opt:String!) {
+        updateProjectV2ItemFieldValue(input:{projectId:$project, itemId:$item, fieldId:$field, value:{singleSelectOptionId:$opt}}) { projectV2Item { id } } }' >/dev/null
+  }
+  set_iteration() {  # item field iteration
+    run gh api graphql -f project="$PROJECT_ID" -f item="$1" -f field="$2" -f iter="$3" -f query='mutation($project:ID!, $item:ID!, $field:ID!, $iter:String!) {
+        updateProjectV2ItemFieldValue(input:{projectId:$project, itemId:$item, fieldId:$field, value:{iterationId:$iter}}) { projectV2Item { id } } }' >/dev/null
+  }
+  clear_field() {  # item field
+    run gh api graphql -f project="$PROJECT_ID" -f item="$1" -f field="$2" -f query='mutation($project:ID!, $item:ID!, $field:ID!) {
+        clearProjectV2ItemFieldValue(input:{projectId:$project, itemId:$item, fieldId:$field}) { projectV2Item { id } } }' >/dev/null
+  }
+
   set_pair() {
-    local name="$1" value="$2" field field_id ftype
-    field=$(jq -c --arg n "$name" \
-      '[.fields[] | select((.name | ascii_downcase) == ($n | ascii_downcase))][0] // empty' <<<"$fields")
+    local name="$1" value="$2" field field_id dtype
+    field=$(jq -c --arg n "$name" '[.[] | select((.name | ascii_downcase) == ($n | ascii_downcase))][0] // empty' <<<"$fields")
     [ -n "$field" ] || { echo "no board field named '$name'" >&2; exit 1; }
-    field_id=$(jq -r .id <<<"$field")
-    ftype=$(jq -r .type <<<"$field")
+    field_id=$(jq -r .id <<<"$field"); dtype=$(jq -r .dataType <<<"$field")
 
     if [ "$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')" = none ]; then
-      run gh project item-edit --project-id "$PROJECT_ID" --id "$item_id" --field-id "$field_id" --clear >/dev/null
-      echo "  $name: cleared"; return
+      clear_field "$item_id" "$field_id"; echo "  $name: cleared"; return
     fi
-
-    case "$ftype" in
-      ProjectV2SingleSelectField)
+    case "$dtype" in
+      SINGLE_SELECT)
         local opt
-        opt=$(jq -r --arg v "$value" \
-          '[.options[] | select((.name | ascii_downcase) == ($v | ascii_downcase))][0].id // empty' <<<"$field")
+        opt=$(jq -r --arg v "$value" '[.options[] | select((.name | ascii_downcase) == ($v | ascii_downcase))][0].id // empty' <<<"$field")
         [ -n "$opt" ] || { echo "$name has no option '$value' (options: $(jq -r '[.options[].name] | join(", ")' <<<"$field"))" >&2; exit 1; }
-        run gh project item-edit --project-id "$PROJECT_ID" --id "$item_id" --field-id "$field_id" \
-          --single-select-option-id "$opt" >/dev/null
+        set_single "$item_id" "$field_id" "$opt"
         echo "  $name: $(jq -r --arg id "$opt" '.options[] | select(.id == $id) | .name' <<<"$field")" ;;
-      ProjectV2IterationField)
+      ITERATION)
         local all iter
-        # field-list's JSON omits the iteration configuration; only GraphQL has it
-        all=$(gh api graphql -f id="$field_id" -f query='query($id:ID!) { node(id:$id) { ... on ProjectV2IterationField {
-                configuration { iterations { id title startDate duration } completedIterations { id title startDate duration } } } } }' \
-          | jq -c '.data.node.configuration | ((.iterations // []) + (.completedIterations // []))
-              | map({id, title, startDate, duration,
-                     endDate: (((.startDate | strptime("%Y-%m-%d") | mktime) + (.duration * 86400)) | strftime("%Y-%m-%d"))})')
+        all=$(jq -c '((.configuration.iterations // []) + (.configuration.completedIterations // []))
+          | map({id, title, startDate, duration,
+                 endDate: (((.startDate | strptime("%Y-%m-%d") | mktime) + (.duration * 86400)) | strftime("%Y-%m-%d"))})' <<<"$field")
         case "$value" in
           @current) iter=$(jq -c --arg d "$today" '[.[] | select(.startDate <= $d and $d < .endDate)][0] // empty' <<<"$all") ;;
           @next)    iter=$(jq -c --arg d "$today" '[.[] | select(.startDate > $d)] | sort_by(.startDate) | .[0] // empty' <<<"$all") ;;
           *)        iter=$(jq -c --arg v "$value" '[.[] | select((.title | ascii_downcase) == ($v | ascii_downcase))][0] // empty' <<<"$all") ;;
         esac
         [ -n "$iter" ] || { echo "no iteration matches '$value' (have: $(jq -r '[.[].title] | join(", ")' <<<"$all"))" >&2; exit 1; }
-        run gh project item-edit --project-id "$PROJECT_ID" --id "$item_id" --field-id "$field_id" \
-          --iteration-id "$(jq -r .id <<<"$iter")" >/dev/null
+        set_iteration "$item_id" "$field_id" "$(jq -r .id <<<"$iter")"
         echo "  $name: $(jq -r '"\(.title) (\(.startDate) → \(.endDate))"' <<<"$iter")" ;;
-      *) echo "$name is a $ftype; this script sets single-select and iteration fields only" >&2; exit 1 ;;
+      *) echo "$name is $dtype; this script sets single-select and iteration fields only" >&2; exit 1 ;;
     esac
   }
 
@@ -128,14 +140,13 @@ if [ ${#PAIRS[@]} -gt 0 ]; then
   done
 fi
 
-# --- assignment ----------------------------------------------------------------
+# --- assignment (REST; PRs are issues here) ---------------------------------------------
 if [ -n "$ASSIGN" ]; then
-  sub=issue; [ "$TYPE" = PullRequest ] && sub=pr
   if [ "$ASSIGN" = add ]; then
-    run gh "$sub" edit "$NUMBER" --repo "$REPO" --add-assignee "$ASSIGNEE" >/dev/null
+    run gh api -X POST "repos/$REPO/issues/$NUMBER/assignees" -f "assignees[]=$ASSIGNEE" >/dev/null
     echo "  assigned $ASSIGNEE (next action is the owner's)"
   else
-    run gh "$sub" edit "$NUMBER" --repo "$REPO" --remove-assignee "$ASSIGNEE" >/dev/null
+    run gh api -X DELETE "repos/$REPO/issues/$NUMBER/assignees" -f "assignees[]=$ASSIGNEE" >/dev/null
     echo "  unassigned $ASSIGNEE (back in the pool)"
   fi
 fi

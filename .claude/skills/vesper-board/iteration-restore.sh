@@ -7,20 +7,17 @@
 #   iteration-restore.sh iterations-before.json [--dry-run]
 set -euo pipefail
 
-OWNER=ceponatia
-PROJECT=7
 PROJECT_ID=PVT_kwHOARzdw84BhlWR
 
 SNAP="${1:?usage: iteration-restore.sh <snapshot.json> [--dry-run]}"
 DRY=0; [ "${2:-}" = --dry-run ] && DRY=1
 
-field=$(gh project field-list "$PROJECT" --owner "$OWNER" --format json \
-  | jq -c '[.fields[] | select(.type == "ProjectV2IterationField")][0]')
+field=$(gh api graphql -f project="$PROJECT_ID" -f query='query($project:ID!) { node(id:$project) { ... on ProjectV2 {
+    fields(first:40) { nodes { ... on ProjectV2IterationField { id name
+      configuration { iterations { id title } completedIterations { id title } } } } } } } }' \
+  --jq '[.data.node.fields.nodes[] | select(.id != null and .configuration != null)][0]')
 field_id=$(jq -r .id <<<"$field")
-# field-list's JSON omits the iteration configuration; only GraphQL has it
-iterations=$(gh api graphql -f id="$field_id" -f query='query($id:ID!) { node(id:$id) { ... on ProjectV2IterationField {
-    configuration { iterations { id title } completedIterations { id title } } } } }' \
-  | jq -c '.data.node.configuration | (.iterations // []) + (.completedIterations // [])')
+iterations=$(jq -c '.configuration | (.iterations // []) + (.completedIterations // [])' <<<"$field")
 echo "current iterations: $(jq -r '[.[] | "\(.title)=\(.id)"] | join("  ")' <<<"$iterations")"
 
 restored=0; skipped=0
@@ -32,7 +29,9 @@ while IFS=$'\t' read -r number type item_id title; do
   if [ "$DRY" = 1 ]; then
     echo "  (dry-run) #$number ($type) → $title ($new_id)"
   else
-    gh project item-edit --project-id "$PROJECT_ID" --id "$item_id" --field-id "$field_id" --iteration-id "$new_id" >/dev/null
+    gh api graphql -f project="$PROJECT_ID" -f item="$item_id" -f field="$field_id" -f iter="$new_id" \
+      -f query='mutation($project:ID!, $item:ID!, $field:ID!, $iter:String!) {
+        updateProjectV2ItemFieldValue(input:{projectId:$project, itemId:$item, fieldId:$field, value:{iterationId:$iter}}) { projectV2Item { id } } }' >/dev/null
     echo "  #$number ($type) → $title"
   fi
   restored=$((restored+1))
