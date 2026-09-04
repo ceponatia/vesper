@@ -15,7 +15,9 @@ the data model.
   attribute as a row. Set values edit in place; unset ones render blank controls — an enum "—"
   option, inactive chips, a dimmed slider — that write a value on first interaction, keeping
   storage sparse with no "add attribute" select. Intimate and body-feature toggles gate
-  anatomy-specific groups and join the same accordion.
+  anatomy-specific groups and join the same accordion. The breast fields are rows of the **Chest**
+  section itself — peers of chest build and chest hair, which the breasts region replaces — while
+  the genital groups sit as sub-groups of a **Pelvis** section beside Hips.
 - The **Disposition** tab leads with the **"Desires & secrets" card** — up to 3 drives, each with
   want, why and secrecy plus a reveal-gate band picker on secrets (`DrivesEditor`; a row saved with
   an empty want drops alone at the trust boundary, never wiping the list). Below it sits the social

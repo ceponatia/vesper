@@ -17,6 +17,7 @@ import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { referenceViewRefusalCopy, referenceViewStateCopy } from "./reference-view-copy";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 
@@ -34,6 +35,13 @@ import { useToast } from "@/components/ui/toast";
  * surface is additive: with the routes unreachable, the portrait studio must
  * look precisely as it did rather than growing an error card about machinery
  * nobody asked about.
+ *
+ * A tile's image opens in the shared `ImageLightbox` (docs/ui/conventions.md
+ * §Image lightbox) — a thumbnail is too small to judge identity, anatomy or
+ * angle before approving. The viewer is one instance at the panel root, outside
+ * every tile, and the thumbnail is its own button beside the review buttons
+ * rather than around them, so opening or closing it can neither reach nor be
+ * reached by Approve, Reject, Regenerate or Upload.
  */
 
 const POLL_MS = 3000;
@@ -59,6 +67,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   const toast = useToast();
   const [busySlot, setBusySlot] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
+  const [enlarged, setEnlarged] = useState<{ imageId: string; label: string } | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const uploadTarget = useRef<{ angle: ReferenceViewAngleId; wardrobe: ReferenceViewWardrobe } | null>(null);
 
@@ -195,6 +204,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
               const copy = referenceViewStateCopy[view.state];
               const slot = `${view.angle} ${view.wardrobe}`;
               const busy = busySlot === slot;
+              const label = `${angle.label}, ${wardrobe.label}`;
               return (
                 <div
                   key={angle.id}
@@ -202,12 +212,14 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                 >
                   <div className="flex aspect-[3/4] items-center justify-center overflow-hidden rounded-card border border-ink-700 bg-ink-900">
                     {view.imageId ? (
-                      <EntityImage
-                        imageId={view.imageId}
-                        name={angle.label}
-                        alt={`${angle.label}, ${wardrobe.label}`}
-                        className="h-full w-full"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => view.imageId && setEnlarged({ imageId: view.imageId, label })}
+                        aria-label={`Enlarge ${label}`}
+                        className="block h-full w-full cursor-pointer"
+                      >
+                        <EntityImage imageId={view.imageId} name={angle.label} alt={label} className="h-full w-full" />
+                      </button>
                     ) : (
                       <span className="px-2 text-center text-xs text-paper-500">{copy.label}</span>
                     )}
@@ -264,6 +276,13 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
           event.target.value = "";
           void onFilePicked(file);
         }}
+      />
+
+      <ImageLightbox
+        imageId={enlarged?.imageId ?? null}
+        alt={enlarged?.label ?? ""}
+        caption={enlarged?.label}
+        onClose={() => setEnlarged(null)}
       />
     </div>
   );

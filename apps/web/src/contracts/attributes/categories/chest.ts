@@ -23,6 +23,10 @@ export const chestGroup = defineAttributeGroup("chest", [
     promptHints: ["Describe the chest only as far as wardrobe exposure and the exposure mask allow."],
   },
   {
+    // Follows the breasts region exactly like `chest.size`: a body WITH the
+    // region carries the `breasts.*` fields alone, so by default the control
+    // appears on a male seed and not on a female one — the body-config, never
+    // the gender label, decides.
     id: "chest.hair",
     label: "Chest hair",
     kind: "physical",
@@ -32,6 +36,7 @@ export const chestGroup = defineAttributeGroup("chest", [
     mutability: "mutable",
     allowedValues: ["none", "sparse", "light", "moderate", "thick"],
     bodyLocationId: "chest",
+    supersededByIntimateRegions: ["breasts"],
     aliases: ["chest hair"],
   },
 ]);
