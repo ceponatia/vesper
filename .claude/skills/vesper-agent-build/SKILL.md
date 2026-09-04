@@ -177,5 +177,10 @@ which decisions are on the PR, what is owner work. Not the narrative.
 - Two sessions given the same task both implemented it in full; only a
   rejected push stopped one clobbering the other. Before pushing a branch
   this session did not create, fetch and compare.
+- Tool calls issued in one message may run concurrently. An Edit of a file
+  and a `git diff`/`git add` of that file in the same message race — a diff
+  issued beside an Edit reported this skill's `board-set.sh` as wholly
+  changed and nearly triggered a needless "fix" commit. Edit in one message;
+  inspect or commit in the next.
 - Sub-issues that enter an iteration pull their parent in too
   (`file-issue.sh --parent … --iteration …` does both).
