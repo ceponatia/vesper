@@ -19,11 +19,9 @@ import {
  * the picker currently offers, give each one a real production compiler, and
  * retire nothing.
  *
- * Nine endpoints land here: the six prose ones (Seedream 4.5, Seedream 5 Lite,
- * Wan 2.7 Image Pro, Stable Diffusion 3.5 Large, NSFW FLUX Dev, P-Image), the
- * two tag ones (LikeReality Pony v1, SDXL PuLID) and the LoRA-capable Qwen edit
- * wrapper, which no production route picks but an admin can still address by
- * hand.
+ * Eight endpoints land here: the six prose ones (Seedream 4.5, Seedream 5 Lite,
+ * Wan 2.7 Image Pro, Stable Diffusion 3.5 Large, NSFW FLUX Dev, P-Image) and the
+ * two tag ones (LikeReality Pony v1, SDXL PuLID).
  *
  * CODE-owned exactly like the two Qwen seeds: a pack that lives in code is its
  * own known active version, its content hash is computed the way a stored row's
@@ -35,7 +33,7 @@ import {
  * Unlike tranche 1, nothing here is registered as `candidate`. The rescope
  * (owner ruling 2026-09-01) ended the accumulate-shadow-evidence-then-promote
  * sequence: shadowing is optional debugging help, not a release gate, and a
- * binding that resolved only for the shadow would leave these nine endpoints on
+ * binding that resolved only for the shadow would leave these eight endpoints on
  * the legacy builders that #251 exists to delete. So a lane is cut over by
  * being wired and bound, and correctness is established by the automated tests
  * plus a live smoke test.
@@ -56,7 +54,7 @@ import {
  * Every negative manifest here enables NO blocks, and that is a deliberate
  * difference from the Qwen seeds rather than an oversight. Both Qwen dialects
  * transport their exclusions as `unsupported`, so their nine enabled blocks are
- * inert by construction and the list costs nothing. Seven of the nine endpoints
+ * inert by construction and the list costs nothing. Six of the eight endpoints
  * below are the same, but Pony's negative channel is real and selective — an
  * enabled block there would SHIP — and the promotion rule holds that a block
  * claims to help only after its own failure-inducing paired-seed trial on that
@@ -470,52 +468,6 @@ export const sdxlPulidCharacterPacks = seedCharacterEndpoint({
   lanes: [editLane("variant-standard", "variant"), ...sceneLanes("scene-standard")],
 });
 
-// ---------------------------------------------------------------------------
-// The LoRA-capable Qwen edit wrapper
-// ---------------------------------------------------------------------------
-
-/**
- * `qwen/qwen-image-edit-plus-lora` — a registered endpoint no production route
- * chooses. The intimate-scene route and the `nsfw_test` bench both run their
- * weights on `qwen/qwen-image-edit-2511` (#457), which loads the same LoRA a
- * generation newer, so nothing swaps onto this row any more.
- *
- * Its rows stay because the endpoint stays addressable by hand: an admin can
- * still pick it in the Image Generator or drive it from the Image Lab, and a
- * render there arrives under a scene or variant profile like any other. An
- * endpoint that is reachable but unbound would compile no program and quietly
- * keep the legacy prompt — the hidden exception #256 forbids, and one nothing in
- * the binding table would show.
- *
- * The profile keys are every key such a render can arrive under: `variant-standard`
- * is the single key every variant profile carries, and the four scene keys are
- * every scene profile the picker offers.
- */
-export const qwenEditPlusLoraCharacterPacks = seedCharacterEndpoint({
-  name: "qwen-edit-plus-lora",
-  modelSlug: "qwen/qwen-image-edit-plus-lora",
-  dialectId: "qwen_edit_plus_lora_delta_edit",
-  positiveManifest: NEUTRAL_POSITIVE,
-  evidence: [
-    {
-      id: "E-QWENEDITPLUSLORA-1",
-      sourceType: "official_endpoint",
-      reviewedAt: "2026-08-24",
-      modelSlug: "qwen/qwen-image-edit-plus-lora",
-      claim:
-        "prompt and image are both required; image is an array of 1-3 references and the endpoint is instruction editing in the same family as 2511, with no negative prompt input.",
-      confidence: "authoritative",
-    },
-  ],
-  lanes: [
-    editLane("variant-standard", "variant"),
-    ...sceneLanes("scene-standard"),
-    ...sceneLanes("ensemble-scene-2k"),
-    ...sceneLanes("quality-scene-3k"),
-    ...sceneLanes("multi-reference-edit-2k"),
-  ],
-});
-
 /** Every endpoint seeded here, for the coverage test that pins the offered surface. */
 export const characterEndpointPacks: readonly CharacterEndpointPacks[] = [
   seedream45CharacterPacks,
@@ -526,5 +478,4 @@ export const characterEndpointPacks: readonly CharacterEndpointPacks[] = [
   pImageCharacterPacks,
   likeRealityPonyCharacterPacks,
   sdxlPulidCharacterPacks,
-  qwenEditPlusLoraCharacterPacks,
 ];

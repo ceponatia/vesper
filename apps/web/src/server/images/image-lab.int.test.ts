@@ -68,7 +68,6 @@ import {
   uploadImageLabControl,
 } from "./image-lab-controls";
 import { loadImageModelProfilesForTask } from "./model-profiles";
-import { qwenEditPlusLoraCharacterPacks } from "./packs-character-endpoints";
 import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./packs-qwen-2511";
 
 /**
@@ -336,9 +335,9 @@ beforeAll(async () => {
     versionId: null,
     task: "scene",
     promptStrategy: "instruction_edit",
-    promptDialectId: "qwen_edit_plus_lora_delta_edit",
-    positivePackVersionId: qwenEditPlusLoraCharacterPacks.positive.id,
-    negativePackVersionId: qwenEditPlusLoraCharacterPacks.negative.id,
+    promptDialectId: "qwen_2511_delta_edit",
+    positivePackVersionId: qwenImageEdit2511PositivePack.id,
+    negativePackVersionId: qwenImageEdit2511NegativePack.id,
     status: "active",
   });
 });

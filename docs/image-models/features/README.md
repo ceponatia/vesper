@@ -219,25 +219,25 @@ record remain the place to state moderation behavior that cannot be controlled.
 
 ## Qwen composition
 
-| Feature          | Edit 2511 | Edit Plus LoRA | Image 2512 |
-| ---------------- | :-------: | :------------: | :--------: |
-| `prompt`         |    yes    |      yes       |    yes     |
-| `multiReference` |    yes    |      yes       |     no     |
-| `aspectRatio`    |    yes    |      yes       |    yes     |
-| `seed`           |    yes    |      yes       |    yes     |
-| `guidance`       |    no     |       no       |    yes     |
-| `fastMode`       |    yes    |      yes       |    yes     |
-| `negativePrompt` |    no     |       no       |     no     |
-| `lora`           |    yes    |      yes       |     no     |
-| `outputFormat`   |    yes    |      yes       |    yes     |
-| `outputQuality`  |    yes    |      yes       |    yes     |
-| `safetyToggle`   |    yes    |      yes       |    yes     |
+| Feature          | Edit 2511 | Image 2512 |
+| ---------------- | :-------: | :--------: |
+| `prompt`         |    yes    |    yes     |
+| `multiReference` |    yes    |     no     |
+| `aspectRatio`    |    yes    |    yes     |
+| `seed`           |    yes    |    yes     |
+| `guidance`       |    no     |    yes     |
+| `fastMode`       |    yes    |    yes     |
+| `negativePrompt` |    no     |     no     |
+| `lora`           |    yes    |     no     |
+| `outputFormat`   |    yes    |    yes     |
+| `outputQuality`  |    yes    |    yes     |
+| `safetyToggle`   |    yes    |    yes     |
 
 An exported feature is vocabulary, not proof that a Qwen adapter composes it.
 `negativePrompt` is the clearest example: the package can represent families that genuinely
 act on negative conditioning, while Qwen Image 2512 omits the feature because its declared
-negative field does not steer output. `fastMode` is the mirror case — all three adapters
-compose it because all three endpoints genuinely offer the accelerated sampling path, and
-whether Vesper *should* ask for it is a reviewed judgment held elsewhere.
+negative field does not steer output. `fastMode` is the mirror case — both adapters compose
+it because both endpoints genuinely offer the accelerated sampling path, and whether Vesper
+*should* ask for it is a reviewed judgment held elsewhere.
 
 [Back to `@vesper/image-models`](../README.md).

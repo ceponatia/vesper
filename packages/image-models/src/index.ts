@@ -59,6 +59,5 @@ export {
   qwenEditFeatures,
   qwenImage2512,
   qwenImageEdit2511,
-  qwenImageEditPlusLora,
 } from "./families";
 export { adapterForImageModel } from "./registry";

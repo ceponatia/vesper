@@ -287,12 +287,12 @@ describe("probeReplicateModel", () => {
 
   describe("advanced capabilities", () => {
     it("derives both LoRA bindings, with the range the schema declared", async () => {
-      // `qwen/qwen-image-edit-plus-lora`'s real shape. A locator sent to a field the
-      // active version does not declare is a provider rejection at spend time, so the
-      // field names come from the schema and are stored with the version they were
-      // read from.
+      // The Qwen edit family's real LoRA shape, trimmed to the fields this case is
+      // about. A locator sent to a field the active version does not declare is a
+      // provider rejection at spend time, so the field names come from the schema
+      // and are stored with the version they were read from.
       stubFetch(() => ({
-        name: "qwen-image-edit-plus-lora",
+        name: "qwen-image-edit-2511",
         latest_version: {
           id: "v1",
           openapi_schema: openapi({
@@ -306,7 +306,7 @@ describe("probeReplicateModel", () => {
         },
       }));
 
-      const result = await probeReplicateModel("qwen/qwen-image-edit-plus-lora");
+      const result = await probeReplicateModel("qwen/qwen-image-edit-2511");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.probe.advancedCapabilities.controls).toEqual({

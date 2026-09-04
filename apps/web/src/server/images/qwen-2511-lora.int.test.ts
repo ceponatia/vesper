@@ -5,14 +5,17 @@ import { endTestPool, probeIntegrationDb } from "@/server/test-support";
 import { db, imageLoras, imageModels } from "../db";
 
 /**
- * Migration 0118 is the deployed-data half of Qwen 2511 runtime LoRA support.
+ * Migrations 0118 and 0127 are the deployed-data half of Qwen 2511 runtime LoRA
+ * support.
  *
  * The Image Generator deliberately renders its controls from the registered
  * model's probed capability record. Merely composing `loraFeature()` in the
  * family adapter therefore cannot make the picker appear on an already-deployed
  * 2511 row whose snapshot predates LoRA binding derivation. This test holds the
  * migrated database to the two facts the page needs: the 2511 row has the real
- * provider bindings, and the built-in anatomy LoRA allows that base slug.
+ * provider bindings, and the built-in anatomy LoRA allows that base slug and
+ * nothing else — a surviving slug for an endpoint no adapter, dialect or pack
+ * binding names any more would offer an operator a pairing every render refuses.
  */
 const ready = await probeIntegrationDb("images qwen-2511-lora.int.test", "image_models");
 
@@ -41,8 +44,7 @@ describe.skipIf(!ready)("Qwen Image Edit 2511 LoRA capability migration", () => 
     const [loraRow] = await db().select().from(imageLoras).where(eq(imageLoras.id, NSFW_LORA_ID)).limit(1);
     expect(loraRow).toBeDefined();
     const lora = imageLoraSchema.parse(loraRow);
-    expect(lora.compatibleModelSlugs).toContain(QWEN_2511);
-    expect(lora.compatibleModelSlugs).toContain("qwen/qwen-image-edit-plus-lora");
+    expect(lora.compatibleModelSlugs).toEqual([QWEN_2511]);
   });
 });
 

@@ -112,18 +112,18 @@ const BENCH_PROFILE: ImageModelProfile = imageModelProfileSchema.parse({
 const REFERENCE_URI = "https://replicate.delivery/pbxt/bench-reference.webp";
 
 /**
- * The seeded intimate-scene row (migrations 0108, 0114 and 0118), parsed through
- * the real schema rather than hand-built: a fixture that could not be stored
- * would prove nothing about a render. Its compatibility list is the one 0118
- * leaves behind — the legacy 2509 endpoint kept, 2511 added — so the row this
- * suite drives is the row production drives.
+ * The seeded intimate-scene row (migrations 0108, 0114, 0118 and 0127), parsed
+ * through the real schema rather than hand-built: a fixture that could not be
+ * stored would prove nothing about a render. Its compatibility list is the one
+ * that chain leaves behind — the intimate endpoint alone — so the row this suite
+ * drives is the row production drives.
  */
 const LIBRARY_ROW: ImageLora = imageLoraSchema.parse({
   id: "imglorqwennsfwallinclv20",
   label: "Qwen Image Edit 2511 NSFW all inclusive v2.0",
   locatorType: "https_url",
   locator: "https://civitai.com/api/download/models/3160956?type=Model&format=SafeTensor",
-  compatibleModelSlugs: ["qwen/qwen-image-edit-plus-lora", "qwen/qwen-image-edit-2511"],
+  compatibleModelSlugs: ["qwen/qwen-image-edit-2511"],
   compatibleVersionIds: [],
   defaultScale: 1,
   minimumScale: 0.5,
