@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { attributeRegistry, DiagnosticCollector, realizeBody, speciesById, traitRegistry, type ItemDefinition } from "@/contracts";
+import {
+  attributeRegistry,
+  DiagnosticCollector,
+  isIntimateAttributeCategory,
+  realizeBody,
+  speciesById,
+  traitRegistry,
+  type AttributeValue,
+  type ItemDefinition,
+} from "@/contracts";
 import { characterDraftSchema } from "./drafts";
 import {
   buildAttributeSectionSchema,
+  conformAttributesToBody,
   demoCharacterAttributeSection,
   demoCharacterOutfitSection,
   describeConstraint,
@@ -23,12 +33,16 @@ import {
   type OutfitItem,
 } from "./character-forge";
 import type { LibraryLookup } from "./library";
-import { noCandidates, noLibrary } from "@/server/test-support";
+import { attr, noCandidates, noLibrary } from "@/server/test-support";
 
 // A species' default body features, sourced from the catalog (the single source of
 // truth) rather than re-hardcoded here — so a catalog change doesn't break these
 // forge tests. The exact set lives in src/contracts/species; order is incidental.
 const speciesFeatures = (id: string) => [...(speciesById(id)?.defaultFeatureGroups ?? [])].sort();
+
+// The anatomy-split size pair as stored: exactly one owner may survive a forge.
+const storedSizes = (values: readonly AttributeValue[]) =>
+  values.filter((v) => v.id === "chest.size" || v.id === "breasts.size").map((v) => `${v.id}=${String(v.value)}`);
 
 describe("registry-derived attribute section schema", () => {
   it("accepts registered attribute ids", () => {
@@ -83,6 +97,20 @@ describe("registry-derived attribute section schema", () => {
     const schema = buildAttributeSectionSchema({ prompt: "a succubus bartender", userId: "user_1", draft });
     expect(schema.safeParse({ attributes: [{ id: "horns.shape", value: "swept_back" }] }).success).toBe(true);
     expect(schema.safeParse({ attributes: [{ id: "wings.type", value: "membranous" }] }).success).toBe(false);
+  });
+
+  it("admits the render-visual intimate size so a concept can state it, and no other intimate field", () => {
+    // Kills a vocabulary that hides breasts.size from the model (the fill then
+    // invents a size the concept contradicted) and one that admits intimate
+    // anatomy wholesale. Registry-derived: an intimate definition is admitted
+    // exactly when it carries the render-consistency flag.
+    const schema = buildAttributeSectionSchema();
+    const intimate = attributeRegistry.definitions.filter((d) => isIntimateAttributeCategory(d.category));
+    expect(intimate.some((d) => d.renderVisual)).toBe(true);
+    for (const def of intimate) {
+      const value = def.allowedValues?.[0] ?? "x";
+      expect(schema.safeParse({ attributes: [{ id: def.id, value }] }).success, def.id).toBe(def.renderVisual === true);
+    }
   });
 });
 
@@ -637,6 +665,35 @@ describe("fillVisualDefaults", () => {
   });
 });
 
+describe("conformAttributesToBody", () => {
+  // The forge never stores both owners of the anatomy-split size pair. Kills a
+  // fill-only pipeline that leaves the model's chest.size beside the seeded
+  // breasts.size (the stale value resurfacing whenever the region is toggled),
+  // a conform that discards the concept's only size instead of translating it,
+  // and one that invents a breast size out of a structural chest build.
+  const female = realizeBody({ intimateRegions: ["vulva", "breasts"] });
+  const male = realizeBody({ intimateRegions: ["penis", "testicles"] });
+  const translated = "forge.character.attributes.size_translated";
+  const inapplicable = "forge.character.attributes.inapplicable_for_body";
+
+  it.each([
+    ["translates a lone bust-scale chest build for a body with breasts", female, [attr("chest.size", "slight")], ["breasts.size=nearly_flat"], translated],
+    ["a stated breast size wins over the superseded chest build", female, [attr("chest.size", "slight"), attr("breasts.size", "full")], ["breasts.size=full"], inapplicable],
+    ["drops a structural chest build rather than inventing a breast size", female, [attr("chest.size", "barrel")], [], inapplicable],
+    ["drops a breast size on a body without the region", male, [attr("breasts.size", "petite"), attr("chest.size", "broad")], ["chest.size=broad"], inapplicable],
+  ])("%s", (_case, body, values, expected, code) => {
+    const sink = new DiagnosticCollector();
+    const conformed = conformAttributesToBody(values, body, sink);
+    expect(storedSizes(conformed)).toEqual(expected);
+    expect(sink.items.some((d) => d.code === code)).toBe(true);
+    // The fill then seeds only what that body still lacks: a stated or translated
+    // size survives unchanged, and exactly one owner is stored either way.
+    const filled = storedSizes(fillVisualDefaults(conformed, "seed", undefined, undefined, body));
+    expect(filled).toHaveLength(1);
+    if (expected.length > 0) expect(filled).toEqual(expected);
+  });
+});
+
 describe("fillSpeciesRequiredDefaults", () => {
   const elf = realizeBody({ speciesId: "elf" });
 
@@ -858,6 +915,17 @@ describe("demo-mode forge (AI_FAKE=1 in test setup)", () => {
     }
     expect(draft.suggestedItems.length).toBeGreaterThan(0);
     expect(draft.suggestedItems.every((i) => i.tags.includes("suggested"))).toBe(true);
+  });
+
+  it("stores one applicable size: the demo's chest.size on a body with breasts becomes breasts.size", async () => {
+    // The demo answer files the bust under chest build before its gender seeds
+    // the breasts region (the model's slip). Kills the pipeline that stored both
+    // sizes, the order that hash-picked breasts.size before the chest value
+    // could translate, and a forge that realizes no body for a plain human
+    // prompt (chest.size seeded on a body with breasts).
+    const draft = await forgeCharacter({ prompt: "a weary harbor-master", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(draft.profile.intimateRegions).toContain("breasts");
+    expect(storedSizes(draft.profile.attributes)).toEqual(["breasts.size=nearly_flat"]);
   });
 
   it("materializes the persisted-baseline foot facts into a forged draft (pre-slice-3)", async () => {

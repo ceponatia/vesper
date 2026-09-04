@@ -25,8 +25,15 @@ bare "android" means Synthetic Android while "organic android" selects the clone
 The attribute agent emits `AttributeValue[]` against the **registry**: the schema enumerates
 allowed ids and values, so output is validated vocabulary rather than free text.
 
-The forge vocabulary excludes intimate anatomy, and includes additive feature morphology only when
-the prompt or current draft resolves a feature-bearing species or body config. It is also
+The forge vocabulary excludes intimate anatomy — the body-config that realizes it is seeded from
+the answer itself — with one exception: an intimate definition flagged `renderVisual`
+(`breasts.size`) is admitted, named plainly, so the model may state the size a concept gives
+rather than have the fill invent one. The prompt says the anatomy-gated ids apply only to a body
+that carries the anatomy; grounding validates the value against the registry, and the conform step
+below drops it when the breasts region ends up off. The vocabulary includes additive feature
+morphology only when the prompt or current draft resolves a feature-bearing species or body
+config. A prompt that names no species realizes the default species' body, so the anatomy gating
+holds for a plain human concept. It is also
 **species-narrowed**: an attribute with a species rule shows only its narrowed allowed values, and
 a `required` rule is tagged `[SPECIES]` with its default in the prompt
 (`realizeBody.allowedValuesFor` / `isAttributeRequired` / `defaultValueFor`). A definite value the
@@ -48,7 +55,14 @@ image — are always filled. Leaving them sparse is not sparseness, it is cross-
 fill runs against the body the draft will carry — its body-config seeded from the grounded gender
 (`activatesGroups`), then realized once more after the fill in case the fill invented the gender
 — so an anatomy-gated pair fills for the owner that body applies: a body with the breasts region
-receives `breasts.size`, one without receives `chest.size`, never both.
+receives `breasts.size`, one without receives `chest.size`, never both. Before each fill the values
+are **conformed to that body** (`conformAttributesToBody`): a value the body does not apply is never
+stored. A `chest.size` the breasts region supersedes becomes `breasts.size` through the contract's
+bust-scale table (`BUST_SCALE_TO_BREAST_SIZE`, the same table the stored-value sweep uses) when it
+is the only size given (`forge.character.attributes.size_translated`); with a `breasts.size` already
+stated it drops, as does a structural `broad` / `barrel`, and every other inapplicable value drops
+(`forge.character.attributes.inapplicable_for_body`). A forged draft therefore stores exactly one
+applicable size, and a concept-stated `breasts.size` survives the fills unchanged.
 
 1. **Definite values** — where the concept states or strongly implies a value, the model emits it
    directly. A definite value always beats a range or a species default for the same id.

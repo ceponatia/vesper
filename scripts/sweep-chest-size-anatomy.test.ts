@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { attributeRegistry } from "@/contracts";
+import { attributeRegistry, BUST_SCALE_TO_BREAST_SIZE } from "@/contracts";
 import {
-  BUST_SCALE_TO_BREAST_SIZE,
   CHEST_BUILD_NORMALIZATION,
   STRUCTURAL_CHEST_VALUES,
   sweepChatState,

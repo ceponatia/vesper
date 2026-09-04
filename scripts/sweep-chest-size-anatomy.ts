@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { and, eq } from "drizzle-orm";
-import { attributeRegistry } from "@/contracts";
+import { attributeRegistry, BUST_SCALE_TO_BREAST_SIZE } from "@/contracts";
 import { characterChatState, characters, db, personas } from "@/server/db";
 
 /**
@@ -20,7 +20,9 @@ import { characterChatState, characters, db, personas } from "@/server/db";
  *   1. `breasts.size` already stored → it wins; the now-inapplicable
  *      `chest.size` row is dropped.
  *   2. only `chest.size` stored, on the bust scale → the row becomes
- *      `breasts.size` (provenance kept) so the only usable size value survives:
+ *      `breasts.size` (provenance kept) so the only usable size value survives,
+ *      through the contract's `BUST_SCALE_TO_BREAST_SIZE` (the forge's body
+ *      conform step translates with the same table):
  *        flat → flat · slight → nearly_flat · modest → modest ·
  *        average → medium · full → full · very_full → very_large
  *   3. only `chest.size` stored, `broad` / `barrel` → these describe ribcage
@@ -51,16 +53,6 @@ import { characterChatState, characters, db, personas } from "@/server/db";
  * are reported again, unchanged, until someone authors them. Run once per
  * environment (`fly ssh console -a vesper -C "pnpm db:sweep-chest-size"`).
  */
-
-/** `chest.size` bust-scale values → their `breasts.size` successor (breasts region on). */
-export const BUST_SCALE_TO_BREAST_SIZE: Readonly<Record<string, string>> = {
-  flat: "flat",
-  slight: "nearly_flat",
-  modest: "modest",
-  average: "medium",
-  full: "full",
-  very_full: "very_large",
-};
 
 /** Removed `chest.size` euphemisms → the chest-build value they normalize to (breasts region off). */
 export const CHEST_BUILD_NORMALIZATION: Readonly<Record<string, string>> = {
