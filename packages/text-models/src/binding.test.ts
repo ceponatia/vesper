@@ -68,19 +68,37 @@ describe("bindTextModelProfile", () => {
     expect(bound.body).toEqual({ min_p: 0.1 });
     expect(bound.withheld.map((entry) => entry.feature)).toEqual(["thinking", "topNsigma"]);
   });
+
+  it("still binds for a placeholder host, which serves nothing and withholds nothing", () => {
+    // Serving and spelling are different questions, and only the first one
+    // `placeholder` answers. A placeholder has no transport, so `hostsServing`
+    // leaves it out — but binding for it still works, because "what would this
+    // profile look like over there?" is worth asking about a lane that does not
+    // exist yet. A change that made `bindingFor` placeholder-aware would break
+    // exactly this and nothing else.
+    expect(bindTextModelProfile(adapter, "self-hosted").withheld).toEqual([]);
+  });
 });
 
 describe("hostsServing", () => {
-  it("derives availability from the dialect tables rather than a second list", () => {
-    expect(hostsServing("temperature")).toEqual(["featherless", "openrouter", "self-hosted"]);
-    expect(hostsServing("thinking")).toEqual(["featherless", "self-hosted"]);
-    expect(hostsServing("topA")).toEqual(["openrouter", "self-hosted"]);
+  it("derives availability from the dialect tables, counting only hosts that have a transport", () => {
+    expect(hostsServing("temperature")).toEqual(["featherless", "openrouter"]);
+    expect(hostsServing("thinking")).toEqual(["featherless"]);
+    expect(hostsServing("topA")).toEqual(["openrouter"]);
+  });
+
+  it("answers with an empty list for a knob present in the vocabulary and off everywhere", () => {
+    // The declared-but-unhosted set. The self-hosted placeholder spells
+    // top-n-sigma and no transport reaches it, so naming it there is a spelling
+    // rather than an availability — counting the placeholder would report this
+    // knob as reachable and a lane would be entitled to send it nowhere. A
+    // later host turns this answer non-empty by adding one dialect row.
+    expect(hostsServing("topNsigma")).toEqual([]);
   });
 
   it("answers with an empty list for a feature id no dialect names", () => {
-    // The honest answer for a knob that has been added to the vocabulary and
-    // not yet bound anywhere — and the answer that catches a dialect key
-    // misspelled, which would otherwise read as a host that simply refuses it.
+    // The case that catches a dialect key misspelled, which would otherwise
+    // read as a host that simply refuses the knob.
     expect(hostsServing("guidanceRescale")).toEqual([]);
   });
 });

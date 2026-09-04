@@ -40,12 +40,19 @@ export function bindingFor(host: TextModelHost, featureId: string): TextServedBi
  * later host makes a feature travel by adding one dialect row, never by adding
  * a field to the feature.
  *
- * An empty result is a legitimate answer, not an error: it is what a feature id
- * no dialect names derives. Because the self-hosted placeholder binds the whole
- * vocabulary, every feature Vesper has written down is served somewhere in this
- * sense, and a caller that wants "can this actually reach a wire?" asks about
- * the host in force rather than about the list.
+ * **Placeholder hosts do not count.** A host with no transport cannot serve
+ * anything, so a dialect marked `placeholder` contributes a spelling and no
+ * availability. That is what lets the answer be empty: a knob only the
+ * placeholder names is present in the vocabulary and off everywhere, and a
+ * later host flips it on by adding one row rather than by adding a field.
+ *
+ * An empty result is therefore a legitimate answer in two cases — a knob no
+ * reachable host serves, and a feature id no dialect names at all. The second
+ * is what catches a misspelled dialect key, which would otherwise read as a
+ * host that simply refuses the knob.
  */
 export function hostsServing(featureId: string): readonly TextModelHost[] {
-  return TEXT_MODEL_HOSTS.filter((host) => bindingFor(host, featureId) !== null);
+  return TEXT_MODEL_HOSTS.filter(
+    (host) => dialectForHost(host).placeholder !== true && bindingFor(host, featureId) !== null,
+  );
 }

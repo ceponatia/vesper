@@ -65,9 +65,11 @@ The split between settings and body fields is a property of the **transport**, n
 
 Two features in one dialect never claim the same wire field. Nothing enforces it at runtime; the tables are constants a reviewer reads whole, and a new row's field name is checked against its neighbours when it is added.
 
-The table below is the authoritative answer to which hosts serve a feature. `hostsServing` derives the same answer from the same tables rather than from a second list, so a later host makes a knob travel by adding one row here and nothing else.
+The table below is the authoritative record of how each knob is spelled on each host. `hostsServing` derives availability from these same tables rather than from a second list, so a later host makes a knob travel by adding one row here and nothing else — but it counts only hosts that **have a transport**, and the self-hosted column is not one of them.
 
-**self-hosted is a placeholder.** No transport reaches it, and no call is ever bound for it. It exists so that a sampler the two hosted tables both withhold still has one place that names it, and its spellings are a record of the vocabulary author profiles are written in rather than a verified wire contract — the lane that adds a transport checks each one against the endpoint it targets.
+**self-hosted is a placeholder: a spelling, not a serving host.** No transport reaches it, so it serves nothing and `hostsServing` leaves it out. A knob that only this column names is present in the vocabulary and off everywhere, which is what makes `hostsServing` able to answer with an empty list. The column exists so that such a knob still has one place that names it, and its spellings are a record of the vocabulary author profiles are written in rather than a verified wire contract — the lane that adds a transport checks each one against the endpoint it targets.
+
+Binding a profile for `self-hosted` nevertheless works, and that is deliberate: serving and spelling are different questions, and asking what a profile would look like on a lane that does not exist yet is worth answering.
 
 | Feature                  | featherless                 | openrouter                 | self-hosted                  |
 | ------------------------ | --------------------------- | -------------------------- | ---------------------------- |
@@ -118,7 +120,9 @@ The table below is the authoritative answer to which hosts serve a feature. `hos
 
 Four things are refused when the definition is evaluated: a feature composed twice, a profile key that names no composed feature, a profile value outside its feature's band, and two quirks claiming the same overriding hook. Those refusals **throw**, which is a deliberate exception to [the resilience rules](../resilience.md). Those rules govern runtime data, where refusing costs a player their turn; a definition is code, evaluated at module load, with inputs somebody typed and no turn to protect.
 
-`profile` carries the author's **whole** profile, including values for knobs the model's own host does not serve. Owner ruling (2026-09-04): a model ships with its author's recommended sampling profile, and fields a host turns out not to use are deactivated by selecting a host rather than by deleting the values. The profile is therefore a single artefact, and what travels is decided per call.
+`profile` carries **every declared value**, including values for knobs the model's own host does not serve. A profile is one artefact, and what travels is decided per call by the host in force rather than at the moment the values are written down.
+
+That structure has a dated origin. Owner ruling (2026-09-04), given for the first adapted narrator: fields its host turns out not to honour are deactivated by host selection, never by deleting the values. It does not make an author's published settings anyone's default — the standing rule (owner ruling 2026-08-17) is that no model receives model-card sampling settings automatically, and a profile with values in it is a claim that this exact model was measured.
 
 ## Binding a profile for a host
 
@@ -138,14 +142,14 @@ Iteration follows `capabilities`, so a bound profile's key order is the definiti
 
 An adapter may state provider-neutral knowledge about how its model behaves rather than what it accepts:
 
-| Hint                  | What earns it                                                                   |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `contextLength`       | The host's own model record                                                      |
-| `maxCompletionTokens` | The host's record, or a call truncated below what the context implies            |
-| `concurrencyCost`     | The host's published concurrency cost for the model                              |
-| `startupBudgetMs`     | A measured cold start a lane's default budget would have abandoned               |
-| `hiddenEmptyRetry`    | A measured intermittent empty reply on this exact model                          |
-| `retryMinTokens`      | Proof the host honours a minimum-token floor on this model                       |
+| Hint                  | What earns it                                                         |
+| --------------------- | --------------------------------------------------------------------- |
+| `contextLength`       | The host's own model record                                           |
+| `maxCompletionTokens` | The host's record, or a call truncated below what the context implies |
+| `concurrencyCost`     | The host's published concurrency cost for the model                   |
+| `startupBudgetMs`     | A measured cold start a lane's default budget would have abandoned    |
+| `hiddenEmptyRetry`    | A measured intermittent empty reply on this exact model               |
+| `retryMinTokens`      | Proof the host honours a minimum-token floor on this model            |
 
 Every field is optional, and an absent field means the lane's own default governs — never zero, never unlimited. A hint is a claim about a real endpoint, so an adapter states one only where a measurement earns it.
 

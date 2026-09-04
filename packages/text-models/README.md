@@ -49,11 +49,16 @@ it takes it as a setting.
 
 `hostsServing(featureId)` is derived from the tables rather than declared beside
 them, because a hand-maintained availability list is a second copy that will
-eventually be believed over the tables it contradicts.
+eventually be believed over the tables it contradicts. It counts only hosts that
+have a transport.
 
-The self-hosted dialect is a **placeholder**: no transport reaches it. It exists
-so that a sampler the hosted tables both withhold still has one place that names
-it.
+The self-hosted dialect is a **placeholder — a spelling, not a serving host**.
+No transport reaches it, so it serves nothing and `hostsServing` leaves it out.
+It exists so that a knob the hosted tables both withhold still has one place
+that names it, which is exactly why such a knob's availability is the empty
+list: present in the vocabulary, off everywhere, and turned on later by one
+dialect row. Binding a profile for it still works, because serving and spelling
+are different questions.
 
 ### The composer — how a model binds them
 

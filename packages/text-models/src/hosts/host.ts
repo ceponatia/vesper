@@ -101,6 +101,16 @@ export type TextServedBinding = Extract<TextFeatureBinding, { readonly kind: "se
 export interface TextHostDialect {
   readonly host: TextModelHost;
   readonly bindings: Readonly<Record<string, TextFeatureBinding>>;
+  /**
+   * This dialect names spellings; no transport reaches it.
+   *
+   * A placeholder's rows are a record of the vocabulary a profile was authored
+   * in, not a claim that anything can be asked through it — so a placeholder
+   * host SERVES nothing, and `hostsServing` leaves it out. Binding for one
+   * still works, because "what would this profile look like over there?" is a
+   * question worth answering about a host that does not exist yet.
+   */
+  readonly placeholder?: true;
 }
 
 /** Bind a feature to an SDK call setting. */

@@ -12,13 +12,20 @@ import {
 /**
  * The values one model is asked with, keyed by feature id.
  *
- * A profile carries EVERY value its author declared, including values for
- * features the model's own host does not serve. That is the owner's ruling
- * (2026-09-04) made structural: a published sampling profile is a single
- * artefact, and a package that dropped the unhosted half at authoring time
- * would lose the record of how the model was meant to be asked the moment a
- * second host appeared. What travels is decided per call, by the host in force,
- * in `bindTextModelProfile`.
+ * A profile carries EVERY declared value, including values for features the
+ * model's own host does not serve. A profile is one artefact, and a package
+ * that dropped the unhosted half at authoring time would lose the record of how
+ * the model was meant to be asked the moment a second host appeared. What
+ * travels is decided per call, by the host in force, in
+ * `bindTextModelProfile`.
+ *
+ * Owner ruling (2026-09-04), given for the first adapted narrator: fields its
+ * host turns out not to honour are deactivated by host selection, never by
+ * deleting the values. That is the origin of the structure and the whole of it.
+ * It grants no model an author's published settings by default — the standing
+ * rule (owner ruling 2026-08-17) is that no model receives model-card sampling
+ * settings automatically, so a value in a profile is a claim that this exact
+ * model was measured, and an empty profile is the ordinary starting state.
  */
 export type TextModelProfile = Readonly<Record<string, TextProfileValue>>;
 

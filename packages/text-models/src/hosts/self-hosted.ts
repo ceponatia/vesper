@@ -20,10 +20,15 @@ import { bodyBinding, type TextHostDialect } from "./host";
  *
  * Every feature is bound, and that is what makes this dialect the vocabulary's
  * completeness check: a sampler the hosted tables both withhold still has one
- * place that names it.
+ * place that names it. Binding all of them is NOT a claim that any of them can
+ * be asked for — `placeholder` is what says so, and it is why `hostsServing`
+ * leaves this host out. A knob only this table names is served nowhere, which
+ * is the honest answer for a sampler that is present in the vocabulary and off
+ * everywhere.
  */
 export const SELF_HOSTED_DIALECT: TextHostDialect = {
   host: "self-hosted",
+  placeholder: true,
   bindings: {
     temperature: bodyBinding("temperature"),
     topP: bodyBinding("top_p"),
