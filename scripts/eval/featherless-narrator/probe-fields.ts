@@ -378,6 +378,8 @@ async function main(): Promise<void> {
     console.log("skipped: FEATHERLESS_API_TOKEN is not set (this probe makes real, billed calls).");
     return;
   }
+  // Hoisted function declarations below do not inherit the narrowing from the guard above.
+  const bearer: string = token;
   console.log(`model: ${MODEL_ID}`);
   console.log(`prompt: fixed 2-message chat, ${SYSTEM_PROMPT.length + USER_PROMPT.length} prompt chars (text never printed)`);
 
@@ -479,7 +481,7 @@ async function main(): Promise<void> {
    */
   async function argmaxProbe(field: string, fields: Record<string, unknown>, note: string): Promise<CallResult | null> {
     if (!wanted(field)) return null;
-    const result = await call(token, GREEDY_BASE, fields);
+    const result = await call(bearer, GREEDY_BASE, fields);
     if (rejected(result)) {
       record(field, short(fields), result, "rejected", result.errorMessage ?? "4xx");
       return result;
@@ -498,7 +500,7 @@ async function main(): Promise<void> {
     // Outside it is only a candidate: the pool can serve a greedy call from a server the
     // anchors did not sample. A confirmation call decides, and a confirmation that lands
     // back inside the greedy set downgrades the verdict rather than defending it.
-    const confirm = await call(token, GREEDY_BASE, fields);
+    const confirm = await call(bearer, GREEDY_BASE, fields);
     if (confirm.status !== 200) {
       record(field, short(fields), confirm, "accepted+unmeasured", `the confirmation call returned ${confirm.status}; ${note}`);
       return result;
@@ -530,7 +532,7 @@ async function main(): Promise<void> {
     note: string;
   }): Promise<CallResult | null> {
     if (!wanted(args.field)) return null;
-    const result = await call(token, GREEDY_BASE, args.fields);
+    const result = await call(bearer, GREEDY_BASE, args.fields);
     if (rejected(result)) {
       record(args.field, short(args.fields), result, "rejected", result.errorMessage ?? "4xx");
       return result;
@@ -555,7 +557,7 @@ async function main(): Promise<void> {
    */
   async function collapseProbe(field: string, fields: Record<string, unknown>, note: string): Promise<void> {
     if (!wanted(field)) return;
-    const result = await call(token, HOT_BASE, fields);
+    const result = await call(bearer, HOT_BASE, fields);
     if (rejected(result)) {
       record(field, short(fields), result, "rejected", result.errorMessage ?? "4xx");
       return;
