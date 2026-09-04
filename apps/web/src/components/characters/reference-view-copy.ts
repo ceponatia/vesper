@@ -1,4 +1,9 @@
-import type { ReferenceViewQueueRefusal, ReferenceViewState } from "@/contracts";
+import type {
+  ReferenceViewHistoryVerdict,
+  ReferenceViewMethod,
+  ReferenceViewQueueRefusal,
+  ReferenceViewState,
+} from "@/contracts";
 import type { TagTone } from "@/components/ui/tag";
 
 /**
@@ -72,4 +77,33 @@ export const referenceViewRefusalCopy: Record<ReferenceViewQueueRefusal, string>
   budget: "the daily image budget is used up. It resets at midnight UTC.",
   storage: "there is no image storage headroom left. Delete some images to free space.",
   busy: "a build for this character is already running.",
+};
+
+/**
+ * What a past attempt's chip says the owner decided about it.
+ *
+ * Deliberately NOT the state map above: that one describes the slot as it is
+ * right now and offers an action, while these describe one attempt as it was
+ * ruled on and offer nothing — the history list is read-only, and copy that
+ * invites an action there would be copy for a button that does not exist.
+ *
+ * `unreviewed` is a real answer, not a gap: a view regenerated before anybody
+ * looked at it was never ruled on, and so was every attempt already superseded
+ * before the verdict was recorded at all.
+ */
+export interface ReferenceViewVerdictCopy {
+  label: string;
+  tone: TagTone;
+}
+
+export const referenceViewVerdictCopy: Record<ReferenceViewHistoryVerdict, ReferenceViewVerdictCopy> = {
+  approved: { label: "approved", tone: "ok" },
+  rejected: { label: "rejected", tone: "danger" },
+  unreviewed: { label: "never reviewed", tone: "default" },
+};
+
+/** How a past attempt's bytes came to exist, in the history list's words. */
+export const referenceViewMethodCopy: Record<ReferenceViewMethod, string> = {
+  rendered: "Rendered",
+  uploaded: "Uploaded",
 };

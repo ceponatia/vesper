@@ -47,6 +47,11 @@ POST               /api/characters/:id/reference-views/:angle/:wardrobe/review  
                                                                                  approve|reject } ⇒ { view };
                                                                                  409 not_ready unless the
                                                                                  current row is ready
+GET                /api/characters/:id/reference-views/:angle/:wardrobe/history   { entries,
+                                                                                  retentionDays } — every
+                                                                                  image the slot still has,
+                                                                                  newest first, each with
+                                                                                  its verdict; read-only
 GET/POST, GET/PATCH/DELETE        /api/locations, /api/locations/:id
 GET/POST, GET/PATCH/DELETE        /api/items, /api/items/:id   (coverage ids validated against the
                                                                body-locations registry → 400 invalid_coverage)

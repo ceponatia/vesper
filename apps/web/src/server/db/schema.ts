@@ -79,7 +79,7 @@ import { inferenceLods } from "@vesper/simulation-core/contracts/deliberation";
 import { simulationLods } from "@vesper/simulation-core/contracts/lod";
 import { newId } from "@/lib/ids";
 import { imageGeneratorRunStatuses } from "@/contracts/images/image-generator";
-import { referenceViewMethods, referenceViewStatuses } from "@/contracts/images/reference-views";
+import { referenceViewMethods, referenceViewStatuses, referenceViewVerdicts } from "@/contracts/images/reference-views";
 import {
   visualExtractionProposalStatuses,
   visualExtractionRunStatuses,
@@ -1961,6 +1961,16 @@ export const characterReferenceViews = pgTable(
     /** A stable `classifyImageFailure` bucket; the human copy is produced at the UI boundary. */
     failureCode: text("failure_code"),
     failureMessage: text("failure_message"),
+    /**
+     * The owner's ruling on THIS attempt, written by a review or an upload and
+     * never cleared — the one review fact that survives supersession.
+     *
+     * `status` cannot carry it: a retired row's status becomes `superseded` the
+     * instant the next attempt claims the slot, flattening a rejection and an
+     * approval into the same word. Null means nobody ruled before the attempt was
+     * replaced, which is an honest and ordinary outcome rather than missing data.
+     */
+    verdict: text("verdict", { enum: referenceViewVerdicts }),
     /** The owner whose eye approved or rejected this view, or who uploaded it (an
      * owner-supplied view is the owner's own review). No cascade, for the same reason
      * as `image_identity_packs.reviewed_by_user_id`: an audit trail that erases itself

@@ -99,6 +99,10 @@ build job plans from, so the charge and the work can never be two numbers.
 - Rows are never deleted. A retired row's **asset** is purged by the scheduled sweep seven days
   after it was retired — the same window the identity pack's retired crops use, and never for a
   `current` row, whatever its status. The whole set is deleted with the character.
+- **A row keeps its `verdict` through supersession.** Retiring a row overwrites its `status` with
+  `superseded`, so the status of every attempt but the newest says nothing about what the owner
+  decided; the stored verdict is the one review fact that outlives the retirement, and a slot's
+  history is read from it.
 
 ## Review
 
@@ -111,6 +115,14 @@ build job plans from, so the charge and the work can never be two numbers.
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
   supplying it. It runs no model, charges no render budget, and re-fits the image to the canonical
   3:4 portrait under the avatar upload's decode guards.
+- **The `verdict` column is written by a review and by an upload, and never cleared.** A review
+  writes `approved` or `rejected`; an upload writes `approved`, because supplying a view is the
+  owner's own review. Nothing else writes it, supersession leaves it alone, and no row's verdict is
+  ever overturned by a later attempt on the same slot.
+- **What a past attempt reads as is one pure function**, `referenceViewHistoryVerdict`: the stored
+  verdict where there is one, otherwise a `rejected` status or a `ready` row's review stamp, and
+  `unreviewed` for an attempt nobody ruled on. Rows retired before the column existed have no
+  recoverable verdict and read as `unreviewed`.
 - **Consumable** is one function, `isConsumableReferenceView`, and nothing else recomputes it: the
   slot's current row, `ready` under the current generation version, rendered from the portrait
   accepted right now, with a `ready` asset, reviewed.
@@ -199,8 +211,9 @@ studio's grid displays them.
 | `POST …/reference-views/:angle/:wardrobe/regenerate` | Rebuilds one slot, a rejected one included                           |
 | `POST …/reference-views/:angle/:wardrobe/upload`     | `{ dataUrl }` ⇒ the settled slot, synchronously                      |
 | `POST …/reference-views/:angle/:wardrobe/review`     | `{ verdict: approve \| reject }` ⇒ the settled slot                  |
+| `GET …/reference-views/:angle/:wardrobe/history`     | `{ entries, retentionDays }` — that slot's past images               |
 
-All five are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
+All six are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
 
 ## Diagnostic codes
 

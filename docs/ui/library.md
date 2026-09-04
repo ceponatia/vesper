@@ -41,6 +41,18 @@ panel polls while a build is live or any slot is pending, and — like the ident
 renders **nothing** while loading or on error, so the studio is unchanged when the surface is
 unavailable.
 
+**History** sits beside Upload on every tile that has been attempted, and opens that slot's past
+images (`reference-view-history.tsx`): a dialog over the sheet listing every image the slot has
+produced, newest first, rendered and uploaded alike, each carrying a verdict chip — *approved*,
+*rejected* or *never reviewed* — a marker on the one the tile is showing now, how it was made, and
+when. Clicking an entry enlarges it in the same shared `ImageLightbox`, and closing the enlargement
+returns to the list. The list is **read-only**: nothing in it approves, rejects, regenerates or
+restores, so a history opened in the middle of a review leaves the slot's current image and verdict
+exactly as they were. It closes on the bound it is subject to — how many days a replaced image keeps
+its bytes, read from the retention window rather than typed here
+([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Lifecycle) —
+because an attempt whose bytes the maintenance sweep has collected is not listed at all.
+
 Accepting a portrait reports what happened to the views in the accept toast: *Building N reference
 views…*, or *Accepted, but the views were not built* with the reason and an invitation to build them
 later. The acceptance always stands.

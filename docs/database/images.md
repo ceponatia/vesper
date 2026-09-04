@@ -83,9 +83,12 @@ the two admin bench run records.
   (SHA-256 over the accepted portrait's stored bytes), `image_id?` (→ `images`, SET NULL — the
   hidden `reference_view` asset), `status`
   (`pending`/`ready`/`rejected`/`failed`/`stale`/`superseded`), `method?` (`rendered`/`uploaded`),
-  `generation_version`, `failure_code?` / `failure_message?`, `reviewed_by_user_id?` (→ `users`, no
-  cascade — the audit survives the reviewer), `reviewed_at?`. One slot of a character's reference
-  view set: attempts are rows, and exactly one per (character, angle, wardrobe) may be `current`
+  `generation_version`, `failure_code?` / `failure_message?`, `verdict?` (`approved`/`rejected` —
+  the owner's ruling on this attempt, written by a review or an upload and never cleared, because
+  retiring a row overwrites `status` with `superseded` and would otherwise erase every ruling but
+  the newest), `reviewed_by_user_id?` (→ `users`, no cascade — the audit survives the reviewer),
+  `reviewed_at?`. One slot of a character's reference view set: attempts are rows, and exactly one
+  per (character, angle, wardrobe) may be `current`
   (a partial unique index). See
   [../images/pipelines/reference-views.md](../images/pipelines/reference-views.md).
 - **`image_identity_lora_bindings`** — `identity_pack_id` (→ `image_identity_packs`,

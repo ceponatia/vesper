@@ -11,10 +11,14 @@ import {
   referenceViewAngleIds,
   referenceViewAngles,
   referenceViewFaceVisibility,
+  referenceViewHistoryVerdict,
   referenceViewWardrobeEntries,
   referenceViewWardrobes,
   type ReferenceViewAngleId,
+  type ReferenceViewHistoryVerdict,
   type ReferenceViewProjectionInput,
+  type ReferenceViewStatus,
+  type ReferenceViewVerdict,
 } from "./reference-views";
 import { FULLY_COVERED, type RegionExposure } from "../items/visibility";
 import {
@@ -331,5 +335,39 @@ describe("selectReferenceView", () => {
     // Stability is the whole point: the same key answers the same way however
     // often a conversation asks.
     expect(side(EVEN_KEY)).toBe("side_left");
+  });
+});
+
+/**
+ * **What a past attempt says the owner decided about it.**
+ *
+ * The invariant: a ruling survives supersession. `reserveReferenceView` retires
+ * the previous row by overwriting its `status` with `superseded`, so the status
+ * of every attempt but the newest says nothing about whether the owner approved
+ * it, rejected it, or never looked — which is the entire reason the `verdict`
+ * column exists and the entire reason a slot's history is worth showing.
+ *
+ * Falsified against the two implementations somebody would actually write: one
+ * that reads `status` alone (every retired attempt reads `unreviewed`, and the
+ * history lies about every ruling the owner made) and one that reads `verdict`
+ * alone (rows written before the column existed lose theirs, so a rejection the
+ * backfill could not reach reads as never reviewed).
+ */
+describe("what a past attempt's verdict reads as", () => {
+  type Row = { status: ReferenceViewStatus; verdict: ReferenceViewVerdict | null; reviewedAt: Date | string | null };
+  const REVIEWED = new Date("2026-01-01T00:00:00Z");
+
+  const cases: ReadonlyArray<[string, Row, ReferenceViewHistoryVerdict]> = [
+    ["a rejection the next attempt superseded", { status: "superseded", verdict: "rejected", reviewedAt: REVIEWED }, "rejected"],
+    ["an approval the next attempt superseded", { status: "superseded", verdict: "approved", reviewedAt: REVIEWED }, "approved"],
+    ["a row replaced before anybody ruled on it", { status: "superseded", verdict: null, reviewedAt: null }, "unreviewed"],
+    ["a pre-column rejection, recoverable from its status", { status: "rejected", verdict: null, reviewedAt: REVIEWED }, "rejected"],
+    ["a pre-column approval, recoverable from its review stamp", { status: "ready", verdict: null, reviewedAt: REVIEWED }, "approved"],
+    ["a finished render nobody has looked at", { status: "ready", verdict: null, reviewedAt: null }, "unreviewed"],
+    ["a render that never produced bytes", { status: "failed", verdict: null, reviewedAt: null }, "unreviewed"],
+  ];
+
+  it.each(cases)("%s ⇒ %s", (_name, row, expected) => {
+    expect(referenceViewHistoryVerdict(row)).toBe(expected);
   });
 });

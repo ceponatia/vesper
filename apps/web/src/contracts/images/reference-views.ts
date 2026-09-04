@@ -579,3 +579,79 @@ export function selectReferenceView(input: ReferenceViewSelectionInput): Referen
     faceVisibility: referenceViewFaceVisibility(angle),
   };
 }
+
+// ---------------------------------------------------------------------------
+// The recorded verdict, and one slot's history
+// ---------------------------------------------------------------------------
+
+/**
+ * The owner's ruling on one attempt, STORED — a fact about a moment, not a
+ * status.
+ *
+ * `status` cannot carry it. A retired row's status is overwritten with
+ * `superseded` the instant the next attempt claims the slot, so a rejection and
+ * an approval read identically the moment either is replaced, and a history
+ * built from `status` would tell the owner nothing about what they already
+ * ruled. The verdict is written once, by a review or an upload, and nothing —
+ * supersession included — ever clears it.
+ */
+export const referenceViewVerdicts = ["approved", "rejected"] as const;
+export const referenceViewVerdictSchema = z.enum(referenceViewVerdicts);
+export type ReferenceViewVerdict = z.infer<typeof referenceViewVerdictSchema>;
+
+/**
+ * What a history entry says happened to one attempt: the stored verdict, or
+ * `unreviewed` for an attempt that was replaced before anybody ruled on it.
+ *
+ * A third member rather than a nullable verdict, because "nobody looked at this
+ * one" is a real and common outcome — a regenerate fired the moment a render
+ * landed — and a hole in a list reads as missing data rather than as an answer.
+ */
+export const referenceViewHistoryVerdicts = ["approved", "rejected", "unreviewed"] as const;
+export const referenceViewHistoryVerdictSchema = z.enum(referenceViewHistoryVerdicts);
+export type ReferenceViewHistoryVerdict = z.infer<typeof referenceViewHistoryVerdictSchema>;
+
+/**
+ * **The one history-verdict rule.** PURE, and read by every surface that shows a
+ * past attempt.
+ *
+ * Two sources, because rows written before the verdict column existed have only
+ * the status: a `rejected` status IS a rejection, and a `ready` row with a
+ * review stamp IS an approval. The stored verdict wins wherever it is present,
+ * and it is the only source that survives supersession — which is exactly why a
+ * reading built on `status` alone is wrong for every retired row.
+ */
+export function referenceViewHistoryVerdict(row: {
+  readonly status: ReferenceViewStatus;
+  readonly verdict: ReferenceViewVerdict | null;
+  readonly reviewedAt: Date | string | null;
+}): ReferenceViewHistoryVerdict {
+  if (row.verdict === "rejected" || row.status === "rejected") return "rejected";
+  if (row.verdict === "approved" || (row.status === "ready" && row.reviewedAt !== null)) return "approved";
+  return "unreviewed";
+}
+
+/**
+ * One attempt as the studio's history list reads it.
+ *
+ * Only attempts that still HAVE something to look at reach this shape: a row
+ * whose render failed never had bytes, and a retired row whose asset the
+ * retention sweep collected no longer does. Both are dropped rather than listed
+ * as blanks — the list exists to compare pictures, and a row with no picture is
+ * not evidence.
+ */
+export const referenceViewHistoryEntrySchema = z.object({
+  id: z.string(),
+  /** Never null: an entry with no readable asset is not listed at all. */
+  imageId: z.string(),
+  method: referenceViewMethodSchema.nullable(),
+  verdict: referenceViewHistoryVerdictSchema,
+  /** This attempt is the slot's current one — what the studio tile shows. */
+  current: z.boolean(),
+  createdAt: z.string(),
+  reviewedAt: z.string().nullable(),
+  generationVersion: z.number(),
+  /** The accepted portrait this attempt was rendered from. */
+  sourceImageId: z.string().nullable(),
+});
+export type ReferenceViewHistoryEntry = z.infer<typeof referenceViewHistoryEntrySchema>;

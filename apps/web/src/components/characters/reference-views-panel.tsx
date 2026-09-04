@@ -15,6 +15,7 @@ import {
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { referenceViewRefusalCopy, referenceViewStateCopy } from "./reference-view-copy";
+import { ReferenceViewHistory, type ReferenceViewHistorySlot } from "./reference-view-history";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -68,6 +69,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   const [busySlot, setBusySlot] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   const [enlarged, setEnlarged] = useState<{ imageId: string; label: string } | null>(null);
+  const [historySlot, setHistorySlot] = useState<ReferenceViewHistorySlot | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const uploadTarget = useRef<{ angle: ReferenceViewAngleId; wardrobe: ReferenceViewWardrobe } | null>(null);
 
@@ -256,6 +258,17 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                     <Button size="sm" variant="ghost" busy={busy} onClick={() => pickUpload(view)}>
                       Upload
                     </Button>
+                    {view.state === "missing" || view.state === "pending" ? null : (
+                      // Read-only, so it is never disabled and never busy: opening a
+                      // slot's past renders cannot change what the slot currently is.
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setHistorySlot({ angle: view.angle, wardrobe: view.wardrobe, label })}
+                      >
+                        History
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
@@ -284,6 +297,13 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
         caption={enlarged?.label}
         onClose={() => setEnlarged(null)}
       />
+
+      {/* Mounted only while open, so the read happens on the click rather than on
+          every render of the sheet, and last in the tree so its overlay sits above
+          the panel's own viewer. */}
+      {historySlot === null ? null : (
+        <ReferenceViewHistory characterId={characterId} slot={historySlot} onClose={() => setHistorySlot(null)} />
+      )}
     </div>
   );
 }
