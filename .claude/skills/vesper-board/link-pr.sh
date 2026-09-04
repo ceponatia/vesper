@@ -18,9 +18,14 @@ PROJECT=7
 PROJECT_ID=PVT_kwHOARzdw84BhlWR
 MIRROR='Horizon Priority Area Effort Iteration'
 
-items=$(gh project item-list "$PROJECT" --owner "$OWNER" --format json --limit 400)
-item_id() { jq -r --argjson n "$1" --arg t "$2" \
-  '[.items[] | select(.content.number == $n and .content.type == $t) | .id][0] // empty' <<<"$items"; }
+# One-point lookups instead of a board dump: item-list queries share the
+# 5,000-point hourly GraphQL budget and have exhausted it mid-session before.
+item_id() {
+  local kind=issue; [ "$2" = PullRequest ] && kind=pullRequest
+  gh api graphql -F n="$1" -f query="query(\$n:Int!) { repository(owner:\"$OWNER\", name:\"vesper\") {
+      $kind(number:\$n) { projectItems(first:20) { nodes { id project { id } } } } } }" \
+    | jq -r --arg p "$PROJECT_ID" '[.data.repository[] | .projectItems.nodes[] | select(.project.id == $p) | .id][0] // empty'
+}
 
 issue_item=$(item_id "$ISSUE" Issue)
 [ -n "$issue_item" ] || { echo "issue #$ISSUE is not on the board — classify it first" >&2; exit 1; }
