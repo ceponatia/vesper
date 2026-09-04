@@ -249,7 +249,7 @@ describe("LoRA credential completion", () => {
     triggerWords: [],
   };
 
-  /** A version that declares both LoRA bindings, like the registered wrapper row. */
+  /** A version that declares both LoRA bindings, like the registered 2511 row. */
   function loraProfile(): ResolvedImageProfile {
     const base = resolved({ seedBinding: null });
     return {

@@ -34,7 +34,7 @@ Exactly one identity reference is required. The staged recipe also permits an op
 
 ## Model and LoRA behavior
 
-The selected model is honored and must be pinnable. In the Model picker, `Default` resolves to the intimate LoRA-capable wrapper rather than the ordinary Qwen edit default, because the normal default cannot load the seeded staging LoRA.
+The selected model is honored and must be pinnable. In the Model picker, `Default` resolves to the production intimate-scene model (`qwen/qwen-image-edit-2511`), and the staged kind sends that slug explicitly so the bench names the same model production runs rather than whatever the runner would otherwise resolve. The seeded staging LoRA is `INTIMATE_SCENE_LORA_ID`, the same curated row the production intimate route pairs with 2511.
 
 The recipe profile (`imageLabStagedSceneRecipeProfile`) runs the `instruction_edit` prompt strategy, which passes the compiled prompt through untouched — the program already numbers its own references, and a composing strategy would prefix a second numbering over the program's. The recipe profile carries no binding row (it is a request shape, not an authorized endpoint), so the program binds on the profile key a chat scene would compile this model under: the pinned model's own offered scene profile, else the scene task's default.
 

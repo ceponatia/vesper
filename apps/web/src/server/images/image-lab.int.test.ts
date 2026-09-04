@@ -223,7 +223,8 @@ beforeAll(async () => {
         // Pinned, and the only fixture whose probed version declares the two
         // LoRA inputs. `evaluateImageLoraForRender` refuses a model that exposes
         // neither, so the LoRA arms are unrunnable without a registration shaped
-        // like the live `qwen/qwen-image-edit-plus-lora` one.
+        // like the live LoRA-bound one — `qwen/qwen-image-edit-2511`, which the
+        // intimate-scene route pairs its weights with (#457).
         id: LORA_MODEL_ID,
         slug: LORA_SLUG,
         label: "Image Lab LoRA Fixture",
@@ -316,10 +317,12 @@ beforeAll(async () => {
     negativePackVersionId: qwenImageEdit2511NegativePack.id,
     status: "active",
   });
-  // The LoRA fixture sits on no picker, like the live wrapper it is shaped
-  // after, so its program binds on the key the deployment's scene default
-  // carries — read from the seeded registry rather than restated here, so the
-  // suite follows the seed (drizzle 0100) instead of pinning a copy of it.
+  // The LoRA fixture sits on no picker — it is a `vesper-test/*` slug no profile
+  // row offers — so its program binds on the key the deployment's scene default
+  // carries, which is the same fallback `stagedSceneBindingProfileKey` applies to
+  // any model with no offered scene profile of its own. Read from the seeded
+  // registry rather than restated here, so the suite follows the seed (drizzle
+  // 0100) instead of pinning a copy of it.
   const sceneDefault = (await loadImageModelProfilesForTask("scene")).find((offered) => offered.profile.isDefault);
   if (!sceneDefault) {
     throw new Error("the image lab suite binds its LoRA fixture on the seeded scene default profile, and none is offered");

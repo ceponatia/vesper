@@ -48,9 +48,9 @@ function qwenEditPlusLoraColdStart(): ImageModelQuirk {
  * It is the OLDER 2509-generation edit endpoint, and that is the trade this
  * adapter exists to make legible: it accepts user-supplied LoRA weights, as
  * `qwen-image-edit-2511` now does as well, but it is a generation behind that
- * model at holding a face. It stays addressable as a separate legacy and
- * comparison endpoint — notably the production intimate-scene model swap —
- * rather than as the registry's only route to a custom LoRA.
+ * model at holding a face. It stays addressable as a legacy and comparison
+ * endpoint only: no production route runs on it, the intimate-scene render
+ * included, and it is not the registry's route to a custom LoRA.
  *
  * Endpoint facts:
  *

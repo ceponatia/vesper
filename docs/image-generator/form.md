@@ -23,13 +23,14 @@ Everything starts unset: the provider's own defaults rule until the admin explic
   asking one prediction to return a set, no registered version declares one, and the bench's own
   image count is a different request ([runs.md](runs.md) §Several images from one request).
 - **The LoRA picker** offers every enabled library row, and pre-fills one case: selecting
-  `qwen/qwen-image-edit-plus-lora` fills in the curated "Qwen Image Edit 2511 NSFW all inclusive
-  v2.0" row, because that wrapper is a legacy endpoint kept precisely to load those weights. It is a
-  default, not a lock — the select stays free to change or clear, a manual clear survives, and a
+  `qwen/qwen-image-edit-2511` fills in the curated "Qwen Image Edit 2511 NSFW all inclusive
+  v2.0" row once, because the Generator mirrors the production intimate pairing so an operator
+  reproducing the route does not re-pick the row. It is a default, not a lock — the select stays
+  free to change or clear, a manual clear survives, leaving and returning re-arms it, and a
   duplicated run carries whatever its source recorded, including a deliberate none. The pairing is a
   named UI preference rather than a derived one: the row's `compatibleModelSlugs` names both Qwen
-  edit endpoints, so "the only compatible row" would arm the default on the everyday scene model
-  too.
+  edit endpoints, so "the only compatible row" would arm the default on the 2509 legacy comparison
+  endpoint too.
 - **Advanced model inputs** render from the probed `providerInputs` descriptors: non-reserved fields
   of a type the bag can express become typed inputs, while reserved fields — owned by the prompt,
   reference, aspect, control and dedicated plumbing — are listed but not editable. A model

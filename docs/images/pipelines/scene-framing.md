@@ -250,22 +250,23 @@ The resolved `{camera, staging}` ids land on `images.meta` for the lightbox and 
 selfie drops both the staged arrangement and the possession clause, and the selfie sanitize
 retry strips `staging` alongside the exposure fields.
 
-## Staging changes the model
+## Staging adds the LoRA
 
 The stock scene model follows every compositional instruction but cannot draw explicit
-anatomy, so an `intimate` staging on the uncensored reference route swaps the render onto the
-LoRA-capable wrapper `qwen/qwen-image-edit-plus-lora` — resolved from the registry by base
-slug, off every picker — bound to one builtin `image_loras` row at its curated scale
-(`images/scene-lora.ts`, over the shared pairing in `images/nsfw-lora.ts`).
+anatomy, so an `intimate` staging on the uncensored reference route pairs the lane's own
+resolved profile with the registered `qwen/qwen-image-edit-2511` row — resolved from the
+registry by base slug, so the row carrying the probed `lora_weights`/`lora_scale` bindings is
+the one used — and the curated `image_loras` row at its default scale (`images/scene-lora.ts`,
+over the shared pairing in `images/nsfw-lora.ts`).
 
 The trigger mirrors the staged sentence's own gates (intimate staging, not a selfie,
 `allowIntimate`, reference route, an identity anchor), so the sanitize retry — which strips
 `staging` — renders LoRA-free without a second rule, and every other render is untouched.
 
-Four legs degrade to the stock model with `images.scene_render.lora_unavailable` naming which
-one (`wrapper_model` · `wrapper_eligibility` · `library_row` · `credential`); the taken route
+Four legs degrade to the stock render with `images.scene_render.lora_unavailable` naming which
+one (`model` · `model_eligibility` · `library_row` · `credential`); the taken route
 logs `images.scene_render.lora_route`. The stored locator is the LoRA's public URL and never a
 credential: `CIVITAI_API_TOKEN` is read by one app-side accessor and appended as a query
 parameter where the binding maps to provider input, so no token reaches the database, an image
-row, or a log line. The image row records the wrapper slug and the resolved LoRA id in `meta`
+row, or a log line. The image row records the model slug and the resolved LoRA id in `meta`
 beside `{camera, staging}`.

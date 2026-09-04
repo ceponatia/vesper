@@ -178,10 +178,11 @@ export interface CharacterPromptProgramInput {
   readonly lane: CharacterPromptLane;
   readonly task: CharacterPromptTask;
   /**
-   * The lane's FINAL resolved profile — after any model swap. The variant
-   * lane's `nsfw_test` kind pairs the picked profile with a LoRA WRAPPER model,
-   * and resolving a binding from the pre-swap profile would bind a program to a
-   * model the render will not run on.
+   * The lane's FINAL resolved profile — after any model pairing. The variant
+   * lane's `nsfw_test` kind and the chat scene lane's intimate route both pair
+   * the picked profile with the model that loads the anatomy LoRA, and resolving
+   * a binding from the pre-pairing profile would bind a program to a model the
+   * render will not run on.
    */
   readonly profile: ResolvedImageProfile;
   /**
@@ -493,12 +494,12 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // --- 1. The binding, on the lane's own FINAL resolved model ---------------
   // The BASE slug, not the row's own. Three seeded character models are
   // community checkpoints whose registry rows carry a `:version` pin
-  // (LikeReality Pony, NSFW FLUX Dev, SDXL PuLID), and so does the LoRA wrapper
-  // the intimate and bench routes swap onto — so resolving on the raw slug
-  // would answer `unbound` for four endpoints that ARE bound, and each would
-  // fail every render with nothing in the binding table showing why. Pinning a
-  // binding to one provider version is what `versionId` is for, and it is a
-  // separate decision from which endpoint a row is about.
+  // (LikeReality Pony, NSFW FLUX Dev, SDXL PuLID), and so does the LoRA-capable
+  // Qwen edit wrapper an admin can still address by hand — so resolving on the
+  // raw slug would answer `unbound` for four endpoints that ARE bound, and each
+  // would fail every render with nothing in the binding table showing why.
+  // Pinning a binding to one provider version is what `versionId` is for, and it
+  // is a separate decision from which endpoint a row is about.
   const modelSlug = baseImageModelSlug(profile.model.slug);
   const binding = activeImagePromptBinding({
     modelSlug,

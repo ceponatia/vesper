@@ -40,8 +40,8 @@ An adapter's `capabilities` list says which semantic features the family/endpoin
 **claims**. `isBound(model)`, where present, asks whether the active probed row exposes the
 required normalized binding.
 
-That distinction matters when provider versions drift. The LoRA-capable Qwen wrapper
-composes `lora`, but a particular row can still fail `isBound` if its active probe does not
+That distinction matters when provider versions drift. Both Qwen edit adapters
+compose `lora`, but a particular row can still fail `isBound` if its active probe does not
 expose both LoRA weights and LoRA scale.
 
 Some features intentionally have no `isBound` hook because the normalized model record

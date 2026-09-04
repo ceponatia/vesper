@@ -465,13 +465,14 @@ export function PortraitStudio({
             Create variant
           </Button>
         </div>
-        {/* The bench kind swaps the MODEL out from under the picked profile, so
+        {/* The bench kind pairs the picked profile with the intimate model, so
             say so where the picker is: the profile still decides prompt strategy,
-            references and controls, but the render leaves on the anatomy LoRA's
-            wrapper. Clothing is deliberately unmentioned — the instruction owns it. */}
+            references and controls, but the render leaves on Qwen Image Edit 2511
+            carrying the anatomy LoRA. Clothing is deliberately unmentioned — the
+            instruction owns it. */}
         {nsfwTest ? (
           <p className="text-xs text-paper-500">
-            Renders the canonical portrait through the NSFW LoRA on its Qwen edit wrapper, whichever profile is
+            Renders the canonical portrait through the NSFW LoRA on Qwen Image Edit 2511, whichever profile is
             picked, and states this character’s intimate attributes in the prompt. Describe the shot — including what
             they are or aren’t wearing — in the instruction.
           </p>

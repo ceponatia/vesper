@@ -13,7 +13,10 @@ import {
 /**
  * The seeded packs and bindings for `qwen/qwen-image-edit-2511` — version 1 of
  * each channel, and the bindings for its three character edit lanes: variant,
- * scene and chat-look (issue #256).
+ * scene and chat-look (issue #256). The scene lane carries a row for every scene
+ * profile key the catalog offers rather than only its own, because the
+ * intimate-scene route arrives here under the key the picker resolved (issue
+ * #457) — see {@link EDIT_LANES}.
  *
  * CODE-owned exactly like the `packs-qwen-2512` seed in `@vesper/image-core`:
  * a pack that lives in code is its own known active version, its content hash
@@ -206,9 +209,10 @@ export const qwenImageEdit2511NegativePack: ImageNegativePackVersion = {
 // ---------------------------------------------------------------------------
 
 /**
- * The three character edit lanes, each pinning the same negative pack and —
- * the chat-look row aside, see {@link POSITIVE_PACK_BY_BINDING} — the same
- * positive pack; all `active` since the #256 cutover (owner ruling 2026-09-01).
+ * The three character edit lanes and the profile keys each can arrive under,
+ * every row pinning the same negative pack and — the chat-look row aside, see
+ * {@link POSITIVE_PACK_BY_BINDING} — the same positive pack; all `active` since
+ * the #256 cutover (owner ruling 2026-09-01).
  *
  * They were registered as `candidate` while the rollout was staged behind
  * accumulated shadow evidence. That sequence is retired: shadowing is optional
@@ -242,6 +246,30 @@ const EDIT_LANES = [
   // a failed render. Same pack pair deliberately: a scene's look must not change
   // with which rung happened to win.
   ["binding-qwen-2511-scene-t2i-v1", "scene-standard", "scene", "text_to_image_description", "active"],
+  // The other three scene keys the profile catalog offers (drizzle 0107):
+  // Seedream 4.5's ensemble tier, Seedream 5 Lite's quality tier and Wan 2.7's
+  // multi-reference tier. This endpoint has no profile row under any of them,
+  // and it does not need one — the intimate-scene route keeps the PICKED scene
+  // profile and pairs it with this model, so a chat that picked any of those
+  // three arrives here under its own key. Binding resolution runs on the FINAL
+  // model, task and profile key, and `unbound` drops the rung, so a missing row
+  // here would silently delete the scene from a staged intimate render. (This is
+  // what the 2509 LoRA wrapper's rows carried while the route ran on it.) Both
+  // strategies each, for the same reason `scene-standard` has both: the bare
+  // prompt rung states `text_to_image_description`, and a binding pins one
+  // strategy.
+  ["binding-qwen-2511-scene-ensemble-v1", "ensemble-scene-2k", "scene", "instruction_edit", "active"],
+  ["binding-qwen-2511-scene-ensemble-t2i-v1", "ensemble-scene-2k", "scene", "text_to_image_description", "active"],
+  ["binding-qwen-2511-scene-quality-v1", "quality-scene-3k", "scene", "instruction_edit", "active"],
+  ["binding-qwen-2511-scene-quality-t2i-v1", "quality-scene-3k", "scene", "text_to_image_description", "active"],
+  ["binding-qwen-2511-scene-multi-reference-v1", "multi-reference-edit-2k", "scene", "instruction_edit", "active"],
+  [
+    "binding-qwen-2511-scene-multi-reference-t2i-v1",
+    "multi-reference-edit-2k",
+    "scene",
+    "text_to_image_description",
+    "active",
+  ],
   ["binding-qwen-2511-chat-look-v1", "chat-look-standard", "chat_look", "instruction_edit", "active"],
 ] as const;
 

@@ -537,7 +537,7 @@ function ImageLoraForm({
               <Input
                 value={slugDraft}
                 onChange={(e) => setSlugDraft(e.target.value)}
-                placeholder="qwen/qwen-image-edit-plus-lora"
+                placeholder="qwen/qwen-image-edit-2511"
                 spellCheck={false}
                 maxLength={200}
                 className="max-w-80"

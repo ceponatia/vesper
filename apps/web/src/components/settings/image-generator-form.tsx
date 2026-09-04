@@ -475,14 +475,15 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     setLoraScale(selectedLora === null ? "" : String(selectedLora.defaultScale));
   }
 
-  // Picking the LoRA wrapper endpoint pre-fills the curated anatomy row, once.
+  // Picking the intimate-scene model pre-fills the curated anatomy row, once.
   //
-  // The wrapper is a legacy endpoint kept for one reason — it loads those
-  // weights — so a run on it that carries no LoRA is the rare case, and making
-  // the operator re-pick the same row every time is a step that only ever has
-  // one right answer. It is a DEFAULT: the select stays free, and the stamp
-  // below is what makes a manual change or clear stick rather than being
-  // re-filled on the next render.
+  // The pre-fill mirrors the PRODUCTION intimate pairing — this model with this
+  // library row is exactly what the chat lane's intimate route sends — so the
+  // Generator reproduces that render without the operator re-picking the same
+  // row every time, a step that only ever has one right answer here. It is a
+  // DEFAULT, not a lock: the select stays free, and the stamp below is what
+  // makes a manual change or clear stick rather than being re-filled on the
+  // next render.
   //
   // Stamped unconditionally, so a missing row (a database that never seeded it,
   // or an admin who switched it off) sets nothing and simply leaves the select
@@ -499,14 +500,14 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     // Waits for `modelId === prevModelId` — the model-change reset above has
     // SCHEDULED `setLoraId("")` but this render still reads the outgoing row's
     // id, so deciding now would see a non-empty `loraId`, skip the fill, and
-    // stamp the wrapper as answered. The prefill would then depend on whether
+    // stamp this model as answered. The prefill would then depend on whether
     // the previous model happened to carry a LoRA. One render later the reset
     // has landed and the state is the one the decision is about.
     //
-    // Advanced for EVERY model, not only the wrapper: the stamp records which
-    // model this default has already answered for, so leaving the wrapper and
-    // coming back re-arms it, while a manual clear on the model still in the
-    // box does not.
+    // Advanced for EVERY model, not only the intimate-scene one: the stamp
+    // records which model this default has already answered for, so leaving
+    // that model and coming back re-arms it, while a manual clear on the model
+    // still in the box does not.
     setLoraPrefilledForModelId(modelId);
     if (
       loraBound &&
@@ -540,8 +541,9 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
           ? `Scale must be between ${String(selectedLora.minimumScale)} and ${String(selectedLora.maximumScale)} for ${selectedLora.label} — fix or clear it to run.`
           : null;
   const loraReady = loraScaleError === null;
-  // Whether the pick standing in the select is the one this endpoint pre-fills,
-  // so the hint can say so rather than leaving a filled field unexplained.
+  // Whether the pick standing in the select is the production intimate pairing
+  // this model pre-fills, so the hint can say so rather than leaving a filled
+  // field unexplained.
   const loraPrefilled =
     selectedLora !== null &&
     selectedLora.id === INTIMATE_SCENE_LORA_ID &&
@@ -1392,7 +1394,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                       enabledLoras.length === 0
                         ? "None in the library yet. Curate one in the LoRA library on the Image models page — only enabled rows are offered here."
                         : loraPrefilled
-                          ? "Pre-filled because this endpoint exists to load these weights. Change or clear it like any other pick."
+                          ? "Pre-filled because this is the pairing intimate scenes run on in production. Change or clear it like any other pick."
                           : "Optional. Blends a curated weights file into this run — the library row decides which models and strengths it may run at."
                     }
                   >

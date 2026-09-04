@@ -48,12 +48,12 @@ export interface GenerateVariantInput {
   sink?: DiagnosticSink;
 }
 
-/** The bench kind's refusal, or the wrapper + weights it will run on. */
+/** The bench kind's refusal, or the model + weights it will run on. */
 type NsfwTestRoute = { ok: true; profile: ResolvedImageProfile; binding: ImageLoraRenderBinding } | { ok: false; error: string };
 
 /**
- * The `nsfw_test` kind's model swap — the studio's half of the anatomy-LoRA
- * route (`nsfw-lora.ts`, shared with the chat scene lane).
+ * The `nsfw_test` kind's pairing — the studio's half of the anatomy-LoRA route
+ * (`nsfw-lora.ts`, shared with the chat scene lane).
  *
  * It FAILS rather than degrades, which is the one place this kind departs from
  * the scene lane. A chat render that cannot assemble the LoRA still owes the
@@ -148,7 +148,7 @@ function tryBuildVariantCut(input: Omit<VariantCutInput, "sink">, sink?: Diagnos
 /** Everything the program decision needs, in the order the lane learns it. */
 interface VariantProgramInputs {
   readonly character: { readonly name: string; readonly updatedAt: Date } | undefined;
-  /** The FINAL resolved profile — the LoRA wrapper when the bench route swapped it. */
+  /** The FINAL resolved profile — the intimate model when the bench route paired it. */
   readonly resolved: ResolvedImageProfile | null;
   readonly cut: StandaloneSubjectCut | null;
   readonly nsfwRoute: NsfwTestRoute | null;
@@ -168,25 +168,22 @@ interface VariantProgramInputs {
  * fails or draws its own way below.
  *
  * Every variant profile the picker offers is bound (#256) — Qwen Edit 2511,
- * Seedream 4.5, Seedream 5 Lite, Wan 2.7, SDXL PuLID, and the LoRA wrapper the
- * bench kind swaps onto — and each resolves its own model's dialect. They all
- * share the profile key `variant-standard`, which is exactly why resolution is
- * keyed on the MODEL SLUG as well: a binding keyed on the profile alone would
- * hand one endpoint's packs to the other four.
+ * Seedream 4.5, Seedream 5 Lite, Wan 2.7 and SDXL PuLID — and each resolves its
+ * own model's dialect. They all share the profile key `variant-standard`, which
+ * is exactly why resolution is keyed on the MODEL SLUG as well: a binding keyed
+ * on the profile alone would hand one endpoint's packs to the other four.
  *
  * ## The bench kind
  *
- * `nsfw_test` pairs the picked profile with a LoRA WRAPPER model, and binding
- * resolution runs on the FINAL resolved profile — so a successful bench route
- * resolves `qwen/qwen-image-edit-plus-lora`, which has a binding of its own
- * (`packs-character-endpoints.ts`) and compiles through the wrapper's own
- * delta-edit dialect rather than borrowing 2511's row.
+ * `nsfw_test` pairs the picked profile with the intimate model (#457), and
+ * binding resolution runs on the FINAL resolved profile — so a successful bench
+ * route resolves `qwen/qwen-image-edit-2511` under the picked key, and 2511
+ * carries a `variant-standard` row of its own.
  *
  * A FAILED bench route is the case worth guarding explicitly. `resolved` then
- * falls back to the picked 2511 profile, which the ordinary variant binding
- * does match — but that profile is not the model this render would have run on,
- * the row is already doomed to refuse in `produce`, and compiling would store a
- * program describing a render nobody made. So it is skipped.
+ * falls back to the picked profile, which the ordinary variant binding does
+ * match — but the row is already doomed to refuse in `produce`, and compiling
+ * would store a program describing a render nobody made. So it is skipped.
  */
 function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProgramResult | null {
   const { character, resolved, cut, packSelection, input } = inputs;
@@ -290,11 +287,11 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   const picked = demo ? null : await resolveImageProfileForTask("variant", input.modelId, input.sink);
   const nsfwTest = input.kind === NSFW_TEST_VARIANT_KIND;
   // Resolved BEFORE the row is reserved, like every other model decision in this
-  // lane: the row records the model it will run on, so a swap decided later would
-  // be a row that lies about its own render.
+  // lane: the row records the model it will run on, so a pairing decided later
+  // would be a row that lies about its own render.
   const nsfwRoute = nsfwTest && picked ? await resolveNsfwTestRoute(picked, input.sink) : null;
-  // The picked profile ON the LoRA wrapper for the bench kind; the picked profile
-  // itself for every other variant, unchanged.
+  // The picked profile ON the intimate model for the bench kind; the picked
+  // profile itself for every other variant, unchanged.
   const resolved = nsfwRoute?.ok ? nsfwRoute.profile : picked;
   const model = resolved?.model ?? null;
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
