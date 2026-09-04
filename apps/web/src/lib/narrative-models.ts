@@ -1,6 +1,7 @@
 /**
- * Curated narrator model options: one pure list shared by the client dropdown
- * (components/play/world-tab.tsx) and the server's
+ * Curated narrator model options: one pure list shared by the client's chat
+ * model dropdown (components/chat/chat-conversation.tsx,
+ * components/characters/character-chat.tsx) and the server's
  * narrativeModelId resolver default (server/ai/provider.ts). The planned BYOK
  * feature replaces this static list with a live-queried catalog; until then,
  * adding a narrator is one entry here.
@@ -173,6 +174,22 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   {
     id: "Naphula/Slimaki-Tavern-24B-v1.3",
     label: "Slimaki Tavern 24B (32K)",
+    provider: "featherless",
+  },
+  // Added 2026-09-04 from Featherless's public `/v1/models` record, not a
+  // production-seam probe — the probe and the exact-model adapter it feeds are
+  // later stages of the same initiative. Host facts: class `mistral-24b`,
+  // 32,768 context, concurrency cost 2, tier `warm`, $0.70 / $1.16 per M
+  // tokens in/out, Mistral Tekken chat template, not a thinking model,
+  // Apache-2.0. The model card describes it as fully uncensored.
+  //
+  // No policy entry and no sampler: this row is asked exactly the way every
+  // OpenRouter narrator is asked (temperature 0.85, nothing else) until an
+  // exact-model adapter exists for it. Do not add a policy entry here — that
+  // adapter is a separate, later stage keyed to this exact id.
+  {
+    id: "DarkArtsForge/Asmodeus-24B-v3",
+    label: "Asmodeus 24B v3 (32K)",
     provider: "featherless",
   },
 ];
