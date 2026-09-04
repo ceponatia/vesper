@@ -71,14 +71,16 @@ export const VESPER_WORKSPACE_POLICY: WorkspacePolicy = {
   applicationWorkspaces: ["@vesper/web"],
   layers: {
     "@vesper/contracts": 10,
-    // 20 twice, deliberately: the image engine and the simulation domain are
-    // PEERS. Equal rank means neither may import the other (the rule is
-    // strictly higher-to-lower), which is the architectural statement — a
-    // render must not reach into world state, and the simulation must not learn
-    // what a provider can draw. If the two ever need to meet, the application
-    // joins them; it is the only workspace above both.
+    // 20 three times, deliberately: the image engine, the simulation domain
+    // and the text-model adapters are PEERS. Equal rank means none may import
+    // another (the rule is strictly higher-to-lower), which is the
+    // architectural statement — a render must not reach into world state, the
+    // simulation must not learn what a provider can draw, and a description of
+    // how a text model is asked must not learn either. If any two ever need to
+    // meet, the application joins them; it is the only workspace above them.
     "@vesper/image-core": 20,
     "@vesper/simulation-core": 20,
+    "@vesper/text-models": 20,
     // 30 three times, deliberately: the SD recipe/training layer, the Replicate
     // transport and the model-family adapters are PEERS above image-core. Equal
     // rank means none may import another — the adapters define how a family
@@ -94,6 +96,7 @@ export const VESPER_WORKSPACE_POLICY: WorkspacePolicy = {
     "@vesper/contracts": "universal",
     "@vesper/image-core": "universal",
     "@vesper/simulation-core": "universal",
+    "@vesper/text-models": "universal",
     "@vesper/image-sd": "universal",
     "@vesper/image-models": "universal",
     "@vesper/image-replicate": "server",

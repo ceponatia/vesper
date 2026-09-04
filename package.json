@@ -89,6 +89,7 @@
     "@vesper/image-models": "workspace:*",
     "@vesper/image-sd": "workspace:*",
     "@vesper/simulation-core": "workspace:*",
+    "@vesper/text-models": "workspace:*",
     "@types/pg": "^8.20.0",
     "dotenv": "^17.0.0",
     "drizzle-kit": "^0.31.10",
