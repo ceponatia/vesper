@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Database Changes"
+  short_description: "Review Vesper schema, data, and Neon operations"
+  default_prompt: "Use $vesper-db-change to prepare and review this Vesper database change through verified migration and target evidence."
+
+policy:
+  allow_implicit_invocation: true

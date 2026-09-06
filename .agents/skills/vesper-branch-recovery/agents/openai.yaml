@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Branch Recovery"
+  short_description: "Classify and recover stale Vesper branch work"
+  default_prompt: "Use $vesper-branch-recovery to classify this stale Vesper branch, preserve recoverable work, and prepare a safe cleanup decision."
+
+policy:
+  allow_implicit_invocation: true

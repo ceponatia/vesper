@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Model Onboarding"
+  short_description: "Onboard Vesper text and image models with evidence"
+  default_prompt: "Use $vesper-model-onboard to onboard this model with provider evidence, correct adapter placement, focused coverage, and live verification."
+
+policy:
+  allow_implicit_invocation: true
