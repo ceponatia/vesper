@@ -13,11 +13,17 @@ Closes #<B>.
      A slice that does not finish its issue says `Part of #N` instead, and names
      what is still owed under "Not in this PR". -->
 
-## Owner decisions to confirm
+## Material decisions
 
-- <Decision the build made that the owner may reverse, with the alternative
-  and where it lives in the diff.>
-- <…>
+- <Settled owner ruling or material implementation decision a reviewer needs
+  to assess, with its reason and location. Do not ask the owner to reconfirm
+  settled rulings or routine implementation choices.>
+
+## Owner action still required
+
+- <Only an unresolved material decision, missing authorization, credentialed
+  action, or other owner-only step. State `None` when the existing request
+  authorizes every remaining action the agent can perform.>
 
 ## Not in this PR
 
@@ -26,8 +32,11 @@ Closes #<B>.
 
 ## Verification
 
-Nothing run locally (owner ruling 2026-08-22: CodeBuild validates). CI runs
-when this draft is flipped ready. Live verification on Fly is owner spend.
+No local application gates run. <Name the current-head CI jobs and exact suites
+that actually ran; an unselected suite remains unverified even if aggregate
+`verify` is green.> <Name live Fly evidence, or the specific authorization,
+credential, cost, or owner-only action that prevented it. Complete authorized
+verification instead of handing it back generically.>
 
 <!-- If something WAS verified live: say what, on which image version, and where
      the evidence sits (eval-images/…, never docs/, never git). -->

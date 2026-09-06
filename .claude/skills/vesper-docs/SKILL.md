@@ -1,254 +1,54 @@
 ---
 name: vesper-docs
-description: Where information lives in Vesper — GitHub Issues and the project board own all work state (plan documents are retired), repo docs state durable technical law, ADRs record contested decisions. Use when writing or editing any Markdown under docs/, when about to record a plan, status, or progress anywhere, when filing or structuring issues and sub-issues, or when deciding whether something belongs in an issue, a reference page, or an ADR.
+description: Author Vesper issues, sub-issues, durable documentation, and ADRs. Use when creating persistent work records, editing docs/, or deciding where information belongs; ordinary chat progress updates do not need this skill.
 ---
 
-# Where information lives
+# Vesper information ownership
 
-**GitHub owns work state; the repository owns technical truth; git owns
-history.**
+GitHub owns work state; the repository owns technical truth; git owns history.
+A future agent should be able to act from the issue, at most one parent, a
+focused system reference, and the code. Keep each fact in one canonical home.
 
-```text
-GitHub Project   what matters now — Status, Horizon, Priority, Area, Effort
-GitHub Issues    what we intend, what blocks it, decisions needed, experiments, acceptance
-Repo docs        what the system currently guarantees
-Git history      how we got here
-```
+## Choose the artifact
 
-The test for every artifact: **an agent picking up an issue must be able to act
-from that issue, at most one parent issue, one 100–200-line reference page, and
-the code.** If a task requires reading six historical documents first, the
-information is in the wrong place — move it, don't add a seventh.
+| Information | Home |
+| --- | --- |
+| Outcome, scope, acceptance | Issue; a parent issue for a larger effort |
+| Implementation stages | Native sub-issues |
+| Dependencies | Native blocked-by relations |
+| Current status, priority, iteration, assignment | Project board, via `vesper-board` |
+| Material unresolved owner choice | `decision-needed` issue |
+| Research or design reasoning | Issue comments or a `research` issue |
+| Resulting technical law | System reference under `docs/` |
+| Contested durable architecture decision | ADR under `docs/decisions/` |
+| Historical implementation detail | Git and closed issues/PRs |
 
-The board is **Vesper Development** — project `7`, owner `ceponatia`, id
-`PVT_kwHOARzdw84BhlWR`. The board's own README on GitHub holds the field and
-label conventions; the commands below are the verified essentials.
+Plan documents are retired. Do not create roadmap/status documents in the
+repository. Evaluation outputs, including screenshots, belong in gitignored
+`eval-images/`, as the root instructions require.
 
-## The routing table
+## Load only the needed procedure
 
-One home per kind of information. Never write the same fact into two homes —
-status in an issue body, a slice list in a doc, or a dependency in prose
-re-creates exactly the drift this system deleted.
+- **Issue or sub-issue content:** read [issue authoring](references/issues.md).
+  Use `vesper-board` for actual creation, classification, dependency operations,
+  branch/PR links, status transitions, and assignment. Do not copy its board
+  field names, IDs, or workflow assumptions into this skill.
+- **A document under `docs/`:** read `docs/README.md`, then the owning system
+  page and [durable document rules](references/durable-docs.md). That reference
+  owns the no-dynamic-state rule, its three date exceptions, style guards, and
+  validation checklist. Use [the reference template](templates/reference-doc.md).
+- **An ADR:** also read `docs/decisions/README.md` and use
+  [the ADR template](templates/adr.md). An unresolved choice starts in an issue;
+  an ADR records the settled decision when its rationale merits preservation.
 
-| Information               | Home                                      |
-| ------------------------- | ----------------------------------------- |
-| Outcome, product intent   | parent issue                              |
-| Current status            | project field, set at triage              |
-| Implementation sequence   | sub-issues, in order                      |
-| Individual work items     | issues and sub-issues                     |
-| Dependencies              | native blocked-by relations               |
-| Design reasoning          | issue comments; a `research` issue        |
-| Owner rulings             | issue comment; ADR only if it becomes law |
-| Open questions that block | a `decision-needed` issue                 |
-| Acceptance criteria       | the issue that closes on them             |
-| Technical laws            | a reference page under `docs/`            |
-| History, research residue | closed issues, merged PRs, git            |
+## Finish within scope
 
-## Work state: issues, sub-issues, the board
+For a system behavior change, update its owning reference in the same change.
+When two pages define the same fact, retain one owner and link to it; do not
+maintain synchronized copies. Index added pages at their own tier according to
+`docs/README.md`.
 
-**Plan documents are retired.** Never create a `*.plan.md`, a roadmap file, or
-any document whose job is to say what happens next. A plan-sized effort is a
-**parent issue**; anything smaller is an issue or a sub-issue.
-
-A parent issue is the agent's map — 30–50 lines, this shape (the "Feature or
-plan" issue form produces it):
-
-```markdown
-**Outcome:** A player can <do something concrete> so that <observable consequence>.
-
-## Current state        — built vs accepted, honestly distinguished
-## Scope                — what this covers; delivery order as sub-issues
-## Acceptance           — the trial, review, or enable that makes it Done
-## Constraints & rulings — dated: `Owner ruling (2026-08-26): …`
-## References           — the reference pages this work implements
-```
-
-- **Sub-issues are the implementation stages, created together with their
-  parent whenever possible** (owner ruling 2026-08-28). Defer a stage only when
-  there is not yet enough information to start even a draft sub-issue — and
-  create it the moment there is. Finishing a stage closes its sub-issue;
-  nothing else needs updating, because nothing else records it.
-- **A discovered prerequisite is a new sub-issue plus a blocked-by relation** on
-  the work it gates — never a prose note. Dependencies are structural: there is
-  deliberately no "Blocked" status; blocked work is visible through its
-  relations.
-- **A blocking open question is a `decision-needed` issue**: the plausible
-  choices, their consequences, links to the code. Close it when the owner
-  rules; record the ruling as a dated comment. If the ruling changes durable
-  law, update those lines in the reference page in the same change.
-- **Research lives in a `research` issue and usually dies with it.** Once
-  decided: rationale worth keeping → ADR (rarely), resulting behavior →
-  reference page, resulting work → issues, everything else → closed-issue
-  history. Measured trials and benchmarks are the exception — reproducibility
-  can justify a durable, **text-only** record under `docs/`. The renders and
-  screenshots behind a verdict never enter git; root `CLAUDE.md` owns where
-  they go.
-- **Fields are set on the board at triage** (Status, Horizon, Priority, Area,
-  Effort) — never restated in bodies or docs. New issues auto-add to the board
-  as Inbox within a few minutes; Inbox means untriaged, not forgotten.
-- **Built is not accepted.** Awaiting Acceptance is a Status, and the issue
-  names what it waits on. Closing an issue asserts delivered *and* accepted.
-- Filing something you noticed in passing: add the `agent-found` label.
-- **GitHub Discussions are not used** (owner ruling 2026-08-26): part of the
-  agent fleet cannot read them, so a decision parked there is a silo. Decisions
-  and research conversations are issues.
-
-### Commands (verified against this repo, gh ≥ 2.89)
-
-```bash
-# File work. Labels: bug, technical-debt, performance, security, documentation,
-# research, evaluation, decision-needed, agent-found.
-gh issue create --repo ceponatia/vesper --title "..." --body-file body.md --label research
-
-# Auto-add reaches the board within minutes; to set fields immediately, add it
-# yourself. Field and option ids come from field-list.
-gh project item-add 7 --owner ceponatia --url <issue-url> --format json --jq .id
-gh project field-list 7 --owner ceponatia --format json
-gh project item-edit --project-id PVT_kwHOARzdw84BhlWR --id <item-id> \
-  --field-id <field-id> --single-select-option-id <option-id>
-
-# Make B a sub-issue of A — REST wants database ids, not issue numbers.
-CHILD=$(gh api repos/ceponatia/vesper/issues/<B> --jq .id)
-gh api -X POST repos/ceponatia/vesper/issues/<A>/sub_issues -F sub_issue_id=$CHILD
-
-# Mark N blocked by M.
-BLOCKER=$(gh api repos/ceponatia/vesper/issues/<M> --jq .id)
-gh api -X POST repos/ceponatia/vesper/issues/<N>/dependencies/blocked_by -F issue_id=$BLOCKER
-```
-
-Close an issue by landing its PR with `Closes #N` in the body — the board's
-automation moves it to Done and archives it after two quiet weeks.
-
-## Durable docs: reference pages
-
-A reference page states **what the system currently guarantees** — boring,
-present-tense law an agent can check code against. It tells no story of how the
-feature was built, lists no alternatives, and records no progress. Template:
-`templates/reference-doc.md`.
-
-`docs/README.md` is the index and owns the tree itself: the reading-order table
-of top-level areas, the one-doc-per-system rule, and the ~400-line
-file-to-folder promotion rule. Read it before adding a page, and index the new
-page in the same change — in the index for its tier. A **new top-level system**
-gets its row in `docs/README.md`'s reading-order table, which indexes areas and
-nothing finer. A **new part file inside a promoted folder** gets its row in that
-folder's own `README.md` index instead; the root table keeps pointing at the
-folder's `README.md`, so a nested page never earns a root row.
-
-- **Shape:** one paragraph of orientation; an "Owns / does not own" section
-  naming the boundary and the owning page for what it excludes; then laws as
-  short declarative bullets grouped by aspect. Target 100–200 lines, well
-  inside the promotion threshold.
-- **One canonical owner per fact.** If two pages define the same thing, stop
-  and designate the owner — delete the other side and link to the owner. Never
-  resolve a conflict by making both sides agree.
-- **Docs do not link into work state.** No issue or PR references as content —
-  git blame is the provenance. Issues point at docs, not the reverse.
-
-### The no-dynamic-state rule
-
-A durable doc may **never** contain: `Status:` lines · "next" / "remaining
-work" / "not started" · slice or stage numbers · rollout checklists · roadmap
-priority · current blockers · "awaiting owner" · PR or issue state. All of that
-is board state.
-
-The distinction that matters — an architectural **requirement** belongs in the
-page; **project state** does not:
-
-- Belongs: "A transfer requires an addressable body-surface owner on both
-  participants."
-- Does not: "Blocked because player body-surface ownership isn't implemented
-  yet."
-
-#### Dates: the three exceptions
-
-A durable page is written in the present tense and carries no dates — a date on
-a statement of current law is either history or a freshness claim the reader
-cannot check. **Exactly three kinds of line may carry one**, and this list is
-canonical: `docs/README.md` and `docs/decisions/README.md` point at it rather
-than restate it, and no page under `docs/` may add a fourth.
-
-1. **ADRs** under `docs/decisions/` — dated by design, because an ADR records
-   what was believed when the call was made. `docs/decisions/README.md` owns
-   why they exist and how they are written.
-2. **Evidence records** — a dated *measurement*, where the date is what makes
-   the measurement reproducible rather than a status marker, and it pairs with
-   the thing measured. Two shapes: the model catalog's dated `**Provenance:**`
-   line, which ties a probe date to the pinned provider version it read
-   (`docs/image-models/models/README.md` owns that line's exact form), and the
-   text-only record a measured trial or benchmark earns under the research rule
-   above, dated with the build, model version, or dataset it ran against. A
-   date pinned to nothing is not an evidence record.
-3. **Owner rulings** stated in a reference page, dated at the attribution —
-   an `Owner ruling <YYYY-MM-DD>:` line, or an inline `(owner ruling
-   <YYYY-MM-DD>)`. The date attributes the decision; the law it produced is
-   still written in the present tense around it.
-
-Every other date is banned: when work happened, when it will happen, when a
-page was last reviewed, or how current its contents are.
-
-### Style guards
-
-- **No conversation in the record:** no "as discussed" / "you said" / "let me
-  know", no agent narration, no standing `TBD` — an undecided thing is a
-  `decision-needed` issue, not a placeholder. Owner rulings appear as dated
-  ruling lines, not remembered dialogue.
-- **Tables are read raw:** 2–4 columns, short cells, every row one physical
-  line, pipes padded so the source aligns, literal pipes escaped `\|`. If
-  several cells need prose, it is a list, not a table.
-
-## ADRs — sparingly
-
-`docs/decisions/NNN-<slug>.md`, template `templates/adr.md`: Decision, Context,
-Alternatives considered, Why this choice, Consequences — 30–100 lines.
-
-An ADR exists to **prevent re-litigation**, not to record history. "Touch,
-smell and taste are sibling owners; do not collapse them into one sensory
-system" earns one, because someone will propose collapsing them again. "Use 30
-days instead of 60" does not — that number belongs in the relevant reference
-page. Most owner rulings never become ADRs.
-
-## Validation
-
-Before finishing any change this skill governed:
-
-- **Run the documentation gate — `pnpm lint:docs`** (`scripts/check-docs.mjs`,
-  Node built-ins only, no install needed). It is the one owner of the three
-  mechanical checks; CI runs the same script in its `documentation checks` job
-  on every change that touches a documentation path, and `verify` fails when it
-  fails. It prints one line per finding naming the file and the target, and
-  proves:
-
-  - **Every relative link in `docs/` resolves.** A `BROKEN LINK` hit names a
-    target that no longer exists at that path — repoint it, or delete it.
-  - **Every `<file>.md §<Heading>` citation names a file that exists and a
-    heading that file actually has.** A `NO DOCUMENT` hit cites a file no
-    reader can open. The link check proves only that a linked file exists,
-    which is exactly how a citation survives the section it names moving to a
-    sibling page. A cited
-    heading has no closing delimiter in prose, so the check takes the text after
-    `§` up to the first `)`, `.`, `,`, `;`, `:` or backtick and accepts a heading
-    that is a prefix of it, or it of a heading. A `NO SECTION` hit is real:
-    repoint the citation at the page that owns the section, or drop the `§` and
-    name the file alone.
-  - **No reference to a retired working document survives, in any form**, in
-    `apps`, `packages`, `scripts` or `docs` — the rule, its rationale, and the
-    `§N` clause it carries are stated once, in `docs/README.md`'s documentation
-    rules. A `RETIRED DOCUMENT` hit names a `<name>.{plan,spec,trial,audit,
-    deferred,research,followups}.md` that does not exist under `docs/`: state
-    the rule it carried instead of naming it. A `RETIRED SECTION` hit is a bare
-    `§N` whose line names no still-existing document under `docs/` with a
-    numbered section N (a doc citing its own numbered section is allowed): put
-    the document's path on the same line, as in `docs/resilience.md §2`, or
-    write the section out in words.
-
-- **No dynamic state in any durable doc you touched** — check against the
-  banned list above, and search touched files for `Status:`, `slice`,
-  `remaining`, `awaiting`, `blocked on`.
-- **Issues you filed are complete:** on the board with fields set, sub-issues
-  linked to their parent, dependencies wired as relations, labels applied.
-- Tables you touched are aligned or converted to lists; no residue phrases in
-  anything you wrote.
-
-Documentation-only changes run no code gates (root `CLAUDE.md`): CI runs
-`pnpm lint:docs` and nothing else, so the rest of this list is the review.
+For repository document edits, run `pnpm lint:docs` and inspect the changed
+Markdown. Issue-only work requires verification of the saved issue and native
+relations instead. Neither route authorizes unrelated issue filing, publishing,
+production actions, or extra owner confirmations; follow the current request.

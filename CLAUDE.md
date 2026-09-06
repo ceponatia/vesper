@@ -2,13 +2,14 @@
 
 - `AGENTS.md` is a symlink of `CLAUDE.md`; update `CLAUDE.md` only. Note this only works on Linux, not Windows. AGENTS.md will be blank on Windows.
 - This app is under active development. Do not preserve legacy behavior by default; prefer deleting obsolete code over deprecation wrappers.
+- Shared skills are authored once under `.claude/skills/`; the tracked `.agents/skills/*` symlinks expose those same sources to Codex. Edit the canonical files, preserve the links, and load only the active host's runtime reference where a workflow needs host-specific tools.
 
 ## Documentation & work state
 
 - **GitHub owns work state; the repository owns technical truth.** Plans, status, sequencing, dependencies, and open questions live on the [Vesper Development board](https://github.com/users/ceponatia/projects/7) and its issues — never in repo documents. Plan documents are retired: never create one. The skill below owns the mechanics that follow from this.
 - Documented system-by-system in `docs/`. **Read `docs/README.md` first** — it indexes the tree and owns the documentation rules — then the relevant system doc, and update it in the same change when behavior or patterns shift. Durable docs state present-tense law and carry no status, no remaining work, and no blockers.
-- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before filing or restructuring issues, and whenever deciding where information belongs** (`.claude/skills/vesper-docs/`). It is the owner of the routing table, the issue and sub-issue conventions with verified commands, the durable-doc authoring law, the templates, and the validation checklist. This section states the principle only; the skill and `docs/README.md` state the rules, and neither is restated here.
-- **Invoke the `vesper-board` skill for board mechanics** (`.claude/skills/vesper-board/`): status moves, the owner-assignment convention (assigned to `ceponatia` ⇔ the next action is the owner's), labels, iterations, milestones, and PR↔issue linkage. `vesper-docs` owns filing and where information lives; `vesper-board` owns the lifecycle after filing.
+- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before drafting or restructuring issue content, and whenever deciding where information belongs** (`.claude/skills/vesper-docs/`). It owns the routing table, issue and sub-issue content conventions, durable-doc authoring law, templates, and validation checklist. This section states the principle only; the skill and `docs/README.md` state the rules, and neither is restated here.
+- **Invoke the `vesper-board` skill to create issues and for all board mechanics** (`.claude/skills/vesper-board/`): saved issue and relation operations, status moves, the owner-assignment convention (assigned to `ceponatia` ⇔ the next action is the owner's), labels, iterations, milestones, branches, and PR↔issue linkage. `vesper-docs` owns content and placement; `vesper-board` owns creation and lifecycle.
 
 ## Architecture
 
@@ -38,17 +39,18 @@
 
 ## Testing
 
-- Tests: `pnpm test` (pure), `pnpm test:int` / `pnpm test:engine` (need Postgres). CI runs the pure suite on every ready PR, and `test:engine` plus the Gate 1 benchmark in its engine job. Run `test:int` manually when its covered surface changes. Degradation tests assert fallback **and** diagnostic code.
+- Application test commands do not run locally. CI runs `pnpm test` on every ready code PR and the applicable curated `pnpm test:engine` and benchmark gates; no current CI job runs the full `pnpm test:int` / `app-int` surface. Use `docs/testing.md` to identify which command and job actually select an affected suite. Report an unselected suite as unverified even when aggregate `verify` is green. Degradation tests assert fallback **and** diagnostic code.
 - **Invoke the `vesper-testing` skill before creating, expanding, or substantially rewriting tests** (`.claude/skills/vesper-testing/`). Protect meaningful invariants, regressions, and failure modes at their one owning layer; extend existing coverage instead of duplicating it, and do not add tests merely because code changed. Test count is not a quality metric here, and "no new test" is a valid outcome.
 - **UI testing runs against the Fly deploy** (`https://vesper.fly.dev`), never a local Postgres + `pnpm dev`. Local dev stays valid for non-UI work and DB scripts.
-  - **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin` — use it for manual/Playwright UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth/sign-in.md`); sign in at `/sign-in` with the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is local-only, disabled in production.
+  - **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin` — use it with the active host's supported browser for UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth/sign-in.md`); sign in at `/sign-in` with the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is local-only, disabled in production.
   - Prefer an **existing** conversation. Create a new chat only when the test needs state you cannot edit into an existing one, and delete it when done.
   - Screenshots and all other evaluation/dev-task output — graded render evidence included — go in the gitignored root `eval-images/`, never under `docs/`. That is the single destination; nothing evaluative enters git.
 
 ## Validation & CI
 
 - **CI is the gate:** GitHub Actions on AWS CodeBuild managed runners (`.github/workflows/ci.yml`, `runs-on: codebuild-vesper-ci-…`; owner decision 2026-08-21). There are **no local git hooks** — commits and pushes run nothing. The aggregate `verify` status check is **required on `main` and `prod`**; a PR merges only when it is green.
-- Milestone-gated per the workflow header: draft PRs run nothing, ready PRs run the applicable gates, and `gh workflow run CI --ref main` is the deliberate full run. CodeBuild bills per job-minute, so keep PRs draft while iterating.
+- **No local application gates:** do not run tests (including Vitest in any form), lint, typecheck, or builds on this machine. Diagnose from code and CI logs. `pnpm lint:docs` is the documentation exception. Dependency-free offline fixtures for skill/helper behavior may run locally without application imports, services, or external mutations; they do not replace application CI. In-scope migration generation remains a non-gate operation, subject to the Drizzle prompt rule above.
+- Milestone-gated per the workflow header: draft PRs run nothing, ready PRs run the applicable gates, and `gh workflow run CI --ref main` deliberately runs every configured gate. Its integration job still selects the curated `test:engine` list rather than the full `app-int` project. CodeBuild bills per job-minute, so keep PRs draft while iterating.
 - For documentation-only changes, run `pnpm lint:docs` (the check CI's `documentation checks` job runs) and review Markdown rendering and consistency instead of running code gates.
 - Two workflows exist: `ci.yml` (the CI suite) and `promote.yml` (manually opens the `main` → `prod` PR). Do not add another without an explicit owner decision.
 

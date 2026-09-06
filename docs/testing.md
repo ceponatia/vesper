@@ -1,289 +1,117 @@
 # Testing
 
-Vitest 4, split by ownership. The root config (`vitest.config.ts`) declares the two **application** projects and nothing else; every workspace package owns its own `vitest.config.ts` and its own `test` script.
+Vesper uses Vitest 4 with one root-owned application configuration and package-owned workspace configurations. CI is the application validation surface; local application gates are disabled by project policy.
 
-| Project   | Covers                                                      | Setup                        |
+## Ownership
+
+This page owns test-project wiring, layer boundaries, shared utility locations, integration contracts, and what each CI job selects. The `vesper-testing` skill owns whether a test should be added and which layer should carry a claim. Live UI and API verification belongs to the `verify` skill.
+
+## Execution policy
+
+Do not run application tests or gates on the development machine. The prohibition includes `pnpm test`, every `pnpm test:*` script, direct or package-filtered Vitest, watch mode, application lint, typecheck, build, Docker-backed integration setup, and local substitutes for CI jobs.
+
+Code changes are validated by the applicable jobs in `.github/workflows/ci.yml`. A documentation-only change may run `pnpm lint:docs` locally because `scripts/check-docs.mjs` uses Node built-ins and starts no application service. A skill-owned shell or Python helper may use dependency-free offline fixture tests when those fixtures start neither Vesper nor a database nor an external service.
+
+Command definitions in `package.json` describe CI composition and suite ownership. Their presence does not authorize local execution.
+
+## Test projects
+
+The root `vitest.config.ts` declares two application projects:
+
+| Project   | Selection                                                   | Setup                        |
 | --------- | ----------------------------------------------------------- | ---------------------------- |
-| `app`     | `apps/web/src/**` + `scripts/**`, minus `*.int.test.ts`     | `apps/web/src/test/setup.ts` |
-| `app-int` | `apps/web/src/**` + `scripts/**` `*.int.test.ts` (needs DB) | `apps/web/src/test/setup.ts` |
+| `app`     | `apps/web/src/**` and `scripts/**`, excluding integration   | `apps/web/src/test/setup.ts` |
+| `app-int` | `apps/web/src/**` and `scripts/**` `*.int.test.ts` files    | `apps/web/src/test/setup.ts` |
 
-`pnpm test` runs the `app` project and then `pnpm -r --workspace-concurrency=1 run test`, which walks the workspace and runs each package's suite from that package's own directory, one at a time. A package joins the run by owning a `test` script — no root script names it, and none has to be edited to add one.
+The root `pnpm test` script, used by CI's `unit tests` job, runs the `app` project and then invokes each workspace package's own `test` script serially. Every package owns its `vitest.config.ts`; adding a package does not add a root Vitest project or a root script entry.
 
-`apps/web/src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Package configs declare **no** setup file and **no** `@/` alias — a package test must prove something about the package, not about Vesper's configuration, and its workspace dependencies resolve through the installed workspace link rather than an alias pointing at source.
+`apps/web` has no `test` script. Its tests already belong to the root `app` and `app-int` projects, and a recursive app script would collect them twice or run them from the wrong directory. The root directory matters because repository tripwires locate source through `process.cwd()`, and `scripts/**` tests share the application alias and setup.
 
-The application suite is the one exception to package-owned configs, and two repository-level properties force it. **The runner's working directory must be the repository root**: several tripwire tests locate source with `process.cwd()` plus a repo-relative path such as `apps/web/src/app/api`, so a config rooted at `apps/web` would resolve them one directory too deep. And the suite spans two workspaces — `scripts/**` tests run in the `app` project on purpose, because they scan application source and import `@/server/test-support`, so they need the application alias and the same demo-mode setup as the code they inspect. `apps/web` therefore defines a `typecheck` script but **no** `test` script; a workspace without one is skipped by the recursive run, which is what keeps the application suite from being collected twice.
+Application setup forces `AI_FAKE=1` and removes live provider credentials. Package configurations have no application setup and no `@/` alias; package tests resolve workspace dependencies through installed workspace links.
 
-Among those tripwires, `scripts/workspace-registration.test.ts` guards the two workspace registration points nothing can discover on its own: the Dockerfile's manifest COPY lines and `next.config.ts`'s `transpilePackages`. Both fail late — in a Fly build or a production build — and neither names its cause.
+The root integration scripts have different selections:
 
-`pnpm test` runs everything that needs no network; DB-backed suites need the dev Postgres up.
+| Script                 | Selection                                                                 |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `pnpm test:int`        | Entire `app-int` project; database probes may self-skip outside strict CI |
+| `pnpm test:int:strict` | Entire `app-int` project with unreachable or unmigrated DB as failure     |
+| `pnpm test:engine`     | Explicit curated integration paths listed in `package.json`               |
+| `pnpm test:engine-e*`  | Focused engine proof paths used for targeted gate work                    |
 
-## Layers
+No current CI job selects `pnpm test:int` or `pnpm test:int:strict`. The workflow's database job selects `pnpm test:engine`; the CI section below states the resulting coverage boundary.
 
-Each layer names its file glob, what it covers, and the IO it needs.
+## Test layers
 
-- **contracts** (`apps/web/src/contracts/**/*.test.ts`) — registry invariants (unique ids, valid
-  enums, alias fan-out — one alias may resolve to several attributes), parse/resolve
-  round-trips, attribute precedence, condition logic, wardrobe visibility, chat
-  scene-memory merge/switch (caps, dedupe oldest-out, current-place protection, degraded
-  parse). No IO.
-- **lib** (`apps/web/src/lib/**/*.test.ts`) — parseOr/parseOrNull, game-clock math, client API error
-  envelope, chat SSE-stream parsing, **speaker segmenter edge cases** (`segmenter.ts` —
-  dialogue tags + the chat lane's standalone-quote attribution), and the story-clock and
-  world-beat presentation the successor lane renders through. No IO.
-- **simulation-core** (`packages/simulation-core/src/**/*.test.ts`, the package's own project) —
-  the successor's pure contracts and kernels (space, activities, commitments, engagements,
-  perception, knowledge, bodies, LOD, …), plus the `node:crypto` equivalence pins on the two
-  persisted sha256 identities. Runs with **no `@/` alias and no demo-mode setup**, so a test
-  here proves something about the simulation rather than about Vesper's configuration. No IO.
-  Two app-parity tests deliberately stay on the app side instead
-  (`apps/web/src/lib/simulation/world-read.test.ts` and `world-beat.test.ts`): they check the
-  package's output against the client API schemas in `@/lib/client/api`, which is an
-  application fact.
-- **engine unit** (`apps/web/src/server/engine/**/*.test.ts`) — demo-mode generators, chat prompt
-  builders (structural assertions, not snapshots of full text), the chat extraction field
-  library, chat one-turn reads (`chat-intent.ts` — scene movement, sense-targeted focus,
-  reply-discipline gates: hook cadence + intimate check-in), the reply-stream watchdog
-  (`withStreamTimeouts` — first-token/overall trip aborts + passes tokens through) and the
-  bounded lock-wait (`acquireKeyedLockWithin` — acquires/waits/times-out, re-issuing its
-  stop) behind the atomic rerun. No IO (fake rows).
-- **memory unit** (`apps/web/src/server/memory/**/*.test.ts`) — supersedence gating, fact lifecycle,
-  fused retrieval merge/dedup, witness-eligibility filtering. IO: mocked embeddings
-  (deterministic vectors).
-- **server unit** (`apps/web/src/server/{api,authoring,images}/**/*.test.ts`) — rate limiting, error
-  envelopes (`respond.ts` — including the request-size guards), body schemas, the paced SSE text
-  reveal (`stream.ts`); character-forge grounding (attributes, traits, outfits, drives,
-  social cards) plus demo-mode forge runs; image prompt builders, monogram SVG, atomic webp
-  writes. No IO.
-- **api unit** (`apps/web/src/app/api/**/*.test.ts`) — the pure decisions that live in route
-  folders: chat-permission override direction, the sim-routing decision (every POST kind on a
-  sim-routed chat maps to a successor mode or a refusal), and the `/self/` admin mirror parity
-  tripwires (every canonical route has a twin, and every handler is gated by an owner-admin
-  wrapper rather than a bare `withUser`). No IO.
-- **components** (`apps/web/src/components/**/*.test.ts`) — pure logic extracted from components
-  (draft merge/seed, attribute editor helpers, inline markup, message-markup span display +
-  `commsLine` texted-line detection, chat reply segment→label mapping, focus-trap
-  targeting, monogram initials) — no DOM rendering. No IO.
-- **fixtures** (`scripts/fixtures/harbor-house.test.ts`) — the seed fixture validates
-  against the contracts registries, so a vocabulary change that breaks the seed fails in
-  tests, not at seed time. No IO.
-- **db integration** (`apps/web/src/**/*.int.test.ts` — engine, memory, images) — the **successor
-  simulation engine** (`server/engine/simulation/*.int.test.ts` — branch/command/event
-  durability, idempotency, typed holdings, injected-crash atomicity, the scheduler, and the
-  gate corpora E2–E6), the chat lane (`chat-*.int.test.ts` — extraction legs, wardrobe,
-  state fidelity, memory-failure), the successor narrator (`sim-narrator.int.test.ts`), plus
-  memory vector queries and image asset lifecycle. IO: a `DATABASE_URL` database — suites
-  probe at collection and self-skip with a stderr warning if unreachable, which keeps
-  day-to-day runs usable; the `engine` gate target refuses to start without the dev Postgres
-  and runs strict, so an unavailable or unmigrated database fails the gate instead of
-  disappearing from it.
-- **api** (`apps/web/src/app/api/**/*.int.test.ts`) — route handlers called directly with mocked auth
-  (`vi.mock` of `server/auth`): validation, envelopes, the chat SSE event sequence in demo
-  mode, the atomic chat **rerun** (stop→wait→acquire→transact: snips successors + reuses the
-  guard row; stops an in-flight reply then succeeds; byte-identical transcript + 409 when the
-  lock can't be re-acquired; 4xx on a non-user/missing/foreign target; snapshot rollback vs.
-  the degraded `chat_state.rerun.no_rollback`), and the successor `/api/chats` sim routes.
-  IO: demo mode, `DATABASE_URL` database.
+Place a claim at the lowest layer that owns it. Higher layers verify only their seam to that owner.
+
+| Layer                | Primary ownership                                                                   | IO                         |
+| -------------------- | ----------------------------------------------------------------------------------- | -------------------------- |
+| Contracts            | Registries, schemas, precedence, parsing, state transformations                     | None                       |
+| Library              | General parsing, clocks, client envelopes, stream parsing, presentation             | None                       |
+| Simulation package   | Pure simulation contracts, kernels, replay, deterministic identities                | None                       |
+| Engine unit          | Prompt structure, extraction, pure engine decisions, bounded control flow           | Fake rows and fake AI      |
+| Server unit          | API primitives, authoring, images, memory rules                                     | Fake rows or mocked IO     |
+| Route unit           | Pure route decisions, mirror parity, wrapper selection                              | None                       |
+| Components           | Extracted UI logic                                                                  | None; no DOM rendering     |
+| Repository tripwires | Source topology, workspace registration, static policy facts                        | Filesystem reads           |
+| Store integration    | Persistence, transactions, idempotency, concurrency, replay, database constraints   | Postgres                   |
+| Route integration    | Authorization across stored rows, validation, envelopes, route-to-store wiring      | Postgres with mocked auth  |
+
+Pure simulation rules belong in `packages/simulation-core`. Application parity checks remain under `apps/web` when the claim compares package output with application client schemas. A real integration test is justified by a database property or a genuine route/database seam, not by the location of the production function.
 
 ## Shared test utilities
 
-Three homes, split by the purity fence (`eslint.config.mjs` bans `@/server/**`
-imports from contracts/lib, tests included) and by the workspace boundary:
+Shared helpers follow the purity and workspace boundaries:
 
-- **`apps/web/src/server/test-support/`** (import via the `@/server/test-support`
-  barrel — lint-enforced) — for server-side suites. Auth mock
-  (`routeAuthModule`/`bindAuthUser`/`withAuthUser` — restore-safe role swaps),
-  request builders (`apiRequest`/`routeCtx`), response assertions
-  (`expectJson`/`expectApiError`/`drainStream`), DB fixtures
-  (`seedTestUser`/`purgeOwnerRows`/`endTestPool` — ends AND clears the shared
-  pool), the simulation suite scaffold (`simulationSuiteHarness`, `simCommand` +
-  principals, `seedSimBranch`/`seedSimpleBranch`, `readBranchEvents`/`forkAtHead`,
-  `expectAccepted`/`expectRejected`, schema-derived `branchFootprint` — a new
-  `sim_*` table is footprint-covered automatically), chat-lane fixtures
-  (`seedChatFixture`/`newChat`/`settleChatExchange`, `chatMemoryMockModule`),
-  routed-sim-chat fixtures (fixed rollout world — those suites must not run
-  file-parallel), profile/prompt fixtures + prompt assertions
-  (`expectOrder`/`expectNumberedRule`/`expectFenced` — assert content, not
-  ordinals or nonce literals), image/tmp-dir/memory/png fixtures, authoring/ai
-  fixtures, and `source-scan` (the guardrail's scanner primitives, shared with
-  `scripts/image-internal-callers.test.ts`).
-  **No production code may import this barrel** — several modules import vitest.
-  The one production consumer (the authorization seam's legacy-mode read) lives
-  in the engine (`simulation/legacy-test-mode.ts`) and is re-exported here.
-- **`apps/web/src/test/`** (import via `@/test/...`) — pure helpers importable from
-  contracts/lib tests: registry invariants (`expectUniqueIds`,
-  `expectAllValidate`, `expectRefsResolve`, `expectCaseInsensitiveLookup`,
-  `expectContiguousBands`) and diagnostics assertions
-  (`codes`/`expectDiagnostics`/`expectDiagnostic`/`expectCleanSink`). These
-  modules import only contracts/lib/vitest/zod — never `@/server`.
-- **`packages/simulation-core/src/test-support/`** — the simulation fixtures, which
-  live beside the kernels they build inputs for: command/event envelope builders
-  (`commandEnvelope`/`eventEnvelope`/`bindSimEnvelopes`/`testPrincipal`) and the
-  space/material/meter fixtures. Package tests import them relatively. The two an
-  application suite also needs are published as exact subpaths —
-  `@vesper/simulation-core/testing/sim-envelopes` and `…/testing/sim-space-fixtures`
-  — so a shared fixture crosses the workspace boundary as declared public API rather
-  than by filesystem path.
-- Garment blueprint fixtures are colocated at
-  `apps/web/src/contracts/items/garment-test-fixtures.ts` (contracts-only imports).
+- `apps/web/src/test/`, imported through `@/test/...`, contains pure registry invariants and diagnostic assertions usable by contracts and library tests.
+- `apps/web/src/server/test-support/`, imported through its `@/server/test-support` barrel, contains server-side auth bindings, request and response helpers, database fixtures and cleanup, simulation harnesses, prompt assertions, temporary data roots, image fixtures, and source scanners. Production code must not import this barrel because it includes Vitest dependencies.
+- `packages/simulation-core/src/test-support/` contains simulation command, event, space, material, and meter fixtures. Package tests import them relatively. App consumers use declared package testing subpaths rather than filesystem escapes.
+- Garment blueprint fixtures live beside their contracts in `apps/web/src/contracts/items/garment-test-fixtures.ts`.
 
-Prefer deriving expectations from the registry/schema under test over
-hand-enumerating entries (the pattern in `attributes/registry.test.ts` and
-`scripts/fixtures/harbor-house.test.ts`): a vocabulary addition should never
-force test edits, while broken production logic and crossed policy tripwires
-(which stay literal, commented) still fail.
+Search these homes and the nearest existing suite before creating setup. Extend a shared helper when several tests share the behavior; keep one-off setup beside its test.
 
-## Rules
+## Test laws
 
-- LLM calls are **never** mocked at the fetch layer — `server/ai` exposes a fake provider (`AI_FAKE=1` / demo mode, forced globally by `apps/web/src/test/setup.ts` — don't re-set it per file) returning canned typed results; tests exercise real parsing/degradation paths.
-- Degradation tests assert the fallback **and** the diagnostic code ([resilience.md](resilience.md) §8) — via `@/test/diagnostics` so the idiom stays uniform.
-- Every bug fix lands with the regression test that would have caught it.
-- `pnpm jscpd` covers test files too, at threshold 3 — reuse the shared utilities
-  instead of copy-pasting scaffolding.
-- Embedding-dependent logic tests use `pseudoEmbed` (deterministic, from `server/ai/embeddings`) so similarity thresholds are exact.
-- The symlink-escape containment cases (`server/images/paths.test.ts`, `server/images/assets.test.ts`) gate on `canCreateSymlinks()` (`@/server/test-support`), which probes once by planting a symlink in a temp dir: on Windows without Developer Mode or elevation `fs.symlink` fails with EPERM, so those cases self-skip with a stderr note rather than failing on fixture setup. `CI=true` is honored as a strict signal: with it set, a failed probe **throws** instead — the escape tests are a security gate and must never silently vanish from a run that claims to have verified them. The containment logic itself is never weakened by the skip.
+- Test a meaningful invariant, regression, external contract, or failure mode. Code existence alone creates no test obligation, and no new test is a valid result.
+- Apply the `vesper-testing` admission rubric to bug fixes. When a new regression assertion is warranted, use the smallest assertion that fails for the observed bug; existing owning coverage may already catch it.
+- Degradation tests assert the fallback and the diagnostic code, using `@/test/diagnostics` where the purity boundary permits it ([resilience.md](resilience.md)).
+- Derive registry expectations from the registry or schema. Do not maintain a second hand-written member list.
+- Prompt tests use structural assertions such as ordering, numbered-rule, and fenced-content helpers instead of large snapshots or incidental nonce and ordinal values.
+- Application tests use the configured fake AI provider. They do not mock LLM calls at the fetch layer or restore deleted provider credentials.
+- Embedding-dependent tests use the deterministic `pseudoEmbed` implementation.
+- Reuse fixtures instead of copying setup; jscpd includes test files.
+- Preserve literal assertions only where the literal is the contract, including persisted hashes, wire formats, migration compatibility, and security allowlists.
+- Symlink-containment tests may self-skip only when the local platform cannot create their fixture. `CI=true` makes fixture failure fatal so a security gate cannot disappear from CI.
+
+## Strict integration mode
+
+Every application integration suite uses `probeIntegrationDb` from `@/server/test-support`, directly or through `simulationSuiteHarness`. In ordinary non-CI execution the probe can self-skip when the database is absent. Strict signals (`REQUIRE_INTEGRATION_DB=true`, `VESPER_REQUIRE_TEST_DB=1`, or `CI=true`) make absence or migration failure fatal.
+
+Suites that submit the legacy synthetic `player` principal against directly seeded simulation branches call `requireLegacyUnanchoredEngineTestMode`. CI's engine job exports `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` for the curated engine run. Authorization-denial suites leave that capability disabled.
+
+Integration files run without file parallelism because they share a database. Image-row fixtures normally use `canonicalImageRow`, which derives a path satisfying the `images_path_canonical` database constraint. Tests of the constraint itself may deliberately construct invalid rows.
 
 ## The verification gate
 
-The gate is CI: GitHub Actions on AWS CodeBuild managed runners
-(`.github/workflows/ci.yml`). The aggregate `verify` status check is required on
-`main` and `prod`, so a PR merges only when it is green. Draft PRs run no jobs;
-mark a PR ready to run the applicable gates, and `gh workflow run CI --ref main`
-is the deliberate full pre-deploy run (engine and build included).
+GitHub Actions runs `.github/workflows/ci.yml` on AWS CodeBuild managed runners. Draft pull requests run no jobs. Ready pull requests run jobs selected from changed paths; a manual dispatch on `main` and every pull request into `prod` force the integration and production-build gates.
 
-| Job                  | Runs                                                           |
-| -------------------- | -------------------------------------------------------------- |
-| documentation checks | `pnpm lint:docs` — links, section citations, retired documents |
-| lint                 | type-aware ESLint at `--max-warnings 0`                        |
-| static checks        | cycles, authz, package boundaries/resolution, typecheck, jscpd |
-| unit tests           | the pure Vitest suite (no database)                            |
-| engine integration   | `pnpm test:engine` (strict) + the Gate 1 benchmark             |
-| production build     | the Next production build, heap-pinned to 4096 MB              |
+| Job                  | Current command and claim                                                           |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| Documentation checks | `node scripts/check-docs.mjs`; links, section citations, retired references         |
+| Lint                 | `pnpm lint`; type-aware ESLint                                                      |
+| Static checks        | Cycles, route auth, package boundaries/resolution, typecheck, jscpd                 |
+| Unit tests           | `pnpm test`; root `app` plus every package-owned pure suite                         |
+| Engine integration   | Postgres, migrations, curated `pnpm test:engine`; Gate 1 only when `engine == true` |
+| Production build     | Next production build with the Fly builder's heap ceiling                           |
 
-The classifier decides which jobs a PR runs from its changed paths. Every
-change that touches a documentation path (`docs/`, any `.md`, the issue and PR
-templates) runs the **documentation checks** job: `pnpm lint:docs`
-(`scripts/check-docs.mjs`, Node built-ins only, so the job checks out the tree
-and runs it with no install), which fails on a relative link in `docs/` that
-does not resolve, a `<file>.md §Heading` citation naming a missing file or a
-heading the file does not have, or a reference to a retired working document —
-the rules the `vesper-docs` skill states. A PR that changes documentation paths only runs
-that job and nothing else; a mixed change runs it alongside the code gates.
-Every ready code PR runs lint, static checks and unit tests; the engine and
-build jobs are path-gated as described below.
+Documentation-only changes run the documentation job. Ready code changes run lint, static checks, and unit tests; changed-path rules decide whether the engine integration and production build jobs apply. A documentation-only follow-up may reuse the preceding revision's green code-gate basis only when `scripts/ci-safe-followup.mjs` proves the update is ancestor-preserving, documentation-only, against the same base, and follows a successful `verify` result. The new revision still earns its own documentation result and aggregate check.
 
-A documentation follow-up to a revision that already passed `verify` takes the
-documentation-only path for that run. The classifier's detector
-(`scripts/ci-safe-followup.mjs`, Node built-ins only) accepts an update when
-every condition holds: the event is a pull-request `synchronize` into a branch
-other than `prod`; the previous head is an ancestor of the new head; every
-path changed between them is in the documentation set above; the newest CI
-run for that pull request at the previous head completed with `success`
-against the same base sha; and that run's `verify` check run from GitHub
-Actions concluded `success`. The new head then runs the documentation checks
-and earns its own `verify` — no result is copied forward, and a failing docs
-check fails it. A force push, a rebase, a base that moved, a change to any
-path outside the documentation set (the workflow file included), a missing or
-non-green previous result, or any API error uses whole-PR classification
-instead; the detector fails closed and never fails the job.
+The aggregate `verify` job requires every applicable job to succeed and requires inapplicable jobs to be skipped or successful. It prevents an applicable cancelled or skipped job from appearing green. It does not claim that inapplicable jobs or unselected test files ran.
 
-**`verify` requires every applicable gate to have succeeded.** A gate the
-classifier enabled must report `success`; `skipped`, `cancelled` or `failure`
-there fails the aggregate, so a job that never ran can never be reported as a
-pass. A gate the classifier did not enable is expected to be skipped, and any
-other result fails `verify` too. A failed classifier leaves every output empty
-and every gate skipped, which the same rule turns red.
+### What a green integration job proves
 
-The **engine job** is the only one that needs Docker, so it is also the only one
-billed on an EC2 runner rather than Lambda. On an ordinary PR into `main` it is
-path-gated, and the gate is written as exclusions rather than an allowlist:
-server code, API routes, workspace packages, migrations, and the Compose and
-install inputs all start it by default, and a short list of surfaces steps
-aside because no `test:engine` suite executes them — the legacy character-chat
-lane, `server/auth`, `server/authoring`, `server/memory`,
-`server/reference-extraction`, and app contracts outside `contracts/images`. A
-new server subsystem or route family therefore starts the job until someone
-deliberately exempts it, because a stale pattern here fails open: the job
-skips and `verify` still reports green. A manual `gh workflow run CI` dispatch
-and every PR into `prod` start it regardless of what changed. The classifier in
-`.github/workflows/ci.yml` carries the reason for each exclusion.
+The `engine integration` job starts Postgres, migrates from zero, and runs the exact `pnpm test:engine` path list in `package.json`. That list includes the successor simulation-store directory and named successor narrator, admin, image, identity-pack, and route suites. `CI=true` makes their database probes strict.
 
-The **engine job** exports `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` and
-`REQUIRE_INTEGRATION_DB=true`, so an unreachable or unmigrated database fails
-the suites rather than letting them self-skip — a gate must never report green
-for a suite it never ran. The **build job** pins the heap to 4096 MB to match
-the Dockerfile's build stage, so a build that would exhaust the Fly builder
-fails in CI instead of during a deploy ([deployment.md](deployment.md)).
+The job does not run the entire `app-int` project. In particular, `apps/web/src/app/api/gallery.int.test.ts` and `apps/web/src/server/api/authz-matrix.int.test.ts` are not selected. Many legacy-chat, route, memory, retention, quota, and other integration suites are also outside the curated command. A green `engine integration` job leaves every unselected suite unverified.
 
-There are no local git hooks and no local gate: commits and pushes run nothing,
-and the retired `scripts/verify.sh` wrapper is not part of the workflow. Run an
-individual command (`pnpm test`, `pnpm lint`, `pnpm typecheck`) to answer a
-focused question while developing; the run that counts is CI's.
-
-## Commands
-
-```
-pnpm test               # the app project + every package's own suite: everything that needs no DB
-pnpm test:watch         # the app project in watch mode (a package watches through
-                        #   `pnpm --filter @vesper/image-core exec vitest`)
-pnpm test:int           # the app-int project: DB suites only (file parallelism off — they share one DB)
-pnpm test:int:strict    # the SAME run as a release gate: REQUIRE_INTEGRATION_DB=true, so an unreachable
-                        #   or unmigrated database FAILS the converted suites instead of skipping them
-pnpm test:engine        # the successor engine's authority + narrator + sim-route int suites
-pnpm test:engine-e2-5   # focused successor branch transaction + crash/concurrency proof (gate-specific
-                        #   scripts run e2-4 … e6-5; run `pnpm db:migrate` first; a bare run self-skips if
-                        #   the database is unreachable, the `engine` gate target fails)
-pnpm typecheck
-pnpm lint
-```
-
-The `test:engine*` scripts pass file paths, which Vitest applies as filters
-across the root config's projects — so they keep working without naming one.
-That only holds for paths under `apps/web/src`: a package's tests belong to the
-package's own Vitest project, which the root config cannot see. So each
-per-gate `test:engine-eN-M` script runs its pure half through the package
-(`pnpm --filter @vesper/simulation-core exec vitest run …`) and then its
-database half through the root config, joined by `&&`.
-
-## Strict integration mode (the release form)
-
-Every `.int.test.ts` suite probes the database at collection and **self-skips** when it is unreachable or unmigrated — right for ordinary dev, wrong for a claimed release gate, where a broken database would silently skip (for instance) the entire authorization matrix and still report green.
-
-`pnpm test:int:strict` is the same run with `REQUIRE_INTEGRATION_DB=true`: the shared probe **throws** instead of returning "skip", so the suite fails loudly and names what was unreachable. Use it before a deploy, or any time a green run is meant to mean something; plain `pnpm test:int` stays skip-tolerant for day-to-day work. The `engine` gate target sets the same flag around its `pnpm test:engine` run, which is why that gate cannot report a suite it never executed. (`CI=true` and `VESPER_REQUIRE_TEST_DB=1` are honored as strict signals too — they predate the flag.)
-
-### Running the whole integration suite locally
-
-`pnpm test:int` needs **`VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1`**:
-
-```
-VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 pnpm test:int
-```
-
-The low-level engine suites seed bare branches and submit the shared synthetic
-player fixture, which the simulation authorization seam refuses without this
-opt-in (deliberately — authorization tests leave it unset and keep proving that
-ordinary unanchored players fail). The `engine` gate target exports it for its
-`pnpm test:engine` run.
-
-A flagless run **fails fast at collection** instead of drowning you in denials:
-each player-principal suite calls `requireLegacyUnanchoredEngineTestMode(suite)`
-(`@/server/test-support`) right after its DB probe succeeds, and the guard
-throws a message naming the flag and this section — without it a flagless
-`pnpm test:int` reports ~120 opaque "expected accepted, got rejected" domain
-failures. An unreachable database still self-skips (the guard only
-fires when the suite would otherwise run), and `command-authz.int.test` never
-calls it, so denial coverage stays independent of the flag. A suite that
-submits `kind: "player"` commands against directly-seeded branches must call
-this guard; suites using only `npc_policy`/`system` principals (material,
-scheduler, time-job stores) don't need it.
-
-Note also that the `engine` gate target runs `test:engine`'s curated glob rather
-than the whole suite, so the route-level suites (`gallery`, `chat`,
-`library-routes`, `authz-matrix`, `public-dto`, `variants`) are covered by **no**
-gate — run `pnpm test:int` yourself to exercise them.
-
-Fixtures inserting `images` rows must go through **`canonicalImageRow`**
-(`@/server/test-support`): the `images_path_canonical` CHECK requires the stored
-path to be exactly `images/<owner_id>/<id>.webp`, and the helper derives the id
-and the path together so a suite cannot pick one without the other.
-
-The probe lives in one place, `apps/web/src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel (the simulation suites get it via `simulationSuiteHarness`). **Every `.int.test.ts` suite uses it**, so strict mode genuinely gates the whole integration surface. A new suite must use the helper (or the harness) from day one; an inline probe silently opts the suite out of the release gate.
+Completion reports map each target test file to the script and CI job that selected it. When a relevant integration suite is outside `test:engine`, the report states that it did not run, even if aggregate `verify` is green. `package.json` is the exact source of the curated selection; inferred family names are not evidence that a file ran.

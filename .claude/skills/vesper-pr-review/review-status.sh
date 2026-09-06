@@ -1,52 +1,123 @@
 #!/usr/bin/env bash
-# One look at where a PR stands: state, CI buckets, reviews and requests,
-# unresolved threads, and whether Codex has answered the latest
-# "@codex review" trigger — its clean pass is a 👍 reaction on the trigger
-# comment, not a review row, which is why a plain poll of reviews misses it.
+# Report CI, threads, and a head- and identity-verified Codex review state.
 #
 #   review-status.sh <pr>
 set -euo pipefail
 
 REPO=ceponatia/vesper
+REVIEWER='chatgpt-codex-connector[bot]'
 HERE=$(cd "$(dirname "$0")" && pwd)
 PR="${1:?usage: review-status.sh <pr>}"
 
-v=$(gh pr view "$PR" --repo "$REPO" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,url,title,reviews,reviewRequests,assignees)
+v=$(gh pr view "$PR" --repo "$REPO" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,url,title,reviewRequests,assignees)
+head=$(jq -r .headRefOid <<<"$v")
+[[ "$head" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "invalid PR head SHA: $head" >&2; exit 5; }
+
 echo "PR #$PR  $(jq -r .title <<<"$v")"
 echo "  $(jq -r .url <<<"$v")"
-echo "  state=$(jq -r .state <<<"$v") draft=$(jq -r .isDraft <<<"$v") mergeable=$(jq -r .mergeable <<<"$v")/$(jq -r .mergeStateStatus <<<"$v") head=$(jq -r '.headRefOid[0:8]' <<<"$v") assignees=$(jq -r '[.assignees[].login] | join(",")' <<<"$v")"
+echo "  state=$(jq -r .state <<<"$v") draft=$(jq -r .isDraft <<<"$v") mergeable=$(jq -r .mergeable <<<"$v")/$(jq -r .mergeStateStatus <<<"$v") head=$head assignees=$(jq -r '[.assignees[].login] | join(",")' <<<"$v")"
 
 echo "CI:"
 set +e
-checks=$(gh pr checks "$PR" --repo "$REPO" --json name,bucket,workflow 2>&1)
+checks=$(gh pr checks "$PR" --repo "$REPO" --required --json name,bucket,state,workflow 2>&1)
+checks_rc=$?
 set -e
-if jq -e 'type == "array" and length > 0' <<<"$checks" >/dev/null 2>&1; then
-  jq -r 'group_by(.bucket) | map("  \(.[0].bucket): \(map(.name) | join(", "))") | .[]' <<<"$checks"
+if { [ "$checks_rc" -eq 0 ] || [ "$checks_rc" -eq 1 ] || [ "$checks_rc" -eq 8 ]; } \
+  && jq -e 'type == "array" and length > 0' <<<"$checks" >/dev/null 2>&1; then
+  jq -r '.[] | "  \(.bucket): \(.workflow)/\(.name) (\(.state))"' <<<"$checks"
 else
-  echo "  $(tr '\n' ' ' <<<"$checks")"
+  echo "  unavailable (rc=$checks_rc): $(tr '\n' ' ' <<<"$checks")"
 fi
-
-echo "reviews:"
-if [ "$(jq '.reviews | length' <<<"$v")" = 0 ]; then echo "  none"; else
-  jq -r '.reviews[] | "  \(.submittedAt[0:16]) \(.author.login) \(.state)"' <<<"$v"; fi
-echo "review requests: $(jq -r '[.reviewRequests[] | (.login // .name // "?")] | join(", ") | if . == "" then "none" else . end' <<<"$v")"
 
 threads=$("$HERE/threads.sh" "$PR" --all --json)
 echo "threads: $(jq 'length' <<<"$threads") total, $(jq 'map(select(.isResolved | not)) | length' <<<"$threads") unresolved"
 
-# --- Codex ---------------------------------------------------------------------------
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
-# the bot's own summary comment mentions "@codex review" — only a human (or agent) comment is a trigger
-trigger=$(jq -c '[.[] | select((.body | test("@codex review"; "i")) and ((.user.login | test("codex"; "i")) | not))] | last // empty' <<<"$comments")
-codex_reviews=$(jq -c '[.reviews[] | select(.author.login | test("codex"; "i"))]' <<<"$v")
-if [ -z "$trigger" ]; then
-  n=$(jq 'length' <<<"$codex_reviews")
-  echo "codex: no '@codex review' trigger comment; $n codex review(s) on the PR (a review is not guaranteed — check once, do not poll)"
+# REST is used here because review rows expose commit_id. --paginate --slurp
+# keeps status correct once a PR exceeds GitHub's first 100 comments/reviews.
+reviews=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -c 'add // []')
+comments=$(gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" | jq -c 'add // []')
+head_date=$(gh api "repos/$REPO/commits/$head" --jq .commit.committer.date)
+
+echo "reviews:"
+if [ "$(jq 'length' <<<"$reviews")" -eq 0 ]; then
+  echo "  none"
 else
-  t_at=$(jq -r .created_at <<<"$trigger"); thumbs=$(jq -r '.reactions["+1"]' <<<"$trigger")
-  after=$(jq --arg t "$t_at" '[.[] | select(.submittedAt > $t)] | length' <<<"$codex_reviews")
-  if [ "$thumbs" -gt 0 ]; then verdict="answered CLEAN (👍 on the trigger)"
-  elif [ "$after" -gt 0 ]; then verdict="answered with findings ($after review(s) after the trigger) — see threads"
-  else verdict="no answer yet"; fi
-  echo "codex: trigger $(jq -r .html_url <<<"$trigger") at ${t_at:0:16} by $(jq -r .user.login <<<"$trigger") — $verdict"
+  jq -r '.[] | "  \(.submitted_at[0:16]) \(.user.login) \(.state) commit=\(.commit_id[0:8])"' <<<"$reviews"
+fi
+echo "review requests: $(jq -r '[.reviewRequests[] | (.login // .name // "?")] | join(", ") | if . == "" then "none" else . end' <<<"$v")"
+
+current_reviews=$(jq -c --arg who "$REVIEWER" --arg head "$head" \
+  '[.[] | select(.user.login == $who and .commit_id == $head)]' <<<"$reviews")
+latest_current_state=$(jq -r 'sort_by(.submitted_at) | last | .state // empty' <<<"$current_reviews")
+trusted_open_threads=$(jq --arg who "$REVIEWER" \
+  '[.[] | select(.isResolved | not) | select(any(.comments[]; .author == $who))] | length' <<<"$threads")
+requested_reviewer=$(jq --arg who "$REVIEWER" \
+  '[.reviewRequests[] | select((.login // .name // "") == $who)] | length' <<<"$v")
+
+# New requests carry the full head in their body. Legacy plain triggers have no
+# immutable commit identity and remain unverified even when their timing looks
+# current.
+trigger=$(jq -c --arg who "$REVIEWER" --arg head "$head" \
+  '[.[] | select((.body | test("@codex (security )?review"; "i")) and .user.login != $who and (.body | contains($head)))] | last // empty' <<<"$comments")
+legacy_trigger=$(jq -c --arg who "$REVIEWER" --arg head "$head" --arg since "$head_date" \
+  '[.[] | select((.body | test("@codex (security )?review"; "i")) and .user.login != $who and (.body | contains($head) | not) and .created_at >= $since)] | last // empty' <<<"$comments")
+
+# Clean comments currently cite an abbreviated reviewed commit. Resolve that
+# ref through GitHub before comparing it with the full current head.
+clean_ref=$(jq -r --arg who "$REVIEWER" \
+  '[.[] | select(.user.login == $who and (.body | test("did(n.t| not) find any major issues|no (major )?issues"; "i"))) | (try (.body | match("Reviewed commit:[^`]*`([0-9a-fA-F]{7,40})`"; "i").captures[0].string) catch empty)] | last // empty' <<<"$comments")
+clean_verified=0
+clean_unverified=0
+if [ -n "$clean_ref" ]; then
+  set +e
+  resolved_clean=$(gh api "repos/$REPO/commits/$clean_ref" --jq .sha 2>/dev/null)
+  resolve_rc=$?
+  set -e
+  if [ "$resolve_rc" -eq 0 ] && [ "$resolved_clean" = "$head" ]; then
+    clean_verified=1
+  else
+    clean_unverified=1
+  fi
+fi
+
+trusted_plus=0
+untrusted_plus=0
+if [ -n "$trigger" ]; then
+  trigger_id=$(jq -r .id <<<"$trigger")
+  reactions=$(gh api --paginate --slurp -H 'Accept: application/vnd.github+json' \
+    "repos/$REPO/issues/comments/$trigger_id/reactions?per_page=100" | jq -c 'add // []')
+  trusted_plus=$(jq --arg who "$REVIEWER" '[.[] | select(.content == "+1" and .user.login == $who)] | length' <<<"$reactions")
+  untrusted_plus=$(jq --arg who "$REVIEWER" '[.[] | select(.content == "+1" and .user.login != $who)] | length' <<<"$reactions")
+fi
+
+# Re-read the full head after all paginated queries. A push during inspection
+# invalidates every result above, even if its first seven characters look alike.
+final_head=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+if [ "$final_head" != "$head" ]; then
+  echo "codex: unverified — head changed during inspection ($head -> $final_head); run again"
+  exit 0
+fi
+
+stale_signal=$(jq --arg who "$REVIEWER" --arg head "$head" \
+  '[.[] | select(.user.login == $who and .commit_id != $head)] | length' <<<"$reviews")
+codex_like_other=$(jq --arg who "$REVIEWER" \
+  '[.[] | select(.user.login != $who and (.user.login | test("codex"; "i")))] | length' <<<"$reviews")
+current_request=0
+[ -n "$trigger" ] && current_request=1
+[ "$requested_reviewer" -gt 0 ] && current_request=1
+
+if [ "$trusted_open_threads" -gt 0 ]; then
+  echo "codex: findings — $trusted_open_threads unresolved thread(s) from $REVIEWER, including older-head threads"
+elif [ "$latest_current_state" = COMMENTED ] || [ "$latest_current_state" = CHANGES_REQUESTED ]; then
+  echo "codex: findings — latest $REVIEWER review on current head $head is $latest_current_state; no unresolved trusted threads"
+elif [ "$latest_current_state" = APPROVED ] || [ "$clean_verified" -eq 1 ] || [ "$trusted_plus" -gt 0 ]; then
+  echo "codex: clean — verified response by $REVIEWER for current head $head"
+elif [ "$untrusted_plus" -gt 0 ] || [ "$codex_like_other" -gt 0 ]; then
+  echo "codex: unverified — a reaction/review exists, but not from $REVIEWER"
+elif [ "$current_request" -eq 1 ]; then
+  echo "codex: pending — review requested for current head $head, no verified response yet"
+elif [ -n "$legacy_trigger" ] || [ "$clean_unverified" -eq 1 ] || [ "$latest_current_state" = DISMISSED ] || [ "$stale_signal" -gt 0 ]; then
+  echo "codex: unverified — reviewer signal is legacy, dismissed, ambiguous, or belongs to an older head"
+else
+  echo "codex: unrequested — no review request or verified response for current head $head"
 fi

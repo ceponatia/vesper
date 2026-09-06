@@ -1,14 +1,16 @@
 # Brief: #<issue> — <one-line outcome>
 
-You are implementing one slice of Vesper in the worktree below. Read this
-whole brief before touching anything; the rules section is not negotiable
-and the report format is how your work gets reviewed.
+You are implementing one slice of Vesper in the assigned checkout below. Read this
+whole brief before touching anything. Apply the user's explicit instructions
+and existing authorization; this brief supplies scope and repository policy.
 
 ## Where you work
 
-- Worktree: `<abs path to .claude/worktrees/agent-N>` — every command runs
-  there, every edit lands there. Branch `agent/<N>-<slug>` is already checked
-  out.
+- Checkout: `<absolute path>`; mode: `<isolated worktree | shared checkout>`.
+  Every command and edit stays there. In an isolated worktree, branch
+  `<assigned branch>` is already checked out. In a shared checkout, do not change
+  branches, stage, commit, or clean files unless the parent explicitly assigns
+  that operation; unrelated edits from other agents are expected and preserved.
 - Read first: the root `CLAUDE.md` and `docs/README.md`, then issue #<N>
   (and its parent #<P>), then `<reference page(s) under docs/>`, then the
   code paths named below. The issue is the spec; if the spec and the code
@@ -43,22 +45,26 @@ nobody asked for.
 
 ## Decisions already made
 
-<Dated owner rulings that bind this slice, verbatim or cited. Agents
-inventing architecture is how past messes happened; if you hit a fork that
-is not settled here, stop, put it in the report's Open questions, and build
-the smaller option or nothing.>
+<Dated owner rulings that bind this slice, verbatim or cited. Reuse them.
+Resolve routine implementation choices from the code and requirements. For
+an unresolved material product, architecture, cost, or irreversible choice,
+hold only the dependent work and ask the parent; continue independent work.>
 
-## Rules (verbatim — these came from the owner)
+## Rules and allowed operations
 
-- Do NOT run lint, typecheck, tests, builds, or any `pnpm` script
+- Do NOT run local application lint, typecheck, tests, or builds
   (`pnpm lint*`, `pnpm test*`, `pnpm typecheck`, `pnpm verify`,
   `scripts/verify.sh`) — and not `vitest` in any form, not even one file
-  under one project. CI on CodeBuild validates when the owner readies the
-  PR; local gate runs are wasted minutes on a memory-fragile machine and are
-  denied by project settings. Diagnose by reading code.
-- Do NOT push, open a PR, edit the board, or comment on GitHub. Commit on
-  your branch only, by pathspec (`git commit -m "…" -- <paths>`), with
-  conventional messages (`feat(images): …`, `fix(chat): …`).
+  under one project. CI on CodeBuild validates when the PR is readied within
+  the task's authorization. Diagnose by reading code and CI logs. Migration
+  generation below is an explicit non-gate exception when a migration is in
+  scope. Dependency-free offline tests of skill helpers are allowed when those
+  helpers are the task;
+  they must not invoke application gates, services, or external mutations.
+- Do NOT push, open a PR, edit the board, or comment on GitHub. In an isolated
+  worktree, commit owned paths only by pathspec (`git commit -m "…" -- <paths>`),
+  with conventional messages (`feat(images): …`, `fix(chat): …`). In a shared
+  checkout, leave commits to the parent unless the brief explicitly assigns one.
 - Do NOT run a formatter over `docs/` or over files you did not change.
 - Do NOT add a test because code exists. Read `.claude/skills/vesper-testing/SKILL.md`:
   one owning layer per invariant, and "no new test" is a valid outcome you
@@ -78,17 +84,23 @@ the smaller option or nothing.>
 
 ## Self-check before you report
 
-- `git status --short` in the worktree is clean (everything committed).
-- `git diff <base>...HEAD --stat` shows only files from your ownership list.
-- No control characters in your diff (`git diff --text <base>...HEAD | grep -P '[\x00-\x08\x0B\x0C\x0E-\x1F]'` is empty).
-- Every new or changed doc line is present-tense law with no dates except
-  dated owner rulings.
+- In an isolated worktree, `git status --short` is clean and owned work is
+  committed. In a shared checkout, inspect `git status --short` without cleaning,
+  staging, or reverting anything; unrelated dirty paths may belong to others.
+- A path-limited diff against the assigned baseline shows only your intended
+  changes under the ownership list. Report any pre-existing edits in an owned
+  path instead of overwriting or claiming them.
+- No unexpected control characters in your owned diff. Use the assigned baseline
+  and pathspec, including uncommitted files when the parent owns commits.
+- Every new or changed doc line follows `vesper-docs`, including its three
+  permitted kinds of dated line; do not redefine that law in the report.
 
 ## Report format
 
 Reply with exactly these sections:
 
-1. **Commits** — SHA and subject, in order.
+1. **Commits** — SHA and subject in order, or `None — parent owns commits` for
+   a shared checkout.
 2. **What changed** — per file, one line each.
 3. **Decisions I made** — anything not settled by this brief, with the
    reasoning and the alternative I rejected.
