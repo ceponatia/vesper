@@ -190,7 +190,7 @@ def check(command: str, start_cwd: str) -> tuple[str | None, str | None]:
                 f"[vesper preflight] `{gate}` is a local gate run, and those are off-limits here "
                 "(owner ruling 2026-08-22, tightened 2026-08-24 after a local lint run coincided with the desktop "
                 "crashing). CI on CodeBuild is the gate: push the branch and read the result "
-                "(.claude/skills/vesper-pr-review/wait-ci.sh, ci-failure.sh). Diagnose from CI logs and by reading code. "
+                "(.agents/skills/vesper-pr-review/wait-ci.sh, ci-failure.sh). Diagnose from CI logs and by reading code. "
                 "Only `pnpm lint:docs` is sanctioned locally, for documentation-only changes.",
                 None,
             )

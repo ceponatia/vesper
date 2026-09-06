@@ -1,0 +1,7 @@
+interface:
+  display_name: "Neon Platform"
+  short_description: "Plan and operate Neon services from Codex"
+  default_prompt: "Use $neon to inspect this project and identify the appropriate Neon service workflow."
+
+policy:
+  allow_implicit_invocation: true

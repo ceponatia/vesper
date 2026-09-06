@@ -6,6 +6,9 @@ next-env.d.ts
 data/
 .vitest-cache/
 
+# Local Codex worktrees created by the repository's agent-build helpers.
+/.codex/worktrees/
+
 # Local-only UI/QA artifacts — Playwright scratch + audit screenshots embed
 # app-generated imagery; keep them on the server, never commit/push.
 .playwright-mcp/

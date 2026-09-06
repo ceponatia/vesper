@@ -1,0 +1,7 @@
+interface:
+  display_name: "Verify Vesper on Fly"
+  short_description: "Prove Vesper behavior on its live Fly deployment"
+  default_prompt: "Use $verify to prove the requested behavior against the live Vesper deployment and report the concrete evidence."
+
+policy:
+  allow_implicit_invocation: true

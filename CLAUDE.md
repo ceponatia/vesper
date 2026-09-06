@@ -2,14 +2,14 @@
 
 - `AGENTS.md` is a symlink of `CLAUDE.md`; update `CLAUDE.md` only. Note this only works on Linux, not Windows. AGENTS.md will be blank on Windows.
 - This app is under active development. Do not preserve legacy behavior by default; prefer deleting obsolete code over deprecation wrappers.
-- Shared skills are authored once under `.claude/skills/`; the tracked `.agents/skills/*` symlinks expose those same sources to Codex. Edit the canonical files, preserve the links, and load only the active host's runtime reference where a workflow needs host-specific tools.
+- Codex skills are authored under `.agents/skills/`. The tracked `.claude/skills/*` compatibility symlinks point to those same sources. Edit the canonical files and preserve the links; skill instructions and `agents/openai.yaml` metadata target Codex.
 
 ## Documentation & work state
 
 - **GitHub owns work state; the repository owns technical truth.** Plans, status, sequencing, dependencies, and open questions live on the [Vesper Development board](https://github.com/users/ceponatia/projects/7) and its issues — never in repo documents. Plan documents are retired: never create one. The skill below owns the mechanics that follow from this.
 - Documented system-by-system in `docs/`. **Read `docs/README.md` first** — it indexes the tree and owns the documentation rules — then the relevant system doc, and update it in the same change when behavior or patterns shift. Durable docs state present-tense law and carry no status, no remaining work, and no blockers.
-- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before drafting or restructuring issue content, and whenever deciding where information belongs** (`.claude/skills/vesper-docs/`). It owns the routing table, issue and sub-issue content conventions, durable-doc authoring law, templates, and validation checklist. This section states the principle only; the skill and `docs/README.md` state the rules, and neither is restated here.
-- **Invoke the `vesper-board` skill to create issues and for all board mechanics** (`.claude/skills/vesper-board/`): saved issue and relation operations, status moves, the owner-assignment convention (assigned to `ceponatia` ⇔ the next action is the owner's), labels, iterations, milestones, branches, and PR↔issue linkage. `vesper-docs` owns content and placement; `vesper-board` owns creation and lifecycle.
+- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before drafting or restructuring issue content, and whenever deciding where information belongs** (`.agents/skills/vesper-docs/`). It owns the routing table, issue and sub-issue content conventions, durable-doc authoring law, templates, and validation checklist. This section states the principle only; the skill and `docs/README.md` state the rules, and neither is restated here.
+- **Invoke the `vesper-board` skill to create issues and for all board mechanics** (`.agents/skills/vesper-board/`): saved issue and relation operations, status moves, the owner-assignment convention (assigned to `ceponatia` ⇔ the next action is the owner's), labels, iterations, milestones, branches, and PR↔issue linkage. `vesper-docs` owns content and placement; `vesper-board` owns creation and lifecycle.
 
 ## Architecture
 
@@ -40,7 +40,7 @@
 ## Testing
 
 - Application test commands do not run locally. CI runs `pnpm test` on every ready code PR and the applicable curated `pnpm test:engine` and benchmark gates; no current CI job runs the full `pnpm test:int` / `app-int` surface. Use `docs/testing.md` to identify which command and job actually select an affected suite. Report an unselected suite as unverified even when aggregate `verify` is green. Degradation tests assert fallback **and** diagnostic code.
-- **Invoke the `vesper-testing` skill before creating, expanding, or substantially rewriting tests** (`.claude/skills/vesper-testing/`). Protect meaningful invariants, regressions, and failure modes at their one owning layer; extend existing coverage instead of duplicating it, and do not add tests merely because code changed. Test count is not a quality metric here, and "no new test" is a valid outcome.
+- **Invoke the `vesper-testing` skill before creating, expanding, or substantially rewriting tests** (`.agents/skills/vesper-testing/`). Protect meaningful invariants, regressions, and failure modes at their one owning layer; extend existing coverage instead of duplicating it, and do not add tests merely because code changed. Test count is not a quality metric here, and "no new test" is a valid outcome.
 - **UI testing runs against the Fly deploy** (`https://vesper.fly.dev`), never a local Postgres + `pnpm dev`. Local dev stays valid for non-UI work and DB scripts.
   - **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin` — use it with the active host's supported browser for UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth/sign-in.md`); sign in at `/sign-in` with the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is local-only, disabled in production.
   - Prefer an **existing** conversation. Create a new chat only when the test needs state you cannot edit into an existing one, and delete it when done.

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Testing Decisions"
+  short_description: "Choose Vesper test coverage and report CI evidence"
+  default_prompt: "Use $vesper-testing to decide the smallest meaningful coverage for this Vesper change and report what CI actually verifies."
+
+policy:
+  allow_implicit_invocation: true

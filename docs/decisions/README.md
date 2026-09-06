@@ -16,7 +16,7 @@ can be answered by pointing at the document instead of re-arguing it.
 Each ADR is `NNN-<slug>.md`, numbered sequentially, with a `Date:` line
 under the title and five sections: Decision, Context, Alternatives
 considered, Why this choice, Consequences. Target 30–100 lines. See
-[`.claude/skills/vesper-docs/templates/adr.md`](../../.claude/skills/vesper-docs/templates/adr.md)
+[`.agents/skills/vesper-docs/templates/adr.md`](../../.agents/skills/vesper-docs/templates/adr.md)
 for the copyable skeleton and the full writing rules.
 
 A decision that reverses an earlier ADR does not edit or delete it: it adds
