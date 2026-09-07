@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cx } from "@/components/ui/cx";
 import { readStoredNavMode, type NavMode } from "@/lib/nav-mode";
 import { AccountMenu } from "./account-menu";
@@ -24,6 +24,16 @@ import { isNavActive, NAV_LINKS } from "./nav-links";
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const measure = () => document.documentElement.style.setProperty("--app-header-height", `${header.getBoundingClientRect().height}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => { observer.disconnect(); document.documentElement.style.removeProperty("--app-header-height"); };
+  }, [pathname]);
   const [navMode, setNavMode] = useState<NavMode>("tabs");
 
   // Sync the stored mode after mount (deferred past a microtask, per the
@@ -56,6 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           conversation screen sizes itself with calc(100dvh - 3.25rem) and a 1px
           mismatch puts a scrollbar on the document. Do not let this height drift. */}
       <header
+        ref={headerRef}
         className={cx(
           "sticky top-0 z-40 h-13 border-b border-ink-600 bg-ink-900/90 backdrop-blur",
           isChatConversation && "hidden md:block",

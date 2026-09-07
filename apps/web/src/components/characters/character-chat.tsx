@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { PLAYER_RELATIONSHIP_NOTE_MAX, type AuthoredRelationshipRecord } from "@/contracts";
-import { RelationshipRecordEditor } from "@/components/characters/relationship-record-editor";
 import { chatsApi } from "@/lib/client/api";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { timeAgo } from "@/lib/relative-time";
@@ -15,25 +13,14 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { ModelSelect } from "@/components/ui/model-select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 
 export interface CharacterChatProps {
   characterId: string;
   name: string;
   /**
-   * The authored Starting Relationship (`profile.playerRelationship`) from the live
-   * editor draft: the full authored record (bands + kind/history/mask texture,
-   * edited through `RelationshipRecordEditor` with its live law preview) plus the
-   * one-line note that pre-fills a new chat's premise. Writes back through the
-   * setter into the draft — the editor SaveBar persists it with the character.
-   */
-  starting: AuthoredRelationshipRecord & { note: string };
-  onStartingChange: (next: AuthoredRelationshipRecord & { note: string }) => void;
-  /**
    * The narrator model the dropdown shows (a resolved `NARRATIVE_MODELS` id). Owned by
-   * the page so it outlives this tab unmounting — picking a model here calls
-   * `onChatModelChange`, which updates that state *and* persists it to the character
-   * (`characters.chatModel`), so the choice is still selected on return.
+   * the page so it outlives tab switches and joins the ordinary character autosave.
+   * The model applies to all this character's conversations.
    */
   chatModel: string;
   onChatModelChange: (modelId: string) => void;
@@ -41,9 +28,8 @@ export interface CharacterChatProps {
 
 /**
  * The editor's Chat tab, post-standalone: a summary surface, not the conversation
- * itself — the editor is where you *author*,
- * the Chats page (`/chat`) where you *play*. Two cards: **Chat defaults** (the
- * narrator model + the authored Starting Relationship) and **Conversations** (this
+ * itself — the editor is where you author, the Chats page where you play.
+ * Two cards: Chat defaults (the narrator model) and Conversations (this
  * character's active chats, each linking to its full-screen page, plus New
  * conversation). The embedded transcript/composer moved to
  * `components/chat/chat-conversation.tsx`.
@@ -51,8 +37,6 @@ export interface CharacterChatProps {
 export function CharacterChat({
   characterId,
   name,
-  starting,
-  onStartingChange,
   chatModel,
   onChatModelChange,
 }: CharacterChatProps) {
@@ -64,7 +48,7 @@ export function CharacterChat({
     <div className="flex flex-col gap-5">
       <Card className="flex flex-col gap-4 p-4">
         <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Chat defaults</h3>
-        <Field label="Narrator model" hint="Saves on pick — every conversation with this character uses it.">
+        <Field label="Narrator model" hint="Autosaves with the character. Applies to new and existing conversations; each story keeps its own relationship.">
           {(id) => (
             <ModelSelect
               id={id}
@@ -73,37 +57,6 @@ export function CharacterChat({
               value={chatModel}
               onChange={onChatModelChange}
               className="max-w-xs"
-            />
-          )}
-        </Field>
-        <div>
-          <p className="mb-2 text-xs font-medium tracking-wide text-paper-400 uppercase">Starting relationship</p>
-          <p className="mb-3 text-xs text-paper-500">
-            How things stand between {who}
-            {/* String-expression children: swc in next 16.2.x drops the leading space of a multi-line JSX text node
-                containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
-            {" and the player when a chat begins — saved with the character (use the page's Save). New "}
-            {"conversations seed from this; the state tools can diverge any one chat later."}
-          </p>
-          <RelationshipRecordEditor
-            value={starting}
-            onChange={(next) => onStartingChange({ ...starting, ...next })}
-            selfName={who}
-            targetName="the player"
-          />
-        </div>
-        <Field
-          label="Premise note"
-          hint="One line that pre-fills a new conversation's premise (the scene, not the relationship)."
-        >
-          {(id) => (
-            <Textarea
-              id={id}
-              rows={2}
-              value={starting.note}
-              maxLength={PLAYER_RELATIONSHIP_NOTE_MAX}
-              onChange={(e) => onStartingChange({ ...starting, note: e.target.value })}
-              placeholder={`e.g. "you grew up next door to ${who} and just moved back"…`}
             />
           )}
         </Field>

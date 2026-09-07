@@ -25,7 +25,7 @@ const forgeBodySchema = z.object({
   mode: z.enum(["create", "fill", "redraft"]).default("create"),
   /** Regenerate a single section against the supplied draft (docs/authoring/character-forge.md). */
   section: characterForgeSectionSchema.optional(),
-  /** The tab to rewrite (redraft mode). */
+  /** The section to complete or rewrite; omitted fill completes the whole sheet. */
   scope: characterSheetScopeSchema.optional(),
   draft: characterDraftSchema.optional(),
 });
@@ -45,7 +45,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   const { prompt, mode, section, scope, draft } = body.value;
   if (mode === "fill") {
     if (!draft) return jsonError("invalid_body", "fill mode requires the current draft", 400);
-    const filled = await forgeCharacterFill({ draft, userId: user.id, sink });
+    const filled = await forgeCharacterFill({ draft, scope, userId: user.id, sink });
     return jsonOk({ draft: filled, diagnostics: sink.items });
   }
   if (mode === "redraft") {

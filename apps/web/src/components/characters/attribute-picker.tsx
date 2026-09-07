@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useId, useMemo, useState } from "react";
 import {
   attributeGroups,
   FEATURE_GROUPS,
@@ -581,15 +581,17 @@ function AttributeRow({
   onSet: (v: AttributeValue["value"]) => void;
   onRemove: () => void;
 }) {
+  const controlId = useId();
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
-        <span
+        <label
+          htmlFor={def.valueType === "enum_list" ? undefined : controlId}
           className={cx("text-xs font-medium", value ? "text-paper-300" : "text-paper-500")}
           title={def.description}
         >
           {def.label}
-        </span>
+        </label>
         {value && isAiSourced(value) ? <AiTag /> : null}
         {/* Materialized baselines (materializeDefault) never offer "clear" — the
             server re-materializes the registry default on save, so clearing here
@@ -605,13 +607,14 @@ function AttributeRow({
           </button>
         ) : null}
       </div>
-      <AttributeControl def={def} value={value} allowed={allowed} seed={seed} onSet={onSet} onRemove={onRemove} />
+      <AttributeControl id={controlId} def={def} value={value} allowed={allowed} seed={seed} onSet={onSet} onRemove={onRemove} />
       {note ? <p className="text-xs italic text-paper-500">{note}</p> : null}
     </div>
   );
 }
 
 function AttributeControl({
+  id,
   def,
   value,
   allowed,
@@ -619,6 +622,7 @@ function AttributeControl({
   onSet,
   onRemove,
 }: {
+  id: string;
   def: AttributeDefinition;
   /** Stored value; undefined renders the blank state (nothing written yet). */
   value: AttributeValue | undefined;
@@ -644,6 +648,7 @@ function AttributeControl({
       const outOfRule = isOutOfRuleValue(allowed, current);
       return (
         <Select
+          id={id}
           value={current}
           // Picking "—" on a set attribute clears it back to unset (the blank
           // option only exists when clearable, so onRemove is unreachable otherwise).
@@ -706,6 +711,7 @@ function AttributeControl({
       // writes a value (there is no "blank" a slider can render).
       return (
         <Slider
+          id={id}
           value={current}
           min={bounds.min}
           max={bounds.max}
@@ -719,6 +725,7 @@ function AttributeControl({
     case "text":
       return (
         <Input
+          id={id}
           value={value && typeof value.value === "string" ? value.value : ""}
           // Emptying the field clears the attribute back to unset.
           onChange={(e) => (e.target.value === "" ? onRemove() : onSet(e.target.value))}
@@ -731,6 +738,7 @@ function AttributeControl({
       return (
         <label className="touch-target flex w-fit cursor-pointer items-center gap-2 text-xs text-paper-300">
           <input
+            id={id}
             type="checkbox"
             checked={value?.value === true}
             onChange={(e) => onSet(e.target.checked)}

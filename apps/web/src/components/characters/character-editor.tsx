@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   emptyCharacterPortraitAcceptance,
   heritagesForSpecies,
-  isPersonalityAttributeId,
+  PLAYER_RELATIONSHIP_NOTE_MAX,
   speciesById,
   speciesCatalog,
   type CharacterPortraitAcceptance,
   type Diagnostic,
 } from "@/contracts";
-import type { CharacterDraft, CharacterForgeSection, CharacterSheetScope } from "@/lib/client/api";
+import type { CharacterDraft, CharacterSheetScope } from "@/lib/client/api";
+import { characterSections, characterSheetScopes, characterSectionDetailCount, type CharacterEditorTab } from "@/lib/character-scopes";
+export type { CharacterEditorTab } from "@/lib/character-scopes";
+import { RelationshipRecordEditor } from "./relationship-record-editor";
 import { wearerHintForGender } from "@/lib/clothing-slots";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
@@ -36,16 +39,6 @@ import { PortraitStudio } from "./portrait-studio";
 import { PreferencesEditor } from "./preferences-editor";
 import { ScheduleEditor } from "./schedule-editor";
 
-type EditorTab =
-  | "profile"
-  | "attributes"
-  | "personality"
-  | "disposition"
-  | "outfit"
-  | "relationships"
-  | "portrait"
-  | "chat";
-
 /** The presented-gender attribute value, when set (drives the outfit picker's wearer default). */
 function genderValue(attributes: readonly { id: string; value: unknown }[]): string | undefined {
   const value = attributes.find((a) => a.id === "identity.gender")?.value;
@@ -55,10 +48,14 @@ function genderValue(attributes: readonly { id: string; value: unknown }[]): str
 
 export interface CharacterEditorProps {
   draft: CharacterDraft;
+  tab?: CharacterEditorTab;
+  onTabChange?: (tab: CharacterEditorTab) => void;
+  onComplete?: (scope: CharacterSheetScope) => void;
+  completing?: CharacterSheetScope | null;
+  generationDisabled?: boolean;
+  onSaveAndOpen?: (destination: "portrait" | "chat") => void;
+  saving?: boolean;
   onChange: (next: CharacterDraft) => void;
-  /** Forge mode shows per-section regenerate buttons (docs/authoring/character-forge.md). */
-  onRegenerate?: (section: CharacterForgeSection) => void;
-  regenerating?: CharacterForgeSection | null;
   /** Edit mode shows per-tab Re-draft buttons. */
   onRedraft?: (scope: CharacterSheetScope) => void;
   redrafting?: CharacterSheetScope | null;
@@ -74,9 +71,8 @@ export interface CharacterEditorProps {
   onAvatarChanged?: () => void;
   diagnostics?: readonly Diagnostic[];
   /**
-   * The owner's persisted chat-tab narrator pick + a setter that saves it. Held by the
-   * page (not here) so it survives the chat tab unmounting on a tab switch; the forge
-   * page omits both — it never shows the chat tab (no `characterId`).
+   * The page owns narrator selection and autosaves it with the character draft.
+   * Unsaved characters show a save-and-open action on Chat.
    */
   chatModel?: string;
   onChatModelChange?: (modelId: string) => void;
@@ -85,9 +81,14 @@ export interface CharacterEditorProps {
 /** The character form — the forge review UI *is* the editor (docs/authoring/manual-editing.md). */
 export function CharacterEditor({
   draft,
+  tab: controlledTab,
+  onTabChange,
+  onComplete,
+  completing = null,
+  generationDisabled = false,
+  onSaveAndOpen,
+  saving = false,
   onChange,
-  onRegenerate,
-  regenerating = null,
   onRedraft,
   redrafting = null,
   onPortraitAttributes,
@@ -100,37 +101,24 @@ export function CharacterEditor({
   chatModel,
   onChatModelChange,
 }: CharacterEditorProps) {
-  const [tab, setTab] = useState<EditorTab>("profile");
-
-  const personalityCount = draft.profile.attributes.filter((a) => isPersonalityAttributeId(a.id)).length;
-  const tabs: TabDef<EditorTab>[] = [
-    { id: "profile", label: "Profile" },
-    {
-      id: "attributes",
-      label: "Attributes",
-      badge: draft.profile.attributes.length - personalityCount || undefined,
-    },
-    {
-      id: "personality",
-      label: "Personality",
-      badge: personalityCount + draft.profile.preferences.length + draft.profile.socialCards.length || undefined,
-    },
-    {
-      id: "disposition",
-      label: "Disposition",
-      badge: draft.profile.traits.length + draft.profile.tags.length + draft.profile.drives.length || undefined,
-    },
-    {
-      id: "outfit",
-      label: "Outfit",
-      badge:
-        draft.profile.outfits.reduce((n, o) => n + o.items.length, 0) + draft.suggestedItems.length || undefined,
-    },
-    // Default edges live server-side (character_relationships) — a saved character only.
-    ...(characterId ? [{ id: "relationships", label: "Relationships" } as TabDef<EditorTab>] : []),
+  const [localTab, setLocalTab] = useState<CharacterEditorTab>("profile");
+  const tab = controlledTab ?? localTab;
+  const setTab = (next: CharacterEditorTab) => {
+    setLocalTab(next);
+    onTabChange?.(next);
+  };
+  const panelPrefix = useId();
+  const tabs: TabDef<CharacterEditorTab>[] = [
+    ...characterSheetScopes.map((id) => ({
+      id,
+      label: characterSections[id].label,
+      badge: characterSectionDetailCount(draft, id) || undefined,
+    })),
     { id: "portrait", label: "Portrait studio" },
     { id: "chat", label: "Chat" },
   ];
+  const scope = characterSheetScopes.find((id) => id === tab);
+  const generationBusy = generationDisabled || redrafting !== null || completing !== null || derivingPortrait;
 
   const patchProfile = (patch: Partial<CharacterDraft["profile"]>) =>
     onChange({ ...draft, profile: { ...draft.profile, ...patch } });
@@ -152,21 +140,6 @@ export function CharacterEditor({
     selectedSpecies?.defaultHeritageId ??
     "";
 
-  const sectionFor: Partial<Record<EditorTab, CharacterForgeSection>> = {
-    profile: "profile",
-    attributes: "attributes",
-    outfit: "outfit",
-  };
-  const section = sectionFor[tab];
-  // Every content tab is re-draftable; scope ids match tab ids by design.
-  const scopeFor: Partial<Record<EditorTab, CharacterSheetScope>> = {
-    profile: "profile",
-    attributes: "attributes",
-    personality: "personality",
-    disposition: "disposition",
-    outfit: "outfit",
-  };
-  const scope = scopeFor[tab];
   const hasVoiceAnchors = Boolean(
     draft.profile.voiceAnchors.cadence.trim()
     || draft.profile.voiceAnchors.petPhrases.some((phrase) => phrase.trim())
@@ -181,45 +154,40 @@ export function CharacterEditor({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
-        <Tabs tabs={tabs} value={tab} onChange={setTab} className="min-w-0 flex-1" />
-        {onRegenerate && section ? (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => onRegenerate(section)}
-            busy={regenerating === section}
-            disabled={regenerating !== null && regenerating !== section}
-            className="self-start sm:mb-1 sm:self-auto"
-          >
-            ↻ Revise {section}
-          </Button>
-        ) : null}
-        {onPortraitAttributes && tab === "attributes" && avatarImageId ? (
-          <Button
-            size="sm"
-            onClick={onPortraitAttributes}
-            busy={derivingPortrait}
-            disabled={redrafting !== null}
-            className="self-start sm:mb-1 sm:self-auto"
-            title="Read the portrait and fill in appearance attributes it clearly shows — never changes values already set (disagreements are reported)."
-          >
-            ◉ From portrait
-          </Button>
-        ) : null}
-        {onRedraft && scope ? (
-          <Button
-            size="sm"
-            onClick={() => onRedraft(scope)}
-            busy={redrafting === scope}
-            disabled={(redrafting !== null && redrafting !== scope) || derivingPortrait}
-            className="self-start sm:mb-1 sm:self-auto"
-            title="Rewrite this tab from the whole sheet, formatted for the narrator. Text fields are rewritten; attribute and trait values you set yourself are kept."
-          >
-            ↻ Re-draft tab
-          </Button>
-        ) : null}
+      <div className="sticky top-[var(--app-header-height,3.25rem)] z-30 -mx-1 border-b border-ink-600 bg-ink-900/95 px-1 py-2 backdrop-blur">
+        <div className="md:hidden">
+          <Field label="Character section">
+            {(id) => (
+              <Select id={id} value={tab} onChange={(event) => setTab(event.target.value as CharacterEditorTab)}>
+                {tabs.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+              </Select>
+            )}
+          </Field>
+        </div>
+        <Tabs tabs={tabs} value={tab} onChange={setTab} idPrefix={panelPrefix} ariaLabel="Character sections" className="hidden md:flex" />
       </div>
+      {scope ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {onComplete ? (
+            <Button size="sm" variant="primary" onClick={() => onComplete(scope)} busy={completing === scope}
+              disabled={generationBusy} title="Suggest missing details in this section, preserving everything already authored.">
+              Complete missing details
+            </Button>
+          ) : null}
+          {onRedraft ? (
+            <Button size="sm" onClick={() => onRedraft(scope)} busy={redrafting === scope} disabled={generationBusy}
+              title="Propose replacements for this section, including manually authored values. Review changes before accepting; identity facts stay fixed.">
+              Rewrite this section
+            </Button>
+          ) : null}
+          {onPortraitAttributes && tab === "attributes" && avatarImageId ? (
+            <Button size="sm" onClick={onPortraitAttributes} busy={derivingPortrait} disabled={generationBusy}
+              title="Read the portrait and propose appearance details. Review disagreements before accepting.">
+              Complete using portrait
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       {diagnostics.length > 0 ? (
         <Disclosure
@@ -230,6 +198,39 @@ export function CharacterEditor({
         </Disclosure>
       ) : null}
 
+      <div role="tabpanel" id={`${panelPrefix}-panel-relationships`}
+        aria-labelledby={`${panelPrefix}-tab-relationships`}
+        className={tab === "relationships" ? "flex flex-col gap-6" : "hidden"} tabIndex={0}>
+          <div className="flex flex-col gap-4">
+            <h3 className="text-base font-medium text-paper-100">Starting relationship with the player</h3>
+            <p className="text-sm text-paper-400">Saved with the character. New conversations start from these details; existing stories keep their own relationship.</p>
+            <RelationshipRecordEditor
+              value={draft.profile.playerRelationship}
+              onChange={(next) => patchProfile({ playerRelationship: { ...draft.profile.playerRelationship, ...next } })}
+              selfName={draft.name || "this character"}
+              targetName="the player"
+            />
+            <Field label="Premise note" hint="One line to pre-fill the opening scene of a new conversation.">
+              {(id) => (
+                <Textarea id={id} rows={2} value={draft.profile.playerRelationship.note}
+                  maxLength={PLAYER_RELATIONSHIP_NOTE_MAX}
+                  onChange={(event) => patchProfile({
+                    playerRelationship: { ...draft.profile.playerRelationship, note: event.target.value },
+                  })} />
+              )}
+            </Field>
+          </div>
+          {characterId ? <RelationshipsEditor key={characterId} characterId={characterId} name={draft.name} /> : <p className="text-sm text-paper-400">Save this character to link relationships with other library characters.</p>}
+        </div>
+
+      {tabs.filter((entry) => entry.id !== tab && entry.id !== "relationships").map((entry) => (
+        <div key={entry.id} hidden role="tabpanel" id={`${panelPrefix}-panel-${entry.id}`}
+          aria-labelledby={`${panelPrefix}-tab-${entry.id}`} />
+      ))}
+      <div role={tab === "relationships" ? undefined : "tabpanel"}
+        id={tab === "relationships" ? undefined : `${panelPrefix}-panel-${tab}`}
+        aria-labelledby={tab === "relationships" ? undefined : `${panelPrefix}-tab-${tab}`}
+        tabIndex={tab === "relationships" ? undefined : 0}>
       {tab === "profile" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
@@ -282,7 +283,7 @@ export function CharacterEditor({
           ) : null}
           <Field
             label="Age"
-            hint="Their actual age. Set their apparent age under Attributes."
+            hint="Their actual age. Set their apparent age under Appearance."
           >
             {(id) => (
               <Input id={id} value={draft.profile.age} onChange={(e) => patchProfile({ age: e.target.value })} />
@@ -293,45 +294,9 @@ export function CharacterEditor({
               <Textarea id={id} rows={6} value={draft.profile.bio} onChange={(e) => patchProfile({ bio: e.target.value })} />
             )}
           </Field>
-          <Field label="Personality" className="sm:col-span-2">
-            {(id) => (
-              <Textarea
-                id={id}
-                rows={5}
-                value={draft.profile.personality}
-                onChange={(e) => patchProfile({ personality: e.target.value })}
-              />
-            )}
-          </Field>
-          <Field label="Voice notes" hint="How they sound on the page." className="sm:col-span-2">
-            {(id) => (
-              <Textarea
-                id={id}
-                rows={3}
-                value={draft.profile.voice ?? ""}
-                onChange={(e) => patchProfile({ voice: e.target.value || undefined })}
-              />
-            )}
-          </Field>
           <Field label="Aliases" hint="Other names the narrative may use.">
             {(id) => <TagInput id={id} value={draft.profile.aliases} onChange={(aliases) => patchProfile({ aliases })} />}
           </Field>
-          <Disclosure
-            title="Voice examples & anchors"
-            description={voiceSummary || "Optional · Sample dialogue, phrases and speaking rhythm"}
-            className="sm:col-span-2"
-          >
-            <div className="flex flex-col gap-6">
-              <MicroExemplarsEditor
-                exemplars={draft.profile.microExemplars}
-                onChange={(microExemplars) => patchProfile({ microExemplars })}
-              />
-              <VoiceAnchorsEditor
-                anchors={draft.profile.voiceAnchors}
-                onChange={(voiceAnchors) => patchProfile({ voiceAnchors })}
-              />
-            </div>
-          </Disclosure>
           <Disclosure
             title="Daily rhythm"
             description={draft.profile.schedule.length > 0
@@ -344,24 +309,6 @@ export function CharacterEditor({
               onChange={(schedule) => patchProfile({ schedule })}
               outfitPresets={draft.profile.outfits.map((o) => ({ id: o.id, name: o.name }))}
             />
-          </Disclosure>
-          <Disclosure
-            title="Intimate disposition"
-            description={draft.profile.intimacy?.trim()
-              ? "Written · Used when a scene turns intimate"
-              : "Optional · How they are as a lover"}
-            className="sm:col-span-2"
-          >
-            <Field label="Intimate disposition" hint="Used when a scene turns intimate.">
-              {(id) => (
-                <Textarea
-                  id={id}
-                  rows={4}
-                  value={draft.profile.intimacy ?? ""}
-                  onChange={(e) => patchProfile({ intimacy: e.target.value || undefined })}
-                />
-              )}
-            </Field>
           </Disclosure>
         </div>
       ) : null}
@@ -383,6 +330,33 @@ export function CharacterEditor({
 
       {tab === "personality" ? (
         <div className="flex flex-col gap-6">
+          <Field label="Voice notes" hint="How they sound on the page." className="sm:col-span-2">
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={3}
+                value={draft.profile.voice ?? ""}
+                onChange={(e) => patchProfile({ voice: e.target.value || undefined })}
+              />
+            )}
+          </Field>
+          <Disclosure
+            title="Voice examples & anchors"
+            description={voiceSummary || "Optional · Sample dialogue, phrases and speaking rhythm"}
+            className="sm:col-span-2"
+          >
+            <div className="flex flex-col gap-6">
+              <MicroExemplarsEditor
+                exemplars={draft.profile.microExemplars}
+                onChange={(microExemplars) => patchProfile({ microExemplars })}
+              />
+              <VoiceAnchorsEditor
+                anchors={draft.profile.voiceAnchors}
+                onChange={(voiceAnchors) => patchProfile({ voiceAnchors })}
+              />
+            </div>
+          </Disclosure>
+
           <AttributePicker
             scope="personality"
             values={draft.profile.attributes}
@@ -391,6 +365,39 @@ export function CharacterEditor({
             heritageId={draft.profile.heritageId}
             bodyPlanId={draft.profile.bodyPlanId}
           />
+        </div>
+      ) : null}
+
+      {tab === "disposition" ? (
+        <div className="flex flex-col gap-6">
+          <Field label="Personality" className="sm:col-span-2">
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={5}
+                value={draft.profile.personality}
+                onChange={(e) => patchProfile({ personality: e.target.value })}
+              />
+            )}
+          </Field>
+          <Disclosure
+            title="Intimate disposition"
+            description={draft.profile.intimacy?.trim()
+              ? "Written · Used when a scene turns intimate"
+              : "Optional · How they are as a lover"}
+            className="sm:col-span-2"
+          >
+            <Field label="Intimate disposition" hint="Used when a scene turns intimate.">
+              {(id) => (
+                <Textarea
+                  id={id}
+                  rows={4}
+                  value={draft.profile.intimacy ?? ""}
+                  onChange={(e) => patchProfile({ intimacy: e.target.value || undefined })}
+                />
+              )}
+            </Field>
+          </Disclosure>
           <PreferencesEditor
             preferences={draft.profile.preferences}
             onChange={(preferences) => patchProfile({ preferences })}
@@ -401,11 +408,7 @@ export function CharacterEditor({
             hint="This character's own taboos and rules — they apply in 1-on-1 chat and take precedence over a world's cards in a session."
             emptyText="No personal cards. Add one to give this character lines that travel with them into any world."
           />
-        </div>
-      ) : null}
 
-      {tab === "disposition" ? (
-        <div className="flex flex-col gap-6">
           <DrivesEditor drives={draft.profile.drives} onChange={(drives) => patchProfile({ drives })} />
           <DispositionEditor
             traits={draft.profile.traits}
@@ -426,9 +429,7 @@ export function CharacterEditor({
         />
       ) : null}
 
-      {tab === "relationships" && characterId ? (
-        <RelationshipsEditor characterId={characterId} name={draft.name} />
-      ) : null}
+
 
       {tab === "portrait" ? (
         characterId ? (
@@ -440,31 +441,30 @@ export function CharacterEditor({
             onAvatarChanged={onAvatarChanged ?? (() => {})}
           />
         ) : (
-          <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
-            Save the character first — the avatar pipeline runs from saved attributes.
-          </p>
+          <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-400">
+            <p>Save your character to create a portrait from these details.</p>
+            {onSaveAndOpen ? <Button variant="primary" busy={saving} disabled={saving} onClick={() => onSaveAndOpen("portrait")}>Save and open Portrait Studio</Button> : null}
+          </div>
         )
       ) : null}
 
       {tab === "chat" ? (
         characterId ? (
-          // The tab is a summary surface (defaults + conversation list) — playing happens
-          // on /chat/[chatId]. Starting Relationship writes back into the draft here; the
-          // editor SaveBar persists it to the profile.
+          // Conversation defaults and links; the player relationship belongs to Relationships.
           <CharacterChat
             characterId={characterId}
             name={draft.name || "Untitled"}
-            starting={draft.profile.playerRelationship}
-            onStartingChange={(next) => patchProfile({ playerRelationship: next })}
             chatModel={resolveChatModelId(chatModel)}
             onChatModelChange={onChatModelChange ?? (() => undefined)}
           />
         ) : (
-          <p className="rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-500">
-            Save the character first — chat speaks from the saved profile and attributes.
-          </p>
+          <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-400">
+            <p>Save your character to start a conversation.</p>
+            {onSaveAndOpen ? <Button variant="primary" busy={saving} disabled={saving} onClick={() => onSaveAndOpen("chat")}>Save and open Chat</Button> : null}
+          </div>
         )
       ) : null}
+      </div>
     </div>
   );
 }
