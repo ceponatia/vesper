@@ -20,7 +20,18 @@ import {
   socialReactionCardExtrasSchema,
 } from "@/contracts";
 
-import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "./http";
+import {
+  apiDelete,
+  apiGet,
+  apiPatch,
+  apiPost,
+  apiPut,
+  withQuery,
+} from "./http";
+import {
+  type AuthoredEdgeRecord,
+  libraryRelationshipsSchema,
+} from "./chat-schemas";
 import { imageRecordSchema } from "./images";
 
 import {

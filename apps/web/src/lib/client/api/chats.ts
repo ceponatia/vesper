@@ -21,6 +21,8 @@ import {
 import { imageRecordSchema } from "./images";
 import { arrayOf, createdRefSchema, idSchema, listOf, textOr } from "./shared";
 import {
+  type AuthoredEdgeRecord,
+  type ChatStateEdit,
   chatRelationshipSchema,
   chatRelationshipsSchema,
   chatStateSnapshotSchema,
