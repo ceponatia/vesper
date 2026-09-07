@@ -6,7 +6,7 @@ import { emotionLabelEnum } from "../mood/emotion-label";
  * structured agent call after a chat reply settles. It does ONLY the cheap
  * generative parts — classify the player's act into the interaction-concept
  * vocabulary and refresh the "what's on their mind" note. The deterministic
- * response curve (engine/chat-state.ts) turns the classified act into every number, so the
+ * response curve (engine/chat-state/pulse-rules.ts) turns the classified act into every number, so the
  * schema carries no deltas. Fully `.default()`/`.catch()`ed so a parsed-empty
  * object IS the degraded fallback (docs/resilience.md §3).
  *

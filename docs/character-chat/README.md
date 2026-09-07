@@ -51,7 +51,7 @@ the chat lane must never re-fork it.
 
 - **Exchange orchestration** — `server/engine/chat-pipeline.ts`
 - **Model stream** — `server/engine/character-chat.ts`
-- **State (drift/pulse/persist)** — `server/engine/chat-state.ts`
+- **State types, seeds, time, pulse rules, and readout** — `server/engine/chat-state/{types,seed,time,pulse-rules,readout}.ts`; **state IO and orchestration** — `server/engine/chat-state.ts`
 - **RAG client (recall / the three extraction legs / write)** — `server/engine/chat-memory.ts`
 - **Extraction field library + the composed legs** ([post-turn.md](post-turn.md)) — `server/engine/prompts/chat-extractors.ts` (pure) + the per-leg schemas / `mergeChatExtractions` in `contracts/turns/chat-archivist.ts`
 - **Per-turn query-embedding cache (one embed, every leg)** — `server/memory/query-embeddings.ts`

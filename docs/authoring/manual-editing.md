@@ -51,7 +51,7 @@ degrade), `outfitItems`, `outfitPresetByName`, and `withItemsInDefaultOutfit` (t
 The forge outfit leg drafts the default preset, with `matchOutfitAgainstLibrary` underneath.
 
 Schedule rows may carry `outfitPresetId` for rhythm auto-dress (`rhythmOutfitPatch` in
-`engine/chat-state.ts` re-dresses on chat time-skips), and the chat archivist's outfit tracking maps
+`engine/chat-state/time.ts` re-dresses on chat time-skips), and the chat archivist's outfit tracking maps
 "changes into her work clothes" onto the preset via `matchOutfitPresetInText` — conservative: an
 exact name, or a name plus an outfit word.
 

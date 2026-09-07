@@ -46,7 +46,8 @@ runtime desires & secrets — see §Drives), and `presence`/`quiet_exchanges`
 ([multi-character.md](multi-character.md) §Multi-character).
 
 **Chat-wide** — the **scenario** on `character_chats` (`ChatScenario`;
-`loadChatScenario`/`saveChatScenario`/`seedChatScenario` in `engine/chat-state.ts`,
+`loadChatScenario`/`saveChatScenario` in `engine/chat-state.ts` and `seedChatScenario`
+in `engine/chat-state/seed.ts`,
 seeded at creation from the PRIMARY's profile — premise from `playerRelationship.note`,
 house rules from their own cards — then preset-overlaid and author-owned): the
 `premise`, the SETTING-wide `active_social_cards` (one rule set for every member —
@@ -96,7 +97,8 @@ carries `milestones_seen_at` (migration 0043) — the marker seen-cursor
 `upsertChatState` is the **one** state-row column-list source shared by the guarded
 (mid-exchange) and unguarded (author-edit) writers; `editChatState` is ONE patch surface
 over both stores (`ChatStateEdit` — per-character fields write the target's row,
-chat-wide fields write the scenario) and `chatStateSnapshot(state, scenario)` merges
+chat-wide fields write the scenario) and `chatStateSnapshot(state, scenario)` in
+`engine/chat-state/readout.ts` merges
 them back into the client's back-compat snapshot shape. State is inspected/edited
 through the per-character **Character sheet** and the chat-wide **Scenario** modal
 ([ui/conversation.md](../ui/conversation.md)).
