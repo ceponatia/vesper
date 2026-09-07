@@ -40,6 +40,8 @@ See [Generating and reviewing control fixtures](generating-control-fixtures.md) 
 5. The result is saved as a hidden `lab_output` image and the experiment settles `succeeded` or `failed`.
 6. Experiment kinds with a defined visual question can receive a verdict and required note. Baselines intentionally have no verdict vocabulary.
 
+The create form (`apps/web/src/components/settings/image-lab-experiment-form.tsx`) owns selection state, data hooks, render-time resets, and submission. The experiment-family fields under `image-lab-form/` receive controlled values and reuse the Lab pickers; `image-lab-form/request.ts` translates those values into ordered inputs, readiness, prompt previews, and the existing create request. The package contract remains the validation authority, and prompt previews use the same compiler helpers as the runners.
+
 All experiment kinds dispatch through `apps/web/src/server/images/image-lab-run.ts`. Shared contracts live in `packages/image-core/src/lab/image-lab.ts`; controlled recipe profiles live in `packages/image-core/src/lab/image-lab-recipes.ts`.
 
 ## Model/version behavior at a glance
