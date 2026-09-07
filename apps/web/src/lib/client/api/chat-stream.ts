@@ -1,4 +1,4 @@
-import { type ChatActionId } from "@/contracts";
+import type { ChatActionId } from "@/contracts";
 
 import { toApiError, type ApiError } from "./http";
 
