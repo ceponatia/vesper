@@ -4555,7 +4555,8 @@ export const simItemConditionModifiers = pgTable(
 // is a caller-supplied identity independent of locus; lots have no such
 // identity in the domain model (they're addressed by `(locus,
 // materialKindKey)` everywhere in contracts/events — see
-// `lib/simulation/households.ts`'s `deriveMaterialLotRowKey`), so the STORE
+// `packages/simulation-core/src/lib/households/lots.ts`'s
+// `deriveMaterialLotRowKey`), so the STORE
 // layer synthesizes one deterministic string purely to have a non-null PK
 // column. The same nullable-discriminant problem applies to means-band
 // subjects (`actor` XOR `household`), solved the same way
@@ -4637,7 +4638,8 @@ export const simHouseholdMembers = pgTable(
 /**
  * E5.4 fungible material lots. `lot_key` is a synthetic, deterministic,
  * content-addressed persistence-layer key (`deriveMaterialLotRowKey`,
- * lib/simulation/households.ts) — NOT a domain id; contracts/events address a lot by
+ * `packages/simulation-core/src/lib/households/lots.ts`) — NOT a domain id;
+ * contracts/events address a lot by
  * `(locus, materialKindKey)` directly. It exists only because Postgres cannot make a
  * discriminated nullable-column tuple a primary key (see the migration-note comment
  * above `simHouseholds`). Zero quantity is NOT terminal (unlike item holdings' `gone`).
