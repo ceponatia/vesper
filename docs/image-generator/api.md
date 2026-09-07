@@ -28,7 +28,10 @@ job from the route — a refused job slot deletes the just-created row rather th
 | `apps/web/src/contracts/images/image-generator.ts`         | statuses, request/wire schemas, failure codes                                           |
 | `apps/web/src/contracts/images/image-generator-outputs.ts` | the per-prediction output record and its reader                                         |
 | `apps/web/src/server/images/image-generator-store.ts`      | row↔wire, create/list/detail/delete/settle                                              |
-| `apps/web/src/server/images/image-generator-run.ts`        | runner algorithm, synthetic profile, refusals                                           |
+| `apps/web/src/server/images/image-generator-run.ts`        | atomic claim and prepare-to-settle coordination                                         |
+| `apps/web/src/server/images/image-generator-request.ts`    | request validation, version, profile and pre-spend planning                             |
+| `apps/web/src/server/images/image-generator-provenance.ts` | capability snapshot and sanitized effective request                                     |
+| `apps/web/src/server/images/image-generator-settle.ts`     | sequential renders, output storage and deletion-race cleanup                            |
 | `apps/web/src/server/images/image-generator-render.ts`     | injectable render seam (`renderImageIntent`)                                            |
 | `apps/web/src/server/images/owned-image-reads.ts`          | shared owner-scoped byte readers                                                        |
 | `apps/web/src/app/api/admin/self/image-generator/…`        | run routes                                                                              |
@@ -38,6 +41,6 @@ job from the route — a refused job slot deletes the just-created row rather th
 | `apps/web/src/components/settings/image-generator-form/`   | model view data, request assembly, prefill interpretation, reference and control fields |
 | `apps/web/src/components/settings/owned-image-picker.tsx`  | general owned-image picker                                                              |
 
-The runner builds a synthetic in-memory profile per run — a pass-through prompt strategy, a caller
+The request planner builds a synthetic in-memory profile per run — a pass-through prompt strategy, a caller
 seed policy, and the run's advanced values as provider overrides — so `compileProfileRenderPlan`
 stays the only control mapper and no production profile is consulted.

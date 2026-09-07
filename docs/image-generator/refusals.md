@@ -1,5 +1,8 @@
 # Refusals
 
+Request feasibility belongs to `image-generator-request.ts`. Transport refusals and
+output failures settle through `image-generator-settle.ts`, using the shared run store.
+
 ## All-or-nothing inputs
 
 Vesper's production lanes may drop a reference that will not fit — a scene missing its third image

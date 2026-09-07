@@ -1,5 +1,10 @@
 # Runs
 
+`image-generator-run.ts` coordinates the claim, request preparation and settlement.
+`image-generator-request.ts` completes the pre-spend gates and records the effective
+request through `image-generator-provenance.ts`; `image-generator-settle.ts` owns
+sequential rendering, output storage and cleanup when a run disappears during rendering.
+
 ## Runs are immutable records
 
 One run is one row in `image_generator_runs`
