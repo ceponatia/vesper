@@ -18,8 +18,8 @@ import { parseOr } from "@/lib/parse";
  * hidden 404 for any path outside `OWNER_ADMIN_API_PREFIX`, so a call to the
  * plan's suggested `/api/admin/narrator-prompts` would 404 by construction.
  *
- * This lives beside the page rather than in `lib/client/api.ts` because the whole
- * feature is one owner-admin screen — nothing else in the app calls these
+ * This lives beside the page rather than in the shared `lib/client/api/`
+ * families because the whole feature is one owner-admin screen — nothing else in the app calls these
  * routes. Every response still crosses a trust boundary, so it is parsed with
  * forgiving schemas exactly like the shared layer's.
  *
