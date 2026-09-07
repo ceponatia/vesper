@@ -1,3 +1,4 @@
+import { finalizeChatState } from "../engine/chat-state/finalize";
 import type { AffordanceCueState } from "@/contracts/affordances/core/ranking";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { GarmentCueState } from "@/contracts/items/garment-instance";
@@ -8,7 +9,6 @@ import { newId } from "@/lib/ids";
 import { characterChatMessages, characterChats, characters, chatParticipants, db, items } from "@/server/db";
 import { endTestPool, purgeOwnerRows, seedTestUser } from "./db-fixtures";
 import {
-  finalizeChatState,
   seedChatScenario,
   seedChatState,
   type ChatScenario,

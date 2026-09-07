@@ -1,3 +1,5 @@
+import { foldPrimaryProgression } from "./chat-state/character-fold";
+import { settleEnsembleMember } from "./chat-state/ensemble";
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { initialMeters } from "@/contracts/meters/registry";
@@ -24,7 +26,6 @@ import {
   rhythmOutfitPatch,
   seedChatScenario,
   seedChatState,
-  settleEnsembleMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
@@ -524,6 +525,38 @@ describe("applyChatAction (test-bed chips)", () => {
   });
 });
 
+describe("primary progression", () => {
+  it("a skipped pulse still samples familiarity without replaying its stale reaction or selfie", () => {
+    const profile = makeProfile();
+    const state = seedChatState(profile);
+    const scenario = seedChatScenario(profile);
+    const pulseState = {
+      ...state,
+      lastPulseTrace: { ...state.lastPulseTrace, degraded: false, regardDelta: 5, sentPhoto: true },
+    };
+    const next = foldPrimaryProgression({
+      preExchangeState: state,
+      driftedState: state,
+      now: new Date("2026-07-12T12:00:00Z"),
+      skipPulse: true,
+      scenario,
+      assistantMessageId: "msg-1",
+      characterName: "Vera",
+      playerName: "Player",
+      profile,
+      selfie: { requested: true, offerEligible: false },
+    }, { state: pulseState, degraded: false }, {
+      value: null, degraded: true, legs: { memory: true, continuity: true, character: true },
+    }, false, { plans: [], archivistKept: [] }, { plans: [], justMissed: [], justKept: [] });
+    expect(next.familiarity).toBeGreaterThan(state.familiarity);
+    expect(next.relationshipHistory).toHaveLength(1);
+    expect(next.relationshipHistory[0]?.familiarity).toBe(next.familiarity);
+    expect(next.milestones.map((m) => m.kind)).toContain("first_exchange");
+    expect(next.milestones.map((m) => m.kind)).not.toContain("strong_reaction");
+    expect(next.selfieKind).toBeNull();
+  });
+});
+
 describe("settleEnsembleMember (followups rulings 10-11)", () => {
   const now = new Date("2026-07-12T12:00:00Z");
   const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
@@ -847,6 +880,7 @@ describe("settleEnsembleMember (followups rulings 10-11)", () => {
     });
     const next = settle({ state: sent, pulsed: true, selfieRequestTarget: true });
     expect(next.selfieHistory).toEqual([{ kind: "request", atClockMinutes: 30 }]);
+    expect(settle({ state: sent, pulsed: false, selfieRequestTarget: true }).selfieHistory).toEqual(next.selfieHistory);
     // Not the target ⇒ no burn even when the trace read a send.
     expect(settle({ state: sent, pulsed: true }).selfieHistory).toEqual([]);
   });

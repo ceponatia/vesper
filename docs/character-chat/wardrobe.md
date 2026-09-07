@@ -72,7 +72,7 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
 ## Archivist outfit changes
 
 The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
-drives two grammars, folded by `foldOutfitProposal` in `chat-state/outfit-fold.ts`, called by `finalizeChatState`: a whole-outfit
+drives two grammars, folded by `foldOutfitProposal` in `chat-state/outfit-fold.ts`, called by `chat-state/wardrobe-fold.ts`: a whole-outfit
 `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
 list from it, an unmatched description over a MODELLED wardrobe replaces it **only when the
 proposal's verbatim `changeEvidence` is present in this exchange's text, classifies as an
@@ -108,7 +108,7 @@ exchange SAYING the outfit changed replaces — and only for the owner it says i
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
   turn).
 - The ensemble members' **personal pass** runs the same two description rungs through
-  the pure `settleEnsembleMember` ([multi-character.md](multi-character.md) §Multi-character):
+  the pure `settleEnsembleMember` (`chat-state/ensemble.ts`; [multi-character.md](multi-character.md) §Multi-character):
   a whole-look description naming an authored preset re-seeds their worn list exactly like the
   primary and never reaches the gate, an unmatched one replaces a
   modelled worn list only past validated evidence (scoped to THAT member — on a roster of two
