@@ -15,6 +15,11 @@
   --color-ink-600: #2b2b39; /* borders */
   --color-ink-500: #3c3c4e; /* strong borders, disabled text bg */
 
+  /* Form boundaries are stronger than decorative card dividers. */
+  --color-control-fill: #1a1a23;
+  --color-control-border: #696977;
+  --color-control-hover: #858591;
+
   --color-paper-50: #f7f2e7; /* brightest headings */
   --color-paper-100: #efe8d8;
   --color-paper-200: #ddd4c0; /* body text */
@@ -56,6 +61,8 @@
   --color-paper-500: #ada189; /* faint → higher contrast */
   --color-ink-500: #50506a; /* strong borders */
   --color-ink-600: #3c3c4e; /* borders → clearly visible */
+  --color-control-border: #9292a3;
+  --color-control-hover: #b0b0be;
 }
 
 @layer base {

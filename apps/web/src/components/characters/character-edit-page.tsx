@@ -17,6 +17,7 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
+import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -360,6 +361,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         <h1 className="prose-display min-w-0 truncate text-2xl">{draft.name || "Untitled character"}</h1>
         <div className="flex flex-wrap items-center gap-3">
           <Button
+            variant={stagedForge ? "ghost" : "primary"}
             onClick={() => void forgeFill()}
             busy={forging}
             disabled={saving || redrafting !== null}
@@ -367,15 +369,19 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
           >
             ✦ Forge the rest
           </Button>
-          <Button
-            onClick={() => void clone()}
-            busy={cloning}
-            disabled={saving || forging || redrafting !== null}
-            title="Copy this character into a new library entry and open it — an archetype starting point."
-          >
-            Duplicate
-          </Button>
           {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
+          <ActionMenu
+            label="Character actions"
+            items={[
+              {
+                label: "Duplicate",
+                onSelect: () => void clone(),
+                busy: cloning,
+                disabled: saving || forging || redrafting !== null,
+              },
+              { label: "Delete character", onSelect: () => setConfirmDelete(true), danger: true },
+            ]}
+          />
         </div>
       </div>
       <div onBlur={autosave.onBlur}>
@@ -403,11 +409,6 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         dirty={dirty}
         saving={saving}
         onSave={() => void save()}
-        secondary={
-          <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
-            Delete
-          </Button>
-        }
       />
       <Dialog
         open={portraitReview !== null}

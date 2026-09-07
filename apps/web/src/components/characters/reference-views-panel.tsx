@@ -21,6 +21,7 @@ import {
   referenceViewStateCopy,
 } from "./reference-view-copy";
 import { ReferenceViewHistory, type ReferenceViewHistorySlot } from "./reference-view-history";
+import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -33,7 +34,7 @@ import { useToast } from "@/components/ui/toast";
  * on its own.
  *
  * The grid is the shape of the REGISTRY, not of the rows that happen to exist —
- * one row of tiles per wardrobe state, one tile per angle, always. A slot with
+ * one row of tiles per wardrobe state, one tile per angle, after acceptance. A slot with
  * no row is a tile that says "not built" and offers to build it, which is
  * something the owner can act on; a hole in the grid is not.
  *
@@ -143,6 +144,10 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   );
 
   if (views.loading || views.error || set === null) return null;
+
+  // Before the first portrait is chosen, there is nothing to review or configure.
+  // Keep existing attempts and live builds visible even if acceptance is cleared.
+  if (!acceptance.acceptedImageId && !inFlight && set.views.every((view) => view.state === "missing")) return null;
 
   const bySlot = new Map(set.views.map((view) => [slotKey(view), view]));
   const buildable = set.views.some(
@@ -270,13 +275,18 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Reference views</h3>
-        <span className="min-w-0 text-xs text-paper-500">
-          What this character looks like from the other sides, built from the accepted portrait. Only views you approve
-          are used.
-        </span>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 max-w-2xl flex-col gap-2">
+          <h3 className="text-base font-medium text-paper-100">Reference views</h3>
+          <p className="text-sm text-paper-400">
+            Check each angle against the accepted portrait, then approve the views that look right. Only approved views
+            are used in new images.
+          </p>
+          <p className="text-xs text-paper-500">
+            Open an image for a closer look. Select attempted views to regenerate them together.
+          </p>
+        </div>
         {buildable && acceptance.acceptedImageId ? (
           <Button size="sm" variant="primary" className="ml-auto" busy={building} disabled={set.building} onClick={buildAll}>
             {`Build ${String(planned)} reference views`}
@@ -303,9 +313,9 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
       ) : null}
 
       {referenceViewWardrobeEntries.map((wardrobe) => (
-        <div key={wardrobe.id} className="flex flex-col gap-2">
-          <h4 className="text-xs text-paper-500">{wardrobe.label}</h4>
-          <div className="flex flex-wrap gap-3">
+        <div key={wardrobe.id} className="flex flex-col gap-3">
+          <h4 className="text-sm font-medium text-paper-200">{wardrobe.label}</h4>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {referenceViewAngles.map((angle) => {
               const view = bySlot.get(slotKey({ angle: angle.id, wardrobe: wardrobe.id }));
               if (!view) return null;
@@ -319,8 +329,33 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
               return (
                 <div
                   key={angle.id}
-                  className="flex w-40 flex-col gap-2 rounded-card border border-ink-600 bg-ink-950/40 p-2"
+                  className="flex min-w-0 flex-col gap-3 rounded-card border border-ink-600 bg-ink-800 p-3"
                 >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {attempted ? (
+                      <label className="touch-target flex cursor-pointer items-center gap-2 text-sm font-medium text-paper-100">
+                        <input
+                          type="checkbox"
+                          className="accent-accent-500"
+                          checked={selected.has(slot)}
+                          aria-label={`Select ${label} for regeneration`}
+                          onChange={() =>
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (!next.delete(slot)) next.add(slot);
+                              return next;
+                            })
+                          }
+                        />
+                        {angle.label}
+                      </label>
+                    ) : (
+                      <span className="text-sm font-medium text-paper-100">{angle.label}</span>
+                    )}
+                    <Tag tone={copy.tone} title={copy.hint}>
+                      {copy.label}
+                    </Tag>
+                  </div>
                   <div className="flex aspect-[3/4] items-center justify-center overflow-hidden rounded-card border border-ink-700 bg-ink-900">
                     {view.imageId ? (
                       <button
@@ -335,35 +370,18 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                       <span className="px-2 text-center text-xs text-paper-500">{copy.label}</span>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {attempted ? (
-                      <input
-                        type="checkbox"
-                        className="accent-accent-500"
-                        checked={selected.has(slot)}
-                        aria-label={`Select ${label} for regeneration`}
-                        onChange={() =>
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (!next.delete(slot)) next.add(slot);
-                            return next;
-                          })
-                        }
-                      />
-                    ) : null}
-                    <span className="text-xs text-paper-300">{angle.label}</span>
-                    <Tag tone={copy.tone}>{copy.label}</Tag>
-                  </div>
-                  <p className="text-[11px] leading-snug text-paper-500">
-                    {view.state === "failed" && view.failureMessage ? view.failureMessage : copy.hint}
-                  </p>
-                  <div className="flex flex-wrap gap-1">
+                  {view.state === "failed" || view.state === "rejected" || view.state === "stale" ? (
+                    <p className="text-xs leading-relaxed text-paper-400">
+                      {view.state === "failed" && view.failureMessage ? view.failureMessage : copy.hint}
+                    </p>
+                  ) : null}
+                  <div className="mt-auto flex flex-wrap items-center gap-2">
                     {view.state === "unreviewed" ? (
                       <>
-                        <Button size="sm" busy={busy} onClick={() => void review(view, "approve")}>
+                        <Button size="sm" variant="primary" busy={busy} onClick={() => void review(view, "approve")}>
                           Approve
                         </Button>
-                        <Button size="sm" variant="ghost" busy={busy} onClick={() => void review(view, "reject")}>
+                        <Button size="sm" variant="quiet" busy={busy} onClick={() => void review(view, "reject")}>
                           Reject
                         </Button>
                       </>
@@ -378,20 +396,18 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                         Regenerate
                       </Button>
                     ) : null}
-                    <Button size="sm" variant="ghost" busy={busy} onClick={() => pickUpload(view)}>
-                      Upload
-                    </Button>
-                    {view.state === "missing" || view.state === "pending" ? null : (
-                      // Read-only, so it is never disabled and never busy: opening a
-                      // slot's past renders cannot change what the slot currently is.
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setHistorySlot({ angle: view.angle, wardrobe: view.wardrobe, label })}
-                      >
-                        History
-                      </Button>
-                    )}
+                    <ActionMenu
+                      label="More"
+                      ariaLabel={`${label} actions`}
+                      items={[
+                        { label: "Upload image", onSelect: () => pickUpload(view), busy },
+                        ...(attempted ? [{
+                          label: "History",
+                          // Read-only: a busy upload or review must not disable history.
+                          onSelect: () => setHistorySlot({ angle: view.angle, wardrobe: view.wardrobe, label }),
+                        }] : []),
+                      ]}
+                    />
                   </div>
                 </div>
               );

@@ -369,10 +369,12 @@ interface NestedGroup {
 const setCountOf = (definitions: readonly AttributeDefinition[], byId: Map<string, AttributeValue>): number =>
   definitions.filter((d) => byId.has(d.id)).length;
 
-/** Set values of a section as short human words, in registry order. */
+/** Keep defining appearance first; use registry order within each visual tier. */
 function setValueWords(definitions: readonly AttributeDefinition[], byId: Map<string, AttributeValue>): string[] {
   const words: string[] = [];
-  for (const def of definitions) {
+  const priority = (def: AttributeDefinition) =>
+    def.coreVisual || def.identityAnchor ? 0 : def.renderVisual ? 1 : 2;
+  for (const def of [...definitions].sort((a, b) => priority(a) - priority(b))) {
     const held = byId.get(def.id);
     if (held === undefined) continue;
     const v = held.value;
@@ -384,29 +386,26 @@ function setValueWords(definitions: readonly AttributeDefinition[], byId: Map<st
   return words;
 }
 
-/** Preview length past which the header falls back to "N set". */
-const SECTION_PREVIEW_MAX = 64;
-
 /**
- * Collapsed-header summary: the section's set values
- * as a scannable phrase — "auburn, shoulder-length, wavy" — falling back to
- * "N set" when it gets long, with a distinct italic "empty" when nothing is
- * authored. What makes a fully-authored section distinguishable at a glance
- * (and Forge-the-rest / From-portrait output reviewable without expanding).
+ * Appearance stays readable even when many values are set. The count is a
+ * secondary cue; detailed anatomy can keep a count-only summary.
  */
 function SectionCount({ count, open, preview }: { count: number; open: boolean; preview?: string }) {
-  const label =
-    count === 0 ? undefined : preview && preview.length <= SECTION_PREVIEW_MAX ? preview : `${count} set`;
   return (
-    <span className="flex min-w-0 items-center text-xs text-paper-500">
-      {label !== undefined ? (
-        <span className="max-w-44 truncate sm:max-w-80" title={preview}>
-          {label}
-        </span>
+    <span className="flex w-full min-w-0 flex-1 items-center gap-3 text-xs text-paper-500 sm:w-auto sm:justify-end">
+      {count > 0 ? (
+        <>
+          {preview ? (
+            <span className="line-clamp-2 min-w-0 break-words text-paper-400 sm:text-right" title={preview}>
+              {preview}
+            </span>
+          ) : null}
+          <span className="shrink-0">{count} set</span>
+        </>
       ) : (
-        <span className="text-paper-600 italic">empty</span>
+        <span className="italic">empty</span>
       )}
-      <span className={cx("ml-2 inline-block shrink-0 transition-transform", open && "rotate-90")}>›</span>
+      <span className={cx("ml-auto inline-block shrink-0 transition-transform sm:ml-0", open && "rotate-90")}>›</span>
     </span>
   );
 }
@@ -477,7 +476,7 @@ function AttributeGroupSection({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-left"
+        className="flex w-full cursor-pointer flex-col items-start gap-1.5 px-4 py-3 text-left sm:flex-row sm:items-center sm:justify-between sm:gap-4"
       >
         <span className="shrink-0 text-sm font-medium text-paper-100 capitalize">{category}</span>
         <SectionCount count={totalSet} open={open} preview={preview} />

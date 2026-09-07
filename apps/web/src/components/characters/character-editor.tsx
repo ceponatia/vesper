@@ -15,6 +15,7 @@ import { wearerHintForGender } from "@/lib/clothing-slots";
 import { resolveChatModelId } from "@/lib/narrative-models";
 import { DiagnosticList } from "@/components/forge/diagnostic-list";
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -166,22 +167,32 @@ export function CharacterEditor({
     outfit: "outfit",
   };
   const scope = scopeFor[tab];
+  const hasVoiceAnchors = Boolean(
+    draft.profile.voiceAnchors.cadence.trim()
+    || draft.profile.voiceAnchors.petPhrases.some((phrase) => phrase.trim())
+    || draft.profile.voiceAnchors.neverSays.some((phrase) => phrase.trim()),
+  );
+  const voiceSummary = [
+    ...(draft.profile.microExemplars.length > 0
+      ? [`${draft.profile.microExemplars.length} voice ${draft.profile.microExemplars.length === 1 ? "example" : "examples"}`]
+      : []),
+    ...(hasVoiceAnchors ? ["Voice anchors written"] : []),
+  ].join(" · ");
 
   return (
     <div className="flex flex-col gap-5">
-      <DiagnosticList diagnostics={diagnostics} />
-
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
         <Tabs tabs={tabs} value={tab} onChange={setTab} className="min-w-0 flex-1" />
         {onRegenerate && section ? (
           <Button
+            variant="primary"
             size="sm"
             onClick={() => onRegenerate(section)}
             busy={regenerating === section}
             disabled={regenerating !== null && regenerating !== section}
             className="self-start sm:mb-1 sm:self-auto"
           >
-            ↻ Regenerate {section}
+            ↻ Revise {section}
           </Button>
         ) : null}
         {onPortraitAttributes && tab === "attributes" && avatarImageId ? (
@@ -209,6 +220,15 @@ export function CharacterEditor({
           </Button>
         ) : null}
       </div>
+
+      {diagnostics.length > 0 ? (
+        <Disclosure
+          title="Generation notes"
+          description={`${diagnostics.length} ${diagnostics.length === 1 ? "note" : "notes"} to review${diagnostics.some((d) => d.severity === "error") ? " · Some details could not be generated" : ""}`}
+        >
+          <DiagnosticList diagnostics={diagnostics} />
+        </Disclosure>
+      ) : null}
 
       {tab === "profile" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -262,7 +282,7 @@ export function CharacterEditor({
           ) : null}
           <Field
             label="Age"
-            hint="Real/chronological age — a number, or e.g. “ancient” / “312 years”. Distinct from the look (Attributes → Apparent age)."
+            hint="Their actual age. Set their apparent age under Attributes."
           >
             {(id) => (
               <Input id={id} value={draft.profile.age} onChange={(e) => patchProfile({ age: e.target.value })} />
@@ -270,14 +290,14 @@ export function CharacterEditor({
           </Field>
           <Field label="Bio" className="sm:col-span-2">
             {(id) => (
-              <Textarea id={id} rows={5} value={draft.profile.bio} onChange={(e) => patchProfile({ bio: e.target.value })} />
+              <Textarea id={id} rows={6} value={draft.profile.bio} onChange={(e) => patchProfile({ bio: e.target.value })} />
             )}
           </Field>
           <Field label="Personality" className="sm:col-span-2">
             {(id) => (
               <Textarea
                 id={id}
-                rows={4}
+                rows={5}
                 value={draft.profile.personality}
                 onChange={(e) => patchProfile({ personality: e.target.value })}
               />
@@ -287,48 +307,62 @@ export function CharacterEditor({
             {(id) => (
               <Textarea
                 id={id}
-                rows={2}
+                rows={3}
                 value={draft.profile.voice ?? ""}
                 onChange={(e) => patchProfile({ voice: e.target.value || undefined })}
-              />
-            )}
-          </Field>
-          <Field
-            label="Intimate disposition"
-            hint="How they are as a lover. Surfaces to the narrator only when a scene turns intimate — never in ordinary play."
-            className="sm:col-span-2"
-          >
-            {(id) => (
-              <Textarea
-                id={id}
-                rows={2}
-                value={draft.profile.intimacy ?? ""}
-                onChange={(e) => patchProfile({ intimacy: e.target.value || undefined })}
               />
             )}
           </Field>
           <Field label="Aliases" hint="Other names the narrative may use.">
             {(id) => <TagInput id={id} value={draft.profile.aliases} onChange={(aliases) => patchProfile({ aliases })} />}
           </Field>
-          <div className="sm:col-span-2">
-            <MicroExemplarsEditor
-              exemplars={draft.profile.microExemplars}
-              onChange={(microExemplars) => patchProfile({ microExemplars })}
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <VoiceAnchorsEditor
-              anchors={draft.profile.voiceAnchors}
-              onChange={(voiceAnchors) => patchProfile({ voiceAnchors })}
-            />
-          </div>
-          <div className="sm:col-span-2">
+          <Disclosure
+            title="Voice examples & anchors"
+            description={voiceSummary || "Optional · Sample dialogue, phrases and speaking rhythm"}
+            className="sm:col-span-2"
+          >
+            <div className="flex flex-col gap-6">
+              <MicroExemplarsEditor
+                exemplars={draft.profile.microExemplars}
+                onChange={(microExemplars) => patchProfile({ microExemplars })}
+              />
+              <VoiceAnchorsEditor
+                anchors={draft.profile.voiceAnchors}
+                onChange={(voiceAnchors) => patchProfile({ voiceAnchors })}
+              />
+            </div>
+          </Disclosure>
+          <Disclosure
+            title="Daily rhythm"
+            description={draft.profile.schedule.length > 0
+              ? `${draft.profile.schedule.length} scheduled ${draft.profile.schedule.length === 1 ? "activity" : "activities"}`
+              : "Optional · Work, rest and the places they spend time"}
+            className="sm:col-span-2"
+          >
             <ScheduleEditor
               schedule={draft.profile.schedule}
               onChange={(schedule) => patchProfile({ schedule })}
               outfitPresets={draft.profile.outfits.map((o) => ({ id: o.id, name: o.name }))}
             />
-          </div>
+          </Disclosure>
+          <Disclosure
+            title="Intimate disposition"
+            description={draft.profile.intimacy?.trim()
+              ? "Written · Used when a scene turns intimate"
+              : "Optional · How they are as a lover"}
+            className="sm:col-span-2"
+          >
+            <Field label="Intimate disposition" hint="Used when a scene turns intimate.">
+              {(id) => (
+                <Textarea
+                  id={id}
+                  rows={4}
+                  value={draft.profile.intimacy ?? ""}
+                  onChange={(e) => patchProfile({ intimacy: e.target.value || undefined })}
+                />
+              )}
+            </Field>
+          </Disclosure>
         </div>
       ) : null}
 
