@@ -246,6 +246,13 @@ export async function loadMessageAttachments(
   };
 }
 
+/**
+ * Defensive parse of an assistant reply's meta: the action-beat chip id (regenerate
+ * recovery) and the run that produced the content currently on the row — which the
+ * first regenerate hands to the historical take it seeds, so the old take keeps
+ * saying which prompt actually wrote it. Rows written before provenance existed
+ * have none; absent is legal, never an error.
+ */
 const assistantReplyMetaSchema = z.object({
   actionBeat: chatActionIdSchema.optional().catch(undefined),
   narratorRun: narratorRunProvenanceSchema.optional().catch(undefined),
@@ -313,6 +320,7 @@ export type RerunResolution =
       ok: true;
       target: { id: string; content: string };
       deletedAssistantIds: string[];
+      /** EVERY deleted successor id (both roles) — user lines' attachments clean up on these. */
       deletedIds: string[];
     };
 
