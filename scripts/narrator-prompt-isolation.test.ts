@@ -308,9 +308,9 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
   ],
   "apps/web/src/server/engine/sim-exchange/context.ts": [
     "const instructionSource = await resolveNarratorInstructionSource(ownerId, chatId, instructions);",
+    "export interface ResolvedSimExchange { :: instructionSource: NarratorInstructionSource;",
     'import type { NarratorInstructionSource } from "@/contracts/narrator-prompts";',
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
-    "export interface ResolvedSimExchange { :: instructionSource: NarratorInstructionSource;",
     "return { > ctx: { :: instructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange/dialogue.ts": [
