@@ -4,9 +4,9 @@ import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { deriveMoodDescriptor, splitStateCues } from "@/contracts/meters/registry";
 import { currentScenePlace, isEmptyChatSceneMemory, type ChatSceneMemory } from "@/contracts/turns/chat-scene-memory";
-import { type SupportingCast } from "@/contracts/turns/chat-supporting-cast";
+import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
 import { planOthersLabel, type SalientPlan } from "@/contracts/turns/chat-plans";
-import { type SocialReactionCard } from "@/contracts/personality/cards";
+import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { stateDispositionOverlays } from "@/contracts/personality/modulation";
 import { dispositionBands, effectiveTraitValue, traitPole, traitRegistry } from "@/contracts/personality/traits";
 import { resolveTraits, type TraitValue } from "@/contracts/personality/traits/value";
@@ -14,10 +14,10 @@ import { driveWithheld } from "@/contracts/personality/drives";
 import { composeRelationshipLaw, dispositionContrastLine, dispositionIdiomLine } from "@/contracts/relationships/law";
 import { speciesIntimacyNote, type RealizedBody } from "@/contracts/species";
 import { hasVoiceAnchors, type CharacterProfile, type VoiceAnchors } from "@/contracts/world/profile";
-import { type VoiceExemplar } from "../../chat-voice";
-import { type ChatFeelingState } from "../../chat-feeling";
+import type { VoiceExemplar } from "../../chat-voice";
+import type { ChatFeelingState } from "../../chat-feeling";
 import { fenceUntrusted } from "../untrusted";
-import { type CharacterChatPromptInput } from "./types";
+import type { CharacterChatPromptInput } from "./types";
 import { AFFORDANCE_CUE_BLOCK_HEADING, VISUAL_STATE_CONSTRAINT_BLOCK_HEADING, VISUAL_STATE_CUE_BLOCK_HEADING, attributePhrase, withholdHairAttributes } from "./sensory-sections";
 
 /**

@@ -1,12 +1,12 @@
 import { HAIR_LOCATION_ID } from "@/contracts/affordances";
 import { attributeRegistry, promptValueWithNoneElided, type AttributeDefinition } from "@/contracts/attributes";
-import { type AttributeValue } from "@/contracts/attributes/value";
+import type { AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
-import { type HairOcclusion } from "@/contracts/items/hair-occlusion";
+import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
 import { meterStateCue } from "@/contracts/meters/registry";
 import { expandBodyTarget, type RealizedBody } from "@/contracts/species";
-import { type ChatSensoryAllowance, type SensoryFocusHint } from "../../chat-intent";
-import { type CharacterChatPromptInput } from "./types";
+import type { ChatSensoryAllowance, SensoryFocusHint } from "../../chat-intent";
+import type { CharacterChatPromptInput } from "./types";
 
 /**
  * The affordance cue block's heading. Declared once because TWO places name it:

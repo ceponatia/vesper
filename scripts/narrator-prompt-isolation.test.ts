@@ -296,7 +296,7 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "const parts = buildCharacterChatPromptParts( :: instructionSource,",
     "const promptInput: CharacterChatPromptInput = { :: instructionSource,",
     "ensembleExtras = { :: instructionSource,",
-    "import { :: type NarratorInstructionSource,",
+    'import type { NarratorInstructionSource, NarratorPromptNode, NarratorRunProvenance } from "@/contracts/narrator-prompts";',
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
   ],
   "apps/web/src/server/engine/chat-reply-store.ts": [
@@ -331,7 +331,7 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
   "apps/web/src/server/engine/prompts/character-chat/types.ts": [
     "export interface CharacterChatPromptInput { :: instructionSource?: NarratorInstructionSource;",
     "export interface EnsemblePromptExtras { :: instructionSource?: NarratorInstructionSource;",
-    'import { type NarratorInstructionSource, type NarratorPromptNode } from "@/contracts/narrator-prompts";',
+    'import type { NarratorInstructionSource, NarratorPromptNode } from "@/contracts/narrator-prompts";',
   ],
   "apps/web/src/server/engine/prompts/charter.ts": [
     "export function narratorRenderMode(source: NarratorInstructionSource | undefined): NarratorPromptRenderMode {",

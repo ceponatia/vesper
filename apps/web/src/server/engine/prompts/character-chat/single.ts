@@ -15,7 +15,7 @@ import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeI
 import { fenceUntrusted } from "../untrusted";
 import { attributionTagNode, cameraViewpointNode, contentFramingNode, intimateCraftNode, lifeStageNode, messageNotationNode, narratorBehaviorSlot, narratorCameraNode, narratorRenderMode, naturalDialogueNode, noRefusalNode, physicalStateLawNode, promptUnit, proportionalityNode, readingPlayerMessageNode, shapingNode, topicDisciplineNode, untrustedDataNoticeNode } from "../charter";
 import { buildBioSection, buildMicroExemplarsSection, buildPreferencesSection, buildVoiceAnchorsSection } from "../profile-sections";
-import { type CharacterChatPromptInput, type CharacterChatPromptNodes, type CharacterChatPromptParts } from "./types";
+import type { CharacterChatPromptInput, CharacterChatPromptNodes, CharacterChatPromptParts } from "./types";
 import { buildAttachmentsSection, buildResponseShapeLine, buildTurnNotes, chatCallbackLine, chatSelfieLine, narratorInputNote } from "./turn-notes";
 import { buildChatIntimateSection, buildDisinhibitionSection, buildDrivesSection, buildMemorySection, buildPlansSection, buildPlayerSections, buildPlayerStateLine, buildRelationshipSection, buildSceneSection, buildSlipCorrectionLine, buildSocialFramingSection, buildStateSection, buildSupportingCastSection, buildTransientAppearanceSection, buildVoiceReanchorLine, buildVoiceRingSection, characterIntimateNote } from "./state-sections";
 import { attributePhrase, buildSensoryFocusSection, buildSensorySection, chatSensoryAllowanceLine, hairOcclusionConstraint, sensoryCues, withholdHairAttributes } from "./sensory-sections";

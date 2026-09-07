@@ -1,9 +1,9 @@
 import { deriveMoodDescriptor } from "@/contracts/meters/registry";
 import { regardBandForValue } from "@/contracts/relationships/bands";
-import { type ChatSkipAmount } from "@/contracts/turns/chat-skip";
+import type { ChatSkipAmount } from "@/contracts/turns/chat-skip";
 import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import { fenceUntrusted } from "../untrusted";
-import { type CharacterChatPromptInput } from "./types";
+import type { CharacterChatPromptInput } from "./types";
 import { feelingPhrase } from "./state-sections";
 
 /**

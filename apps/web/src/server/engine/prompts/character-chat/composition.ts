@@ -1,4 +1,4 @@
-import { type NarratorPromptGroup, type NarratorPromptNode } from "@/contracts/narrator-prompts";
+import type { NarratorPromptGroup, NarratorPromptNode } from "@/contracts/narrator-prompts";
 import { promptUnit } from "../charter";
 
 /** An unreplaceable context section — the default for everything outside the craft layer. */

@@ -1,19 +1,19 @@
-import { type AttributeValue } from "@/contracts/attributes/value";
-import { type ActiveCondition } from "@/contracts/conditions/condition";
-import { type HairOcclusion } from "@/contracts/items/hair-occlusion";
-import { type ChatSceneMemory } from "@/contracts/turns/chat-scene-memory";
-import { type SupportingCast } from "@/contracts/turns/chat-supporting-cast";
-import { type SalientPlan } from "@/contracts/turns/chat-plans";
-import { type SocialReactionCard } from "@/contracts/personality/cards";
-import { type TraitValue } from "@/contracts/personality/traits/value";
-import { type ChatDrive } from "@/contracts/personality/drives";
-import { type RelationshipRecord, type RelationshipTexture } from "@/contracts/relationships/record";
-import { type CharacterProfile } from "@/contracts/world/profile";
-import { type VoiceExemplar } from "../../chat-voice";
-import { type ChatFeelingState } from "../../chat-feeling";
-import { type ChatSensoryAllowance, type SensoryFocusHint } from "../../chat-intent";
-import { type NarratorInstructionSource, type NarratorPromptNode } from "@/contracts/narrator-prompts";
-import { type NarrationShapeId } from "../constants";
+import type { AttributeValue } from "@/contracts/attributes/value";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
+import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
+import type { ChatSceneMemory } from "@/contracts/turns/chat-scene-memory";
+import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
+import type { SalientPlan } from "@/contracts/turns/chat-plans";
+import type { SocialReactionCard } from "@/contracts/personality/cards";
+import type { TraitValue } from "@/contracts/personality/traits/value";
+import type { ChatDrive } from "@/contracts/personality/drives";
+import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
+import type { CharacterProfile } from "@/contracts/world/profile";
+import type { VoiceExemplar } from "../../chat-voice";
+import type { ChatFeelingState } from "../../chat-feeling";
+import type { ChatSensoryAllowance, SensoryFocusHint } from "../../chat-intent";
+import type { NarratorInstructionSource, NarratorPromptNode } from "@/contracts/narrator-prompts";
+import type { NarrationShapeId } from "../constants";
 
 /**
  * The character-chat system prompt (docs/character-chat/).

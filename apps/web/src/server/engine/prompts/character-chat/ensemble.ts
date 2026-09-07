@@ -9,7 +9,7 @@ import { dispositionBands, effectiveTraitValue, traitPole, traitRegistry } from 
 import { resolveTraits } from "@/contracts/personality/traits/value";
 import { familiarityBandForValue, regardBandForValue } from "@/contracts/relationships/bands";
 import { composePairRelationshipLaw } from "@/contracts/relationships/law";
-import { type RelationshipRecord, type RelationshipTexture } from "@/contracts/relationships/record";
+import type { RelationshipRecord, RelationshipTexture } from "@/contracts/relationships/record";
 import { realizeBody, speciesLorePhrase } from "@/contracts/species";
 import { isMinorAge, lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/life-stage";
 import { formatAge } from "@/contracts/world/profile";
@@ -18,7 +18,7 @@ import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeI
 import { fenceUntrusted } from "../untrusted";
 import { CONTENT_FRAMING, ENSEMBLE_MINOR_CAST_LINE, narratorBehaviorSlot, narratorRenderMode, promptUnit, untrustedDataNoticeNode } from "../charter";
 import { buildBioSection, excerpt } from "../profile-sections";
-import { type CharacterChatPromptInput, type CharacterChatPromptNodes, type CharacterChatPromptParts, type EnsembleMemberInput, type EnsemblePairInput, type EnsemblePromptExtras } from "./types";
+import type { CharacterChatPromptInput, CharacterChatPromptNodes, CharacterChatPromptParts, EnsembleMemberInput, EnsemblePairInput, EnsemblePromptExtras } from "./types";
 import { buildAttachmentsSection, buildResponseShapeLine, buildTurnNotes, chatSelfieLine, ensembleCallbackLine, narratorInputNote } from "./turn-notes";
 import { buildChatIntimateSection, buildPlanPresenceLicense, buildPlansSection, buildPlayerSections, buildPlayerStateLine, buildSceneSection, buildSupportingCastSection, characterIntimateNote, feelingPhrase } from "./state-sections";
 import { attributePhrase, buildSensoryFocusSection, hairOcclusionConstraint, withholdHairAttributes } from "./sensory-sections";
