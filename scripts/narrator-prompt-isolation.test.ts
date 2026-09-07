@@ -63,10 +63,10 @@ const APPROVED: readonly string[] = [
   "apps/web/src/app/api/admin/self/narrator-prompts/route.ts",
   // The two exchange pipelines: each resolves ONE source under its exchange
   // lock, threads the frozen value into the prose-narrator build, and stamps
-  // take provenance from it. The legacy pipeline also renders the admin
-  // inspector's read-only preview (sanctioned by the spec: the inspector shows
-  // the prose narrator's own prompt, which is not a helper agent).
+  // take provenance from it. The separate admin preview shows the prose
+  // narrator's own prompt; it is not a helper agent.
   "apps/web/src/server/engine/chat-pipeline.ts",
+  "apps/web/src/server/engine/chat-prompt-preview.ts",
   // Shared reply provenance builder; it consumes only the frozen source passed
   // by a prose narrator lane and never resolves or forwards one to helper agents.
   "apps/web/src/server/engine/chat-reply-store.ts",
@@ -290,16 +290,18 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     'import { createNarratorPromptTemplate, listNarratorPromptTemplates } from "@/server/narrator-prompts";',
   ],
   "apps/web/src/server/engine/chat-pipeline.ts": [
-    // The admin inspector's read-only preview resolve, then the exchange's own.
-    "const instructionSource = await resolveNarratorInstructionSource(",
+    // The exchange resolves one frozen source.
     "const instructionSource = await resolveNarratorInstructionSource(owner, chatId, sink);",
     // Take provenance for the legacy lane.
     "const narratorRun = buildNarratorRunProvenance( :: source: instructionSource,",
-    // The preview's and the exchange's prose-narrator build inputs (1:1 + ensemble).
-    "const parts = buildCharacterChatPromptParts( :: instructionSource,",
+    // The exchange's prose-narrator build inputs (1:1 + ensemble).
     "const promptInput: CharacterChatPromptInput = { :: instructionSource,",
     "ensembleExtras = { :: instructionSource,",
-    'import type { NarratorInstructionSource, NarratorPromptNode, NarratorRunProvenance } from "@/contracts/narrator-prompts";',
+    'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
+  ],
+  "apps/web/src/server/engine/chat-prompt-preview.ts": [
+    "const instructionSource = await resolveNarratorInstructionSource(",
+    "const parts = buildCharacterChatPromptParts( :: instructionSource,",
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
   ],
   "apps/web/src/server/engine/chat-reply-store.ts": [

@@ -4,6 +4,12 @@ export * from "./keyed-lock";
 export * from "./character-chat";
 export * from "./simulation";
 export * from "./chat-pipeline";
+export { previewChatAffordances, previewChatPhysicalGuidance, previewChatPrompt, previewChatVisualState } from "./chat-prompt-preview";
+export type { ChatPromptPreview } from "./chat-prompt-preview";
+export { chatVisualStateShadowInput } from "./chat-visual-state-cut";
+export type { ChatVisualStateCut } from "./chat-visual-state-cut";
+export { reextractEditedReply } from "./chat-message-edits";
+export { deleteChat } from "./chat-delete";
 export { stopChatReply } from "./chat-reply-stream";
 export {
   buildNarratorRunProvenance,
@@ -63,6 +69,11 @@ export * from "./visual-memory-store";
 export * from "./chat-wardrobe";
 export * from "./chat-garments";
 export * from "./chat-state";
+export { runChatPulse } from "./chat-state/pulse-agent";
+export type { ChatPulseInput } from "./chat-state/pulse-agent";
+export { resolveSeededOutfit } from "./chat-state/outfit-fold";
+export { matchOutfitPresetInText, outfitChangeEvidenceValidated } from "./chat-state/outfit-evidence";
+export type { OutfitEvidenceExchange, OutfitEvidenceOwner } from "./chat-state/outfit-evidence";
 export { loadChatScenario, loadChatComposerModel, saveChatScenario, loadMilestonesSeenAt, loadChatState, saveChatState, persistChatState } from "./chat-state/store";
 export { savePreExchangeScenario, rollbackScenario, loadPreExchangeScenario, savePreExchangeSnapshot, loadPreExchangeState } from "./chat-state/snapshots";
 export { persistSurfaceTransferSettlement } from "./chat-state/surface-transfer";
