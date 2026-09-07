@@ -239,6 +239,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   };
 
   const pickUpload = (view: ReferenceViewSummary) => {
+    if (inFlight || submitting || busySlot !== null) return;
     uploadTarget.current = { angle: view.angle, wardrobe: view.wardrobe };
     fileInput.current?.click();
   };
@@ -247,6 +248,10 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     const target = uploadTarget.current;
     uploadTarget.current = null;
     if (!file || !target) return;
+    if (inFlight || submitting) {
+      toast.push({ title: "Wait for the reference build", description: "Upload your image after the reference views finish building." });
+      return;
+    }
     const slot = slotKey(target);
     setBusySlot(slot);
     const dataUrl = await readAsDataUrl(file);
@@ -259,6 +264,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     setBusySlot(null);
     if (!result.ok) {
       toast.push({ title: "Upload failed", description: result.error.message, tone: "error" });
+      refetch();
       return;
     }
     toast.push({ title: "View replaced", description: "Your own image is now this angle's reference." });
@@ -278,6 +284,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
           <p className="text-xs text-paper-500">
             Open an image for a closer look. Select attempted views to regenerate them together.
           </p>
+          {inFlight || submitting ? <p className="text-xs text-paper-400">Uploads are available after the reference build finishes.</p> : null}
         </div>
         {buildable && acceptance.acceptedImageId ? (
           <Button size="sm" variant="primary" className="ml-auto" busy={building} disabled={set.building} onClick={buildAll}>
@@ -392,7 +399,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                       label="More"
                       ariaLabel={`${label} actions`}
                       items={[
-                        { label: "Upload image", onSelect: () => pickUpload(view), busy },
+                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: inFlight || submitting || busySlot !== null },
                         ...(attempted ? [{
                           label: "History",
                           // Read-only: a busy upload or review must not disable history.

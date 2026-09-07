@@ -85,6 +85,16 @@ async function hasLiveReferenceViewJob(executor: ReferenceViewExecutor, characte
   return rows.length > 0;
 }
 
+/** Includes the reservation window and abandoned pending attempts visible in the studio. */
+export async function referenceViewBuildInFlight(characterId: string, executor: ReferenceViewExecutor = db()): Promise<boolean> {
+  if (await hasLiveReferenceViewJob(executor, characterId)) return true;
+  const pending = await executor.select({ id: characterReferenceViews.id }).from(characterReferenceViews).where(and(
+    eq(characterReferenceViews.characterId, characterId), eq(characterReferenceViews.current, true),
+    eq(characterReferenceViews.status, "pending"),
+  )).limit(1);
+  return pending.length > 0;
+}
+
 /** Shared with the sweep; restoration eligibility expires even before a delayed sweep runs. */
 export const REFERENCE_VIEW_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
@@ -491,6 +501,43 @@ export interface FinalizeReferenceViewInput {
   method: ReferenceViewMethod;
   /** Owner id to stamp as the reviewer, for a view that arrives already reviewed (an upload). */
   reviewedByUserId?: string;
+}
+
+export interface InstallUploadedReferenceViewInput extends ReserveReferenceViewInput {
+  ownerId: string;
+  imageId: string;
+  expectedCurrentAttemptId: string | null;
+  expectedCurrentRevision: number;
+}
+
+export type InstallUploadedReferenceViewResult =
+  | { status: "uploaded"; view: ReferenceViewSummary }
+  | { status: "busy" }
+  | { status: "changed" }
+  | { status: "not_found" }
+  | { status: "not_accepted" };
+
+/** Install a processed upload only while the slot and accepted source still match its initial read. */
+export async function installUploadedReferenceView(input: InstallUploadedReferenceViewInput): Promise<InstallUploadedReferenceViewResult> {
+  return withReferenceViewLock<InstallUploadedReferenceViewResult>(input.characterId, async (tx) => {
+    const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
+    if (!source.ok) return { status: source.reason === "not_found" ? "not_found" : "not_accepted" };
+    if (await referenceViewBuildInFlight(input.characterId, tx)) return { status: "busy" };
+    const current = await currentReferenceViewRow(input.characterId, input.view, tx);
+    if (source.imageId !== input.sourceImageId || source.contentHash !== input.sourceContentHash ||
+        (current?.id ?? null) !== input.expectedCurrentAttemptId || (current?.reviewRevision ?? 0) !== input.expectedCurrentRevision) {
+      return { status: "changed" };
+    }
+    if (current) await tx.update(characterReferenceViews).set({ current: false, status: "superseded" }).where(eq(characterReferenceViews.id, current.id));
+    const [candidate] = await tx.insert(characterReferenceViews).values({
+      characterId: input.characterId, angleId: input.view.angle, wardrobe: input.view.wardrobe,
+      current: true, status: "ready", sourceImageId: source.imageId, sourceContentHash: source.contentHash,
+      generationVersion: REFERENCE_VIEW_GENERATION_VERSION, imageId: input.imageId, method: "uploaded",
+      verdict: "approved", reviewedByUserId: input.ownerId, reviewedAt: new Date(),
+    }).returning();
+    if (!candidate) throw new Error("reference upload returned no candidate");
+    return { status: "uploaded", view: summarizeRow(input.view, candidate, source.imageId, "ready") };
+  });
 }
 
 /** What a finalize concluded — `ready` or the honest `stale` when the portrait moved under it. */

@@ -142,7 +142,12 @@ build job plans from, so the charge and the work can never be two numbers.
 - An **owner upload** is the second way a slot is ever filled, and it produces the same row with
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
   supplying it. It runs no model, charges no render budget, and re-fits the image to the canonical
-  3:4 portrait under the avatar upload's decode guards.
+  3:4 portrait under the avatar upload's decode guards. Uploads are unavailable during a live build
+  or pending attempt. After processing the bytes, installation rechecks generation activity, the
+  accepted source and the current attempt/revision under the character lock before replacing the
+  slot. A busy or changed result preserves the existing attempt and asks the owner to retry; only
+  the refused upload's unclaimed asset is removed. A build admitted after installation can replace
+  the upload through the ordinary attempt lifecycle.
 - **Verdict and feedback survive supersession.** A review writes `approved` or `rejected`; an
   upload writes `approved`. Explicit Undo clears the current verdict while retaining feedback for
   correction and retry. A later attempt never overwrites an earlier attempt's review provenance.
