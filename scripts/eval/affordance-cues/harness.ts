@@ -26,7 +26,7 @@ import {
   type ChatTurn,
 } from "@/server/engine";
 // The ONE deep import in this harness: `chat-affordance-cues` is intra-module in
-// production (only `chat-pipeline.ts` calls it) and so is not on the engine
+// production (the live pipeline and prompt preview call it) and is not on the engine
 // barrel. The trial has to call the real projection — reimplementing it would
 // mean measuring the harness's prose instead of the product's — so the barrel
 // rule is waived here rather than widening the module's public surface for an

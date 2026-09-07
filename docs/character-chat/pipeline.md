@@ -7,6 +7,9 @@ persistence guards keep a mid-stream delete from resurrecting orphans. The
 fan-out that follows the flushed reply is [post-turn.md](post-turn.md); the optional
 contact/permission legs that run mid-exchange are [physical-legs.md](physical-legs.md);
 what a reply that never arrives records is [reply-failures.md](reply-failures.md).
+Read-only inspectors live in `engine/chat-prompt-preview.ts`; they share prompt inputs
+with the coordinator through `engine/chat-prompt-input.ts` and the image visual-cut
+factory through `engine/chat-visual-state-cut.ts`.
 
 ## The exchange lifecycle
 
@@ -227,7 +230,7 @@ then renders exactly what survived the gate; it never silently drops a note.
   keyed on the prompting user line, so a Clear Chat or message delete landing mid-stream
   can't resurrect an orphan reply.
 - **State write** (`saveChatState`): same guard shape, keyed on the same row.
-- **Delete** (`deleteChat` — the one destructive verb; **archive** via `PATCH
+- **Delete** (`chat-delete.ts` `deleteChat` — the one destructive verb; **archive** via `PATCH
   {archived:true}` is the everyday shelve/restore action): one transaction — the chat
   row's FK cascades take transcript + summary + participants + state; the scene-image
   prompt scrub runs **per conversation** for chat-keyed rows (sibling chats keep

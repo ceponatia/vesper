@@ -32,7 +32,7 @@ vi.mock("./chat-memory", async () => {
 
 import { loadChatScenario, loadChatState } from "./chat-state/store";
 import type { ChatScenario, ChatState } from "./chat-state";
-import { previewChatPhysicalGuidance, previewChatPrompt } from "./chat-pipeline";
+import { previewChatPhysicalGuidance, previewChatPrompt } from "./chat-prompt-preview";
 import { PHYSICAL_GUIDANCE_BLOCK_HEADING } from "./chat-physical-guidance-render";
 import {
   chatArchivist,

@@ -42,7 +42,7 @@ then one guarded state write:
   leg's reads still land. All three down ⇒ the whole-archivist degrade (no memory
   written, nothing folded). Covered by `chat-extraction-legs.int.test.ts`.
 
-  The **edited-reply re-extraction** (`reextractEditedReply`) runs the memory scribe
+  The **edited-reply re-extraction** (`chat-message-edits.ts` `reextractEditedReply`) runs the memory scribe
   ALONE (`runChatMemoryScribe`): that path re-files long-term memory and rewrites no state
   row, so paying for the other two legs' fields would discard every one of them.
 

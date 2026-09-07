@@ -87,7 +87,7 @@ export interface ChatMemoryMockModule {
  * Build the mocked `./chat-memory` module surface.
  *
  * `retrieveChatMemory` is included (returning nothing recalled) because any
- * suite that reaches the prompt preview pulls `chat-pipeline`, which imports it;
+ * suite that reaches the prompt preview pulls `chat-prompt-preview`, which imports it;
  * suites that never call it are unaffected by its presence. The rest of the real
  * module's exports are deliberately NOT stubbed — a suite that starts needing
  * one should say so explicitly rather than inherit a silent fake.

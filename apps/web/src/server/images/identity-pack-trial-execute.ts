@@ -12,7 +12,7 @@ import { newId } from "@/lib/ids";
 import { db, imageIdentityPackTrialCells } from "../db";
 // Direct module path for the reason `./identity-pack-ensure.ts` records on ITS
 // import of this file: the `@/server/engine` barrel re-exports
-// `chat-pipeline.ts`, which imports `@/server/images` — naming the barrel here
+// the chat coordinator and deletion owner, which import `@/server/images` — naming the barrel here
 // would close a real import cycle. `keyed-lock.ts` itself imports nothing.
 import { tryKeyedLock } from "../engine/keyed-lock";
 import { loadImageModels } from "./models";

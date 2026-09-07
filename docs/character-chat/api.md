@@ -130,7 +130,7 @@ deployed build) and owner-scoped**:
   channel), plus episodes + summary.
 - **Facts / episodes / summary** — facts create/PATCH (pin/retract/restore,
   re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH.
-- **Prompt preview** (`previewChatPrompt`) — "what reaches the narrator": it re-derives the
+- **Prompt preview** (`chat-prompt-preview.ts` `previewChatPrompt`) — "what reaches the narrator": it re-derives the
   flag-gated legs from the stored cut so the bytes match a live turn's, contact leg
   included, and it OBEYS every flag because it is showing prompt bytes.
 - **Affordance preview** (`previewChatAffordances`) — the staged read: source inputs →

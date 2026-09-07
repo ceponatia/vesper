@@ -1,5 +1,8 @@
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import {
+  and,
+  eq,
+  or,
+} from "drizzle-orm";
 import {
   affordanceSubjectId,
   characterProfileSchema,
@@ -16,10 +19,8 @@ import {
   diag,
   effectiveTraitValue,
   emptyCharacterProfile,
-  exposureIsIntimate,
   garmentActorForCharacter,
   formatScheduleRhythm,
-  formatStoryMoment,
   hasSalientPlan,
   samePlaceName,
   splitStateCues,
@@ -30,7 +31,6 @@ import {
   type AffordanceSubjectId,
   type BodyMarkProposal,
   type ChatActionId,
-  type CharacterProfile,
   type ContactEndReason,
   type ContactLifecycleCommit,
   type ContactPersistenceAcknowledgment,
@@ -41,10 +41,8 @@ import {
   type EffectiveCoverageRead,
   type PhysicalActionOutcome,
   type PhysicalStateTransition,
-  type VisualMemoryState,
 } from "@/contracts";
-import type { NarratorInstructionSource, NarratorPromptNode, NarratorRunProvenance } from "@/contracts/narrator-prompts";
-import { PROVISIONING_STALE_AFTER_DELETE } from "@vesper/simulation-core/provisioning";
+import type { NarratorPromptNode, NarratorRunProvenance } from "@/contracts/narrator-prompts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
@@ -52,19 +50,16 @@ import type { NarratorCompletion } from "../ai";
 import {
   characterChats,
   characterChatMessages,
-  chatParticipants,
-  chatVisualCues,
-  chatVisualMemory,
   db,
-  images,
-  simBranches,
-  simProvisioningRequests,
-  simWorlds,
 } from "../db";
-import { chatAttachmentPaths, claimChatAttachments, deleteChatAssets, deleteChatUploads } from "../images";
+import {
+  chatAttachmentPaths,
+  claimChatAttachments,
+  deleteChatUploads,
+} from "../images";
 import { log } from "../log";
 import { QueryEmbeddings } from "../memory";
-import { resolveChatPersona, type PlayerPersona } from "../players";
+import { resolveChatPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { stopChatReply, streamExchange } from "./chat-reply-stream";
 import { buildActionBeatCue } from "./chat-action-beat";
@@ -73,7 +68,6 @@ import {
   currentReplyTakes,
   loadMessageAttachments,
   lastAssistantMessage,
-  messageAttachmentsMetaSchema,
   messageBefore,
   persistAssistantReply,
   pushReplyTake,
@@ -81,7 +75,6 @@ import {
 } from "./chat-reply-store";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordanceRead } from "./chat-affordances";
-import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affordance-preview";
 import {
   chatContactAcknowledgment,
   chatContactActionOutcome,
@@ -122,9 +115,8 @@ import {
   detectChatNpcContactEnding,
   type ChatNpcEndingCharacter,
 } from "./chat-contact-reply";
-import { buildChatPhysicalGuidance, buildChatPhysicalGuidanceStages } from "./chat-physical-guidance";
+import { buildChatPhysicalGuidance } from "./chat-physical-guidance";
 import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
-import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
 import { buildChatRecognitionRead, type ChatRecognitionRead } from "./chat-recognition-adapter";
 import { loadChatVisualMemory, saveChatVisualMemory } from "./visual-memory-store";
 import { loadChatVisualCues, saveChatVisualCues } from "./visual-cue-store";
@@ -152,20 +144,17 @@ import {
   spokeInReply,
 } from "./chat-intent";
 import {
-  deleteChatMemory,
   reconcileMessageMemory,
   retrieveChatCallback,
   retrieveChatMemory,
-  runChatMemoryScribe,
   runChatPersonalNotes,
-  writeChatMemory,
 } from "./chat-memory";
+import { runChatPulse } from "./chat-state/pulse-agent";
+import { resolveSeededOutfit } from "./chat-state/outfit-fold";
 import {
   applyChatAction,
   driftChatState,
   finalizeChatState,
-  runChatPulse,
-  resolveSeededOutfit,
   seedChatScenario,
   seedChatState,
   settleEnsembleMember,
@@ -191,13 +180,11 @@ import {
   resolveChatWardrobe,
   resolvePlayerWardrobe,
   type ResolvedChatWardrobe,
-  type ResolvedPlayerWardrobe,
 } from "./chat-wardrobe";
 import {
   buildChatGarmentNarration,
   chatGarmentNarrationActors,
   reconcileActorWardrobes,
-  type ChatGarmentNarration,
   type ChatGarmentWardrobeChange,
 } from "./chat-garments";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
@@ -235,14 +222,12 @@ import {
   narrationShapeId,
 } from "./prompts/constants";
 import {
-  degradedVisualStatePreviewPayload,
   safeBuildVisualStateShadow,
-  visualStatePreviewPayload,
   visualStateShadowLogSummary,
-  type VisualStatePreviewPayload,
   type VisualStateShadowBuild,
   type VisualStateShadowInput,
 } from "@/server/visual-state";
+import { chatOwnerId, playerPromptSlice, promptStateSlice } from "./chat-prompt-input";
 
 /**
  * The character-chat exchange pipeline (docs/character-chat/pipeline.md) — the chat lane's
@@ -2954,985 +2939,4 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }),
     };
   }
-}
-
-/** The chat's owner id (for persona resolution) — one indexed lookup. */
-async function chatOwnerId(chatId: string): Promise<string> {
-  const [row] = await db()
-    .select({ ownerId: characterChats.ownerId })
-    .from(characterChats)
-    .where(eq(characterChats.id, chatId))
-    .limit(1);
-  if (!row) throw new Error(`chat ${chatId} vanished mid-exchange`);
-  return row.ownerId;
-}
-
-/**
- * Memory reconciliation for an edited assistant reply: retract the
- * old extraction, then re-file the edited exchange's long-term memory
- * fire-and-forget — same resilience as the live fan-out (a degraded re-extract
- * just leaves the exchange unremembered, with the retraction already honest).
- * Only the MEMORY SCRIBE leg runs: this path
- * rewrites no state row, so the continuity/character reads would be discarded.
- */
-export async function reextractEditedReply(args: {
-  chatId: string;
-  messageId: string;
-  memoryGroupId: string;
-  characterId: string;
-  characterName: string;
-  playerName: string;
-  content: string;
-}): Promise<void> {
-  const sink = new DiagnosticCollector();
-  await reconcileMessageMemory(args.messageId, sink);
-  const [row] = await db()
-    .select({ id: characterChatMessages.id, createdAt: characterChatMessages.createdAt })
-    .from(characterChatMessages)
-    .where(and(eq(characterChatMessages.id, args.messageId), eq(characterChatMessages.chatId, args.chatId)))
-    .limit(1);
-  if (!row) return;
-  const prev = await messageBefore(args.chatId, row);
-  const archivist = await runChatMemoryScribe({
-    characterName: args.characterName,
-    playerName: args.playerName,
-    exchange: { player: prev?.role === "user" ? prev.content : "", assistant: args.content },
-    sink,
-  });
-  await writeChatMemory({
-    groupId: args.memoryGroupId,
-    characterId: args.characterId,
-    assistantMessageId: args.messageId,
-    archivist: archivist.value,
-    sink,
-  });
-  if (sink.items.length) {
-    log.info("engine.chat", "edited-reply re-extraction diagnostics", { codes: sink.items.map((d) => d.code) });
-  }
-}
-
-/**
- * The prompt builder's player slice: the resolved persona
- * plus what they have on right now. Built in one place so the live turn and the dev prompt
- * preview can't drift — and so `title` has exactly one shape to be absent from.
- */
-function playerPromptSlice(
-  player: PlayerPersona,
-  wardrobe: ResolvedPlayerWardrobe,
-): NonNullable<CharacterChatPromptInput["player"]> {
-  return {
-    name: player.name,
-    ...(player.persona === undefined ? {} : { persona: player.persona }),
-    ...(wardrobe.garments.trim() ? { wearing: wardrobe.garments } : {}),
-    // One of the chat intimate gate's three signals — coverage-computed, never a flag.
-    ...(exposureIsIntimate(wardrobe.exposure) ? { exposed: true } : {}),
-    ...(player.profile?.voice?.trim() ? { voice: player.profile.voice } : {}),
-    ...(player.profile?.intimacy?.trim() ? { intimacy: player.profile.intimacy } : {}),
-  };
-}
-
-/**
- * The prompt builder's per-turn state slice from a drifted ChatState + the chat-wide scenario.
- * The `wardrobe` supplies the RENDERED garment phrase + coverage-computed
- * exposure — the narrator sees the actual worn garments (subtype-led, occlusion-filtered), and
- * the exposure steer is coverage-accurate rather than the manual toggle.
- */
-function promptStateSlice(
-  state: ChatState,
-  scenario: ChatScenario,
-  wardrobe: ResolvedChatWardrobe,
-  profile?: CharacterProfile,
-  /** The slice-6 digest + cues; null/absent (the flag-off default) renders neither block. */
-  garments?: ChatGarmentNarration | null,
-  /** The affordance cue lines; empty/absent renders no block. */
-  affordanceCues?: readonly string[],
-  /** The visual-state pair (visual-state slice 7); empty/absent renders neither block. */
-  visualState?: ChatVisualStateLines | null,
-): NonNullable<CharacterChatPromptInput["state"]> {
-  return {
-    // Authority + attention — flag-gated upstream, so
-    // the fields are simply absent when off and the prompt is unchanged.
-    ...(garments?.digest ? { garmentDigest: garments.digest } : {}),
-    ...(garments && garments.cues.length > 0 ? { garmentCues: garments.cues } : {}),
-    // Attention only — an affordance read has no authority half (slice 5). Same
-    // conditional-spread discipline: absent when the flag is off, so the prompt is
-    // byte-identical to the pre-feature build.
-    ...(affordanceCues && affordanceCues.length > 0 ? { affordanceCues } : {}),
-    // The visual-state pair (slice 7): a must-not-contradict fence and the
-    // change-gated cues. Same conditional-spread discipline — absent when the
-    // narration flag is off, so the prompt is byte-identical to the pre-feature
-    // build, and absent independently when the selection chose nothing.
-    ...(visualState && visualState.constraints.length > 0 ? { visualConstraints: visualState.constraints } : {}),
-    ...(visualState && visualState.cues.length > 0 ? { visualCues: visualState.cues } : {}),
-    meters: state.meters,
-    regard: state.regard,
-    familiarity: state.familiarity,
-    relationship: state.relationship,
-    conditions: state.conditions,
-    mindNote: state.mindNote,
-    premise: scenario.premise,
-    surfacedCues: state.surfacedCues,
-    outfit: wardrobe.garments,
-    outfitExposed: wardrobe.exposed,
-    // The resolved hair-occlusion band, from the same resolve as the phrase.
-    hairOcclusion: wardrobe.hairOcclusion,
-    activeSocialCards: scenario.activeSocialCards,
-    attributeOverlays: state.attributeOverlays,
-    // Persisted narrative trait overlays — resolved into the
-    // prefix Disposition bands so the character's bounded evolution reaches the narrator.
-    traitOverlays: state.traitOverlays,
-    // Voice-exemplar ring — rendered as the "How you sound" few-shot block.
-    voiceExemplars: state.voiceExemplars,
-    // One-turn character-consistency corrective: last exchange's slip note, if any.
-    slipNote: state.lastMemoryTrace.characterSlip,
-    openLoops: state.openLoops,
-    skipNote: scenario.pendingSkipNote,
-    // The authoritative story moment: the narrator reads
-    // the same clock + calendar anchor the player's clock card shows.
-    storyMoment: formatStoryMoment(scenario.clockMinutes, scenario.calendarStart),
-    // Off-screen life: the one-shot meanwhile note, this member's
-    // daily rhythm, and the pending whereabouts (the one-turn return license).
-    meanwhileNote: scenario.pendingMeanwhileNote,
-    rhythm: profile ? formatScheduleRhythm(profile.schedule) : undefined,
-    whereabouts: state.whereabouts,
-    sceneMemory: scenario.sceneMemory,
-    supportingCast: scenario.supportingCast,
-    // Plans near this turn: derived against the ticked story clock.
-    plans: derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart),
-    feeling: state.feeling,
-    drives: state.drives,
-  };
-}
-
-/** The dev inspector's "what reaches the narrator" view. */
-export interface ChatPromptPreview {
-  prefix: string;
-  tail: string;
-  memory: { facts: string[]; episodes: string[] };
-  memoryQueries: string[];
-}
-
-/**
- * Rebuild "what would reach the narrator now" for the dev inspector: the same
- * assembly as a live exchange — stored state (read-only
- * drift), rolling summary, persona, RAG recall — rendered into the prompt parts,
- * without touching state, history, or the exchange lock. Reflects the POST-exchange
- * state (i.e. the NEXT turn's prompt), which is what comparing live play against the
- * eval fixtures wants.
- */
-/**
- * The stored cut both dev previews read from — state, scenario, persona, and
- * both wardrobes, assembled exactly as a live exchange assembles them and
- * WITHOUT touching state, history, or the exchange lock.
- *
- * Factored out because two previews need it (the prompt preview and the
- * affordance preview) and a second copy would be a second chance to drift from
- * what a real turn does — which is the one thing a debug view must never do.
- */
-async function loadChatPreviewCut(input: {
-  chatId: string;
-  character: { id: string; profile: unknown };
-  sink: DiagnosticCollector;
-}) {
-  const { sink } = input;
-  const profile = parseOr(
-    characterProfileSchema,
-    input.character.profile ?? {},
-    emptyCharacterProfile(),
-    undefined,
-    "characters.profile",
-  );
-  const stored = await loadChatState(input.chatId, input.character.id, sink);
-  const owner = await chatOwnerId(input.chatId);
-  const scenario = (await loadChatScenario(input.chatId, sink)) ?? seedChatScenario(profile);
-  const state = driftChatState(
-    await resolveSeededOutfit(stored ?? seedChatState(profile), owner, profile, sink),
-    profile,
-    { clockMinutes: scenario.clockMinutes },
-  );
-  const player = await resolveChatPersona({ ownerId: owner, chatId: input.chatId });
-  const wardrobe = await resolveChatWardrobe(
-    { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(input.character.id) },
-    owner,
-    profile,
-    sink,
-  );
-  const playerWardrobe = await resolvePlayerWardrobe(
-    scenario.playerState,
-    owner,
-    player.profile,
-    sink,
-    scenario.garments,
-  );
-  return { profile, owner, scenario, state, player, wardrobe, playerWardrobe };
-}
-
-/**
- * The affordance read one preview takes, from the stored cut. Identical inputs
- * to the live path (`chat-pipeline`'s pre-fan-out call), and deliberately NOT
- * flag-gated: a developer asking why a read said nothing needs the answer with
- * the flag off too.
- *
- * Takes the narrow {@link ChatVisualStateCut} slice rather than the whole
- * preview cut, because the visual-state shadow factory below runs the same
- * read from the scene queue's per-member pieces — one read assembly, however
- * the caller loaded the cut.
- */
-function previewAffordanceRead(input: {
-  characterId: string;
-  cut: Pick<ChatVisualStateCut, "profile" | "state" | "scenario" | "wardrobe">;
-  sink?: DiagnosticSink;
-}) {
-  const { cut } = input;
-  return buildChatAffordanceRead({
-    subjectId: input.characterId,
-    attributes: cut.profile.attributes,
-    attributeOverlays: cut.state.attributeOverlays,
-    conditions: cut.state.conditions,
-    ...(cut.wardrobe?.worn === undefined
-      ? {}
-      : {
-          wardrobe: {
-            worn: cut.wardrobe.worn,
-            partVisibility: cut.wardrobe.partVisibility,
-            hairOcclusion: cut.wardrobe.hairOcclusion,
-          },
-        }),
-    garments: cut.scenario.garments,
-    garmentActorId: garmentActorForCharacter(input.characterId),
-    bodySurface: cut.state.bodySurface,
-    environment: cut.scenario.environment,
-    clockMinutes: cut.scenario.clockMinutes,
-    previousCues: cut.scenario.affordanceCues,
-    ...(input.sink === undefined ? {} : { sink: input.sink }),
-  });
-}
-
-/**
- * The pieces of one committed chat cut the visual-state shadow assembles from.
- * The caller owns the load — the inspector reads the drifted preview cut, the
- * scene queue reuses the state/scenario/wardrobe it already resolved per cast
- * member — and this shape is what keeps the two from drifting apart.
- */
-export interface ChatVisualStateCut {
-  readonly profile: CharacterProfile;
-  readonly state: ChatState;
-  readonly scenario: ChatScenario;
-  /** Absent when the subject's wardrobe is unmodelled; the read degrades openly. */
-  readonly wardrobe?: ResolvedChatWardrobe;
-  /** The owning player — the shadow's observer/viewpoint id. */
-  readonly owner: string;
-}
-
-/**
- * ONE committed chat cut as a visual-state shadow input — the chat lane's mirror of
- * `simVisualStateShadowInput`. The inspector preview and the scene render's
- * digest build both go through here, so "what would a picture of her use"
- * cannot quietly assemble two different cuts.
- *
- * Camera-less on purpose: the shadow builds pass none, and the scene render
- * binds its committed `plan.camera` into `VisualStateShadowInput.camera` at
- * the one selection pass. Memory is caller-loaded (the inspector reads it
- * read-only; the scene digest needs none — the image selection is structurally
- * memoryless).
- */
-export function chatVisualStateShadowInput(input: {
-  characterId: string;
-  memoryGroupId: string;
-  /** The cut id this build names (the preview nonce, or the scene job's local id). */
-  cutId: string;
-  cut: ChatVisualStateCut;
-  /** Observer memory, loaded read-only; never written back by these callers. */
-  memory?: VisualMemoryState;
-  sink?: DiagnosticSink;
-}): Omit<VisualStateShadowInput, "sink" | "camera"> {
-  const { characterId, cut } = input;
-  const read = previewAffordanceRead({
-    characterId,
-    cut,
-    ...(input.sink === undefined ? {} : { sink: input.sink }),
-  });
-  const playerSubject = String(CHAT_CONTACT_PLAYER_SUBJECT);
-  return {
-    lane: "character_chat",
-    scope: { kind: "chat", memoryGroupId: input.memoryGroupId },
-    cutId: input.cutId,
-    atMinutes: cut.scenario.clockMinutes,
-    subjectId: characterId,
-    attributes: cut.profile.attributes,
-    attributeOverlays: cut.state.attributeOverlays,
-    conditions: cut.state.conditions,
-    realize: {
-      ...(cut.profile.speciesId === undefined ? {} : { speciesId: cut.profile.speciesId }),
-      ...(cut.profile.heritageId === undefined ? {} : { heritageId: cut.profile.heritageId }),
-      ...(cut.profile.bodyPlanId === undefined ? {} : { bodyPlanId: cut.profile.bodyPlanId }),
-      ...(cut.profile.intimateRegions === undefined ? {} : { intimateRegions: cut.profile.intimateRegions }),
-      ...(cut.profile.bodyFeatures === undefined ? {} : { bodyFeatures: cut.profile.bodyFeatures }),
-    },
-    garments: {
-      store: cut.scenario.garments,
-      actorId: garmentActorForCharacter(characterId),
-      ...(cut.wardrobe?.worn === undefined
-        ? {}
-        : { layersByGarmentId: new Map(cut.wardrobe.worn.map((row) => [row.garmentId, row.layer])) }),
-      freshCoverage: read.coverage,
-    },
-    playerSubjectId: playerSubject,
-    sceneSubjectId: "scene",
-    bodySurface: cut.state.bodySurface,
-    environment: cut.scenario.environment,
-    sceneRelations: {
-      scene: cut.scenario.scene,
-      subjectsByParticipant: new Map([
-        [characterId, characterId],
-        [playerSubject, playerSubject],
-      ]),
-    },
-    observations: read.read.observations,
-    perception: read.request.perception,
-    observerId: cut.owner,
-    observer: { kind: "player_viewpoint", viewpointId: cut.owner },
-    ...(input.memory === undefined ? {} : { memory: input.memory }),
-    ...(cut.wardrobe?.worn === undefined
-      ? {}
-      : { wornGarmentIds: [...new Set(cut.wardrobe.worn.map((row) => row.garmentId))] }),
-  };
-}
-
-/**
- * The read-only developer preview of the staged affordance calculation.
- * Computes on
- * demand from the stored cut and stores NOTHING — in particular it never
- * persists `nextCues`, so looking at a read cannot spend the repeat gate.
- */
-export async function previewChatAffordances(input: {
-  chatId: string;
-  character: { id: string; name: string; profile: unknown };
-}): Promise<AffordancePreview> {
-  const sink = new DiagnosticCollector();
-  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
-  return buildChatAffordancePreview({
-    result: previewAffordanceRead({ characterId: input.character.id, cut, sink }),
-    possessive: `${input.character.name}'s`,
-    cueFlagEnabled: chatAffordanceCuesEnabled(),
-  });
-}
-
-/**
- * A nonce prompting id for the visual-state inspector's memory read: it matches
- * no exchange's `applied_message_id`, so the two-generation store always hands
- * back the CURRENT `features` generation — what the observer knows now — and,
- * because the preview never writes, the generations themselves never move.
- */
-const VISUAL_STATE_PREVIEW_GUARD = "visual_state_preview";
-
-/**
- * The read-only visual-state inspector payload for one legacy chat: the same
- * shadow build the flagged live turn
- * runs — snapshot, composition, suppressions, staircase, both consumer
- * selections, measurements — recomputed on demand from the stored cut.
- *
- * Computes on demand and stores NOTHING: the memory load is read-only, no
- * notice or mention state is spent, and `CHAT_VISUAL_STATE_SHADOW` is reported
- * rather than obeyed — an inspector never changes what it inspects.
- */
-export async function previewChatVisualState(input: {
-  chatId: string;
-  memoryGroupId: string;
-  character: { id: string; name: string; profile: unknown };
-}): Promise<VisualStatePreviewPayload> {
-  const sink = new DiagnosticCollector();
-  const characterId = input.character.id;
-  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
-  const memory = await loadChatVisualMemory({
-    memoryGroupId: input.memoryGroupId,
-    viewpointId: cut.owner,
-    subjectId: characterId,
-    promptingMessageId: VISUAL_STATE_PREVIEW_GUARD,
-    sink,
-  });
-  const build = safeBuildVisualStateShadow(
-    {
-      // The shared cut → shadow-input factory (the scene render's digest build
-      // uses the same one), so the inspector can never preview an assembly the
-      // production render would not take.
-      ...chatVisualStateShadowInput({
-        characterId,
-        memoryGroupId: input.memoryGroupId,
-        cutId: VISUAL_STATE_PREVIEW_GUARD,
-        cut,
-        memory,
-        sink,
-      }),
-      sink,
-    },
-    sink,
-  );
-  if (build === null) {
-    return degradedVisualStatePreviewPayload({
-      lane: "character_chat",
-      shadowFlagEnabled: chatVisualStateShadowEnabled(),
-      diagnostics: sink.items,
-    });
-  }
-  return visualStatePreviewPayload({
-    build,
-    shadowFlagEnabled: chatVisualStateShadowEnabled(),
-    diagnostics: sink.items,
-  });
-}
-
-/**
- * The newest player line in this chat, with the register it was authored in.
- *
- * The guidance preview needs a message to premise-check, and "the last thing the
- * player said" is the one that produced the reply a developer is looking at. Narrator
- * mode rides the line's own meta, so the preview reproduces the live authority
- * decision rather than assuming ordinary input.
- *
- * The row's own id comes back with it because the contact preview needs the exchange
- * guard: an ordinary send keys its ledger on `promptMessageId`, which IS this row, so
- * a preview that carries it re-derives the very contact the live turn wrote rather
- * than a look-alike under a different ref.
- */
-async function lastPlayerMessage(chatId: string): Promise<{ id: string | null; content: string; narrator: boolean }> {
-  const [row] = await db()
-    .select({ id: characterChatMessages.id, content: characterChatMessages.content, meta: characterChatMessages.meta })
-    .from(characterChatMessages)
-    .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "user")))
-    .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
-    .limit(1);
-  if (!row) return { id: null, content: "", narrator: false };
-  const meta = parseOr(messageAttachmentsMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
-  return { id: row.id, content: row.content, narrator: meta.inputMode === "narrator" };
-}
-
-/**
- * Both developer previews run the exact context-aware sensory detector used by a
- * live 1-on-1 cut. The preview loader currently exposes only the primary member;
- * keeping this in one helper at least prevents the guidance inspector and prompt
- * preview from disagreeing about actor, owner, register, or negation.
- */
-function previewSensoryFocus(input: {
-  character: { id: string; name: string };
-  cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
-  message: { content: string; narrator: boolean };
-}): ReturnType<typeof detectSensoryFocus> {
-  const characters =
-    input.cut.state.presence === "present"
-      ? [{ id: input.character.id, name: input.character.name, aliases: input.cut.profile.aliases }]
-      : [];
-  return detectSensoryFocus(input.message.content, {
-    characters,
-    narratorInput: input.message.narrator,
-  });
-}
-
-/**
- * This turn's resolved contact, re-derived READ-ONLY for a preview.
- *
- * The live leg does four things: plan, write the ledger, advance the scene
- * projection, and word the outcome. A preview may only do the first and the last, so
- * this runs the same `planChatContactTurn` over the STORED cut and the newest player
- * line, keeps the outcome, and drops the planned scene. Nothing is appended to
- * `chat_contact_events`, and nothing is written back to the scenario: looking at a
- * prompt must never move a body or record a touch.
- *
- * **The one thing it assumes rather than observes.** `contactActionOutcomeStatus`
- * will not say `committed` without an acknowledgment of a durable write, and a
- * preview performs none — so a literal "no write, no acknowledgment" preview would
- * render every contact as silence, which is exactly the blind spot this closes. The
- * acknowledgment is therefore built from the plan, as the one the live turn's awaited
- * write produces. That assumption is stated to the inspector rather than hidden (the
- * contact stage reports its own flag beside these rows), and in the ordinary case it
- * is not an assumption at all: replaying the newest line against the cut that line
- * already settled re-derives the SAME contact, which folds `contact_continued` — the
- * case that legitimately writes no row.
- *
- * Two fidelity limits worth knowing while reading the inspector:
- *
- * - **One character.** `loadChatPreviewCut` loads the primary participant, so an
- *   ensemble previews as a 1-on-1. A pronoun resolves only when exactly one character
- *   is present, so a group chat's preview can resolve a "your" the live turn refuses
- *   as ambiguous.
- * - **The cut is post-settle.** The live leg planned against the PRE-exchange scene;
- *   this replans against the scene that exchange left behind — the same
- *   after-the-fact reading the guidance preview beside it already takes on the
- *   premise check.
- *
- * Fenced whole like the live leg (docs/resilience.md): any failure degrades to no
- * outcomes, which is the flag-off preview, and never costs the inspector its page.
- */
-async function previewChatContactOutcomes(input: {
-  chatId: string;
-  character: { id: string; name: string };
-  cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
-  message: { id: string | null; content: string; narrator: boolean };
-  sink: DiagnosticCollector;
-}): Promise<{ outcomes: readonly PhysicalActionOutcome[]; unresolvedPremise: ChatContactUnresolvedPremise | null }> {
-  const { cut } = input;
-  try {
-    // No player line yet ⇒ no act is detectable, so the fallback ref is only ever a
-    // placeholder for a plan that returns nothing.
-    const eventRef = chatContactEventRef(input.message.id ?? `preview:${input.chatId}`);
-    const storyMinute = Math.max(0, Math.trunc(cut.scenario.clockMinutes));
-    // The same current-cut material answer the live leg derives, from the same
-    // resolved wardrobe — a preview that read the persisted capture instead
-    // would re-open the settle race the live leg closed, and explain a silence
-    // the turn no longer produces.
-    const actorId = garmentActorForCharacter(input.character.id);
-    const { material } = chatContactMaterialAtCut({
-      store: cut.scenario.garments,
-      actorId,
-      ...(cut.wardrobe.worn === undefined ? {} : { worn: cut.wardrobe.worn }),
-      visibility: cut.wardrobe.partVisibility,
-      environment: cut.scenario.environment,
-      clockMinutes: cut.scenario.clockMinutes,
-      freeTextOutfit: cut.state.outfit,
-      wornItemIds: cut.state.wornItemIds,
-      sink: input.sink,
-    });
-    // PRESENT only, exactly as the live roster is built: an away character is not a
-    // body in the room, and an empty roster resolves no target at all.
-    const characters: ChatContactRosterMember[] =
-      cut.state.presence === "present"
-        ? [
-            {
-              subjectId: affordanceSubjectId(input.character.id),
-              name: input.character.name,
-              aliases: cut.profile.aliases,
-              material,
-            },
-          ]
-        : [];
-
-    // The permission owner's read, gated exactly as the live leg gates it. This
-    // one the preview OBEYS rather than reports: a romantic attempt resolves
-    // against whatever the ledger says, and a preview that answered from an
-    // owner the live turn never consulted would explain a commit the turn did
-    // not make. With the flag off, both paths reach the adapter's bare
-    // `not_required` stub and both fall to `permission_unresolved` — silence,
-    // which is the honest preview of a silent turn.
-    let permissionPolicy: ChatContactPolicySource | undefined;
-    if (chatRomanticPermissionEnabled()) {
-      const permissionProjection = foldChatPermissionProjection(
-        await listChatPermissionEvents(input.chatId, input.sink),
-        input.sink,
-      );
-      permissionPolicy = (attempt) =>
-        derivePermissionPolicyRead({
-          projection: permissionProjection,
-          permittedActorId: attempt.permittedActorId,
-          grantingTargetId: attempt.grantingTargetId,
-          actionKind: attempt.actionKind,
-          playerSubjectId: CHAT_CONTACT_PLAYER_SUBJECT,
-          attemptActionId: attempt.actionId,
-        });
-    }
-
-    // The planned scene — the seeding, any release, and any movement the line wrote —
-    // is deliberately NOT taken, and neither are the plan's `ended` commits: both are
-    // authoritative state a live turn persists with the exchange, and a preview has no
-    // exchange to persist them with. The live leg's own ending hooks (a story-clock
-    // skip, a place change) are skipped here for the same reason — a read-only look at
-    // a turn may not end a contact.
-    const { act, resolution, commit } = planChatContactTurn({
-      scene: cut.scenario.scene,
-      message: input.message.content,
-      narratorInput: input.message.narrator,
-      characters,
-      eventRef,
-      storyTime: storyMinute,
-      ...(permissionPolicy === undefined ? {} : { permissionPolicy }),
-      sink: input.sink,
-    });
-    if (act === null || resolution === null) return { outcomes: [], unresolvedPremise: null };
-    const acknowledgment =
-      commit?.status === "committed"
-        ? chatContactAcknowledgment({ commit, eventRef, actionId: act.actionId })
-        : undefined;
-    return {
-      outcomes: [
-        chatContactActionOutcome({
-          act,
-          resolution,
-          eventRef,
-          ...(commit === null ? {} : { commit }),
-          ...(acknowledgment === undefined ? {} : { acknowledgment }),
-          sink: input.sink,
-        }),
-      ],
-      // The same typed premise the live leg derives — the inspector and the
-      // prompt preview must both explain (or show) the reach fence the turn built.
-      unresolvedPremise: chatContactUnresolvedPremise({ act, resolution, characters }),
-    };
-  } catch (error) {
-    log.error("engine.chat", "chat contact preview failed", { error: describeError(error) });
-    return { outcomes: [], unresolvedPremise: null };
-  }
-}
-
-/**
- * The read-only developer preview of narrator physical guidance (source
- * resolution → candidate → disclosure → selection → rendered instruction).
- *
- * Computes on demand from the stored cut and the newest player line, and stores
- * NOTHING — there is nothing to store, because the live path recomputes this every
- * turn by design. Like the affordance preview it REPORTS `CHAT_PHYSICAL_CONSTRAINTS`
- * rather than obeying it: a developer asking why a fence never appeared needs the
- * answer with the flag off too.
- */
-export async function previewChatPhysicalGuidance(input: {
-  chatId: string;
-  character: { id: string; name: string; profile: unknown };
-}): Promise<PhysicalGuidancePreview> {
-  const sink = new DiagnosticCollector();
-  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
-  const read = previewAffordanceRead({ characterId: input.character.id, cut, sink });
-  const message = await lastPlayerMessage(input.chatId);
-  const sensoryFocus = previewSensoryFocus({ character: input.character, cut, message });
-  // Reported, never obeyed — the same discipline the affordance read above follows. A
-  // developer asking why a contact turn narrated nothing needs the answer with
-  // `CHAT_CONTACT_ACTIONS` off too, which is why this runs unconditionally and the
-  // flag rides the preview as a field. (`previewChatPrompt` gates on it instead: that
-  // surface is showing prompt bytes, so it has to obey.)
-  const contact = await previewChatContactOutcomes({
-    chatId: input.chatId,
-    character: input.character,
-    cut,
-    message,
-    sink,
-  });
-  const actionOutcomes = contact.outcomes;
-  const stages = buildChatPhysicalGuidanceStages({
-    read: read.read,
-    perception: read.request.perception,
-    committed: read.committed,
-    subjectId: input.character.id,
-    characterName: input.character.name,
-    playerName: cut.player.name,
-    message: message.content,
-    narratorInput: message.narrator,
-    // Same pure detector the live turn runs over the same line, so the inspector cannot
-    // report a relevance decision the turn would not have made.
-    sensoryFocus,
-    // An empty list compiles identically to no list at all
-    // (`normalizeGuidanceCandidates`), so the no-contact staircase is unchanged.
-    actionOutcomes,
-    sink,
-  });
-  return buildChatPhysicalGuidancePreview({
-    flagEnabled: chatPhysicalConstraintsEnabled(),
-    contactFlagEnabled: chatContactActionsEnabled(),
-    narratorInput: message.narrator,
-    message: message.content,
-    playerName: cut.player.name,
-    characterName: input.character.name,
-    committed: read.committed,
-    candidateConstraints: stages.candidateConstraints,
-    candidateCorrections: stages.candidateCorrections,
-    candidateActionOutcomes: stages.candidateActionOutcomes,
-    guidance: stages.guidance,
-    relevance: stages.relevance,
-    constraintCodes: read.read.constraints.map((constraint) => constraint.code),
-    rendered: renderChatPhysicalGuidance({
-      guidance: stages.guidance,
-      characterName: input.character.name,
-      possessive: `${input.character.name}'s`,
-      ...(contact.unresolvedPremise === null ? {} : { unresolvedPremise: contact.unresolvedPremise }),
-      sink,
-    }),
-    diagnostics: [...stages.guidance.diagnostics, ...sink.items.filter((item) => item.code.startsWith("guidance."))],
-  });
-}
-
-export async function previewChatPrompt(input: {
-  chatId: string;
-  memoryGroupId: string;
-  character: { id: string; name: string; profile: unknown };
-}): Promise<ChatPromptPreview> {
-  const sink = new DiagnosticCollector();
-  // The inspector SHOWS the narrator prompt, so it has to show the one the next
-  // exchange would actually build — including a Prompt Lab override. Agent
-  // isolation does not apply here: that rule
-  // keeps the resolved source away from HELPER AGENTS (pulse, extractors,
-  // classifiers, composer, deliberator), which produce structured state rather
-  // than prose. This surface renders the prose narrator's own prompt, and an
-  // inspector that quietly showed production bytes for a conversation running a
-  // test template would be worse than no inspector: the one place you go to ask
-  // "what is the narrator actually being told" would answer wrongly, and the
-  // Prompt Lab's whole point is being able to read that answer.
-  //
-  // Read-only: this resolves the CURRENT selection at preview time and generates
-  // nothing. It is not the exchange's frozen source, and it takes no lock — the
-  // live turn resolves its own under its own lock.
-  const instructionSource = await resolveNarratorInstructionSource(
-    await chatOwnerId(input.chatId),
-    input.chatId,
-    sink,
-  );
-  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
-  const { profile, scenario, state, player, wardrobe, playerWardrobe } = cut;
-  const summaryState = await loadChatSummary(input.chatId);
-  const memory = await retrieveChatMemory({
-    groupId: input.memoryGroupId,
-    queries: state.memoryQueries,
-    input: "",
-    sink,
-  });
-  // The inspector must show exactly what the live turn would build, garment
-  // blocks included (slice 6) — same builder, same flag, one place to be wrong.
-  const previewPlaceName = currentScenePlace(scenario.sceneMemory)?.name;
-  // Same for the affordance cues (slice 5): re-derived read-only from the STORED
-  // cut. The preview never persists `nextCues`, so looking at a prompt can't spend
-  // the repeat gate — the read is pure, so rebuilding it costs nothing but CPU.
-  const previewAffordance = chatAffordanceCuesEnabled()
-    ? previewAffordanceRead({ characterId: input.character.id, cut, sink })
-    : null;
-  const previewGarmentNarration = chatGarmentCuesEnabled()
-    ? buildChatGarmentNarration({
-        store: scenario.garments,
-        atMinutes: scenario.clockMinutes,
-        ...(previewPlaceName === undefined ? {} : { placeName: previewPlaceName }),
-        actors: chatGarmentNarrationActors({
-          characterId: input.character.id,
-          characterName: input.character.name,
-          playerName: player.name,
-          characterVisibility: wardrobe.partVisibility,
-          playerVisibility: playerWardrobe.partVisibility,
-        }),
-      })
-    : null;
-  // Same for the physical-guidance block: the
-  // inspector must show what a live turn would build, so it runs the same compile
-  // over the stored cut and the newest player line — the message a live turn would
-  // have been holding. Nothing is stored either way; guidance never was.
-  let previewPhysicalGuidance: readonly string[] = [];
-  if (chatPhysicalConstraintsEnabled()) {
-    const read = previewAffordanceRead({ characterId: input.character.id, cut, sink });
-    const message = await lastPlayerMessage(input.chatId);
-    const sensoryFocus = previewSensoryFocus({ character: input.character, cut, message });
-    // BOTH flags, exactly as the live path gates them: the contact leg is its own
-    // experiment, and its outcome only reaches the narrator inside the guidance block
-    // it rides in. Unlike the inspector, this surface OBEYS `CHAT_CONTACT_ACTIONS` —
-    // it is showing prompt bytes, so a flag-off preview has to BE the flag-off bytes.
-    const contact = chatContactActionsEnabled()
-      ? await previewChatContactOutcomes({ chatId: input.chatId, character: input.character, cut, message, sink })
-      : { outcomes: [] as readonly PhysicalActionOutcome[], unresolvedPremise: null };
-    previewPhysicalGuidance = renderChatPhysicalGuidance({
-      guidance: buildChatPhysicalGuidance({
-        read: read.read,
-        perception: read.request.perception,
-        committed: read.committed,
-        subjectId: input.character.id,
-        characterName: input.character.name,
-        playerName: player.name,
-        message: message.content,
-        narratorInput: message.narrator,
-        sensoryFocus,
-        // The same conditional spread the live call site uses, for the same reason: a
-        // contact-flag-off preview compiles the exact bytes it compiled before the leg.
-        ...(contact.outcomes.length > 0 ? { actionOutcomes: contact.outcomes } : {}),
-        sink,
-      }),
-      characterName: input.character.name,
-      possessive: `${input.character.name}'s`,
-      ...(contact.unresolvedPremise === null ? {} : { unresolvedPremise: contact.unresolvedPremise }),
-      sink,
-    });
-  }
-  const parts = buildCharacterChatPromptParts({
-    name: input.character.name,
-    profile,
-    instructionSource,
-    priorSummary: summaryState?.summary,
-    memory,
-    player: playerPromptSlice(player, playerWardrobe),
-    state: promptStateSlice(
-      state,
-      scenario,
-      wardrobe,
-      profile,
-      previewGarmentNarration,
-      previewAffordance
-        ? renderChatAffordanceCues({
-            cues: previewAffordance.read.cues,
-            attributes: previewAffordance.attributes,
-            possessive: `${input.character.name}'s`,
-            garmentNames: previewAffordance.garmentNames,
-            spokenGarmentIds: new Set(previewGarmentNarration?.wetnessGarmentIds ?? []),
-          })
-        : [],
-    ),
-    narrationShape: narrationShapeId("chat"),
-    // Conditional spread, exactly as the live path threads it: absent when the flag
-    // is off, so the previewed prompt is byte-identical to the pre-feature build.
-    ...(previewPhysicalGuidance.length > 0 ? { physicalGuidance: previewPhysicalGuidance } : {}),
-  });
-  return {
-    prefix: parts.prefix,
-    tail: parts.tail,
-    memory: { facts: memory.facts, episodes: memory.episodes },
-    memoryQueries: state.memoryQueries,
-  };
-}
-
-/**
- * Hard-delete a conversation (archive is the everyday action; this is the one
- * destructive verb). One transaction: the
- * chat row's FK cascades take the transcript, summary, participant rows, and
- * per-participant state; the scene-image prompt text is scrubbed (assets survive
- * in the Gallery, but their prompts embed chat lines — chat-keyed rows scrub
- * per-conversation; legacy rows have no chatId, so those still scrub
- * character-wide, hitting sibling conversations' legacy scenes too); and each
- * participant's memory group is purged **only when no other conversation
- * references it** — shared-history siblings keep the relationship's memory
- * alive.
- *
- * A SUCCESSOR chat takes its whole simulated world with it
- * (owner ruling): the front door is
- * 1:1 chat↔world and nothing else can ever reach that world again, so the
- * `sim_worlds` row is deleted in the same transaction. One statement suffices —
- * `sim_branches` cascades from `sim_worlds` and every branch-scoped table
- * cascades from `sim_branches` — and the chat-side FK's `set null` never fires
- * because the chat row dies in the same tx. Every delete confirm dialog (Worlds
- * page, Chats hub, in-conversation) states that consequence before the call.
- *
- * Its `ready` provisioning records are retired in that same transaction (#197):
- * the ledger's chat/world pointers are soft by design, so nothing else would
- * stop the front door replaying this chat's recorded 201 after it is gone.
- * `pending` and `failed` records are left exactly where they are — the first
- * belongs to a provision still in flight, the second is the failure audit.
- *
- * Ownership is re-read here rather than trusted from the caller: a destructive
- * service takes only ids and
- * proves the pairing itself, so no route-supplied `ownerId` — or an anomalous
- * cross-owner participant row — can route a foreign conversation into deletion.
- * A miss is a warn-level no-op, never a throw (docs/resilience.md).
- */
-export async function deleteChat(chatId: string, ownerId: string): Promise<void> {
-  const [chat] = await db()
-    .select({ id: characterChats.id, ownerId: characterChats.ownerId, simBranchId: characterChats.simBranchId })
-    .from(characterChats)
-    .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, ownerId)))
-    .limit(1);
-  if (!chat) {
-    log.warn("engine.chat", "chat delete denied: no chat matches this owner", {
-      code: "chat.delete_denied",
-      chatId,
-      ownerId,
-    });
-    return;
-  }
-
-  // The linked world, resolved through the branch the chat points at. A dangling
-  // link (branch already gone) is a degraded default, not a failure: the chat
-  // still deletes, the diagnostic records what was unreachable
-  // (docs/resilience.md — diagnostics over exceptions).
-  let simWorldId: string | null = null;
-  if (chat.simBranchId !== null) {
-    const [branch] = await db()
-      .select({ worldId: simBranches.worldId })
-      .from(simBranches)
-      .where(eq(simBranches.id, chat.simBranchId))
-      .limit(1);
-    if (branch) {
-      simWorldId = branch.worldId;
-    } else {
-      log.warn("engine.chat", "chat links a sim branch that no longer exists; deleting the chat alone", {
-        code: "chat.delete_sim_branch_missing",
-        chatId: chat.id,
-        simBranchId: chat.simBranchId,
-      });
-    }
-  }
-
-  const participants = await db()
-    .select({ characterId: chatParticipants.characterId, memoryGroupId: chatParticipants.memoryGroupId })
-    .from(chatParticipants)
-    .where(eq(chatParticipants.chatId, chat.id));
-
-  // Chat-private assets (player uploads + the look/place render anchors) are chat
-  // content, not Gallery assets: hard-delete them BEFORE the chat row goes (the FK
-  // would SET NULL their chat_id and strand them invisibly — scenes deliberately
-  // survive that way, these must not).
-  await deleteChatAssets(chat.id, ["chat_upload", "chat_look", "chat_place"]);
-
-  await db().transaction(async (tx) => {
-    await tx.update(images).set({ prompt: "" }).where(eq(images.chatId, chat.id));
-    for (const p of participants) {
-      await tx
-        .update(images)
-        .set({ prompt: "" })
-        .where(
-          and(
-            eq(images.ownerId, chat.ownerId),
-            eq(images.kind, "scene"),
-            eq(images.entityKind, "character"),
-            eq(images.entityId, p.characterId),
-            isNull(images.chatId),
-          ),
-        );
-    }
-    await tx.delete(characterChats).where(eq(characterChats.id, chat.id));
-    // E20-1: the world graph goes with the chat that owned it.
-    if (simWorldId !== null) await tx.delete(simWorlds).where(eq(simWorlds.id, simWorldId));
-    // #197: retire this chat's SUCCESSFUL provisioning records in the same tx, so
-    // a re-POST of the original request id cannot replay a 201 naming ids that
-    // just died. The front door re-checks the graph anyway; this is the belt —
-    // dropping `response`/`http_status` here means there is no recorded 201 left
-    // to replay even if that check were removed.
-    //
-    // The ids stay: `world_id`/`branch_id`/`chat_id` are soft pointers precisely
-    // so this ledger can outlive the graph it names (#283 — no cascade FK), and
-    // a retired record that still says WHICH world it built is the audit this
-    // table exists for. They are also how the front door knows the refusal is
-    // still owed: it answers one `provision_stale`, nulls them, and the next POST
-    // with that key is an ordinary failed → retry.
-    //
-    // `ready` ONLY. A pending row belongs to a provision still in flight (the
-    // owner lock makes that unreachable here, but the predicate says so rather
-    // than relying on it), and a `failed` row is somebody else's failure record.
-    // `sim_provisioning_requests` has no FK to this chat, so this plain
-    // owner-scoped UPDATE is the only thing that reaches these rows; it matches
-    // nothing when the chat is a legacy one, which is why it is safe on every
-    // delete rather than only successor ones.
-    await tx
-      .update(simProvisioningRequests)
-      .set({
-        state: "failed",
-        response: null,
-        httpStatus: null,
-        error: PROVISIONING_STALE_AFTER_DELETE,
-        completedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(simProvisioningRequests.ownerId, chat.ownerId),
-          eq(simProvisioningRequests.chatId, chat.id),
-          eq(simProvisioningRequests.state, "ready"),
-        ),
-      );
-    for (const p of participants) {
-      const [survivor] = await tx
-        .select({ chatId: chatParticipants.chatId })
-        .from(chatParticipants)
-        .where(and(eq(chatParticipants.memoryGroupId, p.memoryGroupId), ne(chatParticipants.chatId, chat.id)))
-        .limit(1);
-      if (!survivor) {
-        await deleteChatMemory(p.memoryGroupId, tx);
-        // Observer visual memory is memory-group-scoped too (slice 7), so it goes
-        // on exactly the same condition: the group's last conversation is gone.
-        // `chat_visual_memory` carries no FK — memory groups are not a table — so
-        // nothing would cascade it, and orphaned rows would silently resurrect
-        // recognition if the group id were ever minted again.
-        await tx.delete(chatVisualMemory).where(eq(chatVisualMemory.memoryGroupId, p.memoryGroupId));
-        // `chat_visual_cues` is the sibling record for the same observer/subject
-        // pair, keyed the same way: memory holds what the observer recognizes,
-        // cues hold what the narrator has had in view/said. It carries no FK
-        // either, so it goes on the same condition or it orphans the same way.
-        await tx.delete(chatVisualCues).where(eq(chatVisualCues.memoryGroupId, p.memoryGroupId));
-      }
-    }
-  });
 }
