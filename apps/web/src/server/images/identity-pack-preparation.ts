@@ -53,7 +53,7 @@ import { currentPackRow, errorMessage, isLiveReservation } from "./identity-pack
  * architectural reason, not a preference: `@/server/api` re-exports `clone.ts`,
  * which imports `@/server/images`, so calling into that barrel from this module
  * would close an import cycle. The shape is the same as the image sweep's own
- * job row (`assets.ts`), which is likewise local, provider-free work — hence
+ * job row (`asset-maintenance.ts`), which is likewise local, provider-free work — hence
  * `providerLaneFor("identity_pack") === null`, since a failure here says
  * something about this app, not about an upstream.
  */

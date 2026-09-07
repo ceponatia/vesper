@@ -21,7 +21,7 @@ import {
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { db, imageIdentityPacks, JOB_STALE_MS } from "../db";
-import type { ImageRow } from "./assets";
+import type { ImageRow } from "./asset-storage";
 
 /**
  * The identity-pack service: the one place a character's face reference is

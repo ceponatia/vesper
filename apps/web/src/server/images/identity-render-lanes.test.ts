@@ -34,7 +34,11 @@ vi.mock("../events", async (importOriginal) => {
 });
 vi.mock("./assets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./assets")>();
-  return { ...actual, runImagePipeline: vi.fn(), readImageBytes: vi.fn() };
+  return { ...actual, runImagePipeline: vi.fn() };
+});
+vi.mock("./asset-storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./asset-storage")>();
+  return { ...actual, readImageBytes: vi.fn() };
 });
 vi.mock("./model-profiles", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./model-profiles")>();
@@ -62,7 +66,8 @@ import { diag } from "@/contracts/diagnostics";
 import { logDiagnostics } from "@/server/log";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db } from "../db";
-import { readImageBytes, runImagePipeline, type ImagePipelineOptions, type ImageRow } from "./assets";
+import { readImageBytes, type ImageRow } from "./asset-storage";
+import { runImagePipeline, type ImagePipelineOptions } from "./assets";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";

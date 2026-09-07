@@ -38,7 +38,8 @@ vi.mock("@/server/log", () => ({
 }));
 
 import { db } from "../db";
-import { runImagePipeline, type ImagePipelineOptions, type ImageRow } from "./assets";
+import { runImagePipeline, type ImagePipelineOptions } from "./assets";
+import type { ImageRow } from "./asset-storage";
 import { renderImageIntent } from "./render-intent";
 import { renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
 

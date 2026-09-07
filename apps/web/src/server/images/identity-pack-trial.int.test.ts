@@ -37,7 +37,8 @@ import {
   imageModels,
   images,
 } from "../db";
-import { absoluteImagePath, createImageAsset, GALLERY_IMAGE_KINDS, saveImageBuffer, type ImageRow } from "./assets";
+import { absoluteImagePath } from "./paths";
+import { createImageAsset, GALLERY_IMAGE_KINDS, saveImageBuffer, type ImageRow } from "./asset-storage";
 import { ensureIdentityPack } from "./identity-pack-ensure";
 import { saveManualIdentityCrop } from "./identity-pack-manual";
 import {

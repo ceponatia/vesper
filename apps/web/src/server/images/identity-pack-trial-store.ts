@@ -29,7 +29,7 @@ import {
   imageIdentityPackTrialVerdicts,
   images,
 } from "../db";
-import { purgeImagesWhere } from "./assets";
+import { purgeImagesWhere } from "./asset-deletion";
 import { readJsonColumn } from "./identity-pack-store";
 import { profileRenderControlsHash, sha256Hex } from "./render-fingerprint";
 

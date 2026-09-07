@@ -24,7 +24,7 @@ import {
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { log } from "@/server/log";
-import { createImageAsset, failImage, saveImageBuffer, SHARP_DECODE_LIMITS } from "./assets";
+import { createImageAsset, failImage, saveImageBuffer, SHARP_DECODE_LIMITS } from "./asset-storage";
 import { errorMessage, intrinsicPolicy, type ResolvedSource } from "./identity-pack-store";
 
 /**

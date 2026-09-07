@@ -11,7 +11,7 @@ gated by Better Auth — see Security below.)
 
 This is deliberately **not** serverless: the turn engine runs an in-process job
 worker loop (`apps/web/src/server/engine/jobs.ts`) and images are written to a local
-filesystem (`DATA_ROOT`, `apps/web/src/server/images/assets.ts`). Both need an always-on
+filesystem (`DATA_ROOT`, `apps/web/src/server/images/paths.ts`). Both need an always-on
 Machine with a persistent volume — so `auto_stop_machines` must be **off**.
 
 ## Files
@@ -229,7 +229,7 @@ a Tailscale sidecar.) Set strong, unique `BETTER_AUTH_SECRET` and `DEV_PASSWORD`
   warnings during static generation; they disappear once the secrets above are
   set (runtime).
 - **Turbopack NFT "Encountered unexpected file" warnings** (`next.config.ts` →
-  `assets.ts`) — benign; from `DATA_ROOT` filesystem access being traced.
+  `asset-storage.ts` / `asset-maintenance.ts`) — benign; from `DATA_ROOT` filesystem access being traced.
 - **App OOMs / restarts** — bump `[[vm]] memory`; 256 MB is far too small.
 - **Build fails with `Next.js build worker exited ... SIGABRT` and a
   `FatalProcessOutOfMemory` V8 stack** — the BUILDER ran out of JS heap, which is

@@ -2,6 +2,21 @@
 
 One registry, one serving route, one lifecycle for every generated or uploaded image.
 
+## Ownership
+
+`images/assets.ts` coordinates generation through `runImagePipeline`.
+`asset-storage.ts` owns byte IO, exact-row writes, metadata and image-kind
+vocabulary, reusing `paths.ts` for containment. `asset-deletion.ts` owns guarded
+purges and pointer cleanup, `asset-chat-files.ts` owns attachment claims and chat
+file cascades, and `asset-clone.ts` copies eligible entity assets.
+
+`asset-maintenance.ts` owns orphan reconciliation, failed-row retirement and the
+request-driven schedule. The single `asset-lifecycle-hooks.ts` registry supplies
+derived-state invalidation and maintenance callbacks. `images/index.ts` installs
+them before external callers can delete or sweep; leaves never initialize hooks
+or import that public aggregate. Trusted mutation aliases in `images/internal.ts`
+point to the storage and chat-file owners; route code uses owner-scoped adapters.
+
 ## Rows and files
 
 File path: `data/images/<ownerId>/<imageId>.webp` — always webp, converted on save. The `images`
@@ -65,7 +80,7 @@ its kind is Gallery-listable** (`GALLERY_IMAGE_KINDS` — scene, portrait_varian
 kinds are deliberately never purged by `deleteEntityImages` — they survive the character as
 owner-visible Gallery history, with `images.entity_id` left dangling by design. Everything else
 hard-deletes with the character, in one call to `deleteNonGalleryCharacterImages`
-(`images/assets.ts`): every `HIDDEN_IMAGE_KINDS` entry, **and the canonical `avatar`**, which is
+(`images/asset-deletion.ts`): every `HIDDEN_IMAGE_KINDS` entry, **and the canonical `avatar`**, which is
 reachable only through the character's own portrait studio and is therefore not Gallery history —
 left uncovered, it would outlive its character with no surface left to view or delete it through,
 while still counting against the owner's storage quota. `identity_face_crop`
@@ -73,7 +88,7 @@ while still counting against the owner's storage quota. `identity_face_crop`
 
 **Every** delete path — the owned-image helpers, the chat cascades, the entity reclaim, the look
 anchor's keep-latest purge, `deleteNonGalleryCharacterImages` — runs the same `purgeImagesWhere(where)`
-(`images/assets.ts`): select → delete → best-effort unlink, once. The **caller** supplies the
+(`images/asset-deletion.ts`): select → invalidate derived sources → delete → best-effort unlink, once. The **caller** supplies the
 predicate and therefore owns every guard (owner id, kind, chat/entity), and the helper adds nothing
 to it, so a purge can never be wider than the call site asked for. Route handlers are barred from
 importing it (ESLint) and use the owner-scoped `deleteOwnedImage(s)` instead.

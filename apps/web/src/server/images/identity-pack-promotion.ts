@@ -9,7 +9,8 @@ import {
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { characters, type Db, db, imageIdentityPacks } from "../db";
-import { deleteOwnedImage, readImageBytes } from "./assets";
+import { deleteOwnedImage } from "./asset-deletion";
+import { readImageBytes } from "./asset-storage";
 import type { RevisionPatch } from "./identity-pack-derive";
 import {
   coversSource,

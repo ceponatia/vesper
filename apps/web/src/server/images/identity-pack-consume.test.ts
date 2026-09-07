@@ -15,8 +15,8 @@ vi.mock("../db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db")>();
   return { ...actual, db: vi.fn() };
 });
-vi.mock("./assets", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./assets")>();
+vi.mock("./asset-storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./asset-storage")>();
   return { ...actual, readImageBytes: vi.fn() };
 });
 vi.mock("./identity-pack-references", async (importOriginal) => {
@@ -25,7 +25,7 @@ vi.mock("./identity-pack-references", async (importOriginal) => {
 });
 
 import { db } from "../db";
-import { readImageBytes } from "./assets";
+import { readImageBytes } from "./asset-storage";
 import { evaluateIdentityPackForProfile } from "./identity-pack-references";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 

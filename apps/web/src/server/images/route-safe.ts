@@ -3,7 +3,8 @@ import { and, eq, inArray, type SQL } from "drizzle-orm";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag } from "@/contracts/diagnostics";
 import { db, images } from "@/server/db";
-import { absoluteImagePath, saveImageBuffer, type ImageKind, type ImageRow } from "./assets";
+import { absoluteImagePath } from "./paths";
+import { saveImageBuffer, type ImageKind, type ImageRow } from "./asset-storage";
 
 /**
  * Route-facing save boundary. The caller must supply the authenticated owner id;

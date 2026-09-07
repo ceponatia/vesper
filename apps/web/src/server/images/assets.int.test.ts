@@ -13,18 +13,10 @@ import {
   type TempDataRoot,
 } from "@/server/test-support";
 import { characters, db, images, items, locations } from "../db";
-import {
-  absoluteImagePath,
-  createImageAsset,
-  dataRoot,
-  deleteOwnedImage,
-  deleteOwnedImages,
-  failImage,
-  GALLERY_IMAGE_KINDS,
-  saveImageBuffer,
-  sweepOrphans,
-  type ImageRow,
-} from "./assets";
+import { absoluteImagePath, dataRoot } from "./paths";
+import { createImageAsset, failImage, GALLERY_IMAGE_KINDS, saveImageBuffer, type ImageRow } from "./asset-storage";
+import { deleteOwnedImage, deleteOwnedImages } from "./asset-deletion";
+import { sweepOrphans } from "./asset-maintenance";
 import { monogramSvg } from "./monogram";
 import { generateAvatar, generateAvatarsBatch } from "./avatar";
 import { generateEntityImage, generateEntityImagesBatch, missingEntityImageIds } from "./entity";

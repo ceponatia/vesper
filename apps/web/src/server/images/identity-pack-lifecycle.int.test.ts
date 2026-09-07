@@ -24,7 +24,8 @@ import {
   type TempDataRoot,
 } from "@/server/test-support";
 import { characters, db, imageIdentityPacks, images, jobs } from "../db";
-import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageKind, type ImageRow } from "./assets";
+import { absoluteImagePath } from "./paths";
+import { createImageAsset, saveImageBuffer, type ImageKind, type ImageRow } from "./asset-storage";
 import { evaluateIdentityPackForProfile, identityReferenceProvenanceFor } from "./identity-pack-references";
 import { ensureIdentityPack, resolveSource } from "./identity-pack-ensure";
 import {

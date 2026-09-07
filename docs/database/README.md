@@ -70,7 +70,7 @@ is optional there.
 
 ## Retention
 
-The image sweep's maintenance tick (`kickImageSweep` in `apps/web/src/server/images/assets.ts`)
+The image sweep's maintenance tick (`kickImageSweep` in `apps/web/src/server/images/asset-maintenance.ts`)
 also runs the passes in `apps/web/src/server/retention/`. Each pass is a bounded delete of at
 most `RETENTION_BATCH_SIZE` (1000) rows per tick, decided from the row's own timestamp or status
 alone — a large backlog is worked down over several ticks, never in one statement. These passes

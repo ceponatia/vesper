@@ -12,17 +12,10 @@ vi.mock("../db", async (importOriginal) => {
 });
 
 import { db, type Db } from "../db";
-import {
-  absoluteImagePath,
-  dataRoot,
-  imageMeta,
-  imageRelativePath,
-  planFailedImageRetirement,
-  runImagePipeline,
-  writeWebpAtomic,
-  type ImagePipelineOutcome,
-  type ImagePipelineThrown,
-} from "./assets";
+import { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
+import { imageMeta, writeWebpAtomic } from "./asset-storage";
+import { planFailedImageRetirement } from "./asset-maintenance";
+import { runImagePipeline, type ImagePipelineOutcome, type ImagePipelineThrown } from "./assets";
 import { monogramSvg } from "./monogram";
 
 const symlinksAvailable = canCreateSymlinks();

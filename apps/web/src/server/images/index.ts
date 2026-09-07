@@ -1,19 +1,16 @@
-// The folder's front door, and the one place the identity-pack maintenance hooks
-// are installed. `assets.ts` owns image deletion and the scheduled sweep but
-// cannot import the pack service that implements their derived-state half — that
-// edge would close an import cycle (`pnpm lint:cycles`), which is why the hooks
-// are registered rather than imported. Registering them HERE makes the dependency
-// visible: every consumer of this folder comes through this barrel (reaching past
-// it into a module is a lint error), so the registration is an import edge in the
-// diff instead of a side effect of whichever pack module happened to load first.
+// The folder's front door and sole lifecycle callback installation owner.
+// Deletion and scheduled maintenance consume the live slots in
+// asset-lifecycle-hooks.ts; neither imports a derived-asset service. Installers
+// run during this barrel's initialization, before external callers can delete
+// or sweep. Leaves import their owning siblings and never this aggregate.
 import { installIdentityPackMaintenance } from "./identity-pack-maintenance";
 import { installReferenceViewMaintenance } from "./reference-view-maintenance";
 
 installIdentityPackMaintenance();
 installReferenceViewMaintenance();
 
-// Four services are split across modules that import each other directly, so they
-// export helpers no caller outside this folder may use. Those four are re-exported
+// Services split across modules import each other directly and may expose
+// helpers no caller outside this folder may use. Those services are re-exported
 // by NAME rather than with `export *`: the folder's public surface stays exactly
 // what it was before the split, and a cross-module helper cannot reach a route by
 // accident (nor silently vanish from this barrel when a second module happens to
@@ -21,7 +18,63 @@ installReferenceViewMaintenance();
 // Modules absent below export nothing public: the pack service's derivation and
 // promotion halves, the lab's five lanes and the staged bench's subject cut.
 
-export * from "./assets";
+export { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
+export {
+  type ImageRow,
+  type ImageKind,
+  type ImageEntityKind,
+  type ImageFileRef,
+  readImageBytes,
+  type CreateImageAssetOptions,
+  createImageAsset,
+  type WrittenImageInfo,
+  WEBP_QUALITY,
+  SHARP_DECODE_LIMITS,
+  writeWebpAtomic,
+  imageMeta,
+  saveImageBuffer,
+  GALLERY_IMAGE_KINDS,
+  HIDDEN_IMAGE_KINDS,
+  failImage,
+} from "./asset-storage";
+export {
+  type ImageProduceResult,
+  type ImagePipelineStatus,
+  type ImagePipelineOutcome,
+  type ImagePipelineThrown,
+  type ImagePipelineOptions,
+  type ImagePipelineResult,
+  runImagePipeline,
+} from "./assets";
+export {
+  purgeImagesWhere,
+  deleteOwnedImage,
+  deleteNonGalleryCharacterImages,
+  clearEntityImagePointers,
+  deleteOwnedImages,
+} from "./asset-deletion";
+export {
+  type IdentityPackMaintenanceHooks,
+  registerIdentityPackMaintenance,
+  type ReferenceViewMaintenanceHooks,
+  registerReferenceViewMaintenance,
+} from "./asset-lifecycle-hooks";
+export {
+  deleteChatUploads,
+  deleteChatAssets,
+  claimChatAttachments,
+  chatAttachmentPaths,
+} from "./asset-chat-files";
+export { cloneEntityImages } from "./asset-clone";
+export {
+  type SweepResult,
+  type SweepOptions,
+  type FailedImageCandidate,
+  type FailedImageRetirementPlan,
+  planFailedImageRetirement,
+  sweepOrphans,
+  kickImageSweep,
+} from "./asset-maintenance";
 
 export {
   identityPackLockKey,

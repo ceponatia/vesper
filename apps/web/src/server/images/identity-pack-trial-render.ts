@@ -19,7 +19,8 @@ import {
 import { diag, DiagnosticCollector, type DiagnosticSink, teeSink } from "@/contracts/diagnostics";
 import { classifyImageFailure, disableSafetyChecker } from "../ai";
 import { db, imageIdentityPackTrialCells, images } from "../db";
-import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, saveImageBuffer } from "./assets";
+import { createImageAsset, imageMeta, readImageBytes, saveImageBuffer } from "./asset-storage";
+import { deleteOwnedImage } from "./asset-deletion";
 import { ensureIdentityPack } from "./identity-pack-ensure";
 import { getIdentityPackRevisionForTrial } from "./identity-pack-read";
 import { preparePromptFor } from "./model-adapters";

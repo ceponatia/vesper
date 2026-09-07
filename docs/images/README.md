@@ -104,7 +104,8 @@ with the caller's fallback text), `renderImageIntent` (`images/render-intent.ts`
 generating lane renders through, after resolving its task's profile with
 `resolveImageProfileForTask`; never call `renderWithModel` or the provider directly, or the
 profile's controls, the shape negotiation and the crop are all skipped), `readImageBytes` (row bytes
-or null), `imageMeta` (jsonb narrowing), `purgeImagesWhere` (caller-owned delete predicate — see
+or null) and `imageMeta` (jsonb narrowing) from `asset-storage.ts`,
+`purgeImagesWhere` from `asset-deletion.ts` (caller-owned delete predicate — see
 [asset-registry.md](asset-registry.md)), `runInBatches` (`@/lib/batches` — the batch buttons' loop),
 and `fnv1aHex` / `fnv1a32` (`@/lib/hash`, a barrel over `@vesper/contracts` — cache keys and seeds,
 golden-pinned; never re-roll a hash).

@@ -28,9 +28,13 @@ vi.mock("../db", async (importOriginal) => {
   return { ...actual, db: vi.fn() };
 });
 vi.mock("../events", () => ({ logEvent: vi.fn() }));
-vi.mock("./assets", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./assets")>();
-  return { ...actual, deleteOwnedImage: vi.fn(), imageMeta: vi.fn(), readImageBytes: vi.fn() };
+vi.mock("./asset-deletion", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./asset-deletion")>();
+  return { ...actual, deleteOwnedImage: vi.fn() };
+});
+vi.mock("./asset-storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./asset-storage")>();
+  return { ...actual, imageMeta: vi.fn(), readImageBytes: vi.fn() };
 });
 vi.mock("./chat-look", () => ({ latestChatLook: vi.fn() }));
 vi.mock("./identity-pack-consume", () => ({ identityPackRenderReferences: vi.fn() }));
@@ -49,7 +53,8 @@ vi.mock("@/server/log", () => ({
 import { logDiagnostics } from "@/server/log";
 import { classifyImageFailure } from "../ai";
 import { db } from "../db";
-import { deleteOwnedImage, imageMeta } from "./assets";
+import { deleteOwnedImage } from "./asset-deletion";
+import { imageMeta } from "./asset-storage";
 import { renderCharacterSceneImage, type SceneCastMember } from "./character-scene";
 import { latestChatLook } from "./chat-look";
 import { resolveImageLoraForRender } from "./image-loras";

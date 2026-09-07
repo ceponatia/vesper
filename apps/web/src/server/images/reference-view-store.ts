@@ -20,7 +20,7 @@ import {
   type ReferenceViewSummary,
 } from "@/contracts";
 import { characterReferenceViews, characters, db, hasLiveCharacterJob, images } from "../db";
-import { readImageBytes } from "./assets";
+import { readImageBytes } from "./asset-storage";
 import { sourceContentHashOf } from "./identity-pack-store";
 
 /**

@@ -3,7 +3,9 @@ import type { ImageIdentityPackStatus } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { characters, db, imageIdentityPacks, images, JOB_STALE_MS } from "../db";
 import { log } from "@/server/log";
-import { HIDDEN_IMAGE_KINDS, type ImageKind, purgeImagesWhere, registerIdentityPackMaintenance } from "./assets";
+import { HIDDEN_IMAGE_KINDS, type ImageKind } from "./asset-storage";
+import { purgeImagesWhere } from "./asset-deletion";
+import { registerIdentityPackMaintenance } from "./asset-lifecycle-hooks";
 import { errorMessage } from "./identity-pack-store";
 
 /**
@@ -11,7 +13,7 @@ import { errorMessage } from "./identity-pack-store";
  * hidden assets, and the consistency findings the scheduled image sweep runs.
  *
  * {@link installIdentityPackMaintenance} at the foot of this file is how the last
- * two reach `assets.ts` without closing an import cycle.
+ * two reach asset deletion and its sweep through asset-lifecycle-hooks.ts.
  */
 
 /* ------------------------------------------------------------------------ *
@@ -322,7 +324,7 @@ async function deleteOrphanIdentityCrops(cutoff: Date, limit: number, sink: Diag
  * Hard-delete a character's hidden identity assets — rows and files.
  *
  * The character delete route does not call this directly: it calls
- * `deleteNonGalleryCharacterImages` (`images/assets.ts`), whose `notInArray`
+ * `deleteNonGalleryCharacterImages` (`images/asset-deletion.ts`), whose `notInArray`
  * predicate already covers `HIDDEN_IMAGE_KINDS` as one case of the general rule
  * — an image survives its character iff its kind is Gallery-listable. This
  * function stays as the narrower, identity-pack-scoped purge (guarded by kind
@@ -491,10 +493,10 @@ async function identityPackSweepPass(now: Date): Promise<Record<string, number>>
 }
 
 /**
- * Hand the two lifecycle call-backs to `assets.ts`.
+ * Install the two callbacks in asset-lifecycle-hooks.ts.
  *
- * This direction, and not a plain import from there, because `assets.ts` importing
- * this module would close an import cycle (`pnpm lint:cycles`) — the registry's doc
+ * This direction, and not an import from asset-deletion or asset-maintenance,
+ * avoids a cycle through this service's deletion dependency — the registry's doc
  * comment has the full reasoning.
  *
  * Called explicitly, from the folder barrel (`./index.ts`), rather than as a side

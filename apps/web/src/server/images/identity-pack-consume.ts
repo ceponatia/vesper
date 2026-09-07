@@ -11,7 +11,7 @@ import {
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, images } from "../db";
-import { imageMeta, readImageBytes } from "./assets";
+import { imageMeta, readImageBytes } from "./asset-storage";
 import { evaluateIdentityPackForProfile } from "./identity-pack-references";
 
 /**

@@ -21,7 +21,8 @@ import {
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { db, imageGeneratorRuns } from "../db";
-import { deleteOwnedImages, imageMeta } from "./assets";
+import { deleteOwnedImages } from "./asset-deletion";
+import { imageMeta } from "./asset-storage";
 import { loadImageModel } from "./models";
 
 /**

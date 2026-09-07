@@ -2,7 +2,7 @@ import sharp from "sharp";
 import type { ImageModel } from "@vesper/image-core";
 import type { PreparedReferenceBytes } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { SHARP_DECODE_LIMITS, WEBP_QUALITY } from "./assets";
+import { SHARP_DECODE_LIMITS, WEBP_QUALITY } from "./asset-storage";
 
 /**
  * Reference preparation ahead of transport: the sharp pass every reference and

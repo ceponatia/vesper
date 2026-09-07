@@ -32,7 +32,8 @@ import {
   type SceneVisualReferenceKind,
 } from "@vesper/image-core";
 import type { SceneGenState } from "@/contracts/state/scene-gen";
-import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
+import { imageMeta, type ImageEntityKind } from "./asset-storage";
+import { runImagePipeline } from "./assets";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,

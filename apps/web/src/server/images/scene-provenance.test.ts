@@ -61,7 +61,8 @@ vi.mock("@/server/log", () => ({
 
 import { classifyImageFailure, isDemoMode } from "../ai";
 import { db } from "../db";
-import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult, type ImageRow } from "./assets";
+import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult } from "./assets";
+import type { ImageRow } from "./asset-storage";
 import { renderImageIntent } from "./render-intent";
 import { renderResolvedScene, type RenderResolvedSceneInput, type SceneRenderReferenceView } from "./scene";
 

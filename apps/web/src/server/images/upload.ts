@@ -4,7 +4,7 @@ import { characters, db } from "../db";
 import { logEvent } from "../events";
 import { AVATAR_HEIGHT, AVATAR_WIDTH } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { createImageAsset, failImage, saveImageBuffer } from "./assets";
+import { createImageAsset, failImage, saveImageBuffer } from "./asset-storage";
 import { promoteVariant } from "./variants";
 
 export interface UploadAvatarInput {

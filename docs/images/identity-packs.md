@@ -130,7 +130,8 @@ the last outcome, and why it stopped — a detached job has no diagnostic sink, 
 
 A changed source makes the pack stale (read-time hash verification is the backstop), and a deleted one
 invalidates the pack through a **maintenance registration hook** (`registerIdentityPackMaintenance` — a registry rather
-than an import, because `assets.ts` importing the pack service would close a cycle). **Ordering is load-bearing:
+than an import from asset deletion back into the pack service, which would close a cycle;
+[asset-registry.md](asset-registry.md#ownership) owns its installation boundary). **Ordering is load-bearing:
 `purgeImagesWhere` fires that hook BEFORE the rows go**, because `source_image_id` is a `set null` FK and a pack is
 findable by source id only while that id exists — invalidate afterwards and the character keeps a `current`, `ready`
 revision over bytes that are gone. Every purge-based delete inherits it; the portrait studio's own `DELETE` repeats it

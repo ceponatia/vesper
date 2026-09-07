@@ -28,7 +28,9 @@ import {
   type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
-import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
+import { imageMeta, readImageBytes } from "./asset-storage";
+import { purgeImagesWhere } from "./asset-deletion";
+import { runImagePipeline } from "./assets";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
