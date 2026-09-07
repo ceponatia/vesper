@@ -67,6 +67,9 @@ const APPROVED: readonly string[] = [
   // inspector's read-only preview (sanctioned by the spec: the inspector shows
   // the prose narrator's own prompt, which is not a helper agent).
   "apps/web/src/server/engine/chat-pipeline.ts",
+  // Shared reply provenance builder; it consumes only the frozen source passed
+  // by a prose narrator lane and never resolves or forwards one to helper agents.
+  "apps/web/src/server/engine/chat-reply-store.ts",
   "apps/web/src/server/engine/sim-exchange.ts",
   // The successor render loop — rebuilds every hidden retry from the SAME
   // frozen source carried on its context, and records the revision it used.
@@ -285,15 +288,18 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     // The admin inspector's read-only preview resolve, then the exchange's own.
     "const instructionSource = await resolveNarratorInstructionSource(",
     "const instructionSource = await resolveNarratorInstructionSource(owner, chatId, sink);",
-    // Take provenance (legacy lane) and its builder's input type.
+    // Take provenance for the legacy lane.
     "const narratorRun = buildNarratorRunProvenance( :: source: instructionSource,",
     // The preview's and the exchange's prose-narrator build inputs (1:1 + ensemble).
     "const parts = buildCharacterChatPromptParts( :: instructionSource,",
     "const promptInput: CharacterChatPromptInput = { :: instructionSource,",
     "ensembleExtras = { :: instructionSource,",
-    "export function buildNarratorRunProvenance(args: { :: source: NarratorInstructionSource | undefined;",
     "import { :: type NarratorInstructionSource,",
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
+  ],
+  "apps/web/src/server/engine/chat-reply-store.ts": [
+    "export function buildNarratorRunProvenance(args: { :: source: NarratorInstructionSource | undefined;",
+    "import { :: type NarratorInstructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange.ts": [
     // Resolved ONCE under the exchange lock, frozen onto the exchange context…

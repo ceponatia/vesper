@@ -50,6 +50,7 @@ the chat lane must never re-fork it.
 ## Where things live
 
 - **Exchange orchestration** — `server/engine/chat-pipeline.ts`
+- **Reply persistence, rerun cuts and take history** — `server/engine/chat-reply-store.ts`
 - **Model stream** — `server/engine/character-chat.ts`
 - **State types, seeds, time, pulse rules, and readout** — `server/engine/chat-state/{types,seed,time,pulse-rules,readout}.ts`; **state IO and orchestration** — `server/engine/chat-state.ts`
 - **RAG client (recall / the three extraction legs / write)** — `server/engine/chat-memory.ts`

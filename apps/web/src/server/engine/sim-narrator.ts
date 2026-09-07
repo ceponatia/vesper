@@ -18,7 +18,7 @@ import {
   stripNarratorArtifacts,
 } from "@/server/ai";
 import { db, type Db } from "@/server/db";
-import { buildNarratorRunProvenance } from "./chat-pipeline";
+import { buildNarratorRunProvenance } from "./chat-reply-store";
 import { NARRATIVE_TEMPERATURE } from "./constants";
 import {
   beatHandlesForCut,
