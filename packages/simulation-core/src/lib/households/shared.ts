@@ -10,7 +10,7 @@ export interface HouseholdsBranchMeta {
 }
 
 // ---------------------------------------------------------------------------
-// Shared resolver plumbing (mirrors bodies.ts / material-condition.ts)
+// Shared resolver plumbing (mirrors bodies/events.ts / material-condition.ts)
 // ---------------------------------------------------------------------------
 
 export interface HouseholdRejection<TCode extends string> {

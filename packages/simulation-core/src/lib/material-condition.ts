@@ -199,7 +199,7 @@ function itemConditionCapturedDerivation(
 }
 
 // ---------------------------------------------------------------------------
-// Shared resolver plumbing (mirrors bodies.ts)
+// Shared resolver plumbing (mirrors bodies/events.ts)
 // ---------------------------------------------------------------------------
 
 interface ItemConditionRejection<TCode extends string> {

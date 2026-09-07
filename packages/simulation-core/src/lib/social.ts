@@ -486,7 +486,7 @@ export function deriveConsentEscalationCandidates(
 }
 
 // ---------------------------------------------------------------------------
-// Shared resolver plumbing (mirrors households.ts / bodies.ts / commitments.ts)
+// Shared resolver plumbing (mirrors households/shared.ts / bodies/events.ts / commitments.ts)
 // ---------------------------------------------------------------------------
 
 interface RelationshipsBranchMeta {

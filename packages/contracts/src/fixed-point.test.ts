@@ -16,8 +16,9 @@ import {
  * pure numerics where needed — rather than grow its own floating-point turn math.
  *
  * The load-bearing claim is that the generalization changed NOTHING. Two proofs:
- * `lib/simulation/bodies.test.ts` and `material-condition.test.ts` still pass
- * untouched (the successor's own suites), and the sweep below compares the new
+ * `packages/simulation-core/src/lib/bodies.test.ts` and the neighboring
+ * `material-condition.test.ts` still pass untouched (the successor's own suites),
+ * and the sweep below compares the new
  * primitives against a verbatim copy of the pre-extraction numerics.
  */
 
