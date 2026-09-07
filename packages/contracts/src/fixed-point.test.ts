@@ -23,7 +23,7 @@ import {
 
 // ---------------------------------------------------------------------------
 // The PRE-EXTRACTION implementation, copied verbatim out of the old
-// `lib/simulation/bodies.ts` `driftStep`. Deliberately duplicated rather than
+// `simulation-core/src/lib/bodies/integration.ts` `driftStep`. Deliberately duplicated rather than
 // imported: an oracle that imports the code under test proves nothing.
 // ---------------------------------------------------------------------------
 

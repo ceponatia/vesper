@@ -66,7 +66,7 @@ export {
  * Slice 2 adds `resolveConsumeItemFromView` and the shared
  * `buildConsumptionBodyEffects` helper `lib/simulation/activities.ts`'s
  * completion-time consumption path reuses — both drive the body kernel through
- * `applySourceToMeter` (`lib/simulation/bodies.ts`).
+ * `applySourceToMeter` (`lib/bodies/sources.ts`).
  */
 
 // ---------------------------------------------------------------------------
