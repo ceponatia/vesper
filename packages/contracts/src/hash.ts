@@ -14,10 +14,11 @@
  * this module replaced them. Two of those copies are **determinism seams** whose
  * divergence is invisible by construction:
  *
- * - **The character forge's reproducibility** (`server/authoring/character-forge/attributes.ts`):
- *   social-card ids are `card_<base36 of the label hash>` and visual defaults index
- *   a vocabulary pool by the seed hash, so the same seed must keep producing the
- *   same character.
+ * - **The character forge's reproducibility**
+ *   (`server/authoring/character-forge/profile.ts` and
+ *   `server/authoring/character-forge/attributes.ts`): social-card ids are
+ *   `card_<base36 of the label hash>` and visual defaults index a vocabulary
+ *   pool by the seed hash, so the same seed must keep producing the same character.
  * - **The chat-look cache key** (`server/images/chat-look.ts`): `chatLookKey` is
  *   the `meta.lookKey` that decides whether a chat's cached look anchor is stale.
  *   If the key moves, every existing chat misses its cache and silently

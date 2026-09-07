@@ -541,7 +541,3 @@ export async function forgeProfileSection(context: CharacterForgeContext): Promi
     profile,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Attributes section (registry-derived schema)
-// ---------------------------------------------------------------------------

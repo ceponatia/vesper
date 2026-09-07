@@ -274,8 +274,3 @@ export async function matchOutfitAgainstLibrary(
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
-
-// ---------------------------------------------------------------------------
-// Demo fallbacks (docs/resilience.md §6): deterministic hand-written sample so
-// the forge UX works keyless, routed through the same generateChecked path.
-// ---------------------------------------------------------------------------

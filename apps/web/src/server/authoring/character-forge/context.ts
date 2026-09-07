@@ -63,7 +63,3 @@ export function speciesForgeDescriptor(
   const look = [species.appearance, heritage?.appearance ?? ""].map((p) => p.trim()).filter(Boolean).join(" ");
   return { label, look: look ? ` ${look}` : "" };
 }
-
-// ---------------------------------------------------------------------------
-// Profile section
-// ---------------------------------------------------------------------------
