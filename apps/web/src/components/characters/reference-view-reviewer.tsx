@@ -73,11 +73,11 @@ export function ReferenceViewReviewer({ characterId, initialView, set, onChanged
     onChanged();
   };
 
-  return <ImageLightbox open imageId={view.imageId} alt={referenceViewLabel(view)} caption={referenceViewLabel(view)}
+  return <ImageLightbox open imageId={view.imageId} viewKey={`${view.angle}:${view.wardrobe}:${view.attemptId ?? "missing"}`} alt={referenceViewLabel(view)} caption={referenceViewLabel(view)}
     comparisonImageId={acceptedImageId} onClose={onClose} emptyMessage={view.failureMessage ?? copy.hint}
     onPrevious={index > 0 && !busy ? () => move(-1) : undefined}
     onNext={index < set.views.length - 1 && !busy ? () => move(1) : undefined}
-    controls={<div className="mx-auto flex max-w-5xl flex-col gap-3">
+    controls={({ imageStatus }) => <div className="mx-auto flex max-w-5xl flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{referenceViewLabel(view)}</span><Tag tone={copy.tone}>{copy.label}</Tag><span className="text-sm text-paper-400">{index + 1} of {set.views.length}</span></div>
         <div className="flex gap-2"><Button size="sm" variant="ghost" aria-keyshortcuts="ArrowLeft" disabled={index <= 0 || busy} onClick={() => move(-1)}>Previous</Button><Button size="sm" variant="ghost" aria-keyshortcuts="ArrowRight" disabled={index >= set.views.length - 1 || busy} onClick={() => move(1)}>Next</Button></div>
@@ -95,7 +95,7 @@ export function ReferenceViewReviewer({ characterId, initialView, set, onChanged
       </div> : <>
         <ReferenceViewFeedbackNote feedback={view.feedback} />
         <div className="flex flex-wrap items-center gap-2">
-          {view.state === "unreviewed" ? <><Button size="sm" variant="primary" busy={busy} disabled={Boolean(changed)} onClick={() => void review("approve")}>Approve</Button><Button size="sm" variant="quiet" disabled={busy || Boolean(changed)} onClick={() => setRejecting(true)}>Reject</Button></> : null}
+          {view.state === "unreviewed" ? <><Button size="sm" variant="primary" busy={busy} disabled={Boolean(changed) || imageStatus !== "loaded"} onClick={() => { if (imageStatus === "loaded") void review("approve"); }}>Approve</Button><Button size="sm" variant="quiet" disabled={busy || Boolean(changed)} onClick={() => setRejecting(true)}>Reject</Button>{imageStatus !== "loaded" ? <p className="text-sm text-paper-400">Load the reference image before approving it.</p> : null}</> : null}
           {view.state === "approved" || view.state === "rejected" ? <Button size="sm" variant="ghost" busy={busy} disabled={Boolean(changed)} onClick={() => void review("undo")}>Undo review</Button> : null}
           {view.state !== "approved" && view.state !== "unreviewed" && view.state !== "rejected" ? <p className="text-sm text-paper-400">{view.failureMessage ?? copy.hint}</p> : null}
         </div>
