@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { cx } from "./cx";
 import { Tag } from "./tag";
+import { controlSurfaceClass } from "./input";
 
 export interface TagInputProps {
   value: readonly string[];
@@ -29,7 +30,8 @@ export function TagInput({ value, onChange, placeholder, id, className, suggesti
   return (
     <div
       className={cx(
-        "flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-ink-600 bg-ink-850 px-2 py-1.5 focus-within:border-accent-500",
+        controlSurfaceClass,
+        "touch-target flex min-h-9 flex-wrap items-center gap-1.5 px-2 py-1.5",
         className,
       )}
     >

@@ -17,7 +17,7 @@ export function Field({ label, hint, error, children, className }: FieldProps) {
   const controlId = useId();
   return (
     <div className={cx("flex flex-col gap-1.5", className)}>
-      <label htmlFor={controlId} className="text-xs font-medium tracking-wide text-paper-400 uppercase">
+      <label htmlFor={controlId} className="text-sm font-medium text-paper-300">
         {label}
       </label>
       {typeof children === "function" ? children(controlId) : children}

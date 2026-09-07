@@ -31,12 +31,11 @@ const updaters: Record<ShareableKind, (id: string, body: unknown) => Promise<Api
  * reference to yours). An independent action, not part of the editor's save —
  * it owns the visibility state once mounted.
  *
- * Disclosure is two-layer, per the owner ruling (2026-07-31): the one-line
- * summary sits inline beside the button so an author reads it *while* deciding,
- * and publishing a **character** — the only kind carrying private authored
- * fields, and the only irreversible direction — additionally routes through a
+ * Publishing a **character** — the only kind carrying private authored
+ * fields, and the only irreversible direction — routes through a
  * confirmation naming what a copy takes (full profile, images) and what
- * unpublishing can't undo. Every other move stays one click. Copy and flow rule
+ * unpublishing can't undo. This disclosure lives at the publishing decision;
+ * other kinds retain a brief inline notice before their one-click action. Copy and flow rule
  * both live in `./publish-disclosure` so a test pins them.
  */
 export function PublishToggle({ kind, id, visibility }: { kind: ShareableKind; id: string; visibility: Visibility }) {
@@ -81,9 +80,9 @@ export function PublishToggle({ kind, id, visibility }: { kind: ShareableKind; i
         aria-haspopup={confirmable && !isPublic ? "dialog" : undefined}
         title={isPublic ? "Public — discoverable and copyable by anyone. Click to make private." : "Private — only you. Click to publish."}
       >
-        {isPublic ? "● Public" : "○ Private"}
+        {isPublic ? "● Public" : "Publish"}
       </Button>
-      <p className="max-w-xs text-xs text-paper-500">{CLONE_DISCLOSURE[kind]}</p>
+      {!confirmable ? <p className="max-w-xs text-xs text-paper-500">{CLONE_DISCLOSURE[kind]}</p> : null}
       {confirmable ? (
         <Dialog
           open={confirming}

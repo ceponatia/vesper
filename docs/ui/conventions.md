@@ -26,6 +26,22 @@ script in the root layout, so there is no flash. The pure read/parse/apply path 
 Controlled state plus zod validation on submit; shared `Field` primitives; a sticky save bar with
 dirty-state indication on long editors.
 
+`Input`, `Select`, `Textarea`, and `TagInput` share the form surface tokens
+(`control-fill`, `control-border`, and `control-hover`) rather than decorative card borders.
+These boundaries remain visible on dark surfaces without lifting all surrounding chrome;
+the high-contrast theme strengthens them further. `Field` uses sentence-case labels, and
+`Select` retains a visible dropdown indicator. Both button sizes and single-line controls
+use the shared coarse-pointer touch target.
+
+`Textarea` grows with its content and explicitly derives its minimum writing height from
+`rows`, capped at 60vh. CSS content sizing ignores native row sizing; callers set `rows`
+instead of adding competing minimum-height utility classes.
+
+`Disclosure` groups optional detail behind a native summary and keeps its children mounted
+while folded. `ActionMenu` groups secondary actions with outside-pointer and Escape dismissal,
+arrow-key navigation, and focus returned to its trigger after a selection. Keep the useful
+primary action outside these disclosures and menus.
+
 Editor drafts seed from fetched data **exactly once per entity**
 (`components/hooks/draft-seed.ts`, applied during render): refetches and silent reloads never
 clobber in-progress edits, and navigating between entities drops the stale draft until the new one

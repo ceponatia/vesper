@@ -11,6 +11,7 @@ import {
 import { mergeCharacterSection } from "@/components/forge/draft-merge";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Field } from "@/components/ui/field";
 import { SaveBar } from "@/components/ui/save-bar";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
@@ -77,30 +78,42 @@ export function CharacterForgePage() {
     }
   };
 
+  const brief = (
+    <div className="flex flex-col gap-3">
+      <Field label="Creation brief">
+        {(id) => (
+          <Textarea
+            id={id}
+            rows={6}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="a weary harbor-master in her forties, dry humor, bad knee, keeps the storm ledger…"
+            disabled={forging}
+          />
+        )}
+      </Field>
+      {draft ? (
+        <p className="text-xs text-paper-500">
+          Forging again replaces this draft. Use the section revisions above to refine one part.
+        </p>
+      ) : null}
+      <Button variant={draft ? "ghost" : "primary"} onClick={forge} busy={forging} disabled={!prompt.trim()} className="w-fit">
+        {draft ? "Forge a new draft" : "Forge draft"}
+      </Button>
+    </div>
+  );
+
   return (
     <PageContainer>
-      <h1 className="prose-display mb-1 text-2xl">Character forge</h1>
+      {draft ? <p className="mb-2 text-xs font-medium text-paper-400">Character forge · Review your draft</p> : null}
+      <h1 className="prose-display mb-2 text-2xl">{draft ? draft.name || "Untitled character" : "Character forge"}</h1>
       <p className="mb-6 text-sm text-paper-400">
-        Describe someone; the forge drafts the profile, attributes and outfit. Everything stays editable.
+        {draft
+          ? "Make this character your own. Edit any detail or revise a section, then save to your library."
+          : "Describe someone; the forge drafts the profile, attributes and outfit. Everything stays editable."}
       </p>
 
-      <div className="mb-8 flex flex-col gap-3">
-        <Field label="Prompt">
-          {(id) => (
-            <Textarea
-              id={id}
-              rows={3}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="a weary harbor-master in her forties, dry humor, bad knee, keeps the storm ledger…"
-              disabled={forging}
-            />
-          )}
-        </Field>
-        <Button variant="primary" onClick={forge} busy={forging} disabled={!prompt.trim()} className="w-fit">
-          {draft ? "Forge again" : "Forge draft"}
-        </Button>
-      </div>
+      {!draft ? <div className="mb-8">{brief}</div> : null}
 
       {forging && !draft ? (
         <div className="flex flex-col gap-4">
@@ -118,6 +131,9 @@ export function CharacterForgePage() {
             regenerating={regenerating}
             diagnostics={diagnostics.filter((d) => d.severity !== "info")}
           />
+          <Disclosure title="Original creation brief" description="Edit the brief or forge a new draft" className="mt-6">
+            {brief}
+          </Disclosure>
           <SaveBar dirty={true} saving={saving} onSave={save} saveLabel="Save character" />
         </>
       ) : null}

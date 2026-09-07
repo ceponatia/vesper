@@ -178,7 +178,7 @@ export function NarratorPromptEditor({
             value={body}
             maxLength={NARRATOR_PROMPT_BODY_MAX}
             spellCheck={false}
-            className="min-h-96 font-mono text-[13px] leading-relaxed"
+            className="font-mono text-[13px] leading-relaxed"
             onChange={(e) => onChange({ body: e.target.value })}
           />
         )}
