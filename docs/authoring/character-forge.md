@@ -4,9 +4,42 @@
 humor, bad knee…") returns a **draft** and never auto-saves. Three agent legs run in parallel:
 the profile leg ([profile-leg.md](profile-leg.md)), the attribute leg, and the outfit leg.
 
-The forge UI renders the draft as the same form used for manual editing — accept, tweak any
-field, regenerate any single section (each agent re-runs independently), then save. After save,
-the avatar pipeline can run from the attributes.
+The Forge and manual New entry points share one character draft. An initial Forge of a blank
+draft opens an editable preview. Subsequent generated changes enter the explicit proposal review
+described in [manual-editing.md](manual-editing.md); saving writes the authored draft and does not
+accept pending suggestions.
+
+## Owns / does not own
+
+This page owns character generation and creation-draft persistence. Manual form placement,
+autosave and proposal acceptance belong to [manual-editing.md](manual-editing.md). Portrait
+creation and reference approval belong to [../ui/library.md](../ui/library.md).
+
+## Resumable creation
+
+- New and Forge open the same draft for the signed-in account on this browser. The draft stores
+  authored values, the original brief, active section and pending proposals. Resume never starts
+  generation or incurs model spend.
+- **Start a new draft** explicitly replaces the active creation draft after confirmation.
+- The original brief is stored in the existing profile JSON as `creationBrief`, with an empty
+  default for legacy records. It remains private in public profile projections. A prompt-based
+  draft preserves the original prompt. Before the first AI action on a manual or legacy saved
+  character, the editor captures the original authored details if there is no brief.
+- Revisions do not replace the original brief. Fill and rewrite receive it alongside the current
+  sheet, whose later authored values remain authoritative when they disagree with the original.
+- Save and open Portrait Studio or Chat preserves the requested destination. Pending proposals
+  carry into the saved character's review storage without acceptance.
+- A successful save clears only the browser version it saved. If newer edits exist, the saved
+  character remains linked and the newer draft stays available. Subsequent saves of that draft
+  update the linked character rather than creating another character.
+- Failed saves retain the entire draft. Browser storage failures surface a notice and keep the
+  in-memory draft available. Corrupt records stay retained until an explicit replacement.
+- Browser writes compare versions and use a per-draft Web Lock where available. A conflicting
+  tab keeps its changes in a separate recovery copy. Selecting a recovery preserves the displaced
+  version; queued writes from a version being left cannot overwrite the resumed version.
+- Browser drafts are scoped to the authenticated account, remain on this device between visits,
+  and are not cloud drafts. Switching accounts remounts the authoring state and never loads the
+  previous account's draft into the new account.
 
 ## Species matching runs first
 
@@ -120,7 +153,7 @@ name match, a **conservative embedding backstop** (`fuzzyResolve` at `ITEM_DEDUP
 item kind) collapses a near-identical garment the agent missed
 (`api.library.suggested_item.fuzzy_reused`); an embedding failure degrades to a fresh insert.
 
-New rows keep the `suggested` tag, and the resulting ids are appended to `profile.defaultOutfit`.
+New rows keep the `suggested` tag, and the resulting ids are appended to the default outfit preset.
 A bad suggestion degrades — invalid coverage ids are dropped with a diagnostic — and never fails
 the save. The PATCH response returns the saved profile so the sheet editor can adopt the new ids
 and clear its suggestion rows: the outfit tab's "suggested" rows are pending until a save, and

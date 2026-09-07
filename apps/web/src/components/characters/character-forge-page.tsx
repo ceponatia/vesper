@@ -1,142 +1,184 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Diagnostic } from "@/contracts";
-import {
-  charactersApi,
-  type CharacterDraft,
-  type CharacterForgeSection,
-} from "@/lib/client/api";
-import { mergeCharacterSection } from "@/components/forge/draft-merge";
+import { mergeFillDraft } from "@/lib/character-fill";
+import { characterSections, mergeFillScope, mergeRedraftScope, type CharacterSheetScope } from "@/lib/character-scopes";
+import { charactersApi, type CharacterDraft } from "@/lib/client/api";
+import { useSession } from "@/components/auth/auth-client";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Field } from "@/components/ui/field";
 import { SaveBar } from "@/components/ui/save-bar";
-import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { SkeletonText } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
+import { characterCreationStateSchema, emptyCharacterCreation, isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
+import { CharacterProposalReview } from "./character-proposal-review";
+import { readDraft, writeDraft } from "./character-draft-storage";
+import { characterReviewStateSchema, reconcileMaterializedUndo } from "./character-proposals";
+import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
-/**
- * Prose prompt → AI draft → human review/edit → save
- * (docs/authoring/character-forge.md).
- * The draft lives in component state only; abandoning the page writes nothing.
- */
-export function CharacterForgePage() {
+/** New and Forge are two entry points into the same account-scoped creation draft. */
+export function CharacterForgePage({ mode = "forge" }: { mode?: "forge" | "manual" }) {
+  const session = useSession();
+  const ownerId = session.data?.user.id;
+  if (!ownerId) return <PageContainer><SkeletonText lines={6} /></PageContainer>;
+  return <CharacterCreationSession key={ownerId} ownerId={ownerId} mode={mode} />;
+}
+
+function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "forge" | "manual" }) {
   const router = useRouter();
   const toast = useToast();
-  const [prompt, setPrompt] = useState("");
-  const [forging, setForging] = useState(false);
-  const [draft, setDraft] = useState<CharacterDraft | null>(null);
+  const store = useCharacterDraftStorage(`vesper:character-creation:${ownerId}`, characterCreationStateSchema, emptyCharacterCreation);
+  const { draft, prompt, review, tab } = store.data;
+  const [busy, setBusy] = useState<"create" | "fill" | "redraft" | null>(null);
+  const [scopeBusy, setScopeBusy] = useState<CharacterSheetScope | null>(null);
   const [diagnostics, setDiagnostics] = useState<readonly Diagnostic[]>([]);
-  const [regenerating, setRegenerating] = useState<CharacterForgeSection | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [confirmNew, setConfirmNew] = useState(false);
+  const active = useRef(true);
+  const request = useRef(0);
+  const generating = useRef(false);
+  const saveInFlight = useRef(false);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => { if (saving || busy || store.notice) event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [saving, busy, store.notice]);
 
-  const forge = async () => {
-    if (!prompt.trim()) return;
-    setForging(true);
-    const result = await charactersApi.forge({ prompt: prompt.trim() });
-    setForging(false);
-    if (result.ok) {
-      setDraft(result.data.draft);
+  const changeDraft = (next: CharacterDraft) => store.update((current) => ({ ...current, draft: next }));
+  const generate = async (kind: "create" | "fill" | "redraft", scope?: CharacterSheetScope) => {
+    if (!store.ready || generating.current || saveInFlight.current || store.conflict) return;
+    if (kind === "create" && !store.current.current.prompt.trim() && !store.current.current.draft.profile.creationBrief.trim()) return;
+    generating.current = true;
+    const token = ++request.current;
+    const identity = store.current.current.id;
+    const initialPreview = kind === "create" && isPristineCharacterDraft(store.current.current.draft)
+      && !store.current.current.review.pending.length && !store.current.current.savedCharacterId;
+    const base = withCreationBrief(structuredClone(store.current.current.draft), store.current.current.prompt);
+    store.update((current) => ({ ...current, draft: base }));
+    setBusy(kind);
+    setScopeBusy(scope ?? null);
+    try {
+      const result = await charactersApi.forge({ mode: kind, draft: base, ...(kind === "create" ? { prompt: base.profile.creationBrief } : {}), ...(scope ? { scope } : {}) });
+      if (!active.current || token !== request.current || store.current.current.id !== identity) return;
+      if (!result.ok) { toast.push({ title: "Generation failed", description: result.error.message, tone: "error" }); return; }
       setDiagnostics(result.data.diagnostics);
-    } else {
-      toast.push({ title: "Forge failed", description: result.error.message, tone: "error" });
+      const proposed = kind === "create" ? { ...result.data.draft, profile: { ...result.data.draft.profile, creationBrief: base.profile.creationBrief } }
+        : scope ? kind === "fill" ? mergeFillScope(base, result.data.draft, scope) : mergeRedraftScope(base, result.data.draft, scope)
+        : mergeFillDraft(base, result.data.draft);
+      if (initialPreview && JSON.stringify(store.current.current.draft) === JSON.stringify(base)) {
+        store.update((current) => ({ ...current, draft: proposed }));
+        return;
+      }
+      const section = scope ? characterSections[scope].label : "character";
+      const label = kind === "create" ? "forged character" : kind === "fill" ? `missing ${section} details` : `${section} rewrite`;
+      store.update((current) => ({ ...current, review: { ...current.review, pending: [...current.review.pending, { id: crypto.randomUUID(), label, base, proposed, undo: false }] } }));
+    } finally {
+      if (active.current && token === request.current) { generating.current = false; setBusy(null); setScopeBusy(null); }
     }
   };
 
-  const regenerate = async (section: CharacterForgeSection) => {
-    if (!draft) return;
-    setRegenerating(section);
-    const result = await charactersApi.forge({ prompt: prompt.trim(), section, draft });
-    setRegenerating(null);
-    if (result.ok) {
-      setDraft((current) => (current ? mergeCharacterSection(current, result.data.draft, section) : result.data.draft));
-      setDiagnostics(result.data.diagnostics);
-    } else {
-      toast.push({ title: `Couldn't regenerate ${section}`, description: result.error.message, tone: "error" });
-    }
-  };
-
-  const save = async () => {
-    if (!draft) return;
+  const save = async (destination: "portrait" | "chat" | null = null) => {
+    if (!store.ready || saveInFlight.current || generating.current || store.conflict) return;
+    saveInFlight.current = true;
     setSaving(true);
-    const result = await charactersApi.create({
-      name: draft.name || "Untitled character",
-      tags: draft.tags,
-      profile: draft.profile,
-      suggestedItems: draft.suggestedItems,
-    });
-    setSaving(false);
-    if (result.ok) {
-      toast.push({ title: "Character saved", tone: "success" });
-      router.push(`/characters/${result.data.id}`);
-    } else {
-      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
-    }
+    const snapshot = store.current.current;
+    const savedRevision = store.revision.current;
+    const authored = withCreationBrief(snapshot.draft, snapshot.prompt);
+    try {
+      await store.flush();
+      if (store.isBlocked()) return;
+      const body = { name: authored.name || "Untitled character", tags: authored.tags, profile: authored.profile, suggestedItems: authored.suggestedItems };
+      const result = snapshot.savedCharacterId
+        ? await charactersApi.update(snapshot.savedCharacterId, body)
+        : await charactersApi.create(body);
+      if (!result.ok) { if (active.current) toast.push({ title: "Save failed", description: result.error.message, tone: "error" }); return; }
+      const characterId = snapshot.savedCharacterId ?? ("id" in result.data ? result.data.id : result.data.character.id);
+      if (active.current) setSavedId(characterId);
+      const unchanged = store.current.current.id === snapshot.id && store.revision.current === savedRevision;
+      if (store.current.current.id === snapshot.id) {
+        store.update((current) => ({ ...current, savedCharacterId: characterId, ...(unchanged ? { draft: authored } : {}) }));
+      }
+      const boundRevision = store.revision.current;
+      let carriedReview = snapshot.review;
+      if (snapshot.review.undo && authored.suggestedItems.length) {
+        const saved = "character" in result.data ? result.data.character : null;
+        const loaded = saved ? null : await charactersApi.get(characterId);
+        const profile = saved?.profile ?? (loaded?.ok ? loaded.data.profile : null);
+        if (profile) carriedReview = reconcileMaterializedUndo(snapshot.review, authored, profile);
+      }
+      // Saving the authored draft carries pending reviews forward without accepting them.
+      try {
+        const reviewKey = `vesper:character-review:${ownerId}:${characterId}`;
+        const carryReview = () => {
+          const raw = localStorage.getItem(reviewKey);
+          const existing = readDraft(raw, characterReviewStateSchema)?.data;
+          if (raw && !existing) return "conflict" as const;
+          const pending = new Map([...carriedReview.pending, ...(existing?.pending ?? [])].map((proposal) => [proposal.id, proposal]));
+          return writeDraft(localStorage, reviewKey, raw, JSON.stringify({ revision: crypto.randomUUID(), savedAt: Date.now(), data: { pending: [...pending.values()], undo: existing?.undo ?? carriedReview.undo } }));
+        };
+        const stored = navigator.locks ? await navigator.locks.request(reviewKey, carryReview) : carryReview();
+        if (stored !== "saved") {
+          if (active.current) toast.push({ title: "Character saved", description: "Pending reviews stay in this creation draft because another review version exists or browser storage is unavailable.", tone: "success" });
+          return;
+        }
+      } catch {
+        if (active.current) toast.push({ title: "Character saved", description: "Browser review storage is unavailable. This creation draft stays open so you can finish reviewing.", tone: "success" });
+        return;
+      }
+      if (!unchanged || store.current.current.id !== snapshot.id || store.revision.current !== boundRevision) {
+        if (active.current) toast.push({ title: "Snapshot saved", description: "Your newer edits remain in this draft. Open the saved character using the link below.", tone: "success" });
+        return;
+      }
+      const cleared = await store.clear(boundRevision);
+      if (!active.current) return;
+      if (!cleared) {
+        toast.push({ title: "Character saved", description: "The browser draft is kept because its stored version changed or storage is unavailable.", tone: "success" });
+        return;
+      }
+      router.push(`/characters/${characterId}?tab=${destination ?? snapshot.tab}`);
+    } finally { if (active.current) { setSaving(false); saveInFlight.current = false; } }
   };
 
-  const brief = (
-    <div className="flex flex-col gap-3">
-      <Field label="Creation brief">
-        {(id) => (
-          <Textarea
-            id={id}
-            rows={6}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="a weary harbor-master in her forties, dry humor, bad knee, keeps the storm ledger…"
-            disabled={forging}
-          />
-        )}
-      </Field>
-      {draft ? (
-        <p className="text-xs text-paper-500">
-          Forging again replaces this draft. Use the section revisions above to refine one part.
-        </p>
-      ) : null}
-      <Button variant={draft ? "ghost" : "primary"} onClick={forge} busy={forging} disabled={!prompt.trim()} className="w-fit">
-        {draft ? "Forge a new draft" : "Forge draft"}
-      </Button>
-    </div>
-  );
-
+  if (!store.ready) return <PageContainer><SkeletonText lines={6} /></PageContainer>;
   return (
     <PageContainer>
-      {draft ? <p className="mb-2 text-xs font-medium text-paper-400">Character forge · Review your draft</p> : null}
-      <h1 className="prose-display mb-2 text-2xl">{draft ? draft.name || "Untitled character" : "Character forge"}</h1>
-      <p className="mb-6 text-sm text-paper-400">
-        {draft
-          ? "Make this character your own. Edit any detail or revise a section, then save to your library."
-          : "Describe someone; the forge drafts the profile, attributes and outfit. Everything stays editable."}
-      </p>
-
-      {!draft ? <div className="mb-8">{brief}</div> : null}
-
-      {forging && !draft ? (
-        <div className="flex flex-col gap-4">
-          <Skeleton className="h-9 w-72" />
-          <SkeletonText lines={6} />
-        </div>
-      ) : null}
-
-      {draft ? (
-        <>
-          <CharacterEditor
-            draft={draft}
-            onChange={setDraft}
-            onRegenerate={regenerate}
-            regenerating={regenerating}
-            diagnostics={diagnostics.filter((d) => d.severity !== "info")}
-          />
-          <Disclosure title="Original creation brief" description="Edit the brief or forge a new draft" className="mt-6">
-            {brief}
-          </Disclosure>
-          <SaveBar dirty={true} saving={saving} onSave={save} saveLabel="Save character" />
-        </>
-      ) : null}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="prose-display text-2xl">{draft.name || (mode === "forge" ? "Character forge" : "New character")}</h1>
+        <Button variant="ghost" onClick={() => setConfirmNew(true)} disabled={saving}>Start a new draft</Button>
+      </div>
+      <p className="mb-5 text-sm text-paper-400">This draft resumes on this browser for your account. Edit by hand or ask the Forge for suggestions, then save to your library.</p>
+      {store.notice ? <p role="status" className="mb-3 text-sm text-warning">{store.notice}</p> : null}
+      {store.conflict || store.recoveries.length ? <div className="mb-4 flex flex-wrap gap-2"><Button onClick={() => store.resume()}>Resume latest draft</Button>{store.recoveries.map((copy) => <Button key={copy.key} onClick={() => store.resume(copy.key)}>Recover draft from {copy.label}</Button>)}</div> : null}
+      {savedId || store.data.savedCharacterId ? <p className="mb-4 text-sm"><Link className="text-accent-300 underline" href={`/characters/${savedId ?? store.data.savedCharacterId}?tab=portrait`}>Open saved character</Link></p> : null}
+      <Disclosure title={draft.profile.creationBrief ? "Original creation brief" : "Creation brief"} description={draft.profile.creationBrief ? "Kept as context for later suggestions" : "Describe the character to draft with the Forge"} defaultOpen={mode === "forge"} className="mb-5">
+        <Field label={draft.profile.creationBrief ? "Original brief (read only)" : "Describe your character"}>{(id) => <Textarea id={id} rows={5} value={draft.profile.creationBrief || prompt} readOnly={!!draft.profile.creationBrief} onChange={(event) => store.update((current) => ({ ...current, prompt: event.target.value }))} placeholder="A human woman in her forties, a harbor-master with dry humor, auburn hair and a weathered blue coat…" />}</Field>
+        <Button className="mt-3" variant={draft.profile.creationBrief ? "ghost" : "primary"} busy={busy === "create"} disabled={!(prompt.trim() || draft.profile.creationBrief) || busy !== null || saving || store.conflict} onClick={() => void generate("create")}>{draft.profile.creationBrief ? "Regenerate character suggestions" : "Forge character suggestions"}</Button>
+        {draft.profile.creationBrief ? <p className="mt-2 text-xs text-paper-400">Use the section actions to refine one part. Starting a new draft creates a new original brief.</p> : null}
+      </Disclosure>
+      <CharacterProposalReview draft={draft} review={review} onReviewChange={(next) => store.update((current) => ({ ...current, review: next }))} onChange={changeDraft} />
+      <div className="mb-4"><Button busy={busy === "fill" && scopeBusy === null} disabled={busy !== null || saving || store.conflict} onClick={() => void generate("fill")}>Complete missing details</Button></div>
+      <CharacterEditor draft={draft} onChange={changeDraft} tab={tab} onTabChange={(next) => store.update((current) => ({ ...current, tab: next }))}
+        onComplete={(scope) => void generate("fill", scope)} completing={busy === "fill" ? scopeBusy : null}
+        onRedraft={(scope) => void generate("redraft", scope)} redrafting={busy === "redraft" ? scopeBusy : null}
+        generationDisabled={busy !== null || saving || store.conflict}
+        saving={saving || busy !== null} onSaveAndOpen={(destination) => void save(destination)}
+        diagnostics={diagnostics.filter((item) => item.severity !== "info")} />
+      <SaveBar dirty={busy === null && !store.conflict} saving={saving} onSave={() => void save()} saveLabel="Save authored character" />
+      <Dialog open={confirmNew} onClose={() => setConfirmNew(false)} title="Start a new character draft?" footer={<><Button onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" onClick={() => {
+        request.current += 1; generating.current = false; setBusy(null); setScopeBusy(null); setDiagnostics([]); setSavedId(null); store.reset(); setConfirmNew(false);
+      }}>Start new draft</Button></>}>
+        This replaces this browser's current creation draft and pending suggestions. Save the character first if you want to keep it in your library.
+      </Dialog>
     </PageContainer>
   );
 }

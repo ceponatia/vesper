@@ -4,40 +4,56 @@ Every entity has a full manual editor — the forge review UI *is* the editor. A
 visually marked (`source: "creation"` versus `"manual"`) until touched; provenance is already in
 the data model.
 
+## Owns / does not own
+
+This page owns manual editing and the character suggestion review boundary. Creation-draft
+persistence and original concept capture belong to [character-forge.md](character-forge.md).
+Image generation and reference-image approval belong to [../ui/library.md](../ui/library.md).
+
 ## The character editor
 
-- **Profile fields** plus a **species picker** that sets `speciesId` / `bodyPlanId`, selects any
-  default subtype, and seeds species and subtype default `bodyFeatures` (succubus wings, horns,
-  tail). Species overlays normally render as **Heritage**, while Android renders the same control
-  as **Subtype** (Synthetic default or Organic).
-- The **attribute picker** is registry-driven and a **single-open accordion**: every section starts
-  collapsed, expanding one collapses the rest, and an open section shows **every** applicable
-  attribute as a row. Set values edit in place; unset ones render blank controls — an enum "—"
-  option, inactive chips, a dimmed slider — that write a value on first interaction, keeping
-  storage sparse with no "add attribute" select. Intimate and body-feature toggles gate
-  anatomy-specific groups and join the same accordion. The breast fields are rows of the **Chest**
-  section itself — peers of chest build and chest hair, which the breasts region replaces — while
-  the genital groups sit as sub-groups of a **Pelvis** section beside Hips.
-- The **Disposition** tab leads with the **"Desires & secrets" card** — up to 3 drives, each with
-  want, why and secrecy plus a reveal-gate band picker on secrets (`DrivesEditor`; a row saved with
-  an empty want drops alone at the trust boundary, never wiping the list). Below it sits the social
-  disposition: per-trait **sliders** grouped by category with a live band readout (intimate traits
-  labelled), plus a disposition-tag editor autocompleting the canonical registry. A slider edit
-  writes a `manual`-source trait value that wins resolution over the forge's `creation` value.
-- The **Personality** tab holds the expression and bearing attribute picker, the bespoke
-  likes/dislikes list (concept or family target, like or dislike, 1–10 intensity, optional reaction
-  hint — `PreferencesEditor`), and the **social-reaction cards** editor — the character's own
-  taboos and social rules, with severity→tier, trigger concepts and tag-override flips, plus
-  Import-from and Save-to the `/social-cards` library ([social-cards.md](social-cards.md)).
-- The **Profile** tab also carries an **Intimate disposition** textarea (`profile.intimacy`, beside
-  Voice notes, hinted *"surfaces only when a scene turns intimate"*) and the **"Daily rhythm"
-  card** (`ScheduleEditor` — rows, not a timetable grid): each row a day-part preset
-  (Morning/Afternoon/Evening/Night, or Custom with time inputs, where an earlier end wraps past
-  midnight) plus activity, place and optional weekday chips (empty and full masks both normalize to
-  "every day"). A row saved with a blank activity or place drops alone at the trust boundary — an
-  element-wise catch on `profile.schedule` — never wiping the list.
-- Then the outfit builder and the portrait studio
-  ([../ui/library.md](../ui/library.md) §The portrait studio).
+The section registry owns placement, generation scopes and section detail counts:
+
+- **Profile** contains identity, biography and Daily rhythm. Schedule rows describe activity,
+  place, day-part or custom times and optional weekdays. An incomplete row drops independently.
+- **Appearance** contains body configuration and physical attributes. The registry-driven picker
+  shows applicable attributes with explicit empty values, preserving sparse storage. Species and
+  subtype changes seed their body defaults; anatomy toggles control the applicable attribute rows.
+- **Voice & manner** contains voice notes, voice anchors, dialogue examples and expression or
+  bearing attributes.
+- **Personality** contains personality and intimate-disposition prose, desires and secrets,
+  traits, disposition tags, preferences and social-reaction cards. Intimate disposition reaches
+  narration only in an intimate scene. Trait edits carry manual provenance.
+- **Outfit** contains named outfit presets and pending garment suggestions.
+- **Relationships** contains the character's starting relationship toward the player and saved
+  links to other library characters. The latter keep their dedicated replace-set save operation.
+- **Portrait** opens Portrait Studio. **Chat** contains narrator choice and the chat entry point.
+  Narrator choice joins the character's ordinary authoring save queue.
+
+## Reviewing character suggestions
+
+- **Complete missing details** fills absent values. **Rewrite this section** can propose changes
+  to authored values within the selected section. The visible section and generation scope agree.
+- Completion, section rewrites, Forge regeneration and portrait-derived attributes return a
+  reviewable proposal. The author draft stays unchanged until an explicit acceptance. The first
+  full Forge of an untouched blank draft opens the editable preview directly; Create is its
+  review boundary. Any author edits made during that request instead require proposal review.
+- The review displays before and proposed values, with independent choices per change. Attributes
+  and traits compare by id; provenance-only differences do not request an approval.
+- Changes made during generation or review survive. A proposal changes only fields that differ
+  from its original snapshot. Conflicting values require an explicit choice between the current
+  and proposed value before acceptance can proceed.
+- Rejecting a proposal changes no authored value. Review later keeps the proposal pending.
+  Saving, changing tabs and starting another generation never accept an earlier proposal.
+- Ordinary saved-character edits autosave during generation and while proposals wait. Explicit
+  saves and narrator-model changes share the same serialized write queue; a save response does
+  not clear the dirty state of edits made while it was in flight.
+- Undo offers the inverse of the last accepted changes through the same conflict review. Later
+  independent edits survive; later edits to the same field require a choice. Materialized outfit
+  item ids join the undo receipt. Undo removes their character references, not the library items.
+- Pending reviews and the undo receipt persist in browser storage under the authenticated account
+  and character. Account or character navigation resets the editor and guards late async results.
+  Reviews saved on this device are not synchronized between devices.
 
 ## Outfit presets
 

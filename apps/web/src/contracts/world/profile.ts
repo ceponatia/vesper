@@ -179,6 +179,8 @@ const liftLegacyDefaultOutfit = (value: unknown): unknown => {
 /** The raw object shape — for structural uses (`.partial()` etc.); reads go
  *  through `characterProfileSchema`, whose preprocess lifts legacy rows. */
 export const characterProfileObjectSchema = z.object({
+  /** Original authoring concept; private context preserved across subsequent revisions. */
+  creationBrief: z.string().catch("").default(""),
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().optional(),
