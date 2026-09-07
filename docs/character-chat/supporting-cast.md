@@ -15,7 +15,7 @@ of her own to be written *for*. This is the scene-memory pattern applied to peop
   (`contracts/turns/chat-supporting-cast.ts`), hard caps (≤8 members, ≤6 details, length
   caps), `parseOr` degraded-empty at the load boundary. It rides the `pre_exchange_scenario`
   rollback anchor but is **exempt from the rollback itself** (`rollbackScenario`,
-  `chat-state.ts`): regenerate/rerun restore the anchor's clock/scene/skip fields while the
+  `chat-state/snapshots.ts`): regenerate/rerun restore the anchor's clock/scene/skip fields while the
   LIVE cast list wins — the cast is accrete-only and author-curated between takes, so
   redoing a reply never deletes a member added after it (owner report, 2026-07-13). Entries
   only leave via the panel's Remove or the cap's oldest-out eviction.

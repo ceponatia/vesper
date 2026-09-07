@@ -46,7 +46,7 @@ runtime desires & secrets — see §Drives), and `presence`/`quiet_exchanges`
 ([multi-character.md](multi-character.md) §Multi-character).
 
 **Chat-wide** — the **scenario** on `character_chats` (`ChatScenario`;
-`loadChatScenario`/`saveChatScenario` in `engine/chat-state.ts` and `seedChatScenario`
+`loadChatScenario`/`saveChatScenario` in `engine/chat-state/store.ts` and `seedChatScenario`
 in `engine/chat-state/seed.ts`,
 seeded at creation from the PRIMARY's profile — premise from `playerRelationship.note`,
 house rules from their own cards — then preset-overlaid and author-owned): the
@@ -128,6 +128,14 @@ live state is already the pre-exchange state and the stored anchor belongs to th
 exchange before it. Reaching farther back requires a conversation branch because one
 snapshot cannot reconstruct every intervening state; the API rejects that request
 before transcript mutation with `rerun_requires_branch`.
+
+The persistence owners are `chat-state/store.ts` for full-row reads and writes,
+`chat-state/snapshots.ts` for pre-exchange anchors and rollback, `chat-state/edit.ts`
+for explicit edits, and `chat-state/surface-transfer.ts` for atomic transfer settlement.
+Guarded writes retain the prompting-message predicate; unguarded manual writes remain
+separate. Transfer settlement locks that message before writing, passes one transaction
+handle to both sides and their actual rollback anchors, and upserts each distinct
+character before its targeted snapshot update.
 
 ## Emotional weather
 

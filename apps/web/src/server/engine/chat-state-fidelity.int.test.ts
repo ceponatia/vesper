@@ -10,16 +10,10 @@ import {
   type ChatFixture,
   type ChatSeat,
 } from "@/server/test-support";
-import {
-  loadChatScenario,
-  loadChatState,
-  loadPreExchangeState,
-  persistChatState,
-  persistSurfaceTransferSettlement,
-  savePreExchangeSnapshot,
-  seedChatState,
-  type ChatState,
-} from "./chat-state";
+import { loadChatScenario, loadChatState, persistChatState } from "./chat-state/store";
+import { loadPreExchangeState, savePreExchangeSnapshot } from "./chat-state/snapshots";
+import { persistSurfaceTransferSettlement } from "./chat-state/surface-transfer";
+import { seedChatState, type ChatState } from "./chat-state";
 import {
   commitBodySurfaceDeposit,
   emptyBodySurfaceState,
@@ -91,7 +85,6 @@ describe.runIf(ready)("voice-exemplar ring + trait overlays persistence (slices 
     ]);
   });
 });
-
 
 /**
  * The conserved-transfer persistence boundary.

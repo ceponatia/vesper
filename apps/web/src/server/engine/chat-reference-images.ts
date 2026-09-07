@@ -20,7 +20,8 @@ import { characterChats, characters, chatParticipants, db } from "../db";
 import { chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
 import { chatGarmentLookKey } from "./chat-garments";
 import { chatVisualStateShadowInput } from "./chat-pipeline";
-import { loadChatScenario, loadChatState, seedChatScenario } from "./chat-state";
+import { loadChatScenario, loadChatState } from "./chat-state/store";
+import { seedChatScenario } from "./chat-state/seed";
 import { resolveChatWardrobe } from "./chat-wardrobe";
 import { registerJobHandler } from "./jobs";
 

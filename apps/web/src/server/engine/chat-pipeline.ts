@@ -164,18 +164,7 @@ import {
   applyChatAction,
   driftChatState,
   finalizeChatState,
-  loadChatScenario,
-  loadChatState,
-  loadMilestonesSeenAt,
-  loadPreExchangeScenario,
-  loadPreExchangeState,
-  persistChatState,
-  rollbackScenario,
   runChatPulse,
-  saveChatScenario,
-  saveChatState,
-  savePreExchangeScenario,
-  savePreExchangeSnapshot,
   resolveSeededOutfit,
   seedChatScenario,
   seedChatState,
@@ -183,6 +172,21 @@ import {
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
+import {
+  loadChatScenario,
+  loadChatState,
+  loadMilestonesSeenAt,
+  persistChatState,
+  saveChatScenario,
+  saveChatState,
+} from "./chat-state/store";
+import {
+  loadPreExchangeScenario,
+  loadPreExchangeState,
+  rollbackScenario,
+  savePreExchangeScenario,
+  savePreExchangeSnapshot,
+} from "./chat-state/snapshots";
 import {
   resolveChatWardrobe,
   resolvePlayerWardrobe,

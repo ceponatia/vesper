@@ -39,15 +39,10 @@ vi.mock("./chat-reference-enqueue", () => ({
   enqueueChatPlaceImage: () => Promise.resolve(),
 }));
 
-import {
-  editChatState,
-  loadChatScenario,
-  loadPreExchangeScenario,
-  rollbackScenario,
-  saveChatScenario,
-  savePreExchangeScenario,
-  type ChatScenario,
-} from "./chat-state";
+import { editChatState } from "./chat-state/edit";
+import { loadChatScenario, saveChatScenario } from "./chat-state/store";
+import { loadPreExchangeScenario, rollbackScenario, savePreExchangeScenario } from "./chat-state/snapshots";
+import type { ChatScenario } from "./chat-state";
 import { buildChatGarmentNarration, chatGarmentNarrationActors } from "./chat-garments";
 import { previewChatPrompt } from "./chat-pipeline";
 import {

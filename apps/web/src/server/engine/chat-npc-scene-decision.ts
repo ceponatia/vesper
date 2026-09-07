@@ -79,16 +79,10 @@ import {
   type NpcSceneExecutionMember,
   type NpcSceneMaterialCut,
 } from "./chat-npc-scene-execute";
-import { loadChatScenario } from "./chat-state";
+import { loadChatScenario } from "./chat-state/store";
 import { resolveChatWardrobe, resolvePlayerWardrobe, playerWornIds } from "./chat-wardrobe";
-import {
-  CHAT_NPC_SCENE_DECISION_MAX_OUTPUT_TOKENS,
-  CHAT_NPC_SCENE_DECISION_TIMEOUT_MS,
-} from "./constants";
-import {
-  buildChatNpcSceneDecisionPrompt,
-  CHAT_NPC_SCENE_DECISION_SYSTEM,
-} from "./prompts/chat-npc-scene-decision";
+import { CHAT_NPC_SCENE_DECISION_MAX_OUTPUT_TOKENS, CHAT_NPC_SCENE_DECISION_TIMEOUT_MS } from "./constants";
+import { buildChatNpcSceneDecisionPrompt, CHAT_NPC_SCENE_DECISION_SYSTEM } from "./prompts/chat-npc-scene-decision";
 import {
   chatContactActionsEnabled,
   chatNpcSceneDecisionsEnabled,

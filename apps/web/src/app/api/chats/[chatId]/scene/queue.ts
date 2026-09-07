@@ -136,7 +136,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
 
     const scenario = await loadChatScenario(args.chatId, collected);
     // Read separately from the scenario, and outside it, on purpose: the composer-model
-    // override is operational config that a retake must not revert (chat-state.ts).
+    // override is operational config that a retake must not revert (chat-state/snapshots.ts).
     const composerModel = await loadChatComposerModel(args.chatId);
 
     // Who is in the shot. Chat tracks no per-character location — `presence` is
