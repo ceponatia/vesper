@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { CHARACTER_CREATION_BRIEF_MAX } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSheetScopeSchema } from "@/lib/character-scopes";
 import {
@@ -16,7 +17,7 @@ import { backpressureRejection, dailyBudgetRejection, jsonError, jsonOk, readBod
 
 const forgeBodySchema = z.object({
   /** Required for create mode; fill and redraft work from the draft alone (sheet-only, no guidance). */
-  prompt: z.string().trim().min(1).max(4000).optional(),
+  prompt: z.string().trim().min(1).max(CHARACTER_CREATION_BRIEF_MAX).optional(),
   /**
    * "create" (default): prose prompt → full draft, or one `section` of it.
    * "fill": complete a partially-authored sheet without overwriting anything
