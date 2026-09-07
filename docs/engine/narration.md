@@ -15,6 +15,23 @@ For how the state inside a cut gets decided — perception, deliberation, beats
 tracked and later surfaced as `speakerBeliefs` and `perceptibleNow`, see
 [knowledge.md](knowledge.md).
 
+## Exchange ownership
+
+`apps/web/src/server/engine/sim-exchange.ts` dispatches exchange modes after
+`sim-exchange/context.ts` resolves authority and freezes one narrator instruction
+source under the caller's exchange lock. That context is passed unchanged through
+co-present dialogue, departure, accompany, solo narration, and same-cut rerender.
+Presentation and memory reads share the context owner; no mode resolves a second
+instruction source.
+
+Within `sim-exchange/`, `turn.ts` routes fresh turns, `admission.ts` admits player
+commands, and `engagements.ts` owns standing-scene lookup and opening. `dialogue.ts`
+renders co-present turns, `travel.ts` coordinates departure and accompany, `solo.ts`
+builds and renders solo cuts, and `retake.ts` rerenders an existing committed cut.
+`time.ts` shares drain and arrival settlement with command routes while durable
+catch-up jobs remain in `sim-time-jobs.ts`. Both conversation lanes use
+`chat-reply-store.ts` for reply persistence and browsable takes.
+
 ## How it works
 
 1. The compiler builds a `NarrativeCut` from the branch's projected state for

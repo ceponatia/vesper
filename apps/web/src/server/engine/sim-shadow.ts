@@ -14,7 +14,7 @@ import { readChatEngineAuthority } from "./chat-authority";
 import { loadChatScenario } from "./chat-state";
 import { tryKeyedLock } from "./keyed-lock";
 import { readBranchClock } from "./sim-beats";
-import { findOrOpenStandingEngagement, findStandingEngagement } from "./sim-exchange";
+import { findOrOpenStandingEngagement, findStandingEngagement } from "./sim-exchange/engagements";
 import { renderCommittedCut } from "./sim-narrator";
 import { advanceBranchStoryTime, prepareEngagementTurn, readDurableBodies } from "./simulation";
 
