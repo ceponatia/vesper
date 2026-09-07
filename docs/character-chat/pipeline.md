@@ -11,6 +11,25 @@ Read-only inspectors live in `engine/chat-prompt-preview.ts`; they share prompt 
 with the coordinator through `engine/chat-prompt-input.ts` and the image visual-cut
 factory through `engine/chat-visual-state-cut.ts`.
 
+The coordinator retains lock acquisition/release, reply guards, rollback anchors and the
+single frozen narrator instruction source. Preparation uses explicit phase inputs and
+returns the values consumed by later phases:
+
+- `chat-turn-prepare.ts` owns recall, action/perk preparation and resolved presentation reads.
+- `chat-turn-contact.ts` owns contact planning and awaited ledger/scene persistence, returning
+  the updated scenario, exact coverage captures, effect proposals and observer facts.
+- `chat-turn-guidance.ts` renders physical guidance and assembles visual observation from
+  that updated cut; the contact observer runs after guidance and before streaming.
+- `chat-turn-prompt.ts` assembles solo/ensemble narrator prompts, transport layout and
+  provenance nodes. Only this narrator phase receives the source-bearing prompt input.
+- `chat-turn-settle.ts` commits observer memory and settles isolated ensemble members.
+  `chat-turn-types.ts` owns the exchange API types without importing the coordinator.
+
+The coordinator visibly orders reply persistence, NPC decision launch, primary finalization,
+concurrent member settlement, sequential shared garment reconciliation, the last scene writer,
+permission processing and callbacks. Opening keeps its separate persistence and observer
+commit path before the common NPC/permission tail and early return.
+
 ## The exchange lifecycle
 
 The coordinator in `engine/chat-pipeline.ts` (`submitChatMessage`) owns the exchange
