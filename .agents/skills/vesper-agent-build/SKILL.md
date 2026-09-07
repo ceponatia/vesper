@@ -26,7 +26,9 @@ default worktree procedure; assign disjoint paths and one integrator there.
 
 ## Track the issue checklist
 
-Treat the issue's checklist as working acceptance criteria. Before editing,
+Treat the issue's checklist as working acceptance criteria. Read both checked
+and unchecked items, preserving their exact text and order so partial updates
+do not shift item identities. Before editing,
 account for its inventory and move-map requirements. At implementation handoff,
 review completion, and CI completion, reconcile each item with actual evidence.
 A merged PR or a green aggregate alone does not complete every checkbox.
