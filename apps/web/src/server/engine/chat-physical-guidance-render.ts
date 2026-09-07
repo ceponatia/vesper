@@ -13,7 +13,7 @@ import {
   chatContactPhrase,
   type ChatContactPhraseKind,
   type ChatContactUnresolvedPremise,
-} from "./chat-contact-adapter";
+} from "./chat-contact/presentation";
 import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permission-guidance";
 
 /**

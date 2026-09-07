@@ -106,7 +106,7 @@ vi.mock("./chat-permission-events", async (importOriginal) => {
   };
 });
 
-import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
+import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 import { runChatRomanticPermissionDecision } from "./chat-permission-decision";
 
 const CHAT_ID = "chat-1";

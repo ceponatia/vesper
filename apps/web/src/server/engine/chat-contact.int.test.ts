@@ -129,13 +129,10 @@ import {
   listChatContactEvents,
   type ChatContactEventRow,
 } from "./chat-contact-events";
-import {
-  chatContactEventRef,
-  endAllChatContacts,
-  planChatContactTurn,
-  CHAT_CONTACT_PLAYER_SUBJECT,
-  type ChatContactMaterialSource,
-} from "./chat-contact-adapter";
+import { chatContactEventRef, CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
+import { endAllChatContacts } from "./chat-contact/scene";
+import { planChatContactTurn } from "./chat-contact-adapter";
+import type { ChatContactMaterialSource } from "./chat-contact/material";
 import {
   chatArchivist,
   dropChatFixture,

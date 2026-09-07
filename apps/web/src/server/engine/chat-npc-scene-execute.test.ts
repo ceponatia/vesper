@@ -30,13 +30,10 @@ import {
   type SceneState,
 } from "@/contracts";
 import { codes } from "@/test/diagnostics";
-import {
-  chatContactEventRef,
-  planChatContactTurn,
-  seededChatScene,
-  CHAT_CONTACT_PLAYER_SUBJECT,
-  type ChatContactRosterMember,
-} from "./chat-contact-adapter";
+import { chatContactEventRef, CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
+import { planChatContactTurn } from "./chat-contact-adapter";
+import { seededChatScene } from "./chat-contact/scene";
+import type { ChatContactRosterMember } from "./chat-contact/input-evidence";
 import { chatReplyContactEventRef } from "./chat-contact-reply";
 import { admitNpcSceneDecision } from "./chat-npc-scene-decision";
 import {

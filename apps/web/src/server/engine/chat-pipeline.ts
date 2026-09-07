@@ -96,19 +96,16 @@ import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affor
 import {
   chatContactAcknowledgment,
   chatContactActionOutcome,
-  chatContactEventRef,
-  chatContactMaterialAtCut,
   chatContactUnresolvedPremise,
-  chatSceneAfterDiscontinuity,
-  CHAT_CONTACT_PLAYER_SUBJECT,
-  endAllChatContacts,
-  planChatContactTurn,
-  type ChatContactAct,
-  type ChatContactPolicySource,
   type ChatContactPremiseKind,
   type ChatContactUnresolvedPremise,
-  type ChatContactRosterMember,
-} from "./chat-contact-adapter";
+} from "./chat-contact/presentation";
+import { chatContactEventRef, CHAT_CONTACT_PLAYER_SUBJECT, type ChatContactAct } from "./chat-contact/identity";
+import { chatContactMaterialAtCut } from "./chat-contact/material";
+import { chatSceneAfterDiscontinuity, endAllChatContacts } from "./chat-contact/scene";
+import { planChatContactTurn } from "./chat-contact-adapter";
+import type { ChatContactPolicySource } from "./chat-contact/resolution";
+import type { ChatContactRosterMember } from "./chat-contact/input-evidence";
 import {
   appendChatContactEventsWithScene,
   CHAT_CONTACT_LEDGER_MISMATCH,
@@ -296,7 +293,7 @@ import {
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
 
-export type { ChatContactPremiseKind } from "./chat-contact-adapter";
+export type { ChatContactPremiseKind } from "./chat-contact/presentation";
 
 /**
  * One exchange's physical act, as the narrator was told about it.

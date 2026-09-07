@@ -19,7 +19,7 @@ import {
 import { agentModelId, generateChecked, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, db } from "../db";
 import { log } from "../log";
-import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
+import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 import {
   appendChatPermissionEventsWithInvalidation,
   chatPermissionReplyEventRef,

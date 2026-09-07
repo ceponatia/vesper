@@ -41,40 +41,52 @@ import {
 import {
   applyChatContactDeparture,
   applyChatContactRelease,
+  CHAT_SCENE_GROUND_SUPPORT,
+  endAllChatContacts,
+  chatSceneAfterDiscontinuity,
+  seededChatScene,
+} from "./chat-contact/scene";
+import {
   approachedBand,
-  chatActorControl,
   chatApproachSceneIntents,
+  chatDepartureSceneIntents,
+  departedBand,
+  detectChatApproach,
+  detectChatDeparture,
+  npcMovementSceneIntents,
+  type ChatDeparture,
+} from "./chat-contact/movement";
+import {
+  chatActorControl,
+  resolveChatContactAttempt,
+  type ChatContactPolicySource,
+} from "./chat-contact/resolution";
+import {
   chatContactAcknowledgment,
-  chatContactActionId,
   chatContactActionOutcome,
+  chatContactPhrase,
+  chatContactUnresolvedPremise,
+} from "./chat-contact/presentation";
+import {
+  chatContactActionId,
   chatContactEventRef,
+  CHAT_CONTACT_PLAYER_SUBJECT,
+  type ChatContactAct,
+} from "./chat-contact/identity";
+import {
   chatContactMaterialBetween,
   chatContactMaterialLayers,
   chatContactMaterialSource,
-  chatContactPhrase,
-  chatContactUnresolvedPremise,
-  chatDepartureSceneIntents,
-  CHAT_CONTACT_PLAYER_SUBJECT,
-  CHAT_SCENE_GROUND_SUPPORT,
-  departedBand,
+  type ChatContactMaterialSource,
+} from "./chat-contact/material";
+import {
   detectChatAffectionateTouch,
-  detectChatApproach,
   detectChatContactAct,
   detectChatRomanticTouch,
   detectChatContactRelease,
-  detectChatDeparture,
-  endAllChatContacts,
-  npcMovementSceneIntents,
-  planChatContactTurn,
-  resolveChatContactAttempt,
-  chatSceneAfterDiscontinuity,
-  seededChatScene,
-  type ChatContactAct,
-  type ChatContactMaterialSource,
-  type ChatContactPolicySource,
-  type ChatContactRosterMember,
-  type ChatDeparture,
-} from "./chat-contact-adapter";
+} from "./chat-contact/touch";
+import { planChatContactTurn } from "./chat-contact-adapter";
+import type { ChatContactRosterMember } from "./chat-contact/input-evidence";
 import { chatContactActionsEnabled } from "./prompts/constants";
 import { probePermissionEvent } from "@/contracts/affordances/permission/test-support";
 
@@ -2170,7 +2182,6 @@ describe("scene discontinuities clear pair relations", () => {
     expect(sceneParticipant(after, CHAT_CONTACT_PLAYER_SUBJECT)?.posture).toBeDefined();
   });
 });
-
 
 // ---------------------------------------------------------------------------
 // The romantic action producer
