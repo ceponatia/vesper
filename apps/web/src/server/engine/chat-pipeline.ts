@@ -45,10 +45,10 @@ import {
   type PhysicalStateTransition,
   type VisualMemoryState,
 } from "@/contracts";
-import {
-  type NarratorInstructionSource,
-  type NarratorPromptNode,
-  type NarratorRunProvenance,
+import type {
+  NarratorInstructionSource,
+  NarratorPromptNode,
+  NarratorRunProvenance,
 } from "@/contracts/narrator-prompts";
 import { PROVISIONING_STALE_AFTER_DELETE } from "@vesper/simulation-core/provisioning";
 import { newId } from "@/lib/ids";
