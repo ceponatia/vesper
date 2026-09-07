@@ -176,7 +176,7 @@ describe("section completion", () => {
     expect(fillSectionsToRun(draft, "outfit")).toEqual([]);
   });
 
-  it("fills a missing routine while preserving authored prose and unrelated sections", async () => {
+  it("preserves the scoped draft when generation degrades instead of inserting a demo routine", async () => {
     const draft = draftWith((d) => {
       d.name = "Mira";
       d.profile.bio = "Keeps the lighthouse";
@@ -184,7 +184,7 @@ describe("section completion", () => {
     });
     const filled = await forgeCharacterFill({ draft, scope: "profile", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
     expect(filled.profile.bio).toBe(draft.profile.bio);
-    expect(filled.profile.schedule.length).toBeGreaterThan(0);
+    expect(filled.profile.schedule).toEqual(draft.profile.schedule);
     expect(filled.profile.personality).toBe(draft.profile.personality);
     expect(filled.profile.playerRelationship).toEqual(draft.profile.playerRelationship);
     expect(filled.profile.socialCards).toEqual(draft.profile.socialCards);

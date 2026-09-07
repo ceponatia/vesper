@@ -289,17 +289,26 @@ function attributesPrompt(context: CharacterForgeContext): string {
 
 export async function forgeAttributesSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
   const scope = context.scope;
-  const { value } = await generateChecked({
+  const { value, degraded } = await generateChecked({
     ...FORGE_LEG_OPTIONS,
     schema: buildAttributeSectionSchema(context),
     system: ATTRIBUTES_SYSTEM,
     prompt: attributesPrompt(context),
     code: "forge.character.attributes",
     sink: context.sink,
-    fallback: context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
+    fallback: scope || context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
   });
-  if (scope && !value) return {};
-  const section = value ?? { attributes: [], ranges: [] };
+  if (scope && (degraded || !value)) return {};
+  return groundCharacterAttributeSection(value ?? { attributes: [], ranges: [] }, context);
+}
+
+/** Ground successful output against the body that the scoped edit can actually adopt. */
+export function groundCharacterAttributeSection(section: AttributeSection, context: CharacterForgeContext): CharacterSectionPatch {
+  const scope = context.scope;
+  const authoredRegions = scope ? context.draft?.profile.intimateRegions : undefined;
+  const regionsFor = (attributes: readonly AttributeValue[]) => authoredRegions?.length
+    ? authoredRegions
+    : seedBodyConfigFromAttributes(attributes).intimateRegions;
   const realizedBody = realizedBodyForForgeContext(context);
   const grounded = groundAttributeValues(section.attributes, context.sink, undefined, realizedBody);
   if (scope === "personality") {
@@ -317,7 +326,7 @@ export async function forgeAttributesSection(context: CharacterForgeContext): Pr
   // apply is translated to its successor or dropped BEFORE the fill can seed
   // the competing owner beside it — so the draft never stores both sizes.
   const bodyFor = (values: readonly AttributeValue[]) =>
-    realizedBodyForForgeContext(context, scope ? context.draft?.profile.intimateRegions : seedBodyConfigFromAttributes(values).intimateRegions);
+    realizedBodyForForgeContext(context, regionsFor(values));
   const conformAndFill = (values: readonly AttributeValue[]) => {
     const body = bodyFor(values);
     const conformed = conformAttributesToBody(values, body, context.sink);
@@ -342,10 +351,10 @@ export async function forgeAttributesSection(context: CharacterForgeContext): Pr
   // The stored body-config is the same seed the fills realized against. Intimate
   // attribute values beyond the render-consistency fill stay empty; the human
   // authors them.
-  const { intimateRegions } = seedBodyConfigFromAttributes(attributes);
+  const intimateRegions = regionsFor(attributes);
   return { profile: {
     attributes: scope ? attributes.filter((a) => sectionOwnsAttribute(scope, a.id)) : attributes,
-    intimateRegions: scope ? context.draft?.profile.intimateRegions ?? intimateRegions : intimateRegions,
+    intimateRegions,
   } };
 }
 

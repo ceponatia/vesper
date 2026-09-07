@@ -558,12 +558,12 @@ export async function forgeProfileSection(context: CharacterForgeContext): Promi
     temperature: 0.7,
     code: "forge.character.profile",
     sink: context.sink,
-    fallback: context.useFallbacks === false ? undefined : demoCharacterProfileSection,
+    fallback: context.scope || context.useFallbacks === false ? undefined : demoCharacterProfileSection,
   });
-  if (context.scope && !value) return {};
+  if (context.scope && (degraded || !value)) return {};
   // Scoped fields use their full authored shape; the create parser must not strip them.
   const createShape = { ...value };
-  if (context.scope && !degraded) {
+  if (context.scope) {
     delete createShape.schedule;
     delete createShape.playerRelationship;
   }
@@ -579,11 +579,11 @@ export async function forgeProfileSection(context: CharacterForgeContext): Promi
     microExemplars: groundMicroExemplars(section.microExemplars, context.sink),
     voiceAnchors: groundVoiceAnchors(section.voiceAnchors),
     drives: groundDrives(section.drives, context.sink),
-    schedule: context.scope === "profile" && !degraded
+    schedule: context.scope === "profile"
       ? groundScopedSchedule(value?.schedule, context.draft?.profile.schedule ?? [], context.sink)
       : groundSchedule(section.schedule, context.sink),
   };
-  const playerRelationship = context.scope === "relationships" && !degraded
+  const playerRelationship = context.scope === "relationships"
     ? groundScopedPlayerRelationship(value?.playerRelationship, context.draft?.profile.playerRelationship ?? emptyCharacterProfile().playerRelationship, context.sink)
     : groundPlayerRelationship(section.playerRelationship, context.sink);
   if (playerRelationship) profile.playerRelationship = playerRelationship;

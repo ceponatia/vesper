@@ -21,8 +21,9 @@ authored details; an empty optional section is not a validation failure.
   rows, including exact custom/overnight windows, weekdays and outfit preset mappings; it does not
   reduce an authored routine to the create leg's four-row day-part sketch. Name, real age,
   aliases, library tags and species controls live here but remain fixed during section generation.
-- **Appearance** owns physical attributes and optional intimate anatomy. Established body
-  configuration stays fixed. Attribute values, including manually authored ones, are reviewable
+- **Appearance** owns physical attributes and optional intimate anatomy. Nonempty authored body
+  configuration stays fixed; an empty configuration can adopt the grounded seed from generated
+  identity attributes. Visual attribute grounding uses that same resulting body. Attribute values, including manually authored ones, are reviewable
   during a rewrite.
 - **Voice & manner** owns voice notes, examples, anchors and expression attributes. It runs the
   profile and attribute legs in parallel, each constrained to its own portion.
@@ -47,6 +48,9 @@ browser store leaves the draft usable and reports that the page must stay open u
 The profile leg requests only a scope's declared output fields. The attribute leg constrains its
 schema vocabulary to the selected section. Grounding uses the existing registry rules, and the
 shared scope merge is the authoritative boundary even when a provider returns extra data.
+Scoped generation that degrades returns no patch: demo content and schema defaults never replace
+an authored section after failure. Whole-character creation and whole-sheet fill retain their
+existing demo behavior.
 
 ## Complete missing details
 

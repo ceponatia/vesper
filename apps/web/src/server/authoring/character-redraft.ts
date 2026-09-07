@@ -45,6 +45,7 @@ export async function redraftCharacterScope(input: RedraftCharacterInput): Promi
     useFallbacks: input.useFallbacks,
   };
   const patches = await Promise.all(characterSections[scope].legs.map((leg) => forgeCharacterSection(leg, context)));
+  if (patches.every((patch) => Object.keys(patch).length === 0)) return draft;
   let incoming = draft;
   for (const patch of patches) incoming = applyCharacterSectionPatch(incoming, patch);
   return mergeRedraftScope(draft, incoming, scope);

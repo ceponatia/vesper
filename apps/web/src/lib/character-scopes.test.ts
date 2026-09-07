@@ -102,14 +102,17 @@ describe("mergeRedraftScope — attributes (full re-sync)", () => {
 });
 
 describe("mergeRedraftScope — personality", () => {
-  it("replaces only the personality-category attributes, wholesale", () => {
+  it("replaces voice prose and expression attributes, leaving physical details unchanged", () => {
     const base = draftOf({}, {
+      voice: "Old voice",
       attributes: [attr("hair.color", "black", "manual"), attr("voice.pitch", "low", "manual"), attr("movement.gait", "gliding", "creation")],
     });
     const incoming = draftOf({}, {
+      voice: "Dry and unhurried",
       attributes: [attr("voice.pitch", "high", "creation"), attr("presentation.scent_baseline", "cedar", "creation")],
     });
     const merged = mergeRedraftScope(base, incoming, "personality");
+    expect(merged.profile.voice).toBe("Dry and unhurried");
     expect(merged.profile.attributes).toContainEqual(attr("hair.color", "black", "manual"));
     expect(merged.profile.attributes).toContainEqual(attr("voice.pitch", "high", "creation"));
     expect(merged.profile.attributes).toContainEqual(attr("presentation.scent_baseline", "cedar", "creation"));

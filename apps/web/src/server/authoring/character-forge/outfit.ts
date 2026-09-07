@@ -205,7 +205,7 @@ export async function forgeOutfitSection(context: CharacterForgeContext): Promis
     );
   }
 
-  const { value } = await generateChecked({
+  const { value, degraded } = await generateChecked({
     ...FORGE_LEG_OPTIONS,
     schema: outfitSectionSchema,
     system: OUTFIT_SYSTEM,
@@ -213,8 +213,9 @@ export async function forgeOutfitSection(context: CharacterForgeContext): Promis
     temperature: 0.5,
     code: "forge.character.outfit",
     sink: context.sink,
-    fallback: context.useFallbacks === false ? undefined : demoCharacterOutfitSection,
+    fallback: context.scope || context.useFallbacks === false ? undefined : demoCharacterOutfitSection,
   });
+  if (context.scope && (degraded || !value)) return {};
   const section = value ?? outfitSectionSchema.parse({});
   const { reuseIds, fresh } = partitionOutfitReuse(section, new Set(candidates.map((c) => c.id)), context.sink);
   const items = groundOutfitItems(fresh, context.sink);
