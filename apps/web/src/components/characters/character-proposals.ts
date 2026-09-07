@@ -146,6 +146,6 @@ export function transferCreationReview(existing: CharacterReviewState | undefine
   const carried = incoming.pending.filter((proposal) => !handled.has(proposal.id)).map((proposal) => ({ ...proposal, sourceDraftId }));
   const destinationOnly = (existing?.pending ?? []).filter((proposal) => proposal.sourceDraftId !== sourceDraftId && !handled.has(proposal.id));
   const pending = new Map([...carried, ...destinationOnly].map((proposal) => [proposal.id, proposal]));
-  const undo = existing?.undo ?? incoming.undo;
-  return { pending: [...pending.values()], handledIds: [...handled], undo: undo && !handled.has(undo.id) ? undo : null };
+  const undo = [existing?.undo, incoming.undo].find((candidate) => candidate && !handled.has(candidate.id)) ?? null;
+  return { pending: [...pending.values()], handledIds: [...handled], undo };
 }

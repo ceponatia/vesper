@@ -194,7 +194,7 @@ const liftLegacyDefaultOutfit = (value: unknown): unknown => {
  *  through `characterProfileSchema`, whose preprocess lifts legacy rows. */
 export const characterProfileObjectSchema = z.object({
   /** Original authoring concept; private context preserved across subsequent revisions. */
-  creationBrief: z.string().catch("").default("").transform(boundCharacterCreationBrief),
+  creationBrief: z.string().catch("").transform(boundCharacterCreationBrief).default(""),
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().optional(),

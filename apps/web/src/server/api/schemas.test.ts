@@ -21,6 +21,14 @@ describe("character body schemas", () => {
     expect(parsed.tags).toEqual([]);
   });
 
+  it("patch omission preserves the original creation brief", () => {
+    const existing = characterCreateSchema.parse({ name: "Iris", profile: { creationBrief: "Human woman, green eyes, blue suit" } });
+    const patch = characterPatchSchema.parse({ profile: { bio: "A harbor master" } });
+    expect(patch.profile).not.toHaveProperty("creationBrief");
+    expect({ ...existing.profile, ...patch.profile }.creationBrief).toBe("Human woman, green eyes, blue suit");
+    expect(characterCreateSchema.parse({ name: "Iris" }).profile.creationBrief).toBe("");
+  });
+
   it("patch accepts a partial profile and rejects wrong types", () => {
     expect(characterPatchSchema.safeParse({ profile: { bio: "new bio" } }).success).toBe(true);
     expect(characterPatchSchema.safeParse({ profile: { bio: 5 } }).success).toBe(false);

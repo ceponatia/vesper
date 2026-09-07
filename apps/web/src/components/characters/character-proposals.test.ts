@@ -7,6 +7,18 @@ import { isPristineCharacterDraft, withCreationBrief } from "./character-creatio
 const proposal = (base: CharacterProposal["base"], proposed: CharacterProposal["proposed"]): CharacterProposal => ({ id: "generation", label: "Profile rewrite", base, proposed, undo: false });
 
 describe("character proposal review", () => {
+  it("falls back to an eligible incoming undo when the destination undo was handled", () => {
+    const base = emptyCharacterDraft();
+    const oldUndo = { ...proposal(base, { ...base, name: "Old name" }), id: "old-undo", undo: true };
+    const newUndo = { ...proposal(base, { ...base, name: "New name" }), id: "new-undo", undo: true };
+    const transferred = transferCreationReview(
+      { pending: [], handledIds: [oldUndo.id], undo: oldUndo },
+      { pending: [], undo: newUndo },
+      "creation",
+    );
+    expect(transferred.undo).toEqual(newUndo);
+  });
+
   it("does not resurrect transferred suggestions rejected in the retained creation draft", () => {
     const base = emptyCharacterDraft();
     const source = proposal(base, { ...base, name: "Source suggestion" });
