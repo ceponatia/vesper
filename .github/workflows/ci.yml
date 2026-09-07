@@ -240,10 +240,9 @@ jobs:
               # (chat-summary) and `readChatEngineAuthority` (chat-authority),
               # while chat-pipeline orchestrates those shared calls, so the EC2
               # suite owns the three leaves' writes and their coordinator wiring.
-              # Successor route tests also exercise the extracted chat deletion.
               # The extracted reply-stream owner retains its coordinator's
               # selection; its lifecycle assertions run in the unit job.
-              apps/web/src/server/engine/chat-delete*|apps/web/src/server/engine/chat-pipeline*|apps/web/src/server/engine/chat-reply-stream*|apps/web/src/server/engine/chat-reply-store*|apps/web/src/server/engine/chat-summary*|apps/web/src/server/engine/chat-authority*)
+              apps/web/src/server/engine/chat-pipeline*|apps/web/src/server/engine/chat-reply-stream*|apps/web/src/server/engine/chat-reply-store*|apps/web/src/server/engine/chat-summary*|apps/web/src/server/engine/chat-authority*)
                 integration=true
                 ;;
               # EXCLUSION 1 — the rest of the legacy character-chat lane.
