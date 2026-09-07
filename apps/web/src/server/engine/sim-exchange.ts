@@ -48,7 +48,7 @@ import {
   persistAssistantReply,
   pushReplyTake,
   replyTakesSchema,
-} from "./chat-pipeline";
+} from "./chat-reply-store";
 import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
 import { log } from "../log";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";

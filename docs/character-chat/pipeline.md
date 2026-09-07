@@ -1,7 +1,8 @@
 # The exchange pipeline
 
 One chat exchange from lock to settle: `engine/chat-pipeline.ts` (`submitChatMessage`),
-and the persistence guards that keep a mid-stream delete from resurrecting orphans. The
+with reply persistence, rerun cuts and take history in `engine/chat-reply-store.ts`. The
+persistence guards keep a mid-stream delete from resurrecting orphans. The
 fan-out that follows the flushed reply is [post-turn.md](post-turn.md); the optional
 contact/permission legs that run mid-exchange are [physical-legs.md](physical-legs.md);
 what a reply that never arrives records is [reply-failures.md](reply-failures.md).
@@ -219,7 +220,7 @@ then renders exactly what survived the gate; it never silently drops a note.
 
 ## Persistence guards
 
-- **Reply persist** (`persistAssistantReply`): atomic `INSERT … SELECT … WHERE EXISTS`
+- **Reply persist** (`chat-reply-store.ts` `persistAssistantReply`): atomic `INSERT … SELECT … WHERE EXISTS`
   keyed on the prompting user line, so a Clear Chat or message delete landing mid-stream
   can't resurrect an orphan reply.
 - **State write** (`saveChatState`): same guard shape, keyed on the same row.

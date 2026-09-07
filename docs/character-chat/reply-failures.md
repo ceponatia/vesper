@@ -45,7 +45,8 @@ travels out-of-band instead.
 | `stop` finish with no such evidence     | `empty_reply` / `model_silent`      |
 | no usable evidence                      | `empty_reply`, no cause             |
 
-4. The verdict is written to `character_chats.last_reply_failure` (cleared by any
+4. `engine/chat-reply-store.ts` writes the verdict to
+   `character_chats.last_reply_failure` (cleared by any
    exchange that settles) **before the generator returns**, so the route's drain —
    and therefore the client's post-exchange refetch — strictly follows it.
 5. The transcript GET returns it on the `chat` envelope; the client's

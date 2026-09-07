@@ -4,6 +4,15 @@ export * from "./keyed-lock";
 export * from "./character-chat";
 export * from "./simulation";
 export * from "./chat-pipeline";
+export {
+  buildNarratorRunProvenance,
+  emptyReplyTakes,
+  persistAssistantReply,
+  pushReplyTake,
+  replyTakesSchema,
+  switchReplyTake,
+  type ReplyTakes,
+} from "./chat-reply-store";
 export * from "./chat-reference-enqueue";
 export * from "./chat-reference-images";
 export * from "./chat-action-beat";
