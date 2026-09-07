@@ -232,7 +232,7 @@ jobs:
             # ORDER MATTERS: a bash `case` takes the first matching arm and
             # `*` matches `/`, so every exclusion must precede its fallback.
             case "$path" in
-              # EXCLUSION 1a — the four chat-lane modules that are NOT
+              # EXCLUSION 1a — the shared chat-lane modules that are NOT
               # excluded. `runSimChatExchange`, the successor turn core that
               # `chats/sim-routes.int.test.ts` drives end to end, persists
               # through `persistAssistantReply`/`pushReplyTake`
@@ -240,6 +240,8 @@ jobs:
               # (chat-summary) and `readChatEngineAuthority` (chat-authority),
               # while chat-pipeline orchestrates those shared calls, so the EC2
               # suite owns the three leaves' writes and their coordinator wiring.
+              # The extracted reply-stream owner retains its coordinator's
+              # selection; its lifecycle assertions run in the unit job.
               apps/web/src/server/engine/chat-pipeline*|apps/web/src/server/engine/chat-reply-stream*|apps/web/src/server/engine/chat-reply-store*|apps/web/src/server/engine/chat-summary*|apps/web/src/server/engine/chat-authority*)
                 integration=true
                 ;;

@@ -1434,7 +1434,7 @@ export const images = pgTable(
     // `identity_face_crop`: the hidden face crop an
     // identity pack derives from the character's canonical portrait — an internal render
     // input, never a user-visible asset. It must be excluded from EVERY listing, clone
-    // and cross-owner read; `HIDDEN_IMAGE_KINDS` in `src/server/images/assets.ts` names
+    // and cross-owner read; `HIDDEN_IMAGE_KINDS` in `src/server/images/asset-storage.ts` names
     // those surfaces.
     // `identity_trial_output`: a render produced by
     // an admin identity-pack trial cell — operational evidence, never a Gallery asset.
@@ -1442,7 +1442,7 @@ export const images = pgTable(
     // reads it through the file route, which is how the blinded review UI displays it.
     // Swept when its trial run is deleted, AND with its character — an image survives
     // its character iff its kind is Gallery-listable, and this one is not, so it goes
-    // too (`deleteNonGalleryCharacterImages` in `src/server/images/assets.ts`).
+    // too (`deleteNonGalleryCharacterImages` in `src/server/images/asset-deletion.ts`).
     // `lab_control` / `lab_output`: the Advanced Image Lab's control fixtures
     // (pose skeleton, depth map, edge map) and
     // its experiment renders. Admin-only operational evidence, never Gallery items —

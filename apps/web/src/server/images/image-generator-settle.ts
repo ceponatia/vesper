@@ -5,7 +5,8 @@ import type { ImageGeneratorRunOutput } from "@/contracts/images/image-generator
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { classifyImageFailure } from "../ai";
 import { db, imageGeneratorRuns } from "../db";
-import { createImageAsset, deleteOwnedImage, deleteOwnedImages, saveImageBuffer } from "./assets";
+import { createImageAsset, saveImageBuffer } from "./asset-storage";
+import { deleteOwnedImage, deleteOwnedImages } from "./asset-deletion";
 import { generatorRenderer } from "./image-generator-render";
 import {
   generatorRunMeta,

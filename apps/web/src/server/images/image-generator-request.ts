@@ -37,7 +37,7 @@ import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
 import { disableSafetyChecker } from "../ai";
 import { db, imageGeneratorRuns } from "../db";
-import { imageMeta } from "./assets";
+import { imageMeta } from "./asset-storage";
 import {
   generatorRunMeta,
   type ImageGeneratorRunPayload,

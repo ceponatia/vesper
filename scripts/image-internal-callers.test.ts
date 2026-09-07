@@ -9,9 +9,9 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
 /**
  * Reviewed 2026-07-26; re-reviewed 2026-08-02 (image-pipeline-consolidation
  * C1): the five generation lanes no longer import `saveImageBuffer` — they run
- * on `runImagePipeline`, and the shell's save call lives inside `assets.ts`
- * itself (the defining module, so it never appears as an import). Every
- * remaining entry is either the upload worker that minted the row it writes,
+ * on `runImagePipeline`. Its `assets.ts` coordinator imports the storage
+ * writer, and `index.ts` explicitly forwards the existing public surface. Every
+ * other entry is either the upload worker that minted the row it writes,
  * the route-safe owner-checking adapter, or the chat pipeline's authenticated
  * rerun / ownership-reverified delete cascade.
  *
@@ -69,8 +69,10 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
+    "apps/web/src/server/images/assets.ts",
+    "apps/web/src/server/images/index.ts",
     "apps/web/src/server/images/identity-pack-trial-render.ts",
-    "apps/web/src/server/images/image-generator-run.ts",
+    "apps/web/src/server/images/image-generator-settle.ts",
     "apps/web/src/server/images/image-lab-render.ts",
     "apps/web/src/server/images/identity-pack-derive.ts",
     "apps/web/src/server/images/internal.ts",
@@ -78,8 +80,8 @@ const APPROVED: Readonly<Record<string, readonly string[]>> = {
     "apps/web/src/server/images/route-safe.ts",
     "apps/web/src/server/images/upload.ts",
   ],
-  deleteChatUploads: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/internal.ts"],
-  deleteChatAssets: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/internal.ts"],
+  deleteChatUploads: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/index.ts", "apps/web/src/server/images/internal.ts"],
+  deleteChatAssets: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/index.ts", "apps/web/src/server/images/internal.ts"],
 };
 
 function importedInternalNames(source: string): string[] {
