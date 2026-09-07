@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CHARACTER_CREATION_BRIEF_MAX, boundCharacterCreationBrief } from "@/contracts";
 import { characterDraftSchema, emptyCharacterDraft } from "@/lib/client/api";
 import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, reconcileMaterializedUndo, transferCreationReview, type CharacterProposal } from "./character-proposals";
-import { isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
+import { completeCreationForge, emptyCharacterCreation, isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
 
 const proposal = (base: CharacterProposal["base"], proposed: CharacterProposal["proposed"]): CharacterProposal => ({ id: "generation", label: "Profile rewrite", base, proposed, undo: false });
 
@@ -171,5 +171,39 @@ describe("original creation brief", () => {
     expect(draft.profile.creationBrief).toBe("Human woman, auburn hair, green eyes, blue suit");
     expect(withCreationBrief(draft, "Another prompt")).toBe(draft);
     expect(characterDraftSchema.parse(draft).profile.creationBrief).toBe(draft.profile.creationBrief);
+  });
+});
+
+
+describe("successful creation Forge preview", () => {
+  it("builds request context without freezing the authored brief before success", () => {
+    const started = emptyCharacterCreation();
+    started.prompt = "Human woman with auburn hair";
+    const base = withCreationBrief(started.draft, started.prompt);
+    expect(started.draft.profile.creationBrief).toBe("");
+    expect(base.profile.creationBrief).toBe(started.prompt);
+    const generated = { ...base, name: "Iris" };
+    const completed = completeCreationForge(started, started, base, generated, "first");
+    expect(completed.draft.name).toBe("Iris");
+    expect(completed.draft.profile.creationBrief).toBe(started.prompt);
+    expect(completed.review.pending).toEqual([]);
+  });
+
+  it("keeps concurrent author edits and stages a successful Forge result", () => {
+    const started = emptyCharacterCreation();
+    started.prompt = "Human woman with auburn hair";
+    const base = withCreationBrief(started.draft, started.prompt);
+    const current = { ...started, draft: { ...started.draft, name: "My own name" } };
+    const completed = completeCreationForge(current, started, base, { ...base, name: "Iris" }, "first");
+    expect(completed.draft.name).toBe("My own name");
+    expect(completed.draft.profile.creationBrief).toBe(started.prompt);
+    expect(completed.review.pending[0]?.proposed.name).toBe("Iris");
+  });
+
+  it("does not add an empty review when a full regeneration suggests no changes", () => {
+    const started = emptyCharacterCreation();
+    started.draft = withCreationBrief({ ...started.draft, name: "Iris" }, "Original brief");
+    const completed = completeCreationForge(started, started, started.draft, structuredClone(started.draft), "same");
+    expect(completed.review).toBe(started.review);
   });
 });

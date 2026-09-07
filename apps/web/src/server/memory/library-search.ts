@@ -5,7 +5,7 @@ import { emptyPersonaProfile, personaProfileSchema } from "@/contracts/players/p
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral, type Embedded } from "../ai";
-import { characters, db, items, locations, personas, socialCards } from "../db";
+import { characters, db, items, locations, personas, socialCards, type Db } from "../db";
 import { FUZZY_MIN_SCORE } from "./constants";
 
 export type LibraryKind = "character" | "location" | "item" | "social_card" | "persona";
@@ -61,6 +61,8 @@ export async function refreshSearchEmbedding(kind: LibraryKind, id: string, sink
 }
 
 export interface FuzzyResolveOptions {
+  /** Keep all lookup queries inside a caller-owned transaction when supplied. */
+  executor?: Pick<Db, "select" | "execute">;
   sink?: DiagnosticSink;
   /** Minimum similarity to accept an embedding hit (default FUZZY_MIN_SCORE). */
   minScore?: number;
@@ -80,12 +82,13 @@ export async function fuzzyResolve(
   opts: FuzzyResolveOptions = {},
 ): Promise<FuzzyMatch | null> {
   const { sink } = opts;
+  const executor = opts.executor ?? db();
   const minScore = opts.minScore ?? FUZZY_MIN_SCORE;
   const kindFilter = kind === "item" && opts.itemKind ? sql` and kind = ${opts.itemKind}` : sql``;
   const normalized = name.trim().toLowerCase();
   if (!normalized) return null;
 
-  const exactResult = await db().execute(
+  const exactResult = await executor.execute(
     sql`select id, name from ${sql.identifier(TABLE_NAMES[kind])}
         where owner_id = ${ownerId} and lower(name) = ${normalized}${kindFilter}
         limit 1`,
@@ -94,7 +97,7 @@ export async function fuzzyResolve(
   if (exact) return { id: exact.id, name: exact.name, score: 1 };
 
   if (kind === "character") {
-    const alias = await aliasMatch(ownerId, normalized, sink);
+    const alias = await aliasMatch(ownerId, normalized, executor, sink);
     if (alias) return alias;
   }
 
@@ -111,7 +114,7 @@ export async function fuzzyResolve(
   }
 
   const vec = toVectorLiteral(embedded.vector);
-  const result = await db().execute(
+  const result = await executor.execute(
     sql`select id, name, 1 - (search_embedding <=> ${vec}::vector) as score
         from ${sql.identifier(TABLE_NAMES[kind])}
         where owner_id = ${ownerId} and embedder = ${currentEmbedder()} and search_embedding is not null${kindFilter}
@@ -123,8 +126,8 @@ export async function fuzzyResolve(
   return best;
 }
 
-async function aliasMatch(ownerId: string, normalized: string, sink?: DiagnosticSink): Promise<FuzzyMatch | null> {
-  const rows = await db()
+async function aliasMatch(ownerId: string, normalized: string, executor: Pick<Db, "select">, sink?: DiagnosticSink): Promise<FuzzyMatch | null> {
+  const rows = await executor
     .select({ id: characters.id, name: characters.name, profile: characters.profile })
     .from(characters)
     .where(eq(characters.ownerId, ownerId));

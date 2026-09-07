@@ -29,6 +29,12 @@ describe("character body schemas", () => {
     expect(characterCreateSchema.parse({ name: "Iris" }).profile.creationBrief).toBe("");
   });
 
+  it("keeps the optional save precondition strict and absent for existing callers", () => {
+    expect(characterPatchSchema.parse({})).not.toHaveProperty("expectedUpdatedAt");
+    expect(characterPatchSchema.parse({ expectedUpdatedAt: "2026-09-01T12:00:00.123Z" }).expectedUpdatedAt).toBe("2026-09-01T12:00:00.123Z");
+    expect(characterPatchSchema.safeParse({ expectedUpdatedAt: "yesterday" }).success).toBe(false);
+  });
+
   it("patch accepts a partial profile and rejects wrong types", () => {
     expect(characterPatchSchema.safeParse({ profile: { bio: "new bio" } }).success).toBe(true);
     expect(characterPatchSchema.safeParse({ profile: { bio: 5 } }).success).toBe(false);

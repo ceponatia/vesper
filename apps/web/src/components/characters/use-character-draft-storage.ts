@@ -107,11 +107,12 @@ export function useCharacterDraftStorage<T>(key: string, schema: z.ZodType<T>, i
     persist(next);
   }, [persist]);
 
-  const resume = useCallback((copyKey?: string) => {
+  const resume = useCallback(async (copyKey?: string): Promise<boolean> => {
     // Invalidates callbacks already queued by the version being left.
     const operationEpoch = ++epoch.current;
     const requestedRevision = revision.current;
-    void lock(() => {
+    let resumed = false;
+    await lock(() => {
       if (!mounted.current || epoch.current !== operationEpoch) return;
       if (revision.current !== requestedRevision) { setNotice("This draft was edited while resuming. Your edits are kept; choose a version again when ready."); return; }
       try {
@@ -151,8 +152,10 @@ export function useCharacterDraftStorage<T>(key: string, schema: z.ZodType<T>, i
         setData(parsed.data);
         setNotice(null);
         setRecoveries(findRecoveries());
+        resumed = true;
       } catch { setNotice("Browser storage is unavailable. Keep this page open until you save."); }
     });
+    return resumed;
   }, [key, recoveryKey, recoveryPrefix, schema, findRecoveries, lock]);
 
   const reset = useCallback(() => {

@@ -111,19 +111,15 @@ export type { CharacterPortraitAcceptance };
  * diagnostics (materializing a forge outfit suggestion reports reuse/degradation).
  * Resilient throughout: a visibility-only toggle reads the same envelope.
  */
-export const characterSaveSchema = z
-  .object({
-    character: z
-      .object({
-        profile: characterProfileSchema.catch(() => emptyCharacterProfile()),
-      })
-      .catch(() => ({ profile: emptyCharacterProfile() })),
-    diagnostics: arrayOf(diagnosticSchema),
-  })
-  .catch(() => ({
-    character: { profile: emptyCharacterProfile() },
-    diagnostics: [],
-  }));
+export const characterSaveSchema = z.object({
+  character: characterDetailSchema,
+  diagnostics: arrayOf(diagnosticSchema),
+});
+/** The conflict response carries the current owned row for three-way recovery. */
+export const characterSaveConflictSchema = z.object({
+  error: z.object({ code: z.literal("character_conflict"), message: z.string() }),
+  character: characterDetailSchema,
+});
 export type CharacterSaveResult = z.infer<typeof characterSaveSchema>;
 
 /**
