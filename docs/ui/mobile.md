@@ -56,5 +56,17 @@ All in `globals.css` under `@media (pointer: coarse)` / `(hover: hover)`:
 - reveal-on-hover action clusters use `.hover-reveal` — always visible on touch, hover-gated only
   where hover exists (for example the portrait-studio variant actions);
 - form fields are pinned to 16px on coarse pointers so focusing them never triggers iOS zoom;
-- the dense `Tabs` strip (the 5-tab world and 7-tab character editors) scrolls horizontally and
-  keeps the active tab scrolled into view.
+- shared `Tabs` strips scroll horizontally and reveal the active tab on selection and resize
+  without moving the page. Repeated arrows, Home and End move both selection and focus.
+
+## Character section navigation
+
+Character sections form a sticky second navigation level beneath the global header. The shell
+measures the actual header height with `ResizeObserver` and exposes `--app-header-height`;
+character navigation uses that offset rather than covering site navigation. The global desktop
+menu and mobile bottom bar or drawer remain available.
+
+Below `md`, a labelled section selector replaces the horizontal character strip, keeping the
+selected section visible at narrow widths and after resizing. At larger widths the section tabs
+use roving keyboard focus and name their corresponding panels. Optional disclosures and image
+review dialogs retain their own mobile layout and pinned-footer behavior.

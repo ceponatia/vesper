@@ -146,3 +146,26 @@ describe("forgeCharacterFill (keyless demo path)", () => {
     expect(a).toEqual(b);
   });
 });
+
+
+describe("section completion", () => {
+  it("carries the original creation brief into later generation", () => {
+    const draft = draftWith((d) => { d.profile.creationBrief = "A lighthouse keeper in a wool coat; childhood friend of the player."; });
+    expect(renderSheetConcept(draft)).toContain(draft.profile.creationBrief);
+  });
+
+  it("fills a missing routine while preserving authored prose and unrelated sections", async () => {
+    const draft = draftWith((d) => {
+      d.name = "Mira";
+      d.profile.bio = "Keeps the lighthouse";
+      d.profile.personality = "Private";
+    });
+    const filled = await forgeCharacterFill({ draft, scope: "profile", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(filled.profile.bio).toBe(draft.profile.bio);
+    expect(filled.profile.schedule.length).toBeGreaterThan(0);
+    expect(filled.profile.personality).toBe(draft.profile.personality);
+    expect(filled.profile.playerRelationship).toEqual(draft.profile.playerRelationship);
+    expect(filled.profile.socialCards).toEqual(draft.profile.socialCards);
+    expect(filled.profile.attributes).toEqual(draft.profile.attributes);
+  });
+});

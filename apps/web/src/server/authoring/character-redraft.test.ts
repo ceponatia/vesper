@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DiagnosticCollector } from "@/contracts";
+import { DiagnosticCollector, isPersonalityAttributeId } from "@/contracts";
 import { draftWith, manualAttr, noCandidates, noLibrary } from "@/server/test-support";
+import { characterSections, characterSheetScopes } from "@/lib/character-scopes";
+import { buildProfileSectionSchema } from "./character-forge/profile";
+import { characterAttributeDefinitions } from "./character-forge/attributes";
 import { redraftCharacterScope } from "./character-redraft";
 import type { CharacterDraft } from "./drafts";
 
@@ -67,5 +70,39 @@ describe("redraftCharacterScope (keyless demo path)", () => {
     });
     const redrafted = await redraftCharacterScope(input(draft, "profile"));
     expect(redrafted.profile.speciesId).toBe("human");
+  });
+});
+
+
+describe("scoped generation contract", () => {
+  it("requests only the registered profile outputs", () => {
+    for (const scope of characterSheetScopes) {
+      const schema = buildProfileSectionSchema(scope);
+      expect(schema.safeParse({}).success).toBe(true);
+      expect(Object.keys(schema.shape).sort()).toEqual([...characterSections[scope].profileOutput].sort());
+    }
+  });
+
+  it("constrains the attribute vocabulary to the visible section", () => {
+    const draft = draftWith(() => {});
+    const context = { prompt: "Human lighthouse keeper", userId: "user_1", draft };
+    const body = characterAttributeDefinitions({ ...context, scope: "attributes" });
+    const voice = characterAttributeDefinitions({ ...context, scope: "personality" });
+    expect(body.length).toBeGreaterThan(0);
+    expect(voice.length).toBeGreaterThan(0);
+    expect(body.every((attribute) => !isPersonalityAttributeId(attribute.id))).toBe(true);
+    expect(voice.every((attribute) => isPersonalityAttributeId(attribute.id))).toBe(true);
+  });
+
+  it("Voice and manner combines prose and expression while leaving background alone", async () => {
+    const draft = draftWith((d) => {
+      d.profile.bio = "Authored background";
+      d.profile.voice = "Old voice";
+      d.profile.attributes = [manualAttr("hair.color", "black")];
+    });
+    const redrafted = await redraftCharacterScope(input(draft, "personality"));
+    expect(redrafted.profile.bio).toBe(draft.profile.bio);
+    expect(redrafted.profile.voice).not.toBe("Old voice");
+    expect(redrafted.profile.attributes).toContainEqual(manualAttr("hair.color", "black"));
   });
 });

@@ -1,73 +1,77 @@
-# In-sheet forge: fill, re-draft, portrait
+# In-sheet forge: fill, rewrite, portrait
 
-Three editor-side operations on a **saved** character's sheet. All share the save-first
-discipline: the edit page flushes unsaved edits through the normal PATCH **before** any LLM spend,
-and the generated result lands as an *unsaved* dirty draft, so the save bar is the review and undo
-step.
+Character generation returns suggestions for a human to review. Ordinary edits keep their
+normal save behavior while generated proposals remain separate until accepted. The same editor
+sections serve newly forged drafts and saved characters.
 
-The prose-prompt forge page stays — it creates whole characters from a prompt
-([character-forge.md](character-forge.md)); these build parts of an existing sheet.
+## Owns / does not own
 
-## Fill — "✦ Forge the rest"
+This page owns the section boundaries and merge guarantees for completing and rewriting a
+character. [character-forge.md](character-forge.md) owns whole-character creation;
+[manual-editing.md](manual-editing.md) owns the manual controls. Portrait production and reference
+review belong to [../ui/library.md](../ui/library.md).
 
-`POST /api/characters/forge` with `mode: "fill"`. It runs the forge legs with the authored sheet
-rendered as a fixed concept (`renderSheetConcept`, `server/authoring/character-fill.ts`), then
-applies the pure fill-merge (`lib/character-fill.ts`). The merge is the guarantee; the prompt
-directive is an optimization.
+## Shared section contract
 
-- Non-empty scalars are fixed; lists are additive.
-- Attribute and trait ids present on the sheet are never touched.
-- Preference targets are exclusive.
-- Drives fill additively up to the 3-drive cap, deduped by want — authored drives never change
-  (owner ruling 2026-07-12).
-- The species, outfit, and schedule clusters move all-or-nothing. Species is adopted only while
-  still at the blank-create default, so a bio reading "a succubus barmaid" adopts the species on an
-  otherwise untouched sheet via the same inference as create mode. A daily rhythm is one coherent
-  day, so any authored row keeps the whole set.
-- The **starting relationship** is adopted only while still the untouched default — any authored
-  band, text, or mask freezes the record (`isPlayerRelationshipUnset`).
-- **Social cards** append deduped by label; authored cards never change.
-- The outfit leg is skipped entirely, with no spend, when any garment is authored.
+`lib/character-scopes.ts` defines labels, field ownership, generation legs, output keys and detail
+counts. The editor uses those definitions for section navigation and actions. Counts describe
+authored details; an empty optional section is not a validation failure.
 
-## Per-tab re-draft — "↻ Re-draft tab"
+- **Profile** owns background bio and daily rhythm. Name, real age, aliases, library tags and
+  species controls live here but remain fixed during section generation.
+- **Appearance** owns physical attributes and optional intimate anatomy. Established body
+  configuration stays fixed. Attribute values, including manually authored ones, are reviewable
+  during a rewrite.
+- **Voice & manner** owns voice notes, examples, anchors and expression attributes. It runs the
+  profile and attribute legs in parallel, each constrained to its own portion.
+- **Personality** owns personality prose, intimate disposition, preferences, social cards,
+  disposition tags, traits and drives.
+- **Relationships** owns the player's starting relationship and premise note. Library links on
+  the same section are stored separately, require **Save library relationships**, and are outside
+  generation. Both relationship defaults apply to newly created conversations.
+- **Outfit** owns outfit presets and suggested garments.
 
-`mode: "redraft"` plus a `scope`: a **full re-sync** of ONE tab from the rest of the sheet (owner
-ruling 2026-07-12), narrator-formatted — misplaced personality prose moves out of the bio, and
-disposition re-reads off the authored text.
+The stable scope identifiers are `profile`, `attributes`, `personality`, `disposition`,
+`relationships` and `outfit`; labels are presentation, not generation routing keys. The original
+creation brief remains part of generation context and is never rewritten by a section action.
 
-Five scopes (`lib/character-scopes.ts`: `profile` | `attributes` | `personality` | `disposition` |
-`outfit`) map onto the three legs (`server/authoring/character-redraft.ts`). The scope merge takes
-only the target tab's fields, and player-set (`manual`-provenance) attribute and trait values ARE
-revisable — the unsaved-draft review is the safety net, and "Forge the rest" remains the fill-only
-tool.
+The profile leg requests only a scope's declared output fields. The attribute leg constrains its
+schema vocabulary to the selected section. Grounding uses the existing registry rules, and the
+shared scope merge is the authoritative boundary even when a provider returns extra data.
 
-Two scope limits stand:
+## Complete missing details
 
-- The `profile` scope rewrites ONLY bio, personality, voice, and the intimate disposition — never
-  name, age, aliases, or library tags. The voice micro-exemplars, the structured voice anchors, and
-  the `profile.intimacy` note ride this prose scope too ([profile-leg.md](profile-leg.md)).
-- A re-draft never changes the species cluster: that cascade is too destructive for a formatting
-  pass.
+`POST /api/characters/forge` with `mode: "fill"` accepts an optional `scope`. A scope completes
+only its visible fields; omitting it completes the whole sheet. The server and client apply the
+same additive merge, so a value entered during generation also survives.
 
-One deliberate scope/tab mismatch: the `disposition` scope still owns `preferences` — they ride the
-profile forge leg with tags and traits — even though the editor shows likes and dislikes on the
-Personality tab, so a Disposition re-draft re-derives them. The scope also owns `drives`, since the
-Desires & secrets card lives on that tab. Social cards are never re-drafted.
+- Non-empty scalars stay fixed. Text lists append with deduplication.
+- Existing attribute and trait ids never change; preference targets remain exclusive.
+- Drives append up to their cap, deduped by want. Existing cards stay intact and new cards dedupe
+  by label.
+- Any authored garment preserves the entire outfit cluster. Any authored schedule row preserves
+  the entire daily rhythm, avoiding overlapping generated windows.
+- The player relationship fills only while its bands, text, mask and flags are all at the blank
+  default. Changing any part preserves the whole record.
+- Whole-sheet fill can infer a species only while its body cluster is at the blank-create default.
+  Scoped fill never changes species, body plan, name or real age.
+- Whole-sheet fill skips the outfit leg when garments already exist.
 
-## Portrait → attributes — "◉ From portrait"
+## Rewrite this section
 
-`POST /api/characters/:id/attributes/from-portrait`: the codebase's first image-understanding
-capability (`server/authoring/portrait-attributes.ts`; the vision model via `visionModelId()`,
-image parts through `generateChecked`'s `images` option).
+`mode: "redraft"` requires a `scope`. It proposes replacements for the selected section,
+including manually authored text, attributes and traits. It does not rewrite identity facts,
+body configuration, the creation brief or unrelated sections.
 
-It reads the character's **ready canonical avatar** — the id taken from the owned row, never the
-client — fills **unset appearance attributes only** (the vocabulary excludes personality-tab and
-intimate categories, and output grounds against the registry and realized body like every forge
-leg), and returns **structured results**: the auto-filled list plus every disagreement with an
-existing value as `{attributeId, label, current, proposed}`.
+Generated changes enter explicit proposal review. Accept applies the chosen changes, Reject
+leaves the authored draft alone, and Undo restores accepted values where subsequent edits do not
+conflict. A save indicator is not a substitute for generation review.
 
-The editor auto-opens a **"Review portrait changes"** dialog: each conflict is a pre-checked
-`current → proposed` row, and the auto-fills are listed read-only as the debugging window into what
-the vision pass read. Apply overwrites the checked values on the draft.
+## Complete using portrait
 
-Keyless demo mode degrades to a no-op — it never invents a "reading" of an image nobody looked at.
+`POST /api/characters/:id/attributes/from-portrait` reads the owned character's ready canonical
+avatar. It proposes only visible appearance attributes, excluding expression and intimate
+categories. Registry grounding returns proposed additions and structured disagreements with
+existing values for review before acceptance.
+
+Keyless demo mode is a no-op for portrait understanding; it never invents an image reading.

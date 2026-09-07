@@ -6,6 +6,7 @@ import { charactersApi, type AuthoredEdgeRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { EntityPickerDialog } from "@/components/library/entity-picker";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +18,7 @@ import { useToast } from "@/components/ui/toast";
  * characters, stored in `character_relationships` (FK cascade — deleting a
  * character never leaves dangling edges). Creating a conversation seeds its
  * matrix from these for every roster pair; the in-chat matrix overrides on top.
- * The player edge stays the Chat tab's Starting Relationship control.
+ * The player edge lives above this editor in the character draft.
  */
 
 interface EdgeDraft {
@@ -42,7 +43,8 @@ export function RelationshipsEditor({ characterId, name }: { characterId: string
   const [saving, setSaving] = useState(false);
 
   if (stored.loading) return <Skeleton className="h-24 w-full" />;
-  if (stored.error || !stored.data) return null;
+  if (stored.error) return <ErrorState error={stored.error} onRetry={() => stored.reload()} />;
+  if (!stored.data) return null;
 
   const edges = drafts ?? stored.data.edges.map((e) => ({ toCharacterId: e.toCharacterId, toName: e.toName, record: e.record }));
   const update = (index: number, patch: Partial<AuthoredEdgeRecord>) => {
@@ -78,9 +80,11 @@ export function RelationshipsEditor({ characterId, name }: { characterId: string
 
   return (
     <div className="flex flex-col gap-3">
+      <h3 className="text-base font-medium text-paper-100">Library relationships</h3>
       <p className="text-sm text-paper-400">
-        How {name || "this character"} stands toward other library characters by default — new conversations seed their
-        relationship matrix from these, then override per story. The player edge lives on the Chat tab.
+        How {name || "this character"} stands toward other library characters. Use Save library relationships below to
+        save these links separately. New conversations use them; existing stories keep their own relationships.
+        Section generation changes only the player relationship above.
       </p>
       {edges.map((edge, index) => (
         <div key={edge.toCharacterId} className="flex flex-col gap-2 rounded-md border border-ink-600 bg-ink-850 p-2.5">
@@ -168,7 +172,7 @@ export function RelationshipsEditor({ characterId, name }: { characterId: string
         </Button>
         {drafts ? (
           <Button size="sm" variant="primary" busy={saving} onClick={() => void save()}>
-            Save relationships
+            Save library relationships
           </Button>
         ) : null}
       </div>

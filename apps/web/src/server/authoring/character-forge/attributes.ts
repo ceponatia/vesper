@@ -13,6 +13,7 @@ import {
   type DiagnosticSink,
   type RealizedBody,
 } from "@/contracts";
+import { sectionOwnsAttribute } from "@/lib/character-scopes";
 import { fnv1a32 } from "@/lib/hash";
 import { generateChecked } from "@/server/ai";
 import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
@@ -54,6 +55,7 @@ export function characterAttributeDefinitions(context?: CharacterForgeContext): 
   return attributeRegistry.definitions.filter(
     (d) =>
       (d.appliesToEntityKinds ?? ["character"]).includes("character") &&
+      (!context?.scope || sectionOwnsAttribute(context.scope, d.id)) &&
       (!isIntimateAttributeCategory(d.category) || d.renderVisual === true) &&
       (!isFeatureAttributeCategory(d.category) || (realizedBody?.isAttributeApplicable(d) ?? false)),
   );
@@ -286,6 +288,7 @@ function attributesPrompt(context: CharacterForgeContext): string {
 }
 
 export async function forgeAttributesSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
+  const scope = context.scope;
   const { value } = await generateChecked({
     ...FORGE_LEG_OPTIONS,
     schema: buildAttributeSectionSchema(context),
@@ -295,9 +298,13 @@ export async function forgeAttributesSection(context: CharacterForgeContext): Pr
     sink: context.sink,
     fallback: context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
   });
+  if (scope && !value) return {};
   const section = value ?? { attributes: [], ranges: [] };
   const realizedBody = realizedBodyForForgeContext(context);
   const grounded = groundAttributeValues(section.attributes, context.sink, undefined, realizedBody);
+  if (scope === "personality") {
+    return { profile: { attributes: grounded.filter((a) => sectionOwnsAttribute(scope, a.id)) } };
+  }
   const ranges = groundAttributeRanges(section.ranges, context.sink);
   // Species-required defaults first (e.g. elf ears.shape = "pointed") so the
   // core-visual pass treats them as already present, then the core-visual fill.
@@ -310,7 +317,7 @@ export async function forgeAttributesSection(context: CharacterForgeContext): Pr
   // apply is translated to its successor or dropped BEFORE the fill can seed
   // the competing owner beside it — so the draft never stores both sizes.
   const bodyFor = (values: readonly AttributeValue[]) =>
-    realizedBodyForForgeContext(context, seedBodyConfigFromAttributes(values).intimateRegions);
+    realizedBodyForForgeContext(context, scope ? context.draft?.profile.intimateRegions : seedBodyConfigFromAttributes(values).intimateRegions);
   const conformAndFill = (values: readonly AttributeValue[]) => {
     const body = bodyFor(values);
     const conformed = conformAttributesToBody(values, body, context.sink);
@@ -336,7 +343,10 @@ export async function forgeAttributesSection(context: CharacterForgeContext): Pr
   // attribute values beyond the render-consistency fill stay empty; the human
   // authors them.
   const { intimateRegions } = seedBodyConfigFromAttributes(attributes);
-  return { profile: { attributes, intimateRegions } };
+  return { profile: {
+    attributes: scope ? attributes.filter((a) => sectionOwnsAttribute(scope, a.id)) : attributes,
+    intimateRegions: scope ? context.draft?.profile.intimateRegions ?? intimateRegions : intimateRegions,
+  } };
 }
 
 /**

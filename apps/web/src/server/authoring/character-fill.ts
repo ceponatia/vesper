@@ -10,6 +10,7 @@ import {
   type AttributeValue,
   type DiagnosticSink,
 } from "@/contracts";
+import { characterSections, mergeFillScope, type CharacterSheetScope } from "@/lib/character-scopes";
 import { isPlaceholderName, isPlayerRelationshipUnset, isSpeciesUnset, mergeFillDraft } from "@/lib/character-fill";
 import {
   applyCharacterSectionPatch,
@@ -46,6 +47,7 @@ function formatSheetValue(value: AttributeValue["value"]): string {
 export function renderSheetLines(draft: CharacterDraft): string[] {
   const p = draft.profile;
   const lines: string[] = [];
+  if (p.creationBrief?.trim()) lines.push(`Original creation brief: ${p.creationBrief.trim()}`);
   if (!isPlaceholderName(draft.name)) lines.push(`Name: ${draft.name.trim()}`);
   const species = speciesById(p.speciesId);
   if (species && species.id !== DEFAULT_SPECIES_ID) {
@@ -171,6 +173,7 @@ export function fillSectionsToRun(draft: CharacterDraft): CharacterForgeSection[
 
 export interface FillCharacterInput {
   draft: CharacterDraft;
+  scope?: CharacterSheetScope;
   userId: string;
   sink?: DiagnosticSink;
   findItems?: LibraryLookup;
@@ -180,9 +183,10 @@ export interface FillCharacterInput {
 
 /** Complete a partially-authored sheet: adopt species, run the legs, fill-merge. */
 export async function forgeCharacterFill(input: FillCharacterInput): Promise<CharacterDraft> {
-  const base = adoptInferredSpecies(input.draft, input.sink);
+  const base = input.scope ? input.draft : adoptInferredSpecies(input.draft, input.sink);
   const context: CharacterForgeContext = {
     prompt: renderSheetConcept(base),
+    scope: input.scope,
     userId: input.userId,
     sink: input.sink,
     draft: base,
@@ -190,8 +194,9 @@ export async function forgeCharacterFill(input: FillCharacterInput): Promise<Cha
     listCandidates: input.listCandidates,
     useFallbacks: input.useFallbacks,
   };
-  const patches = await Promise.all(fillSectionsToRun(base).map((section) => forgeCharacterSection(section, context)));
+  const sections = input.scope ? characterSections[input.scope].legs : fillSectionsToRun(base);
+  const patches = await Promise.all(sections.map((section) => forgeCharacterSection(section, context)));
   let generated = base;
   for (const patch of patches) generated = applyCharacterSectionPatch(generated, patch);
-  return mergeFillDraft(base, generated);
+  return input.scope ? mergeFillScope(base, generated, input.scope) : mergeFillDraft(base, generated);
 }
