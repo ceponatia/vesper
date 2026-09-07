@@ -14,7 +14,7 @@
  * this module replaced them. Two of those copies are **determinism seams** whose
  * divergence is invisible by construction:
  *
- * - **The character forge's reproducibility** (`server/authoring/character-forge.ts`):
+ * - **The character forge's reproducibility** (`server/authoring/character-forge/attributes.ts`):
  *   social-card ids are `card_<base36 of the label hash>` and visual defaults index
  *   a vocabulary pool by the seed hash, so the same seed must keep producing the
  *   same character.

@@ -87,7 +87,7 @@ export function emptyPersonaProfile(): PersonaProfile {
  * Step 2 is gated on the **body-config being empty**, not on the whole profile being
  * blank the way `characters/route.ts` gates it. That gate exists to let authored
  * character bodies — forge drafts, clones — through untouched, and those already carry
- * a seeded config from `character-forge.ts`. A persona has neither a forge nor a clone,
+ * a seeded config from `server/authoring/character-forge/attributes.ts`. A persona has neither a forge nor a clone,
  * so its only non-blank creator is an API client, and one that sends `identity.gender`
  * with no anatomy wants the anatomy that gender activates. A supplied config always
  * wins; re-deriving one after creation (including one the author deliberately emptied)

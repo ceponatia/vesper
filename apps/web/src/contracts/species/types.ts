@@ -81,7 +81,7 @@ export const speciesDefinitionSchema = z.object({
    * what *any* member looks like (pointed ears, a greenish skin cast, wings /
    * horns / tail, broad stature), NOT one character's specific attribute values.
    * Surfaced to the **character forge** (`speciesForgeDescriptor` in
-   * authoring/character-forge.ts), which turns this generic look into concrete
+   * `authoring/character-forge/context.ts`), which turns this generic look into concrete
    * per-character attribute values. Image prompts deliberately do NOT read it —
    * they name the species with `speciesLabelPhrase` and let those per-character
    * attributes carry the morphology. Keep it to a sentence. Empty ⇒ only the
