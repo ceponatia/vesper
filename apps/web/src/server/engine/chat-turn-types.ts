@@ -1,4 +1,5 @@
 import type {
+  CharacterProfile,
   ChatActionId,
   ContactRejectionReason,
   ContactResolutionStatus,
@@ -8,7 +9,6 @@ import type {
 import type { ChatContactPremiseKind } from "./chat-contact/presentation";
 import type { ChatContactAct } from "./chat-contact/identity";
 import type { ChatState } from "./chat-state/types";
-import type { CharacterProfile } from "@/contracts";
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
 

@@ -1,12 +1,12 @@
-import type { DiagnosticSink } from "@/contracts";
+import type { CharacterProfile, DiagnosticSink } from "@/contracts";
 import type { NarratorPromptNode } from "@/contracts/narrator-prompts";
 import { loadChatRelationships } from "./chat-relationships";
-import { detectSensoryFocus } from "./chat-intent";
-import { retrieveChatMemory } from "./chat-memory";
+import type { detectSensoryFocus } from "./chat-intent";
+import type { retrieveChatMemory } from "./chat-memory";
 import type { ChatScenario, ChatState } from "./chat-state/types";
 import type { ResolvedChatWardrobe } from "./chat-wardrobe";
-import { buildChatGarmentNarration } from "./chat-garments";
-import { loadVerbatimWindow } from "./chat-summary";
+import type { buildChatGarmentNarration } from "./chat-garments";
+import type { loadVerbatimWindow } from "./chat-summary";
 import {
   buildCharacterChatPromptNodes,
   buildCharacterChatPromptParts,
@@ -23,7 +23,6 @@ import {
 } from "./prompts/character-chat";
 import { chatPromptLayout } from "./prompts/constants";
 import { promptStateSlice } from "./chat-prompt-input";
-import type { CharacterProfile } from "@/contracts";
 import type { PlayerPersona } from "../players";
 import type { ChatTurnMember } from "./chat-turn-types";
 

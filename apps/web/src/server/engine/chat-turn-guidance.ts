@@ -2,6 +2,7 @@ import {
   compileNarratorPhysicalGuidance,
   DiagnosticCollector,
   garmentActorForCharacter,
+  type CharacterProfile,
   type DiagnosticSink,
   type PhysicalActionOutcome,
   type PhysicalStateTransition,
@@ -21,7 +22,7 @@ import {
   visualStateGarmentNames,
   type ChatVisualStateLines,
 } from "./chat-visual-state-cues";
-import { detectSensoryFocus } from "./chat-intent";
+import type { detectSensoryFocus } from "./chat-intent";
 import type { ChatScenario, ChatState } from "./chat-state/types";
 import type { ResolvedChatWardrobe } from "./chat-wardrobe";
 import { chatRomanticPermissionEnabled, chatVisualStateShadowEnabled } from "./prompts/constants";
@@ -31,7 +32,6 @@ import {
   type VisualStateShadowBuild,
   type VisualStateShadowInput,
 } from "@/server/visual-state";
-import type { CharacterProfile } from "@/contracts";
 import type { PlayerPersona } from "../players";
 import type { ChatTurnMember, ChatContactTurnRecord, SubmitChatMessageInput } from "./chat-turn-types";
 

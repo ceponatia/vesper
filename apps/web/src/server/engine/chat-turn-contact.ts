@@ -11,12 +11,13 @@ import {
   type ContactEndReason,
   type ContactLifecycleCommit,
   type ContactPersistenceAcknowledgment,
+  type CharacterProfile,
   type DiagnosticSink,
   type EffectiveCoverageRead,
   type PhysicalActionOutcome,
 } from "@/contracts";
 import { log } from "../log";
-import { buildChatAffordanceRead } from "./chat-affordances";
+import type { buildChatAffordanceRead } from "./chat-affordances";
 import {
   chatContactAcknowledgment,
   chatContactActionOutcome,
@@ -31,7 +32,7 @@ import type { ChatContactPolicySource } from "./chat-contact/resolution";
 import type { ChatContactRosterMember } from "./chat-contact/input-evidence";
 import { appendChatContactEventsWithScene, CHAT_CONTACT_LEDGER_MISMATCH } from "./chat-contact-events";
 import { foldChatPermissionProjection, listChatPermissionEvents } from "./chat-permission-events";
-import { detectSceneMovement } from "./chat-intent";
+import type { detectSceneMovement } from "./chat-intent";
 import type { ChatScenario, ChatState } from "./chat-state/types";
 import type { ResolvedChatWardrobe } from "./chat-wardrobe";
 import {
@@ -39,7 +40,6 @@ import {
   chatContactEffectsEnabled,
   chatRomanticPermissionEnabled,
 } from "./prompts/constants";
-import type { CharacterProfile } from "@/contracts";
 import type { ChatTurnMember, ChatContactTurnRecord, SubmitChatMessageInput } from "./chat-turn-types";
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));

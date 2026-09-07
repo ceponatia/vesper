@@ -1,6 +1,6 @@
 import { prepareChatTurnRecall, prepareChatTurnBeats, prepareChatTurnPresentation } from "./chat-turn-prepare";
 import { commitChatTurnRecognition, commitChatTurnVisualCues, settleChatTurnMembers } from "./chat-turn-settle";
-import type { SubmitChatMessageInput, SubmitChatMessageResult } from "./chat-turn-types";
+import type { ChatExchangeKind, SubmitChatMessageInput, SubmitChatMessageResult } from "./chat-turn-types";
 import { prepareChatTurnContact } from "./chat-turn-contact";
 import { prepareChatTurnGuidance } from "./chat-turn-guidance";
 import { prepareChatTurnPrompt } from "./chat-turn-prompt";
@@ -101,7 +101,6 @@ import { acquireKeyedLockWithin, CHAT_LOCK_LABEL_REPLY, chatExchangeLockKey, try
 import { chatNotationNote, type CharacterChatPromptInput } from "./prompts/character-chat";
 import { chatAffordanceCuesEnabled, chatContactActionsEnabled, narrationShapeId } from "./prompts/constants";
 import { chatOwnerId, playerPromptSlice, promptStateSlice } from "./chat-prompt-input";
-import type { ChatExchangeKind } from "./chat-turn-types";
 
 /**
  * The character-chat exchange pipeline (docs/character-chat/pipeline.md) — the chat lane's

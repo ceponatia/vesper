@@ -4,6 +4,7 @@ import {
   garmentActorForCharacter,
   hasSalientPlan,
   unseenMilestoneReason,
+  type CharacterProfile,
   type DiagnosticSink,
 } from "@/contracts";
 import { log } from "../log";
@@ -22,7 +23,7 @@ import type { ChatScenario, ChatState } from "./chat-state/types";
 import { loadMilestonesSeenAt } from "./chat-state/store";
 import { resolveChatWardrobe, resolvePlayerWardrobe, type ResolvedChatWardrobe } from "./chat-wardrobe";
 import { buildChatGarmentNarration, chatGarmentNarrationActors } from "./chat-garments";
-import { loadVerbatimWindow } from "./chat-summary";
+import type { loadVerbatimWindow } from "./chat-summary";
 import { ENSEMBLE_QUIET_EXCHANGES } from "./prompts/character-chat";
 import {
   chatAffordanceCuesEnabled,
@@ -30,7 +31,6 @@ import {
   chatPhysicalConstraintsEnabled,
   chatRecognitionCuesEnabled,
 } from "./prompts/constants";
-import type { CharacterProfile } from "@/contracts";
 import type { PlayerPersona } from "../players";
 import type { ChatTurnMember, SubmitChatMessageInput, ChatExchangeKind } from "./chat-turn-types";
 
