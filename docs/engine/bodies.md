@@ -122,6 +122,14 @@ untyped text never produces a hard body or location effect — a character's
 
 ## Extending it
 
+The public `@vesper/simulation-core/bodies` facade is explicit. Its private
+owners separate analytic integration, shared event construction, source and
+condition commands, threshold alarms, collapse, and projection replay under
+`packages/simulation-core/src/lib/bodies/`. New body behavior extends the
+owner for that responsibility; callers continue through the package subpath.
+`body-reads.ts` remains the owner of derived presentation such as circadian
+pressure, and `contracts/bodies.ts` remains the schema and vocabulary owner.
+
 The engine keeps **its own** meter and condition vocabulary — `bodyMeterRegistryV1`
 and `bodyConditionKeys` in `packages/simulation-core/src/contracts/bodies.ts`,
 versioned by `bodyDerivationVersion`. It is deliberately not shared with the chat

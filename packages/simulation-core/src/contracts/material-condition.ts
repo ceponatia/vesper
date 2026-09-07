@@ -29,7 +29,7 @@ import {
  * thresholds) under an item-scoped registry version and item-scoped tables —
  * the body tables are not reused, only the pure numerics
  * (`integrateMeterValue`, `solveNextThresholdCrossing`,
- * `MeterIntegrationView` in `lib/simulation/bodies.ts`) and the TYPES here
+ * `MeterIntegrationView` in `lib/bodies/integration.ts`) and the TYPES here
  * (`BodyMeterDefinition` et al. are already subject-agnostic — no actorId
  * anywhere in a meter/threshold/drift-law definition).
  */
