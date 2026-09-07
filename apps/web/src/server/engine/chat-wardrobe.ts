@@ -50,8 +50,8 @@ import {
  * an empty worn list falls back to the free-text `outfit` + manual `outfitExposed` flag
  * (legacy chats + ad-hoc looks), healing any lingering id-marker into a readable phrase.
  * This module also hosts `seededOutfitMarker`/`healOutfitMarker` (the lower-level pieces of
- * `resolveSeededOutfit`, which stays in chat-state so its return type is the concrete
- * `ChatState`) — keeping the load direction one-way: chat-state → chat-wardrobe → images.
+ * `resolveSeededOutfit`, in `chat-state/outfit-fold.ts`, whose return type is the concrete
+ * `ChatState`) — keeping the load direction one-way: chat-state/outfit-fold → chat-wardrobe → images.
  */
 
 /**

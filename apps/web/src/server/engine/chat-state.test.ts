@@ -21,17 +21,16 @@ import {
   applyTimeSkipToScenario,
   chatStateSnapshot,
   driftChatState,
-  matchOutfitPresetInText,
-  outfitChangeEvidenceValidated,
-  resolveSeededOutfit,
   rhythmOutfitPatch,
-  runChatPulse,
   seedChatScenario,
   seedChatState,
   settleEnsembleMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
+import { matchOutfitPresetInText, outfitChangeEvidenceValidated } from "./chat-state/outfit-evidence";
+import { resolveSeededOutfit } from "./chat-state/outfit-fold";
+import { runChatPulse } from "./chat-state/pulse-agent";
 import { rollbackScenario } from "./chat-state/snapshots";
 import { seededOutfitMarker } from "./chat-wardrobe";
 

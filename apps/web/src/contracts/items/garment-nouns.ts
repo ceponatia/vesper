@@ -19,7 +19,7 @@
  * **It does not decide keep-vs-replace** (owner ruling, 2026-08-01). That
  * decision belongs to the archivist's verbatim `changeEvidence`, validated
  * against the exchange text (`outfitChangeEvidenceValidated` in
- * `server/engine/chat-state.ts`): a whole-look description replaces the modelled
+ * `server/engine/chat-state/outfit-evidence.ts`): a whole-look description replaces the modelled
  * wardrobe only when the exchange itself says the outfit CHANGED. A noun list
  * could never make that call — "a black silk shirt" over a worn "soft cotton
  * shirt" shares its head noun and IS a change, while "her white cotton t-shirt"

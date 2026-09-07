@@ -10,7 +10,7 @@ is a diagnostic and a degraded fold, never a failed exchange.
 `finalizeChatState` runs **pulse ‖ the three extraction legs** in parallel (`Promise.all`),
 then one guarded state write:
 
-- **Pulse** (`runChatPulse`): classifies the exchange onto the personality curve —
+- **Pulse** (`runChatPulse` in `chat-state/pulse-agent.ts`): classifies the exchange onto the personality curve —
   regard/mood deltas, arousal bump for intimate concepts, mindNote refresh, and the
   optional **feeling proposal** ([state.md](state.md) §Emotional weather: label + cause only; intensity
   derives from the curve's move). Degrades to drift-only state. Skipped for
@@ -70,7 +70,7 @@ then one guarded state write:
   `presence` transitions ([multi-character.md](multi-character.md) §Multi-character),
   `driveUpdates` ([state.md](state.md) §Drives), and the optional
   `outfit` change ([wardrobe.md](wardrobe.md) §Archivist outfit changes):
-  `foldOutfitProposal` (in `finalizeChatState`) reads the archivist's two grammars —
+  `foldOutfitProposal` (in `chat-state/outfit-fold.ts`, called by `finalizeChatState`) reads the archivist's two grammars —
   a whole-outfit `description` (naming an authored preset → seeds the structured
   `worn_item_ids` via `matchOutfitPresetInText`; unmatched → a free-text overlay
   replacement — but over a modelled wardrobe only when the proposal's verbatim

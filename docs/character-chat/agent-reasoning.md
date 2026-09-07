@@ -45,6 +45,6 @@ This distinction matters because a profile can be selected while a particular le
 | Server-side profile lookup                                         | `apps/web/src/server/ai/agent-reasoning.ts`                                                               |
 | Owner-admin API                                                    | `apps/web/src/app/api/admin/agent-reasoning/[chatId]/route.ts`                                            |
 | Conversation-menu selector                                         | `apps/web/src/components/chat/agent-reasoning-select.tsx`                                                 |
-| Covered post-turn and detached agents                              | `apps/web/src/server/engine/chat-memory.ts`, `chat-state.ts`, `chat-meanwhile.ts`, `chat-scene-sketch.ts` |
+| Covered post-turn and detached agents                              | `apps/web/src/server/engine/chat-memory.ts`, `chat-state/pulse-agent.ts`, `chat-meanwhile.ts`, `chat-scene-sketch.ts` |
 | Success/failure attribution                                        | `apps/web/src/server/ai/agent-failures.ts`, `generate-checked.ts`, `generate-timeout.ts`                  |
 | Inspector display                                                  | `apps/web/src/components/chat/chat-inspector-agent-health.tsx`                                            |

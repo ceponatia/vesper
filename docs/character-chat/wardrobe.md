@@ -72,7 +72,7 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
 ## Archivist outfit changes
 
 The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
-drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
+drives two grammars, folded by `foldOutfitProposal` in `chat-state/outfit-fold.ts`, called by `finalizeChatState`: a whole-outfit
 `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
 list from it, an unmatched description over a MODELLED wardrobe replaces it **only when the
 proposal's verbatim `changeEvidence` is present in this exchange's text, classifies as an

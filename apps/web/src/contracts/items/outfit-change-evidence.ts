@@ -4,7 +4,7 @@ import { garmentIdentitiesIn } from "./garment-nouns";
  * Does a quoted clause ACTUALLY assert that someone's clothes moved?
  *
  * This is the middle third of the chat lane's whole-look evidence gate
- * (`outfitChangeEvidenceValidated` in `server/engine/chat-state.ts`, owner
+ * (`outfitChangeEvidenceValidated` in `server/engine/chat-state/outfit-evidence.ts`, owner
  * ruling 2026-08-01). That gate first asks whether the archivist's
  * `changeEvidence` is VERBATIM from the exchange; this module asks what the
  * quoted words SAY; the gate then asks WHOSE clothes moved, reading the
