@@ -717,7 +717,7 @@ function applyDeposit(
  * - **Capacity REFUSES rather than evicting**
  *   (`garment_op.transfer_capacity`) — the one material-capacity law
  *   `applyDeposit` above and the body-surface owner
- *   (`contracts/state/body-surface.ts`) also hold (owner ruling 2026-08-26).
+ *   (`contracts/state/body-surface/deposits.ts`) also hold (owner ruling 2026-08-26).
  *   Evicting the oldest record to make room destroys material that was never
  *   part of this transaction — the transfer would "conserve" by deleting
  *   someone else's mud.

@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { AVATAR_HEIGHT, AVATAR_WIDTH } from "@vesper/image-core";
 import { REFERENCE_VIEW_GENERATION_VERSION, type ReferenceView, type ReferenceViewSummary } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { createImageAsset, failImage, saveImageBuffer, SHARP_DECODE_LIMITS } from "./assets";
+import { createImageAsset, failImage, saveImageBuffer, SHARP_DECODE_LIMITS } from "./asset-storage";
 import { decodeDataUrl } from "./upload";
 import {
   finalizeReferenceView,

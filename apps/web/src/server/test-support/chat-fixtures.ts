@@ -9,13 +9,12 @@ import { characterChatMessages, characterChats, characters, chatParticipants, db
 import { endTestPool, purgeOwnerRows, seedTestUser } from "./db-fixtures";
 import {
   finalizeChatState,
-  loadChatScenario,
-  loadChatState,
   seedChatScenario,
   seedChatState,
   type ChatScenario,
   type ChatState,
 } from "../engine/chat-state";
+import { loadChatScenario, loadChatState } from "../engine/chat-state/store";
 
 /**
  * The chat-lane integration scaffold: one admin user, one character, its library

@@ -1,6 +1,6 @@
 // Database retention: bounded deletes of rows whose own data says they have
 // expired (old telemetry, finished jobs, expired auth rows). Runs on the image
-// sweep's maintenance tick (`kickImageSweep` in `images/assets.ts`), which is
+// sweep's maintenance tick (`kickImageSweep` in `images/asset-maintenance.ts`), which is
 // the one request-driven periodic tick the app has; this module owns only the
 // passes, never the scheduling.
 import { log } from "@/server/log";

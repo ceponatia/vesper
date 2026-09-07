@@ -16,5 +16,5 @@
 export {
   deleteChatAssets as internalDeleteChatAssets,
   deleteChatUploads as internalDeleteChatUploads,
-  saveImageBuffer as internalSaveImageBuffer,
-} from "./assets";
+} from "./asset-chat-files";
+export { saveImageBuffer as internalSaveImageBuffer } from "./asset-storage";

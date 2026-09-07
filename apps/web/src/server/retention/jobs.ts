@@ -28,7 +28,7 @@ const RETENTION_MS = JOB_RETENTION_DAYS * 24 * 60 * 60_000;
  * forever.
  *
  * This pass cannot erase the sweep's durable "already swept" guard: `sweptRecently`
- * (`server/images/assets.ts`) looks for an `image_sweep` row inside a SIX-HOUR
+ * (`server/images/asset-maintenance.ts`) looks for an `image_sweep` row inside a SIX-HOUR
  * window, so every marker old enough to delete here stopped being read days ago.
  *
  * Bounded to {@link RETENTION_BATCH_SIZE} rows per run — Postgres `DELETE` has no

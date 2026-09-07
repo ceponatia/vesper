@@ -11,7 +11,7 @@ import {
 import {
   resolveReplyFailure,
   withStreamTimeouts,
-} from "./chat-pipeline";
+} from "./chat-reply-stream";
 
 // pushReplyTake — the PURE takes-list
 // core behind "another take": lazy seeding of the pre-regenerate reply, newest

@@ -25,7 +25,6 @@ import {
   outfitChangeEvidenceValidated,
   resolveSeededOutfit,
   rhythmOutfitPatch,
-  rollbackScenario,
   runChatPulse,
   seedChatScenario,
   seedChatState,
@@ -33,6 +32,7 @@ import {
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
+import { rollbackScenario } from "./chat-state/snapshots";
 import { seededOutfitMarker } from "./chat-wardrobe";
 
 // These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the

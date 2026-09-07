@@ -1,7 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { images } from "../db";
 import { log } from "@/server/log";
-import { purgeImagesWhere, registerReferenceViewMaintenance } from "./assets";
+import { purgeImagesWhere } from "./asset-deletion";
+import { registerReferenceViewMaintenance } from "./asset-lifecycle-hooks";
 import { clearReferenceViewAssetPointers, retiredReferenceViewAssets } from "./reference-view-store";
 
 /**
@@ -14,8 +15,8 @@ import { clearReferenceViewAssetPointers, retiredReferenceViewAssets } from "./r
  * without this pass every regenerate would leave one behind forever.
  *
  * {@link installReferenceViewMaintenance} at the foot of this file is how the
- * pass reaches `assets.ts` without closing an import cycle — that module owns
- * the sweep and the delete, and cannot import the store that reads these rows.
+ * pass reaches asset-maintenance through asset-lifecycle-hooks.ts, without
+ * closing a cycle through this service's asset-deletion dependency.
  */
 
 /**
@@ -77,7 +78,7 @@ export async function referenceViewSweepPass(options: ReferenceViewSweepOptions 
 }
 
 /**
- * Hand the pass to `assets.ts`. Called once, from the folder barrel — see
+ * Hand the pass to asset-lifecycle-hooks.ts. Called once, from the folder barrel — see
  * `installIdentityPackMaintenance` for why the registration lives there rather
  * than being a side effect of loading this module.
  */

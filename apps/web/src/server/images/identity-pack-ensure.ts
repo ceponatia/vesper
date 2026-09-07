@@ -17,7 +17,7 @@ import { log } from "@/server/log";
 // (Worth relocating the lock to a neutral server home if a second image lane
 // ever needs it.)
 import { acquireKeyedLockWithin } from "../engine/keyed-lock";
-import { readImageBytes, SHARP_DECODE_LIMITS } from "./assets";
+import { readImageBytes, SHARP_DECODE_LIMITS } from "./asset-storage";
 import { deriveRevision } from "./identity-pack-derive";
 import {
   abandonRevision,

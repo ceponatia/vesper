@@ -61,7 +61,7 @@ vi.mock("./character-chat", async () => {
 });
 
 import { submitChatMessage } from "@/server/engine";
-import { loadChatScenario } from "./chat-state";
+import { loadChatScenario } from "./chat-state/store";
 import { listChatContactEvents } from "./chat-contact-events";
 import { chatReplyContactEventRef } from "./chat-contact-reply";
 import {

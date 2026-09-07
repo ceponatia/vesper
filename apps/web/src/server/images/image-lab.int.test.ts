@@ -46,7 +46,7 @@ import {
   images,
   jobs,
 } from "../db";
-import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
+import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./asset-storage";
 import { createImageLabExperiment } from "./image-lab-create";
 import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
 import { runImageLabExperiment } from "./image-lab-run";

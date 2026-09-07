@@ -1434,7 +1434,7 @@ export const images = pgTable(
     // `identity_face_crop`: the hidden face crop an
     // identity pack derives from the character's canonical portrait — an internal render
     // input, never a user-visible asset. It must be excluded from EVERY listing, clone
-    // and cross-owner read; `HIDDEN_IMAGE_KINDS` in `src/server/images/assets.ts` names
+    // and cross-owner read; `HIDDEN_IMAGE_KINDS` in `src/server/images/asset-storage.ts` names
     // those surfaces.
     // `identity_trial_output`: a render produced by
     // an admin identity-pack trial cell — operational evidence, never a Gallery asset.
@@ -1442,7 +1442,7 @@ export const images = pgTable(
     // reads it through the file route, which is how the blinded review UI displays it.
     // Swept when its trial run is deleted, AND with its character — an image survives
     // its character iff its kind is Gallery-listable, and this one is not, so it goes
-    // too (`deleteNonGalleryCharacterImages` in `src/server/images/assets.ts`).
+    // too (`deleteNonGalleryCharacterImages` in `src/server/images/asset-deletion.ts`).
     // `lab_control` / `lab_output`: the Advanced Image Lab's control fixtures
     // (pose skeleton, depth map, edge map) and
     // its experiment renders. Admin-only operational evidence, never Gallery items —
@@ -4555,7 +4555,8 @@ export const simItemConditionModifiers = pgTable(
 // is a caller-supplied identity independent of locus; lots have no such
 // identity in the domain model (they're addressed by `(locus,
 // materialKindKey)` everywhere in contracts/events — see
-// `lib/simulation/households.ts`'s `deriveMaterialLotRowKey`), so the STORE
+// `packages/simulation-core/src/lib/households/lots.ts`'s
+// `deriveMaterialLotRowKey`), so the STORE
 // layer synthesizes one deterministic string purely to have a non-null PK
 // column. The same nullable-discriminant problem applies to means-band
 // subjects (`actor` XOR `household`), solved the same way
@@ -4637,7 +4638,8 @@ export const simHouseholdMembers = pgTable(
 /**
  * E5.4 fungible material lots. `lot_key` is a synthetic, deterministic,
  * content-addressed persistence-layer key (`deriveMaterialLotRowKey`,
- * lib/simulation/households.ts) — NOT a domain id; contracts/events address a lot by
+ * `packages/simulation-core/src/lib/households/lots.ts`) — NOT a domain id;
+ * contracts/events address a lot by
  * `(locus, materialKindKey)` directly. It exists only because Postgres cannot make a
  * discriminated nullable-column tuple a primary key (see the migration-note comment
  * above `simHouseholds`). Zero quantity is NOT terminal (unlike item holdings' `gone`).

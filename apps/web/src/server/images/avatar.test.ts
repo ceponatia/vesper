@@ -31,7 +31,8 @@ vi.mock("./standalone-subject-visual", async (importOriginal) => {
 
 import { isDemoMode } from "../ai";
 import { db } from "../db";
-import { runImagePipeline, type ImageRow } from "./assets";
+import { runImagePipeline } from "./assets";
+import type { ImageRow } from "./asset-storage";
 import {
   AVATAR_CUT_FAILED,
   AVATAR_PROGRAM_UNBOUND,

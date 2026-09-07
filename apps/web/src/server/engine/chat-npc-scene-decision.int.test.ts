@@ -113,7 +113,7 @@ vi.mock("../ai", async (importOriginal) => {
 });
 
 import { submitChatMessage } from "@/server/engine";
-import { loadChatScenario } from "./chat-state";
+import { loadChatScenario } from "./chat-state/store";
 import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 import { listChatContactEvents } from "./chat-contact-events";
 import { chatReplyContactEventRef } from "./chat-contact-reply";

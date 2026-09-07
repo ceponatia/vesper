@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import type { ImageLabInput, ImageLabInputList } from "@vesper/image-core";
 import { db, images } from "../db";
-import { type ImageKind, type ImageRow, readImageBytes } from "./assets";
+import { type ImageKind, type ImageRow, readImageBytes } from "./asset-storage";
 
 /**
  * Generic owner-scoped image reads — moved out of the Image Lab's render kernel

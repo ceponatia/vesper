@@ -37,16 +37,9 @@ vi.mock("./chat-memory", async () => {
   return chatMemoryMockModule(mock);
 });
 
-import {
-  loadChatScenario,
-  loadChatState,
-  loadPreExchangeScenario,
-  rollbackScenario,
-  saveChatScenario,
-  savePreExchangeScenario,
-  type ChatScenario,
-  type ChatState,
-} from "./chat-state";
+import { loadChatScenario, loadChatState, saveChatScenario } from "./chat-state/store";
+import { loadPreExchangeScenario, rollbackScenario, savePreExchangeScenario } from "./chat-state/snapshots";
+import type { ChatScenario, ChatState } from "./chat-state";
 import { buildChatAffordanceRead } from "./chat-affordances";
 import { resolveChatWardrobe } from "./chat-wardrobe";
 import { previewChatPrompt } from "./chat-pipeline";

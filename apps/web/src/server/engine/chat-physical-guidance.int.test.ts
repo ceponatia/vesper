@@ -30,7 +30,8 @@ vi.mock("./chat-memory", async () => {
   return chatMemoryMockModule(mock);
 });
 
-import { loadChatScenario, loadChatState, type ChatScenario, type ChatState } from "./chat-state";
+import { loadChatScenario, loadChatState } from "./chat-state/store";
+import type { ChatScenario, ChatState } from "./chat-state";
 import { previewChatPhysicalGuidance, previewChatPrompt } from "./chat-pipeline";
 import { PHYSICAL_GUIDANCE_BLOCK_HEADING } from "./chat-physical-guidance-render";
 import {

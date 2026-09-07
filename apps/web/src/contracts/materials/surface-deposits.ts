@@ -11,7 +11,7 @@ import { FIXED_POINT_ONE } from "@/lib/fixed-point";
  * This module exists because there are now TWO owners of deposited material and
  * they must never disagree about it: the garment store
  * (`items/garment-instance.ts`, which introduced this vocabulary) and the
- * body-surface store (`state/body-surface.ts`, which gains it here). Mud on a
+ * body-surface deposit owner (`state/body-surface/deposits.ts`). Mud on a
  * sleeve and mud on the forearm under it are the same substance, and a reader
  * comparing them is entitled to one answer. The garment lane keeps its
  * `garmentDeposit*` names as aliases of these, so nothing downstream of it

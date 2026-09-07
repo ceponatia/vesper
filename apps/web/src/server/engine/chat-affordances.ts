@@ -466,7 +466,7 @@ function hairEvents(input: ChatAffordanceReadInput): HairCausalEvent[] {
  * the two answer different questions. `hairEvents` decides what the domain may
  * VOLUNTEER, and a cause stops being worth mentioning after
  * `CHAT_AFFORDANCE_EVENT_FRESHNESS_MINUTES`. Provenance TRUTH does not expire on that
- * clock: while the entry lives it keeps the cause that created it (`body-surface.ts`
+ * clock: while the entry lives it keeps the cause that created it (`contracts/state/body-surface/wetness.ts`
  * — `updatedAtMinutes` is the change anchor, and drying never restamps it), so ninety
  * story minutes after a bath the hair is still wet because of the bath. Deriving the
  * fence from the cue window is what let a player blame the storm at minute 61 and be

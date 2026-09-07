@@ -17,9 +17,11 @@ vi.mock("../images", () => ({
   renderChatLookImage: vi.fn(async () => "img-1"),
   renderChatPlaceImage: vi.fn(async () => null),
 }));
-vi.mock("./chat-state", () => ({
+vi.mock("./chat-state/store", () => ({
   loadChatState: vi.fn(),
   loadChatScenario: vi.fn(async () => null),
+}));
+vi.mock("./chat-state/seed", () => ({
   seedChatScenario: vi.fn(() => ({ garments: {}, clockMinutes: 0 })),
 }));
 vi.mock("./chat-wardrobe", () => ({
@@ -35,7 +37,7 @@ vi.mock("./chat-pipeline", () => ({
 import { db } from "../db";
 import { renderChatLookImage } from "../images";
 import { runChatLookImage } from "./chat-reference-images";
-import { loadChatState } from "./chat-state";
+import { loadChatState } from "./chat-state/store";
 import { resolveChatWardrobe } from "./chat-wardrobe";
 
 /**

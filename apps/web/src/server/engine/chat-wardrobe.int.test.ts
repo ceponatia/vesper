@@ -27,7 +27,7 @@ vi.mock("./chat-memory", async () => {
   return chatMemoryMockModule(mock);
 });
 
-import { loadPreExchangeState } from "./chat-state";
+import { loadPreExchangeState } from "./chat-state/snapshots";
 import {
   bareGarment,
   dropChatFixture,

@@ -33,6 +33,14 @@ the continuity extraction leg proposes typed ops and the fold commits them throu
   freshness stamp for the cause. Only the **primary character** carries a body surface,
   and `hair` is the one owned location.
 
+`contracts/state/body-surface.ts` is the public entry for this one stored contract.
+Its `body-surface/schema.ts` owner defines the aggregate shape, vocabulary, bounds,
+and shared entry/key quarantine. `wetness.ts`, `marks.ts`, `deposits.ts`, and
+`transfer-receipts.ts` own their respective reads and writes. Each reads the same
+schema directly; splitting operations does not split stored state or rollback anchors.
+The separate `contracts/visual-state/body-surface.ts` adapter projects these committed
+facts, and transfer settlement transactions remain outside the pure contract modules.
+
 ## Three laws about not letting a gap become a physical claim
 
 - **Absent, dry, and invalid are three answers, and the wrong one is a physical claim.**

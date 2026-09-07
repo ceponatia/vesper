@@ -183,7 +183,7 @@ function sentPayload(plan: PlannedImageRender): Record<string, unknown> {
   );
 }
 
-/** The same payload as the Generator RECORDS it before spending (`image-generator-run.ts` step 11). */
+/** The same payload as the Generator RECORDS it before spending (`image-generator-provenance.ts` effective request record). */
 function recordedPayload(plan: PlannedImageRender): Record<string, unknown> {
   return previewRegistryModelInput({
     model: withReviewedImageQuality(plan.model),

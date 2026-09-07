@@ -70,7 +70,10 @@ const APPROVED: readonly string[] = [
   // Shared reply provenance builder; it consumes only the frozen source passed
   // by a prose narrator lane and never resolves or forwards one to helper agents.
   "apps/web/src/server/engine/chat-reply-store.ts",
-  "apps/web/src/server/engine/sim-exchange.ts",
+  "apps/web/src/server/engine/sim-exchange/context.ts",
+  "apps/web/src/server/engine/sim-exchange/dialogue.ts",
+  "apps/web/src/server/engine/sim-exchange/solo.ts",
+  "apps/web/src/server/engine/sim-exchange/retake.ts",
   // The successor render loop — rebuilds every hidden retry from the SAME
   // frozen source carried on its context, and records the revision it used.
   "apps/web/src/server/engine/sim-narrator.ts",
@@ -303,20 +306,22 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "export function buildNarratorRunProvenance(args: { :: source: NarratorInstructionSource | undefined;",
     "import { :: type NarratorInstructionSource,",
   ],
-  "apps/web/src/server/engine/sim-exchange.ts": [
-    // Resolved ONCE under the exchange lock, frozen onto the exchange context…
+  "apps/web/src/server/engine/sim-exchange/context.ts": [
     "const instructionSource = await resolveNarratorInstructionSource(ownerId, chatId, instructions);",
-    // …stamped into solo-lane provenance…
-    "const narratorRun = buildNarratorRunProvenance( :: source: ctx.instructionSource,",
-    // …and threaded into the co-present render (the send and the retake paths)
-    // plus the solo render context.
-    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
-    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
-    "const soloRenderContext: SimSoloRenderContext = { :: instructionSource: ctx.instructionSource,",
-    'import { narratorRunProvenanceSchema, type NarratorInstructionSource } from "@/contracts/narrator-prompts";',
+    "export interface ResolvedSimExchange { :: instructionSource: NarratorInstructionSource;",
+    'import type { NarratorInstructionSource } from "@/contracts/narrator-prompts";',
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
-    "interface ResolvedSimExchange { :: instructionSource: NarratorInstructionSource;",
     "return { > ctx: { :: instructionSource,",
+  ],
+  "apps/web/src/server/engine/sim-exchange/dialogue.ts": [
+    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
+  ],
+  "apps/web/src/server/engine/sim-exchange/retake.ts": [
+    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
+  ],
+  "apps/web/src/server/engine/sim-exchange/solo.ts": [
+    "const narratorRun = buildNarratorRunProvenance( :: source: ctx.instructionSource,",
+    "const soloRenderContext: SimSoloRenderContext = { :: instructionSource: ctx.instructionSource,",
   ],
   "apps/web/src/server/engine/sim-narrator.ts": [
     // Provenance for the accepted successor attempt, from the context's frozen source.

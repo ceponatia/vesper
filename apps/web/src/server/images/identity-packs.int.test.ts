@@ -23,7 +23,8 @@ import {
   type TempDataRoot,
 } from "@/server/test-support";
 import { characters, db, imageIdentityPacks, images, jobs, JOB_STALE_MS } from "../db";
-import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageRow } from "./assets";
+import { absoluteImagePath } from "./paths";
+import { createImageAsset, saveImageBuffer, type ImageRow } from "./asset-storage";
 import {
   deriveIdentityPackWithoutProcessLockForTesting,
   ensureIdentityPack,

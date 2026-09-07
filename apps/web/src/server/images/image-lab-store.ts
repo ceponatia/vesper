@@ -26,7 +26,8 @@ import {
 } from "@/contracts/world/profile";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { characters, chatParticipants, db, imageLabExperiments } from "../db";
-import { deleteOwnedImage, imageMeta } from "./assets";
+import { deleteOwnedImage } from "./asset-deletion";
+import { imageMeta } from "./asset-storage";
 
 /**
  * The Advanced Image Lab's experiment service.

@@ -24,6 +24,29 @@ default worktree procedure; assign disjoint paths and one integrator there.
    slices in sequence. Tell every worker that others share the codebase and
    that they must preserve concurrent edits.
 
+## Track the issue checklist
+
+Treat the issue's checklist as working acceptance criteria. Read both checked
+and unchecked items, preserving their exact text and order so partial updates
+do not shift item identities. Before editing,
+account for its inventory and move-map requirements. At implementation handoff,
+review completion, and CI completion, reconcile each item with actual evidence.
+A merged PR or a green aggregate alone does not complete every checkbox.
+
+The parent owns issue-body updates unless the brief delegates one writer.
+Workers report the exact checklist item, completed action, and evidence as they
+reach each milestone; they distinguish pending parent-owned review/CI from their
+completed implementation. Keep issue text and unrelated checkboxes intact: read
+its latest body, change only evidence-supported items, and read the saved body
+back. Use `vesper-docs` for issue content and `vesper-board` for lifecycle.
+
+Leave unverified, blocked, or inapplicable requirements unchecked with a concise
+reason and any remaining action. Link evidence already in the PR or CI run
+instead of duplicating an inventory. Before the final handoff, reconcile the
+saved checklist with the report, including when recovering old work or finishing
+a previously merged issue. Never check a before-edit requirement retroactively
+unless the recorded evidence proves it occurred before those edits.
+
 ## Prepare and delegate
 
 - Use [the brief template](templates/agent-brief.md), filling the outcome,

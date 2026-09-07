@@ -29,7 +29,7 @@ import { resolveChatPersona } from "../players";
 import { log } from "../log";
 import { CHAT_MEANWHILE_MAX_OUTPUT_TOKENS, CHAT_MEANWHILE_TIMEOUT_MS } from "./constants";
 import { loadChatRelationships } from "./chat-relationships";
-import { loadChatScenario, loadChatState } from "./chat-state";
+import { loadChatScenario, loadChatState } from "./chat-state/store";
 import { enqueueJob, registerJobHandler } from "./jobs";
 import { buildChatMeanwhilePrompt, CHAT_MEANWHILE_SYSTEM } from "./prompts/chat-meanwhile";
 

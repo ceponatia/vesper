@@ -19,7 +19,7 @@ import {
   type TempDataRoot,
 } from "@/server/test-support";
 import { db, imageGeneratorRuns, imageLoras, imageModels, images } from "../db";
-import { createImageAsset, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
+import { createImageAsset, imageMeta, saveImageBuffer, type ImageKind } from "./asset-storage";
 import { setImageGeneratorRendererForTesting, type GeneratorRenderRequest } from "./image-generator-render";
 import { runImageGeneratorRun } from "./image-generator-run";
 import {

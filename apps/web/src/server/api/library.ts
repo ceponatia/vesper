@@ -398,7 +398,7 @@ export function composeItemDefinition(row: {
  * Locations and items only. A character follows a different rule — an image survives
  * its character iff its kind is Gallery-listable (`GALLERY_IMAGE_KINDS`: scene,
  * portrait_variant, entity) — so the character delete route never calls this for
- * `"character"`; it calls `deleteNonGalleryCharacterImages` (`images/assets.ts`)
+ * `"character"`; it calls `deleteNonGalleryCharacterImages` (`images/asset-deletion.ts`)
  * instead, which purges everything else (the canonical `avatar` included) in one call.
  */
 export async function deleteEntityImages(entityKind: ImageEntityKind, entityId: string, ownerId: string): Promise<void> {

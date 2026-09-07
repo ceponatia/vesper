@@ -4,6 +4,7 @@ export * from "./keyed-lock";
 export * from "./character-chat";
 export * from "./simulation";
 export * from "./chat-pipeline";
+export { stopChatReply } from "./chat-reply-stream";
 export {
   buildNarratorRunProvenance,
   emptyReplyTakes,
@@ -21,7 +22,14 @@ export * from "./engine-comparison";
 export * from "./sim-beats";
 export * from "./composition-diagnostics";
 export * from "./sim-time-jobs";
-export * from "./sim-exchange";
+export { runSimChatExchange } from "./sim-exchange";
+export type { SimChatExchangeMode, SimChatExchangeResult } from "./sim-exchange/types";
+export { isSimRoutedAuthority } from "./sim-exchange/context";
+export { findStandingEngagement, findOrOpenStandingEngagement } from "./sim-exchange/engagements";
+export { readSimChatClock, drainShortCode, noteDrainDiagnostics, drainBranchTo, moveArrivalTarget, settleStrandedInTransit } from "./sim-exchange/time";
+export type { DrainShortReason, DrainResult } from "./sim-exchange/time";
+export { runAccompanyTogether } from "./sim-exchange/travel";
+export type { AccompanyResult } from "./sim-exchange/travel";
 export * from "./sim-narrator";
 export * from "./sim-shadow";
 export * from "./sim-surfaces";
@@ -55,6 +63,12 @@ export * from "./visual-memory-store";
 export * from "./chat-wardrobe";
 export * from "./chat-garments";
 export * from "./chat-state";
+export { loadChatScenario, loadChatComposerModel, saveChatScenario, loadMilestonesSeenAt, loadChatState, saveChatState, persistChatState } from "./chat-state/store";
+export { savePreExchangeScenario, rollbackScenario, loadPreExchangeScenario, savePreExchangeSnapshot, loadPreExchangeState } from "./chat-state/snapshots";
+export { persistSurfaceTransferSettlement } from "./chat-state/surface-transfer";
+export type { ChatSurfaceTransferInput } from "./chat-state/surface-transfer";
+export { editChatState } from "./chat-state/edit";
+export type { ChatStateEdit } from "./chat-state/edit";
 export * from "./chat-memory";
 export * from "./chat-scene-sketch";
 export * from "./chat-meanwhile";

@@ -16,7 +16,8 @@ import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
-import { HIDDEN_IMAGE_KINDS, runImagePipeline, type ImageKind } from "./assets";
+import { HIDDEN_IMAGE_KINDS, type ImageKind } from "./asset-storage";
+import { runImagePipeline } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import {

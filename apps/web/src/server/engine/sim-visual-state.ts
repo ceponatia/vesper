@@ -115,9 +115,8 @@ export async function runSimVisualStateShadow(context: SimVisualStateShadowConte
 
 /**
  * The primary participant's authored profile — the same sort-0 query
- * `sim-exchange.ts` runs for its canon block, duplicated here so the preview
- * glue never imports the exchange module (which would close an import cycle
- * with the turn hook above).
+ * `sim-exchange/context.ts` runs for its canon block. The preview retains its
+ * own read and failure handling; it does not resolve an exchange context.
  */
 async function loadSimPreviewProfile(
   chatId: string,

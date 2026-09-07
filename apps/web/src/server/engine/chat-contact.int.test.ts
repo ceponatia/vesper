@@ -122,7 +122,8 @@ vi.mock("./character-chat", async () => {
 
 import { submitChatMessage } from "@/server/engine";
 import { previewChatPhysicalGuidance, previewChatPrompt } from "./chat-pipeline";
-import { applyTimeSkipToScenario, loadChatScenario, saveChatScenario, seedChatState } from "./chat-state";
+import { applyTimeSkipToScenario, seedChatState } from "./chat-state";
+import { loadChatScenario, saveChatScenario } from "./chat-state/store";
 import { PHYSICAL_GUIDANCE_BLOCK_HEADING } from "./chat-physical-guidance-render";
 import {
   appendChatContactEventsWithScene,

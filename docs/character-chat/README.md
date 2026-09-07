@@ -49,10 +49,10 @@ the chat lane must never re-fork it.
 
 ## Where things live
 
-- **Exchange orchestration** — `server/engine/chat-pipeline.ts`
+- **Exchange orchestration** — `server/engine/chat-pipeline.ts`; reply streaming, Stop, and watchdogs live in `server/engine/chat-reply-stream.ts`
 - **Reply persistence, rerun cuts and take history** — `server/engine/chat-reply-store.ts`
 - **Model stream** — `server/engine/character-chat.ts`
-- **State types, seeds, time, pulse rules, and readout** — `server/engine/chat-state/{types,seed,time,pulse-rules,readout}.ts`; **state IO and orchestration** — `server/engine/chat-state.ts`
+- **State types, seeds, time, pulse rules, and readout** — `server/engine/chat-state/{types,seed,time,pulse-rules,readout}.ts`; **state persistence, rollback, edits, and atomic surface settlement** — `server/engine/chat-state/{store,snapshots,edit,surface-transfer}.ts`; **pulse and finalization orchestration** — `server/engine/chat-state.ts`
 - **RAG client (recall / the three extraction legs / write)** — `server/engine/chat-memory.ts`
 - **Extraction field library + the composed legs** ([post-turn.md](post-turn.md)) — `server/engine/prompts/chat-extractors.ts` (pure) + the per-leg schemas / `mergeChatExtractions` in `contracts/turns/chat-archivist.ts`
 - **Per-turn query-embedding cache (one embed, every leg)** — `server/memory/query-embeddings.ts`
@@ -60,7 +60,7 @@ the chat lane must never re-fork it.
 - **One-turn player-input reads (cue / scene movement / sensory focus / reply gates)** — `server/engine/chat-intent.ts`
 - **Memory callbacks (gate / selection / ring)** — `server/engine/chat-callback.ts` (pure cue) + `retrieveChatCallback` in `chat-memory.ts` + `chatCallbackLine` in `prompts/character-chat/turn-notes.ts`
 - **Emotional weather (feeling / momentum / bruise)** — `server/engine/chat-feeling.ts` (pure) + wiring in `chat-state.ts`; pacing in `lib/chat-pacing.ts`
-- **Player photos (upload / claim / vision)** — `server/images/upload.ts` (`uploadChatAttachment`) + `assets.ts` (`claimChatAttachments`/`deleteChatUploads`) + `server/engine/chat-vision.ts`; composer prep in `components/chat/attachment-file.ts`
+- **Player photos (upload / claim / vision)** — `server/images/upload.ts` (`uploadChatAttachment`) + `asset-chat-files.ts` (`claimChatAttachments`/`deleteChatUploads`) + `server/engine/chat-vision.ts`; composer prep in `components/chat/attachment-file.ts`
 - **Selfies (triggers / gates / retry)** — `server/engine/chat-selfie.ts` (pure) + pulse `sentPhoto` + `chatSelfieLine` in `prompts/character-chat/turn-notes.ts` + the selfie branch in `images/character-scene.ts`; "Failed" placeholder in `components/chat/chat-scene-moments.tsx`
 - **Scene reference anchors (look / place)** — `server/images/chat-look.ts` (key + renders) + `server/engine/chat-reference-enqueue.ts` / `chat-reference-images.ts` (jobs) + consumption in `images/character-scene.ts` and `scene/queue.ts`
 - **Drives (schemas / gate / updates)** — `contracts/personality/drives.ts` (pure registry) + `buildDrivesSection` in `prompts/character-chat/state-sections.ts` + the finalize fold in `chat-state.ts`

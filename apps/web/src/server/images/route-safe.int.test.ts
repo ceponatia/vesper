@@ -11,7 +11,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { createImageAsset } from "./assets";
+import { createImageAsset } from "./asset-storage";
 import { internalDeleteChatAssets, internalSaveImageBuffer } from "./internal";
 import { deleteOwnedChatAssets, deleteOwnedChatUploads, saveOwnedImageBuffer } from "./route-safe";
 import { monogramSvg } from "./monogram";
