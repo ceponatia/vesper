@@ -110,7 +110,7 @@ export function chatLookKey(input: {
    * hash byte-identically to the key before the band existed, so no uncovered
    * chat's cached look invalidates on this change alone, while a covered-hair
    * chat's pre-band anchor (minted with hair showing) misses and re-mints. This
-   * is the key gate only — the enqueue is its own gate (`chat-state.ts`), and a
+   * is the key gate only — the enqueue is its own gate (`chat-state/finalize-enqueue.ts`), and a
    * band change that never fires the enqueue cannot be fixed here.
    */
   hairOcclusion?: HairOcclusion;

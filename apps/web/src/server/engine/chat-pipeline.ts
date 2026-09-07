@@ -1,3 +1,5 @@
+import { settleEnsembleMember } from "./chat-state/ensemble";
+import { finalizeChatState } from "./chat-state/finalize";
 import {
   and,
   eq,
@@ -154,10 +156,8 @@ import { resolveSeededOutfit } from "./chat-state/outfit-fold";
 import {
   applyChatAction,
   driftChatState,
-  finalizeChatState,
   seedChatScenario,
   seedChatState,
-  settleEnsembleMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";

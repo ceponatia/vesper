@@ -5,9 +5,33 @@ one guarded state write they merge into, and the detached jobs the exchange enqu
 of it is off the perceived-latency path — the reply already streamed, so every failure here
 is a diagnostic and a degraded fold, never a failed exchange.
 
+## Finalization owners
+
+`chat-state.ts` is the public entry. `chat-state/finalize-types.ts` owns the documented
+input and result contract, shared with pipeline callers without importing orchestration.
+The finalizer preserves one ordered sequence:
+
+1. `finalize-agents.ts` prepares voice, trait, plan and garment-handle context, then runs
+   pulse and extraction in parallel; `memory-writes.ts` files the result per witness,
+   fencing each failure independently.
+2. `character-fold.ts` captures pre-pulse personal fields; `narrative-fold.ts` merges
+   scene, cast and plans; `wardrobe-fold.ts` selects one mutation lane, reconciles from
+   pre-fold worn IDs, applies operations in fiction order, then captures projections.
+3. `surface-fold.ts` applies environment, wetness, deposits, marks and conserved transfer
+   in that order, using the post-fold surface and wardrobe. `character-fold.ts` then
+   applies primary progression and shared relationship/secret-milestone rules.
+4. `finalize-persist.ts` writes state, scenario, state snapshot and scenario snapshot in
+   order under the same prompt guard, or delegates a committed transfer to its atomic
+   persistence owner. `finalize-enqueue.ts` runs only after those writes complete.
+
+`ensemble.ts` shares the relationship and secret-milestone folds. Members sample only
+when pulsed and keep familiarity fixed; the primary samples after its familiarity ticks
+also on skipped-pulse exchanges. Member wardrobe folding remains pure and member personal
+failure keeps its previous fields. Shared scenario writes remain primary-owned.
+
 ## The fan-out
 
-`finalizeChatState` runs **pulse ‖ the three extraction legs** in parallel (`Promise.all`),
+`finalizeChatState` (`chat-state/finalize.ts`) runs **pulse ‖ the three extraction legs** in parallel (`Promise.all`),
 then one guarded state write:
 
 - **Pulse** (`runChatPulse` in `chat-state/pulse-agent.ts`): classifies the exchange onto the personality curve —

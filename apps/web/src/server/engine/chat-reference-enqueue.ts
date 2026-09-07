@@ -5,7 +5,7 @@ import { enqueueJob } from "./jobs";
 /**
  * Enqueue-only half of the chat reference-image jobs
  * — split from the handlers (`chat-reference-images.ts`) so the exchange finalizer
- * (`chat-state.ts`) can fire them without a chat-state ↔ handler import cycle.
+ * (`chat-state/finalize-enqueue.ts`) can fire them without a chat-state ↔ handler import cycle.
  * Deduped one-live-per-chat (`hasLiveChatJob`, staleness-bounded) like
  * `enqueueChatSceneSketch`; never throws.
  */

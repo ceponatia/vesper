@@ -103,6 +103,9 @@ them back into the client's back-compat snapshot shape. State is inspected/edite
 through the per-character **Character sheet** and the chat-wide **Scenario** modal
 ([ui/conversation.md](../ui/conversation.md)).
 
+Finalization and per-member settlement use the focused owners described in
+[post-turn.md](post-turn.md) §Finalization owners.
+
 ## Retake rollback boundary
 
 A retake is a roster-wide transaction boundary, not a primary-character convenience.
