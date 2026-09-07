@@ -16,10 +16,12 @@ export {
   bodyConditionExpiryUniquenessKey,
   bodyThresholdUniquenessKey,
   bodyThresholdUniquenessKeyPrefix,
+  buildSleepConditionTrain,
   deriveBodyConditionId,
   deriveBodyModifierId,
   type BodyBranchMeta,
   type BodyEventCommandContext,
+  type SleepConditionTrain,
 } from "./bodies/events";
 export {
   applySourceToMeter,
@@ -33,7 +35,6 @@ export {
   type InitializeActorBodyResolutionView,
 } from "./bodies/sources";
 export {
-  buildSleepConditionTrain,
   resolveApplyBodyCondition,
   resolveApplyBodyModifier,
   resolveEndBodyCondition,
@@ -42,7 +43,6 @@ export {
   type ApplyBodyModifierResolution,
   type EndBodyConditionResolution,
   type EndBodyConditionResolutionView,
-  type SleepConditionTrain,
 } from "./bodies/conditions";
 export {
   buildActorBodyAlarmRearms,

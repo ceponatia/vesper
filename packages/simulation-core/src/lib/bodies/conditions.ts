@@ -2,7 +2,7 @@ import { bodyConditionAppliedEventSchema, bodyConditionEndedEventSchema, bodyCon
 import { composeSimulationId } from "../../contracts/identity";
 import { bodyConditionExpiryTriggerKind, type TriggerScheduledEvent } from "../../contracts/scheduler";
 import { rearmCollapseTrigger, type CollapseContext } from "./collapse";
-import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, buildSleepConditionTrain, capturedDerivation, deriveBodyConditionId, deriveBodyModifierId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection, type SleepConditionTrain } from "./events";
+import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, capturedDerivation, deriveBodyConditionId, deriveBodyModifierId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection } from "./events";
 import { compareStableText, deriveSleepCredit, integrateMeterValue, normalizeConditionModifierSpecs, type MeterIntegrationView } from "./integration";
 
 // ---------------------------------------------------------------------------
@@ -537,7 +537,3 @@ export function resolveEndBodyCondition(
   events.push(...rearms);
   return { ok: true, condition: ended, meters, events };
 }
-
-export { buildSleepConditionTrain };
-
-export type { SleepConditionTrain };
