@@ -1,6 +1,8 @@
 # The profile leg
 
-One `generateChecked` call drafts everything on the Profile, Personality and Disposition tabs.
+One `generateChecked` call drafts the profile leg's prose and behavioral families.
+Full creation requests all families; scoped generation requests only the fields owned by the
+selected editor section in `lib/character-scopes.ts`.
 Each family below is grounded against its own registry before it reaches the draft, and a family
 that fails grounding drops with a diagnostic rather than breaking the draft
 ([README.md](README.md) §Guardrails).
@@ -38,8 +40,8 @@ line drop, text is trimmed, the list caps at `MICRO_EXEMPLARS_MAX` = 3) onto
 
 They are few-shots of how the character actually talks — a deflection, a boundary, a tease —
 rendered near generation in the chat prefix so voice, disposition and age land in the prose rather
-than only in the sliders. They ride the **profile** prose re-draft scope
-([in-sheet-forge.md](in-sheet-forge.md)), are hand-editable on the Profile tab
+than only in the sliders. They belong to **Voice & manner**
+([in-sheet-forge.md](in-sheet-forge.md)), are hand-editable in that section
 (`MicroExemplarsEditor`, beside Voice notes), and fill-merge all-or-nothing like the outfit: any
 authored row keeps them all.
 
@@ -52,18 +54,18 @@ blanks, caps the lists.
 These are the concrete near-generation levers that keep a voice consistent across a long chat:
 phrases the character reaches for, a rhythm note, and words or registers off-limits for them. They
 render two ways in the chat prefix — a stable **"Your voice, concretely"** anchors block, and a
-one-line **"Voice check"** re-anchor beside the mood pin near generation — ride the same profile
-prose re-draft scope, are hand-editable on the Profile tab (`VoiceAnchorsEditor`), and fill-merge
+one-line **"Voice check"** re-anchor beside the mood pin near generation — belong to
+**Voice & manner**, are hand-editable there (`VoiceAnchorsEditor`), and fill-merge
 all-or-nothing via `hasVoiceAnchors`.
 
 ## Intimate disposition
 
 A short, tasteful `profile.intimacy` note on how the character reads as a lover. It is **always
-generated**: the gate lives at *surfacing*, not authoring, so the note costs nothing until a scene
-earns it.
+included in full character generation**: the gate lives at *surfacing*, not authoring. Scoped
+generation includes it only when the selected section owns it.
 
-It is hand-editable on the Profile tab (the *Intimate disposition* textarea beside Voice notes),
-rides the profile prose re-draft scope, and fill-merges like `voice` — an authored note is fixed, a
+It is hand-editable in **Personality** and belongs to that section's generation scope.
+It fill-merges like `voice` — an authored note is fixed, a
 blank one takes the generated one. It reaches the narrator only above the chat intimate gate
 ([../character-chat/perception-gates.md](../character-chat/perception-gates.md) §The chat intimate
 gate).
@@ -108,7 +110,7 @@ kind/history/mask/premise note, grounded by `groundPlayerRelationship` onto
 `profile.playerRelationship`. Unknown bands self-heal to the axis default with
 `forge.character.profile.unknown_relationship_band`, text truncates at the storage caps, the
 human-phrased mask maps onto the presented lean, and an all-default draft grounds to *nothing* so an
-untouched Chat tab stays untouched.
+untouched starting relationship stays untouched. Its editor lives in **Relationships**.
 
 **Personal social cards** — drafted when the concept names a hard social line ("hates being haggled
 over her art"): up to 2 cards, grounded by `groundSocialCards` against the interaction-concept

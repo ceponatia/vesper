@@ -86,6 +86,10 @@ backdrop, image scaled to fit, Escape and backdrop close, Tab trapped inside. Ev
 enlarges an image opens the same component, and a page mounts one instance rather than one per
 thumbnail.
 
+Reference review supplies optional comparison, navigation and action content to this viewer.
+Ordinary callers keep the same enlargement behavior. Review controls stay inside the focus trap
+and remain usable on phones; opening or dismissing an image never implies approval.
+
 Beside the image it renders an **admin-and-desktop-only side panel** — gated by `useIsAdmin` and
 hidden below the `md` breakpoint so it never crowds the picture on a phone. It holds the
 generation prompt and, under it, the row's **provenance**: the resolved camera as
