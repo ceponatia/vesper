@@ -9,7 +9,7 @@ import {
 import { characterChats, db } from "../db";
 import type { PlayerPersona } from "../players";
 import type { ChatVisualStateLines } from "./chat-visual-state-cues";
-import type { ChatScenario, ChatState } from "./chat-state";
+import type { ChatScenario, ChatState } from "./chat-state/types";
 import type { ResolvedChatWardrobe, ResolvedPlayerWardrobe } from "./chat-wardrobe";
 import type { ChatGarmentNarration } from "./chat-garments";
 import type { CharacterChatPromptInput } from "./prompts/character-chat";

@@ -6,7 +6,7 @@ import {
 } from "@/contracts";
 import { buildChatAffordanceRead } from "./chat-affordances";
 import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
-import type { ChatScenario, ChatState } from "./chat-state";
+import type { ChatScenario, ChatState } from "./chat-state/types";
 import type { ResolvedChatWardrobe } from "./chat-wardrobe";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 
