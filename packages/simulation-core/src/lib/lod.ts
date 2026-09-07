@@ -58,7 +58,7 @@ export function effectiveActorLod(
 }
 
 // ---------------------------------------------------------------------------
-// assign_actor_lod resolution (FromView style — mirrors households.ts)
+// assign_actor_lod resolution (FromView style — mirrors households/commands.ts)
 // ---------------------------------------------------------------------------
 
 interface ActorLodRejection {

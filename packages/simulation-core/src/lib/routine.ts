@@ -178,7 +178,7 @@ export function selectRoutineMealItem(
 }
 
 // ---------------------------------------------------------------------------
-// Trigger builder (mirrors bodies.ts's buildBodyTrigger for the routine kind)
+// Trigger builder (mirrors bodies/events.ts's buildBodyTrigger for the routine kind)
 // ---------------------------------------------------------------------------
 
 export interface RoutineBranchMeta {
