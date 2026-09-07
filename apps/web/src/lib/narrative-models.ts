@@ -1,6 +1,6 @@
 /**
  * Curated narrator model options: one pure list shared by the client's chat
- * model dropdown (components/chat/chat-conversation.tsx,
+ * model dropdown (components/chat/chat-conversation-menu.tsx,
  * components/characters/character-chat.tsx) and the server's
  * narrativeModelId resolver default (server/ai/provider.ts). The planned BYOK
  * feature replaces this static list with a live-queried catalog; until then,

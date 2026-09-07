@@ -75,7 +75,9 @@ const APPROVED: readonly string[] = [
   // frozen source carried on its context, and records the revision it used.
   "apps/web/src/server/engine/sim-narrator.ts",
   // The four prose-narrator prompt builders and their shared classified charter.
-  "apps/web/src/server/engine/prompts/character-chat.ts",
+  "apps/web/src/server/engine/prompts/character-chat/ensemble.ts",
+  "apps/web/src/server/engine/prompts/character-chat/single.ts",
+  "apps/web/src/server/engine/prompts/character-chat/types.ts",
   "apps/web/src/server/engine/prompts/charter.ts",
   "apps/web/src/server/engine/prompts/sim-render.ts",
   "apps/web/src/server/engine/prompts/sim-solo-render.ts",
@@ -294,7 +296,7 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "const parts = buildCharacterChatPromptParts( :: instructionSource,",
     "const promptInput: CharacterChatPromptInput = { :: instructionSource,",
     "ensembleExtras = { :: instructionSource,",
-    "import { :: type NarratorInstructionSource,",
+    'import type { NarratorInstructionSource, NarratorPromptNode, NarratorRunProvenance } from "@/contracts/narrator-prompts";',
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
   ],
   "apps/web/src/server/engine/chat-reply-store.ts": [
@@ -320,12 +322,16 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     // Provenance for the accepted successor attempt, from the context's frozen source.
     "return { > provenance: buildNarratorRunProvenance( :: source: context.instructionSource,",
   ],
-  "apps/web/src/server/engine/prompts/character-chat.ts": [
+  "apps/web/src/server/engine/prompts/character-chat/ensemble.ts": [
     "const mode = narratorRenderMode(extras.instructionSource ?? input.instructionSource);",
+  ],
+  "apps/web/src/server/engine/prompts/character-chat/single.ts": [
     "const mode = narratorRenderMode(input.instructionSource);",
+  ],
+  "apps/web/src/server/engine/prompts/character-chat/types.ts": [
     "export interface CharacterChatPromptInput { :: instructionSource?: NarratorInstructionSource;",
     "export interface EnsemblePromptExtras { :: instructionSource?: NarratorInstructionSource;",
-    "import { :: type NarratorInstructionSource,",
+    'import type { NarratorInstructionSource, NarratorPromptNode } from "@/contracts/narrator-prompts";',
   ],
   "apps/web/src/server/engine/prompts/charter.ts": [
     "export function narratorRenderMode(source: NarratorInstructionSource | undefined): NarratorPromptRenderMode {",

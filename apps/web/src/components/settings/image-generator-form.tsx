@@ -1,45 +1,34 @@
 "use client";
-
-import { useState } from "react";
+import { generatorModelView } from "./image-generator-form/model";
+import { GeneratorReferences, toPurposeOption, type PrimaryRow } from "./image-generator-form/references";
+import { GeneratorControls, AdvancedInputField } from "./image-generator-form/controls";
 import {
-  baseImageModelSlug,
-  chooseAspect,
-  imageResolutionTiers,
-  isImageControlReferenceRole,
-  parseAspectValue,
-  pinnedImageModelVersion,
-  referenceCapacity,
-  type ImageInputBinding,
-  type ImageModel,
-  type ImageProviderInputDescriptor,
-  type ImageReferenceRole,
-  type ImageResolutionTier,
-  type ImageUriBinding,
-} from "@vesper/image-core";
+  assembleGeneratorRequest,
+  generatorRequestReady,
+  generatorRequestBody,
+} from "./image-generator-form/request";
+import {
+  reconcileGeneratorPrefill,
+  generatorLoraSelection,
+  type ImageGeneratorPrefill,
+} from "./image-generator-form/prefill";
+import { useState } from "react";
+import { baseImageModelSlug, pinnedImageModelVersion, type ImageResolutionTier } from "@vesper/image-core";
 import {
   IMAGE_GENERATOR_MAX_IMAGE_COUNT,
-  IMAGE_GENERATOR_MAX_PRIMARY,
   IMAGE_GENERATOR_PROMPT_MAX,
-  type ImageGeneratorControls,
-  type ImageGeneratorCreateRunRequest,
   type ImageGeneratorDedicatedRole,
-  type ImageGeneratorProviderInputs,
-  type ImageGeneratorRunInputs,
   type ImageGeneratorVersionPolicy,
 } from "@/contracts/images/image-generator";
 import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_PREFILL_SLUG } from "@/contracts/images/intimate-scene-lora";
-import { adminImageModelsApi, imageGeneratorApi, imageLorasApi, imageUrl } from "@/lib/client/api";
+import { adminImageModelsApi, imageGeneratorApi, imageLorasApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { NumberField } from "./image-admin-shared";
 import { imageGeneratorRoleLabel } from "./image-generator-copy";
-import { OwnedImagePicker } from "./owned-image-picker";
 
 /**
  * The new-run form: one raw prompt against one explicitly chosen registered
@@ -69,215 +58,12 @@ import { OwnedImagePicker } from "./owned-image-picker";
  * substitution.
  */
 
-/** A settled run's request, re-seeded into a fresh form. Values only. */
-export interface ImageGeneratorPrefill {
-  /** The original's model snapshot — resolved back against the registry here. */
-  modelSlug: string;
-  /** The pin the original ran on; a drifted current pin is warned about. */
-  requestedVersionId: string | null;
-  prompt: string;
-  inputs: ImageGeneratorRunInputs;
-  controls: ImageGeneratorControls;
-  providerInputs: ImageGeneratorProviderInputs;
-  /** Lineage — sent as `sourceRunId` so the new row cites what it varies. */
-  sourceRunId: string;
-}
+export type { ImageGeneratorPrefill } from "./image-generator-form/prefill";
 
 export interface ImageGeneratorFormProps {
   prefill?: ImageGeneratorPrefill | null;
   /** The accepted run's id — the caller opens it and remounts this form blank. */
   onCreated: (runId: string) => void;
-}
-
-/**
- * The purposes the form offers: the CONTENT roles only. The structural roles
- * are deliberately absent — a structural image belongs in a dedicated slot or
- * an ordinary numbered position, and letting an admin file one as a "pose
- * purpose" would look like routing while changing nothing. A stored purpose
- * outside this set (possible via the API) is dropped from a duplicate's seed
- * rather than silently remapped.
- */
-const PURPOSE_ROLES = [
-  "identity",
-  "location",
-  "style",
-  "object",
-  "outfit",
-  "product",
-  "before",
-  "after_example",
-] as const satisfies readonly ImageReferenceRole[];
-type PurposeRole = (typeof PURPOSE_ROLES)[number];
-
-function toPurposeOption(purpose: ImageReferenceRole | undefined): PurposeRole | "" {
-  return PURPOSE_ROLES.find((role) => role === purpose) ?? "";
-}
-
-interface PrimaryRow {
-  key: number;
-  imageId: string | null;
-  purpose: PurposeRole | "";
-}
-
-/**
- * The model's dedicated structural slots, one per role, first declaration
- * winning — the same tie-break `controlReferenceTransport` applies, so what
- * the form offers is what the runner would route.
- */
-function dedicatedSlotsOf(model: ImageModel | null): { role: ImageGeneratorDedicatedRole; binding: ImageUriBinding }[] {
-  if (model === null) return [];
-  const slots: { role: ImageGeneratorDedicatedRole; binding: ImageUriBinding }[] = [];
-  const seen = new Set<string>();
-  for (const entry of model.advancedCapabilities.additionalImageInputs) {
-    if (!isImageControlReferenceRole(entry.roleHint) || seen.has(entry.roleHint)) continue;
-    seen.add(entry.roleHint);
-    // A binding that names the PRIMARY reference field is the numbered array
-    // described twice, not a dedicated input — `controlReferenceTransport`
-    // demotes exactly this entry, and an explicitly dedicated selection never
-    // falls back to the numbered references, so offering the slot here would
-    // offer a route the runner refuses.
-    if (entry.binding.field === model.referenceField) continue;
-    slots.push({ role: entry.roleHint, binding: entry.binding });
-  }
-  return slots;
-}
-
-/**
- * Whether this version would actually send `option` if it were asked for.
- *
- * Membership in `supportedAspects` is not enough. Several declared members can
- * share one ratio — Wan lists five pixel pairs that each lose their ratio group
- * to a larger sibling — and the shared mapper resolves a ratio to the largest,
- * so asking for one of the others is a guaranteed refusal. One predicate for
- * the select, the request, and the drift warning, so the three cannot disagree
- * about what "supported" means.
- */
-function shapeIsReachable(model: ImageModel | null, option: string): boolean {
-  if (model === null) return false;
-  const ratio = parseAspectValue(option);
-  return ratio !== null && chooseAspect(model, ratio).value === option;
-}
-
-/** The provider-input types the advanced editor can offer a control for. */
-const EDITABLE_PROVIDER_TYPES = ["string", "integer", "number", "boolean", "enum"] as const;
-
-function editableProviderInputs(model: ImageModel | null): ImageProviderInputDescriptor[] {
-  if (model === null) return [];
-  return model.advancedCapabilities.providerInputs.filter(
-    (descriptor) => !descriptor.reserved && EDITABLE_PROVIDER_TYPES.some((type) => type === descriptor.type),
-  );
-}
-
-/** One numeric box, read strictly: blank, unreadable, or the number it names in full. */
-type StrictNumber = { kind: "unset" } | { kind: "invalid" } | { kind: "value"; value: number };
-
-/**
- * Strict numeric read — `Number`, never `parseInt`/`parseFloat`, so a typed
- * value can never be silently rewritten into a request the admin did not make:
- * "3.7" or "12abc" in an integer box is INVALID rather than truncated to 3 or
- * 12, and "1e10" means ten billion rather than 1. The caller renders invalid
- * as a visible per-field error that holds the run — withheld-but-typed would
- * be the same lie as silently trimmed.
- */
-function parseStrictNumber(raw: string, mode: "integer" | "number"): StrictNumber {
-  const text = raw.trim();
-  if (text === "") return { kind: "unset" };
-  const value = Number(text);
-  if (!Number.isFinite(value)) return { kind: "invalid" };
-  if (mode === "integer" && !Number.isInteger(value)) return { kind: "invalid" };
-  return { kind: "value", value };
-}
-
-/** A numeric binding's declared range, as hint copy — absent means undeclared, never unbounded. */
-function bindingRangeHint(binding: ImageInputBinding, lead: string): string {
-  if (binding.minimum === undefined && binding.maximum === undefined) return lead;
-  const min = binding.minimum === undefined ? "…" : String(binding.minimum);
-  const max = binding.maximum === undefined ? "…" : String(binding.maximum);
-  return `${lead} Provider range ${min}–${max}.`;
-}
-
-/** Everything the provider schema said about one advanced field, as one hint line. */
-function advancedInputHint(descriptor: ImageProviderInputDescriptor): string {
-  const parts: string[] = [];
-  if (descriptor.description !== undefined && descriptor.description.trim() !== "") {
-    parts.push(descriptor.description.trim());
-  }
-  if (descriptor.default !== undefined) parts.push(`Default ${JSON.stringify(descriptor.default)}.`);
-  if (descriptor.minimum !== undefined || descriptor.maximum !== undefined) {
-    const min = descriptor.minimum === undefined ? "…" : String(descriptor.minimum);
-    const max = descriptor.maximum === undefined ? "…" : String(descriptor.maximum);
-    parts.push(`Range ${min}–${max}.`);
-  }
-  if (descriptor.required) parts.push("The provider marks it required.");
-  return parts.length > 0 ? parts.join(" ") : "Described by the provider schema. Unset is omitted from the payload.";
-}
-
-/** One advanced field's editor, by declared type. Empty means unset — omitted, never defaulted here. */
-function AdvancedInputField({
-  descriptor,
-  value,
-  error,
-  onChange,
-}: {
-  descriptor: ImageProviderInputDescriptor;
-  value: string;
-  /** The strict-parse verdict on the current value; shown beside the field and holds the run. */
-  error?: string;
-  onChange: (value: string) => void;
-}) {
-  const hint = advancedInputHint(descriptor);
-  if (descriptor.type === "boolean" || descriptor.type === "enum") {
-    const options = descriptor.type === "boolean" ? ["true", "false"] : (descriptor.enumValues ?? []);
-    return (
-      <Field label={descriptor.field} hint={hint}>
-        {(id) => (
-          <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
-            <option value="">— Provider default —</option>
-            {options.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
-    );
-  }
-  if (descriptor.type === "integer" || descriptor.type === "number") {
-    return (
-      <div className="flex flex-col gap-1">
-        <NumberField
-          label={descriptor.field}
-          hint={hint}
-          value={value}
-          min={descriptor.minimum}
-          max={descriptor.maximum}
-          step={descriptor.type === "integer" ? 1 : undefined}
-          placeholder="provider default"
-          onChange={onChange}
-        />
-        {error !== undefined ? (
-          <p className="text-xs text-danger-300" role="alert">
-            {error}
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-  return (
-    <Field label={descriptor.field} hint={hint}>
-      {(id) => (
-        <Input
-          id={id}
-          value={value}
-          maxLength={2000}
-          spellCheck={false}
-          placeholder="provider default"
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-    </Field>
-  );
 }
 
 export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGeneratorFormProps) {
@@ -401,10 +187,23 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     setVersionPolicy("current");
   }
 
-  // The edit gate mirrors `profileEligibility`: `canEdit` AND a reviewed
-  // `editKind` other than "none" — a row rated unable to actually edit must
-  // not offer reference slots whose run the planner refuses.
-  const modelCanEdit = selectedModel !== null && selectedModel.canEdit && selectedModel.editKind !== "none";
+  const {
+    modelCanEdit,
+    capabilities,
+    bindings,
+    dedicatedSlots,
+    advancedInputs,
+    reservedFields,
+    shapeOptions,
+    resolutionTierOffered,
+    pinnedVersion,
+    modelCapacity,
+    capacity,
+    capabilitySummary,
+  } = generatorModelView({
+    selectedModel,
+  });
+
 
   // A model with no image input cannot take the rows, and holding them unseen
   // would send a request the runner refuses — cleared, not hidden (no latch:
@@ -412,38 +211,6 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   if (selectedModel !== null && !modelCanEdit && primaryRows.length > 0) {
     setPrimaryRows([]);
   }
-
-  const capabilities = selectedModel?.advancedCapabilities ?? null;
-  const bindings = capabilities?.controls ?? {};
-  const dedicatedSlots = dedicatedSlotsOf(selectedModel);
-  const advancedInputs = editableProviderInputs(selectedModel);
-  const reservedFields = (capabilities?.providerInputs ?? [])
-    .filter((descriptor) => descriptor.reserved)
-    .map((descriptor) => descriptor.field);
-
-  // The version's OWN declared shapes, narrowed to the ones actually
-  // reachable. Blank stays the model's default: the Generator writes no
-  // aspect/size key unless one of these is picked, so a raw run is never
-  // bucketed toward a Vesper target or cropped to reach one.
-  //
-  // The filter matters on size-mode models, where several members share one
-  // ratio (Wan's three 3:4 sizes) and the shared mapper resolves a ratio to the
-  // largest of them. The server refuses a pick it would have to substitute, so
-  // offering the unreachable members here would only sell a guaranteed refusal.
-  const shapeOptions = (selectedModel?.supportedAspects ?? []).filter((option) =>
-    shapeIsReachable(selectedModel, option),
-  );
-
-  // On a size-mode model the declared shapes ARE the sizes, so the tier and the
-  // Output shape select would be two controls for one request — and the render
-  // path reserves that key for the shape, so a tier picked here would be
-  // refused pre-spend. Offer the shape only.
-  const resolutionTierOffered =
-    bindings.resolutionTier !== undefined && selectedModel !== null && selectedModel.aspectMode !== "size";
-
-  const pinnedVersion = selectedModel === null ? null : pinnedImageModelVersion(selectedModel);
-  const modelCapacity = selectedModel === null ? null : referenceCapacity(selectedModel).max;
-  const capacity = modelCapacity === null ? null : Math.min(modelCapacity, IMAGE_GENERATOR_MAX_PRIMARY);
 
   // The LoRA control, offered only when the active version binds BOTH the
   // weights and the scale field — the resolver requires the pair (a locator
@@ -518,368 +285,124 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
       setLoraId(INTIMATE_SCENE_LORA_ID);
     }
   }
-  const parsedLoraScale = parseStrictNumber(loraScale, "number");
-  const requestedScale = parsedLoraScale.kind === "value" ? parsedLoraScale.value : Number.NaN;
-  const effectiveLoraScale =
-    selectedLora === null ? null : Number.isFinite(requestedScale) ? requestedScale : selectedLora.defaultScale;
-  // The scale names its own refusal, like every other numeric box on this
-  // screen. Without a message an out-of-band value only greys the Run button,
-  // which reads as a form that has quietly stopped working.
-  //
-  // Text this box cannot parse is an error too, NOT a fall back to the row's
-  // default. Blank means "use the row's default" and says so; `1.2x` meaning
-  // the same thing would be the silent rewrite this file's header rules out,
-  // and the operator would read the recorded scale as the one they typed.
-  const loraScaleError =
-    selectedLora === null
-      ? null
-      : parsedLoraScale.kind === "invalid"
-        ? "A LoRA scale is a number — fix or clear it to run. Blank uses the row’s default."
-        : effectiveLoraScale === null ||
-            effectiveLoraScale < selectedLora.minimumScale ||
-            effectiveLoraScale > selectedLora.maximumScale
-          ? `Scale must be between ${String(selectedLora.minimumScale)} and ${String(selectedLora.maximumScale)} for ${selectedLora.label} — fix or clear it to run.`
-          : null;
-  const loraReady = loraScaleError === null;
-  // Whether the pick standing in the select is the production intimate pairing
-  // this model pre-fills, so the hint can say so rather than leaving a filled
-  // field unexplained.
-  const loraPrefilled =
-    selectedLora !== null &&
-    selectedLora.id === INTIMATE_SCENE_LORA_ID &&
-    selectedModel !== null &&
-    baseImageModelSlug(selectedModel.slug) === INTIMATE_SCENE_LORA_PREFILL_SLUG;
-  const loraModelMismatch =
-    selectedLora !== null &&
-    selectedModel !== null &&
-    !selectedLora.compatibleModelSlugs.some(
-      (compatible) => baseImageModelSlug(compatible) === baseImageModelSlug(selectedModel.slug),
-    );
+  const {
+    requestedScale,
+    loraScaleError,
+    loraReady,
+    loraPrefilled,
+    loraModelMismatch,
+  } = generatorLoraSelection({
+    loraScale,
+    selectedLora,
+    selectedModel,
+  });
 
-  // The request as it stands: explicit controls assembled beside their summary
-  // lines, so the panel below and the POST can never disagree. Each numeric box
-  // is read by `parseStrictNumber`; a value it calls invalid gets a per-field
-  // error below and holds the run, never a silent rewrite or withhold.
-  //
-  // Width/Height are deliberately NOT offered: the compile honors explicit
-  // dimensions only under `resolution: "custom"`, which this form cannot
-  // produce — the tier select filters `imageResolutionTiers` by the provider's
-  // own enumValues, which never include "custom" — so any set dimension was a
-  // guaranteed pre-spend `control_refused`. Withheld until the shared
-  // custom-resolution path works end to end; the contract keeps `width`/`height`
-  // for API callers.
-  const assembledControls: ImageGeneratorControls = {};
-  const controlLines: string[] = [];
-  const parsedSeed = parseStrictNumber(seed, "integer");
-  const seedError =
-    bindings.seed !== undefined &&
-    (parsedSeed.kind === "invalid" || (parsedSeed.kind === "value" && parsedSeed.value < 0))
-      ? "A seed is a whole number of 0 or more — fix or clear it to run."
-      : null;
-  if (bindings.seed !== undefined && parsedSeed.kind === "value" && parsedSeed.value >= 0) {
-    assembledControls.seed = parsedSeed.value;
-    controlLines.push(`seed ${String(parsedSeed.value)}`);
-  }
-  // Images per run. One is the ordinary case and is left out of the request
-  // entirely, so a single-image run records exactly what it recorded before the
-  // fan-out existed.
-  //
-  // A set seed and a count above one contradict each other: the seed is what
-  // makes a render reproducible, so every prediction in the run would return
-  // the same image at N times the price. Refused here and again pre-spend by
-  // the runner, because a bench that quietly dropped one of the two would be
-  // reporting a request nobody made.
-  const requestedImageCount = Number.parseInt(imageCount, 10);
-  const effectiveImageCount =
-    Number.isInteger(requestedImageCount) && requestedImageCount >= 1 && requestedImageCount <= IMAGE_GENERATOR_MAX_IMAGE_COUNT
-      ? requestedImageCount
-      : 1;
-  const imageCountError =
-    effectiveImageCount > 1 && assembledControls.seed !== undefined
-      ? "A set seed makes every image in the run identical — clear the seed, or ask for one image."
-      : null;
-  if (effectiveImageCount > 1) {
-    // Not pushed to `controlLines`: those are the values the provider receives,
-    // and a loop count reading alongside them as "3 images" is exactly the
-    // native-image-set confusion this bench must not create. It has its own
-    // summary line instead.
-    assembledControls.imageCount = effectiveImageCount;
-  }
-  if (bindings.negativePrompt !== undefined && negativePrompt.trim() !== "") {
-    assembledControls.negativePrompt = negativePrompt.trim();
-    controlLines.push("negative prompt");
-  }
-  const parsedGuidance = parseStrictNumber(guidance, "number");
-  const guidanceError =
-    bindings.guidance !== undefined && parsedGuidance.kind === "invalid"
-      ? "Guidance is a number — fix or clear it to run."
-      : null;
-  if (bindings.guidance !== undefined && parsedGuidance.kind === "value") {
-    assembledControls.guidance = parsedGuidance.value;
-    controlLines.push(`guidance ${String(parsedGuidance.value)}`);
-  }
-  const parsedSteps = parseStrictNumber(steps, "integer");
-  const stepsError =
-    bindings.steps !== undefined &&
-    (parsedSteps.kind === "invalid" || (parsedSteps.kind === "value" && parsedSteps.value < 1))
-      ? "Steps is a whole number of 1 or more — fix or clear it to run."
-      : null;
-  if (bindings.steps !== undefined && parsedSteps.kind === "value" && parsedSteps.value >= 1) {
-    assembledControls.steps = parsedSteps.value;
-    controlLines.push(`steps ${String(parsedSteps.value)}`);
-  }
-  const parsedStrength = parseStrictNumber(editStrength, "number");
-  const editStrengthError =
-    bindings.editStrength !== undefined && parsedStrength.kind === "invalid"
-      ? "Edit strength is a number — fix or clear it to run."
-      : null;
-  if (bindings.editStrength !== undefined && parsedStrength.kind === "value") {
-    assembledControls.editStrength = parsedStrength.value;
-    controlLines.push(`edit strength ${String(parsedStrength.value)}`);
-  }
-  if (resolutionTierOffered && resolution !== "") {
-    assembledControls.resolution = resolution;
-    controlLines.push(`resolution ${resolution}`);
-  }
-  // Only a member the current version still declares AND still resolves to
-  // travels. Reachability rather than mere membership, because the two differ:
-  // a declared-but-unreachable member is not in the select, so sending it would
-  // submit a value the operator cannot see and the runner is certain to refuse.
-  if (aspect !== "" && shapeIsReachable(selectedModel, aspect)) {
-    assembledControls.aspect = aspect;
-    controlLines.push(`shape ${aspect}`);
-  }
-  if (bindings.thinkingMode !== undefined && thinkingMode) {
-    assembledControls.thinkingMode = true;
-    controlLines.push("thinking mode");
-  }
-  if (bindings.fastMode !== undefined && fastMode !== "") {
-    assembledControls.fastMode = fastMode === "on";
-    controlLines.push(fastMode === "on" ? "fast mode on" : "fast mode off");
-  }
-  if (loraBound && selectedLora !== null) {
-    assembledControls.lora = {
-      id: selectedLora.id,
-      ...(Number.isFinite(requestedScale) ? { scale: requestedScale } : {}),
-    };
-    controlLines.push(
-      `LoRA ${selectedLora.label}${Number.isFinite(requestedScale) ? ` @ ${String(requestedScale)}` : ""}`,
-    );
-  }
+  const {
+    assembledControls,
+    controlLines,
+    seedError,
+    effectiveImageCount,
+    imageCountError,
+    guidanceError,
+    stepsError,
+    editStrengthError,
+    assembledProviderInputs,
+    advancedLines,
+    advancedErrors,
+    primaryCount,
+    primaryComplete,
+    overCapacity,
+    filledDedicated,
+    missingRequiredDedicated,
+    operation,
+    operationSupported,
+    promptRequired,
+  } = assembleGeneratorRequest({
+    seed,
+    imageCount,
+    negativePrompt,
+    guidance,
+    steps,
+    editStrength,
+    aspect,
+    resolution,
+    thinkingMode,
+    fastMode,
+    bindings,
+    resolutionTierOffered,
+    selectedModel,
+    loraBound,
+    selectedLora,
+    requestedScale,
+    advancedInputs,
+    providerValues,
+    primaryRows,
+    capacity,
+    dedicatedSlots,
+    dedicated,
+    modelCanEdit,
+    capabilities,
+  });
 
-  const assembledProviderInputs: ImageGeneratorProviderInputs = {};
-  const advancedLines: string[] = [];
-  const advancedErrors: Record<string, string> = {};
-  for (const descriptor of advancedInputs) {
-    const raw = (providerValues[descriptor.field] ?? "").trim();
-    if (raw === "") continue;
-    let value: string | number | boolean;
-    if (descriptor.type === "boolean") value = raw === "true";
-    else if (descriptor.type === "integer" || descriptor.type === "number") {
-      const parsed = parseStrictNumber(raw, descriptor.type);
-      if (parsed.kind !== "value") {
-        advancedErrors[descriptor.field] =
-          descriptor.type === "integer"
-            ? "A whole number — fix or clear it to run."
-            : "A number — fix or clear it to run.";
-        continue;
-      }
-      value = parsed.value;
-    } else value = raw;
-    assembledProviderInputs[descriptor.field] = value;
-    advancedLines.push(`${descriptor.field} = ${String(value)}`);
-  }
+  const {
+    prefillModelMissing,
+    versionDrift,
+    effectiveVersionId,
+    loraVersionMismatch,
+    prefillDrift,
+  } = reconcileGeneratorPrefill({
+    prefill,
+    prefillModelResolved,
+    modelsLoaded: models.data !== null,
+    modelId,
+    registeredModels,
+    selectedModel,
+    pinnedVersion,
+    versionPolicy,
+    selectedLora,
+    bindings,
+    resolutionTierOffered,
+    loraBound,
+    advancedInputs,
+    dedicatedSlots,
+  });
 
-  const primaryCount = primaryRows.filter((row) => row.imageId !== null).length;
-  const primaryComplete = primaryRows.every((row) => row.imageId !== null);
-  const overCapacity = capacity !== null && primaryRows.length > capacity;
-  const filledDedicated = dedicatedSlots.filter((slot) => dedicated[slot.role] !== undefined);
-  const missingRequiredDedicated = dedicatedSlots.filter(
-    (slot) => slot.binding.required && dedicated[slot.role] === undefined,
-  );
-  // The runner's own rule: a PRIMARY reference makes this an edit. A dedicated
-  // structural input does not — it is its own
-  // provider field, and a model that generates from a prompt while taking a
-  // required pose map is still generating. Only a model that cannot generate at
-  // all reads its structural image as the thing being edited.
-  const operation: "edit" | "generate" =
-    primaryCount > 0
-      ? "edit"
-      : filledDedicated.length > 0 && selectedModel !== null && !selectedModel.canGenerate && modelCanEdit
-        ? "edit"
-        : "generate";
-  const operationSupported =
-    selectedModel === null || (operation === "edit" ? modelCanEdit : selectedModel.canGenerate);
-
-  // Whether this version needs prompt text at all, from its own probed
-  // descriptor. A record with no descriptor for the prompt field says nothing,
-  // and silence means "required" — the server refuses on the same rule, so an
-  // enabled button here would only buy a refusal.
-  const promptDescriptor = (capabilities?.providerInputs ?? []).find(
-    (descriptor) => descriptor.field === (capabilities?.prompt?.field ?? "prompt"),
-  );
-  const promptRequired =
-    selectedModel === null || promptDescriptor === undefined || (promptDescriptor.required && promptDescriptor.default === undefined);
-
-  // A duplicate whose model has drifted — comparison honesty: the
-  // fact is surfaced BEFORE submit, never silently run on different weights.
-  const prefillModelMissing =
-    prefill !== null &&
-    prefillModelResolved &&
-    models.data !== null &&
-    modelId === "" &&
-    !registeredModels.some((model) => model.slug === prefill.modelSlug);
-  const versionDrift =
-    prefill !== null &&
-    prefill.requestedVersionId !== null &&
-    selectedModel !== null &&
-    selectedModel.slug === prefill.modelSlug &&
-    pinnedVersion !== null &&
-    pinnedVersion !== prefill.requestedVersionId;
-
-  // The version this run will actually be judged against: the model's own pin,
-  // unless a drifted duplicate chose to replay the one its source ran — the
-  // only case where that choice is offered, and the same condition the submit
-  // below uses to send it.
-  const effectiveVersionId =
-    versionDrift && versionPolicy === "captured" ? (prefill?.requestedVersionId ?? null) : pinnedVersion;
-
-  // A LoRA row that names exact versions is a reviewer saying these weights do
-  // NOT survive a version change, so a pinned version outside that list is a
-  // pre-spend refusal exactly like the model mismatch above — surfaced here for
-  // the same reason, and worded the same way. Declared beside the version facts
-  // rather than beside the other LoRA rails because it needs the replay choice,
-  // which is settled here. A row naming no versions runs on any of them, and a
-  // model with no pin is already refused by its own warning.
-  const loraVersionMismatch =
-    selectedLora !== null &&
-    selectedLora.compatibleVersionIds.length > 0 &&
-    effectiveVersionId !== null &&
-    !selectedLora.compatibleVersionIds.includes(effectiveVersionId);
-
-  // Capability drift on a duplicate — the same honesty rule one level down: a
-  // prefill seeded from an older capability record can carry values the
-  // CURRENT record has no binding, descriptor, or slot for. The submit already
-  // omits each one (every control above is gated on the current record), so
-  // this list is the warning's job — the admin reads what the duplicate will
-  // NOT re-send before spending, not after comparing outputs.
-  const prefillDrift: string[] = [];
-  if (prefill !== null && selectedModel !== null && selectedModel.slug === prefill.modelSlug) {
-    if (prefill.controls.seed !== undefined && bindings.seed === undefined) prefillDrift.push("seed");
-    if (prefill.controls.negativePrompt !== undefined && bindings.negativePrompt === undefined) {
-      prefillDrift.push("negative prompt");
-    }
-    if (prefill.controls.guidance !== undefined && bindings.guidance === undefined) prefillDrift.push("guidance");
-    if (prefill.controls.steps !== undefined && bindings.steps === undefined) prefillDrift.push("steps");
-    if (prefill.controls.editStrength !== undefined && bindings.editStrength === undefined) {
-      prefillDrift.push("edit strength");
-    }
-    if (prefill.controls.resolution !== undefined && !resolutionTierOffered) {
-      prefillDrift.push("resolution");
-    }
-    // Explicit dimensions are withheld by this form outright (see the Controls
-    // assembly above), so a duplicated width/height never re-sends whatever
-    // the current version binds.
-    if (prefill.controls.width !== undefined) prefillDrift.push("width");
-    if (prefill.controls.height !== undefined) prefillDrift.push("height");
-    if (prefill.controls.aspect !== undefined && !shapeIsReachable(selectedModel, prefill.controls.aspect)) {
-      prefillDrift.push("output shape");
-    }
-    if (prefill.controls.fastMode !== undefined && bindings.fastMode === undefined) {
-      prefillDrift.push("fast mode");
-    }
-    if (prefill.controls.thinkingMode !== undefined && bindings.thinkingMode === undefined) {
-      prefillDrift.push("thinking mode");
-    }
-    // Multi-image controls the one-output policy makes unreachable here, so a
-    // duplicate that carried one says so rather than dropping it silently.
-    if (prefill.controls.coherentSet !== undefined) prefillDrift.push("coherent set");
-    if (prefill.controls.outputCount !== undefined) prefillDrift.push("output count");
-    if (prefill.controls.lora !== undefined && !loraBound) prefillDrift.push("LoRA");
-    for (const field of Object.keys(prefill.providerInputs)) {
-      if (!advancedInputs.some((descriptor) => descriptor.field === field)) prefillDrift.push(field);
-    }
-    for (const input of prefill.inputs.dedicated) {
-      if (!dedicatedSlots.some((slot) => slot.role === input.role)) {
-        prefillDrift.push(`${imageGeneratorRoleLabel(input.role)} input`);
-      }
-    }
-  }
-
-  const ready =
-    selectedModel !== null &&
-    pinnedVersion !== null &&
-    (!promptRequired || prompt.trim() !== "") &&
-    primaryComplete &&
-    !overCapacity &&
-    missingRequiredDedicated.length === 0 &&
-    operationSupported &&
-    loraReady &&
-    seedError === null &&
-    imageCountError === null &&
-    guidanceError === null &&
-    stepsError === null &&
-    editStrengthError === null &&
-    Object.keys(advancedErrors).length === 0;
-
-  const addRow = () => {
-    setPrimaryRows((rows) => [...rows, { key: nextRowKey, imageId: null, purpose: "" }]);
-    setNextRowKey((key) => key + 1);
-    setOpenPicker(`primary:${String(nextRowKey)}`);
-  };
-  const removeRow = (key: number) => {
-    setPrimaryRows((rows) => rows.filter((row) => row.key !== key));
-  };
-  const moveRow = (index: number, delta: -1 | 1) => {
-    setPrimaryRows((rows) => {
-      const target = index + delta;
-      if (target < 0 || target >= rows.length) return rows;
-      const next = [...rows];
-      const [moved] = next.splice(index, 1);
-      if (moved === undefined) return rows;
-      next.splice(target, 0, moved);
-      return next;
-    });
-  };
-  const setRowImage = (key: number, imageId: string | null) => {
-    setPrimaryRows((rows) => rows.map((row) => (row.key === key ? { ...row, imageId } : row)));
-    if (imageId !== null) setOpenPicker(null);
-  };
-  const setRowPurpose = (key: number, purpose: PurposeRole | "") => {
-    setPrimaryRows((rows) => rows.map((row) => (row.key === key ? { ...row, purpose } : row)));
-  };
-  const setDedicatedImage = (role: ImageGeneratorDedicatedRole, imageId: string | null) => {
-    setDedicated((current) => {
-      const next = { ...current };
-      if (imageId === null) delete next[role];
-      else next[role] = imageId;
-      return next;
-    });
-    if (imageId !== null) setOpenPicker(null);
-  };
+  const {
+    ready,
+  } = generatorRequestReady({
+    selectedModel,
+    pinnedVersion,
+    promptRequired,
+    prompt,
+    primaryComplete,
+    overCapacity,
+    missingRequiredDedicated,
+    operationSupported,
+    loraReady,
+    seedError,
+    imageCountError,
+    guidanceError,
+    stepsError,
+    editStrengthError,
+    advancedErrors,
+  });
 
   const submit = async () => {
     if (!ready || selectedModel === null) return;
-    const primary = primaryRows.flatMap((row) =>
-      row.imageId === null ? [] : [{ imageId: row.imageId, ...(row.purpose === "" ? {} : { purpose: row.purpose }) }],
-    );
-    const dedicatedInputs = dedicatedSlots.flatMap((slot) => {
-      const imageId = dedicated[slot.role];
-      return imageId === undefined ? [] : [{ role: slot.role, imageId }];
-    });
-    const body: ImageGeneratorCreateRunRequest = {
-      modelId: selectedModel.id,
-      prompt: prompt.trim(),
-      ...(primary.length > 0 || dedicatedInputs.length > 0
-        ? { inputs: { primary, dedicated: dedicatedInputs } }
-        : {}),
-      ...(Object.keys(assembledControls).length > 0 ? { controls: assembledControls } : {}),
-      ...(Object.keys(assembledProviderInputs).length > 0 ? { providerInputs: assembledProviderInputs } : {}),
-      ...(prefill === null ? {} : { sourceRunId: prefill.sourceRunId }),
-      // Only sent when the operator actually chose the replay, and only while
-      // the drift that offered the choice is real.
-      ...(versionDrift && versionPolicy === "captured" ? { versionPolicy: "captured" as const } : {}),
-    };
+    const {
+    body,
+  } = generatorRequestBody({
+    selectedModel,
+    prompt,
+    primaryRows,
+    dedicatedSlots,
+    dedicated,
+    assembledControls,
+    assembledProviderInputs,
+    sourceRunId: prefill?.sourceRunId ?? null,
+    versionDrift,
+    versionPolicy,
+  });
     setSubmitting(true);
     const result = await imageGeneratorApi.runs.create(body);
     setSubmitting(false);
@@ -897,35 +420,6 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     });
     onCreated(result.data.run.id);
   };
-
-  /** One image slot's thumbnail — or an honest "nothing yet". */
-  const slotThumb = (imageId: string | null, alt: string) =>
-    imageId !== null ? (
-      // eslint-disable-next-line @next/next/no-img-element -- local asset route at thumbnail size; next/image adds nothing here
-      <img
-        src={imageUrl(imageId)}
-        alt={alt}
-        className="h-14 w-14 rounded-card border border-ink-600 bg-ink-950 object-cover"
-      />
-    ) : (
-      <span className="text-xs text-paper-600">no image chosen</span>
-    );
-
-  // What the chosen row can take, in one line — the capability record's own
-  // facts, restated where the admin chooses rather than after a refusal.
-  const capabilityParts: string[] = [];
-  if (selectedModel !== null) {
-    if (selectedModel.canGenerate) capabilityParts.push("prompt-only");
-    if (modelCanEdit && modelCapacity !== null && modelCapacity > 0) {
-      capabilityParts.push(`up to ${String(modelCapacity)} reference image${modelCapacity === 1 ? "" : "s"}`);
-    }
-    if (dedicatedSlots.length > 0) {
-      capabilityParts.push(
-        `dedicated ${dedicatedSlots.map((slot) => imageGeneratorRoleLabel(slot.role)).join(" / ")} input${dedicatedSlots.length === 1 ? "" : "s"}`,
-      );
-    }
-  }
-  const capabilitySummary = capabilityParts.length > 0 ? capabilityParts.join(" · ") : "—";
 
   const modelHint = ((): string => {
     const base =
@@ -1046,414 +540,63 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
           )}
         </Field>
 
-        {modelCanEdit && capacity !== null && capacity > 0 ? (
-          <div className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Primary references</h3>
-            <p className="text-xs text-paper-500">
-              {`Ordered images sent through the model’s numbered reference input — up to ${String(capacity)} here `}
-              {`(the model takes ${String(modelCapacity ?? 0)}; the app caps freeform runs at ${String(IMAGE_GENERATOR_MAX_PRIMARY)}). `}
-              {"The optional purpose is recorded on the run for provenance only: every primary reference is sent "}
-              {"under the neutral reference role, and a purpose changes nothing about the request."}
-            </p>
-            {primaryRows.map((row, index) => (
-              <div key={row.key} className="flex flex-col gap-2 rounded-card border border-ink-700 bg-ink-950/40 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] tracking-wide text-paper-500 uppercase">
-                    Image {index + 1}
-                  </span>
-                  {slotThumb(row.imageId, `Reference ${String(index + 1)}`)}
-                  <Select
-                    value={row.purpose}
-                    onChange={(e) => setRowPurpose(row.key, e.target.value as PurposeRole | "")}
-                    className="w-52"
-                    aria-label={`Recorded purpose for reference ${String(index + 1)}`}
-                  >
-                    <option value="">— No recorded purpose —</option>
-                    {PURPOSE_ROLES.map((role) => (
-                      <option key={role} value={role}>
-                        {imageGeneratorRoleLabel(role)}
-                      </option>
-                    ))}
-                  </Select>
-                  <div className="ml-auto flex items-center gap-1">
-                    <Button size="sm" variant="quiet" disabled={index === 0} onClick={() => moveRow(index, -1)}>
-                      Up
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="quiet"
-                      disabled={index === primaryRows.length - 1}
-                      onClick={() => moveRow(index, 1)}
-                    >
-                      Down
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="quiet"
-                      onClick={() =>
-                        setOpenPicker(openPicker === `primary:${String(row.key)}` ? null : `primary:${String(row.key)}`)
-                      }
-                    >
-                      {row.imageId === null ? "Choose image" : "Change image"}
-                    </Button>
-                    <Button size="sm" variant="quiet" onClick={() => removeRow(row.key)}>
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-                {openPicker === `primary:${String(row.key)}` ? (
-                  <OwnedImagePicker
-                    label={`Reference ${String(index + 1)} image`}
-                    hint="Any of your ready images. Clicking the chosen tile again clears it."
-                    value={row.imageId}
-                    onChange={(imageId) => setRowImage(row.key, imageId)}
-                  />
-                ) : null}
-              </div>
-            ))}
-            {primaryRows.length < capacity ? (
-              <div>
-                <Button size="sm" onClick={addRow}>
-                  Add reference
-                </Button>
-              </div>
-            ) : null}
-            {overCapacity ? (
-              <p className="text-xs text-danger-300" role="alert">
-                {`${String(primaryRows.length)} references exceed this model’s capacity of ${String(capacity)}. `}
-                {"Nothing is trimmed for you — remove rows until the request fits."}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        <GeneratorReferences
+          modelCanEdit={modelCanEdit}
+          capacity={capacity}
+          modelCapacity={modelCapacity}
+          primaryRows={primaryRows}
+          setPrimaryRows={setPrimaryRows}
+          nextRowKey={nextRowKey}
+          setNextRowKey={setNextRowKey}
+          dedicatedSlots={dedicatedSlots}
+          dedicated={dedicated}
+          setDedicated={setDedicated}
+          openPicker={openPicker}
+          setOpenPicker={setOpenPicker}
+          overCapacity={overCapacity}
+          missingRequiredDedicated={missingRequiredDedicated}
+        />
 
-        {dedicatedSlots.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Dedicated structural inputs</h3>
-            <p className="text-xs text-paper-500">
-              {"Inputs the probed version declares its own fields for — they do not spend primary-reference "}
-              {"capacity, and the provider field behind each slot is a probe fact, never typed here."}
-            </p>
-            {dedicatedSlots.map((slot) => {
-              const imageId = dedicated[slot.role] ?? null;
-              const pickerKey = `dedicated:${slot.role}`;
-              return (
-                <div key={slot.role} className="flex flex-col gap-2 rounded-card border border-ink-700 bg-ink-950/40 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] tracking-wide text-paper-500 uppercase">
-                      {imageGeneratorRoleLabel(slot.role)}
-                    </span>
-                    {slot.binding.required ? <Tag tone="accent">required</Tag> : <Tag>optional</Tag>}
-                    <code className="text-[10px] text-paper-600">{slot.binding.field}</code>
-                    {slotThumb(imageId, `${imageGeneratorRoleLabel(slot.role)} input`)}
-                    <div className="ml-auto flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="quiet"
-                        onClick={() => setOpenPicker(openPicker === pickerKey ? null : pickerKey)}
-                      >
-                        {imageId === null ? "Choose image" : "Change image"}
-                      </Button>
-                      {imageId !== null ? (
-                        <Button size="sm" variant="quiet" onClick={() => setDedicatedImage(slot.role, null)}>
-                          Clear
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                  {openPicker === pickerKey ? (
-                    <OwnedImagePicker
-                      label={`${imageGeneratorRoleLabel(slot.role)} image`}
-                      hint="Any of your ready images — a lab fixture is usually the honest choice for a structural map."
-                      value={imageId}
-                      onChange={(picked) => setDedicatedImage(slot.role, picked)}
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
-            {missingRequiredDedicated.length > 0 ? (
-              <p className="text-xs text-danger-300" role="alert">
-                {`The model requires ${missingRequiredDedicated
-                  .map((slot) => imageGeneratorRoleLabel(slot.role))
-                  .join(", ")} — the run is held until each required slot has an image.`}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {selectedModel !== null &&
-        (bindings.seed !== undefined ||
-          bindings.negativePrompt !== undefined ||
-          bindings.guidance !== undefined ||
-          bindings.steps !== undefined ||
-          bindings.editStrength !== undefined ||
-          resolutionTierOffered ||
-          bindings.thinkingMode !== undefined ||
-          bindings.fastMode !== undefined ||
-          shapeOptions.length > 0 ||
-          loraBound) ? (
-          <div className="flex flex-col gap-3">
-            <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Controls</h3>
-            <p className="text-xs text-paper-500">
-              {"Only what the active probed version binds is offered, and everything starts unset — the provider’s "}
-              {"own defaults rule until you change a value. An explicitly set value that cannot be represented "}
-              {"refuses the run before any spend rather than being dropped."}
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {bindings.seed !== undefined ? (
-                <div className="flex flex-col gap-1">
-                  <NumberField
-                    label="Seed"
-                    hint="Blank is random. A set seed is what makes a duplicate reproducible."
-                    value={seed}
-                    min={0}
-                    step={1}
-                    placeholder="random"
-                    onChange={setSeed}
-                  />
-                  {seedError !== null ? (
-                    <p className="text-xs text-danger-300" role="alert">
-                      {seedError}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {bindings.guidance !== undefined ? (
-                <div className="flex flex-col gap-1">
-                  <NumberField
-                    label="Guidance"
-                    hint={bindingRangeHint(bindings.guidance, "Blank is the provider default.")}
-                    value={guidance}
-                    min={bindings.guidance.minimum}
-                    max={bindings.guidance.maximum}
-                    step={0.1}
-                    placeholder="provider default"
-                    onChange={setGuidance}
-                  />
-                  {guidanceError !== null ? (
-                    <p className="text-xs text-danger-300" role="alert">
-                      {guidanceError}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {bindings.steps !== undefined ? (
-                <div className="flex flex-col gap-1">
-                  <NumberField
-                    label="Steps"
-                    hint={bindingRangeHint(bindings.steps, "Blank is the provider default.")}
-                    value={steps}
-                    min={bindings.steps.minimum ?? 1}
-                    max={bindings.steps.maximum}
-                    step={1}
-                    placeholder="provider default"
-                    onChange={setSteps}
-                  />
-                  {stepsError !== null ? (
-                    <p className="text-xs text-danger-300" role="alert">
-                      {stepsError}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {bindings.editStrength !== undefined ? (
-                <div className="flex flex-col gap-1">
-                  <NumberField
-                    label="Edit strength"
-                    hint={bindingRangeHint(bindings.editStrength, "How far the render may move from its source; blank is the provider default.")}
-                    value={editStrength}
-                    min={bindings.editStrength.minimum ?? 0}
-                    max={bindings.editStrength.maximum ?? 1}
-                    step={0.05}
-                    placeholder="provider default"
-                    onChange={setEditStrength}
-                  />
-                  {editStrengthError !== null ? (
-                    <p className="text-xs text-danger-300" role="alert">
-                      {editStrengthError}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {bindings.thinkingMode !== undefined ? (
-                <Field label="Thinking mode" hint="Unchecked is the provider default — the switch is only sent when ticked.">
-                  {(id) => (
-                    <label htmlFor={id} className="flex items-center gap-2 text-sm text-paper-300">
-                      <input
-                        id={id}
-                        type="checkbox"
-                        checked={thinkingMode}
-                        onChange={(e) => setThinkingMode(e.target.checked)}
-                      />
-                      {"Ask the model to reason before rendering"}
-                    </label>
-                  )}
-                </Field>
-              ) : null}
-              {bindings.fastMode !== undefined ? (
-                <Field
-                  label="Fast mode"
-                  hint={
-                    "Blank sends nothing, so whatever this model already runs with stands — the provider’s default, " +
-                    "or Vesper’s reviewed correction where one exists. On asks for the accelerated sampling path; " +
-                    "Off refuses it."
-                  }
-                >
-                  {(id) => (
-                    <Select
-                      id={id}
-                      value={fastMode}
-                      onChange={(e) => setFastMode(e.target.value as "" | "on" | "off")}
-                    >
-                      <option value="">— Provider default —</option>
-                      <option value="on">On</option>
-                      <option value="off">Off</option>
-                    </Select>
-                  )}
-                </Field>
-              ) : null}
-              {shapeOptions.length > 0 ? (
-                <Field
-                  label="Output shape"
-                  hint="Blank sends no shape at all — the model answers at its own default, and nothing is cropped afterwards."
-                >
-                  {(id) => (
-                    <Select id={id} value={aspect} onChange={(e) => setAspect(e.target.value)}>
-                      <option value="">— Model default —</option>
-                      {shapeOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </Select>
-                  )}
-                </Field>
-              ) : null}
-              {resolutionTierOffered ? (
-                <Field label="Resolution" hint="Blank is the provider default tier.">
-                  {(id) => (
-                    <Select
-                      id={id}
-                      value={resolution}
-                      onChange={(e) => setResolution(e.target.value as ImageResolutionTier | "")}
-                    >
-                      <option value="">— Provider default —</option>
-                      {imageResolutionTiers
-                        .filter(
-                          (tier) =>
-                            bindings.resolutionTier?.enumValues === undefined ||
-                            bindings.resolutionTier.enumValues.includes(tier),
-                        )
-                        .map((tier) => (
-                          <option key={tier} value={tier}>
-                            {tier}
-                          </option>
-                        ))}
-                    </Select>
-                  )}
-                </Field>
-              ) : null}
-              {/* No Width/Height here even where customWidth/customHeight are
-                  bound — withheld until the shared custom-resolution path works
-                  end to end (rationale on the controls assembly above). */}
-            </div>
-              {/* Stated unconditionally, and deliberately not narrowed to the
-                  endpoints known to ignore the field. A slug test here is the
-                  thing @vesper/image-models exists to keep out of shared code,
-                  and the honest general warning is the same warning: a declared
-                  input is a schema fact, and acting on it is a behavior fact the
-                  schema cannot promise. Qwen Image 2512 is the measured case —
-                  16 of 16 paired renders kept what the negative field excluded. */}
-            {bindings.negativePrompt !== undefined ? (
-              <Field
-                label="Negative prompt"
-                hint={
-                  "What the render should avoid. Blank sends nothing. A model declaring this field is not a promise " +
-                  "it acts on one — check the model’s page under docs/image-models before trusting an exclusion."
-                }
-              >
-                {(id) => (
-                  <Textarea
-                    id={id}
-                    rows={2}
-                    value={negativePrompt}
-                    maxLength={2000}
-                    spellCheck={false}
-                    onChange={(e) => setNegativePrompt(e.target.value)}
-                  />
-                )}
-              </Field>
-            ) : null}
-            {loraBound ? (
-              <>
-                <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
-                  <Field
-                    label="LoRA"
-                    hint={
-                      enabledLoras.length === 0
-                        ? "None in the library yet. Curate one in the LoRA library on the Image models page — only enabled rows are offered here."
-                        : loraPrefilled
-                          ? "Pre-filled because this is the pairing intimate scenes run on in production. Change or clear it like any other pick."
-                          : "Optional. Blends a curated weights file into this run — the library row decides which models and strengths it may run at."
-                    }
-                  >
-                    {(id) => (
-                      <Select id={id} value={loraId} onChange={(e) => setLoraId(e.target.value)}>
-                        <option value="">— None —</option>
-                        {enabledLoras.map((lora) => (
-                          <option key={lora.id} value={lora.id}>
-                            {lora.label}
-                          </option>
-                        ))}
-                      </Select>
-                    )}
-                  </Field>
-                  {selectedLora !== null ? (
-                    <Field label="Scale">
-                      {(id) => (
-                        <Input
-                          id={id}
-                          type="number"
-                          step={0.05}
-                          min={selectedLora.minimumScale}
-                          max={selectedLora.maximumScale}
-                          value={loraScale}
-                          onChange={(e) => setLoraScale(e.target.value)}
-                        />
-                      )}
-                    </Field>
-                  ) : null}
-                </div>
-                {selectedLora !== null ? (
-                  <p className="text-xs text-paper-500">
-                    {`Curated range ${String(selectedLora.minimumScale)}–${String(selectedLora.maximumScale)}, default ${String(selectedLora.defaultScale)}. `}
-                    {"A scale outside the band is refused before any spend rather than clamped — widen the row in the "}
-                    {"LoRA library if the band is the thing that is wrong."}
-                  </p>
-                ) : null}
-                {loraScaleError !== null ? (
-                  <p className="text-xs text-danger-300" role="alert">
-                    {loraScaleError}
-                  </p>
-                ) : null}
-                {loraModelMismatch ? (
-                  <p className="text-xs text-danger-300">
-                    {`These weights are not curated for ${baseImageModelSlug(selectedModel.slug)} — as it stands the `}
-                    {"run is refused before any spend. Pick a listed model, or widen the row in the LoRA library."}
-                  </p>
-                ) : null}
-                {loraVersionMismatch ? (
-                  <p className="text-xs text-danger-300">
-                    {`These weights name the exact versions they were reviewed against, and ${effectiveVersionId ?? ""} `}
-                    {"is not one of them — as it stands the run is refused before any spend. Pick a different LoRA, or "}
-                    {"add this version to the row in the LoRA library."}
-                  </p>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-        ) : null}
+        <GeneratorControls
+          selectedModel={selectedModel}
+          bindings={bindings}
+          resolutionTierOffered={resolutionTierOffered}
+          shapeOptions={shapeOptions}
+          loraBound={loraBound}
+          seed={seed}
+          setSeed={setSeed}
+          guidance={guidance}
+          setGuidance={setGuidance}
+          steps={steps}
+          setSteps={setSteps}
+          editStrength={editStrength}
+          setEditStrength={setEditStrength}
+          aspect={aspect}
+          setAspect={setAspect}
+          negativePrompt={negativePrompt}
+          setNegativePrompt={setNegativePrompt}
+          loraId={loraId}
+          setLoraId={setLoraId}
+          loraScale={loraScale}
+          setLoraScale={setLoraScale}
+          resolution={resolution}
+          setResolution={setResolution}
+          thinkingMode={thinkingMode}
+          setThinkingMode={setThinkingMode}
+          fastMode={fastMode}
+          setFastMode={setFastMode}
+          seedError={seedError}
+          guidanceError={guidanceError}
+          stepsError={stepsError}
+          editStrengthError={editStrengthError}
+          loraScaleError={loraScaleError}
+          enabledLoras={enabledLoras}
+          loraPrefilled={loraPrefilled}
+          selectedLora={selectedLora}
+          loraModelMismatch={loraModelMismatch}
+          loraVersionMismatch={loraVersionMismatch}
+          effectiveVersionId={effectiveVersionId}
+        />
 
         {selectedModel !== null ? (
           <div className="flex flex-col gap-3">

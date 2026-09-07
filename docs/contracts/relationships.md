@@ -127,7 +127,7 @@ Pure trait → coefficient functions, kept deterministic in the reaction step �
 - **`regardDispositionOverlays(bandId, traits)`** — Render-time **soft coloring** from the regard band (`REGARD_TRAIT_SHIFTS`): warm regard reads warmer/less guarded/less inhibited, hostile colder and walled-off. Shifts **only authored** traits (never fabricates one) as `source:"condition"` overlays; `neutral` shifts nothing; familiarity deliberately does *not* color disposition. Loosens tone only — never raises the escalation floor. **Capped at `REGARD_OVERLAY_MAX_BAND_STEPS` (1) band step from the authored value** (via `clampValueToBandSteps` in `traits/registry.ts`) so a long, warm chat can't homogenize every character toward the same warm/open reading — the authored band stays recognizable.
 - **`stateDispositionOverlays(traits, meters)`** — Transient **disinhibition** from live state: intoxication + arousal past a floor drop guardedness/inhibition, as `source:"condition"` overlays that recede as the meters drift back. Only authored traits shift.
 
-Empty traits ⇒ unit/identity. The two `*DispositionOverlays` are wired into the chat prompt builder (`character-chat.ts`).
+Empty traits ⇒ unit/identity. The two `*DispositionOverlays` are wired into the chat prompt state and composition owners (`character-chat/state-sections.ts`, `character-chat/single.ts`, and `character-chat/ensemble.ts`).
 
 ### How it's stored and resolved
 

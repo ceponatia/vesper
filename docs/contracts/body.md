@@ -189,4 +189,4 @@ with a small synonym map for colloquialisms that match neither (`mouth` → lips
 | `expandBodyTarget(term, isApplicable)` | The expansion filtered through a character's realized body — pass `realizeBody(...).isAttributeApplicable`, so "chest" on a flat-chested character omits breast attributes. |
 | `detectBodyTargets(text)`              | Scans free prose (whole-word, longest-phrase-first).                                                                                                                        |
 
-Consumers: the **chat lane's Sensory-focus block** (`buildSensoryFocusSection`, prompts/character-chat.ts — `expandBodyTarget` over the detected focus `region` surfaces the target's own attributes; the resolver also handles **singular forms** of plural locations — "foot" → `feet` — for exactly this).
+Consumers: the **chat lane's Sensory-focus block** (`buildSensoryFocusSection`, `prompts/character-chat/sensory-sections.ts` — `expandBodyTarget` over the detected focus `region` surfaces the target's own attributes; the resolver also handles **singular forms** of plural locations — "foot" → `feet` — for exactly this).

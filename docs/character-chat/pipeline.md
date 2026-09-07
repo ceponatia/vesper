@@ -66,7 +66,7 @@ exchange:
    An older target returns 400 `rerun_requires_branch` before deleting anything: the
    one-exchange snapshot cannot restore an arbitrary discarded suffix, so the honest
    operation is a future conversation branch, not a false rollback. From there an accepted
-   rerun streams exactly like `send`. The client (`chat-conversation.tsx`) deletes NOTHING
+   rerun streams exactly like `send`. The client (`use-chat-exchange.ts`) deletes NOTHING
    and never abort-and-hopes: it optimistically snips the lines after the target and, on
    any failure, restores them (the server guarantees the transcript is byte-identical).
 3. **Window + summary.** The rolling summary covers everything up to its watermark; the

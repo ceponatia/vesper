@@ -52,9 +52,9 @@ import type { SensoryFocusHint } from "./chat-intent";
  * 3. **Compilation** — hand this cut's admitted constraints, the turn's corrections, and
  *    whatever resolved action outcomes the caller supplies to the lane-neutral compiler,
  *    which gates, orders, and budgets them. The outcomes are only ever PASSED THROUGH:
- *    the contact adapter (`chat-contact-adapter.ts`) owns the detection, the resolution,
- *    and the persistence acknowledgment behind them, and this file must never be able to
- *    manufacture one — a compiled outcome is the strongest claim the block can make.
+ *    the contact owners (`chat-contact/touch.ts`, `resolution.ts`, and
+ *    `presentation.ts`) own detection, resolution, and acknowledgment verification.
+ *    This file must never manufacture one — a compiled outcome is the strongest claim the block can make.
  *
  * ## Conservative by construction
  *

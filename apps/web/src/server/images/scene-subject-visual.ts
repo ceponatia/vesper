@@ -310,7 +310,7 @@ function produceSubjectVisual(
   const { member, shadow } = subject;
   // Authored base → persisted narrative overlays → this moment's condition
   // overlays: the same three-layer resolve the narrator prompt takes
-  // (`character-chat.ts`'s `fullResolved`), the affordance read takes
+  // (`prompts/character-chat/single.ts`'s `fullResolved`), the affordance read takes
   // (`chat-affordances.ts`'s `resolveSubjectAttributes`) and the shadow
   // assembly itself takes (`visual-state/assemble.ts`'s
   // `resolveShadowAttributes`), so the route's own reveal can never disagree

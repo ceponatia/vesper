@@ -23,19 +23,20 @@ job from the route — a refused job slot deletes the just-created row rather th
 
 ## Code map
 
-| Module                                                     | Owns                                            |
-| ---------------------------------------------------------- | ----------------------------------------------- |
-| `apps/web/src/contracts/images/image-generator.ts`         | statuses, request/wire schemas, failure codes   |
-| `apps/web/src/contracts/images/image-generator-outputs.ts` | the per-prediction output record and its reader |
-| `apps/web/src/server/images/image-generator-store.ts`      | row↔wire, create/list/detail/delete/settle      |
-| `apps/web/src/server/images/image-generator-run.ts`        | runner algorithm, synthetic profile, refusals   |
-| `apps/web/src/server/images/image-generator-render.ts`     | injectable render seam (`renderImageIntent`)    |
-| `apps/web/src/server/images/owned-image-reads.ts`          | shared owner-scoped byte readers                |
-| `apps/web/src/app/api/admin/self/image-generator/…`        | run routes                                      |
-| `apps/web/src/app/api/admin/self/owned-images/route.ts`    | sources endpoint                                |
-| `apps/web/src/app/settings/image-generator/page.tsx`       | server page (`?run=` idiom)                     |
-| `apps/web/src/components/settings/image-generator-*.tsx`   | client UI (page, form, list, detail, copy)      |
-| `apps/web/src/components/settings/owned-image-picker.tsx`  | general owned-image picker                      |
+| Module                                                     | Owns                                                                                    |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `apps/web/src/contracts/images/image-generator.ts`         | statuses, request/wire schemas, failure codes                                           |
+| `apps/web/src/contracts/images/image-generator-outputs.ts` | the per-prediction output record and its reader                                         |
+| `apps/web/src/server/images/image-generator-store.ts`      | row↔wire, create/list/detail/delete/settle                                              |
+| `apps/web/src/server/images/image-generator-run.ts`        | runner algorithm, synthetic profile, refusals                                           |
+| `apps/web/src/server/images/image-generator-render.ts`     | injectable render seam (`renderImageIntent`)                                            |
+| `apps/web/src/server/images/owned-image-reads.ts`          | shared owner-scoped byte readers                                                        |
+| `apps/web/src/app/api/admin/self/image-generator/…`        | run routes                                                                              |
+| `apps/web/src/app/api/admin/self/owned-images/route.ts`    | sources endpoint                                                                        |
+| `apps/web/src/app/settings/image-generator/page.tsx`       | server page (`?run=` idiom)                                                             |
+| `apps/web/src/components/settings/image-generator-*.tsx`   | client UI (page, form, list, detail, copy)                                              |
+| `apps/web/src/components/settings/image-generator-form/`   | model view data, request assembly, prefill interpretation, reference and control fields |
+| `apps/web/src/components/settings/owned-image-picker.tsx`  | general owned-image picker                                                              |
 
 The runner builds a synthetic in-memory profile per run — a pass-through prompt strategy, a caller
 seed policy, and the run's advanced values as provider overrides — so `compileProfileRenderPlan`

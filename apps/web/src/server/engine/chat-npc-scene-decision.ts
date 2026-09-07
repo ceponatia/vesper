@@ -40,11 +40,8 @@ import { parseOrNull } from "@/lib/parse";
 import { agentModelId, generateChecked, withGenerateTimeout, type AgentTelemetry } from "../ai";
 import { characterChatMessages, characterChats, characterChatState, db } from "../db";
 import { log } from "../log";
-import {
-  chatContactMaterialAtCut,
-  CHAT_CONTACT_PLAYER_SUBJECT,
-  type ChatContactMaterialSource,
-} from "./chat-contact-adapter";
+import { chatContactMaterialAtCut, type ChatContactMaterialSource } from "./chat-contact/material";
+import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 import {
   applyChatNpcContactEnding,
   chatReplyContactEventRef,

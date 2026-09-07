@@ -155,7 +155,7 @@ all in the pure `engine/chat-feeling.ts`:
   the bruise's remaining life. A scaled nonzero delta never rounds to zero, the ±5
   clamp is re-applied last, and the trace records `regardScale` + the applied feeling
   for the state tools.
-- **Reply pacing** (UI-only, `lib/chat-pacing.ts` + `chat-conversation.tsx`): the
+- **Reply pacing** (UI-only, `lib/chat-pacing.ts` + `use-chat-exchange.ts`): the
   client holds the "…" bubble before revealing streamed tokens — cold regard ≈700ms,
   the middle ≈250ms, warm none; a standing dark feeling adds ≈500ms, a bright one
   trims; capped at 1.2s and purely presentational (tokens buffer, nothing is lost;

@@ -24,7 +24,7 @@ import {
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { characterChats, chatPermissionEvents, db, events as appEvents } from "../db";
-import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
+import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 import {
   canonicalJson,
   chatContactEventRowsFor,

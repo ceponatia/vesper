@@ -6,27 +6,18 @@ import type { ContactAreaBand, ContactMotionBand, ContactPressureBand } from "..
  * THE ONE SHARED CHAT-CONTACT VOCABULARY: the `CONTACT_TARGET_LOCATION`,
  * `chatContactGestures`, and `GESTURE_CONTACT` data, in one pure shared place.
  *
- * Everything here used to live as private data inside
- * `src/server/engine/chat-contact-adapter.ts`, which was fine while the
- * player-line detector was the only consumer. The NPC actor-control work adds
- * three more: the reply-scene classifier's closed decision schema
- * (`npc-scene-decision.ts`), the evidence congruence verifiers
- * (`npc-scene-evidence.ts`), and — at wiring time — the NPC contact adapter.
- * Four consumers reading four copies of a gesture list is how a location id the
- * schema accepts stops being one the detector can produce, so the data moved
- * HERE (pure contracts, importable by every leg) and the adapter now imports
- * it. The move is behavior-preserving: same members, same tables, same regexes.
+ * Player-line detectors (`server/engine/chat-contact/touch.ts`), the reply-scene
+ * classifier's closed schema (`npc-scene-decision.ts`), its evidence verifiers
+ * (`npc-scene-evidence.ts`), and NPC resolution read this same vocabulary.
+ * A location admitted by the schema therefore stays one the detector can produce.
  *
- * The sentence-eligibility gates ride along for the same reason. The evidence
- * admission gates must "reuse the shared veto machinery … rather than inventing
- * a divergent list", and `src/contracts` cannot import a server module — so the
- * shared machinery lives here and the server adapter re-exports
- * `contactSentenceEligible` for the frozen ending floor
- * (`chat-contact-reply.ts`), whose veto set is therefore UNCHANGED.
+ * Sentence eligibility lives here so contracts never import server modules.
+ * Player input evidence and the reply-side ending floor (`chat-contact-reply.ts`)
+ * import the same gate directly, preserving their shared veto set.
  */
 
 // ---------------------------------------------------------------------------
-// Sentence gates (moved verbatim from chat-contact-adapter.ts)
+// Shared sentence gates
 // ---------------------------------------------------------------------------
 
 /** Sentence boundaries: terminal punctuation, or a line break. */
@@ -79,9 +70,8 @@ export const CHAT_CONTACT_RESTRAINT_RE =
  * The gates EVERY detector shares: a question, a hedge, a denial, or romantic
  * framing is a sentence this proof reads as nothing at all.
  *
- * Three consumers: the player-line detectors (`chat-contact-adapter.ts`), the
- * frozen reply-side NPC ending floor (`chat-contact-reply.ts`, via the
- * adapter's re-export — its veto set is unchanged by the move here), and the
+ * Three consumers: the player-line detectors (`chat-contact/input-evidence.ts`), the
+ * frozen reply-side NPC ending floor (`chat-contact-reply.ts`), and the
  * NPC reply-scene assertion gate (`npc-scene-evidence.ts`), which layers its
  * own third-person vetoes ON TOP rather than altering these.
  */

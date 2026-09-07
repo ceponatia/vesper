@@ -12,7 +12,7 @@ A narrator left unshaped over-produces: long replies that re-describe the unchan
 drift from the mood, end every reply with a question ("interview mode"), and — during
 intimate beats — solicit a check-in every turn. The counter is rules plus per-turn
 deterministic context (no token limits, no extra LLM legs). All prompt wording lives in
-`prompts/character-chat.ts`; the per-turn reads live in `engine/chat-intent.ts`; the state
+`prompts/character-chat/sensory-sections.ts`; the per-turn reads live in `engine/chat-intent.ts`; the state
 lives in the scenario's `scene_memory` (see [scene-memory.md](scene-memory.md)).
 
 - **Turn grammar (`CHAT_RULES`, stable prefix).** A `Shaping each reply` block: **Resolve,

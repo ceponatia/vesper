@@ -18,6 +18,23 @@ the screen: transcript, chat header (title, archived), and character card (name,
 The transcript itself is [transcript.md](transcript.md); the successor lane's travel panel is
 [world-card.md](world-card.md).
 
+## Component ownership
+
+`ChatConversation` composes the page and owns shared header, world, light-state, dialog,
+privacy, and scene-fetch/poll state. It applies the exhaustive `PER_CHAT_DEFAULTS` reset to
+page and hook state when the transcript owner's chat identity changes.
+
+- `use-chat-transcript.ts` owns bootstrap, transcript rows, paging, reconciliation, and the
+  current visit identity shared by asynchronous work.
+- `use-chat-exchange.ts` owns optimistic replies, stream settlement, pacing, Stop, rerun,
+  continuation, and take selection. It uses the transcript owner's rows and identity.
+- `use-chat-scroll.ts` owns viewport refs, prepend anchors, pinning, and resize correction.
+  Its chat-switch layout reset runs before its scroll correction.
+- `chat-transcript.tsx` renders rows and scene moments using the page's privacy flag and
+  scene list. `chat-composer.tsx` renders and edits the page-owned draft, register, and
+  staged attachments. Neither starts another privacy state or scene poll.
+- `chat-conversation-menu.tsx` owns menu presentation, the desktop popover, and rename form.
+
 ## Header row
 
 A back link to `/chat`, a small portrait (tap → the portrait lightbox), the character name plus

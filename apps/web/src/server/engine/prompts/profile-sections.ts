@@ -8,7 +8,7 @@ import { fenceUntrusted } from "./untrusted";
  *
  * These render the parts of the prompt that are driven PURELY by a character's saved
  * profile — bio, voice anchors, micro exemplars, likes/dislikes — with no dependence on
- * chat state, presence, or the turn. Extracted from `character-chat.ts` so the successor
+ * chat state, presence, or the turn. Extracted from the character-chat prompt owners so the successor
  * (simulated-world) narrator can surface the same authored canon from the SAME builders
  * (the `/worlds` front door creates successor chats from a library character, so their
  * `CharacterProfile` is available to it too). Single source ⇒ the two lanes can't drift,

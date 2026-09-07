@@ -4,7 +4,7 @@ import { compareSets, legacyNarratorAttributeIds } from "./measure";
 
 /**
  * The legacy-comparison instrument: a
- * measurement replica of the guard chain `character-chat.ts` runs before
+ * measurement replica of the guard chain `prompts/character-chat/sensory-sections.ts` runs before
  * rendering its Attributes block. It must apply the same five guards —
  * apparent-age skip, unknown-definition skip, prompt exclusion, the intimate
  * sensory gate, and body applicability — or the disagreement measurement would

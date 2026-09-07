@@ -2,9 +2,9 @@
 
 # Character-chat prompt architecture
 
-`apps/web/src/server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`,
+`apps/web/src/server/engine/prompts/character-chat.ts` and its `character-chat/` owners (+ `prompts/chat-archivist.ts`,
 `prompts/chat-state.ts`, `prompts/chat-summary.ts`, `prompts/chat-extractors.ts`) — all chat
-prompt assembly is code-reviewed text in one place. Builders are pure functions of typed
+prompt assembly is code-reviewed text under explicit owners. Builders are pure functions of typed
 inputs (snapshot-testable); no inline prompt strings elsewhere in the engine. Anything
 tunable (history depth, fact cap, narration shape) is a named constant in
 `prompts/constants.ts`.
@@ -20,7 +20,8 @@ the attribution contract (rule 3) + message-notation legend,
 proportionality/topic/no-refusal/natural-dialogue rules, the Shaping block, and the
 intimate-craft block — lives in `prompts/charter.ts` as parameterized number-free units,
 with the authored-profile section builders (bio excerpt, voice anchors, micro exemplars,
-preferences) in `prompts/profile-sections.ts`. `character-chat.ts` composes them
+preferences) in `prompts/profile-sections.ts`. `character-chat/single.ts` and
+`character-chat/ensemble.ts` compose them
 byte-identically (snapshot-pinned); the successor narrator (`prompts/sim-render.ts`)
 consumes the SAME units, so craft fixes land in one place for both lanes. How those units
 are classified, and which layer a prompt experiment may replace, is

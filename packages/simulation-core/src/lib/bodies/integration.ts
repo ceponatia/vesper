@@ -110,7 +110,7 @@ function effectiveDrift(
   return { kind: "proportional_decay", targetFixedPoint: target, ratePerHourFixedPoint: 0, halfLifeSeconds: halfLife };
 }
 
-function clampMeter(value: number): number {
+export function clampMeter(value: number): number {
   return clampFixedPoint(value, METER_FIXED_POINT_ONE);
 }
 

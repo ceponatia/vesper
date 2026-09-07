@@ -1,7 +1,7 @@
-import { bodyConditionAppliedEventSchema, bodyConditionSchema, bodyDerivationVersion, type ApplyBodyConditionCommand, type ApplyBodyModifierCommand, type ApplyBodySourceCommand, type BodyCondition, type BodyModifier, type EndBodyConditionCommand, type InitializeActorBodyCommand, type ResolveBodyCollapseCommand, type ResolveBodyThresholdCommand, type ScheduledBodyAdjustment } from "../../contracts/bodies";
+import { bodyConditionAppliedEventSchema, bodyConditionSchema, bodyDerivationVersion, bodyModifierAppliedEventSchema, bodyModifierSchema, type ApplyBodyConditionCommand, type ApplyBodyModifierCommand, type ApplyBodySourceCommand, type BodyCondition, type BodyModifier, type BodyModifierAppliedEvent, type BodyModifierSpec, type EndBodyConditionCommand, type InitializeActorBodyCommand, type ResolveBodyCollapseCommand, type ResolveBodyThresholdCommand, type ScheduledBodyAdjustment } from "../../contracts/bodies";
 import type { SimulationBranchEvent } from "../../contracts/branching";
 import { composeSimulationId } from "../../contracts/identity";
-import { bodyCollapseTriggerKind, bodyConditionExpiryTriggerKind, bodyThresholdTriggerKind, schedulerDerivationVersion, triggerScheduledEventSchema, type TriggerScheduledEvent, } from "../../contracts/scheduler";
+import { type bodyCollapseTriggerKind, bodyConditionExpiryTriggerKind, bodyThresholdTriggerKind, schedulerDerivationVersion, triggerScheduledEventSchema, type TriggerScheduledEvent, } from "../../contracts/scheduler";
 import { simulationHash } from "../hash";
 import { compareStableText, modifiersLiveAt, normalizeConditionModifierSpecs, solveNextThresholdCrossing, type MeterIntegrationView } from "./integration";
 
@@ -244,6 +244,72 @@ export interface SleepConditionTrain {
   /** condition-applied + modifier-applied + expiry trigger, causation-chained. */
   events: SimulationBranchEvent[];
   nextSequence: number;
+}
+
+export function buildModifierAppliedEvent(input: {
+  view: BodyBranchMeta;
+  command: BodyEventCommandContext;
+  sequence: number;
+  suffix: string;
+  actorId: string;
+  modifier: BodyModifier;
+  meterView: MeterIntegrationView;
+  valueAtApply: number;
+  causationId?: string;
+}): BodyModifierAppliedEvent {
+  return bodyModifierAppliedEventSchema.parse({
+    ...eventEnvelope(input.view, input.command, input.sequence, input.suffix),
+    type: "body_modifier_applied",
+    ...(input.causationId === undefined ? {} : { causationId: input.causationId }),
+    actorIds: [input.actorId],
+    entityIds: [input.actorId],
+    payload: {
+      actorId: input.actorId,
+      modifierId: input.modifier.id,
+      meterKey: input.modifier.meterKey,
+      operation: input.modifier.operation,
+      stackingGroup: input.modifier.stackingGroup,
+      priority: input.modifier.priority,
+      validFromStorySecond: input.modifier.validFromStorySecond,
+      ...(input.modifier.validUntilStorySecond === undefined
+        ? {}
+        : { validUntilStorySecond: input.modifier.validUntilStorySecond }),
+      visibility: input.modifier.visibility,
+      ...(input.modifier.conditionId === undefined ? {} : { conditionId: input.modifier.conditionId }),
+      valueAtApplyFixedPoint: input.valueAtApply,
+      derived: capturedDerivation(input.meterView, input.view.storySecond),
+    },
+  });
+}
+
+export function modifierFromSpec(input: {
+  spec: BodyModifierSpec;
+  modifierId: string;
+  actorId: string;
+  fromStorySecond: number;
+  sourceEventId: string;
+  conditionId?: string;
+  conditionExpiresAt?: number;
+}): BodyModifier {
+  const untilCandidates = [
+    input.spec.durationSeconds === undefined
+      ? undefined
+      : input.fromStorySecond + input.spec.durationSeconds,
+    input.conditionExpiresAt,
+  ].filter((value): value is number => value !== undefined);
+  return bodyModifierSchema.parse({
+    id: input.modifierId,
+    actorId: input.actorId,
+    meterKey: input.spec.meterKey,
+    operation: input.spec.operation,
+    stackingGroup: input.spec.stackingGroup,
+    priority: input.spec.priority,
+    validFromStorySecond: input.fromStorySecond,
+    ...(untilCandidates.length === 0 ? {} : { validUntilStorySecond: Math.min(...untilCandidates) }),
+    visibility: input.spec.visibility,
+    ...(input.conditionId === undefined ? {} : { conditionId: input.conditionId }),
+    sourceEventId: input.sourceEventId,
+  });
 }
 
 /**

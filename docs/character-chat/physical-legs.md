@@ -8,8 +8,14 @@ that independence is what keeps either experiment interpretable on its own.
 
 ## Affectionate contact
 
-`CHAT_CONTACT_ACTIONS` (default off), `engine/chat-contact-adapter.ts`. Regex-only over
-the player's own line: no model call and no
+`CHAT_CONTACT_ACTIONS` (default off) uses `engine/chat-contact-adapter.ts` as the
+pure turn coordinator. Its `chat-contact/` owners separate player sentence and target
+evidence (`input-evidence.ts`), movement (`movement.ts`), touch recognition (`touch.ts`),
+scene lifecycle (`scene.ts`), material reads (`material.ts`), actor-generic attempt
+resolution (`resolution.ts`), and acknowledged narrator outcomes (`presentation.ts`).
+`identity.ts` owns stable actor/action identifiers and act shapes. Leaves import their
+owners directly; the public engine entry exposes only the player subject and event-ref
+builder. Recognition is regex-only over the player's own line: no model call and no
 extraction leg, the `chat-intent.ts` precedent. It **seeds the scenario's scene** (a
 participant per player + PRESENT roster member, an authored controller each, and a
 `scene_default` standing posture on a seeded floor for a new arrival — distance and
@@ -146,7 +152,8 @@ produce a permission-requiring act, so preview/live parity holds).
 re-derive these legs without writing. Guidance is pure, so a
 preview is simply a second evaluation. The contact leg is not — a live turn appends to
 `chat_contact_events` and advances the scene projection — so `previewChatContactOutcomes`
-runs `planChatContactTurn` and words the outcome while **discarding the planned scene and
+runs `planChatContactTurn` and uses `chat-contact/presentation.ts` to word the outcome
+while **discarding the planned scene and
 performing no write**: looking at a prompt never moves a body or records a touch.
 
 It keys on the newest player line's own row id, which for an ordinary send IS the exchange

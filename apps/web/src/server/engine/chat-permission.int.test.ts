@@ -41,7 +41,7 @@ import {
   type ChatFixture,
   type ChatSeat,
 } from "@/server/test-support";
-import { chatContactEventRef } from "./chat-contact-adapter";
+import { chatContactEventRef } from "./chat-contact/identity";
 import {
   appendChatContactEventsWithScene,
   deleteChatContactEventsForGuard,

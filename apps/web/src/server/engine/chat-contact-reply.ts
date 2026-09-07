@@ -7,9 +7,10 @@ import {
   type ContactEventRef,
   type DiagnosticSink,
   type SceneState,
+  contactSentenceEligible,
 } from "@/contracts";
 import { parseMessageSpans } from "@/lib/message-spans";
-import { contactSentenceEligible, endCoveredContacts, type ChatContactEnds } from "./chat-contact-adapter";
+import { endCoveredContacts, type ChatContactEnds } from "./chat-contact/scene";
 
 /**
  * THE REPLY-SIDE NPC CONTACT ENDING — the minimal actor-control deliverable.

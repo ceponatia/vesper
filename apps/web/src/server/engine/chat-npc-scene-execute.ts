@@ -35,21 +35,13 @@ import {
   type SceneIntentOutcome,
   type SceneProximityBand,
   type SceneState,
-} from "@/contracts";
-import {
-  approachedBand,
-  chatContactMaterialBetween,
-  chatNpcContactAct,
-  chatSceneAfterDiscontinuity,
-  departedBand,
-  endCoveredContacts,
-  npcMovementSceneIntents,
-  resolveChatContactAttempt,
-  seededChatScene,
-  CHAT_CONTACT_PLAYER_SUBJECT,
   CHAT_CONTACT_SOURCE_LOCATION,
-  type ChatContactMaterialSource,
-} from "./chat-contact-adapter";
+} from "@/contracts";
+import { approachedBand, departedBand, npcMovementSceneIntents } from "./chat-contact/movement";
+import { chatContactMaterialBetween, type ChatContactMaterialSource } from "./chat-contact/material";
+import { chatNpcContactAct, resolveChatContactAttempt } from "./chat-contact/resolution";
+import { chatSceneAfterDiscontinuity, endCoveredContacts, seededChatScene } from "./chat-contact/scene";
+import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 import { applyChatNpcContactEnding, type ChatNpcContactEnding } from "./chat-contact-reply";
 import {
   NPC_SCENE_DECISION_COMMITTED_BLOB_MAX_BYTES,

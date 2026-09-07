@@ -23,7 +23,7 @@ import {
   type PhysicalStateTransition,
 } from "@/contracts";
 import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permission-guidance";
-import type { ChatContactUnresolvedPremise } from "./chat-contact-adapter";
+import type { ChatContactUnresolvedPremise } from "./chat-contact/presentation";
 import {
   chatPhysicalGuidanceBlock,
   renderChatPhysicalGuidance,

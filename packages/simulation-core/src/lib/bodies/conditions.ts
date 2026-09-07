@@ -1,9 +1,10 @@
-import { bodyConditionAppliedEventSchema, bodyConditionEndedEventSchema, bodyConditionSchema, bodyMeterStateSchema, bodyModifierAppliedEventSchema, bodyModifierSchema, bodySourceAppliedEventSchema, type ApplyBodyConditionCommand, type ApplyBodyConditionRejectionCode, type ApplyBodyModifierCommand, type ApplyBodyModifierRejectionCode, type BodyCondition, type BodyConditionAppliedEvent, type BodyConditionEndedEvent, type BodyMeterDefinition, type BodyMeterState, type BodyModifier, type BodyModifierAppliedEvent, type BodyModifierSpec, type BodySourceAppliedEvent, type EndBodyConditionCommand, type EndBodyConditionRejectionCode } from "../../contracts/bodies";
+import { bodyConditionAppliedEventSchema, bodyConditionEndedEventSchema, bodyConditionSchema, bodyMeterStateSchema, bodySourceAppliedEventSchema, type ApplyBodyConditionCommand, type ApplyBodyConditionRejectionCode, type ApplyBodyModifierCommand, type ApplyBodyModifierRejectionCode, type BodyCondition, type BodyConditionAppliedEvent, type BodyConditionEndedEvent, type BodyMeterDefinition, type BodyMeterState, type BodyModifier, type BodyModifierAppliedEvent, type BodyModifierSpec, type BodySourceAppliedEvent, type EndBodyConditionCommand, type EndBodyConditionRejectionCode } from "../../contracts/bodies";
 import { composeSimulationId } from "../../contracts/identity";
 import { bodyConditionExpiryTriggerKind, type TriggerScheduledEvent } from "../../contracts/scheduler";
 import { rearmCollapseTrigger, type CollapseContext } from "./collapse";
-import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, capturedDerivation, deriveBodyConditionId, deriveBodyModifierId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection } from "./events";
-import { compareStableText, deriveSleepCredit, integrateMeterValue, normalizeConditionModifierSpecs, type MeterIntegrationView } from "./integration";
+import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, buildModifierAppliedEvent, capturedDerivation, deriveBodyConditionId, deriveBodyModifierId, eventEnvelope, modifierFromSpec, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection } from "./events";
+import { clampMeter, compareStableText, deriveSleepCredit, integrateMeterValue, normalizeConditionModifierSpecs, type MeterIntegrationView } from "./integration";
+import type { BodyMeterResolutionView } from "./sources";
 
 // ---------------------------------------------------------------------------
 // ApplyBodyModifier (the one modifier contract)
@@ -26,72 +27,6 @@ function validateModifierSpec(
     return "rate_add_on_nonlinear_law";
   }
   return undefined;
-}
-
-function buildModifierAppliedEvent(input: {
-  view: BodyBranchMeta;
-  command: BodyEventCommandContext;
-  sequence: number;
-  suffix: string;
-  actorId: string;
-  modifier: BodyModifier;
-  meterView: MeterIntegrationView;
-  valueAtApply: number;
-  causationId?: string;
-}): BodyModifierAppliedEvent {
-  return bodyModifierAppliedEventSchema.parse({
-    ...eventEnvelope(input.view, input.command, input.sequence, input.suffix),
-    type: "body_modifier_applied",
-    ...(input.causationId === undefined ? {} : { causationId: input.causationId }),
-    actorIds: [input.actorId],
-    entityIds: [input.actorId],
-    payload: {
-      actorId: input.actorId,
-      modifierId: input.modifier.id,
-      meterKey: input.modifier.meterKey,
-      operation: input.modifier.operation,
-      stackingGroup: input.modifier.stackingGroup,
-      priority: input.modifier.priority,
-      validFromStorySecond: input.modifier.validFromStorySecond,
-      ...(input.modifier.validUntilStorySecond === undefined
-        ? {}
-        : { validUntilStorySecond: input.modifier.validUntilStorySecond }),
-      visibility: input.modifier.visibility,
-      ...(input.modifier.conditionId === undefined ? {} : { conditionId: input.modifier.conditionId }),
-      valueAtApplyFixedPoint: input.valueAtApply,
-      derived: capturedDerivation(input.meterView, input.view.storySecond),
-    },
-  });
-}
-
-function modifierFromSpec(input: {
-  spec: BodyModifierSpec;
-  modifierId: string;
-  actorId: string;
-  fromStorySecond: number;
-  sourceEventId: string;
-  conditionId?: string;
-  conditionExpiresAt?: number;
-}): BodyModifier {
-  const untilCandidates = [
-    input.spec.durationSeconds === undefined
-      ? undefined
-      : input.fromStorySecond + input.spec.durationSeconds,
-    input.conditionExpiresAt,
-  ].filter((value): value is number => value !== undefined);
-  return bodyModifierSchema.parse({
-    id: input.modifierId,
-    actorId: input.actorId,
-    meterKey: input.spec.meterKey,
-    operation: input.spec.operation,
-    stackingGroup: input.spec.stackingGroup,
-    priority: input.spec.priority,
-    validFromStorySecond: input.fromStorySecond,
-    ...(untilCandidates.length === 0 ? {} : { validUntilStorySecond: Math.min(...untilCandidates) }),
-    visibility: input.spec.visibility,
-    ...(input.conditionId === undefined ? {} : { conditionId: input.conditionId }),
-    sourceEventId: input.sourceEventId,
-  });
 }
 
 export function resolveApplyBodyModifier(

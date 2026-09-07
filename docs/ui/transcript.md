@@ -72,7 +72,8 @@ streaming render is cheap (the parser is pure) and the unterminated tail stays s
 
 ## Scrolling and pagination
 
-Auto-scroll is **stick-to-bottom** (`lib/scroll-pin.ts`): it pins on new lines only while the
+Auto-scroll is **stick-to-bottom** (`components/chat/use-chat-scroll.ts` over
+`lib/scroll-pin.ts`): it pins on new lines only while the
 reader is already at the bottom, so scrolling up to reread stops the yanking and surfaces a **"Jump
 to latest" pill**. A `ResizeObserver` on the content column re-pins as async content — scene
 thumbnails, avatars — grows it after load; without it the initial view lands mid-transcript once
