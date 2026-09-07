@@ -94,7 +94,7 @@ import { buildChatGarmentAffordance } from "./chat-garment-affordances";
  * Neither `unavailable` is an oversight, but they have different causes now.
  * `contamination` has no owner at all. `contacts` DOES have one — the typed scene
  * contact state in `src/contracts/affordances/scene`, lane-wired through
- * `chat-contact-adapter.ts` and live in production since 2026-08-02 — this payload
+ * `chat-contact/` owners and live in production since 2026-08-02 — this payload
  * simply does not read it yet. That is a wiring gap to close, not a ruling to defend.
  *
  * Until it is closed the reported status is load-bearing exactly as before:

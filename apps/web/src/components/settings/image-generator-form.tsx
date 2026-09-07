@@ -187,19 +187,8 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     setVersionPolicy("current");
   }
 
-  // The edit gate mirrors `profileEligibility`: `canEdit` AND a reviewed
-  // `editKind` other than "none" — a row rated unable to actually edit must
-  // not offer reference slots whose run the planner refuses.
-  const modelCanEdit = selectedModel !== null && selectedModel.canEdit && selectedModel.editKind !== "none";
-
-  // A model with no image input cannot take the rows, and holding them unseen
-  // would send a request the runner refuses — cleared, not hidden (no latch:
-  // clearing extinguishes the condition).
-  if (selectedModel !== null && !modelCanEdit && primaryRows.length > 0) {
-    setPrimaryRows([]);
-  }
-
   const {
+    modelCanEdit,
     capabilities,
     bindings,
     dedicatedSlots,
@@ -214,6 +203,14 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   } = generatorModelView({
     selectedModel,
   });
+
+
+  // A model with no image input cannot take the rows, and holding them unseen
+  // would send a request the runner refuses — cleared, not hidden (no latch:
+  // clearing extinguishes the condition).
+  if (selectedModel !== null && !modelCanEdit && primaryRows.length > 0) {
+    setPrimaryRows([]);
+  }
 
   // The LoRA control, offered only when the active version binds BOTH the
   // weights and the scale field — the resolver requires the pair (a locator

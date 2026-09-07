@@ -43,13 +43,13 @@ export * from "./chat-physical-guidance-preview";
 export * from "./chat-recognition-adapter";
 export * from "./chat-contact-events";
 export * from "./chat-permission-events";
-// Two chat-contact-adapter values with callers outside the pipeline: the lane's
+// Two chat-contact identity values with callers outside the pipeline: the lane's
 // player subject id (the permission override route,
 // src/app/api/admin/chat-permissions) and the exchange event ref (the rollout
 // trial's driver, which must reproduce an attempt id to bind a denial to it).
 // The adapter itself stays out of the barrel — its DETECTOR surface is
 // pipeline-internal, and neither of these is a detector.
-export { chatContactEventRef, CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact-adapter";
+export { chatContactEventRef, CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 export * from "./chat-npc-scene-envelope";
 export * from "./visual-memory-store";
 export * from "./chat-wardrobe";

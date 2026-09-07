@@ -115,6 +115,7 @@ export function generatorModelView({
   const capabilitySummary = capabilityParts.length > 0 ? capabilityParts.join(" · ") : "—";
 
   return {
+    modelCanEdit,
     capabilities,
     bindings,
     dedicatedSlots,
