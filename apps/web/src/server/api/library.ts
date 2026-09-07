@@ -4,7 +4,7 @@ import { diag, itemDefinitionSchema, type Diagnostic, type DiagnosticSink, type 
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
 import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
-import { db, images, items, locationLinks, locations } from "@/server/db";
+import { db, images, items, locationLinks, locations, type Db } from "@/server/db";
 import { escapeLikePattern } from "@/server/authoring";
 import { fuzzyResolve, ITEM_DEDUPE_MIN_SCORE, refreshSearchEmbedding, type LibraryKind } from "@/server/memory";
 import { purgeImagesWhere, type ImageEntityKind } from "@/server/images";
@@ -290,12 +290,14 @@ export async function materializeSuggestedItems(
   ownerId: string,
   suggestions: readonly ItemDefinition[],
   sink: DiagnosticSink,
+  options: { executor?: Pick<Db, "select" | "insert" | "execute">; onCreated?: (id: string) => void } = {},
 ): Promise<string[]> {
   const ids: string[] = [];
+  const executor = options.executor ?? db();
   for (const def of suggestions) {
     const name = def.name.trim();
     if (!name) continue;
-    const existing = await db()
+    const existing = await executor
       .select({ id: items.id, kind: items.kind })
       .from(items)
       .where(and(eq(items.ownerId, ownerId), sql`lower(${items.name}) = ${name.toLowerCase()}`));
@@ -312,6 +314,7 @@ export async function materializeSuggestedItems(
     // it rather than spawning a near-duplicate. Conservative threshold so only
     // obvious dupes merge; an embedding failure degrades to a new insert.
     const fuzzy = await fuzzyResolve("item", ownerId, name, {
+      executor,
       minScore: ITEM_DEDUPE_MIN_SCORE,
       itemKind: def.kind,
       sink,
@@ -338,7 +341,7 @@ export async function materializeSuggestedItems(
         ),
       );
     }
-    const [row] = await db()
+    const [row] = await executor
       .insert(items)
       .values({
         ownerId,
@@ -366,7 +369,8 @@ export async function materializeSuggestedItems(
       sink.push(diag("error", "api.library.suggested_item.insert_failed", `"${name}" could not be created`));
       continue;
     }
-    queueEmbedRefresh("item", row.id);
+    if (options.onCreated) options.onCreated(row.id);
+    else queueEmbedRefresh("item", row.id);
     ids.push(row.id);
   }
   return ids;

@@ -39,7 +39,9 @@ The section registry owns placement, generation scopes and section detail counts
   full Forge of an untouched blank draft opens the editable preview directly; Create is its
   review boundary. Any author edits made during that request instead require proposal review.
 - The review displays before and proposed values, with independent choices per change. Attributes
-  and traits compare by id; provenance-only differences do not request an approval.
+  and traits compare by id; provenance-only differences do not request an approval. Results with
+  no changes show a short notice without adding a pending review. Review actions remain disabled
+  until browser hydration completes and any competing browser version is resolved.
 - Changes made during generation or review survive. A proposal changes only fields that differ
   from its original snapshot. Conflicting values require an explicit choice between the current
   and proposed value before acceptance can proceed.
@@ -55,6 +57,25 @@ The section registry owns placement, generation scopes and section detail counts
 - Pending reviews and the undo receipt persist in browser storage under the authenticated account
   and character. Account or character navigation resets the editor and guards late async results.
   Reviews saved on this device are not synchronized between devices.
+
+## Recovering ordinary edits
+
+- Authored values and narrator choice persist under an account-and-character browser key separate
+  from suggestions. Each record stores the server baseline and its `updatedAt` version. Leaving
+  the page keeps authorized queued writes and their recovery record alive; a failed save never
+  clears that record. An acknowledgment clears only the exact stored snapshot it saved.
+- Loading an unchanged server version resumes retained edits. A changed server version opens
+  **Review recovered edits**, with the same per-field three-way choices and an independent
+  narrator choice. **Use saved version** explicitly discards those recovered edits. Competing
+  browser tabs offer the latest browser record, separate recovery copies, or the saved character.
+- Saved-editor PATCH sends `expectedUpdatedAt`. The server locks the owned row, compares its
+  version, and performs item materialization and the character write in one transaction. A stale
+  version returns `409 character_conflict` with the current owned character before creating any
+  items. Omitted preconditions preserve ordinary PATCH semantics for other callers; a no-op
+  leaves the version unchanged. Item embedding refresh runs after the transaction commits.
+- Save acknowledgments reconcile into the latest draft. Newer edits stay dirty; returned outfit
+  item ids and completed suggestions converge without repeated item submission. Browser storage
+  failures keep the in-memory draft available and show a notice to keep the page open until saved.
 
 ## Outfit presets
 

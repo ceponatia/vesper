@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { promoteDraftRecovery, readDraft, writeDraft, type DraftStorage } from "./character-draft-storage";
-import { characterCreationStateSchema, emptyCharacterCreation } from "./character-creation-draft";
+import { characterCreationStateSchema, emptyCharacterCreation, savedCreationHref } from "./character-creation-draft";
 
 function memoryStorage(): DraftStorage {
   const rows = new Map<string, string>();
@@ -58,10 +58,14 @@ describe("character browser draft persistence", () => {
     state.draft.profile.creationBrief = "A human woman in a blue suit";
     state.draft.name = "Iris";
     state.tab = "portrait";
+    state.saveDestination = "chat";
+    state.savedCharacterId = "saved-character";
+    state.materializingDraft = structuredClone(state.draft);
     state.review.pending.push({ id: "pending", label: "Profile rewrite", base: structuredClone(state.draft), proposed: { ...state.draft, name: "Suggested Iris" }, undo: false });
     const raw = JSON.stringify({ revision: "one", data: state });
     const loaded = readDraft(raw, characterCreationStateSchema);
     expect(loaded?.data).toEqual(state);
+    expect(loaded && savedCreationHref(loaded.data)).toBe("/characters/saved-character?tab=chat");
     expect(loaded?.data.draft.name).toBe("Iris");
     expect(loaded?.data.review.pending[0]?.proposed.name).toBe("Suggested Iris");
   });

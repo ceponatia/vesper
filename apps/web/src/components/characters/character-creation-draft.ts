@@ -2,18 +2,20 @@ import { z } from "zod";
 import { attributeRegistry, boundCharacterCreationBrief, traitRegistry } from "@/contracts";
 import { characterEditorTabs } from "@/lib/character-scopes";
 import { characterDraftSchema, emptyCharacterDraft, type CharacterDraft } from "@/lib/client/api";
-import { characterReviewStateSchema, describeProposalValue, emptyCharacterReview } from "./character-proposals";
+import { characterReviewStateSchema, describeProposalValue, emptyCharacterReview, proposalChanges } from "./character-proposals";
 
 export const characterCreationStateSchema = z.object({
   id: z.string(),
   savedCharacterId: z.string().nullable().default(null),
+  saveDestination: z.enum(characterEditorTabs).nullable().default(null),
+  materializingDraft: characterDraftSchema.nullable().default(null),
   draft: characterDraftSchema,
   prompt: z.string(),
   tab: z.enum(characterEditorTabs).catch("profile"),
   review: characterReviewStateSchema,
 });
 export type CharacterCreationState = z.infer<typeof characterCreationStateSchema>;
-export const emptyCharacterCreation = (): CharacterCreationState => ({ id: crypto.randomUUID(), savedCharacterId: null, draft: emptyCharacterDraft(), prompt: "", tab: "profile", review: emptyCharacterReview() });
+export const emptyCharacterCreation = (): CharacterCreationState => ({ id: crypto.randomUUID(), savedCharacterId: null, saveDestination: null, materializingDraft: null, draft: emptyCharacterDraft(), prompt: "", tab: "profile", review: emptyCharacterReview() });
 
 /** Capture the original concept before any rewriting can remove it. This also
  * covers manually authored and legacy saved characters with no prompt history. */
@@ -61,4 +63,20 @@ export function withCreationBrief(draft: CharacterDraft, prompt = ""): Character
  * untouched draft. Brief capture itself is not an authored field change. */
 export function isPristineCharacterDraft(draft: CharacterDraft): boolean {
   return JSON.stringify({ ...draft, profile: { ...draft.profile, creationBrief: "" } }) === JSON.stringify(emptyCharacterDraft());
+}
+
+/** Commit the original request context only after a successful full Forge. The
+ * editable first preview is safe only while the author has not changed its input. */
+export function completeCreationForge(current: CharacterCreationState, started: CharacterCreationState, base: CharacterDraft, proposed: CharacterDraft, proposalId: string): CharacterCreationState {
+  const draft = { ...current.draft, profile: { ...current.draft.profile, creationBrief: current.draft.profile.creationBrief || base.profile.creationBrief } };
+  const result = { ...proposed, profile: { ...proposed.profile, creationBrief: draft.profile.creationBrief } };
+  const initialPreview = isPristineCharacterDraft(started.draft) && !started.review.pending.length && !started.savedCharacterId
+    && JSON.stringify(current.draft) === JSON.stringify(started.draft) && current.prompt === started.prompt;
+  if (initialPreview) return { ...current, draft: result };
+  const proposal = { id: proposalId, label: "forged character", base, proposed: result, undo: false };
+  return { ...current, draft, review: proposalChanges(proposal).length ? { ...current.review, pending: [...current.review.pending, proposal] } : current.review };
+}
+
+export function savedCreationHref(state: CharacterCreationState): string | null {
+  return state.savedCharacterId ? `/characters/${state.savedCharacterId}?tab=${state.saveDestination ?? state.tab}` : null;
 }

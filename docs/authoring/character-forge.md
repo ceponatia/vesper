@@ -23,7 +23,9 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
 - **Start a new draft** explicitly replaces the active creation draft after confirmation.
 - The original brief is stored in the existing profile JSON as `creationBrief`, with an empty
   default for legacy records. It remains private in public profile projections. A prompt-based
-  draft preserves the original prompt. Before the first AI action on a manual or legacy saved
+  draft preserves the original prompt after its first successful full Forge. A failed first request
+  leaves the brief editable. A successful response preserves concurrent edits and stages its
+  suggestions for review instead of replacing them. Before the first AI action on a manual or legacy saved
   character, the editor captures the original authored details if there is no brief. The durable
   brief shares the Forge request's 4,000-character limit. Manual capture reserves space for
   identity, appearance and outfit before bounded biography, personality, voice and traits.
@@ -33,7 +35,8 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
 - Save and open Portrait Studio or Chat preserves the requested destination. Pending proposals
   carry into the saved character's review storage without acceptance. Repeated saves replace
   that creation draft's pending contribution and preserve decisions made on either surface,
-  without removing proposals created independently on the saved character.
+  without removing proposals created independently on the saved character. A failed review
+  transfer retains the creation draft and a link to the requested Portrait Studio or Chat destination.
 - A successful save clears only the browser version it saved. If newer edits exist, the saved
   character remains linked and the newer draft stays available. Subsequent saves of that draft
   update the linked character rather than creating another character.
@@ -164,4 +167,8 @@ New rows keep the `suggested` tag, and the resulting ids are appended to the def
 A bad suggestion degrades — invalid coverage ids are dropped with a diagnostic — and never fails
 the save. The PATCH response returns the saved profile so the sheet editor can adopt the new ids
 and clear its suggestion rows: the outfit tab's "suggested" rows are pending until a save, and
-Save is what creates them.
+Save is what creates them. Returned item ids merge into the latest surviving outfit; only the
+suggestions sent in that save are removed. Newer prose, outfit edits and suggestions survive.
+If a create succeeds before its saved profile can be loaded, the browser stores the created id
+and sent draft, and resolves that acknowledgment before sending suggestions again. This avoids
+recreating the character or submitting the same suggestions on a retry.

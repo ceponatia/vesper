@@ -73,6 +73,18 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
     expect(row?.tags).toContain("suggested");
   });
 
+  it("resolves an uncommitted fuzzy candidate through the materialization transaction", async () => {
+    await db().transaction(async (tx) => {
+      const [candidate] = await tx.insert(items).values({ ownerId, kind: "clothing", name: "Uncommitted Fuzzy Mantle", searchEmbedding: pseudoEmbed("Transaction copper robe"), embedder: "pseudo" }).returning({ id: items.id });
+      const sink = new DiagnosticCollector();
+      const created: string[] = [];
+      const ids = await materializeSuggestedItems(ownerId, [suggest("Transaction copper robe")], sink, { executor: tx, onCreated: (id) => created.push(id) });
+      expect(ids).toEqual([candidate!.id]);
+      expect(created).toEqual([]);
+      expect(sink.items.some((item) => item.code === "api.library.suggested_item.fuzzy_reused")).toBe(true);
+    });
+  });
+
   it("persists the clothing category into the stored definition", async () => {
     // Regression: the category template anchors coverage semantics and must
     // survive materialization, not get dropped on insert
