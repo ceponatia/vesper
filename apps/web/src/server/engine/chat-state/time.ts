@@ -1,5 +1,6 @@
 import {
   applyMeterDrift,
+  CHAT_DEFAULT_CALENDAR_START,
   chatGameTime,
   formatChatMoment,
   isConditionExpired,
@@ -11,7 +12,7 @@ import {
   type ChatSkipAmount,
   type SkipRecord,
 } from "@/contracts";
-import { CHAT_DEFAULT_CALENDAR_START, minuteOfDay, type CalendarStart } from "@/lib/clock";
+import { minuteOfDay, type CalendarStart } from "@/lib/clock";
 import { CHAT_FEELING_SKIP_STEPS, decayFeelingState } from "../chat-feeling";
 import { CHAT_METER_DRIFT_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
 import { chatSkipNote } from "../prompts/character-chat";

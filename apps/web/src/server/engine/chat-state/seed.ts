@@ -1,5 +1,6 @@
 import {
   authoredRecordToLive,
+  CHAT_DEFAULT_CALENDAR_START,
   CHAT_PREMISE_MAX_CHARS,
   emptyAffordanceCueState,
   emptyBodySurfaceState,
@@ -18,7 +19,6 @@ import {
   seedChatDrives,
   type CharacterProfile,
 } from "@/contracts";
-import { CHAT_DEFAULT_CALENDAR_START } from "@/lib/clock";
 import { emptyChatFeelingState } from "../chat-feeling";
 import type { ChatScenario, ChatState } from "./types";
 
