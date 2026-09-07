@@ -10,7 +10,7 @@ The lane is [scene-images.md](scene-images.md); the camera and POV rules are
 Every present character sources their facts from the visual image digest
 (`server/images/scene-subject-visual.ts`). The queue hands the render one **committed chat cut
 per present member** — camera-less shadow inputs built by `chatVisualStateShadowInput`
-(`engine/chat-pipeline.ts`), the same factory the admin visual-state inspector preview uses, so
+(`engine/chat-visual-state-cut.ts`), the same factory the admin visual-state inspector preview uses, so
 the scene digest and the preview assemble one cut identically — resolving every member's memory
 group in one batched query. A selfie's cast is trimmed to the sender. A member with no
 participant row has no cut — the queue warns and skips them — and a cut naming a different

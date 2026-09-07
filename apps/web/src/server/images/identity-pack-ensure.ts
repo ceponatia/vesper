@@ -11,7 +11,7 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { characters, db, images } from "../db";
 import { log } from "@/server/log";
 // Direct module path, NOT the `@/server/engine` barrel: that barrel re-exports
-// `chat-pipeline.ts`, which imports `@/server/images` — so importing it here
+// the chat coordinator and deletion owner, which import `@/server/images` — so importing it here
 // would close a real import cycle and fail `pnpm lint:cycles`. `keyed-lock.ts`
 // itself imports nothing at all, so naming it directly adds no edge to the graph.
 // (Worth relocating the lock to a neutral server home if a second image lane

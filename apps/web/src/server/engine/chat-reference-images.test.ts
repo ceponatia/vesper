@@ -30,7 +30,7 @@ vi.mock("./chat-wardrobe", () => ({
 // The look mint's digest cut rides the shared committed-cut factory since the
 // Stage 4 cutover; mocked like every other collaborator so this unit stays
 // hermetic (the factory itself is exercised by the visual-state suites).
-vi.mock("./chat-pipeline", () => ({
+vi.mock("./chat-visual-state-cut", () => ({
   chatVisualStateShadowInput: vi.fn(() => ({ subjectId: "chr-1", cutId: "cut-1" })),
 }));
 

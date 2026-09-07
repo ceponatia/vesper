@@ -42,7 +42,7 @@ import { loadPreExchangeScenario, rollbackScenario, savePreExchangeScenario } fr
 import type { ChatScenario, ChatState } from "./chat-state";
 import { buildChatAffordanceRead } from "./chat-affordances";
 import { resolveChatWardrobe } from "./chat-wardrobe";
-import { previewChatPrompt } from "./chat-pipeline";
+import { previewChatPrompt } from "./chat-prompt-preview";
 import {
   chatArchivist,
   dropChatFixture,

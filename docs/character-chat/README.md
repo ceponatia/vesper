@@ -50,9 +50,10 @@ the chat lane must never re-fork it.
 ## Where things live
 
 - **Exchange orchestration** — `server/engine/chat-pipeline.ts`; reply streaming, Stop, and watchdogs live in `server/engine/chat-reply-stream.ts`
+- **Prompt previews and shared cuts** — `server/engine/chat-prompt-preview.ts`, `chat-visual-state-cut.ts`, and `chat-prompt-input.ts`; reply repair and deletion live in `chat-message-edits.ts` and `chat-delete.ts`
 - **Reply persistence, rerun cuts and take history** — `server/engine/chat-reply-store.ts`
 - **Model stream** — `server/engine/character-chat.ts`
-- **State types, seeds, time, pulse rules, and readout** — `server/engine/chat-state/{types,seed,time,pulse-rules,readout}.ts`; **state persistence, rollback, edits, and atomic surface settlement** — `server/engine/chat-state/{store,snapshots,edit,surface-transfer}.ts`; **pulse and finalization orchestration** — `server/engine/chat-state.ts`
+- **State types, seeds, time, pulse rules, and readout** — `server/engine/chat-state/{types,seed,time,pulse-rules,readout}.ts`; **state persistence, rollback, edits, and atomic surface settlement** — `server/engine/chat-state/{store,snapshots,edit,surface-transfer}.ts`; **pulse and authorized outfit folds** — `server/engine/chat-state/{pulse-agent,outfit-evidence,outfit-fold}.ts`; **finalization orchestration** — `server/engine/chat-state.ts`
 - **RAG client (recall / the three extraction legs / write)** — `server/engine/chat-memory.ts`
 - **Extraction field library + the composed legs** ([post-turn.md](post-turn.md)) — `server/engine/prompts/chat-extractors.ts` (pure) + the per-leg schemas / `mergeChatExtractions` in `contracts/turns/chat-archivist.ts`
 - **Per-turn query-embedding cache (one embed, every leg)** — `server/memory/query-embeddings.ts`

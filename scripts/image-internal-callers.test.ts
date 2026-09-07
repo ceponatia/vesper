@@ -81,7 +81,7 @@ const APPROVED: Readonly<Record<string, readonly string[]>> = {
     "apps/web/src/server/images/upload.ts",
   ],
   deleteChatUploads: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/index.ts", "apps/web/src/server/images/internal.ts"],
-  deleteChatAssets: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/index.ts", "apps/web/src/server/images/internal.ts"],
+  deleteChatAssets: ["apps/web/src/server/engine/chat-delete.ts", "apps/web/src/server/images/index.ts", "apps/web/src/server/images/internal.ts"],
 };
 
 function importedInternalNames(source: string): string[] {
