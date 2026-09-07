@@ -30,8 +30,6 @@ import {
   type AffordanceSubjectId,
   type BodyMarkProposal,
   type ChatActionId,
-  type ChatReplyFailureCause,
-  type ChatReplyFailureCode,
   type CharacterProfile,
   type ContactEndReason,
   type ContactLifecycleCommit,
@@ -50,12 +48,7 @@ import { PROVISIONING_STALE_AFTER_DELETE } from "@vesper/simulation-core/provisi
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
-import {
-  classifyEmptyNarratorCompletion,
-  classifyProviderError,
-  narratorCompletionLogFields,
-  type NarratorCompletion,
-} from "../ai";
+import type { NarratorCompletion } from "../ai";
 import {
   characterChats,
   characterChatMessages,
@@ -73,6 +66,7 @@ import { log } from "../log";
 import { QueryEmbeddings } from "../memory";
 import { resolveChatPersona, type PlayerPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
+import { stopChatReply, streamExchange } from "./chat-reply-stream";
 import { buildActionBeatCue } from "./chat-action-beat";
 import {
   buildNarratorRunProvenance,
@@ -84,7 +78,6 @@ import {
   persistAssistantReply,
   pushReplyTake,
   resolveRerunTarget,
-  saveReplyFailure,
 } from "./chat-reply-store";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordanceRead } from "./chat-affordances";
@@ -208,8 +201,6 @@ import {
   CHARACTER_CHAT_SUMMARIZE_AT,
   CHAT_TICK_MINUTES,
   CHAT_RERUN_LOCK_WAIT_MS,
-  CHAT_STREAM_FIRST_TOKEN_MS,
-  CHAT_STREAM_OVERALL_MS,
 } from "./constants";
 import { acquireKeyedLockWithin, CHAT_LOCK_LABEL_REPLY, chatExchangeLockKey, tryKeyedLock } from "./keyed-lock";
 import {
@@ -484,93 +475,6 @@ const CONTINUE_CUE = "(Continue naturally from your last line — one more beat.
 const INTIMATE_AROUSAL_FLOOR = 0.55;
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-// ---------------------------------------------------------------------------
-// Stop — abort the in-flight reply, keep what streamed
-// ---------------------------------------------------------------------------
-
-/** In-flight reply aborts by chat id — in-process, like the exchange lock itself. */
-const inflightReplyAborts = new Map<string, AbortController>();
-
-/**
- * Cut the in-flight reply short: the model stream aborts server-side, the
- * accumulated prefix persists as the reply (`meta.stopped`), and the fan-out
- * runs over the truncated text. Returns false when nothing is streaming.
- */
-export function stopChatReply(chatId: string): boolean {
-  const controller = inflightReplyAborts.get(chatId);
-  if (!controller) return false;
-  controller.abort();
-  return true;
-}
-
-export interface StreamTimeoutOptions {
-  /** No first token within this many ms ⇒ abort (a wedged provider that never speaks). */
-  firstTokenMs: number;
-  /** The whole stream running past this many ms ⇒ abort (a provider that trickles forever). */
-  overallMs: number;
-  /** Abort the upstream call (wired to the exchange's AbortController). */
-  onAbort: () => void;
-  /** Record the watchdog trip (a log/diagnostic); the reply still settles via the stop path. */
-  onTimeout?: (reason: "first_token" | "overall") => void;
-}
-
-/**
- * Guard a reply token stream with two watchdogs (data-loss-rerun fix): a first-token
- * timeout and an overall cap. On a trip it calls `onAbort` (aborting the upstream call)
- * and ends the stream — the caller's settle path then persists any partial with
- * `meta.stopped` and releases the chat lock, so a hung provider can never wedge the
- * conversation (the Aion 3.0 incident). Passes every token through untouched otherwise;
- * a source that finishes or throws on its own flows through unchanged.
- *
- * PURE + testable: no engine state, just the source generator and the timeout knobs. The
- * lost `next()` after a trip is fire-and-forget-swallowed, and the source is closed
- * fire-and-forget in `finally` — never awaited, so a source that stays wedged even after
- * the abort can't re-hang us here (which would defeat the whole watchdog).
- */
-export async function* withStreamTimeouts(
-  source: AsyncGenerator<string>,
-  opts: StreamTimeoutOptions,
-): AsyncGenerator<string> {
-  const iterator = source[Symbol.asyncIterator]();
-  const overallDeadline = Date.now() + opts.overallMs;
-  let sawFirstToken = false;
-  try {
-    for (;;) {
-      const overallBudget = overallDeadline - Date.now();
-      const budget = sawFirstToken ? overallBudget : Math.min(opts.firstTokenMs, overallBudget);
-      const next = iterator.next();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<"timeout">((resolve) => {
-        timer = setTimeout(() => resolve("timeout"), Math.max(0, budget));
-      });
-      let result: IteratorResult<string> | "timeout";
-      try {
-        result = await Promise.race([next, timeout]);
-      } finally {
-        if (timer) clearTimeout(timer);
-      }
-      if (result === "timeout") {
-        opts.onTimeout?.(sawFirstToken ? "overall" : "first_token");
-        opts.onAbort();
-        // The lost next() settles once the abort lands upstream — swallow it so it can't
-        // surface as an unhandled rejection now that we've stopped reading.
-        void next.then(
-          () => {},
-          () => {},
-        );
-        return;
-      }
-      if (result.done) return;
-      sawFirstToken = true;
-      yield result.value;
-    }
-  } finally {
-    // Fire-and-forget close of the source — never blocking on it (a still-wedged provider
-    // must not re-hang the watchdog); the abort above already unwinds it.
-    void Promise.resolve(iterator.return?.(undefined)).catch(() => {});
-  }
-}
 
 // ---------------------------------------------------------------------------
 // The exchange
@@ -2401,7 +2305,6 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     };
 
     const abortController = new AbortController();
-    inflightReplyAborts.set(chatId, abortController);
     // How the narrator generation actually finished (server/ai/narrator-completion.ts).
     // Set once, by the stream itself, when it runs to its own end — so a zero-text
     // exchange can be classified from real evidence instead of "no text and no
@@ -3034,143 +2937,19 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
     };
 
-    // Guard the model stream with the first-token + overall watchdogs (data-loss-rerun
-    // fix): a wedged provider trips a timeout, which aborts the upstream call and lets
-    // the exchange settle through the same stop path as a player Stop — so the chat lock
-    // can never be held indefinitely by a hung generation. The trip reason is kept so
-    // the settle can record a `timeout` reply failure instead of a silent pseudo-stop.
-    let timedOut: "first_token" | "overall" | null = null;
-    const guarded = withStreamTimeouts(gen, {
-      firstTokenMs: CHAT_STREAM_FIRST_TOKEN_MS,
-      overallMs: CHAT_STREAM_OVERALL_MS,
-      onAbort: () => abortController.abort(),
-      onTimeout: (reason) => {
-        timedOut = reason;
-        log.warn("engine.chat", "chat reply stream timed out", { chatId, reason });
-      },
-    });
     return {
       ok: true,
-      stream: streamExchange(guarded, settle, abortController, () => timedOut, () => narratorCompletion),
-    };
-  }
-
-  /**
-   * Wrap the model stream so persistence + fan-out + lock release ride the
-   * generator's own completion: the route (or any consumer) just drains it. A
-   * model-stream failure keeps whatever accumulated (persisted if non-empty); a
-   * player Stop is not a failure — the truncated prefix persists with
-   * `meta.stopped`. An empty reply skips settle but records WHY it was empty
-   * (`last_reply_failure` — the client's post-exchange refetch reads it for the
-   * failure popup); the lock releases on every path.
-   */
-  async function* streamExchange(
-    gen: AsyncGenerator<string>,
-    settle: (full: string, stopped: boolean) => Promise<void>,
-    abortController: AbortController,
-    timedOut: () => "first_token" | "overall" | null,
-    completion: () => NarratorCompletion | null,
-  ): AsyncGenerator<string, void, unknown> {
-    let full = "";
-    let stopped = false;
-    let streamError: { code: ChatReplyFailureCode; detail: string } | null = null;
-    try {
-      try {
-        for await (const delta of gen) {
-          full += delta;
-          yield delta;
-        }
-      } catch (error) {
-        if (abortController.signal.aborted) {
-          stopped = true;
-        } else {
-          const classified = classifyProviderError(error);
-          streamError = { code: classified.code, detail: classified.detail };
-          log.warn("engine.chat", "reply stream failed", {
-            chatId,
-            code: classified.code,
-            status: classified.status,
-            error: classified.detail,
-          });
-        }
-      }
-      if (abortController.signal.aborted) stopped = true;
-      if (full.trim()) {
-        try {
-          await settle(full, stopped);
-        } catch (error) {
-          log.error("engine.chat", "failed to persist assistant reply", { error: describeError(error) });
-        }
-      }
-      // A zero-visible-text exchange logs the generation's own numbers — the
-      // structured half of the truthful story, and the only place the raw-versus-
-      // visible split is recorded. Counts and finish state only.
-      const narrator = completion();
-      if (!full.trim() && narrator) {
-        log.warn("engine.chat", "narrator produced no visible text", {
-          chatId,
-          ...narratorCompletionLogFields(narrator),
-        });
-      }
-      // Record (or clear) the exchange's reply-failure verdict BEFORE the generator
-      // returns — the route's drain, and so the client's refetch, wait on this.
-      await saveReplyFailure(
+      stream: streamExchange(gen, {
         chatId,
-        resolveReplyFailure({
-          hasText: Boolean(full.trim()),
-          stopped,
-          streamError,
-          timedOut: timedOut(),
-          completion: narrator,
-        }),
-        narrator?.modelId ?? input.model ?? "",
-      );
-    } finally {
-      inflightReplyAborts.delete(chatId);
-      releaseChatLock();
-    }
-  }
-}
-
-/**
- * Resolve what a settled exchange records as its reply failure (PURE). Only an
- * exchange that produced NO text records one — a partial that persisted is a
- * visible reply. A watchdog trip aborts the same controller as a player Stop, so
- * the timeout reason outranks the stop flag; a genuine player Stop is not a
- * failure. Null ⇒ clear any prior record.
- *
- * A zero-text exchange that neither threw, timed out, nor was stopped used to
- * record a bare `empty_reply` with no detail — which asserted "the model said
- * nothing" on the strength of having no evidence either way. When the stream
- * reports how the generation actually finished, that record is built from the
- * evidence instead (`classifyEmptyNarratorCompletion`): a content filter and a
- * generation error route to the classes that already describe them, and a genuine
- * empty is told apart from a burned output budget and from Vesper's own
- * normalizers erasing the reply. With no completion record — a provider that
- * reported nothing, or a lane that supplies none — it stays the honest bare
- * `empty_reply`.
- */
-export function resolveReplyFailure(input: {
-  hasText: boolean;
-  stopped: boolean;
-  streamError: { code: ChatReplyFailureCode; detail: string } | null;
-  timedOut: "first_token" | "overall" | null;
-  completion?: NarratorCompletion | null;
-}): { code: ChatReplyFailureCode; detail: string; cause?: ChatReplyFailureCause } | null {
-  if (input.hasText) return null;
-  if (input.streamError) return input.streamError;
-  if (input.timedOut) {
-    return {
-      code: "timeout",
-      detail:
-        input.timedOut === "first_token"
-          ? `no output within ${Math.round(CHAT_STREAM_FIRST_TOKEN_MS / 1000)}s`
-          : `the reply ran past ${Math.round(CHAT_STREAM_OVERALL_MS / 1000)}s and was cut off`,
+        settle,
+        abortController,
+        completion: () => narratorCompletion,
+        modelId: input.model ?? "",
+        // The coordinator owns the lock; the stream releases it on every terminal path.
+        release: releaseChatLock,
+      }),
     };
   }
-  if (input.stopped) return null;
-  if (input.completion) return classifyEmptyNarratorCompletion(input.completion);
-  return { code: "empty_reply", detail: "" };
 }
 
 /** The chat's owner id (for persona resolution) — one indexed lookup. */

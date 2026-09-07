@@ -1,7 +1,8 @@
 # The exchange pipeline
 
 One chat exchange from lock to settle: `engine/chat-pipeline.ts` (`submitChatMessage`),
-with reply persistence, rerun cuts and take history in `engine/chat-reply-store.ts`. The
+with reply persistence, rerun cuts and take history in `engine/chat-reply-store.ts`, and
+stream draining, Stop, watchdogs and failure recording in `engine/chat-reply-stream.ts`. The
 persistence guards keep a mid-stream delete from resurrecting orphans. The
 fan-out that follows the flushed reply is [post-turn.md](post-turn.md); the optional
 contact/permission legs that run mid-exchange are [physical-legs.md](physical-legs.md);
@@ -9,7 +10,9 @@ what a reply that never arrives records is [reply-failures.md](reply-failures.md
 
 ## The exchange lifecycle
 
-All orchestration lives in `engine/chat-pipeline.ts` (`submitChatMessage`). The HTTP route
+The coordinator in `engine/chat-pipeline.ts` (`submitChatMessage`) owns the exchange
+lock, preparation and settlement. The stream owner receives its settlement and lock-release
+callbacks; it keeps one active abort registry shared with Stop and rerun. The HTTP route
 (`app/api/chats/[chatId]/route.ts`) is a thin parse → auth → stream shell. One
 exchange:
 
