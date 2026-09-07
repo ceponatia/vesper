@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { emptyItemDefinition } from "@/contracts";
 import { draftWith, manualAttr, noCandidates, noLibrary } from "@/server/test-support";
 import { adoptInferredSpecies, fillSectionsToRun, forgeCharacterFill, renderSheetConcept } from "./character-fill";
 import { emptyCharacterDraft, characterDraftSchema, type CharacterDraft } from "./drafts";
@@ -152,6 +153,27 @@ describe("section completion", () => {
   it("carries the original creation brief into later generation", () => {
     const draft = draftWith((d) => { d.profile.creationBrief = "A lighthouse keeper in a wool coat; childhood friend of the player."; });
     expect(renderSheetConcept(draft)).toContain(draft.profile.creationBrief);
+  });
+
+  it("includes exact authoring details needed by subsequent rewrites", () => {
+    const draft = draftWith((d) => {
+      d.profile.schedule = [{ startMinute: 1337, endMinute: 121, days: [2, 4], outfitPresetId: "watch", activity: "Night watch", locationName: "Lighthouse" }];
+      d.profile.playerRelationship.presented = { lean: "masks_warmth", note: "Brisk jokes hide relief" };
+      d.profile.playerRelationship.note = "The player arrives during a storm";
+    });
+    const concept = renderSheetConcept(draft);
+    expect(concept).toContain(JSON.stringify(draft.profile.schedule));
+    expect(concept).toContain(JSON.stringify(draft.profile.playerRelationship));
+  });
+
+  it("skips every leg for scoped Outfit completion when garments already exist", async () => {
+    const draft = draftWith((d) => { d.profile.outfits = [{ id: "watch", name: "Watch", items: ["item_coat"] }]; });
+    expect(fillSectionsToRun(draft, "outfit")).toEqual([]);
+    const filled = await forgeCharacterFill({ draft, scope: "outfit", userId: "user_1", findItems: noLibrary, listCandidates: noCandidates });
+    expect(filled).toEqual(draft);
+    draft.profile.outfits = [];
+    draft.suggestedItems = [emptyItemDefinition()];
+    expect(fillSectionsToRun(draft, "outfit")).toEqual([]);
   });
 
   it("fills a missing routine while preserving authored prose and unrelated sections", async () => {

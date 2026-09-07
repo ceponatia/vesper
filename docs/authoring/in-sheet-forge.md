@@ -17,8 +17,10 @@ review belong to [../ui/library.md](../ui/library.md).
 counts. The editor uses those definitions for section navigation and actions. Counts describe
 authored details; an empty optional section is not a validation failure.
 
-- **Profile** owns background bio and daily rhythm. Name, real age, aliases, library tags and
-  species controls live here but remain fixed during section generation.
+- **Profile** owns background bio and daily rhythm. Scoped generation represents full schedule
+  rows, including exact custom/overnight windows, weekdays and outfit preset mappings; it does not
+  reduce an authored routine to the create leg's four-row day-part sketch. Name, real age,
+  aliases, library tags and species controls live here but remain fixed during section generation.
 - **Appearance** owns physical attributes and optional intimate anatomy. Established body
   configuration stays fixed. Attribute values, including manually authored ones, are reviewable
   during a rewrite.
@@ -27,13 +29,20 @@ authored details; an empty optional section is not a validation failure.
 - **Personality** owns personality prose, intimate disposition, preferences, social cards,
   disposition tags, traits and drives.
 - **Relationships** owns the player's starting relationship and premise note. Library links on
-  the same section are stored separately, require **Save library relationships**, and are outside
-  generation. Both relationship defaults apply to newly created conversations.
+  the same section are stored separately and autosave with the same blur/debounce behavior as
+  ordinary edits. **Save library relationships** flushes pending edits and retries failures.
+  Both relationship defaults apply to newly created conversations.
 - **Outfit** owns outfit presets and suggested garments.
 
 The stable scope identifiers are `profile`, `attributes`, `personality`, `disposition`,
 `relationships` and `outfit`; labels are presentation, not generation routing keys. The original
 creation brief remains part of generation context and is never rewritten by a section action.
+
+The Relationships panel stays mounted across section changes, preserving debounced and in-flight
+writes. Library edits use owner-scoped browser recovery, revision-checked acknowledgements and
+serialized saves; a later edit remains dirty when an earlier write finishes. Conflicting browser
+or recovered server versions require an explicit choice before autosave resumes. An unavailable
+browser store leaves the draft usable and reports that the page must stay open until saved.
 
 The profile leg requests only a scope's declared output fields. The attribute leg constrains its
 schema vocabulary to the selected section. Grounding uses the existing registry rules, and the
@@ -55,13 +64,15 @@ same additive merge, so a value entered during generation also survives.
   default. Changing any part preserves the whole record.
 - Whole-sheet fill can infer a species only while its body cluster is at the blank-create default.
   Scoped fill never changes species, body plan, name or real age.
-- Whole-sheet fill skips the outfit leg when garments already exist.
+- Whole-sheet and scoped Outfit completion skip the outfit leg when garments already exist.
 
 ## Rewrite this section
 
 `mode: "redraft"` requires a `scope`. It proposes replacements for the selected section,
 including manually authored text, attributes and traits. It does not rewrite identity facts,
-body configuration, the creation brief or unrelated sections.
+body configuration, the creation brief or unrelated sections. Relationship output includes the full outward mask,
+its note, the premise note and looming flag. Missing or invalid scoped schedule/relationship
+objects retain authored data instead of clearing it; invalid objects also produce diagnostics.
 
 Generated changes enter explicit proposal review. Accept applies the chosen changes, Reject
 leaves the authored draft alone, and Undo restores accepted values where subsequent edits do not

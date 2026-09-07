@@ -198,11 +198,39 @@ export function CharacterEditor({
         </Disclosure>
       ) : null}
 
-      {tabs.filter((entry) => entry.id !== tab).map((entry) => (
+      <div role="tabpanel" id={`${panelPrefix}-panel-relationships`}
+        aria-labelledby={`${panelPrefix}-tab-relationships`}
+        className={tab === "relationships" ? "flex flex-col gap-6" : "hidden"} tabIndex={0}>
+          <div className="flex flex-col gap-4">
+            <h3 className="text-base font-medium text-paper-100">Starting relationship with the player</h3>
+            <p className="text-sm text-paper-400">Saved with the character. New conversations start from these details; existing stories keep their own relationship.</p>
+            <RelationshipRecordEditor
+              value={draft.profile.playerRelationship}
+              onChange={(next) => patchProfile({ playerRelationship: { ...draft.profile.playerRelationship, ...next } })}
+              selfName={draft.name || "this character"}
+              targetName="the player"
+            />
+            <Field label="Premise note" hint="One line to pre-fill the opening scene of a new conversation.">
+              {(id) => (
+                <Textarea id={id} rows={2} value={draft.profile.playerRelationship.note}
+                  maxLength={PLAYER_RELATIONSHIP_NOTE_MAX}
+                  onChange={(event) => patchProfile({
+                    playerRelationship: { ...draft.profile.playerRelationship, note: event.target.value },
+                  })} />
+              )}
+            </Field>
+          </div>
+          {characterId ? <RelationshipsEditor key={characterId} characterId={characterId} name={draft.name} /> : <p className="text-sm text-paper-400">Save this character to link relationships with other library characters.</p>}
+        </div>
+
+      {tabs.filter((entry) => entry.id !== tab && entry.id !== "relationships").map((entry) => (
         <div key={entry.id} hidden role="tabpanel" id={`${panelPrefix}-panel-${entry.id}`}
           aria-labelledby={`${panelPrefix}-tab-${entry.id}`} />
       ))}
-      <div role="tabpanel" id={`${panelPrefix}-panel-${tab}`} aria-labelledby={`${panelPrefix}-tab-${tab}`} tabIndex={0}>
+      <div role={tab === "relationships" ? undefined : "tabpanel"}
+        id={tab === "relationships" ? undefined : `${panelPrefix}-panel-${tab}`}
+        aria-labelledby={tab === "relationships" ? undefined : `${panelPrefix}-tab-${tab}`}
+        tabIndex={tab === "relationships" ? undefined : 0}>
       {tab === "profile" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
@@ -401,30 +429,7 @@ export function CharacterEditor({
         />
       ) : null}
 
-      {tab === "relationships" ? (
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-4">
-            <h3 className="text-base font-medium text-paper-100">Starting relationship with the player</h3>
-            <p className="text-sm text-paper-400">Saved with the character. New conversations start from these details; existing stories keep their own relationship.</p>
-            <RelationshipRecordEditor
-              value={draft.profile.playerRelationship}
-              onChange={(next) => patchProfile({ playerRelationship: { ...draft.profile.playerRelationship, ...next } })}
-              selfName={draft.name || "this character"}
-              targetName="the player"
-            />
-            <Field label="Premise note" hint="One line to pre-fill the opening scene of a new conversation.">
-              {(id) => (
-                <Textarea id={id} rows={2} value={draft.profile.playerRelationship.note}
-                  maxLength={PLAYER_RELATIONSHIP_NOTE_MAX}
-                  onChange={(event) => patchProfile({
-                    playerRelationship: { ...draft.profile.playerRelationship, note: event.target.value },
-                  })} />
-              )}
-            </Field>
-          </div>
-          {characterId ? <RelationshipsEditor characterId={characterId} name={draft.name} /> : <p className="text-sm text-paper-400">Save this character to link relationships with other library characters.</p>}
-        </div>
-      ) : null}
+
 
       {tab === "portrait" ? (
         characterId ? (

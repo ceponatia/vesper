@@ -95,7 +95,10 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
     );
   }
   if (p.traits.length > 0) lines.push(`Traits: ${p.traits.map((t) => `${t.id}=${t.value}`).join(", ")}`);
-  if (p.schedule.length > 0) lines.push(`Daily rhythm: ${formatScheduleRhythm(p.schedule)}`);
+  if (p.schedule.length > 0) {
+    lines.push(`Daily rhythm: ${formatScheduleRhythm(p.schedule)}`);
+    lines.push(`Exact daily rhythm: ${JSON.stringify(p.schedule)}`);
+  }
   if (!isPlayerRelationshipUnset(p)) {
     const r = p.playerRelationship;
     const mask =
@@ -103,6 +106,7 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
     lines.push(
       `Starting relationship with the player: familiarity ${r.familiarity}, regard ${r.regard}${r.kind.trim() ? `, ${r.kind.trim()}` : ""}${r.history.trim() ? ` — ${r.history.trim()}` : ""}${mask}`,
     );
+    lines.push(`Starting relationship details: ${JSON.stringify(r)}`);
   }
   if (p.socialCards.length > 0) {
     lines.push(`Personal social cards: ${p.socialCards.map((c) => c.label).join("; ")}`);
@@ -113,6 +117,7 @@ export function renderSheetLines(draft: CharacterDraft): string[] {
   if (p.outfits.some((o) => o.items.length > 0)) {
     const garments = p.outfits.reduce((n, o) => n + o.items.length, 0);
     lines.push(`Outfits: already authored (${p.outfits.length} preset${p.outfits.length === 1 ? "" : "s"}, ${garments} garments) — fixed.`);
+    lines.push(`Outfit presets for schedule mapping: ${JSON.stringify(p.outfits.map(({ id, name }) => ({ id, name })))}`);
   }
   return lines;
 }
@@ -166,9 +171,10 @@ export function adoptInferredSpecies(draft: CharacterDraft, sink?: DiagnosticSin
  * when any garment is authored — an outfit is a coherent set, and the fill
  * would discard the result anyway (no spend on a leg we won't use).
  */
-export function fillSectionsToRun(draft: CharacterDraft): CharacterForgeSection[] {
+export function fillSectionsToRun(draft: CharacterDraft, scope?: CharacterSheetScope): CharacterForgeSection[] {
   const outfitAuthored = draft.profile.outfits.some((o) => o.items.length > 0) || draft.suggestedItems.length > 0;
-  return outfitAuthored ? ["profile", "attributes"] : ["profile", "attributes", "outfit"];
+  const sections = scope ? characterSections[scope].legs : ["profile", "attributes", "outfit"] as const;
+  return sections.filter((section) => section !== "outfit" || !outfitAuthored);
 }
 
 export interface FillCharacterInput {
@@ -194,7 +200,7 @@ export async function forgeCharacterFill(input: FillCharacterInput): Promise<Cha
     listCandidates: input.listCandidates,
     useFallbacks: input.useFallbacks,
   };
-  const sections = input.scope ? characterSections[input.scope].legs : fillSectionsToRun(base);
+  const sections = fillSectionsToRun(base, input.scope);
   const patches = await Promise.all(sections.map((section) => forgeCharacterSection(section, context)));
   let generated = base;
   for (const patch of patches) generated = applyCharacterSectionPatch(generated, patch);

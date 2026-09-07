@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticCollector, isPersonalityAttributeId } from "@/contracts";
 import { draftWith, manualAttr, noCandidates, noLibrary } from "@/server/test-support";
 import { characterSections, characterSheetScopes } from "@/lib/character-scopes";
-import { buildProfileSectionSchema } from "./character-forge/profile";
+import { buildProfileSectionSchema, groundScopedPlayerRelationship, groundScopedSchedule } from "./character-forge/profile";
 import { characterAttributeDefinitions } from "./character-forge/attributes";
 import { redraftCharacterScope } from "./character-redraft";
 import type { CharacterDraft } from "./drafts";
@@ -104,5 +104,43 @@ describe("scoped generation contract", () => {
     expect(redrafted.profile.bio).toBe(draft.profile.bio);
     expect(redrafted.profile.voice).not.toBe("Old voice");
     expect(redrafted.profile.attributes).toContainEqual(manualAttr("hair.color", "black"));
+  });
+});
+
+
+describe("scoped authored field round trips", () => {
+  it("preserves custom and overnight windows, weekdays and outfit mappings beyond the create sketch cap", () => {
+    const routine = Array.from({ length: 5 }, (_, index) => ({
+      startMinute: 1337 + index,
+      endMinute: 137 + index,
+      activity: `Night watch ${index}`,
+      locationName: "Lighthouse",
+      days: [1, 3, 5],
+      outfitPresetId: "storm-watch",
+    }));
+    const parsed = buildProfileSectionSchema("profile").parse({ bio: "Keeper", schedule: routine });
+    expect(groundScopedSchedule(parsed.schedule, [])).toEqual(routine);
+  });
+
+  it("keeps the authored routine and diagnoses invalid generated times", () => {
+    const routine = [{ startMinute: 1300, endMinute: 200, activity: "Watch", locationName: "Tower", outfitPresetId: "watch" }];
+    const sink = new DiagnosticCollector();
+    expect(groundScopedSchedule([{ ...routine[0], startMinute: 1440 }], routine, sink)).toEqual(routine);
+    expect(sink.items.some((diagnostic) => diagnostic.code === "parse.boundary_failed")).toBe(true);
+    expect(groundScopedSchedule(undefined, routine)).toEqual(routine);
+  });
+
+  it("preserves outward-mask flavor, premise and looming through the scoped output schema", () => {
+    const draft = draftWith((d) => {
+      d.profile.playerRelationship = { ...d.profile.playerRelationship,
+        familiarity: "familiar", regard: "warm", kind: "Old friends",
+        history: "Shared the watch", presented: { lean: "masks_warmth", note: "Brisk jokes hide relief" },
+        note: "The player arrives during a storm", looming: true,
+      };
+    });
+    const relationship = draft.profile.playerRelationship;
+    const parsed = buildProfileSectionSchema("relationships").parse({ playerRelationship: relationship });
+    expect(groundScopedPlayerRelationship(parsed.playerRelationship, relationship)).toEqual(relationship);
+    expect(groundScopedPlayerRelationship(undefined, relationship)).toBe(relationship);
   });
 });
