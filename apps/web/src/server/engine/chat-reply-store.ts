@@ -215,7 +215,7 @@ export async function saveReplyFailure(
   }
 }
 
-const messageAttachmentsMetaSchema = z.object({
+export const messageAttachmentsMetaSchema = z.object({
   attachments: z
     .object({
       ids: z.array(z.string()).catch([]).default([]),

@@ -83,6 +83,7 @@ import {
   currentReplyTakes,
   loadMessageAttachments,
   lastAssistantMessage,
+  messageAttachmentsMetaSchema,
   messageBefore,
   persistAssistantReply,
   pushReplyTake,
