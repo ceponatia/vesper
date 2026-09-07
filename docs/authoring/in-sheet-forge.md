@@ -44,6 +44,9 @@ writes. Library edits use owner-scoped browser recovery, revision-checked acknow
 serialized saves; a later edit remains dirty when an earlier write finishes. Conflicting browser
 or recovered server versions require an explicit choice before autosave resumes. An unavailable
 browser store leaves the draft usable and reports that the page must stay open until saved.
+Pending, saving, blocked and failed library writes also appear beside the sticky character
+navigation, with a return action from other sections. This notice remains separate from the
+character profile's save indicator and clears when library relationships are saved.
 
 The profile leg requests only a scope's declared output fields. The attribute leg constrains its
 schema vocabulary to the selected section. Grounding uses the existing registry rules, and the

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import {
   emptyCharacterPortraitAcceptance,
   heritagesForSpecies,
@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { TagInput } from "@/components/ui/tag-input";
 import { Tabs, type TabDef } from "@/components/ui/tabs";
-import { RelationshipsEditor } from "./relationships-editor";
+import { RelationshipsEditor, type RelationshipSaveStatus } from "./relationships-editor";
 import { Textarea } from "@/components/ui/textarea";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { AttributePicker } from "./attribute-picker";
@@ -102,6 +102,12 @@ export function CharacterEditor({
   onChatModelChange,
 }: CharacterEditorProps) {
   const [localTab, setLocalTab] = useState<CharacterEditorTab>("profile");
+  const [relationshipSave, setRelationshipSave] = useState<{ characterId?: string; status: RelationshipSaveStatus }>({ status: "saved" });
+  const onRelationshipSaveStatusChange = useCallback((status: RelationshipSaveStatus) => {
+    setRelationshipSave((current) => current.characterId === characterId && current.status === status
+      ? current : { characterId, status });
+  }, [characterId]);
+  const relationshipSaveStatus = relationshipSave.characterId === characterId ? relationshipSave.status : "saved";
   const tab = controlledTab ?? localTab;
   const setTab = (next: CharacterEditorTab) => {
     setLocalTab(next);
@@ -165,6 +171,20 @@ export function CharacterEditor({
           </Field>
         </div>
         <Tabs tabs={tabs} value={tab} onChange={setTab} idPrefix={panelPrefix} ariaLabel="Character sections" className="hidden md:flex" />
+        {relationshipSaveStatus !== "saved" ? (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-ink-600 bg-ink-800 px-3 py-2">
+            <p role={relationshipSaveStatus === "error" || relationshipSaveStatus === "blocked" ? "alert" : "status"}
+              className="text-sm text-paper-200">
+              {relationshipSaveStatus === "error" ? "Library relationships could not be saved. Review them and retry."
+                : relationshipSaveStatus === "blocked" ? "Library relationship autosave is paused. Review the recovered versions."
+                  : relationshipSaveStatus === "saving" ? "Saving library relationships…"
+                    : "Library relationship changes are waiting to save."}
+            </p>
+            {tab !== "relationships" ? (
+              <Button size="sm" onClick={() => setTab("relationships")}>Return to Relationships</Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {scope ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -220,7 +240,7 @@ export function CharacterEditor({
               )}
             </Field>
           </div>
-          {characterId ? <RelationshipsEditor key={characterId} characterId={characterId} name={draft.name} /> : <p className="text-sm text-paper-400">Save this character to link relationships with other library characters.</p>}
+          {characterId ? <RelationshipsEditor key={characterId} characterId={characterId} name={draft.name} onSaveStatusChange={onRelationshipSaveStatusChange} /> : <p className="text-sm text-paper-400">Save this character to link relationships with other library characters.</p>}
         </div>
 
       {tabs.filter((entry) => entry.id !== tab && entry.id !== "relationships").map((entry) => (

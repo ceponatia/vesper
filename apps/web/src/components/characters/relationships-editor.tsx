@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { familiarityBands, regardBands } from "@/contracts";
 import { charactersApi, type AuthoredEdgeRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -35,8 +35,16 @@ const blankRecord = (): AuthoredEdgeRecord => ({
 
 const emptyRecovery = (): RelationshipRecovery => null;
 
+/** Library writes are independent of the character profile's save indicator. */
+export type RelationshipSaveStatus = "saved" | "pending" | "saving" | "blocked" | "error";
+interface RelationshipsEditorProps {
+  characterId: string;
+  name: string;
+  onSaveStatusChange?: (status: RelationshipSaveStatus) => void;
+}
+
 /** Keep this component mounted while the section is hidden so debounce and writes survive tab changes. */
-export function RelationshipsEditor({ characterId, name }: { characterId: string; name: string }) {
+export function RelationshipsEditor({ characterId, name, onSaveStatusChange }: RelationshipsEditorProps) {
   const { data: session } = useSession();
   const stored = useAsyncData(() => charactersApi.relationships(characterId), [characterId]);
   if (stored.loading || !session?.user.id) return <Skeleton className="h-24 w-full" />;
@@ -44,14 +52,15 @@ export function RelationshipsEditor({ characterId, name }: { characterId: string
   if (!stored.data) return null;
   const storageKey = `vesper:character-relationships:${session.user.id}:${characterId}`;
   return <RelationshipDraftEditor key={storageKey} storageKey={storageKey} characterId={characterId}
-    name={name} initialEdges={stored.data.edges} />;
+    name={name} initialEdges={stored.data.edges} onSaveStatusChange={onSaveStatusChange} />;
 }
 
-function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges }: {
+function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges, onSaveStatusChange }: {
   characterId: string;
   name: string;
   storageKey: string;
   initialEdges: EdgeDraft[];
+  onSaveStatusChange?: RelationshipsEditorProps["onSaveStatusChange"];
 }) {
   const storage = useCharacterDraftStorage(storageKey, relationshipRecoverySchema, emptyRecovery);
   const [savedEdges, setSavedEdges] = useState(initialEdges);
@@ -65,6 +74,10 @@ function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges }
   const edges = storage.data?.edges ?? savedEdges;
   const dirty = storage.data !== null && snapshotOf(edges) !== savedSnapshot;
   const blocked = storage.conflict || serverConflict;
+  const saveStatus: RelationshipSaveStatus = saving ? "saving" : saveError ? "error" : blocked ? "blocked" : dirty ? "pending" : "saved";
+  useEffect(() => {
+    onSaveStatusChange?.(saveStatus);
+  }, [onSaveStatusChange, saveStatus]);
   const setDrafts = (next: EdgeDraft[]) => {
     setSaveError(null);
     storage.update({ base: acknowledged.current, edges: next });
