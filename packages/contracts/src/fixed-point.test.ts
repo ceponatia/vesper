@@ -22,9 +22,10 @@ import {
  */
 
 // ---------------------------------------------------------------------------
-// The PRE-EXTRACTION implementation, copied verbatim out of the old
-// `simulation-core/src/lib/bodies/integration.ts` `driftStep`. Deliberately duplicated rather than
-// imported: an oracle that imports the code under test proves nothing.
+// The PRE-EXTRACTION body `driftStep`, copied verbatim before the shared
+// fixed-point primitive existed. Current body integration lives in
+// `simulation-core/src/lib/bodies/integration.ts`. This oracle stays
+// deliberately duplicated: importing the code under test would prove nothing.
 // ---------------------------------------------------------------------------
 
 const METER_ONE = 10_000;
