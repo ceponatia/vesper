@@ -17,17 +17,8 @@ import {
   itemDefinitionSchema,
   itemKindSchema,
   itemSensorySchema,
+  socialReactionCardExtrasSchema,
 } from "@/contracts";
-
-/**
- * Client data layer (docs/streaming-api.md, docs/ui/conventions.md): typed
- * fetch helpers over the route-handler API. Every response crosses a trust boundary, so it
- * is parsed with forgiving schemas — unknown fields are stripped, bad fields
- * fall back, bad list elements are dropped. Errors use the
- * `{ error: { code, message } }` envelope.
- *
- * This module is client-safe: it imports only pure contracts and `zod`.
- */
 
 import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "./http";
 import { imageRecordSchema } from "./images";
@@ -268,6 +259,29 @@ export const itemDetailSchema = itemSummarySchema.extend({
   visibility: visibilitySchema,
 });
 export type ItemDetail = z.infer<typeof itemDetailSchema>;
+
+// ---------------------------------------------------------------------------
+// Social-reaction cards
+// ---------------------------------------------------------------------------
+
+export const socialCardSummarySchema = z.object({
+  id: idSchema,
+  name: nameSchema,
+  description: textOr(""),
+  tags: tagsSchema,
+  visibility: visibilitySchema,
+  /** The `kind` lives in the definition JSONB; surfaced for the library bucket + tag. */
+  definition: socialReactionCardExtrasSchema.catch(() =>
+    socialReactionCardExtrasSchema.parse({}),
+  ),
+});
+export type SocialCardSummary = z.infer<typeof socialCardSummarySchema>;
+
+/** Detail adds `mine` (viewer owns it) so the builder offers edit vs clone-to-library. */
+export const socialCardDetailSchema = socialCardSummarySchema.extend({
+  mine: z.boolean().catch(true),
+});
+export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 
 export const characterForgeSections = [
   "profile",

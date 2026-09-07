@@ -44,15 +44,6 @@ import {
   type ChatPlan,
 } from "@/contracts";
 
-/**
- * Client data layer (docs/streaming-api.md, docs/ui/conventions.md): typed
- * fetch helpers over the route-handler API. Every response crosses a trust boundary, so it
- * is parsed with forgiving schemas — unknown fields are stripped, bad fields
- * fall back, bad list elements are dropped. Errors use the
- * `{ error: { code, message } }` envelope.
- *
- * This module is client-safe: it imports only pure contracts and `zod`.
- */
 import {
   arrayOf,
   idSchema,

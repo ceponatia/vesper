@@ -1,4 +1,9 @@
-/** Public client API surface. Domain leaves import one another directly, never this entry. */
+/**
+ * Typed client data layer over the route-handler API. Domain leaves own transport,
+ * response schemas, endpoint families, and streaming; this entry preserves the
+ * application-facing surface with explicit exports. Every response crosses a
+ * trust boundary and is parsed with forgiving schemas.
+ */
 export { meSchema, meApi } from "./api/account";
 export type { Me } from "./api/account";
 export {
@@ -70,7 +75,6 @@ export {
   apiPut,
   apiDelete,
   withQuery,
-  imageUrl,
 } from "./api/http";
 export type { ApiError, ApiResult } from "./api/http";
 export {
@@ -125,8 +129,7 @@ export type {
   ImageLoraUpdateRequest,
 } from "./api/image-models";
 export {
-  socialCardSummarySchema,
-  socialCardDetailSchema,
+  imageUrl,
   imageRowMetaSchema,
   galleryImageSchema,
   imageRecordSchema,
@@ -137,8 +140,6 @@ export {
   galleryApi,
 } from "./api/images";
 export type {
-  SocialCardSummary,
-  SocialCardDetail,
   GalleryTab,
   GalleryImage,
   ImageRecord,
@@ -159,6 +160,8 @@ export {
   locationDetailSchema,
   itemSummarySchema,
   itemDetailSchema,
+  socialCardSummarySchema,
+  socialCardDetailSchema,
   characterForgeSections,
   characterSheetScopes,
   characterDraftSchema,
@@ -187,6 +190,8 @@ export type {
   ItemDefinitionParts,
   ItemSummary,
   ItemDetail,
+  SocialCardSummary,
+  SocialCardDetail,
   CharacterForgeSection,
   CharacterSheetScope,
   CharacterDraft,

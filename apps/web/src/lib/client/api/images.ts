@@ -4,55 +4,18 @@ import {
   portraitVariantKindLabel,
   portraitVariantKinds,
   type PortraitVariantKind,
-  socialReactionCardExtrasSchema,
 } from "@/contracts";
 import { sceneReferenceSchema } from "@vesper/image-core";
-
-/**
- * Client data layer (docs/streaming-api.md, docs/ui/conventions.md): typed
- * fetch helpers over the route-handler API. Every response crosses a trust boundary, so it
- * is parsed with forgiving schemas — unknown fields are stripped, bad fields
- * fall back, bad list elements are dropped. Errors use the
- * `{ error: { code, message } }` envelope.
- *
- * This module is client-safe: it imports only pure contracts and `zod`.
- */
 
 import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "./http";
 import {
   arrayOf,
   idSchema,
   listOf,
-  nameSchema,
   optionalId,
   optionalText,
-  tagsSchema,
   textOr,
-  visibilitySchema,
 } from "./shared";
-
-// ---------------------------------------------------------------------------
-// Social-reaction cards
-// ---------------------------------------------------------------------------
-
-export const socialCardSummarySchema = z.object({
-  id: idSchema,
-  name: nameSchema,
-  description: textOr(""),
-  tags: tagsSchema,
-  visibility: visibilitySchema,
-  /** The `kind` lives in the definition JSONB; surfaced for the library bucket + tag. */
-  definition: socialReactionCardExtrasSchema.catch(() =>
-    socialReactionCardExtrasSchema.parse({}),
-  ),
-});
-export type SocialCardSummary = z.infer<typeof socialCardSummarySchema>;
-
-/** Detail adds `mine` (viewer owns it) so the builder offers edit vs clone-to-library. */
-export const socialCardDetailSchema = socialCardSummarySchema.extend({
-  mine: z.boolean().catch(true),
-});
-export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 
 /**
  * One image row's `meta`, as every client surface reads it.
@@ -151,6 +114,10 @@ export const imageRecordSchema = z.object({
   meta: imageRowMetaSchema,
 });
 export type ImageRecord = z.infer<typeof imageRecordSchema>;
+
+export function imageUrl(imageId: string): string {
+  return `/api/images/${imageId}/file`;
+}
 
 // The variant kinds are a pure contract (`contracts/images/portrait-variant`) —
 // the studio dropdown, the POST body schema and the prompt builder all read that

@@ -103,5 +103,3 @@ export function detailOf<T>(item: z.ZodType<T>, key: string) {
 export const ambientSchema = ambientBaseSchema.catch({});
 
 export type Ambient = z.infer<typeof ambientSchema>;
-
-// ---------------------------------------------------------------------------

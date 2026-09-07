@@ -139,7 +139,3 @@ export function withQuery(
   const qs = search.toString();
   return qs ? `${path}?${qs}` : path;
 }
-
-export function imageUrl(imageId: string): string {
-  return `/api/images/${imageId}/file`;
-}
