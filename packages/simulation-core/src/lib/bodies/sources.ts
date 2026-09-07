@@ -2,7 +2,7 @@ import { AFTERGLOW_DURATION_SECONDS, EXERTION_HYGIENE_FRACTION_FIXED_POINT, METE
 import { bodyConditionExpiryTriggerKind, type TriggerScheduledEvent } from "../../contracts/scheduler";
 import { rearmCollapseTrigger, type CollapseContext } from "./collapse";
 import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, capturedDerivation, deriveBodyConditionId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection } from "./events";
-import { integrateMeterValue, type MeterIntegrationView } from "./integration";
+import { clampMeter, integrateMeterValue, type MeterIntegrationView } from "./integration";
 
 // ---------------------------------------------------------------------------
 // InitializeActorBody (seeds the substrate for one actor)
