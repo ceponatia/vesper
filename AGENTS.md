@@ -25,6 +25,8 @@
 - `vesper-db-change`: schema migrations, durable data changes, backfills, and authorized Neon operations.
 - `vesper-model-onboard`: text/image model identity, provider evidence, adapters, and deployed behavior.
 - `vesper-skill-maintenance`: skill discovery, routing, helpers, and hook/runtime compatibility.
+- For substantial delegated work, use `vesper-task-context`. Select `vesper-ux-review`, `vesper-ui-quality`,
+  or `vesper-scenario-review` when the change warrants that review; their custom roles live in `.codex/agents/`.
 - GitHub issues and the Vesper Development board own plans, status, sequencing, dependencies, blockers, and
   open questions. Never create plan documents. The repository owns current technical truth.
 - Read `docs/README.md` before editing `docs/`, then the relevant system docs. Durable docs use present-tense

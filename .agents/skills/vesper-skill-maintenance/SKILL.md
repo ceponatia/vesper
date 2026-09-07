@@ -46,6 +46,8 @@ Read [behavioral review](references/behavioral-review.md) for the affected route
 Verify referenced paths and commands against the checkout, and tool names,
 arguments, hook events, and payloads against the active host. Existing files or
 a passing payload fixture do not prove discovery or hook attachment.
+For this repository's custom roles and context/evidence hooks, read
+[Codex runtime checks](references/codex-runtime.md).
 
 Preserve one owner for each workflow. Descriptions should distinguish neighboring
 skills; entrypoints should route to conditional detail rather than copying root

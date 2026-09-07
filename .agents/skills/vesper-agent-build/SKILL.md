@@ -28,6 +28,8 @@ default worktree procedure; assign disjoint paths and one integrator there.
 
 - Use [the brief template](templates/agent-brief.md), filling the outcome,
   ownership, known decisions, allowed operations, and required report.
+- Use `vesper-task-context` when a substantial slice needs focused source discovery
+  or a fresh context handoff. The parent owns any optional context/evidence record.
 - For ordinary issue implementation, read [worktrees and integration](references/integration.md).
   Helpers are beside this file; run them from the repository root:
 

@@ -1,5 +1,24 @@
 # Codex collaboration
 
+Choose a focused project role when it materially helps the task:
+
+| Role | Bounded responsibility |
+| --- | --- |
+| `vesper-context-scout` | Gather the minimum verified context for a fresh worker or handoff. |
+| `vesper-ux-reviewer` | Assess substantial flows, defaults, unnecessary steps, and simpler alternatives. |
+| `vesper-ui-reviewer` | Inspect the deployed desktop/mobile UI and record rendered evidence. |
+| `vesper-scenario-reviewer` | Trace meaningful state transitions, failure recovery, and access boundaries. |
+
+These profiles inherit the selected model. Do not run every role for every change.
+Context, UX, and scenario roles inspect without editing; the UI role may record
+evaluation artifacts. They do not implement fixes or spawn further agents.
+Check the current spawn tool's available role names. New `.codex/agents` files may
+require a fresh session before they appear. If a role is unavailable, give an
+available agent its profile and matching skill, and report the fallback honestly.
+
+Profile sandbox defaults support these boundaries, but parent permission overrides
+can take precedence; do not describe role instructions as a complete security boundary.
+
 - Use `spawn_agent` for a concrete, bounded subtask that can proceed independently.
   Give code-changing workers explicit path or module ownership and tell them
   other agents share the codebase and their edits must be preserved.

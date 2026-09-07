@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper UI Quality"
+  short_description: "Review rendered Fly UI quality and accessibility"
+  default_prompt: "Use $vesper-ui-quality to review this rendered Fly surface at desktop and phone viewports."
+
+policy:
+  allow_implicit_invocation: true
