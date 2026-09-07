@@ -5,13 +5,13 @@ import {
   type ImageModel,
   type ImageProviderInputDescriptor,
   type ImageResolutionTier,
+  type ImageLora,
 } from "@vesper/image-core";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { NumberField } from "../image-admin-shared";
-import type { ImageLora } from "@vesper/image-core";
 import type { GeneratorModelView } from "./model";
 
 /** A numeric binding's declared range, as hint copy — absent means undeclared, never unbounded. */

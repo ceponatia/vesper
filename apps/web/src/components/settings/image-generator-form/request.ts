@@ -1,4 +1,4 @@
-import { type ImageModel, type ImageResolutionTier } from "@vesper/image-core";
+import type { ImageModel, ImageResolutionTier, ImageLora } from "@vesper/image-core";
 import {
   IMAGE_GENERATOR_MAX_IMAGE_COUNT,
   type ImageGeneratorControls,
@@ -7,7 +7,6 @@ import {
   type ImageGeneratorProviderInputs,
   type ImageGeneratorVersionPolicy,
 } from "@/contracts/images/image-generator";
-import type { ImageLora } from "@vesper/image-core";
 import { shapeIsReachable, type GeneratorModelView } from "./model";
 import type { PrimaryRow } from "./references";
 

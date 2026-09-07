@@ -1,13 +1,7 @@
-import { baseImageModelSlug, type ImageModel } from "@vesper/image-core";
-import {
-  type ImageGeneratorControls,
-  type ImageGeneratorProviderInputs,
-  type ImageGeneratorRunInputs,
-  type ImageGeneratorVersionPolicy,
-} from "@/contracts/images/image-generator";
+import { baseImageModelSlug, type ImageModel, type ImageLora } from "@vesper/image-core";
+import type { ImageGeneratorControls, ImageGeneratorProviderInputs, ImageGeneratorRunInputs, ImageGeneratorVersionPolicy } from "@/contracts/images/image-generator";
 import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_PREFILL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { imageGeneratorRoleLabel } from "../image-generator-copy";
-import type { ImageLora } from "@vesper/image-core";
 import { shapeIsReachable, type GeneratorModelView } from "./model";
 import { parseStrictNumber } from "./request";
 /** A settled run's request, re-seeded into a fresh form. Values only. */
