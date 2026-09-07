@@ -28,5 +28,5 @@ model. Since every prompt consumer reads this one resolved type, **the absence o
 not a rule anyone has to remember — is what enforces that.**
 
 The character-chat prompt threads the rest in as the addressee
-(`apps/web/src/server/engine/prompts/character-chat.ts`): name, bio, what they are wearing, how
+(`apps/web/src/server/engine/prompts/character-chat/types.ts`): name, bio, what they are wearing, how
 their voice sounds, and what they respond to once things turn intimate.

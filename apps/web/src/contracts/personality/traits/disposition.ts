@@ -14,7 +14,7 @@ export interface DispositionBandOptions {
  * ("Warmth: warm (openly affectionate and caring)") — the personality sliders
  * turned into narrator-facing guidance. The single source shared by BOTH the
  * session disposition blocks (engine/scene.ts) and the character-chat prompt
- * (engine/prompts/character-chat.ts), so the same authored sliders read
+ * (engine/prompts/character-chat/state-sections.ts), so the same authored sliders read
  * identically wherever they surface. Unknown / over-range ids are skipped (the
  * registry clamps), so a stale value never breaks the block. Intimate traits are
  * partitioned out by default so callers can exposure-gate them separately.

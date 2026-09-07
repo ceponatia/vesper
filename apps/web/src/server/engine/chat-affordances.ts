@@ -345,7 +345,7 @@ export interface ChatAffordanceReadResult {
 /**
  * The character's attributes as the narrator sees them: authored base + persisted
  * narrative overlays + this moment's condition overlays. Identical composition to
- * `character-chat.ts`'s `fullResolved`, deliberately — an affordance read that
+ * `prompts/character-chat/single.ts`'s `fullResolved`, deliberately — an affordance read that
  * disagreed with the prompt about what the hair is doing would be worse than no
  * read at all.
  *

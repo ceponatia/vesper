@@ -27,7 +27,7 @@ import {
 
 /**
  * The attribute ids the legacy narrator prompt surfaces for this body — the
- * guard chain `character-chat.ts` runs over `stableResolved` before rendering
+ * guard chain `prompts/character-chat/sensory-sections.ts` runs over `stableResolved` before rendering
  * its Attributes block and sensory cues (audit finding 2 records that chain
  * re-typed at seven sites; this is a MEASUREMENT REPLICA of it, and slice 10
  * owns consolidating all of them onto the shared snapshot).

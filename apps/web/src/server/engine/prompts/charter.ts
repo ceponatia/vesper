@@ -21,7 +21,7 @@ import { UNTRUSTED_DATA_NOTICE } from "./untrusted";
  * lane-specific prompt input, so the successor builder can compose the SAME text into
  * its own block structure and numbering.
  *
- * Extracted from `character-chat.ts` with a hard invariant: the legacy prompt stays
+ * Extracted from the character-chat prompt owners with a hard invariant: the legacy prompt stays
  * byte-identical (its snapshot tests are the gate). Rule bodies here are NUMBER-FREE —
  * the caller owns the numbering / placement (the legacy lane prepends "2. ", "3. ", …;
  * the successor lane embeds them in its role/craft blocks). Pure, no IO.

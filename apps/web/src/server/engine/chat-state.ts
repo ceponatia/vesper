@@ -104,7 +104,7 @@ import {
   type SupportingCastMember,
   type TraitValue,
 } from "@/contracts";
-// life-stage is not re-exported by the @/contracts barrel (see scene.ts / prompts/character-chat.ts) — import direct.
+// life-stage is not re-exported by the @/contracts barrel (see scene.ts / prompts/character-chat/single.ts) — import direct.
 import { lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/life-stage";
 import { attributeValueSchema, type AttributeValue } from "@/contracts/attributes/value";
 import { agentReasoningPlan } from "@/lib/agent-reasoning";
