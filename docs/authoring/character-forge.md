@@ -24,11 +24,16 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
 - The original brief is stored in the existing profile JSON as `creationBrief`, with an empty
   default for legacy records. It remains private in public profile projections. A prompt-based
   draft preserves the original prompt. Before the first AI action on a manual or legacy saved
-  character, the editor captures the original authored details if there is no brief.
+  character, the editor captures the original authored details if there is no brief. The durable
+  brief shares the Forge request's 4,000-character limit. Manual capture reserves space for
+  identity, appearance and outfit before bounded biography, personality, voice and traits.
+  Oversized existing briefs retain their opening and closing constraints within that limit.
 - Revisions do not replace the original brief. Fill and rewrite receive it alongside the current
   sheet, whose later authored values remain authoritative when they disagree with the original.
 - Save and open Portrait Studio or Chat preserves the requested destination. Pending proposals
-  carry into the saved character's review storage without acceptance.
+  carry into the saved character's review storage without acceptance. Repeated saves replace
+  that creation draft's pending contribution and preserve decisions made on either surface,
+  without removing proposals created independently on the saved character.
 - A successful save clears only the browser version it saved. If newer edits exist, the saved
   character remains linked and the newer draft stays available. Subsequent saves of that draft
   update the linked character rather than creating another character.
@@ -36,7 +41,9 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
   in-memory draft available. Corrupt records stay retained until an explicit replacement.
 - Browser writes compare versions and use a per-draft Web Lock where available. A conflicting
   tab keeps its changes in a separate recovery copy. Selecting a recovery preserves the displaced
-  version; queued writes from a version being left cannot overwrite the resumed version.
+  version; queued writes from a version being left cannot overwrite the resumed version. Recovery
+  promotion consumes the exact selected copy only after the shared write succeeds. Displaced
+  shared versions use stable recovery keys rather than multiplying copies on repeated recovery.
 - Browser drafts are scoped to the authenticated account, remain on this device between visits,
   and are not cloud drafts. Switching accounts remounts the authoring state and never loads the
   previous account's draft into the new account.

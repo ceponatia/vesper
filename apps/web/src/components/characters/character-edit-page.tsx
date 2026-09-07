@@ -58,6 +58,8 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
   const alive = useRef(true);
   const reviewStore = useCharacterDraftStorage(`vesper:character-review:${ownerId}:${characterId}`, characterReviewStateSchema, emptyCharacterReview);
 
+  const updateReview = reviewStore.update;
+
   useEffect(() => {
     alive.current = true;
     const requested = new URLSearchParams(window.location.search).get("tab");
@@ -73,11 +75,12 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         const model = modelRef.current;
         saveChainRef.current = saveChainRef.current.then(async () => {
           const result = await charactersApi.update(characterId, { name: snapshot.name, tags: snapshot.tags, profile: snapshot.profile, suggestedItems: snapshot.suggestedItems, chatModel: model });
+          if (result.ok) updateReview((review) => reconcileMaterializedUndo(review, snapshot, result.data.character.profile));
           return result.ok;
         }).catch(() => false);
       }
     };
-  }, [characterId]);
+  }, [characterId, updateReview]);
 
   useEffect(() => { draftRef.current = draft; modelRef.current = chatModel; }, [draft, chatModel]);
 
@@ -113,7 +116,8 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       const gen = editGenRef.current;
       if (alive.current) setSaving(true);
       const result = await charactersApi.update(characterId, { name: snapshot.name, tags: snapshot.tags, profile: snapshot.profile, suggestedItems: snapshot.suggestedItems, chatModel: modelRef.current });
-      if (!alive.current) return false;
+      if (result.ok) updateReview((review) => reconcileMaterializedUndo(review, snapshot, result.data.character.profile));
+      if (!alive.current) return result.ok;
       setSaving(false);
       if (!result.ok) {
         toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
@@ -127,7 +131,6 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
           draftRef.current = saved;
           setDraft(saved);
           setForgeDiagnostics(result.data.diagnostics);
-          reviewStore.update((review) => reconcileMaterializedUndo(review, snapshot, result.data.character.profile));
         }
       }
       if (!opts.silent) toast.push({ title: "Character saved", tone: "success" });

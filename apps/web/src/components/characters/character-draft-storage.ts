@@ -22,3 +22,13 @@ export function readDraft<T>(raw: string | null, schema: z.ZodType<T>): StoredDr
     return parseOrNull(z.object({ revision: z.string(), savedAt: z.number().optional(), data: schema }), JSON.parse(raw));
   } catch { return null; }
 }
+
+/** Promote a selected recovery under the shared draft lock. A copy is consumed
+ * only after the shared CAS succeeds and only if its exact selected bytes remain.
+ * The caller may have reused that copy key to protect displaced local edits. */
+export function promoteDraftRecovery(storage: DraftStorage, key: string, expected: string | null, copyKey: string, selected: string): { status: StorageResult; consumed: boolean } {
+  if (copyKey === key) return { status: "conflict", consumed: false };
+  const status = writeDraft(storage, key, expected, selected);
+  if (status !== "saved") return { status, consumed: false };
+  return { status, consumed: writeDraft(storage, copyKey, selected, null) === "saved" };
+}

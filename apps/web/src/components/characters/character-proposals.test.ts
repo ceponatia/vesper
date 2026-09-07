@@ -1,11 +1,29 @@
 import { describe, expect, it } from "vitest";
+import { CHARACTER_CREATION_BRIEF_MAX, boundCharacterCreationBrief } from "@/contracts";
 import { characterDraftSchema, emptyCharacterDraft } from "@/lib/client/api";
-import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, reconcileMaterializedUndo, type CharacterProposal } from "./character-proposals";
+import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, reconcileMaterializedUndo, transferCreationReview, type CharacterProposal } from "./character-proposals";
 import { isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
 
 const proposal = (base: CharacterProposal["base"], proposed: CharacterProposal["proposed"]): CharacterProposal => ({ id: "generation", label: "Profile rewrite", base, proposed, undo: false });
 
 describe("character proposal review", () => {
+  it("does not resurrect transferred suggestions rejected in the retained creation draft", () => {
+    const base = emptyCharacterDraft();
+    const source = proposal(base, { ...base, name: "Source suggestion" });
+    const destination = { ...proposal(base, { ...base, name: "Destination suggestion" }), id: "destination" };
+    const original = transferCreationReview({ pending: [destination], undo: null }, { pending: [source], undo: null }, "creation");
+    expect(original.pending).toHaveLength(2);
+    const repeated = transferCreationReview(original, { pending: [], handledIds: [source.id], undo: null }, "creation");
+    expect(repeated.pending).toEqual([destination]);
+  });
+
+  it("keeps destination decisions when a retained creation copy still has stale suggestions", () => {
+    const base = emptyCharacterDraft();
+    const source = proposal(base, { ...base, name: "Source suggestion" });
+    const destination = { pending: [], handledIds: [source.id], undo: null };
+    expect(transferCreationReview(destination, { pending: [source], undo: null }, "creation").pending).toEqual([]);
+  });
+
   it("applies only proposed differences and preserves edits made during generation", () => {
     const base = characterDraftSchema.parse({ name: "Iris", profile: { bio: "Original", attributes: [{ id: "hair.color", value: "auburn", source: "manual" }] } });
     const incoming = characterDraftSchema.parse({ ...base, profile: { ...base.profile, bio: "Suggested", attributes: [...base.profile.attributes, { id: "eyes.color", value: "green", source: "creation" }] } });
@@ -86,10 +104,41 @@ describe("character proposal review", () => {
     const undone = applyCharacterProposal({ ...incoming, profile: savedProfile, suggestedItems: [] }, review.undo);
     expect(undone.unresolved).toEqual([]);
     expect(undone.draft.profile.outfits).toEqual([]);
+    // A completing save and a queued navigation save may return the same materialization.
+    expect(reconcileMaterializedUndo(review, incoming, savedProfile)).toBe(review);
   });
 });
 
 describe("original creation brief", () => {
+  it("bounds a rich manual brief while reserving visual identity and outfit context", () => {
+    const manual = characterDraftSchema.parse({
+      name: "Iris Vale",
+      profile: {
+        bio: "A harbor master. " + "Long biography details. ".repeat(1000) + "Keeps the storm ledger.",
+        personality: "Independent. ".repeat(1000),
+        voice: "Dry humor. ".repeat(1000),
+        age: "42",
+        attributes: [{ id: "hair.color", value: "auburn", source: "manual" }, { id: "eyes.color", value: "green", source: "manual" }],
+      },
+      suggestedItems: [{ kind: "clothing", name: "Signature blue suit", description: "Blue linen with brass buttons. " + "Fabric details. ".repeat(1000) }],
+    });
+    const brief = withCreationBrief(manual).profile.creationBrief;
+    expect(brief.length).toBeLessThanOrEqual(CHARACTER_CREATION_BRIEF_MAX);
+    for (const fact of ["Iris Vale", "human", "42", "auburn", "green", "Signature blue suit", "storm ledger"]) expect(brief).toContain(fact);
+    expect(withCreationBrief(withCreationBrief(manual)).profile.creationBrief).toBe(brief);
+    expect(characterDraftSchema.parse(withCreationBrief(manual)).profile.creationBrief).toBe(brief);
+  });
+
+  it("normalizes oversized persisted prompts without losing their opening and closing constraints", () => {
+    const prompt = "Human woman, auburn hair. " + "Biography. ".repeat(1000) + "Always wears a blue coat.";
+    const bounded = boundCharacterCreationBrief(prompt);
+    expect(bounded.length).toBeLessThanOrEqual(CHARACTER_CREATION_BRIEF_MAX);
+    expect(bounded).toContain("Human woman, auburn hair.");
+    expect(bounded).toContain("Always wears a blue coat.");
+    expect(characterDraftSchema.parse({ profile: { creationBrief: prompt } }).profile.creationBrief).toBe(bounded);
+    expect(withCreationBrief(emptyCharacterDraft(), prompt).profile.creationBrief).toBe(bounded);
+  });
+
   it("distinguishes the first blank Forge preview from existing author edits", () => {
     const blank = withCreationBrief(emptyCharacterDraft(), "A harbor master");
     expect(isPristineCharacterDraft(blank)).toBe(true);

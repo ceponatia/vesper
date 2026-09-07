@@ -5,6 +5,7 @@ import { characterDraftSchema, type CharacterDraft } from "@/lib/client/api";
 export const characterProposalSchema = z.object({
   id: z.string(),
   label: z.string(),
+  sourceDraftId: z.string().optional(),
   base: characterDraftSchema,
   proposed: characterDraftSchema,
   undo: z.boolean().default(false),
@@ -12,6 +13,7 @@ export const characterProposalSchema = z.object({
 export type CharacterProposal = z.infer<typeof characterProposalSchema>;
 export const characterReviewStateSchema = z.object({
   pending: z.array(characterProposalSchema).default([]),
+  handledIds: z.array(z.string()).optional(),
   undo: characterProposalSchema.nullable().default(null),
 });
 export type CharacterReviewState = z.infer<typeof characterReviewStateSchema>;
@@ -135,4 +137,15 @@ export function reconcileMaterializedUndo(review: CharacterReviewState, sent: Ch
     ? [{ ...first, items: [...new Set([...first.items, ...added])] }, ...base.profile.outfits.slice(1)]
     : [{ id: saved.outfits[0]?.id ?? "everyday", name: saved.outfits[0]?.name ?? "Everyday", items: added }];
   return { ...review, undo: { ...review.undo, base: { ...base, suggestedItems: [], profile: { ...base.profile, outfits } } } };
+}
+
+/** Repeated saves replace this creation draft's contribution, preserving proposals
+ * created on the saved character. Decisions on either surface prevent resurrection. */
+export function transferCreationReview(existing: CharacterReviewState | undefined, incoming: CharacterReviewState, sourceDraftId: string): CharacterReviewState {
+  const handled = new Set([...(existing?.handledIds ?? []), ...(incoming.handledIds ?? [])]);
+  const carried = incoming.pending.filter((proposal) => !handled.has(proposal.id)).map((proposal) => ({ ...proposal, sourceDraftId }));
+  const destinationOnly = (existing?.pending ?? []).filter((proposal) => proposal.sourceDraftId !== sourceDraftId && !handled.has(proposal.id));
+  const pending = new Map([...carried, ...destinationOnly].map((proposal) => [proposal.id, proposal]));
+  const undo = existing?.undo ?? incoming.undo;
+  return { pending: [...pending.values()], handledIds: [...handled], undo: undo && !handled.has(undo.id) ? undo : null };
 }

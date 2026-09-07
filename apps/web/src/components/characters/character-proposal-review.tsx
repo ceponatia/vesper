@@ -19,7 +19,7 @@ export function CharacterProposalReview({ draft, review, onReviewChange, onChang
     const result = applyCharacterProposal(draft, item, choices);
     if (result.unresolved.length) return;
     onChange(result.draft);
-    onReviewChange({ pending: review.pending.filter((p) => p.id !== item.id), undo: item.undo ? null : result.undo });
+    onReviewChange({ ...review, pending: review.pending.filter((p) => p.id !== item.id), handledIds: [...new Set([...(review.handledIds ?? []), item.id])], undo: item.undo ? null : result.undo });
     setOpenId(null);
   };
   if (!review.pending.length && !review.undo) return null;
@@ -32,7 +32,7 @@ export function CharacterProposalReview({ draft, review, onReviewChange, onChang
         {review.undo ? <Button variant="ghost" onClick={() => setOpenId(review.undo?.id ?? null)}>Undo last accepted changes</Button> : null}
       </div>
       {proposal ? <ReviewDialog key={proposal.id} draft={draft} proposal={proposal} onClose={() => setOpenId(null)} onAccept={(choices) => accept(proposal, choices)} onReject={() => {
-        onReviewChange({ ...review, pending: review.pending.filter((p) => p.id !== proposal.id), undo: proposal.undo ? null : review.undo });
+        onReviewChange({ ...review, pending: review.pending.filter((p) => p.id !== proposal.id), handledIds: [...new Set([...(review.handledIds ?? []), proposal.id])], undo: proposal.undo ? null : review.undo });
         setOpenId(null);
       }} /> : null}
     </section>

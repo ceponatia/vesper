@@ -50,7 +50,8 @@ The section registry owns placement, generation scopes and section detail counts
   not clear the dirty state of edits made while it was in flight.
 - Undo offers the inverse of the last accepted changes through the same conflict review. Later
   independent edits survive; later edits to the same field require a choice. Materialized outfit
-  item ids join the undo receipt. Undo removes their character references, not the library items.
+  item ids join the undo receipt even when the save completes after leaving the editor. Undo
+  removes their character references, not the library items.
 - Pending reviews and the undo receipt persist in browser storage under the authenticated account
   and character. Account or character navigation resets the editor and guards late async results.
   Reviews saved on this device are not synchronized between devices.

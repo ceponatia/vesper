@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { z } from "zod";
-import { readDraft, writeDraft } from "./character-draft-storage";
+import { promoteDraftRecovery, readDraft, writeDraft } from "./character-draft-storage";
 
 interface RecoveryCopy { key: string; label: string }
 
@@ -101,6 +101,7 @@ export function useCharacterDraftStorage<T>(key: string, schema: z.ZodType<T>, i
 
   const update = useCallback((value: T | ((old: T) => T)) => {
     const next = typeof value === "function" ? (value as (old: T) => T)(current.current) : value;
+    if (Object.is(next, current.current)) return;
     current.current = next;
     if (mounted.current) setData(next);
     persist(next);
@@ -118,13 +119,31 @@ export function useCharacterDraftStorage<T>(key: string, schema: z.ZodType<T>, i
         const selected = copyKey ? localStorage.getItem(copyKey) : raw;
         const parsed = readDraft(selected, schema);
         if (!parsed) { setNotice("That draft could not be read. Your current edits are still here."); return; }
-        // Preserve the local version before choosing another, even if its last write was queued.
-        if (revision.current && revision.current !== parsed.revision) {
+        const shared = readDraft(raw, schema);
+        // Preserve truly displaced local edits. If local already equals the shared
+        // version, the shared backup below owns that one copy.
+        if (revision.current && revision.current !== parsed.revision && revision.current !== shared?.revision) {
           localStorage.setItem(recoveryKey, JSON.stringify({ revision: revision.current, savedAt: Date.now(), data: current.current }));
         }
-        // Choosing a recovery copy also preserves the displaced shared version.
-        if (copyKey && raw && raw !== selected) localStorage.setItem(`${recoveryPrefix}${crypto.randomUUID()}`, raw);
-        expected.current = raw;
+        if (copyKey && selected) {
+          // Version-addressed backups avoid multiplying the same displaced record
+          // when users alternate between recovery copies.
+          if (raw && raw !== selected) {
+            let backupKey = `${recoveryPrefix}version:${shared?.revision ?? crypto.randomUUID()}`;
+            const previousBackup = localStorage.getItem(backupKey);
+            if (previousBackup && previousBackup !== raw) backupKey = `${recoveryPrefix}${crypto.randomUUID()}`;
+            localStorage.setItem(backupKey, raw);
+          }
+          const promoted = promoteDraftRecovery(localStorage, key, raw, copyKey, selected);
+          if (promoted.status !== "saved") {
+            blocked.current = true;
+            setConflict(true);
+            setNotice("The shared draft changed while recovering. Your current edits and the recovery copy are retained.");
+            setRecoveries(findRecoveries());
+            return;
+          }
+        }
+        expected.current = copyKey ? selected : raw;
         blocked.current = false;
         setConflict(false);
         current.current = parsed.data;
@@ -132,10 +151,9 @@ export function useCharacterDraftStorage<T>(key: string, schema: z.ZodType<T>, i
         setData(parsed.data);
         setNotice(null);
         setRecoveries(findRecoveries());
-        if (copyKey) persist(parsed.data);
       } catch { setNotice("Browser storage is unavailable. Keep this page open until you save."); }
     });
-  }, [key, recoveryKey, recoveryPrefix, schema, findRecoveries, persist, lock]);
+  }, [key, recoveryKey, recoveryPrefix, schema, findRecoveries, lock]);
 
   const reset = useCallback(() => {
     epoch.current += 1;
@@ -143,8 +161,11 @@ export function useCharacterDraftStorage<T>(key: string, schema: z.ZodType<T>, i
     blocked.current = false;
     setConflict(false);
     setNotice(null);
-    update(initial());
-  }, [key, initial, update]);
+    const fresh = initial();
+    current.current = fresh;
+    setData(fresh);
+    persist(fresh);
+  }, [key, initial, persist]);
 
   const clear = useCallback(async (savedRevision: string): Promise<boolean> => {
     await tail.current;

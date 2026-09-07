@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { readDraft, writeDraft, type DraftStorage } from "./character-draft-storage";
+import { promoteDraftRecovery, readDraft, writeDraft, type DraftStorage } from "./character-draft-storage";
 import { characterCreationStateSchema, emptyCharacterCreation } from "./character-creation-draft";
 
 function memoryStorage(): DraftStorage {
@@ -9,6 +9,26 @@ function memoryStorage(): DraftStorage {
 }
 
 describe("character browser draft persistence", () => {
+  it("consumes the exact recovery copy only after shared promotion succeeds", () => {
+    const storage = memoryStorage();
+    storage.setItem("shared", "old");
+    storage.setItem("copy", "selected");
+    expect(promoteDraftRecovery(storage, "shared", "old", "copy", "selected")).toEqual({ status: "saved", consumed: true });
+    expect(storage.getItem("shared")).toBe("selected");
+    expect(storage.getItem("copy")).toBeNull();
+  });
+
+  it("retains recovery on a shared conflict and preserves a reused copy key", () => {
+    const storage = memoryStorage();
+    storage.setItem("shared", "newer");
+    storage.setItem("copy", "selected");
+    expect(promoteDraftRecovery(storage, "shared", "old", "copy", "selected")).toEqual({ status: "conflict", consumed: false });
+    expect(storage.getItem("copy")).toBe("selected");
+    storage.setItem("copy", "displaced local edits");
+    expect(promoteDraftRecovery(storage, "shared", "newer", "copy", "selected")).toEqual({ status: "saved", consumed: false });
+    expect(storage.getItem("copy")).toBe("displaced local edits");
+  });
+
   it.each(["replace", "clear"] as const)("a stale %s never destroys a newer draft", (operation) => {
     const storage = memoryStorage();
     writeDraft(storage, "account-one", null, "first");

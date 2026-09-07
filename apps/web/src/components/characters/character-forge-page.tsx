@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { Diagnostic } from "@/contracts";
+import { CHARACTER_CREATION_BRIEF_MAX, type Diagnostic } from "@/contracts";
 import { mergeFillDraft } from "@/lib/character-fill";
 import { characterSections, mergeFillScope, mergeRedraftScope, type CharacterSheetScope } from "@/lib/character-scopes";
 import { charactersApi, type CharacterDraft } from "@/lib/client/api";
@@ -21,7 +21,7 @@ import { CharacterEditor } from "./character-editor";
 import { characterCreationStateSchema, emptyCharacterCreation, isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
 import { CharacterProposalReview } from "./character-proposal-review";
 import { readDraft, writeDraft } from "./character-draft-storage";
-import { characterReviewStateSchema, reconcileMaterializedUndo } from "./character-proposals";
+import { characterReviewStateSchema, reconcileMaterializedUndo, transferCreationReview } from "./character-proposals";
 import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
 /** New and Forge are two entry points into the same account-scoped creation draft. */
@@ -123,8 +123,8 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
           const raw = localStorage.getItem(reviewKey);
           const existing = readDraft(raw, characterReviewStateSchema)?.data;
           if (raw && !existing) return "conflict" as const;
-          const pending = new Map([...carriedReview.pending, ...(existing?.pending ?? [])].map((proposal) => [proposal.id, proposal]));
-          return writeDraft(localStorage, reviewKey, raw, JSON.stringify({ revision: crypto.randomUUID(), savedAt: Date.now(), data: { pending: [...pending.values()], undo: existing?.undo ?? carriedReview.undo } }));
+          const transferred = transferCreationReview(existing, carriedReview, snapshot.id);
+          return writeDraft(localStorage, reviewKey, raw, JSON.stringify({ revision: crypto.randomUUID(), savedAt: Date.now(), data: transferred }));
         };
         const stored = navigator.locks ? await navigator.locks.request(reviewKey, carryReview) : carryReview();
         if (stored !== "saved") {
@@ -161,7 +161,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       {store.conflict || store.recoveries.length ? <div className="mb-4 flex flex-wrap gap-2"><Button onClick={() => store.resume()}>Resume latest draft</Button>{store.recoveries.map((copy) => <Button key={copy.key} onClick={() => store.resume(copy.key)}>Recover draft from {copy.label}</Button>)}</div> : null}
       {savedId || store.data.savedCharacterId ? <p className="mb-4 text-sm"><Link className="text-accent-300 underline" href={`/characters/${savedId ?? store.data.savedCharacterId}?tab=portrait`}>Open saved character</Link></p> : null}
       <Disclosure title={draft.profile.creationBrief ? "Original creation brief" : "Creation brief"} description={draft.profile.creationBrief ? "Kept as context for later suggestions" : "Describe the character to draft with the Forge"} defaultOpen={mode === "forge"} className="mb-5">
-        <Field label={draft.profile.creationBrief ? "Original brief (read only)" : "Describe your character"}>{(id) => <Textarea id={id} rows={5} value={draft.profile.creationBrief || prompt} readOnly={!!draft.profile.creationBrief} onChange={(event) => store.update((current) => ({ ...current, prompt: event.target.value }))} placeholder="A human woman in her forties, a harbor-master with dry humor, auburn hair and a weathered blue coat…" />}</Field>
+        <Field label={draft.profile.creationBrief ? "Original brief (read only)" : "Describe your character"}>{(id) => <Textarea id={id} rows={5} maxLength={CHARACTER_CREATION_BRIEF_MAX} value={draft.profile.creationBrief || prompt} readOnly={!!draft.profile.creationBrief} onChange={(event) => store.update((current) => ({ ...current, prompt: event.target.value }))} placeholder="A human woman in her forties, a harbor-master with dry humor, auburn hair and a weathered blue coat…" />}</Field>
         <Button className="mt-3" variant={draft.profile.creationBrief ? "ghost" : "primary"} busy={busy === "create"} disabled={!(prompt.trim() || draft.profile.creationBrief) || busy !== null || saving || store.conflict} onClick={() => void generate("create")}>{draft.profile.creationBrief ? "Regenerate character suggestions" : "Forge character suggestions"}</Button>
         {draft.profile.creationBrief ? <p className="mt-2 text-xs text-paper-400">Use the section actions to refine one part. Starting a new draft creates a new original brief.</p> : null}
       </Disclosure>
