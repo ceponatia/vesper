@@ -7,7 +7,8 @@ import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngB
 import { createImageAsset, readImageBytes, saveImageBuffer } from "./asset-storage";
 import { absoluteImagePath } from "./paths";
 import { referenceViewSweepPass } from "./reference-view-maintenance";
-import { currentReferenceViewRow, finalizeReferenceView, getReferenceViewSummary, readAcceptedPortraitSource, referenceViewHistoryEntries, reserveReferenceView, restoreReferenceView, reviewReferenceView, REFERENCE_VIEW_RETENTION_MS } from "./reference-view-store";
+import { currentReferenceViewRow, finalizeReferenceView, getReferenceViewSummary, installUploadedReferenceView, readAcceptedPortraitSource, referenceViewHistoryEntries, reserveReferenceView, restoreReferenceView, reviewReferenceView, withReferenceViewLock, REFERENCE_VIEW_RETENTION_MS } from "./reference-view-store";
+import { uploadReferenceView } from "./reference-view-upload";
 
 // These claims depend on real transaction locks, stored ownership and retained files.
 const ready = await probeIntegrationDb("reference view review.int.test", "character_reference_views");
@@ -123,6 +124,64 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     const [result, reservation] = await Promise.all([restoreReferenceView(state.restore), reserveReferenceView(state.reserve)]);
     expect(["restored", "changed"]).toContain(result.status);
     expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(reservation);
+  });
+
+  it.each(["queued", "running"] as const)("refuses an upload during a %s build without changing the current attempt or creating an asset", async (status) => {
+    const state = await fixture();
+    await db().insert(jobs).values({ ownerId, type: "reference_views", status, payload: { characterId: state.input.characterId } });
+    const before = await db().select({ id: images.id }).from(images).where(eq(images.entityId, state.input.characterId));
+    const result = await uploadReferenceView({ ...state.input, dataUrl: `data:image/png;base64,${(await testPngBuffer()).toString("base64")}` });
+    expect(result.status).toBe("busy");
+    expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(state.first.id);
+    const after = await db().select({ id: images.id }).from(images).where(eq(images.entityId, state.input.characterId));
+    expect(after.map((row) => row.id).sort()).toEqual(before.map((row) => row.id).sort());
+  });
+
+  it("rechecks a build committed while upload installation waits for the character lock", async () => {
+    const state = await fixture();
+    const image = await asset(state.input.characterId, "reference_view");
+    let entered!: () => void;
+    let release!: () => void;
+    const locked = new Promise<void>((resolve) => { entered = resolve; });
+    const resume = new Promise<void>((resolve) => { release = resolve; });
+    const admission = withReferenceViewLock(state.input.characterId, async (tx) => {
+      entered();
+      await resume;
+      await tx.insert(jobs).values({ ownerId, type: "reference_views", status: "queued", payload: { characterId: state.input.characterId } });
+    });
+    await locked;
+    const installation = installUploadedReferenceView({ ...state.reserve, ownerId, imageId: image.id,
+      expectedCurrentAttemptId: state.first.id, expectedCurrentRevision: 0 });
+    release();
+    const [, result] = await Promise.all([admission, installation]);
+    expect(result.status).toBe("busy");
+    expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(state.first.id);
+  });
+
+  it("protects pending generations and resolves competing uploads with one approved current attempt", async () => {
+    const state = await fixture();
+    const image = await asset(state.input.characterId, "reference_view");
+    const input = { ...state.reserve, ownerId, imageId: image.id, expectedCurrentAttemptId: state.first.id, expectedCurrentRevision: 0 };
+    const results = await Promise.all([installUploadedReferenceView(input), installUploadedReferenceView(input)]);
+    expect(results.filter((result) => result.status === "uploaded")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "changed")).toHaveLength(1);
+    const current = await currentReferenceViewRow(state.input.characterId, view);
+    expect(current).toMatchObject({ current: true, status: "ready", verdict: "approved", imageId: image.id });
+    const pending = await reserveReferenceView(state.reserve);
+    expect((await installUploadedReferenceView({ ...input, expectedCurrentAttemptId: pending })).status).toBe("busy");
+    expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(pending);
+  });
+
+  it("does not replace a review or accepted portrait changed while upload bytes were processed", async () => {
+    const state = await fixture();
+    const image = await asset(state.input.characterId, "reference_view");
+    const input = { ...state.reserve, ownerId, imageId: image.id, expectedCurrentAttemptId: state.first.id, expectedCurrentRevision: 0 };
+    await reviewReferenceView({ ...state.input, attemptId: state.first.id, expectedRevision: 0, verdict: "reject", feedback });
+    expect((await installUploadedReferenceView(input)).status).toBe("changed");
+    const portrait = await asset(state.input.characterId, "avatar");
+    await db().update(characters).set({ acceptedAvatarImageId: portrait.id }).where(eq(characters.id, state.input.characterId));
+    expect((await installUploadedReferenceView({ ...input, expectedCurrentRevision: 1 })).status).toBe("changed");
+    expect((await currentReferenceViewRow(state.input.characterId, view))).toMatchObject({ id: state.first.id, verdict: "rejected", feedback });
   });
 
   it("refuses foreign, wrong-slot, expired, unreadable, incompatible and busy attempts", async () => {
