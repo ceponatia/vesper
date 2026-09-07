@@ -14,6 +14,20 @@ import { DEFAULT_BODY_PLAN_ID } from "../body/plans";
  */
 export const PLAYER_RELATIONSHIP_NOTE_MAX = 280;
 
+/** Shared by the Forge request and the durable original authoring context. */
+export const CHARACTER_CREATION_BRIEF_MAX = 4000;
+
+/** Older oversized briefs degrade to bounded context, retaining both their opening
+ * identity and closing constraints instead of making every later Forge call fail. */
+export function boundCharacterCreationBrief(value: string): string {
+  const brief = value.trim();
+  if (brief.length <= CHARACTER_CREATION_BRIEF_MAX) return brief;
+  const marker = "\n[… brief shortened …]\n";
+  const tailLength = 600;
+  return brief.slice(0, CHARACTER_CREATION_BRIEF_MAX - marker.length - tailLength).trimEnd()
+    + marker + brief.slice(-tailLength).trimStart();
+}
+
 export const scheduleEntrySchema = z.object({
   startMinute: z.number().int().min(0).max(1439),
   endMinute: z.number().int().min(0).max(1439),
@@ -179,6 +193,8 @@ const liftLegacyDefaultOutfit = (value: unknown): unknown => {
 /** The raw object shape — for structural uses (`.partial()` etc.); reads go
  *  through `characterProfileSchema`, whose preprocess lifts legacy rows. */
 export const characterProfileObjectSchema = z.object({
+  /** Original authoring concept; private context preserved across subsequent revisions. */
+  creationBrief: z.string().catch("").transform(boundCharacterCreationBrief).default(""),
   bio: z.string().default(""),
   personality: z.string().default(""),
   voice: z.string().optional(),

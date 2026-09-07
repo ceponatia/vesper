@@ -517,6 +517,7 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   }, [list.data, tagSel]);
 
   const createBlank = async () => {
+    if (entity === "characters") { router.push("/characters/new"); return; }
     setCreating(true);
     // Randomized placeholder (create-on-new): several
     // fresh drafts never share a name, so nothing dupes or shadows in pickers.
