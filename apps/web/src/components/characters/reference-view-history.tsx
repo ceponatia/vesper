@@ -6,14 +6,17 @@ import {
   type ReferenceViewAngleId,
   type ReferenceViewHistoryEntry,
   type ReferenceViewWardrobe,
+  type ReferenceViewSummary,
 } from "@/lib/client/api";
 import { timeAgo } from "@/lib/relative-time";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { Button } from "@/components/ui/button";
+import { ReferenceViewFeedbackNote } from "./reference-view-reviewer";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Tag } from "@/components/ui/tag";
-import { referenceViewMethodCopy, referenceViewVerdictCopy } from "./reference-view-copy";
+import { referenceViewMethodCopy, referenceViewVerdictCopy, referenceViewRestoreUnavailableCopy } from "./reference-view-copy";
 
 /**
  * Every image one reference-view slot has produced, newest first, each with the
@@ -25,10 +28,8 @@ import { referenceViewMethodCopy, referenceViewVerdictCopy } from "./reference-v
  * shows what the same slot produced before, whether the owner approved it,
  * rejected it, or replaced it without looking, and it enlarges any of them.
  *
- * **READ-ONLY, absolutely.** Nothing here approves, rejects, regenerates or
- * restores. Opening the list, scrolling it and enlarging an entry leave the
- * slot's current image and its verdict exactly as they were — which is what
- * makes it safe to open a history in the middle of a review.
+ * Use this version restores an eligible image as an unreviewed candidate. Opening
+ * history itself makes no change; restoration checks the originally displayed slot.
  *
  * **The overlay is borrowed, not rebuilt.** The list rides `Dialog`, so the
  * backdrop, the Escape/backdrop close and the focus trap are the shared ones,
@@ -54,14 +55,26 @@ export interface ReferenceViewHistoryProps {
   characterId: string;
   slot: ReferenceViewHistorySlot;
   onClose: () => void;
+  onRestored: (view: ReferenceViewSummary) => void;
 }
 
-export function ReferenceViewHistory({ characterId, slot, onClose }: ReferenceViewHistoryProps) {
+export function ReferenceViewHistory({ characterId, slot, onClose, onRestored }: ReferenceViewHistoryProps) {
   const history = useAsyncData(
     () => referenceViewsApi.history(characterId, slot.angle, slot.wardrobe),
     [characterId, slot.angle, slot.wardrobe],
   );
   const [enlarged, setEnlarged] = useState<ReferenceViewHistoryEntry | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const restore = async (entry: ReferenceViewHistoryEntry) => {
+    if (!history.data || restoring) return;
+    setRestoring(entry.id); setError(null);
+    const result = await referenceViewsApi.restore(characterId, slot.angle, slot.wardrobe, entry.id,
+      history.data.currentAttemptId, history.data.currentRevision);
+    setRestoring(null);
+    if (!result.ok) { setError(result.error.message); return; }
+    onRestored(result.data.view);
+  };
 
   const entries = history.data?.entries ?? [];
   const retentionDays = history.data?.retentionDays ?? 0;
@@ -69,6 +82,9 @@ export function ReferenceViewHistory({ characterId, slot, onClose }: ReferenceVi
   return (
     <>
       <Dialog open onClose={onClose} title={`${slot.label} — past images`} size="xl">
+        <p className="mb-3 text-sm text-paper-400">Use a retained version to make it the current candidate. It needs your approval again before it is used in new images.</p>
+        {error ? <p role="alert" className="mb-2 text-sm text-paper-200">{error}</p> : null}
+        <Button size="sm" variant="ghost" className="mb-3" disabled={restoring !== null || history.loading} onClick={() => { setError(null); history.reload(); }}>Refresh history</Button>
         {history.loading ? <p className="text-xs text-paper-500">Reading this view&apos;s history…</p> : null}
         {!history.loading && history.data === null ? (
           <p className="text-xs text-paper-500">This view&apos;s history could not be read.</p>
@@ -104,10 +120,17 @@ export function ReferenceViewHistory({ characterId, slot, onClose }: ReferenceVi
                       <Tag tone={verdict.tone}>{verdict.label}</Tag>
                       {entry.current ? <Tag tone="accent">on the card now</Tag> : null}
                     </div>
+                    <ReferenceViewFeedbackNote feedback={entry.feedback} />
                     <div className="flex flex-wrap items-center gap-2 text-[11px] text-paper-500">
                       {entry.method === null ? null : <span>{referenceViewMethodCopy[entry.method]}</span>}
                       <span>{timeAgo(entry.createdAt)}</span>
                     </div>
+                    {!entry.current ? <>
+                      <Button size="sm" variant="ghost" className="self-start" busy={restoring === entry.id}
+                        disabled={entry.restoreUnavailable !== null || restoring !== null}
+                        onClick={() => void restore(entry)}>Use this version</Button>
+                      {entry.restoreUnavailable ? <p className="text-xs text-paper-400">{referenceViewRestoreUnavailableCopy[entry.restoreUnavailable]}</p> : null}
+                    </> : null}
                   </div>
                 </li>
               );
@@ -127,6 +150,12 @@ export function ReferenceViewHistory({ characterId, slot, onClose }: ReferenceVi
         alt={slot.label}
         caption={enlarged === null ? null : `${slot.label} — ${referenceViewVerdictCopy[enlarged.verdict].label}`}
         onClose={() => setEnlarged(null)}
+        controls={enlarged ? <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          <ReferenceViewFeedbackNote feedback={enlarged.feedback} />
+          {error ? <p role="alert" className="text-sm text-paper-200">{error}</p> : null}
+          {enlarged.restoreUnavailable ? <p className="text-sm text-paper-400">{referenceViewRestoreUnavailableCopy[enlarged.restoreUnavailable]}</p> :
+            <Button size="sm" className="self-start" busy={restoring === enlarged.id} disabled={restoring !== null} onClick={() => void restore(enlarged)}>Use this version</Button>}
+        </div> : null}
       />
     </>
   );

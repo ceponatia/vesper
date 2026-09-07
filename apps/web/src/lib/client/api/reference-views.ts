@@ -14,6 +14,7 @@ import {
   type ReferenceViewState,
   type ReferenceViewSummary,
   type ReferenceViewWardrobe,
+  type ReferenceViewReviewRequest,
 } from "@/contracts";
 
 import { apiGet, apiPost } from "./http";
@@ -78,8 +79,10 @@ const referenceViewHistoryResponseSchema = z
   .object({
     entries: z.array(referenceViewHistoryEntrySchema).catch([]),
     retentionDays: z.number().catch(0),
+    currentAttemptId: z.string().nullable().catch(null),
+    currentRevision: z.number().int().nonnegative().catch(0),
   })
-  .catch({ entries: [], retentionDays: 0 });
+  .catch({ entries: [], retentionDays: 0, currentAttemptId: null, currentRevision: 0 });
 
 /** The slot path segment pair, spelled once so no call site builds a URL by hand. */
 function referenceViewPath(
@@ -128,18 +131,27 @@ export const referenceViewsApi = {
       `${referenceViewPath(characterId, angle, wardrobe)}/upload`,
       { dataUrl },
     ),
-  /** Approve (making the view consumable) or reject (terminal for that attempt). */
+  /** A revision-conditional approval, rejection or undo on the displayed attempt. */
   review: (
     characterId: string,
     angle: ReferenceViewAngleId,
     wardrobe: ReferenceViewWardrobe,
-    verdict: "approve" | "reject",
+    request: ReferenceViewReviewRequest,
   ) =>
     apiPost(
       referenceViewResponseSchema,
       `${referenceViewPath(characterId, angle, wardrobe)}/review`,
-      { verdict },
+      request,
     ),
+  restore: (
+    characterId: string,
+    angle: ReferenceViewAngleId,
+    wardrobe: ReferenceViewWardrobe,
+    attemptId: string,
+    expectedCurrentAttemptId: string | null,
+    expectedCurrentRevision: number,
+  ) => apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/restore`,
+    { attemptId, expectedCurrentAttemptId, expectedCurrentRevision }),
   /** Every image this slot has produced, with its verdict. Read-only — it moves nothing. */
   history: (
     characterId: string,

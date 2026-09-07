@@ -12,6 +12,9 @@ import {
   referenceViewAngleIds,
   referenceViewAngles,
   referenceViewFaceVisibility,
+  referenceViewFeedbackReasons,
+  referenceViewReviewRequestSchema,
+  referenceViewRestoreRequestSchema,
   referenceViewHistoryVerdict,
   referenceViewWardrobeEntries,
   referenceViewWardrobes,
@@ -421,5 +424,21 @@ describe("what a past attempt's verdict reads as", () => {
 
   it.each(cases)("%s ⇒ %s", (_name, row, expected) => {
     expect(referenceViewHistoryVerdict(row)).toBe(expected);
+  });
+});
+
+
+describe("reference review wire guards", () => {
+  const request = { attemptId: "attempt", expectedRevision: 0, verdict: "reject" };
+  it("requires an exact attempt and revision for review and restoration", () => {
+    expect(referenceViewReviewRequestSchema.safeParse({ verdict: "approve" }).success).toBe(false);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, expectedRevision: -1 }).success).toBe(false);
+    expect(referenceViewRestoreRequestSchema.safeParse({ attemptId: "old-attempt" }).success).toBe(false);
+  });
+  it("accepts optional registered feedback and rejects oversized or unknown correction data", () => {
+    expect(referenceViewReviewRequestSchema.safeParse(request).success).toBe(true);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: [...referenceViewFeedbackReasons], correction: "Keep the original jacket." } }).success).toBe(true);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: [], correction: "x".repeat(1001) } }).success).toBe(false);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: ["invented_reason"], correction: "" } }).success).toBe(false);
   });
 });

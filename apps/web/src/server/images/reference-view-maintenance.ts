@@ -3,7 +3,7 @@ import { images } from "../db";
 import { log } from "@/server/log";
 import { purgeImagesWhere } from "./asset-deletion";
 import { registerReferenceViewMaintenance } from "./asset-lifecycle-hooks";
-import { clearReferenceViewAssetPointers, retiredReferenceViewAssets } from "./reference-view-store";
+import { REFERENCE_VIEW_RETENTION_MS, clearReferenceViewAssetPointers, retiredReferenceViewAssets } from "./reference-view-store";
 
 /**
  * Retention for the reference view set: the bounded pass that collects a
@@ -25,7 +25,7 @@ import { clearReferenceViewAssetPointers, retiredReferenceViewAssets } from "./r
  * last Tuesday?" can still be answered from the actual picture, short enough
  * that nobody is storing months of superseded bodies.
  */
-export const REFERENCE_VIEW_RETENTION_MS = 7 * 24 * 60 * 60_000;
+export { REFERENCE_VIEW_RETENTION_MS } from "./reference-view-store";
 
 /**
  * The window in whole days, for the one sentence the studio's history list owes
