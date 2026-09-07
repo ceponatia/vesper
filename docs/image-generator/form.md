@@ -1,5 +1,11 @@
 # The create form
 
+`image-generator-form.tsx` owns form state, model-change resets, and submission. Its
+`image-generator-form/` modules own capability view data (`model.ts`), explicit request assembly
+(`request.ts`), copy/replay and LoRA compatibility (`prefill.ts`), and reference/control presentation
+(`references.tsx`, `controls.tsx`). These owners use the existing Generator contracts and provider
+descriptors; Lab retains its own form.
+
 The create form derives everything past the prompt from the selected model's probed capability
 record, never from its slug
 ([../images/providers/registry.md](../images/providers/registry.md)). Registering a new model

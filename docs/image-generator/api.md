@@ -35,6 +35,7 @@ job from the route — a refused job slot deletes the just-created row rather th
 | `apps/web/src/app/api/admin/self/owned-images/route.ts`    | sources endpoint                                |
 | `apps/web/src/app/settings/image-generator/page.tsx`       | server page (`?run=` idiom)                     |
 | `apps/web/src/components/settings/image-generator-*.tsx`   | client UI (page, form, list, detail, copy)      |
+| `apps/web/src/components/settings/image-generator-form/`  | model view data, request assembly, prefill interpretation, reference and control fields |
 | `apps/web/src/components/settings/owned-image-picker.tsx`  | general owned-image picker                      |
 
 The runner builds a synthetic in-memory profile per run — a pass-through prompt strategy, a caller
