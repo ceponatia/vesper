@@ -46,6 +46,7 @@ import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Sheet } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
@@ -229,14 +230,14 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   /** Wraps the menu trigger + desktop popover, for the popover's outside-click test. */
   const menuWrapRef = useRef<HTMLDivElement>(null);
 
-  const scroll = useChatScroll(chatId, lines);
-  const { setPinned } = scroll;
+  const { scrollRef, contentRef, pinned, setPinned, pin, preparePrepend, onScroll, jumpToLatest } =
+    useChatScroll(chatId, lines);
   const { sending, setSending, stopping, setStopping, actionBusy, setActionBusy,
     requestInitiative, send, rerun, runAction, promptCharacter, stopReply, goOn, anotherTake,
     switchTake, letThemSpeak } = useChatExchange({
     chatId, transcript, ready, archived, setArchived, chatModel, chatState, input,
     setInput, narratorMode, attachments, setAttachments, setOocActive, attachBusy,
-    skipBusy, setPickupDismissed, setWantsSay, pin: scroll.pin, refreshState,
+    skipBusy, setPickupDismissed, setWantsSay, pin, refreshState,
     refreshScenes: () => scenes.reload({ silent: true }),
     refreshWorld: () => world.reload({ silent: true }), who,
   });
@@ -976,7 +977,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         <ChatTranscriptView
           lines={lines} loading={bootstrap.loading} error={bootstrap.error} onRetry={() => bootstrap.reload()}
           ready={ready} hasEarlier={hasEarlier} loadingEarlier={loadingEarlier}
-          loadEarlier={() => transcript.loadEarlier(scroll.preparePrepend)} scroll={scroll}
+          loadEarlier={() => transcript.loadEarlier(preparePrepend)}
+          scrollRef={scrollRef} contentRef={contentRef} onScroll={onScroll} pinned={pinned} jumpToLatest={jumpToLatest}
           who={who} name={name} rosterNames={rosterNames} avatarImageId={character?.avatarImageId ?? null}
           sending={sending} archived={archived} lastAssistantId={lastAssistantId} capabilities={capabilities}
           privacyMode={privacyMode} sceneAnchors={sceneAnchors} onEnlargeAvatar={() => setPortraitOpen(true)}

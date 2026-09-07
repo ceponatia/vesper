@@ -1,13 +1,12 @@
 "use client";
 
-import type { ComponentProps } from "react";
+import type { ComponentProps, RefObject, UIEventHandler } from "react";
 import type { ApiError, ImageRecord } from "@/lib/client/api";
 import { MessageBubble, type ChatLine } from "@/components/characters/chat-message";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SceneMomentRow } from "./chat-scene-moments";
-import type { useChatScroll } from "./use-chat-scroll";
 
 type BubbleProps = ComponentProps<typeof MessageBubble>;
 interface TranscriptProps {
@@ -19,7 +18,11 @@ interface TranscriptProps {
   hasEarlier: boolean;
   loadingEarlier: boolean;
   loadEarlier: () => Promise<void>;
-  scroll: Pick<ReturnType<typeof useChatScroll>, "scrollRef" | "contentRef" | "onScroll" | "pinned" | "jumpToLatest">;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  contentRef: RefObject<HTMLDivElement | null>;
+  onScroll: UIEventHandler<HTMLDivElement>;
+  pinned: boolean;
+  jumpToLatest: () => void;
   who: string;
   name: string;
   rosterNames: string[];
@@ -44,17 +47,17 @@ interface TranscriptProps {
 
 /** Transcript presentation consumes the page's shared scene list and privacy flag. */
 export function ChatTranscriptView({ lines, loading, error, onRetry, ready, hasEarlier,
-  loadingEarlier, loadEarlier, scroll, who, name, rosterNames, avatarImageId,
+  loadingEarlier, loadEarlier, scrollRef, contentRef, onScroll, pinned, jumpToLatest, who, name, rosterNames, avatarImageId,
   sending, archived, lastAssistantId, capabilities, privacyMode, sceneAnchors,
   onEnlargeAvatar, actions }: TranscriptProps) {
   return (
     <div className="relative min-h-0 flex-1">
     <div
-      ref={scroll.scrollRef}
-      onScroll={scroll.onScroll}
+      ref={scrollRef}
+      onScroll={onScroll}
       className="h-full overflow-y-auto px-4 py-4"
     >
-      <div ref={scroll.contentRef} className="mx-auto flex max-w-3xl flex-col gap-3">
+      <div ref={contentRef} className="mx-auto flex max-w-3xl flex-col gap-3">
         {hasEarlier && ready ? (
           <div className="flex justify-center">
             <Button size="sm" variant="quiet" busy={loadingEarlier} onClick={() => void loadEarlier()}>
@@ -109,10 +112,10 @@ export function ChatTranscriptView({ lines, loading, error, onRetry, ready, hasE
         )}
       </div>
     </div>
-    {!scroll.pinned && lines.length > 0 ? (
+    {!pinned && lines.length > 0 ? (
       <button
         type="button"
-        onClick={scroll.jumpToLatest}
+        onClick={jumpToLatest}
         className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 cursor-pointer rounded-full border border-ink-500 bg-ink-800 px-4 py-1.5 text-xs text-paper-200 shadow-lift transition-colors hover:border-accent-500 hover:text-paper-50"
       >
         ↓ Jump to latest
