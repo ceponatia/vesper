@@ -32,8 +32,8 @@ import {
  * at read time; the extraction leg proposes typed ops that commit through
  * `parseOr`.* A proposal is therefore never a state value — it is a small
  * semantic sentence ("the hair got a lot wetter, from rain") that this module
- * maps deterministically onto the owners in `state/body-surface.ts` and
- * `state/chat-environment.ts`. `level: 7314` is unreachable from a proposal, and
+ * maps deterministically onto the wetness/deposit owners under `state/body-surface/` and
+ * `state/chat-environment.ts`, through their public entries. `level: 7314` is unreachable from a proposal, and
  * so is a body location nobody owns.
  *
  * Rejections are drops with a stable `chat_surface.*` code, never a throw

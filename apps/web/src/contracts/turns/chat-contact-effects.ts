@@ -22,7 +22,7 @@ import type { ChatSurfaceTraceEntry } from "./chat-surface-ops";
  *
  * The design law is `chat-surface-ops.ts`'s, verbatim: a proposal is a small
  * semantic sentence, never a state value, and this module maps it
- * deterministically onto the owner in `state/body-surface.ts`. A hallucinated
+ * deterministically onto `state/body-surface/marks.ts` through the public body-surface entry. A hallucinated
  * magnitude is unreachable (the band table is the owner's), and so is a mark
  * kind no owner supports — which is where "scratch stays unavailable" is
  * ENFORCED, not just documented: a proposal whose `markKind` is outside
