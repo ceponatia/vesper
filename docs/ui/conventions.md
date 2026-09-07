@@ -41,7 +41,8 @@ once in `components/chat/chat-conversation-state.ts` (`PER_CHAT_DEFAULTS`), whic
 per-chat state cannot leak into the next conversation by omission.
 
 Per-chat **refs** — the regard-band mirror, the scroll pin, the active-stream token — reset in the
-matching `chatId`-keyed layout effect. Clearing the stream token also supersedes a reply still
+page and owning hooks' matching chat-switch layout effects. The scroll owner resets before correcting
+the viewport, and the transcript owner supplies one visit identity to async work. Clearing the stream token also supersedes a reply still
 streaming for the chat just left, so it cannot write over the new one.
 
 ## Polling

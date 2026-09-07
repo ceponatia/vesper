@@ -4,7 +4,7 @@ import type { ChatRosterMember, ChatStateSnapshot } from "@/lib/client/api";
 import type { ChatLine } from "@/components/characters/chat-message";
 
 /**
- * Every piece of `ChatConversation` state that belongs to ONE conversation —
+ * Every piece of the conversation page and focused hooks' state that belongs to ONE conversation —
  * i.e. everything that must go back to its at-rest value the moment the mount
  * switches chats.
  *
@@ -15,7 +15,7 @@ import type { ChatLine } from "@/components/characters/chat-message";
  * the new one, an open delete dialog kept its confirm button armed over a
  * different chat, and a leftover `skipBusy` locked the composer for good.
  *
- * So the list lives here exactly once: the component seeds every `useState`
+ * So the list lives here exactly once: the page and hooks seed every `useState`
  * from `PER_CHAT_DEFAULTS` and resets through the same object, keyed by this
  * type (`{ [K in keyof PerChatState]: () => void }`), which makes a per-chat
  * field that isn't reset a compile error rather than a silent leak.
@@ -34,7 +34,7 @@ import type { ChatLine } from "@/components/characters/chat-message";
  *
  * Refs can't be written during render, so the per-chat REFS (`stageRef`,
  * `stickRef`, `sendingRef`, `abortRef`, `prependAnchorRef`) are reset in the
- * component's `chatId`-keyed layout effect — the other half of the same job.
+ * page and owning hooks' chat-switch layout effects — the other half of the same job.
  */
 export interface PerChatState {
   // Transcript + keyset pagination.
@@ -92,7 +92,7 @@ export interface PerChatState {
  * and dialog closed, pinned to the newest line.
  *
  * The two collections are shared across every reset. That is safe (and useful):
- * every update in the component is copy-on-write, and the stable identity means
+ * every update in the page and hooks is copy-on-write, and the stable identity means
  * a redundant reset is a value React bails out of instead of a re-render.
  */
 export const PER_CHAT_DEFAULTS: PerChatState = {
