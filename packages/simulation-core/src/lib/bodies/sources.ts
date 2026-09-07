@@ -1,7 +1,7 @@
 import { AFTERGLOW_DURATION_SECONDS, EXERTION_HYGIENE_FRACTION_FIXED_POINT, METER_FIXED_POINT_ONE, bodyConditionAppliedEventSchema, bodyConditionSchema, bodyInitializedEventSchema, bodyMeterRegistryByVersion, bodyMeterStateSchema, bodySourceAppliedEventSchema, type ApplyBodySourceCommand, type ApplyBodySourceRejectionCode, type BodyCondition, type BodyConditionAppliedEvent, type BodyInitializedEvent, type BodyMeterDefinition, type BodyMeterState, type BodyModifier, type BodySourceAppliedEvent, type BodySourceKind, type BodySourceOperation, type InitializeActorBodyCommand, type InitializeActorBodyRejectionCode, type ScheduledBodyAdjustment } from "../../contracts/bodies";
 import { bodyConditionExpiryTriggerKind, type TriggerScheduledEvent } from "../../contracts/scheduler";
 import { rearmCollapseTrigger, type CollapseContext } from "./collapse";
-import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, capturedDerivation, deriveBodyConditionId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection } from "./events";
+import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, capturedDerivation, deriveBodyConditionId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyEventCommandContext, type BodyRejection } from "./events";
 import { clampMeter, integrateMeterValue, type MeterIntegrationView } from "./integration";
 
 // ---------------------------------------------------------------------------
