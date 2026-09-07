@@ -4,6 +4,7 @@
 
 - User goal: <observable outcome, in the user's terms>.
 - Acceptance: <conditions that finish this assigned slice>.
+- Issue checklist: <exact items that govern this slice; evidence needed for each>.
 - Issue and settled decisions: <links/rulings when relevant; distinguish facts from assumptions>.
 
 ## Checkout and ownership
@@ -32,6 +33,7 @@ settled choices without new evidence or expand this slice into adjacent work.
 
 - External/live operations: <explicit authorized scope or none>.
 - Commit/push/PR/board ownership: <parent or explicitly delegated actions>.
+- Checklist writer: <parent by default; workers report milestone evidence for that writer>.
 - Validation route: <exact permitted offline check, CI job/suite, or live verifier>.
 - Unavailable validation: <what remains unverified and why>.
 - Optional shared context/evidence record: <path supplied by parent, or none>.
@@ -45,6 +47,8 @@ owns updating it. Continue independent work while a material question is pending
 
 Report changed behavior and owned paths, commits or parent-owned commit status,
 material decisions, actual validation with evidence, and anything incomplete.
+Report each issue checklist item as completed with evidence or pending with a reason;
+send milestone evidence during work rather than waiting until the final report.
 Include actionable findings with paths and user impact. Inspect the scoped diff
 for unrelated edits and unexpected control characters before reporting. Preserve
 preexisting work and distinguish it from your contribution.
