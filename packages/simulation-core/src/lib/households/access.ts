@@ -1,4 +1,4 @@
-import { type HouseholdMembership, type LotLocus, type MaterialLotState, type MeansBandState, type MeansRead, type MeansSubject, type SimulationHousehold } from "../../contracts/households";
+import type { HouseholdMembership, LotLocus, MaterialLotState, MeansBandState, MeansRead, MeansSubject, SimulationHousehold } from "../../contracts/households";
 
 // ---------------------------------------------------------------------------
 // Root/co-location resolution (flat, no chain walk)
