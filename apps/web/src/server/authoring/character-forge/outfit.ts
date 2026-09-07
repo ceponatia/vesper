@@ -5,10 +5,7 @@ import { generateChecked } from "@/server/ai";
 import { CANDIDATE_LIMIT, findItemsByName, listClothingCandidates, type ClothingCandidate, type LibraryLookup } from "../library";
 import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
 import { demoCharacterOutfitSection } from "./demo";
-
-function normalizeEnumToken(value: string): string {
-  return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
-}
+import { normalizeEnumToken } from "./normalization";
 
 const outfitItemSchema = z.object({
   name: z.string().min(1),

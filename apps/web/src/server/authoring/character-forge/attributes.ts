@@ -23,6 +23,7 @@ import {
   speciesForForgeContext,
 } from "./context";
 import { demoCharacterAttributeSection } from "./demo";
+import { normalizeEnumToken } from "./normalization";
 
 export interface RawAttributeEntry {
   id: string;
@@ -90,10 +91,6 @@ export function buildAttributeSectionSchema(context?: CharacterForgeContext): z.
       .default([])
       .describe("For [CORE]/[RENDER] enum attributes you could not pin to a definite value: a plausible subset of allowed values."),
   });
-}
-
-function normalizeEnumToken(value: string): string {
-  return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
 }
 
 /**

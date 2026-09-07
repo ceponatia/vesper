@@ -5,6 +5,7 @@ import { generateChecked } from "@/server/ai";
 import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
 import { heritageForForgeContext, speciesForgeDescriptor, speciesForForgeContext } from "./context";
 import { demoCharacterProfileSection } from "./demo";
+import { normalizeEnumToken } from "./normalization";
 
 const profileSectionSchema = z.object({
   name: z.string().default(""),
