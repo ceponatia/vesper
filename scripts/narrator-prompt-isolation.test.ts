@@ -67,6 +67,9 @@ const APPROVED: readonly string[] = [
   // narrator's own prompt; it is not a helper agent.
   "apps/web/src/server/engine/chat-pipeline.ts",
   "apps/web/src/server/engine/chat-prompt-preview.ts",
+  // Legacy narrator assembly receives the frozen narrator prompt input only;
+  // the source never enters general preparation, contact, guidance or settlement.
+  "apps/web/src/server/engine/chat-turn-prompt.ts",
   // Shared reply provenance builder; it consumes only the frozen source passed
   // by a prose narrator lane and never resolves or forwards one to helper agents.
   "apps/web/src/server/engine/chat-reply-store.ts",
@@ -296,13 +299,15 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "const narratorRun = buildNarratorRunProvenance( :: source: instructionSource,",
     // The exchange's prose-narrator build inputs (1:1 + ensemble).
     "const promptInput: CharacterChatPromptInput = { :: instructionSource,",
-    "ensembleExtras = { :: instructionSource,",
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
   ],
   "apps/web/src/server/engine/chat-prompt-preview.ts": [
     "const instructionSource = await resolveNarratorInstructionSource(",
     "const parts = buildCharacterChatPromptParts( :: instructionSource,",
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
+  ],
+  "apps/web/src/server/engine/chat-turn-prompt.ts": [
+    "ensembleExtras = { :: instructionSource: promptInput.instructionSource,",
   ],
   "apps/web/src/server/engine/chat-reply-store.ts": [
     "export function buildNarratorRunProvenance(args: { :: source: NarratorInstructionSource | undefined;",
