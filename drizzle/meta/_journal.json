@@ -897,6 +897,13 @@
       "when": 1788532973041,
       "tag": "0127_retire-qwen-2509-lora-slug",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1788813868359,
+      "tag": "0128_jittery_the_hunter",
+      "breakpoints": true
     }
   ]
 }
