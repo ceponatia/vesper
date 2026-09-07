@@ -179,7 +179,7 @@ export const attributeDefinitionSchema = z.object({
   /**
    * Enum members that are valid vocabulary but must never be chosen as an
    * *automatic* default — neither the forge's tier-3 unconstrained fallback
-   * fill (character-forge.ts §fillVisualDefaults) nor the picker's initial
+   * fill (`server/authoring/character-forge/attributes.ts`) nor the picker's initial
    * value when a human adds the attribute (attribute-helpers.ts
    * §defaultValueFor). The model or a human may still select them explicitly.
    * Used so minor apparent ages exist for background characters while an

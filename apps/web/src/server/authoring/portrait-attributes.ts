@@ -14,7 +14,7 @@ import {
   describeConstraint,
   groundAttributeValues,
   type RawAttributeEntry,
-} from "./character-forge";
+} from "./character-forge/attributes";
 import type { CharacterDraft } from "./drafts";
 
 /**

@@ -148,7 +148,7 @@ Each species carries three optional, **model-facing** notes — all empty by def
 - **`appearance`** — audience: the character forge.
   - *Contents:* A generic, image-safe description of the species' default morphology (pointed ears, a greenish skin cast, wings/horns/tail, broad stature) — **not** any one character's specific attribute values.
   - *Surfaced via:* `speciesForgeDescriptor`, which reads `species.appearance` (combined with the heritage's) directly. There is no registry phrase for it.
-  - *Feeds:* The character forge's species-context prompt (`authoring/character-forge.ts`), which folds the generic look into the prompt to guide per-character attribute inference. **Not** sent to image prompts — those name the species via `speciesLabelPhrase` (name only) and let the character's feature attributes carry the morphology.
+  - *Feeds:* The character forge's species-context prompt (`authoring/character-forge/context.ts`), which folds the generic look into the prompt to guide per-character attribute inference. **Not** sent to image prompts — those name the species via `speciesLabelPhrase` (name only) and let the character's feature attributes carry the morphology.
 - **`lore`** — audience: narrator (**always**).
   - *Contents:* Cultural / identity backstory — temperament, standing, relations.
   - *Surfaced via:* `speciesLorePhrase(speciesId)`.
