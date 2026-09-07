@@ -87,7 +87,7 @@ const SURPRISE_CONCEPTS: ReadonlySet<string> = new Set(["boundary_push"]);
 /** Concept ids that, at low–mid affinity, read `flustered`. */
 const FLIRT_CONCEPTS: ReadonlySet<string> = new Set(["flirt", "compliment", "proposition"]);
 /** Condition labels (normalized — see `conditionKey`) that directly tint the baseline. */
-// "flushed" is the fluster action chip's own mint (engine/chat-state.ts applyChatAction) —
+// "flushed" is the fluster action chip's own mint (engine/chat-state/pulse-rules.ts applyChatAction) —
 // the chip-label ↔ key agreement is pinned by that chip's test.
 const FLUSTERED_CONDITION_LABELS: ReadonlySet<string> = new Set(["flustered", "bashful", "flushed"]);
 const TIPSY_CONDITION_LABELS: ReadonlySet<string> = new Set(["tipsy", "drunk", "intoxicated"]);
