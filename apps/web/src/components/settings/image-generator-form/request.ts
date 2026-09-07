@@ -10,7 +10,6 @@ import {
 import type { ImageLora } from "@vesper/image-core";
 import { shapeIsReachable, type GeneratorModelView } from "./model";
 import type { PrimaryRow } from "./references";
-import type { ImageGeneratorPrefill } from "./prefill";
 
 /** One numeric box, read strictly: blank, unreadable, or the number it names in full. */
 type StrictNumber = { kind: "unset" } | { kind: "invalid" } | { kind: "value"; value: number };
@@ -334,7 +333,7 @@ export function generatorRequestBody({
   dedicated,
   assembledControls,
   assembledProviderInputs,
-  prefill,
+  sourceRunId,
   versionDrift,
   versionPolicy,
 }: {
@@ -345,7 +344,7 @@ export function generatorRequestBody({
   dedicated: Partial<Record<ImageGeneratorDedicatedRole, string>>;
   assembledControls: ImageGeneratorControls;
   assembledProviderInputs: ImageGeneratorProviderInputs;
-  prefill: ImageGeneratorPrefill | null;
+  sourceRunId: string | null;
   versionDrift: boolean;
   versionPolicy: ImageGeneratorVersionPolicy;
 }) {
@@ -364,7 +363,7 @@ export function generatorRequestBody({
       : {}),
     ...(Object.keys(assembledControls).length > 0 ? { controls: assembledControls } : {}),
     ...(Object.keys(assembledProviderInputs).length > 0 ? { providerInputs: assembledProviderInputs } : {}),
-    ...(prefill === null ? {} : { sourceRunId: prefill.sourceRunId }),
+    ...(sourceRunId === null ? {} : { sourceRunId }),
     // Only sent when the operator actually chose the replay, and only while
     // the drift that offered the choice is real.
     ...(versionDrift && versionPolicy === "captured" ? { versionPolicy: "captured" as const } : {}),

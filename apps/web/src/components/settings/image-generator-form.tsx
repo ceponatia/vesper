@@ -399,7 +399,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     dedicated,
     assembledControls,
     assembledProviderInputs,
-    prefill,
+    sourceRunId: prefill?.sourceRunId ?? null,
     versionDrift,
     versionPolicy,
   });
