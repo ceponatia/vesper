@@ -46,7 +46,7 @@ import {
 import { buildVisualStateShadow } from "@/server/visual-state";
 // The ONE deep import in this harness, on the affordance trial's documented
 // precedent: the narrator projection is intra-module in production (only
-// `chat-pipeline.ts` calls it) and so is not on the engine barrel. The trial has
+// `chat-turn-guidance.ts` calls it) and so is not on the engine barrel. The trial has
 // to call the REAL projection — reimplementing it would mean measuring the
 // harness's prose instead of the product's — so the barrel rule is waived here
 // rather than widening the module's public surface for an eval.

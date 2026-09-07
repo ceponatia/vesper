@@ -51,7 +51,7 @@ import {
  * it were, the trial would be measuring the harness.
  *
  * What this DOESN'T reuse is the pipeline's database-bound assembly
- * (`chat-pipeline.ts`: state load, RAG recall, wardrobe resolution, the fan-out).
+ * (`chat-pipeline.ts` and its turn phases: state load, RAG recall, wardrobe resolution, the fan-out).
  * Those need Postgres, and none of them differ between the arms — so the state
  * slice is built here instead, once, and handed to BOTH arms byte-identically.
  * The differences between the arms are `state.affordanceCues` and, on a

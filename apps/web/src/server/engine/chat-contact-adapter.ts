@@ -172,7 +172,7 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
   const act = detectChatContactAct({
     ...detection,
     eventRef: input.eventRef,
-    // The owner's PRESENCE is the gate. `chat-pipeline.ts` wires a policy
+    // The owner's PRESENCE is the gate. `chat-turn-contact.ts` wires a policy
     // source only under `chatRomanticPermissionEnabled()`, so this is that flag
     // reaching a pure module without the module reading an env var.
     romanticEnabled: input.permissionPolicy !== undefined,

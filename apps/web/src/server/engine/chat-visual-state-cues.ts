@@ -70,7 +70,7 @@ import { chatRecognitionDetailPhrase } from "./chat-recognition-adapter";
  * for the unseen stays the narrator-guidance plan's business and this block
  * cannot leak what the observer cannot see.
  *
- * Pure: no IO, no clock, no flag reads. `chat-pipeline.ts` decides whether to
+ * Pure: no IO, no clock, no flag reads. `chat-turn-guidance.ts` decides whether to
  * call it.
  */
 

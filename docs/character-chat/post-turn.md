@@ -7,6 +7,11 @@ is a diagnostic and a degraded fold, never a failed exchange.
 
 ## Finalization owners
 
+The turn coordinator (`chat-pipeline.ts`) persists the reply and starts the NPC decision
+before primary finalization. `chat-turn-settle.ts` owns observer-memory commits and the
+concurrent, individually fenced ensemble-member work. Shared garment reconciliation,
+the final scene writer and the permission leg remain ordered in the coordinator.
+
 `chat-state.ts` is the public entry. `chat-state/finalize-types.ts` owns the documented
 input and result contract, shared with pipeline callers without importing orchestration.
 The finalizer preserves one ordered sequence:

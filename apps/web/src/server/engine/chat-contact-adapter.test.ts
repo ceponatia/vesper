@@ -2220,7 +2220,7 @@ function grantEvent(overrides: Partial<RomanticPermissionEvent> = {}): RomanticP
 }
 
 /**
- * The REAL permission seam, assembled exactly as `chat-pipeline.ts` assembles
+ * The REAL permission seam, assembled exactly as `chat-turn-contact.ts` assembles
  * it: real events, the real fold, the real derive. A stubbed policy read would
  * prove the resolver reads a field; this proves the owner answers an attempt.
  */

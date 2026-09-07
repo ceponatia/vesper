@@ -49,7 +49,7 @@ the chat lane must never re-fork it.
 
 ## Where things live
 
-- **Exchange orchestration** — `server/engine/chat-pipeline.ts`; reply streaming, Stop, and watchdogs live in `server/engine/chat-reply-stream.ts`
+- **Exchange orchestration** — `server/engine/chat-pipeline.ts`; focused preparation, contact, guidance, narrator construction and member settlement live in `server/engine/chat-turn-{prepare,contact,guidance,prompt,settle}.ts`; reply streaming, Stop, and watchdogs live in `server/engine/chat-reply-stream.ts`
 - **Prompt previews and shared cuts** — `server/engine/chat-prompt-preview.ts`, `chat-visual-state-cut.ts`, and `chat-prompt-input.ts`; reply repair and deletion live in `chat-message-edits.ts` and `chat-delete.ts`
 - **Reply persistence, rerun cuts and take history** — `server/engine/chat-reply-store.ts`
 - **Model stream** — `server/engine/character-chat.ts`

@@ -6,6 +6,12 @@ constraint-first narrator guidance, and the `romantic_touch` permission owner. E
 behind its own flag, each defaults off, and **none of them ever writes another's state** —
 that independence is what keeps either experiment interpretable on its own.
 
+Contact preparation lives in `engine/chat-turn-contact.ts`: it awaits the ledger/scene
+write and returns the resulting scenario and exact coverage reads to the coordinator.
+`engine/chat-turn-guidance.ts` consumes that cut for physical guidance and its observer
+record. Neither phase receives the narrator instruction source. The coordinator retains
+rollback guards and the ordered post-reply scene and permission writers.
+
 ## Affectionate contact
 
 `CHAT_CONTACT_ACTIONS` (default off) uses `engine/chat-contact-adapter.ts` as the
