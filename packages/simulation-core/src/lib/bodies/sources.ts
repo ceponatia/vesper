@@ -4,6 +4,10 @@ import { rearmCollapseTrigger, type CollapseContext } from "./collapse";
 import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, capturedDerivation, deriveBodyConditionId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection } from "./events";
 import { integrateMeterValue, type MeterIntegrationView } from "./integration";
 
+// ---------------------------------------------------------------------------
+// InitializeActorBody (seeds the substrate for one actor)
+// ---------------------------------------------------------------------------
+
 export interface InitializeActorBodyResolutionView extends BodyBranchMeta {
   actorExists: boolean;
   /**
@@ -468,6 +472,3 @@ export function resolveApplyBodySource(
     events: [event, ...trailing],
   };
 }
-// ---------------------------------------------------------------------------
-// ApplyBodyModifier (the one modifier contract)
-// ---------------------------------------------------------------------------

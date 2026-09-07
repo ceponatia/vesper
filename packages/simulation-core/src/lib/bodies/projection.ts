@@ -2,6 +2,10 @@ import { bodiesProjectionSchema, bodyConditionSchema, bodyMeterStateSchema, body
 import type { SimulationBranchEvent } from "../../contracts/branching";
 import { compareStableText } from "./integration";
 
+// ---------------------------------------------------------------------------
+// Bodies projection: projectors and replay
+// ---------------------------------------------------------------------------
+
 export function sortBodiesProjection(projection: BodiesProjection): BodiesProjection {
   return bodiesProjectionSchema.parse({
     ...projection,

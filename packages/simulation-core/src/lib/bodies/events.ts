@@ -5,6 +5,15 @@ import { bodyCollapseTriggerKind, bodyConditionExpiryTriggerKind, bodyThresholdT
 import { simulationHash } from "../hash";
 import { compareStableText, modifiersLiveAt, normalizeConditionModifierSpecs, solveNextThresholdCrossing, type MeterIntegrationView } from "./integration";
 
+// ---------------------------------------------------------------------------
+// Identities
+// ---------------------------------------------------------------------------
+
+/**
+ * Command ids on the trigger-dispatch path are themselves derived and would
+ * stack a condition-expiry chain past the 256-char compact-id cap (the E3.5
+ * lesson) — hash the variable-length part instead of concatenating.
+ */
 export function deriveBodyConditionId(branchId: string, commandId: string): string {
   return composeSimulationId("body-condition", [branchId, simulationHash({ commandId })]);
 }
@@ -36,17 +45,8 @@ export function bodyConditionExpiryUniquenessKey(conditionId: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// E5.2 — rhythm self-care and the sleep coupling
+// Shared resolver plumbing
 // ---------------------------------------------------------------------------
-/**
- * Window-crossing self-care: each rhythm row whose kind carries a self-care
- * effect lands that effect at its window-END minute, every story day. A skip
- * credits only the crossings it actually contains — landing at 6am (before a
- * 7am wash) and landing at 8am (past it) genuinely differ, and nothing ever
- * blanket-restores. Crossings are deterministic clock points, so they enter
- * integration as {@link ScheduledBodyAdjustment}s — no per-day tick, no
- * trigger, no persistence.
- */
 export interface BodyBranchMeta {
   worldId: string;
   branchId: string;
@@ -236,7 +236,7 @@ export function rearmThresholdTrigger(input: {
 }
 
 // ---------------------------------------------------------------------------
-// InitializeActorBody (seeds the substrate for one actor)
+// Shared sleep condition event train
 // ---------------------------------------------------------------------------
 export interface SleepConditionTrain {
   condition: BodyCondition;

@@ -319,12 +319,16 @@ export function solveNextThresholdCrossing(
 }
 
 // ---------------------------------------------------------------------------
-// Identities
+// E5.2 — rhythm self-care and the sleep coupling
 // ---------------------------------------------------------------------------
 /**
- * Command ids on the trigger-dispatch path are themselves derived and would
- * stack a condition-expiry chain past the 256-char compact-id cap (the E3.5
- * lesson) — hash the variable-length part instead of concatenating.
+ * Window-crossing self-care: each rhythm row whose kind carries a self-care
+ * effect lands that effect at its window-END minute, every story day. A skip
+ * credits only the crossings it actually contains — landing at 6am (before a
+ * 7am wash) and landing at 8am (past it) genuinely differ, and nothing ever
+ * blanket-restores. Crossings are deterministic clock points, so they enter
+ * integration as {@link ScheduledBodyAdjustment}s — no per-day tick, no
+ * trigger, no persistence.
  */
 export function selfCareAdjustmentsBetween(
   rhythmRows: readonly BodyRhythmRow[],
@@ -435,6 +439,3 @@ export function deriveSleepCredit(input: {
   const headroom = Math.max(0, ENERGY_SLEEP_RESTORE_CAP_FIXED_POINT - input.reserveAtWakeFixedPoint);
   return Math.min(rawCredit, headroom);
 }
-// ---------------------------------------------------------------------------
-// Shared resolver plumbing
-// ---------------------------------------------------------------------------

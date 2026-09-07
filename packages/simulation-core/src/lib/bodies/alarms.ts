@@ -4,6 +4,10 @@ import { rearmCollapseTrigger, type CollapseContext } from "./collapse";
 import { bodyConditionExpiryUniquenessKey, buildBodyTrigger, capturedDerivation, deriveBodyConditionId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyEventCommandContext, type BodyRejection } from "./events";
 import { compareStableText, integrateMeterValue, thresholdCrossed, type MeterIntegrationView } from "./integration";
 
+// ---------------------------------------------------------------------------
+// ResolveBodyThreshold (trigger-dispatched; fire-time re-validated)
+// ---------------------------------------------------------------------------
+
 export interface ResolveBodyThresholdResolutionView extends BodyBranchMeta {
   meter?: BodyMeterState;
   definition?: BodyMeterDefinition;
@@ -179,9 +183,16 @@ export function resolveBodyThreshold(
   };
 }
 
-// ---------------------------------------------------------------------------
-// E5.2 slice 2b — collapse at the saturated read floor (OQ1's −1 pole)
-// ---------------------------------------------------------------------------
+/**
+ * E6.3 — re-solve and re-arm one actor's full body-alarm set (each meter's
+ * next threshold crossing, plus the collapse alarm when an energy view and
+ * context exist) from current law at `view.storySecond`. Used by the LOD
+ * assignment when the simulation axis moves and lands at `event` or `exact`:
+ * the store retires every prior body alarm unconditionally first (the
+ * restock-reconfigure idiom), and this builds the fresh set as the same
+ * command's trigger_scheduled events. A meter whose law never crosses a
+ * threshold inside the horizon arms nothing, exactly as initialization does.
+ */
 export function buildActorBodyAlarmRearms(input: {
   view: BodyBranchMeta;
   command: BodyEventCommandContext;

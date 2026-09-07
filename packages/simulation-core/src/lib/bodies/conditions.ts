@@ -5,6 +5,10 @@ import { rearmCollapseTrigger, type CollapseContext } from "./collapse";
 import { actorControlledBy, bodyConditionExpiryUniquenessKey, buildBodyTrigger, buildSleepConditionTrain, capturedDerivation, deriveBodyConditionId, deriveBodyModifierId, eventEnvelope, rearmThresholdTrigger, rejection, type BodyBranchMeta, type BodyRejection, type SleepConditionTrain } from "./events";
 import { compareStableText, deriveSleepCredit, integrateMeterValue, normalizeConditionModifierSpecs, type MeterIntegrationView } from "./integration";
 
+// ---------------------------------------------------------------------------
+// ApplyBodyModifier (the one modifier contract)
+// ---------------------------------------------------------------------------
+
 export interface ApplyBodyModifierResolution {
   ok: true;
   meter: BodyMeterState;
@@ -534,9 +538,6 @@ export function resolveEndBodyCondition(
   return { ok: true, condition: ended, meters, events };
 }
 
-// ---------------------------------------------------------------------------
-// ResolveBodyThreshold (trigger-dispatched; fire-time re-validated)
-// ---------------------------------------------------------------------------
 export { buildSleepConditionTrain };
 
 export type { SleepConditionTrain };
