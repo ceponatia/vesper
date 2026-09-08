@@ -31,7 +31,7 @@ import {
 import { absoluteImagePath, sourceContentHashOf } from "@/server/images";
 import { materializeSuggestedItems, prepareSuggestedItemEmbeddings, queueEmbedRefresh } from "./library";
 import { reserveCharacterAuthoringAction } from "./character-save";
-import { startJobAfterAdmission } from "./jobs";
+import { isJobAdmissionPending, startJobAfterAdmission, waitForJobAdmission } from "./jobs";
 
 const MAX_RUNS_PER_SURFACE = 25;
 
@@ -216,6 +216,16 @@ async function ownedPortraitBytes(ownerId: string, characterId: string, imageId:
   }
 }
 
+function rowDraft(character: { name: string; profile: unknown; tags: unknown }): CharacterDraft | null {
+  const parsed = characterDraftSchema.safeParse({
+    name: character.name,
+    profile: character.profile,
+    tags: character.tags,
+    suggestedItems: [],
+  });
+  return parsed.success ? parsed.data : null;
+}
+
 export async function listCharacterAuthoringRuns(ownerId: string, target: z.infer<typeof authoringTargetSchema>) {
   const predicates = [
     eq(jobs.ownerId, ownerId),
@@ -227,6 +237,7 @@ export async function listCharacterAuthoringRuns(ownerId: string, target: z.infe
   const diagnostics: Diagnostic[] = [];
   const runs: AuthoringRunDto[] = [];
   for (const row of rows) {
+    if (isJobAdmissionPending(row.payload)) continue;
     const run = parseRun(row);
     if (run) runs.push(run);
     else diagnostics.push(diag("warn", "authoring.run.malformed", "One saved authoring run could not be read and was omitted.", { context: { runId: row.id } }));
@@ -234,7 +245,7 @@ export async function listCharacterAuthoringRuns(ownerId: string, target: z.infe
   return { runs: runs.filter((run) => run.proposal.status !== "dismissed"), diagnostics };
 }
 
-async function canonicalizeStart(ownerId: string, input: StartInput): Promise<StartInput | { conflict: "not_found" | "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed"; currentRevision?: number; currentImageId?: string | null }> {
+async function canonicalizeStart(ownerId: string, input: StartInput): Promise<StartInput | { conflict: "not_found" | "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed" | "invalid_source"; currentRevision?: number; currentImageId?: string | null }> {
   if (input.target.kind === "creation") return input;
   const source = input.source;
   if (!source) return { conflict: "not_found" };
@@ -250,12 +261,14 @@ async function canonicalizeStart(ownerId: string, input: StartInput): Promise<St
       ...(reserved.status === "not_found" ? {} : { currentRevision: reserved.currentRevision, currentImageId: reserved.currentImageId }),
     };
   }
-  const base = characterDraftSchema.parse({
-    name: reserved.source.name,
-    profile: reserved.source.profile,
-    tags: reserved.source.tags,
-    suggestedItems: [],
-  });
+  const base = rowDraft(reserved.source);
+  if (!base) {
+    return {
+      conflict: "invalid_source",
+      currentRevision: reserved.source.authoringRevision,
+      currentImageId: reserved.source.avatarImageId,
+    };
+  }
   if (input.operation === "portrait" && source.imageId) {
     const portrait = await ownedPortraitBytes(ownerId, input.target.id, source.imageId);
     if (!portrait) {
@@ -311,8 +324,9 @@ async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>)
       )).limit(1),
     ]);
     const current = characterRows[0];
-    const sourceChanged = !current || current.avatarImageId !== imageId
-      || portraitAuthoringFingerprint(rowDraft(current)) !== authoringFingerprint;
+    const currentDraft = current ? rowDraft(current) : null;
+    const sourceChanged = !current || !currentDraft || current.avatarImageId !== imageId
+      || portraitAuthoringFingerprint(currentDraft) !== authoringFingerprint;
     const extracted = !loaded
       ? failedPortraitAttributes({ draft: base, source, failure: "source_unavailable", sink })
       : loaded.contentHash !== contentHash || sourceChanged
@@ -343,24 +357,46 @@ export type StartAuthoringRunOutcome =
   | { status: "capacity"; active: number; limit: number }
   | { status: "admission"; response: Response }
   | { status: "not_found" }
-  | { status: "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed"; currentRevision?: number; currentImageId?: string | null }
+  | { status: "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed" | "invalid_source"; currentRevision?: number; currentImageId?: string | null }
+  | { status: "admission_pending" }
   | { status: "idempotency_conflict" };
+
+export function isCoalescedAuthoringRetry(
+  started: { readonly jobId: string; readonly inserted: boolean },
+  requestId: string,
+  retryOf: string | null,
+  rootRunId: string,
+  storedRootRunId: string,
+): boolean {
+  return retryOf !== null
+    && !started.inserted
+    && started.jobId !== requestId
+    && storedRootRunId === rootRunId;
+}
 
 async function launch(ownerId: string, input: StartInput, retryOf: string | null, rootRunId: string, admit: () => Promise<Response | null>, sourceAlreadyReserved = false): Promise<StartAuthoringRunOutcome> {
   const existing = await ownedRunRow(ownerId, input.requestId);
   if (existing) {
-    const parsed = payloadSchema.safeParse(existing.payload);
-    if (!parsed.success) return { status: "idempotency_conflict" };
-    return matchesStoredRequest(parsed.data, input, retryOf, rootRunId)
-      ? { status: "accepted", run: projectRun(existing, parsed.data) }
-      : { status: "idempotency_conflict" };
+    const admission = await waitForJobAdmission(existing.id);
+    if (admission === "pending") return { status: "admission_pending" };
+    if (admission === "admitted") {
+      const admitted = await ownedRunRow(ownerId, existing.id);
+      const parsed = admitted ? payloadSchema.safeParse(admitted.payload) : null;
+      if (!admitted || !parsed?.success) return { status: "idempotency_conflict" };
+      return matchesStoredRequest(parsed.data, input, retryOf, rootRunId)
+        ? { status: "accepted", run: projectRun(admitted, parsed.data) }
+        : { status: "idempotency_conflict" };
+    }
   }
   const canonical = sourceAlreadyReserved ? input : await canonicalizeStart(ownerId, input);
   if ("conflict" in canonical) {
     const raced = await ownedRunRow(ownerId, input.requestId);
-    const parsed = raced ? payloadSchema.safeParse(raced.payload) : null;
-    if (raced && parsed?.success && matchesStoredRequest(parsed.data, input, retryOf, rootRunId)) {
-      return { status: "accepted", run: projectRun(raced, parsed.data) };
+    const admission = raced ? await waitForJobAdmission(raced.id) : "missing";
+    if (admission === "pending") return { status: "admission_pending" };
+    const admitted = admission === "admitted" ? await ownedRunRow(ownerId, input.requestId) : null;
+    const parsed = admitted ? payloadSchema.safeParse(admitted.payload) : null;
+    if (admitted && parsed?.success && matchesStoredRequest(parsed.data, input, retryOf, rootRunId)) {
+      return { status: "accepted", run: projectRun(admitted, parsed.data) };
     }
     return { status: canonical.conflict, currentRevision: canonical.currentRevision, currentImageId: canonical.currentImageId };
   }
@@ -393,6 +429,7 @@ async function launch(ownerId: string, input: StartInput, retryOf: string | null
   }, admit);
   if (!started.ok) {
     if ("admission" in started) return { status: "admission", response: started.admission };
+    if ("admissionPending" in started) return { status: "admission_pending" };
     return { status: "capacity", active: started.active, limit: started.limit };
   }
   const row = await ownedRunRow(ownerId, started.jobId);
@@ -400,10 +437,14 @@ async function launch(ownerId: string, input: StartInput, retryOf: string | null
   const parsed = payloadSchema.safeParse(row.payload);
   if (!parsed.success) return { status: "idempotency_conflict" };
   if (parsed.data.intent.intentHash !== intent.intentHash) {
-    const activeSibling = retryOf !== null
-      && parsed.data.intent.rootRunId === rootRunId
-      && (row.status === "queued" || row.status === "running");
-    if (!activeSibling) return { status: "idempotency_conflict" };
+    const coalescedSibling = isCoalescedAuthoringRetry(
+      started,
+      canonical.requestId,
+      retryOf,
+      rootRunId,
+      parsed.data.intent.rootRunId,
+    );
+    if (!coalescedSibling) return { status: "idempotency_conflict" };
   }
   return { status: "accepted", run: projectRun(row, parsed.data) };
 }
@@ -463,7 +504,11 @@ export async function retryCharacterAuthoringRun(ownerId: string, runId: string,
     if (!imageId || !contentHash || !fingerprint || old.target.kind !== "character") return { status: "portrait_source_changed" };
     const [character] = await db().select().from(characters).where(and(eq(characters.id, old.target.id), eq(characters.ownerId, ownerId))).limit(1);
     const loaded = await ownedPortraitBytes(ownerId, old.target.id, imageId);
-    if (!character || character.avatarImageId !== imageId || !loaded || loaded.contentHash !== contentHash || portraitAuthoringFingerprint(rowDraft(character)) !== fingerprint) {
+    const currentDraft = character ? rowDraft(character) : null;
+    if (character && !currentDraft) {
+      return { status: "invalid_source", currentRevision: character.authoringRevision, currentImageId: character.avatarImageId };
+    }
+    if (!character || character.avatarImageId !== imageId || !loaded || loaded.contentHash !== contentHash || !currentDraft || portraitAuthoringFingerprint(currentDraft) !== fingerprint) {
       return { status: "portrait_source_changed", currentRevision: character?.authoringRevision, currentImageId: character?.avatarImageId };
     }
   }
@@ -484,11 +529,7 @@ export async function retryCharacterAuthoringRun(ownerId: string, runId: string,
 
 export type DecideAuthoringRunOutcome =
   | { status: "accepted"; run: AuthoringRunDto; character?: typeof characters.$inferSelect }
-  | { status: "not_found" | "invalid_run" | "proposal_changed" | "authoring_conflict" | "portrait_source_changed"; conflicts?: ReturnType<typeof proposalConflicts>; currentRevision?: number };
-
-function rowDraft(character: typeof characters.$inferSelect): CharacterDraft {
-  return characterDraftSchema.parse({ name: character.name, profile: character.profile, tags: character.tags, suggestedItems: [] });
-}
+  | { status: "not_found" | "invalid_run" | "proposal_changed" | "authoring_conflict" | "portrait_source_changed" | "invalid_source"; conflicts?: ReturnType<typeof proposalConflicts>; currentRevision?: number };
 
 function settlePortraitDecision(
   payload: StoredPayload,
@@ -610,9 +651,11 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     if (input.expectedAuthoringRevision !== character.authoringRevision) {
       return { status: "authoring_conflict", currentRevision: character.authoringRevision };
     }
+    const current = rowDraft(character);
+    if (!current) return { status: "invalid_source", currentRevision: character.authoringRevision };
     if (payload.intent.operation === "portrait" && input.action !== "reject") {
       const source = payload.result.portrait?.source;
-      if (!source || character.avatarImageId !== source.imageId || portraitAuthoringFingerprint(rowDraft(character)) !== source.authoringFingerprint) {
+      if (!source || character.avatarImageId !== source.imageId || portraitAuthoringFingerprint(current) !== source.authoringFingerprint) {
         return { status: "portrait_source_changed", currentRevision: character.authoringRevision };
       }
     }
@@ -624,7 +667,6 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       if (!saved) return tx.rollback();
       return { status: "accepted", run: projectRun(saved, next) };
     }
-    const current = rowDraft(character);
     const applied = applyCharacterProposal(current, proposal, input.choices as ProposalChoices);
     if (applied.unresolved.length) return { status: "authoring_conflict", conflicts: applied.unresolved, currentRevision: character.authoringRevision };
 

@@ -28,7 +28,9 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
   if (outcome.status === "accepted") return jsonOk({ run: outcome.run }, 202);
   if (outcome.status === "capacity") return jobCapRejection(outcome, user, req);
   if (outcome.status === "admission") return outcome.response;
+  if (outcome.status === "admission_pending") return jsonError("admission_pending", "this retry is still being admitted; retry shortly", 409);
   if (outcome.status === "not_found") return jsonError("not_found", "authoring run not found", 404);
+  if (outcome.status === "invalid_source") return jsonError("invalid_source", "the saved character details could not be read safely", 409);
   if (outcome.status === "portrait_source_changed") return jsonError("portrait_source_changed", "the portrait or relevant appearance details changed; start a new portrait read", 409);
   return jsonError("idempotency_conflict", "this run id already names a different request", 409);
 }, { limit: "forge" });

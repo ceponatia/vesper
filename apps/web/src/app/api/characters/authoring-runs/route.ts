@@ -37,7 +37,9 @@ export const POST = withUser(async (user, req: NextRequest) => {
   if (outcome.status === "accepted") return jsonOk({ run: outcome.run }, 202);
   if (outcome.status === "capacity") return jobCapRejection(outcome, user, req);
   if (outcome.status === "admission") return outcome.response;
+  if (outcome.status === "admission_pending") return jsonError("admission_pending", "this generation request is still being admitted; retry shortly", 409);
   if (outcome.status === "not_found") return jsonError("not_found", "character not found", 404);
+  if (outcome.status === "invalid_source") return jsonError("invalid_source", "the saved character details could not be read safely", 409);
   if (outcome.status === "idempotency_conflict") return jsonError("idempotency_conflict", "this run id already names a different request", 409);
   return jsonOk({
     error: {

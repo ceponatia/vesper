@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { emptyCharacterProfile } from "@/contracts";
 import { emptyCharacterDraft } from "@/lib/client/api";
 import { characters, db, jobs } from "@/server/db";
-import { bindCreationAuthoringRuns, claimJobSlot, resetRateLimits, startJobAfterAdmission } from "@/server/api";
+import { bindCreationAuthoringRuns, claimJobSlot, isCoalescedAuthoringRetry, resetRateLimits, startAuthoringRunSchema, startCharacterAuthoringRun, startJobAfterAdmission } from "@/server/api";
 
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Authoring runs", role: "admin" as const } }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
@@ -333,6 +333,60 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, claims[0]!.ok ? claims[0]!.jobId : ""));
   });
 
+  it("keeps a coalesced retry valid after its selected sibling settles", () => {
+    expect(isCoalescedAuthoringRetry(
+      { jobId: "settled-sibling", inserted: false },
+      "new-request",
+      "failed-parent",
+      "logical-root",
+      "logical-root",
+    )).toBe(true);
+    expect(isCoalescedAuthoringRetry(
+      { jobId: "new-request", inserted: false },
+      "new-request",
+      "failed-parent",
+      "logical-root",
+      "logical-root",
+    )).toBe(false);
+  });
+
+  it("waits for duplicate admission and never acknowledges a refused provisional row", async () => {
+    const row = await subject("Admission source");
+    const requestId = crypto.randomUUID();
+    const input = startAuthoringRunSchema.parse({
+      requestId,
+      target: { kind: "character", id: row.id },
+      operation: "fill",
+      scope: "profile",
+      label: "missing Profile details",
+      base: { ...emptyCharacterDraft(), name: row.name, profile: row.profile },
+      creationStart: null,
+      source: { authoringRevision: row.authoringRevision, imageId: null },
+    });
+    let releaseAdmission!: () => void;
+    let admissionStarted!: () => void;
+    const release = new Promise<void>((resolve) => { releaseAdmission = resolve; });
+    const started = new Promise<void>((resolve) => { admissionStarted = resolve; });
+    const refusal = () => new Response("refused", { status: 429 });
+    const first = startCharacterAuthoringRun(authState.user.id, input, async () => {
+      admissionStarted();
+      await release;
+      return refusal();
+    });
+    await started;
+    let duplicateSettled = false;
+    const duplicate = startCharacterAuthoringRun(authState.user.id, input, async () => refusal())
+      .finally(() => { duplicateSettled = true; });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(duplicateSettled).toBe(false);
+    expect((await expectJson<{ runs: unknown[] }>(await list("character", row.id))).runs).toEqual([]);
+
+    releaseAdmission();
+    const outcomes = await Promise.all([first, duplicate]);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(["admission", "admission"]);
+    expect(await db().select({ id: jobs.id }).from(jobs).where(eq(jobs.id, requestId))).toEqual([]);
+  });
+
   it("converges duplicate starts, resumes by owner, and does not spend on reload", async () => {
     const row = await subject("Idempotent source");
     const requestId = crypto.randomUUID();
@@ -481,5 +535,40 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     await db().update(jobs).set({ payload: { intent: { target: { kind: "character", id: row.id } } } }).where(eq(jobs.id, "authoring-malformed-run"));
     const degraded = await expectJson<{ diagnostics: { code: string }[] }>(await list("character", row.id));
     expect(degraded.diagnostics.map((item) => item.code)).toContain("authoring.run.malformed");
+  });
+
+  it("returns a controlled conflict for malformed persisted character details", async () => {
+    const row = await subject("Malformed character source");
+    const [malformed] = await db().update(characters)
+      .set({ profile: { attributes: "not-an-array" } as never })
+      .where(eq(characters.id, row.id))
+      .returning();
+    if (!malformed) throw new Error("failed to seed malformed character source");
+    let admissionCalls = 0;
+    const outcome = await startCharacterAuthoringRun(authState.user.id, startAuthoringRunSchema.parse({
+      requestId: crypto.randomUUID(),
+      target: { kind: "character", id: row.id },
+      operation: "fill",
+      scope: "profile",
+      label: "missing Profile details",
+      base: emptyCharacterDraft(),
+      creationStart: null,
+      source: { authoringRevision: malformed.authoringRevision, imageId: null },
+    }), async () => { admissionCalls += 1; return null; });
+    expect(outcome.status).toBe("invalid_source");
+    expect(admissionCalls).toBe(0);
+
+    await db().insert(jobs).values(storedRun({
+      id: "authoring-malformed-character-decision",
+      characterId: row.id,
+      revision: malformed.authoringRevision,
+      before: row.name,
+      after: "Unsafe overwrite",
+    }));
+    const decision = await decideRun(apiRequest("/api/characters/authoring-runs/authoring-malformed-character-decision/decision", {
+      method: "PATCH",
+      body: { action: "accept", expectedProposalRevision: 1, expectedAuthoringRevision: malformed.authoringRevision, choices: {} },
+    }), routeCtx({ runId: "authoring-malformed-character-decision" }));
+    expect((await expectJson<{ error: { code: string } }>(decision, 409)).error.code).toBe("invalid_source");
   });
 });

@@ -108,6 +108,7 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
     }, async () => imageRenderRejection(user, req));
     if (!job.ok) {
       if ("admission" in job) return job.admission;
+      if ("admissionPending" in job) return jsonError("admission_pending", "this portrait request is still being admitted; retry shortly", 409);
       return jobCapRejection(job, user, req);
     }
     return jsonOk({ jobId: job.jobId, characterId: id }, 202);

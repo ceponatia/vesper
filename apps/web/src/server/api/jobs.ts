@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, jobs, JOB_HEARTBEAT_INTERVAL_MS } from "@/server/db";
 import { log } from "@/server/log";
 import { errorText } from "./respond";
@@ -135,7 +135,40 @@ export type StartJobResult =
  * concurrency capacity is secured. An admission refusal never starts the job and
  * carries the caller's own refusal value back unchanged.
  */
-export type StartJobAfterAdmissionResult<T> = StartJobResult | { readonly ok: false; readonly admission: T };
+export type StartJobAfterAdmissionResult<T> =
+  | { readonly ok: true; readonly jobId: string; readonly inserted: boolean }
+  | Extract<StartJobResult, { ok: false }>
+  | { readonly ok: false; readonly admission: T }
+  | { readonly ok: false; readonly admissionPending: true };
+
+const ADMISSION_STATE_KEY = "_jobAdmissionState";
+const ADMISSION_PENDING = "pending";
+const ADMISSION_WAIT_MS = 10_000;
+const ADMISSION_POLL_MS = 25;
+
+export function isJobAdmissionPending(payload: unknown): boolean {
+  return typeof payload === "object" && payload !== null && !Array.isArray(payload)
+    && (payload as Record<string, unknown>)[ADMISSION_STATE_KEY] === ADMISSION_PENDING;
+}
+
+/**
+ * Wait for a provisional job row to become admitted or disappear on refusal.
+ * The bounded pending result lets an HTTP caller retry without claiming work
+ * started when an admitting process has stalled or exited.
+ */
+export async function waitForJobAdmission(
+  jobId: string,
+  waitMs = ADMISSION_WAIT_MS,
+): Promise<"admitted" | "missing" | "pending"> {
+  const deadline = Date.now() + waitMs;
+  while (true) {
+    const [row] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
+    if (!row) return "missing";
+    if (!isJobAdmissionPending(row.payload)) return "admitted";
+    if (Date.now() >= deadline) return "pending";
+    await new Promise((resolve) => setTimeout(resolve, ADMISSION_POLL_MS));
+  }
+}
 
 /** Returns the new job id, or the refusal to hand back to the caller. */
 type InsertedJob = { readonly jobId: string; readonly inserted: boolean };
@@ -251,25 +284,45 @@ export async function startJobAfterAdmission<T>(
   opts: StartJobOptions,
   admit: (jobId: string) => Promise<T | null>,
 ): Promise<StartJobAfterAdmissionResult<T>> {
-  const jobId = await insertJobRow(opts);
-  if ("ok" in jobId) return jobId;
-  if (!jobId.inserted) return { ok: true, jobId: jobId.jobId };
+  const reservation = {
+    ...opts,
+    payload: { ...opts.payload, [ADMISSION_STATE_KEY]: ADMISSION_PENDING },
+  };
+  let insertedJob: InsertedJob | null = null;
+  while (!insertedJob) {
+    const candidate = await insertJobRow(reservation);
+    if ("ok" in candidate) return candidate;
+    if (candidate.inserted) {
+      insertedJob = candidate;
+      break;
+    }
+    const state = await waitForJobAdmission(candidate.jobId);
+    if (state === "admitted") return { ok: true, jobId: candidate.jobId, inserted: false };
+    if (state === "pending") return { ok: false, admissionPending: true };
+    // The other request was refused and removed its provisional row. Reclaim
+    // this request id and run this caller's admission guard instead.
+  }
 
   let admission: T | null;
   try {
-    admission = await admit(jobId.jobId);
+    admission = await admit(insertedJob.jobId);
   } catch (err) {
-    await db().delete(jobs).where(eq(jobs.id, jobId.jobId));
+    await db().delete(jobs).where(eq(jobs.id, insertedJob.jobId));
     throw err;
   }
 
   if (admission !== null) {
-    await db().delete(jobs).where(eq(jobs.id, jobId.jobId));
+    await db().delete(jobs).where(eq(jobs.id, insertedJob.jobId));
     return { ok: false, admission };
   }
 
-  launchInsertedJob(jobId.jobId, opts);
-  return { ok: true, jobId: jobId.jobId };
+  const [admitted] = await db().update(jobs)
+    .set({ payload: sql`${jobs.payload} - ${ADMISSION_STATE_KEY}` })
+    .where(eq(jobs.id, insertedJob.jobId))
+    .returning({ id: jobs.id });
+  if (!admitted) throw new Error("admitted job row disappeared before launch");
+  launchInsertedJob(insertedJob.jobId, opts);
+  return { ok: true, jobId: insertedJob.jobId, inserted: true };
 }
 
 /**
