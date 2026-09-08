@@ -17,7 +17,7 @@ export type GenerationTarget = CharacterAuthoringTarget;
 
 /** One bounded browser cache per account and surface; the server remains authoritative. */
 export const generationCacheKey = (ownerId: string, target: GenerationTarget) =>
-  `vesper:character-generation-cache:${ownerId}:${target.kind}:${target.kind === "character" ? target.id : "latest"}`;
+  `vesper:character-generation-cache:${ownerId}:${target.kind}:${target.id}`;
 
 export const characterGenerationCacheSchema = z.object({
   savedAt: z.number(),
@@ -33,7 +33,7 @@ export function readGenerationCache(raw: string | null): CharacterGeneration[] {
 export function matchesGeneration(record: CharacterGeneration, ownerId: string, target: GenerationTarget): boolean {
   return record.ownerId === ownerId
     && record.target.kind === target.kind
-    && (target.kind === "creation" || record.target.id === target.id)
+    && record.target.id === target.id
     && (record.operation !== "portrait" || record.target.kind === "character")
     && (!record.scope || record.operation === "fill" || record.operation === "redraft");
 }

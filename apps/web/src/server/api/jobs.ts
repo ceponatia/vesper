@@ -95,6 +95,8 @@ export interface StartJobOptions {
   type: ApiJobType;
   /** Stable request id for idempotent starts. */
   requestedJobId?: string;
+  /** Coalesce active work that has different request ids but one logical root. */
+  activeDedupeKey?: string;
   /**
    * Who the work is for. The per-user concurrency cap counts over this, so a
    * call that omits it submits uncapped work — reserved for system and
@@ -145,6 +147,7 @@ async function insertJobRow(opts: StartJobOptions): Promise<InsertedJob | Extrac
       type: opts.type,
       payload: opts.payload,
       ...(opts.requestedJobId === undefined ? {} : { requestedJobId: opts.requestedJobId }),
+      ...(opts.activeDedupeKey === undefined ? {} : { activeDedupeKey: opts.activeDedupeKey }),
       ...(opts.chatId === undefined ? {} : { chatId: opts.chatId }),
     });
     return claim.ok ? { jobId: claim.jobId, inserted: claim.inserted } : { ok: false, active: claim.active, limit: claim.limit };
@@ -202,10 +205,17 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
     .then(async (result) => {
       const outcome = laneOutcome(true);
       if (lane && outcome !== null) recordProviderOutcome(lane, outcome);
-      await db()
-        .update(jobs)
-        .set({ status: "done", payload: { ...opts.payload, ...result }, finishedAt: new Date() })
-        .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
+      await db().transaction(async (tx) => {
+        const [current] = await tx.select({ payload: jobs.payload }).from(jobs)
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running"))).for("update");
+        if (!current) return;
+        const payload = current.payload && typeof current.payload === "object" && !Array.isArray(current.payload)
+          ? current.payload as Record<string, unknown>
+          : opts.payload;
+        await tx.update(jobs)
+          .set({ status: "done", payload: { ...payload, ...result }, finishedAt: new Date() })
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
+      });
     })
     .catch(async (err: unknown) => {
       // A run that reported a success and then threw is telling the truth twice:

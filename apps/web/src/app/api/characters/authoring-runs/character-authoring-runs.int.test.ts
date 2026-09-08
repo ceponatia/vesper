@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { emptyCharacterProfile } from "@/contracts";
 import { emptyCharacterDraft } from "@/lib/client/api";
 import { characters, db, jobs } from "@/server/db";
-import { resetRateLimits } from "@/server/api";
+import { claimJobSlot, resetRateLimits, startJobAfterAdmission } from "@/server/api";
 
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Authoring runs", role: "admin" as const } }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
@@ -152,6 +152,69 @@ function storedPortraitRun(input: Awaited<ReturnType<typeof portraitSubject>> & 
 }
 
 describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
+  it("keeps the first Forge decidable until the client accepts its unchanged preview", async () => {
+    const requestId = crypto.randomUUID();
+    const creationId = crypto.randomUUID();
+    const blank = emptyCharacterDraft();
+    const base = { ...blank, profile: { ...blank.profile, creationBrief: "A patient harbor master" } };
+    const response = await startRun(apiRequest("/api/characters/authoring-runs", { method: "POST", body: {
+      requestId,
+      target: { kind: "creation", id: creationId },
+      operation: "create",
+      scope: null,
+      label: "forged character",
+      base,
+      creationStart: { draft: blank, prompt: "A patient harbor master", initialPreview: true },
+      source: null,
+    } }), routeCtx({}));
+    expect(response.status).toBe(202);
+    await waitForJob(requestId);
+    const listed = await expectJson<{ runs: { id: string; proposal: { status: string } }[] }>(await list("creation", creationId));
+    expect(listed.runs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: requestId, proposal: expect.objectContaining({ status: "unresolved" }) }),
+    ]));
+    expect((await expectJson<{ runs: unknown[] }>(await list("creation", crypto.randomUUID()))).runs).toEqual([]);
+  });
+
+  it("preserves a running dismissal when detached work settles", async () => {
+    const row = await subject("Dismiss while running");
+    const fixture = storedRun({ id: crypto.randomUUID(), characterId: row.id, revision: row.authoringRevision, before: row.name, after: "Late proposal" });
+    let finishDetachedRun!: () => void;
+    const waiting = new Promise<void>((resolve) => { finishDetachedRun = resolve; });
+    const payload = { ...fixture.payload, result: null };
+    const started = await startJobAfterAdmission({
+      type: "character_authoring",
+      ownerId: authState.user.id,
+      requestedJobId: fixture.id,
+      payload,
+      run: async () => { await waiting; return { result: fixture.payload.result }; },
+    }, async () => null);
+    expect(started.ok).toBe(true);
+    const dismissed = await decideRun(apiRequest(`/api/characters/authoring-runs/${fixture.id}/decision`, {
+      method: "PATCH", body: { action: "dismiss", expectedProposalRevision: 1, choices: {} },
+    }), routeCtx({ runId: fixture.id }));
+    expect((await expectJson<{ run: { proposal: { status: string } } }>(dismissed)).run.proposal.status).toBe("dismissed");
+    finishDetachedRun();
+    await waitForJob(fixture.id);
+    const [settled] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, fixture.id));
+    expect(settled?.payload).toEqual(expect.objectContaining({
+      proposal: expect.objectContaining({ status: "dismissed" }),
+      result: fixture.payload.result,
+    }));
+  });
+
+  it("coalesces simultaneous active retry children by logical root", async () => {
+    const rootRunId = crypto.randomUUID();
+    const key = `character-authoring:${rootRunId}`;
+    const claims = await Promise.all([
+      claimJobSlot({ ownerId: authState.user.id, type: "character_authoring", requestedJobId: crypto.randomUUID(), activeDedupeKey: key, payload: { rootRunId } }),
+      claimJobSlot({ ownerId: authState.user.id, type: "character_authoring", requestedJobId: crypto.randomUUID(), activeDedupeKey: key, payload: { rootRunId } }),
+    ]);
+    expect(claims.every((claim) => claim.ok)).toBe(true);
+    expect(claims[0]?.ok && claims[1]?.ok ? claims[0].jobId : null).toBe(claims[1]?.ok ? claims[1].jobId : null);
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, claims[0]!.ok ? claims[0]!.jobId : ""));
+  });
+
   it("converges duplicate starts, resumes by owner, and does not spend on reload", async () => {
     const row = await subject("Idempotent source");
     const requestId = crypto.randomUUID();

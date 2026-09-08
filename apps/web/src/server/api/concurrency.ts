@@ -37,6 +37,8 @@ export interface ClaimJobSlotInput {
   readonly payload: Record<string, unknown>;
   /** Stable caller request id. An existing row converges without a new slot. */
   readonly requestedJobId?: string;
+  /** While active, one job with this owner/type key is admitted. */
+  readonly activeDedupeKey?: string;
   /**
    * The conversation this work belongs to, written to the first-class `chat_id`
    * column so the row dies with its chat. Absent for work that belongs to no
@@ -85,11 +87,24 @@ export async function claimJobSlot(input: ClaimJobSlotInput): Promise<JobSlotCla
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`job_slot:${input.ownerId}`}, 0))`);
     if (input.requestedJobId) {
       const [existing] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, input.requestedJobId)).limit(1);
-      if (existing) return { existing: true, rows: [] };
+      if (existing) return { existing: true, jobId: existing.id, rows: [] };
     }
+    if (input.activeDedupeKey) {
+      const [active] = await tx.select({ id: jobs.id }).from(jobs).where(and(
+        eq(jobs.ownerId, input.ownerId),
+        eq(jobs.type, input.type),
+        inArray(jobs.status, [...ACTIVE_STATUSES]),
+        gt(jobs.createdAt, new Date(Date.now() - JOB_SLOT_STALE_MS)),
+        sql`${jobs.payload} ->> '_activeDedupeKey' = ${input.activeDedupeKey}`,
+      )).limit(1);
+      if (active) return { existing: true, jobId: active.id, rows: [] };
+    }
+    const payload = input.activeDedupeKey
+      ? { ...input.payload, _activeDedupeKey: input.activeDedupeKey }
+      : input.payload;
     return tx.execute(sql`
       INSERT INTO "jobs" ("id", "type", "status", "owner_id", "payload", "attempts", "started_at", "heartbeat_at", "chat_id")
-      SELECT ${id}, ${input.type}, 'running', ${input.ownerId}, ${JSON.stringify(input.payload)}::jsonb, 1, now(), now(), ${input.chatId ?? null}::text
+      SELECT ${id}, ${input.type}, 'running', ${input.ownerId}, ${JSON.stringify(payload)}::jsonb, 1, now(), now(), ${input.chatId ?? null}::text
       WHERE (
         SELECT count(*) FROM "jobs"
         WHERE "jobs"."owner_id" = ${input.ownerId}
@@ -100,7 +115,7 @@ export async function claimJobSlot(input: ClaimJobSlotInput): Promise<JobSlotCla
     `);
   });
 
-  if ("existing" in inserted) return { ok: true, jobId: id, inserted: false };
+  if ("existing" in inserted) return { ok: true, jobId: inserted.jobId, inserted: false };
   if (inserted.rows.length > 0) return { ok: true, jobId: id, inserted: true };
   return { ok: false, active: await activeJobCount(input.ownerId), limit };
 }

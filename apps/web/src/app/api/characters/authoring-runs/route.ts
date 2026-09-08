@@ -16,15 +16,13 @@ import {
 
 const listQuerySchema = z.object({
   targetKind: z.enum(["creation", "character"]),
-  targetId: z.string().min(1).max(128).optional(),
-}).superRefine((value, ctx) => {
-  if (value.targetKind === "character" && !value.targetId) ctx.addIssue({ code: "custom", message: "character target id is required" });
+  targetId: z.string().min(1).max(128),
 });
 
 export const GET = withUser(async (user, req: NextRequest) => {
   const query = listQuerySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
   if (!query.success) return jsonError("invalid_query", "invalid authoring-run target", 400);
-  const target = authoringTargetSchema.parse({ kind: query.data.targetKind, id: query.data.targetId ?? "latest" });
+  const target = authoringTargetSchema.parse({ kind: query.data.targetKind, id: query.data.targetId });
   return jsonOk(await listCharacterAuthoringRuns(user.id, target));
 });
 

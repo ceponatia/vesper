@@ -19,7 +19,7 @@ import { SkeletonText } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
-import { characterCreationStateSchema, completeCreationForge, creationForgeStart, emptyCharacterCreation, isPristineCharacterDraft, prepareCreationSave, recoverCreationMismatch, savedCreationHref, withCreationBrief } from "./character-creation-draft";
+import { canApplyCreationForgePreview, characterCreationStateSchema, completeCreationForge, creationForgeStart, emptyCharacterCreation, isPristineCharacterDraft, prepareCreationSave, recoverCreationMismatch, savedCreationHref, withCreationBrief } from "./character-creation-draft";
 import { CharacterProposalReview } from "./character-proposal-review";
 import { readDraft, writeDraft } from "./character-draft-storage";
 import { characterReviewStateSchema, proposalChanges, reconcileMaterializedUndo, transferCreationReview } from "./character-proposals";
@@ -45,6 +45,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
   const { draft, prompt, review, tab } = store.data;
   const [diagnostics, setDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [saving, setSaving] = useState(false);
+  const [abandoning, setAbandoning] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
   const active = useRef(true);
   const saveInFlight = useRef(false);
@@ -58,36 +59,49 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
     record: { base: store.data.serverSnapshot ?? { draft: emptyCharacterDraft(), chatModel: conflict.snapshot.chatModel }, authored: { draft, chatModel: store.data.serverSnapshot?.chatModel ?? conflict.snapshot.chatModel }, serverUpdatedAt: store.data.serverUpdatedAt },
   } : null;
   const changeDraft = (next: CharacterDraft) => { if (!store.current.current.serverConflict) store.update((current) => ({ ...current, draft: next })); };
-  const generation = useCharacterGeneration(ownerId, { kind: "creation", id: store.data.id }, store.ready, store.conflict || !!creationRecovery, store.data, async (record) => {
+  const generation = useCharacterGeneration(ownerId, { kind: "creation", id: store.data.id }, store.ready, store.conflict || !!creationRecovery, store.data, async (record, actions) => {
     if (store.isBlocked() || store.current.current.serverConflict || record.ownerId !== ownerId || !record.result) return false;
-    if (store.current.current.id !== record.target.id) {
-      const current = store.current.current;
-      const canResume = !current.savedCharacterId && !current.prompt.trim() && !current.review.pending.length && isPristineCharacterDraft(current.draft);
-      if (!canResume) return false;
-      store.update({
-        ...current,
-        id: record.target.id,
-        draft: record.creationStart?.draft ?? record.base,
-        prompt: record.creationStart?.prompt ?? record.base.profile.creationBrief,
-      });
-    }
+    if (store.current.current.id !== record.target.id) return false;
     const firstReceipt = !hasReceivedGeneration(store.current.current.review, record.id);
     if (firstReceipt && record.operation === "create" && record.creationStart
-      && (record.proposal.status === "unresolved" || record.creationStart.initialPreview)) {
+      && record.proposal.status === "unresolved") {
       setDiagnostics(record.result.diagnostics);
-      const completed = completeCreationForge(store.current.current, record.creationStart, record.base, record.result.proposed, record.id);
+      const current = store.current.current;
+      const completed = completeCreationForge(current, record.creationStart, record.base, record.result.proposed, record.id);
+      const changes = proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false });
+      const preview = canApplyCreationForgePreview(current, record.creationStart);
+      let decided = record;
+      if (preview && changes.length) {
+        const accepted = await actions.decide(
+          { sourceRunId: record.id, proposalRevision: record.proposal.revision },
+          "accept",
+          {},
+          { currentDraft: record.base },
+        );
+        if (!accepted) return false;
+        decided = accepted.run;
+      } else if (!changes.length) {
+        const rejected = await actions.decide(
+          { sourceRunId: record.id, proposalRevision: record.proposal.revision },
+          "reject",
+          {},
+          { currentDraft: current.draft },
+        );
+        if (!rejected) return false;
+        decided = rejected.run;
+      }
       const next = {
         ...completed,
         review: {
           ...completed.review,
           pending: completed.review.pending.map((proposal) => proposal.id === record.id
-            ? { ...proposal, sourceRunId: record.id, proposalRevision: record.proposal.revision }
+            ? { ...proposal, sourceRunId: record.id, proposalRevision: decided.proposal.revision }
             : proposal),
         },
       };
       const staged = hasReceivedGeneration(next.review, record.id);
       store.update(staged ? next : { ...next, review: { ...next.review, handledIds: [...(next.review.handledIds ?? []), record.id] } });
-      if (!proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
+      if (!changes.length) toast.push({ title: "No changes suggested", tone: "success" });
     } else {
       setDiagnostics(record.result.diagnostics);
       store.update((current) => ({
@@ -229,7 +243,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
     <PageContainer>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h1 className="prose-display text-2xl">{draft.name || (mode === "forge" ? "Character forge" : "New character")}</h1>
-        <Button variant="ghost" onClick={() => setConfirmNew(true)} disabled={saving}>Start a new draft</Button>
+        <Button variant="ghost" onClick={() => setConfirmNew(true)} disabled={saving || abandoning}>Start a new draft</Button>
       </div>
       <p className="mb-5 text-sm text-paper-400">This draft resumes on this browser for your account. Edit by hand or ask the Forge for suggestions, then save to your library.</p>
       {store.notice ? <p role="status" className="mb-3 text-sm text-warning">{store.notice}</p> : null}
@@ -289,9 +303,13 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         diagnostics={diagnostics.filter((item) => item.severity !== "info")} />
       </fieldset>
       <SaveBar dirty={busy === null && !store.conflict} saving={saving} disabled={!!creationRecovery} status={creationRecovery ? "Resolve recovered edits to save" : undefined} onSave={() => void save()} saveLabel="Save authored character" />
-      <Dialog open={confirmNew} onClose={() => setConfirmNew(false)} title="Start a new character draft?" footer={<><Button onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" onClick={() => {
-        generation.records.forEach(generation.dismiss); setDiagnostics([]); store.reset(); setConfirmNew(false);
-      }}>Start new draft</Button></>}>
+      <Dialog open={confirmNew} onClose={() => setConfirmNew(false)} title="Start a new character draft?" footer={<><Button disabled={abandoning} onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" busy={abandoning} onClick={() => { void (async () => {
+        setAbandoning(true);
+        const abandoned = await generation.abandon();
+        if (abandoned) { setDiagnostics([]); store.reset(); setConfirmNew(false); }
+        else toast.push({ title: "Draft not replaced", description: "The current generation could not be abandoned. Your draft is still here; try again.", tone: "error" });
+        if (active.current) setAbandoning(false);
+      })(); }}>Start new draft</Button></>}>
         This replaces this browser&apos;s current creation draft and pending suggestions. Save the character first if you want to keep it in your library.
       </Dialog>
     </PageContainer>

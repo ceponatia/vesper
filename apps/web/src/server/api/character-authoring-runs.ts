@@ -178,6 +178,7 @@ function projectRun(row: typeof jobs.$inferSelect, payload: StoredPayload) {
     errorCode: readFailure ? `portrait_${readFailure}` : row.status === "failed" ? "generation_failed" : null,
     retryOf: payload.intent.retryOf,
     rootRunId: payload.intent.rootRunId,
+    persisted: true,
     proposal: payload.proposal,
     createdAt: row.createdAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
@@ -221,7 +222,7 @@ export async function listCharacterAuthoringRuns(ownerId: string, target: z.infe
     eq(jobs.type, "character_authoring"),
     sql`${jobs.payload} -> 'intent' -> 'target' ->> 'kind' = ${target.kind}`,
   ];
-  if (target.kind === "character") predicates.push(sql`${jobs.payload} -> 'intent' -> 'target' ->> 'id' = ${target.id}`);
+  predicates.push(sql`${jobs.payload} -> 'intent' -> 'target' ->> 'id' = ${target.id}`);
   const rows = await db().select().from(jobs).where(and(...predicates)).orderBy(desc(jobs.createdAt)).limit(MAX_RUNS_PER_SURFACE);
   const diagnostics: Diagnostic[] = [];
   const runs: AuthoringRunDto[] = [];
@@ -291,7 +292,7 @@ async function canonicalizeStart(ownerId: string, input: StartInput): Promise<St
   };
 }
 
-async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>): Promise<Pick<StoredPayload, "result" | "proposal">> {
+async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>): Promise<Pick<StoredPayload, "result">> {
   const sink = new DiagnosticCollector();
   const base = intent.base;
   let proposed: CharacterDraft;
@@ -333,13 +334,7 @@ async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>)
     proposed = { ...proposed, profile: { ...proposed.profile, creationBrief: base.profile.creationBrief } };
   }
   const result = { proposed, diagnostics: sink.items, ...(portrait ? { portrait } : {}) };
-  const initial = intent.operation === "create" && intent.creationStart?.initialPreview === true;
-  return {
-    result,
-    proposal: initial
-      ? { revision: 2, status: "accepted", choices: {}, appliedDraft: proposed, undo: null }
-      : { revision: 1, status: "unresolved", choices: {}, appliedDraft: null, undo: null },
-  };
+  return { result };
 }
 
 export type StartAuthoringRunOutcome =
@@ -391,6 +386,7 @@ async function launch(ownerId: string, input: StartInput, retryOf: string | null
     type: "character_authoring",
     ownerId,
     requestedJobId: canonical.requestId,
+    ...(retryOf ? { activeDedupeKey: `character-authoring:${rootRunId}` } : {}),
     payload,
     run: async () => executeRun(ownerId, intent),
   }, admit);
@@ -401,7 +397,13 @@ async function launch(ownerId: string, input: StartInput, retryOf: string | null
   const row = await ownedRunRow(ownerId, started.jobId);
   if (!row) return { status: "idempotency_conflict" };
   const parsed = payloadSchema.safeParse(row.payload);
-  if (!parsed.success || parsed.data.intent.intentHash !== intent.intentHash) return { status: "idempotency_conflict" };
+  if (!parsed.success) return { status: "idempotency_conflict" };
+  if (parsed.data.intent.intentHash !== intent.intentHash) {
+    const activeSibling = retryOf !== null
+      && parsed.data.intent.rootRunId === rootRunId
+      && (row.status === "queued" || row.status === "running");
+    if (!activeSibling) return { status: "idempotency_conflict" };
+  }
   return { status: "accepted", run: projectRun(row, parsed.data) };
 }
 

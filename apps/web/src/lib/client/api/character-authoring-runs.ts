@@ -61,6 +61,7 @@ export const characterAuthoringRunSchema = z.object({
   errorCode: z.string().nullable().optional(),
   retryOf: z.string().nullable(),
   rootRunId: z.string(),
+  persisted: z.boolean(),
   proposal: characterAuthoringProposalStateSchema,
   createdAt: z.string(),
   startedAt: z.string().nullable(),
@@ -86,7 +87,7 @@ export const characterAuthoringRunsApi = {
     runListEnvelopeSchema,
     withQuery("/api/characters/authoring-runs", {
       targetKind: target.kind,
-      ...(target.kind === "character" ? { targetId: target.id } : {}),
+      targetId: target.id,
     }),
   ),
   start: (requestId: string, target: CharacterAuthoringTarget, input: CharacterAuthoringGenerationInput) => apiPost(

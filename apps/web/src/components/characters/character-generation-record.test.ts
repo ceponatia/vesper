@@ -18,6 +18,7 @@ function fixture(overrides: Partial<CharacterGeneration> = {}): CharacterGenerat
     status: "completed",
     result: { proposed: { ...base, name: "Iris" }, diagnostics: [] },
     error: null,
+    persisted: true,
     retryOf: null,
     rootRunId: "request",
     proposal: { revision: 1, status: "unresolved", choices: {}, appliedDraft: null, undo: null },
@@ -55,8 +56,10 @@ describe("server character generation records", () => {
     expect(matchesGeneration(run, "other", run.target)).toBe(false);
     expect(matchesGeneration(run, run.ownerId, { kind: "character", id: "other" })).toBe(false);
     const creation = fixture({ target: { kind: "creation", id: "draft-a" }, operation: "create", source: null });
-    expect(matchesGeneration(creation, creation.ownerId, { kind: "creation", id: "new-browser-draft" })).toBe(true);
-    expect(generationCacheKey(creation.ownerId, creation.target)).toContain(":creation:latest");
+    expect(matchesGeneration(creation, creation.ownerId, { kind: "creation", id: "new-browser-draft" })).toBe(false);
+    expect(matchesGeneration(creation, creation.ownerId, { kind: "creation", id: "draft-a" })).toBe(true);
+    expect(generationCacheKey(creation.ownerId, creation.target)).toContain("draft-a");
+    expect(generationCacheKey(creation.ownerId, creation.target)).toContain(":creation:draft-a");
   });
 
   it("degrades malformed cache entries to an empty cache", () => {

@@ -80,6 +80,12 @@ export function creationForgeStart(state: CharacterCreationState) {
   return { draft: structuredClone(state.draft), prompt: state.prompt, initialPreview: isPristineCharacterDraft(state.draft) && !state.review.pending.length && !state.savedCharacterId };
 }
 
+export function canApplyCreationForgePreview(current: CharacterCreationState, started: ReturnType<typeof creationForgeStart>): boolean {
+  return started.initialPreview
+    && JSON.stringify(current.draft) === JSON.stringify(started.draft)
+    && current.prompt === started.prompt;
+}
+
 export function completeCreationForge(current: CharacterCreationState, started: ReturnType<typeof creationForgeStart>, base: CharacterDraft, proposed: CharacterDraft, proposalId: string): CharacterCreationState {
   const proposal = { id: proposalId, label: "forged character", base, proposed, undo: false };
   const hasChanges = proposalChanges(proposal).length > 0;
@@ -88,8 +94,7 @@ export function completeCreationForge(current: CharacterCreationState, started: 
   if (!hasChanges && started.initialPreview && !started.draft.profile.creationBrief) return current;
   const draft = { ...current.draft, profile: { ...current.draft.profile, creationBrief: current.draft.profile.creationBrief || base.profile.creationBrief } };
   const result = { ...proposed, profile: { ...proposed.profile, creationBrief: draft.profile.creationBrief } };
-  const initialPreview = started.initialPreview
-    && JSON.stringify(current.draft) === JSON.stringify(started.draft) && current.prompt === started.prompt;
+  const initialPreview = canApplyCreationForgePreview(current, started);
   if (initialPreview) return { ...current, draft: result };
   return { ...current, draft, review: hasChanges ? { ...current.review, pending: [...current.review.pending, { ...proposal, proposed: result }] } : current.review };
 }

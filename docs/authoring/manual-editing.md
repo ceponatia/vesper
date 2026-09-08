@@ -67,10 +67,18 @@ The section registry owns placement, generation scopes and section detail counts
   an owner-scoped `character_authoring` job. Its request id is the idempotency key; duplicate starts
   converge on the same row before admission or provider work. The row keeps immutable input,
   operation and section, lifecycle, result or error, retry lineage, proposal revision and decision.
+- Capacity, admission and stale-source refusals are browser records rather than durable runs. They
+  say that generation did not start. Retryable refusals restart the immutable request through the
+  start endpoint; source conflicts direct the author to review current saved inputs and start again.
+  Dismissing a browser-only refusal never calls a run endpoint.
 - Returning to either browser reads the saved runs and projects each server proposal into the
   matching creation draft or saved character. Reload and resume never start a model call. A failed
   run offers explicit **Retry generation**, which creates a new run linked to the same root and
   immutable source; **Dismiss** records the decision on the server.
+- Retry is single-flight per logical root. The browser installs the pending child synchronously,
+  and the server coalesces concurrent active children under the owner-scoped job admission lock.
+  A refused retry remains visible with its error. Detached completion merges into the latest run
+  payload, so an abandonment or dismissal recorded during execution remains authoritative.
 - Accept, Reject and Undo compare both the proposal revision and the saved character's authoring
   revision inside one transaction. Acceptance uses a three-way merge against the run's immutable
   base, so unrelated edits survive and overlapping edits require an explicit choice. Provider work,
