@@ -184,7 +184,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         {draft.profile.creationBrief ? <p className="mt-2 text-xs text-paper-400">Use the section actions to refine one part. Starting a new draft creates a new original brief.</p> : null}
       </Disclosure>
       <CharacterProposalReview draft={draft} review={review} onReviewChange={(next) => store.update((current) => ({ ...current, review: next }))} onChange={changeDraft} disabled={!store.ready || store.conflict} isBlocked={store.isBlocked} />
-      <div className="mb-4"><Button busy={busy === "fill" && scopeBusy === null} disabled={busy !== null || saving || store.conflict} onClick={() => void generate("fill")}>Complete missing details</Button></div>
+      <div className="mb-4"><Button busy={busy === "fill" && scopeBusy === null} disabled={busy !== null || saving || store.conflict} onClick={() => void generate("fill")}>Complete all missing details</Button></div>
       <CharacterEditor draft={draft} onChange={changeDraft} tab={tab} onTabChange={(next) => store.update((current) => ({ ...current, tab: next }))}
         onComplete={(scope) => void generate("fill", scope)} completing={busy === "fill" ? scopeBusy : null}
         onRedraft={(scope) => void generate("redraft", scope)} redrafting={busy === "redraft" ? scopeBusy : null}

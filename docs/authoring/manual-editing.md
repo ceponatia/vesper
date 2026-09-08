@@ -32,8 +32,8 @@ The section registry owns placement, generation scopes and section detail counts
 
 ## Reviewing character suggestions
 
-- **Complete missing details** fills absent values. **Rewrite this section** can propose changes
-  to authored values within the selected section. The visible section and generation scope agree.
+- **Complete all missing details** fills absent values across sections. **Rewrite this section**
+  can propose changes to authored values within the selected section. The visible section and generation scope agree.
 - Completion, section rewrites, Forge regeneration and portrait-derived attributes return a
   reviewable proposal. The author draft stays unchanged until an explicit acceptance. The first
   full Forge of an untouched blank draft opens the editable preview directly; Create is its
@@ -68,6 +68,8 @@ The section registry owns placement, generation scopes and section detail counts
   **Review recovered edits**, with the same per-field three-way choices and an independent
   narrator choice. **Use saved version** explicitly discards those recovered edits. Competing
   browser tabs offer the latest browser record, separate recovery copies, or the saved character.
+  Until recovery is resolved, Save and Duplicate are disabled and the save bar states
+  **Resolve recovered edits to save** without marking unsaved edits as saved.
 - Saved-editor PATCH sends `expectedUpdatedAt`. The server locks the owned row, compares its
   version, and performs item materialization and the character write in one transaction. A stale
   version returns `409 character_conflict` with the current owned character before creating any
