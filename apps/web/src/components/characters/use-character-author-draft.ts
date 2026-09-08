@@ -16,6 +16,7 @@ export interface AuthorRecoveryReview { id: string; record: CharacterAuthorRecov
  * An acknowledgment advances its baseline; failed/unmounted writes leave it recoverable. */
 export function useCharacterAuthorDraft(characterId: string, ownerId: string, detail: CharacterDetail | null, onSaved: (sent: CharacterDraft, saved: CharacterDetail, diagnostics: readonly Diagnostic[]) => void) {
   const storage = useCharacterDraftStorage(`vesper:character-author:${ownerId}:${characterId}`, characterAuthorRecoverySchema, emptyAuthorRecovery);
+  const { clear: clearStorage, current: storageCurrent, ready: storageReady, revision: storageRevision } = storage;
   const toast = useToast();
   const [authored, setAuthored] = useState<CharacterAuthorSnapshot | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -47,19 +48,19 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     pending.current = review;
     dirtyRef.current = disposition === "resume";
     if (alive.current) { setAuthored(next); setDirty(dirtyRef.current); setRecovery(review); }
-    if (disposition === "acknowledged" && stored && serverDetail.mine) void storage.clear(storage.revision.current);
-  }, [storage.clear, storage.revision]);
+    if (disposition === "acknowledged" && stored && serverDetail.mine) void clearStorage(storageRevision.current);
+  }, [clearStorage, storageRevision]);
 
   useEffect(() => {
-    if (!detail || !storage.ready || initialized.current) return;
+    if (!detail || !storageReady || initialized.current) return;
     let cancelled = false;
     void Promise.resolve().then(() => {
       if (cancelled || !alive.current || initialized.current) return;
       initialized.current = true;
-      load(detail, storage.current.current);
+      load(detail, storageCurrent.current);
     });
     return () => { cancelled = true; };
-  }, [detail, storage.ready, storage.current, load]);
+  }, [detail, storageReady, storageCurrent, load]);
 
   const persist = (snapshot: CharacterAuthorSnapshot) => {
     if (!baseline.current) return;
@@ -84,17 +85,20 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
       if (alive.current) setSaving(true);
       // The server compares this version while holding the row lock. A conflict
       // includes its current row, so recovery needs no racy follow-up GET.
-      if (!baseline.current.updatedAt) {
+      let expectedUpdatedAt = baseline.current.updatedAt;
+      if (!expectedUpdatedAt) {
         if (alive.current) toast.push({ title: "Save paused", description: "The saved character version is unavailable. Reload to recover your browser edits safely.", tone: "error" });
         return false;
       }
       let sent = current.current;
-      const patch = () => charactersApi.update(characterId, { name: sent.draft.name, tags: sent.draft.tags, profile: sent.draft.profile, suggestedItems: sent.draft.suggestedItems, chatModel: sent.chatModel, expectedUpdatedAt: baseline.current!.updatedAt });
+      const patch = () => charactersApi.update(characterId, { name: sent.draft.name, tags: sent.draft.tags, profile: sent.draft.profile, suggestedItems: sent.draft.suggestedItems, chatModel: sent.chatModel, expectedUpdatedAt });
       let response = await patch();
       if (!response.ok) {
         const changed = parseOrNull(characterSaveConflictSchema, response.error.body);
         if (changed && sameAuthorSnapshot(authorSnapshotFromDetail(changed.character), baseline.current.snapshot)) {
+          if (!changed.character.updatedAt) return false;
           baseline.current = { snapshot: baseline.current.snapshot, updatedAt: changed.character.updatedAt };
+          expectedUpdatedAt = changed.character.updatedAt;
           sent = current.current;
           persist(sent);
           response = await patch();

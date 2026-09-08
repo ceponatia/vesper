@@ -23,7 +23,15 @@ export interface ProposalChange { key: string; path: Path; label: string; before
 export type ProposalChoices = Record<string, "current" | "proposed">;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const object = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const keyed = (v: unknown): v is { id: string }[] => Array.isArray(v) && v.every((row) => object(row) && typeof row.id === "string") && new Set(v.map((row) => row.id)).size === v.length;
+function keyed(value: unknown): value is (Record<string, unknown> & { id: string })[] {
+  if (!Array.isArray(value)) return false;
+  const ids = new Set<string>();
+  for (const row of value as unknown[]) {
+    if (!object(row) || typeof row.id !== "string" || ids.has(row.id)) return false;
+    ids.add(row.id);
+  }
+  return true;
+}
 const words = (s: string) => s.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[._]/g, " ");
 const title = (path: Path): string => path.map((part) => {
   if (typeof part === "string") return words(part);

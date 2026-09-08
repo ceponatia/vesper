@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Diagnostic } from "@/contracts";
+import { VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type Diagnostic } from "@/contracts";
 import { characterEditorTabs, characterSections, type CharacterEditorTab, type CharacterSheetScope } from "@/lib/character-scopes";
 import { charactersApi } from "@/lib/client/api";
 import { useSession } from "@/components/auth/auth-client";
@@ -56,6 +56,9 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     if (alive.current) { setForgeDiagnostics(diagnostics); detail.reload({ silent: true }); }
   });
   const { draft, chatModel, dirty, saving, save, changeDraft, changeChatModel } = author;
+  const referencePlanKey = JSON.stringify(
+    detail.data?.profile.attributes.find((value) => value.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value ?? null,
+  );
 
   useEffect(() => {
     alive.current = true;
@@ -223,7 +226,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         onTabChange={setTab}
         characterId={characterId}
         avatarImageId={detail.data?.avatarImageId ?? null}
-        referencePlanRevision={detail.data?.updatedAt ?? null}
+        referencePlanKey={referencePlanKey}
         {...(detail.data ? { acceptance: detail.data.acceptance } : {})}
         onAvatarChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }}
         chatModel={chatModel}

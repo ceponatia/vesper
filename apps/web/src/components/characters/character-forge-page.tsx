@@ -101,7 +101,11 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       if (store.isBlocked()) return;
       const snapshot = store.current.current;
       const savedRevision = store.revision.current;
-      const authored = snapshot.savedCharacterId ? withCreationBrief(snapshot.draft, snapshot.prompt) : snapshot.initialSaveDraft!;
+      const authored = snapshot.savedCharacterId ? withCreationBrief(snapshot.draft, snapshot.prompt) : snapshot.initialSaveDraft;
+      if (!authored) {
+        if (active.current) toast.push({ title: "Save paused", description: "The retained creation snapshot is unavailable. Your current draft is still here.", tone: "error" });
+        return;
+      }
       if (snapshot.savedCharacterId && (!snapshot.serverUpdatedAt || !snapshot.serverSnapshot)) {
         const fresh = await charactersApi.get(snapshot.savedCharacterId);
         if (!fresh.ok) { if (active.current) toast.push({ title: "Save paused", description: "Could not check the saved character. Your draft is retained.", tone: "error" }); return; }
@@ -191,6 +195,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
   };
 
   if (!store.ready) return <PageContainer><SkeletonText lines={6} /></PageContainer>;
+  const savedHref = savedCreationHref(store.data);
   return (
     <PageContainer>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -200,7 +205,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       <p className="mb-5 text-sm text-paper-400">This draft resumes on this browser for your account. Edit by hand or ask the Forge for suggestions, then save to your library.</p>
       {store.notice ? <p role="status" className="mb-3 text-sm text-warning">{store.notice}</p> : null}
       {store.conflict || store.recoveries.length ? <div className="mb-4 flex flex-wrap gap-2"><Button disabled={saving || busy !== null} onClick={() => store.resume()}>Resume latest draft</Button>{store.recoveries.map((copy) => <Button key={copy.key} disabled={saving || busy !== null} onClick={() => store.resume(copy.key)}>Recover draft from {copy.label}</Button>)}</div> : null}
-      {savedCreationHref(store.data) ? <p className="mb-4 text-sm"><Link className="text-accent-300 underline" href={savedCreationHref(store.data)!}>Open saved character{store.data.saveDestination === "chat" ? " in Chat" : store.data.saveDestination === "portrait" ? " in Portrait Studio" : ""}</Link></p> : null}
+      {savedHref ? <p className="mb-4 text-sm"><Link className="text-accent-300 underline" href={savedHref}>Open saved character{store.data.saveDestination === "chat" ? " in Chat" : store.data.saveDestination === "portrait" ? " in Portrait Studio" : ""}</Link></p> : null}
       {creationRecovery ? <CharacterAuthorRecoveryNotice key={creationRecovery.id} recovery={creationRecovery} disabled={saving || store.conflict}
         title={conflict?.reason === "creation_mismatch" ? "Saved character found" : undefined}
         description={conflict?.reason === "creation_mismatch" ? "This creation request already saved a character. Your retained draft is linked to it; review the differences before saving again." : undefined}
@@ -231,7 +236,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       <Dialog open={confirmNew} onClose={() => setConfirmNew(false)} title="Start a new character draft?" footer={<><Button onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" onClick={() => {
         generation.records.forEach(generation.dismiss); setDiagnostics([]); store.reset(); setConfirmNew(false);
       }}>Start new draft</Button></>}>
-        This replaces this browser's current creation draft and pending suggestions. Save the character first if you want to keep it in your library.
+        This replaces this browser&apos;s current creation draft and pending suggestions. Save the character first if you want to keep it in your library.
       </Dialog>
     </PageContainer>
   );

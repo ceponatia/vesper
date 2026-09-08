@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, type SetStateAction } from "react";
 import {
   referenceViewAngles,
   referenceViewWardrobeEntries,
@@ -76,8 +76,8 @@ function slotKey(view: { angle: string; wardrobe: string }): string {
 
 export interface ReferenceViewsPanelProps {
   characterId: string;
-  /** Saved character revision; apparent-age saves can change the eligible plan. */
-  planRevision: string | null;
+  /** Identity of the saved apparent-age value that determines eligibility. */
+  planKey: string;
   /**
    * Which portrait the character's identity comes from, and whether the one on
    * screen is it. Views are measured against the ACCEPTED portrait, so the read
@@ -89,16 +89,27 @@ export interface ReferenceViewsPanelProps {
   onChanged: () => void;
 }
 
-export function ReferenceViewsPanel({ characterId, planRevision, acceptance, onChanged }: ReferenceViewsPanelProps) {
+export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChanged }: ReferenceViewsPanelProps) {
   const views = useAsyncData(
     () => referenceViewsApi.get(characterId),
-    [characterId, acceptance.acceptedImageId, planRevision],
+    [characterId, acceptance.acceptedImageId, planKey],
   );
   const toast = useToast();
   const [busySlot, setBusySlot] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   /** The slots the owner has ticked, waiting to be submitted together. */
-  const [selected, setSelected] = useState<ReadonlySet<string>>(NO_SLOTS);
+  const [selection, setSelection] = useState<{ planKey: string; slots: ReadonlySet<string> }>(() => ({ planKey, slots: NO_SLOTS }));
+  // React's previous-prop pattern clears the old plan during render without an
+  // effect or a panel remount, so feedback and open review state stay intact.
+  if (selection.planKey !== planKey) setSelection({ planKey, slots: NO_SLOTS });
+  const selected = selection.planKey === planKey ? selection.slots : NO_SLOTS;
+  const setSelected = (action: SetStateAction<ReadonlySet<string>>) => {
+    setSelection((current) => {
+      const previous = current.planKey === planKey ? current.slots : NO_SLOTS;
+      const slots = typeof action === "function" ? action(previous) : action;
+      return { planKey, slots };
+    });
+  };
   /**
    * The slots the server has accepted a rebuild for but whose rows have not
    * caught up yet. It replaces the old character-wide lock: a live batch marks
@@ -128,21 +139,6 @@ export function ReferenceViewsPanel({ characterId, planRevision, acceptance, onC
     // pruned them, so a batch that settles before the first tick cannot leave a
     // tile busy forever.
     submitted.size > 0;
-
-  // A saved apparent-age change can make a previously selected bare slot
-  // ineligible. Remove anything the refreshed server plan no longer offers for
-  // regeneration so an invisible checkbox cannot poison a mixed batch.
-  useEffect(() => {
-    const current = views.data?.set;
-    if (!current) return;
-    const eligible = new Set(current.views
-      .filter((view) => view.state !== "ineligible" && view.attemptId !== null)
-      .map(slotKey));
-    setSelected((previous) => {
-      const next = new Set([...previous].filter((key) => eligible.has(key)));
-      return next.size === previous.size ? previous : next;
-    });
-  }, [views.data?.set]);
 
   usePollWhile(
     inFlight,
@@ -183,7 +179,9 @@ export function ReferenceViewsPanel({ characterId, planRevision, acceptance, onC
   );
   // Read back off the set rather than out of the checkbox state, so a slot that
   // vanished between tick and submit cannot inflate the count the owner is shown.
-  const selectedViews = set.views.filter((view) => selected.has(slotKey(view)));
+  const selectedViews = set.views.filter(
+    (view) => view.state !== "ineligible" && view.attemptId !== null && selected.has(slotKey(view)),
+  );
 
   const refetch = () => {
     views.reload({ silent: true });

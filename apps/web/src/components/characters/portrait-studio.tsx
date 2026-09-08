@@ -32,8 +32,8 @@ import { useToast } from "@/components/ui/toast";
 
 export interface PortraitStudioProps {
   characterId: string;
-  /** Saved character revision; reference eligibility follows stored apparent age. */
-  referencePlanRevision: string | null;
+  /** Identity of the saved apparent-age plan used by portrait references. */
+  referencePlanKey: string;
   name: string;
   /** The portrait CANDIDATE — what this studio shows and edits. */
   avatarImageId: string | null;
@@ -107,7 +107,7 @@ function portraitKindLabel(image: ImageRecord): string {
  */
 export function PortraitStudio({
   characterId,
-  referencePlanRevision,
+  referencePlanKey,
   name,
   avatarImageId,
   acceptance,
@@ -419,7 +419,7 @@ export function PortraitStudio({
             {acceptance.acceptedImageId ? (
               <ActionMenu
                 label="Portrait actions"
-                items={[{ label: "Clear acceptance", onSelect: clearAcceptance, busy: acceptingPortrait }]}
+                items={[{ label: "Clear acceptance", onSelect: () => void clearAcceptance(), busy: acceptingPortrait }]}
               />
             ) : null}
           </div>
@@ -478,7 +478,7 @@ export function PortraitStudio({
 
       <ReferenceViewsPanel
         characterId={characterId}
-        planRevision={referencePlanRevision}
+        planKey={referencePlanKey}
         acceptance={acceptance}
         onChanged={onAvatarChanged}
       />

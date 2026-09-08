@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { DEFAULT_SPECIES_ID, emptyCharacterProfile, parseOrNull, scheduleEntrySchema, authoredRelationshipRecordSchema, diag, canonicalTagId, dispositionTags, DRIVES_MAX, DRIVE_WANT_MAX_CHARS, DRIVE_WHY_MAX_CHARS, familiarityBandById, familiarityBands, interactionConceptIds, interactionFamilies, MICRO_EXEMPLARS_MAX, normalizeTag, axisRange, PLAYER_RELATIONSHIP_NOTE_MAX, RELATIONSHIP_HISTORY_TEXT_MAX, RELATIONSHIP_KIND_MAX, regardBandById, regardBands, scheduleDayPartById, traitRegistry, voiceAnchorsSchema, type CharacterProfile, type DiagnosticSink, type Drive, type MicroExemplar, type VoiceAnchors, type Preference, type ScheduleEntry, type SocialReactionCard, type TraitValue } from "@/contracts";
+import { DEFAULT_SPECIES_ID, emptyCharacterProfile, scheduleEntrySchema, authoredRelationshipRecordSchema, diag, canonicalTagId, dispositionTags, DRIVES_MAX, DRIVE_WANT_MAX_CHARS, DRIVE_WHY_MAX_CHARS, familiarityBandById, familiarityBands, interactionConceptIds, interactionFamilies, MICRO_EXEMPLARS_MAX, normalizeTag, axisRange, PLAYER_RELATIONSHIP_NOTE_MAX, RELATIONSHIP_HISTORY_TEXT_MAX, RELATIONSHIP_KIND_MAX, regardBandById, regardBands, scheduleDayPartById, traitRegistry, voiceAnchorsSchema, type CharacterProfile, type DiagnosticSink, type Drive, type MicroExemplar, type VoiceAnchors, type Preference, type ScheduleEntry, type SocialReactionCard, type TraitValue } from "@/contracts";
 import { characterSections, type CharacterSheetScope } from "@/lib/character-scopes";
 import { fnv1a32 } from "@/lib/hash";
+import { parseOrNull } from "@/lib/parse";
 import { generateChecked } from "@/server/ai";
 import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
 import { heritageForForgeContext, speciesForgeDescriptor, speciesForForgeContext } from "./context";

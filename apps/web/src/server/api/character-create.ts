@@ -58,7 +58,7 @@ export type CharacterCreationOutcome =
   | { status: "create_failed" };
 
 function payloadHash(body: CharacterCreateBody): string {
-  const { creationRequestId: _requestId, ...payload } = body;
+  const payload = { ...body, creationRequestId: undefined };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 

@@ -14,7 +14,10 @@ const storage = createGenerationStorage({
   setItem: (key, raw) => localStorage.setItem(key, raw),
   removeItem: (key) => localStorage.removeItem(key),
 });
-const locked = <T,>(key: string, work: () => T | Promise<T>): Promise<T> => navigator.locks ? navigator.locks.request(key, work) : Promise.resolve().then(work);
+async function locked<T>(key: string, work: () => T | Promise<T>): Promise<T> {
+  if (navigator.locks) return await navigator.locks.request(key, async () => await work());
+  return await work();
+}
 const notify = () => window.dispatchEvent(new Event(eventName));
 async function generate(record: CharacterGeneration): Promise<GenerationResult | { error: string }> {
   if (record.operation === "portrait") {
