@@ -78,6 +78,15 @@ resolves to a value the image age vocabulary carries — the adult floor, with n
 the character's age reaches a model. The accept route charges the budget from the same helper the
 build job plans from, so the charge and the work can never be two numbers.
 
+Eligibility is live character truth rather than a creation-time decision. If apparent age later
+becomes minor or unresolved, every `bare` slot projects `ineligible` immediately, including an
+older approved attempt. The studio keeps its image and review provenance visible but disables
+review, restoration, regeneration, and upload for that slot. Reservation, finalization, review,
+restoration, and upload installation all re-read the current plan while holding the character row
+lock; a render that crossed the gate after reservation settles stale. Consumption holds that same
+lock across the plan projection and asset read, so an age edit cannot commit between eligibility
+approval and opening the bytes.
+
 ## Cost and single flight
 
 - Accepting a portrait queues the set and charges the daily image budget for exactly the planned
@@ -137,8 +146,11 @@ build job plans from, so the charge and the work can never be two numbers.
   revision; it makes the current attempt unreviewed again.
 - Rejection optionally records Wrong outfit, Wrong angle, Identity mismatch, Image defect and a
   correction note of at most 1,000 characters. Feedback is stored on that attempt and shown in the
-  viewer, current card and history. Cancel leaves the verdict unchanged, and a failed request keeps
-  the entered feedback. The note is review provenance; it does not change generation instructions.
+  viewer, current card and history. An unfinished note lives at the reference-panel session boundary,
+  keyed to the exact attempt, so Escape, backdrop close, navigation to another view, and a failed
+  request keep it for reopening. Keep for later closes the form without deleting it; Discard feedback
+  removes it explicitly. A successful rejection clears only the submitted attempt's draft. The note
+  is review provenance; it does not change generation instructions.
 - An **owner upload** is the second way a slot is ever filled, and it produces the same row with
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
   supplying it. It runs no model, charges no render budget, and re-fits the image to the canonical
@@ -166,7 +178,8 @@ build job plans from, so the charge and the work can never be two numbers.
   recoverable verdict and read as `unreviewed`.
 - **Consumable** is one function, `isConsumableReferenceView`, and nothing else recomputes it: the
   slot's current row, `ready` under the current generation version, rendered from the portrait
-  accepted right now, with a `ready` asset, reviewed.
+  accepted right now, with a `ready` asset, reviewed, and still present in the character's current
+  age-gated plan.
 
 ## Selection — which view a render sends
 
@@ -208,8 +221,8 @@ function.
 
 `loadConsumableReferenceView` (`server/images/reference-view-consume.ts`) is the only way a
 render gets a view's bytes. It is owner-scoped, it reads the store's own `consumable` verdict
-rather than recomputing it, and it reads the asset through the shared owned-image reader. No
-lane queries the `reference_view` kind by hand.
+rather than recomputing it, and it holds the character lock across the current plan projection and
+the owner-scoped asset read. No lane queries the `reference_view` kind by hand.
 
 - A view enters the render's reference list as an **optional identity reference** for the member
   it depicts, ordered after the required identity anchors and before the place, then cut to the
@@ -247,7 +260,7 @@ studio's grid displays them.
 
 | Route                                                 | What it does                                                                              |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot, `missing` where no row exists                            |
+| `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot; withheld slots are `ineligible`                          |
 | `POST /api/characters/:id/reference-views/build`      | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted`                      |
 | `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — rebuilds the named slots as one batch, rejected ones included             |
 | `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                              |
@@ -256,9 +269,9 @@ studio's grid displays them.
 | `GET …/reference-views/:angle/:wardrobe/history`      | `{ entries, retentionDays, currentAttemptId, currentRevision }`                           |
 | `POST …/reference-views/:angle/:wardrobe/restore`     | `{ attemptId, expectedCurrentAttemptId, expectedCurrentRevision }` ⇒ unreviewed candidate |
 
-All routes are owner-only and rooted at the character. A slot the registry has no entry for is a 404,
-and so is a slot the plan withholds — a regeneration naming one is refused whole, before anything is
-charged, rather than silently building the rest.
+All routes are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
+A plan-withheld regeneration is refused whole before anything is charged. A review, restoration, or
+upload that loses eligibility after its initial read returns a recoverable 409 `ineligible`.
 
 ## Diagnostic codes
 
