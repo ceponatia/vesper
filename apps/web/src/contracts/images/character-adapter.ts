@@ -4,13 +4,13 @@ import type {
   ImageWorldSuppression,
 } from "@vesper/image-core";
 import { AFFORDANCE_UNIT_ONE } from "../affordances/core";
-import { sceneBodyZoneOf } from "../affordances/scene";
 import {
   activeLocatedFacts,
   appearanceFeatureKindRegistry,
   bodyLocusKey,
   currentAnatomyStates,
   parseLocatedFactValue,
+  projectImageAppearanceAttributes,
   type AnatomyPartState,
   type BodyLocusRef,
   type LocatedAppearanceFact,
@@ -23,15 +23,16 @@ import {
   isNonVisualAttribute,
   type AttributeValue,
 } from "../attributes";
-import { bodyLocationRegistry } from "../body/locations";
+import { bodyLocationRegistry, isIntimateAttributeCategory } from "../body/locations";
 import type { HairOcclusion } from "../items/hair-occlusion";
-import type { RegionExposure } from "../items/visibility";
+import { FULLY_COVERED, type RegionExposure } from "../items/visibility";
 import { DEFAULT_SPECIES_ID, speciesLabelPhrase, type RealizedBody } from "../species";
 import {
   visualStateSpeciesFeatureGroupValueSchema,
-  visualStateFingerprint,
   visualStateWardrobeValueSchema,
   VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID,
+  VISUAL_STATE_PRESENTATION_GROOMING_KIND_ID,
+  VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID,
   VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
   VISUAL_STATE_WARDROBE_ITEM_KIND_ID,
   type VisualFramingBand,
@@ -50,6 +51,7 @@ import {
   type VisualImageFact,
 } from "./visual-digest";
 import { visualExposureReads } from "./visual-segments";
+import { revealSurfaces } from "./subject-reveal";
 
 /**
  * The character image adapter — the join between visual state's fact selection
@@ -123,10 +125,6 @@ import { visualExposureReads } from "./visual-segments";
 export const IMAGE_CHARACTER_ATTRIBUTE_OWNER = "character.attributes";
 /** The garment coverage readout as a projection owner — exposure's provenance. */
 export const IMAGE_CHARACTER_COVERAGE_OWNER = "character.wardrobe_coverage";
-/** Ordinary sheet appearance projected only for image consumers. */
-export const IMAGE_CHARACTER_APPEARANCE_OWNER = "character.image_appearance";
-/** Species and subtype identity projected only for image consumers. */
-export const IMAGE_CHARACTER_SPECIES_OWNER = "character.realized_body";
 
 /** Apparent age withheld by the owner ruling: a minor-band value states nothing, ever. */
 export const IMAGE_CHARACTER_AGE_WITHHELD = "character.apparent_age.withheld";
@@ -138,6 +136,14 @@ export const IMAGE_CHARACTER_AGE_OMITTED = "character.apparent_age.omitted";
 export const IMAGE_CHARACTER_COVERAGE_UNRESOLVED = "character.wardrobe_coverage.unresolved";
 /** A record value with no readable member left after ids were stripped. */
 export const IMAGE_CHARACTER_VALUE_UNREADABLE = "character.value_unreadable";
+/** A canonical appearance fact was outside the shot's useful framing. */
+export const IMAGE_CHARACTER_APPEARANCE_OUT_OF_FRAME = "character.appearance.out_of_frame";
+/** A surface detail is hidden by opaque garment coverage. */
+export const IMAGE_CHARACTER_APPEARANCE_HIDDEN = "character.appearance.hidden";
+/** Current visual state replaced the character-sheet fallback. */
+export const IMAGE_CHARACTER_APPEARANCE_REPLACED = "character.appearance.replaced";
+/** A required reference-free appearance owner had no usable canonical value. */
+export const IMAGE_CHARACTER_APPEARANCE_UNRESOLVED = "character.appearance.unresolved";
 
 // ---------------------------------------------------------------------------
 // The image age vocabulary (owner ruling 2026-07-29)
@@ -245,6 +251,8 @@ export interface CharacterWorldSlicesInput {
   readonly sources: Readonly<Record<string, CharacterSubjectSources>>;
   /** The caller's apparent-age policy for every subject. Absent reads `state`. */
   readonly apparentAge?: CharacterApparentAgePolicy;
+  /** Subjects actually bound to planned, required identity references. */
+  readonly identityReferenceSubjects?: ReadonlySet<string>;
 }
 
 /** The completed subject slices plus everything the join lost, ready for `buildImageWorldDigest`. */
@@ -525,300 +533,99 @@ function isAgeAnchorFact(fact: Pick<VisualImageFact, "sourceRef">): boolean {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Ordinary visual identity — image-only, independent of recognition
-// ---------------------------------------------------------------------------
+const APPEARANCE_FRAMING_RANK: Readonly<Record<VisualFramingBand, number>> = {
+  close_up: 0,
+  portrait: 1,
+  waist_up: 2,
+  full_figure: 3,
+  wide: 4,
+};
 
-/**
- * The bounded sheet vocabulary image prompts may state without routing it
- * through observer recognition. This is intentionally explicit: adding a
- * narrator-recognizable feature and adding an image descriptor are separate
- * product decisions, and neither registry flag silently opts into the other.
- */
-export const IMAGE_CHARACTER_APPEARANCE_ATTRIBUTE_IDS = [
-  "identity.gender",
-  "identity.heritage",
-  "skin.tone",
-  "skin.undertone",
-  "skin.texture",
-  "hair.color",
-  "hair.length",
-  "hair.texture",
-  "hair.density",
-  "hair.strand_thickness",
-  "hair.condition",
-  "hair.arrangement",
-  "hair.style",
-  "eyes.color",
-  "eyes.shape",
-  "eyes.pupil",
-  "eyes.luminosity",
-  "face.shape",
-  "face.freckles",
-  "nose.shape",
-  "nose.size",
-  "nose.piercings",
-  "brows.shape",
-  "brows.thickness",
-  "lips.fullness",
-  "lips.shape",
-  "lips.piercings",
-  "ears.shape",
-  "ears.piercings",
-  "teeth.shape",
-  "teeth.condition",
-  "build.height",
-  "build.frame",
-  "build.musculature",
-  "build.weight_presentation",
-  "shoulders.width",
-  "shoulders.slope",
-  "neck.length",
-  "neck.prominence",
-  "arms.build",
-  "arms.hair",
-  "hands.size",
-  "hands.texture",
-  "hands.nails",
-  "chest.size",
-  "breasts.size",
-  "waist.definition",
-  "hips.width",
-  "legs.build",
-  "legs.length",
-  "legs.hair",
-  "presentation.grooming",
-] as const;
+const APPEARANCE_PRIORITY = {
+  core: 8_500,
+  reinforcement: 6_000,
+  fine: 3_500,
+  fallback: 2_000,
+} as const;
 
-/** Stable facts a reference-free portrait must carry before provider spend. */
-export const IMAGE_CHARACTER_REFERENCE_FREE_REQUIRED_ATTRIBUTE_IDS = [
-  "identity.gender",
-  "skin.tone",
-  "hair.color",
-  "hair.length",
-  "eyes.color",
-  "face.shape",
-  "build.frame",
-  "build.weight_presentation",
-] as const;
-
-const IMAGE_CHARACTER_APPEARANCE_ATTRIBUTES = new Set<string>(IMAGE_CHARACTER_APPEARANCE_ATTRIBUTE_IDS);
-const WHOLE_FIGURE_ONLY_ATTRIBUTES = new Set(["build.height", "hands.size", "hands.texture", "hands.nails"]);
-const FINE_DETAIL_ATTRIBUTES = new Set([
-  "skin.texture",
-  "hair.strand_thickness",
-  "hair.condition",
-  "eyes.pupil",
-  "eyes.luminosity",
-  "nose.piercings",
-  "lips.piercings",
-  "ears.piercings",
-  "teeth.shape",
-  "teeth.condition",
-  "arms.hair",
-  "legs.hair",
-]);
-const HAIR_ATTRIBUTE_PREFIX = "hair.";
-
-function framingOf(digest: VisualImageDigest): VisualFramingBand | undefined {
-  return digest.cameraFacts.find((fact) => fact.component === "framing")?.band;
+function digestFraming(digest: VisualImageDigest): VisualFramingBand | undefined {
+  return digest.cameraFacts.find((fact) => fact.component === "framing")?.band as
+    | VisualFramingBand
+    | undefined;
 }
 
-function attributeFitsFrame(attributeId: string, bodyLocationId: string | undefined, framing: VisualFramingBand | undefined): boolean {
-  if (framing === undefined) return true;
-  if (WHOLE_FIGURE_ONLY_ATTRIBUTES.has(attributeId)) return framing === "full_figure" || framing === "wide";
-  if (framing === "wide" && FINE_DETAIL_ATTRIBUTES.has(attributeId)) return false;
-  if (bodyLocationId === undefined) return true;
-  const zone = sceneBodyZoneOf(bodyLocationId);
-  if (zone === undefined) return false;
-  switch (framing) {
-    case "close_up":
-      return zone === "head";
-    case "portrait":
-      return zone === "head" || zone === "torso";
-    case "waist_up":
-      return zone === "head" || zone === "torso" || zone === "arms";
-    case "full_figure":
-    case "wide":
-      return true;
+function isAppearanceAttributeFact(
+  fact: Pick<VisualImageFact, "sourceRef">,
+  attributeId: string,
+): boolean {
+  return (
+    fact.sourceRef.kind === "appearance" &&
+    fact.sourceRef.ref.kind === "attribute" &&
+    fact.sourceRef.ref.attributeId === attributeId
+  );
+}
+
+function appearanceReplacementReason(
+  attributeId: string,
+  selected: readonly VisualImageFact[],
+  emitted: readonly ImageWorldFact[],
+): string | undefined {
+  const emittedKind = (kindId: string): boolean =>
+    selected.some((selectedFact) => {
+      if (selectedFact.kindId !== kindId) return false;
+      return emitted.some((fact) => fact.key === selectedFact.key);
+    });
+  if (
+    (attributeId === "hair.arrangement" || attributeId === "hair.style") &&
+    emittedKind(VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID)
+  ) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
   }
-}
-
-function exposureRegionFor(bodyLocationId: string | undefined): keyof RegionExposure | undefined {
-  if (bodyLocationId === undefined) return undefined;
-  const zone = sceneBodyZoneOf(bodyLocationId);
-  if (zone === "torso" || zone === "arms") return "torso";
-  if (zone === "pelvis") return "pelvis";
-  if (zone === "legs") return bodyLocationId === "feet" || bodyLocationId.startsWith("foot") || bodyLocationId.startsWith("toe") ? "feet" : "legs";
+  if (
+    attributeId === "presentation.grooming" &&
+    emittedKind(VISUAL_STATE_PRESENTATION_GROOMING_KIND_ID)
+  ) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
+  }
+  if (
+    attributeId === "face.expression_default" &&
+    selected.some(
+      (fact) =>
+        emitted.some((emittedFact) => emittedFact.key === fact.key) &&
+        (fact.segmentKind === "pose" ||
+          (fact.segmentKind === "current_state" && fact.sourceRef.kind === "scene_relation")),
+    )
+  ) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
+  }
+  if (attributeId === "presentation.style" && emitted.some((fact) => fact.concept === "subject.wardrobe")) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
+  }
   return undefined;
 }
 
-/** Surface detail needs exposed skin; silhouette facts remain visible through clothing. */
-function attributeFitsExposure(attributeId: string, imageReveal: "shape" | "skin" | undefined, bodyLocationId: string | undefined, exposure: RegionExposure): boolean {
-  if (imageReveal !== "skin" && !attributeId.endsWith(".hair") && !attributeId.includes(".texture")) return true;
-  const region = exposureRegionFor(bodyLocationId);
-  return region === undefined || exposure[region] !== "covered";
-}
-
-function attributeValueOrDefault(
-  def: ReturnType<typeof attributeRegistry.byId>,
-  sources: CharacterSubjectSources,
-): AttributeValue["value"] | undefined {
-  if (def === undefined) return undefined;
-  const stored = sources.attributes?.find((entry) => entry.id === def.id)?.value;
-  const candidate = stored ?? sources.realizedBody?.defaultValueFor(def) ?? def.defaultValue;
-  if (candidate === undefined) return undefined;
-  const parsed = attributeRegistry.parseValue(def.id, candidate);
-  return parsed.ok ? parsed.value : undefined;
-}
-
-/**
- * Deterministically project the ordinary visible sheet facts for one subject.
- * These facts never enter a visual-state snapshot, so they cannot widen
- * recognition or narrator memory; they exist only in the image world digest.
- */
-export function projectCharacterAppearanceFacts(input: {
-  readonly subjectRef: string;
-  readonly subjectId: string;
-  readonly digest: VisualImageDigest;
-  readonly sources: CharacterSubjectSources;
-  readonly alreadyProjectedAttributeIds?: ReadonlySet<string>;
-}): readonly ImageWorldFact[] {
-  const framing = framingOf(input.digest);
-  const hairConcealed = isHairConcealed(input.sources.hairOcclusion ?? "none");
-  const selectedKinds = new Set(
-    (input.digest.subjects.find((subject) => subject.subjectId === input.subjectId)?.required ?? [])
-      .concat(input.digest.subjects.find((subject) => subject.subjectId === input.subjectId)?.optional ?? [])
-      .map((fact) => fact.kindId),
-  );
-  const facts: ImageWorldFact[] = [];
-
-  for (const attributeId of IMAGE_CHARACTER_APPEARANCE_ATTRIBUTE_IDS) {
-    if (input.alreadyProjectedAttributeIds?.has(attributeId)) continue;
-    if (hairConcealed && attributeId.startsWith(HAIR_ATTRIBUTE_PREFIX)) continue;
-    if ((attributeId === "hair.arrangement" || attributeId === "hair.style") && selectedKinds.has("presentation.hairstyle")) continue;
-    if (attributeId === "presentation.grooming" && selectedKinds.has("presentation.grooming")) continue;
-    const def = attributeRegistry.byId(attributeId);
-    if (def === undefined || !IMAGE_CHARACTER_APPEARANCE_ATTRIBUTES.has(def.id)) continue;
-    if (def.excludeFromPrompts === true || isNonVisualAttribute(def)) continue;
-    if (input.sources.realizedBody !== undefined && !input.sources.realizedBody.isAttributeApplicable(def)) continue;
-    if (!attributeFitsFrame(def.id, def.bodyLocationId, framing)) continue;
-    if (!attributeFitsExposure(def.id, def.imageReveal, def.bodyLocationId, input.sources.exposure)) continue;
-    const value = attributeValueOrDefault(def, input.sources);
-    if (value === undefined) continue;
-    const rendered = formatAttribute(def, value);
-    if (rendered.length === 0) continue;
-    facts.push({
-      key: `${input.subjectRef}.appearance.${def.id}`,
-      concept: "subject.appearance",
-      value: rendered,
-      subjectRef: input.subjectRef,
-      ...(def.bodyLocationId === undefined ? {} : { locus: `body:${def.bodyLocationId}` }),
-      semanticTags: ["appearance.attribute", def.id],
-      disposition: "optional_visual",
-      priority: def.coreVisual === true ? 0.85 : def.renderVisual === true ? 0.7 : 0.5,
-      source: { owner: IMAGE_CHARACTER_APPEARANCE_OWNER, key: def.id, entityId: input.subjectId },
-      truthFingerprint: visualStateFingerprint(value),
-    });
-  }
-
-  const body = input.sources.realizedBody;
-  if (body !== undefined && body.speciesId !== DEFAULT_SPECIES_ID) {
-    const value = speciesLabelPhrase(body.speciesId, body.heritageId);
-    if (value.length > 0) {
-      facts.push({
-        key: `${input.subjectRef}.appearance.species`,
-        concept: "subject.morphology",
-        value,
-        subjectRef: input.subjectRef,
-        semanticTags: ["appearance.species"],
-        disposition: "optional_visual",
-        priority: 0.9,
-        source: { owner: IMAGE_CHARACTER_SPECIES_OWNER, key: "species", entityId: input.subjectId },
-        truthFingerprint: visualStateFingerprint({ speciesId: body.speciesId, heritageId: body.heritageId }),
-      });
-    }
-  }
-  return facts;
-}
-
-/**
- * Apply the task-level appearance policy after references have been planned.
- * A reference-free portrait promotes its stable descriptors to mandatory and
- * records any absent applicable fact. A reference-backed edit leaves the same
- * current sheet facts optional because the image itself satisfies stable
- * identity completeness. The default expression belongs only to the neutral
- * standalone portrait and is appended when that lane asks for it.
- */
-export function applyCharacterAppearancePolicy(input: {
-  readonly subject: ImageSubjectDigest;
-  readonly sources: CharacterSubjectSources;
-  readonly referenceAnchored: boolean;
-  readonly requireStableIdentity: boolean;
-  readonly includeDefaultExpression: boolean;
-}): ImageSubjectDigest {
-  let facts = input.referenceAnchored
-    ? input.subject.facts.filter((fact) => {
-        if (fact.source.owner !== IMAGE_CHARACTER_APPEARANCE_OWNER) return true;
-        return attributeRegistry.byId(fact.source.key)?.mutability !== "inherent";
-      })
-    : [...input.subject.facts];
-  if (input.includeDefaultExpression) {
-    const def = attributeRegistry.byId("face.expression_default");
-    if (def !== undefined && input.sources.realizedBody?.isAttributeApplicable(def) !== false) {
-      const value = attributeValueOrDefault(def, input.sources);
-      const rendered = value === undefined ? "" : formatAttribute(def, value);
-      if (rendered.length > 0) {
-        facts.push({
-          key: `${input.subject.ref}.appearance.${def.id}`,
-          concept: "subject.appearance",
-          value: rendered,
-          subjectRef: input.subject.ref,
-          locus: "body:face",
-          semanticTags: ["appearance.attribute", def.id],
-          disposition: "optional_visual",
-          priority: 0.55,
-          source: { owner: IMAGE_CHARACTER_APPEARANCE_OWNER, key: def.id, entityId: input.subject.entityId },
-          truthFingerprint: visualStateFingerprint(value),
-        });
-      }
-    }
-  }
-  if (!input.requireStableIdentity) return { ...input.subject, facts };
-
-  const requiredIds = new Set<string>(IMAGE_CHARACTER_REFERENCE_FREE_REQUIRED_ATTRIBUTE_IDS);
-  if (isHairConcealed(input.sources.hairOcclusion ?? "none")) {
-    requiredIds.delete("hair.color");
-    requiredIds.delete("hair.length");
-  }
-  for (const attributeId of [...requiredIds]) {
-    const def = attributeRegistry.byId(attributeId);
-    if (def === undefined || input.sources.realizedBody?.isAttributeApplicable(def) === false) requiredIds.delete(attributeId);
-  }
-
-  const found = new Set<string>();
-  facts = facts.map((fact) => {
-    if (fact.source.owner !== IMAGE_CHARACTER_APPEARANCE_OWNER || !requiredIds.has(fact.source.key)) return fact;
-    found.add(fact.source.key);
-    return { ...fact, disposition: "required_visual", priority: AFFORDANCE_UNIT_ONE };
-  });
-  const missing = [...requiredIds]
-    .filter((attributeId) => !found.has(attributeId))
-    .map((attributeId) => `${input.subject.ref}.appearance.${attributeId}`);
-
-  const body = input.sources.realizedBody;
-  if (body !== undefined && body.speciesId !== DEFAULT_SPECIES_ID) {
-    const speciesKey = `${input.subject.ref}.appearance.species`;
-    let foundSpecies = false;
-    facts = facts.map((fact) => {
-      if (fact.key !== speciesKey) return fact;
-      foundSpecies = true;
-      return { ...fact, disposition: "required_visual", priority: AFFORDANCE_UNIT_ONE };
-    });
-    if (!foundSpecies) missing.push(speciesKey);
-  }
-
-  return { ...input.subject, facts, missingRequired: [...input.subject.missingRequired, ...missing] };
+function speciesIdentityFact(
+  slice: ImageSubjectDigest,
+  sources: CharacterSubjectSources | undefined,
+): { readonly fact?: ImageWorldFact; readonly missing?: string } {
+  const body = sources?.realizedBody;
+  if (body === undefined || body.speciesId === DEFAULT_SPECIES_ID) return {};
+  const key = `${slice.ref}.species`;
+  const label = speciesLabelPhrase(body.speciesId, body.heritageId);
+  if (!label) return { missing: key };
+  return {
+    fact: {
+      key,
+      concept: "subject.morphology",
+      value: label,
+      subjectRef: slice.ref,
+      semanticTags: ["morphology.species", body.speciesId],
+      disposition: "required_visual",
+      priority: AFFORDANCE_UNIT_ONE,
+      source: { owner: "character.species", key: "species.label", entityId: slice.entityId },
+      truthFingerprint: `${body.speciesId}:${body.heritageId ?? ""}`,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -852,10 +659,25 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
   }
   const digestSubjectById = new Map(digest.subjects.map((subject) => [subject.subjectId, subject]));
   const ageOmitted = input.apparentAge === "omit";
+  const baseEntityIds = new Set(base.subjects.map((subject) => subject.entityId));
+  const sourceOnlySubjects: ImageSubjectDigest[] = Object.keys(input.sources)
+    .filter((subjectId) => !baseEntityIds.has(subjectId))
+    .sort()
+    .map((subjectId) => ({
+      kind: "subject",
+      ref: `subject.${subjectId}`,
+      entityId: subjectId,
+      label: input.labels?.[subjectId]?.trim() || "the subject",
+      facts: [],
+      morphology: [],
+      missingRequired: [],
+    }));
 
-  const subjects = base.subjects.map((slice): ImageSubjectDigest => {
+  const subjects = [...base.subjects, ...sourceOnlySubjects].map((slice): ImageSubjectDigest => {
     const sources = input.sources[slice.entityId];
     const digestSubject = digestSubjectById.get(slice.entityId);
+    const selected = [...(digestSubject?.required ?? []), ...(digestSubject?.optional ?? [])];
+    const referenceAnchored = input.identityReferenceSubjects?.has(slice.ref) ?? false;
 
     // --- gap 5: hair the headwear fully hides is not visual truth ------------
     // Decided from the resolved band the lane carried beside its coverage
@@ -913,30 +735,113 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     let missingRequired = [...slice.missingRequired, ...unreadableRequired].filter((key) => !concealedHair(key));
     if (hairConcealed) facts.push(hairConcealmentFact(slice.ref, slice.entityId));
 
-    // Ordinary image identity is intentionally projected BESIDE the narrow
-    // observer-recognition facts. If visual state already selected an
-    // attribute, its resolved fact stays authoritative and the ordinary path
-    // does not repeat it.
-    if (sources !== undefined) {
-      const alreadyProjectedAttributeIds = new Set<string>();
-      for (const source of sourceFactByKey.values()) {
-        if (
-          source.subjectId === slice.entityId &&
-          source.sourceRef.kind === "appearance" &&
-          source.sourceRef.ref.kind === "attribute"
-        ) {
-          alreadyProjectedAttributeIds.add(source.sourceRef.ref.attributeId);
-        }
+    // --- registry-backed image appearance ------------------------------------
+    // One projection over the resolved sheet, independent of the deliberately
+    // narrow recognition catalog. The adapter alone applies render policy.
+    const projectedAppearance =
+      sources === undefined
+        ? []
+        : projectImageAppearanceAttributes({
+            attributes: sources.attributes ?? [],
+            isAttributeApplicable: (definition) =>
+              sources.realizedBody?.isAttributeApplicable(definition) ?? true,
+          });
+    const projectedIds = new Set(projectedAppearance.map((appearance) => appearance.attributeId));
+    const framing = digestFraming(digest);
+
+    for (const appearance of projectedAppearance) {
+      if (appearance.attributeId === VISUAL_IMAGE_AGE_ATTRIBUTE_ID) continue;
+      const key = `${slice.ref}.appearance.${appearance.attributeId}`;
+      if (hairConcealed && appearance.bodyLocationId === "hair") {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_HAIR_CONCEALED });
+        continue;
       }
-      facts.push(
-        ...projectCharacterAppearanceFacts({
-          subjectRef: slice.ref,
-          subjectId: slice.entityId,
-          digest,
-          sources,
-          alreadyProjectedAttributeIds,
-        }),
-      );
+      const replacement = appearanceReplacementReason(appearance.attributeId, selected, facts);
+      if (replacement !== undefined) {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: replacement });
+        continue;
+      }
+      if (isIntimateAttributeCategory(appearance.definition.category) && !appearance.ordinarySilhouette) {
+        continue;
+      }
+      if (
+        appearance.definition.imageReveal !== undefined &&
+        !revealSurfaces(appearance.definition, sources?.exposure ?? FULLY_COVERED, false)
+      ) {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_APPEARANCE_HIDDEN });
+        continue;
+      }
+
+      const required = appearance.referenceFreeRequired && !referenceAnchored;
+      const inFrame =
+        framing === undefined ||
+        (APPEARANCE_FRAMING_RANK[framing] >= APPEARANCE_FRAMING_RANK[appearance.minimumFraming] &&
+          APPEARANCE_FRAMING_RANK[framing] <= APPEARANCE_FRAMING_RANK[appearance.maximumFraming]);
+      if (!required && !inFrame) {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_APPEARANCE_OUT_OF_FRAME });
+        continue;
+      }
+
+      const existingSource = selected.find((fact) => isAppearanceAttributeFact(fact, appearance.attributeId));
+      if (existingSource !== undefined) {
+        if (required) {
+          const index = facts.findIndex((fact) => fact.key === existingSource.key);
+          const existing = facts[index];
+          if (existing !== undefined) {
+            facts[index] = { ...existing, disposition: "required_visual", priority: AFFORDANCE_UNIT_ONE };
+            missingRequired = missingRequired.filter((missing) => missing !== existingSource.key);
+          }
+        }
+        continue;
+      }
+
+      facts.push({
+        key,
+        concept: "subject.appearance",
+        value: appearance.readableValue,
+        subjectRef: slice.ref,
+        ...(appearance.bodyLocationId === undefined ? {} : { locus: appearance.bodyLocationId }),
+        semanticTags: [`appearance:${appearance.class}`, `attribute:${appearance.attributeId}`],
+        disposition: required ? "required_visual" : "optional_visual",
+        priority: required ? AFFORDANCE_UNIT_ONE : APPEARANCE_PRIORITY[appearance.class],
+        source: {
+          owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+          key: appearance.attributeId,
+          entityId: slice.entityId,
+        },
+        truthFingerprint: appearance.truthFingerprint,
+      });
+    }
+
+    if (!referenceAnchored) {
+      for (const definition of attributeRegistry.definitions) {
+        if (!definition.imageAppearance?.referenceFreeRequired) continue;
+        if (definition.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID) continue;
+        if (sources?.realizedBody !== undefined && !sources.realizedBody.isAttributeApplicable(definition)) continue;
+        if (hairConcealed && definition.bodyLocationId === "hair") continue;
+        if (projectedIds.has(definition.id)) continue;
+        const key = `${slice.ref}.appearance.${definition.id}`;
+        suppressions.push({
+          key,
+          owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+          reason: IMAGE_CHARACTER_APPEARANCE_UNRESOLVED,
+        });
+        missingRequired.push(key);
+      }
+    }
+
+    const species = speciesIdentityFact(slice, sources);
+    if (
+      species.fact !== undefined &&
+      !facts.some(
+        (fact) => fact.source.owner === species.fact?.source.owner && fact.source.key === species.fact?.source.key,
+      )
+    ) {
+      facts.push(species.fact);
+    }
+    if (species.missing !== undefined) {
+      suppressions.push({ key: species.missing, owner: "character.species", reason: IMAGE_CHARACTER_APPEARANCE_UNRESOLVED });
+      missingRequired.push(species.missing);
     }
 
     // --- gap 1: the apparent-age anchor ---------------------------------------
@@ -979,6 +884,11 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
           };
         }
         missingRequired = missingRequired.filter((key) => key !== digestAgeFact.key);
+      } else if (referenceAnchored) {
+        // A required subject-bound identity image may carry a missing stable
+        // age anchor. Available age text remains authoritative and required;
+        // only absence stops refusing the reference edit.
+        missingRequired = missingRequired.filter((key) => key !== digestAgeFact.key);
       }
     } else {
       const ageKey = `${ref}.apparent_age`;
@@ -1007,7 +917,7 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
         // legacy value): the age segment is mandatory, so this is degradation
         // and the lane must see it before spend.
         suppressions.push({ key: ageKey, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_AGE_UNRESOLVED });
-        missingRequired = [...missingRequired, ageKey];
+        if (!referenceAnchored) missingRequired = [...missingRequired, ageKey];
       }
     }
 
@@ -1032,16 +942,15 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     // Morphology re-read from the mapped facts, exactly as the scaffold does it,
     // so a suppressed or re-filed fact cannot leave a stale guard behind.
     const byKey = new Map(facts.map((fact) => [fact.key, fact]));
-    const morphology = [
-      ...slice.morphology
-        .map((fact) => byKey.get(fact.key))
-        .filter((fact): fact is ImageWorldFact => fact !== undefined),
-      ...facts.filter(
-        (fact) => fact.concept === "subject.morphology" && !slice.morphology.some((member) => member.key === fact.key),
-      ),
-    ];
+    const morphology = slice.morphology
+      .map((fact) => byKey.get(fact.key))
+      .filter((fact): fact is ImageWorldFact => fact !== undefined);
+    if (species.fact !== undefined) {
+      const emittedSpecies = byKey.get(species.fact.key);
+      if (emittedSpecies !== undefined) morphology.push(emittedSpecies);
+    }
 
-    return { ...slice, facts, morphology, missingRequired };
+    return { ...slice, facts, morphology, missingRequired: [...new Set(missingRequired)] };
   });
 
   return { subjects, suppressions };

@@ -41,6 +41,11 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     bodyLocationId: "breasts",
     aliases: ["breast size", "cup size", "bust"],
     imageReveal: "shape",
+    imageAppearance: {
+      class: "reinforcement",
+      minimumFraming: "portrait",
+      ordinarySilhouette: true,
+    },
     promptHints: [
       "Describe breasts only as far as wardrobe exposure and the exposure mask allow; one impression, not a checklist.",
     ],

@@ -13,6 +13,7 @@ export const shouldersGroup = defineAttributeGroup("shoulders", [
     allowedValues: ["narrow", "slight", "average", "broad", "very_broad"],
     bodyLocationId: "shoulders",
     aliases: ["shoulder width", "broad shoulders"],
+    imageAppearance: { class: "reinforcement", minimumFraming: "portrait" },
   },
   {
     id: "shoulders.slope",
@@ -25,5 +26,6 @@ export const shouldersGroup = defineAttributeGroup("shoulders", [
     allowedValues: ["square", "gently_sloped", "sloped", "rounded"],
     bodyLocationId: "shoulders",
     aliases: ["shoulder slope"],
+    imageAppearance: { class: "reinforcement", minimumFraming: "portrait" },
   },
 ]);

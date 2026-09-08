@@ -7,7 +7,7 @@ import {
   type ImageWorldFact,
 } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
-import { toUnitInterval } from "../affordances/core";
+import { affordancePerceptionView, toUnitInterval } from "../affordances/core";
 import { visualAttentionContextFixture, visualAttentionSnapshotFixture } from "../affordances/recognition";
 import { crookedNoseAttributes, freckleClusterFact, missingFingerState, projectFixture } from "../appearance-features";
 import type { AttributeValue } from "../attributes";
@@ -137,6 +137,19 @@ function hairstyleFeature(): VisualStateFeature {
     locus: { kind: "body", locus: { bodyLocationId: "hair" } },
     sourceRef: { kind: "presentation", presentationId: "pres_hair" },
     value: { arrangement: "loose" },
+  });
+}
+
+function groomingFeature(): VisualStateFeature {
+  return visualStateFeatureFixture({
+    subjectId: SUBJECT,
+    kindId: "presentation.grooming",
+    layer: "presentation",
+    stability: "presentation",
+    aspect: "presentation.grooming:brows",
+    locus: { kind: "body", locus: { bodyLocationId: "face" } },
+    sourceRef: { kind: "presentation", presentationId: "pres_grooming" },
+    value: { area: "brows", state: "shaped" },
   });
 }
 
@@ -442,15 +455,30 @@ describe("camera facts", () => {
 
 const ADULT_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "late_twenties", source: "creation" };
 const MINOR_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "teen", source: "creation" };
+const REQUIRED_APPEARANCE_VALUES: readonly AttributeValue[] = [
+  { id: "identity.gender", value: "female", source: "creation" },
+  { id: "skin.tone", value: "light", source: "creation" },
+  { id: "hair.color", value: "platinum", source: "creation" },
+  { id: "hair.length", value: "shoulder_length", source: "creation" },
+  { id: "eyes.color", value: "blue", source: "creation" },
+  { id: "face.shape", value: "oval", source: "creation" },
+  { id: "build.frame", value: "slight", source: "creation" },
+  { id: "build.weight_presentation", value: "average", source: "creation" },
+];
+
+function completeFixtureAttributes(attributes: readonly AttributeValue[]): readonly AttributeValue[] {
+  return [...REQUIRED_APPEARANCE_VALUES, ...attributes];
+}
 
 /** The fixture subject's canonical owners — the values the resolver joins in. */
 function fixtureSources(overrides: Partial<CharacterSubjectSources> = {}): CharacterSubjectSources {
+  const { attributes, ...rest } = overrides;
   return {
-    attributes: [...crookedNoseAttributes(), ADULT_AGE_VALUE],
+    attributes: attributes ?? completeFixtureAttributes([...crookedNoseAttributes(), ADULT_AGE_VALUE]),
     locatedFacts: [freckleClusterFact()],
     anatomy: [missingFingerState()],
     exposure: FULLY_COVERED,
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -459,6 +487,198 @@ function adapterSlices(digest: VisualImageDigest, overrides: Partial<CharacterSu
 }
 
 describe("projectCharacterWorldSlices", () => {
+  it("creates a complete source-backed subject when visual selection contains no facts", () => {
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "waist_up" } }),
+    });
+    expect(digest.subjects).toEqual([]);
+
+    const complete = adapterSlices(digest);
+    expect(complete.subjects).toHaveLength(1);
+    expect(complete.subjects[0]).toMatchObject({
+      ref: `subject.${SUBJECT}`,
+      entityId: SUBJECT,
+      label: "the subject",
+      missingRequired: [],
+    });
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "hair.color")?.value).toBe(
+      "Hair color: platinum",
+    );
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
+      "Eye color: blue",
+    );
+
+    const withoutHair = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        ADULT_AGE_VALUE,
+      ]).filter((attribute) => attribute.id !== "hair.color"),
+    });
+    expect(withoutHair.subjects[0]?.missingRequired).toContain(
+      `subject.${SUBJECT}.appearance.hair.color`,
+    );
+  });
+
+  it("adds canonical appearance facts once and protects required reference-free identity", () => {
+    const slices = adapterSlices(characterDigest([ageAnchorFeature()]));
+    const subject = slices.subjects[0];
+    const appearance = (subject?.facts ?? []).filter((fact) => fact.concept === "subject.appearance");
+    expect(appearance.find((fact) => fact.source.key === "hair.color")).toMatchObject({
+      value: "Hair color: platinum",
+      disposition: "required_visual",
+    });
+    expect(appearance.find((fact) => fact.source.key === "eyes.color")).toMatchObject({
+      value: "Eye color: blue",
+      disposition: "required_visual",
+    });
+    expect(new Set(appearance.map((fact) => fact.source.key)).size).toBe(appearance.length);
+    expect(subject?.missingRequired).toEqual([]);
+  });
+
+  it("reports a missing reference-free core value but lets an actual planned identity reference carry it", () => {
+    const attributes = REQUIRED_APPEARANCE_VALUES.filter((value) => value.id !== "hair.color");
+    const digest = characterDigest([ageAnchorFeature()]);
+    const unanchored = projectCharacterWorldSlices({
+      digest,
+      sources: { [SUBJECT]: fixtureSources({ attributes: [...attributes, ADULT_AGE_VALUE] }) },
+    });
+    const missing = `subject.${SUBJECT}.appearance.hair.color`;
+    expect(unanchored.subjects[0]?.missingRequired).toContain(missing);
+
+    const anchored = projectCharacterWorldSlices({
+      digest,
+      sources: { [SUBJECT]: fixtureSources({ attributes: [...attributes, ADULT_AGE_VALUE] }) },
+      identityReferenceSubjects: new Set([`subject.${SUBJECT}`]),
+    });
+    expect(anchored.subjects[0]?.missingRequired).not.toContain(missing);
+    expect(anchored.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
+      "Eye color: blue",
+    );
+  });
+
+  it("states the canonical non-human species exactly once beside its feature-group morphology", () => {
+    const subject = adapterSlices(characterDigest([ageAnchorFeature()]), {
+      realizedBody: visualStateNonHumanBody(["wings"]),
+    }).subjects[0];
+    expect(subject?.facts.filter((fact) => fact.key === `subject.${SUBJECT}.species`)).toEqual([
+      expect.objectContaining({ value: "Succubus", disposition: "required_visual" }),
+    ]);
+    expect(subject?.morphology.filter((fact) => fact.key === `${SUBJECT}/wings/species.feature_group`)).toHaveLength(1);
+  });
+
+  it("keeps close detail in a close-up and omits it from a wide frame", () => {
+    const atFraming = (framing: "close_up" | "wide"): VisualImageDigest =>
+      buildVisualImageDigest({
+        snapshot: visualAttentionSnapshotFixture([...appearanceFeatures()]),
+        context: visualAttentionContextFixture("image", { framing: { status: "known", value: framing } }),
+      });
+    const attributes = completeFixtureAttributes([
+      ...crookedNoseAttributes(),
+      ADULT_AGE_VALUE,
+      { id: "nose.piercings", value: "septum", source: "manual" },
+    ]);
+    const hasPiercing = (digest: VisualImageDigest): boolean =>
+      adapterSlices(digest, { attributes }).subjects[0]?.facts.some(
+        (fact) => fact.source.key === "nose.piercings",
+      ) ?? false;
+
+    expect(hasPiercing(atFraming("close_up"))).toBe(true);
+    expect(hasPiercing(atFraming("wide"))).toBe(false);
+  });
+
+  it("lets an emitted live hairstyle replace both sheet hair fallbacks", () => {
+    const attributes = completeFixtureAttributes([
+      ...crookedNoseAttributes(),
+      ADULT_AGE_VALUE,
+      { id: "hair.arrangement", value: "ponytail", source: "manual" },
+      { id: "hair.style", value: "sheet curls", source: "manual" },
+    ]);
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([hairstyleFeature(), ageAnchorFeature()]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
+    });
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.hairstyle");
+    const subject = adapterSlices(digest, {
+      attributes,
+    }).subjects[0];
+    const sourceKeys = (subject?.facts ?? []).map((fact) => fact.source.key);
+    expect(sourceKeys).not.toContain("hair.arrangement");
+    expect(sourceKeys).not.toContain("hair.style");
+    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("loose");
+  });
+
+  it("lets an emitted live grooming fact replace the sheet grooming fallback", () => {
+    const faceVisible = affordancePerceptionView({
+      exposure: { face: "visible" },
+      channels: { sight: "available" },
+    });
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([groomingFeature(), ageAnchorFeature()]),
+      context: visualAttentionContextFixture("image", {
+        perception: faceVisible,
+        framing: { status: "known", value: "portrait" },
+      }),
+    });
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.grooming");
+    const subject = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        ADULT_AGE_VALUE,
+        { id: "presentation.grooming", value: "neat", source: "manual" },
+      ]),
+    }).subjects[0];
+    expect(subject?.facts.some((fact) => fact.source.key === "presentation.grooming")).toBe(false);
+    expect(subject?.facts.find((fact) => fact.key.includes("presentation.grooming:brows"))?.value).toContain("shaped");
+  });
+
+  it("keeps a sheet fallback when the selected current fact is unreadable", () => {
+    const unreadableGrooming = { ...groomingFeature(), value: {} };
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([unreadableGrooming, ageAnchorFeature()]),
+      context: visualAttentionContextFixture("image", {
+        perception: affordancePerceptionView({
+          exposure: { face: "visible" },
+          channels: { sight: "available" },
+        }),
+        framing: { status: "known", value: "portrait" },
+      }),
+    });
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.grooming");
+    const subject = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        ADULT_AGE_VALUE,
+        { id: "presentation.grooming", value: "neat", source: "manual" },
+      ]),
+    }).subjects[0];
+    expect(subject?.facts.find((fact) => fact.source.key === "presentation.grooming")?.value).toBe(
+      "Grooming: neat",
+    );
+  });
+
+  it("hides chest hair under an opaque torso and states it when the torso is bare", () => {
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([...appearanceFeatures()]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "waist_up" } }),
+    });
+    const attributes = completeFixtureAttributes([
+      ...crookedNoseAttributes(),
+      ADULT_AGE_VALUE,
+      { id: "chest.hair", value: "thick", source: "manual" },
+    ]);
+    const chestHair = (exposure: RegionExposure): ImageWorldFact | undefined =>
+      adapterSlices(digest, { attributes, exposure }).subjects[0]?.facts.find(
+        (fact) => fact.source.key === "chest.hair",
+      );
+
+    expect(chestHair(FULLY_COVERED)).toBeUndefined();
+    expect(chestHair({ ...FULLY_COVERED, torso: "bare" })).toMatchObject({
+      concept: "subject.appearance",
+      value: "Chest hair: thick",
+    });
+  });
+
   /**
    * The issue's completion criterion, stated as one case: with every canonical
    * owner joined, the fixture subject binds — no required anchor is suppressed,
@@ -649,12 +869,19 @@ describe("projectCharacterWorldSlices", () => {
 
     // The floor itself (owner ruling 2026-07-29): `eighteen` states the number
     // outright as an adult, never a word that could read younger.
-    const floor = adapterSlices(digest, { attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "eighteen" }] });
+    const floor = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        { ...ADULT_AGE_VALUE, value: "eighteen" },
+      ]),
+    });
     const eighteen = floor.subjects[0]?.facts.find((fact) => fact.concept === "subject.apparent_age");
     expect(eighteen?.value).toBe("exactly eighteen years old, an adult");
     expect(eighteen?.value).not.toMatch(/\bteen\b/i);
 
-    const minor = adapterSlices(digest, { attributes: [...crookedNoseAttributes(), MINOR_AGE_VALUE] });
+    const minor = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([...crookedNoseAttributes(), MINOR_AGE_VALUE]),
+    });
     expect(minor.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
     expect(minor.subjects[0]?.missingRequired).toEqual([]);
     expect(minor.suppressions).toContainEqual({
@@ -663,7 +890,7 @@ describe("projectCharacterWorldSlices", () => {
       reason: IMAGE_CHARACTER_AGE_WITHHELD,
     });
 
-    const unset = adapterSlices(digest, { attributes: crookedNoseAttributes() });
+    const unset = adapterSlices(digest, { attributes: completeFixtureAttributes(crookedNoseAttributes()) });
     expect(unset.subjects[0]?.missingRequired).toContain(ageKey);
 
     // Only a band the REGISTRY recognizes is withheld by ruling. A string it
@@ -672,7 +899,10 @@ describe("projectCharacterWorldSlices", () => {
     // closed, never render age-silent. Falsified against the classifier that
     // treated every non-phrase string as withheld.
     const malformed = adapterSlices(digest, {
-      attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "adult" }],
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        { ...ADULT_AGE_VALUE, value: "adult" },
+      ]),
     });
     expect(malformed.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
     expect(malformed.subjects[0]?.missingRequired).toContain(ageKey);
@@ -690,7 +920,9 @@ describe("projectCharacterWorldSlices", () => {
    */
   it("applies the same floor to a projected age anchor", () => {
     const digest = characterDigest([ageAnchorFeature()]);
-    const minor = adapterSlices(digest, { attributes: [...crookedNoseAttributes(), MINOR_AGE_VALUE] });
+    const minor = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([...crookedNoseAttributes(), MINOR_AGE_VALUE]),
+    });
     expect(minor.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);
     expect(minor.subjects[0]?.missingRequired).toEqual([]);
     expect(minor.suppressions).toContainEqual({
@@ -703,7 +935,10 @@ describe("projectCharacterWorldSlices", () => {
     // on the projected anchor keeps the scaffold's fail-closed record instead
     // of being rewritten into a ruling nobody made.
     const malformed = adapterSlices(digest, {
-      attributes: [...crookedNoseAttributes(), { ...ADULT_AGE_VALUE, value: "adult" }],
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        { ...ADULT_AGE_VALUE, value: "adult" },
+      ]),
     });
     expect(malformed.subjects[0]?.missingRequired).toContain(`${SUBJECT}/face/apparent_age`);
   });
@@ -725,7 +960,7 @@ describe("projectCharacterWorldSlices", () => {
     for (const attributes of [[...crookedNoseAttributes(), ADULT_AGE_VALUE], crookedNoseAttributes()]) {
       const omitted = projectCharacterWorldSlices({
         digest,
-        sources: { [SUBJECT]: fixtureSources({ attributes }) },
+        sources: { [SUBJECT]: fixtureSources({ attributes: completeFixtureAttributes(attributes) }) },
         apparentAge: "omit",
       });
       expect(omitted.subjects[0]?.facts.some((fact) => fact.concept === "subject.apparent_age")).toBe(false);

@@ -324,6 +324,16 @@ describe("the compiled scene prompt over a populated plan", () => {
   });
 });
 
+describe("the shared appearance owners in a scene", () => {
+  it("reinforces the focal's visible platinum hair and blue eyes beside its identity reference", () => {
+    const plan = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
+    const { program } = compileScene(plan);
+
+    expect(program.prompt).toMatch(/hair color: platinum/i);
+    expect(program.prompt).toMatch(/eye color: blue/i);
+  });
+});
+
 describe("production chat cuts are narrowed to the scene cast", () => {
   /**
    * The shared chat factory carries three visual owners in one cut: the cast

@@ -18,6 +18,7 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     autoDefaultExcludes: ["gold", "red", "crimson", "silver", "white", "solid_black"],
     bodyLocationId: "eyes",
     aliases: ["eye color", "eye colour"],
+    imageAppearance: { class: "core", referenceFreeRequired: true },
     coreVisual: true,
     defaultValue: "brown",
   },
@@ -32,6 +33,7 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     allowedValues: ["round", "vertical_slit", "horizontal_slit", "goat"],
     bodyLocationId: "eyes",
     aliases: ["pupils", "slit pupils"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "close_up", omitValues: ["round"] },
     promptHints: ["Vertical-slit pupils read demonic/feline, horizontal/goat bestial; round is the human default."],
   },
   {
@@ -45,6 +47,7 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     allowedValues: ["none", "faint_glow", "glowing"],
     bodyLocationId: "eyes",
     aliases: ["glowing eyes"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
     promptHints: ["A supernatural cue; let it read strongest in low light."],
   },
   {
@@ -62,5 +65,6 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     ],
     bodyLocationId: "eyes",
     aliases: ["eye shape"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
 ]);

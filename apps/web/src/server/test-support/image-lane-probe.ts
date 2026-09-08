@@ -35,7 +35,7 @@ import { attr, makeProfile } from "./profile-fixtures";
  * `applySceneCastVisual`, so no test can quietly assemble a different person
  * than production does.
  *
- * Every authored value is deliberately distinctive ("deep violet" hair, a
+ * Every authored value is deliberately distinctive ("platinum" hair, a
  * "spiraled" horn, a "gravelly" voice) and the two fixtures share none of them
  * in either direction, so a suite can ask whether a specific fact reached a
  * compiled prompt — and FOR WHOM — by looking for the word, without parsing the
@@ -66,14 +66,15 @@ export function laneProbeProfile(overrides: Partial<CharacterProfile> = {}): Cha
       base("identity.apparent_age", "late_twenties"),
       base("identity.gender", "female"),
       base("identity.heritage", "Latina"),
-      base("hair.color", "deep_violet"),
+      base("skin.tone", "brown"),
+      base("skin.undertone", "warm"),
+      base("hair.color", "platinum"),
       base("hair.length", "shoulder_length"),
-      base("eyes.color", "amber"),
-      base("skin.tone", "bronze"),
+      base("eyes.color", "blue"),
       base("face.shape", "oval"),
+      base("build.frame", "sturdy"),
+      base("build.weight_presentation", "soft"),
       base("build.height", "tall"),
-      base("build.frame", "slight"),
-      base("build.weight_presentation", "slim"),
       base("horns.shape", "spiraled"),
       base("wings.type", "membranous"),
       base("tail.type", "spaded"),
@@ -149,8 +150,12 @@ export function laneProbeSecondProfile(overrides: Partial<CharacterProfile> = {}
       base("identity.apparent_age", "forties"),
       base("identity.gender", "androgynous_born_male"),
       base("hair.color", "dyed_teal"),
+      base("hair.length", "waist_length"),
       base("eyes.color", "emerald"),
       base("skin.tone", "ashen"),
+      base("face.shape", "heart"),
+      base("build.frame", "slight"),
+      base("build.weight_presentation", "slim"),
       base("horns.shape", "antlered"),
       base("wings.type", "gossamer"),
       base("tail.type", "fox"),

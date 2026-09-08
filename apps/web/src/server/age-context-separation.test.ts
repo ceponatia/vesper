@@ -54,13 +54,15 @@ describe("age context separation", () => {
     // (`imageAgeBandPhrases`), never the chronological field. Over the lane
     // probe's species, because the program states a person only once the
     // standalone digest projects a subject for them.
-    const requiredPortraitAttributes = laneProbeProfile().attributes.filter(
-      (attribute) => !profile.attributes.some((override) => override.id === attribute.id),
-    );
+    const complete = laneProbeProfile();
+    const overridden = new Set(profile.attributes.map((attribute) => attribute.id));
     const program = laneProbeAvatarProgram({
       profile: laneProbeProfile({
         age: profile.age,
-        attributes: [...requiredPortraitAttributes, ...profile.attributes],
+        attributes: [
+          ...complete.attributes.filter((attribute) => !overridden.has(attribute.id)),
+          ...profile.attributes,
+        ],
       }),
     });
     if (program.kind !== "compiled") throw new Error(`the avatar program did not compile: ${program.kind}`);

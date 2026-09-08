@@ -14,6 +14,7 @@ export const armsGroup = defineAttributeGroup("arms", [
     allowedValues: ["slender", "wiry", "soft", "toned", "sinewy", "muscular", "heavy"],
     bodyLocationId: "arms",
     aliases: ["arms", "arm build"],
+    imageAppearance: { class: "reinforcement", minimumFraming: "waist_up" },
   },
   {
     id: "arms.hair",

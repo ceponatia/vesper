@@ -17,6 +17,7 @@ export const earsGroup = defineAttributeGroup("ears", [
     ],
     bodyLocationId: "ears",
     aliases: ["ear shape", "pointed ears"],
+    imageAppearance: { class: "fine", maximumFraming: "portrait" },
   },
   {
     id: "ears.piercings",
@@ -29,5 +30,6 @@ export const earsGroup = defineAttributeGroup("ears", [
     allowedValues: ["none", "single_lobe", "double_lobe", "multiple", "cartilage", "industrial", "gauged"],
     bodyLocationId: "ears",
     aliases: ["piercings", "earrings"],
+    imageAppearance: { class: "fine", maximumFraming: "portrait" },
   },
 ]);

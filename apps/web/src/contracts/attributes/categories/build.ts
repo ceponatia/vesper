@@ -25,6 +25,7 @@ export const buildGroup = defineAttributeGroup("build", [
       "towering",
     ],
     aliases: ["height", "tall", "short", "petite"],
+    imageAppearance: { class: "reinforcement", minimumFraming: "full_figure" },
     promptHints: [
       'Convey height through comparison and blocking ("she has to look up at him"), never as a number.',
     ],
@@ -48,6 +49,7 @@ export const buildGroup = defineAttributeGroup("build", [
       "heavy_boned",
     ],
     aliases: ["frame", "build", "figure", "physique", "bone structure"],
+    imageAppearance: { class: "core", referenceFreeRequired: true, minimumFraming: "portrait" },
     coreVisual: true,
     defaultValue: "slight",
     narratorGuidance: {
@@ -76,6 +78,7 @@ export const buildGroup = defineAttributeGroup("build", [
       "powerfully_built",
     ],
     aliases: ["muscles", "muscle tone", "musculature"],
+    imageAppearance: { class: "core", minimumFraming: "portrait" },
     narratorGuidance: {
       untoned: "no muscle definition — soft and unworked",
       lightly_toned: "the faintest firmness, barely worked",
@@ -105,6 +108,7 @@ export const buildGroup = defineAttributeGroup("build", [
       "very_heavy",
     ],
     aliases: ["weight", "body weight"],
+    imageAppearance: { class: "core", referenceFreeRequired: true, minimumFraming: "portrait" },
     promptHints: [
       "Describe weight as silhouette and presence, never as a number or a judgement.",
     ],

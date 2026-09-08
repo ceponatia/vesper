@@ -13,6 +13,7 @@ export const browsGroup = defineAttributeGroup("brows", [
     allowedValues: ["straight", "softly_arched", "arched", "high_arch", "angled", "rounded", "flat"],
     bodyLocationId: "face",
     aliases: ["eyebrows", "brow shape"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "brows.thickness",
@@ -26,5 +27,6 @@ export const browsGroup = defineAttributeGroup("brows", [
     allowedValues: ["sparse", "thin", "medium", "full", "thick", "bushy"],
     bodyLocationId: "face",
     aliases: ["brow thickness", "bushy brows"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
 ]);

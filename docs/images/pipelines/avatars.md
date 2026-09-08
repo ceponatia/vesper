@@ -37,8 +37,9 @@ different one.
 on the picked profile: a cast of one, **no references** (every portrait profile's reference
 policy allows no roles, so identity travels entirely in the digest's own descriptors), the
 operation `characterPortraitImageOperation()`, and `refuseOnMissingRequired: true` — a portrait
-of a specific character with a lost identity or morphology anchor is a picture of somebody
-else.
+of a specific character with a lost identity, appearance or morphology anchor is a picture of
+somebody else. The shared reference-free completeness policy is owned by
+[character-prompts.md](../character-prompts.md) §Reference-free completeness.
 
 A reference-free portrait also requires the applicable stable appearance set:
 gender, skin tone, visible hair color and length, eye color, face shape, frame
@@ -72,19 +73,27 @@ prompt at all.
 ## What the program states
 
 The digest carries the species feature-group **morphology** — the anchors an image model
-"corrects" away, the "human wearing fake wings" failure — the cataloged recognition marks, and
-an image-only projection of ordinary identity such as gender, skin tone, hair, eyes, face shape
-and build. This projection is independent of narrator recognition and follows the camera,
-coverage, concealment and realized-body gates. The character adapter
-(`contracts/images/character-adapter.ts`) values every fact from its canonical owner — the
-attribute registry, the located-fact rows, the anatomy rows — and never from a fingerprint.
+"corrects" away, the "human wearing fake wings" failure — the cataloged recognition marks and
+the registry-backed image appearance selected for this camera. The shared projection remains
+independent of the deliberately narrow recognition catalog; its class, filtering, formatting,
+provenance, replacement and completeness rules are owned by
+[character-prompts.md](../character-prompts.md) §Registry-backed image appearance.
+
+For this reference-free lane, applicable core appearance facts are mandatory. Saved values such
+as platinum hair and blue eyes travel through the real cut and adapter into the compiled prompt;
+the row stores that compiled text and `characterPromptTransport` sends the same text to the
+provider. A missing applicable core value enters the program's `missingRequired` record and the
+strict avatar compile fails the row before rendering. There is no route-local prose fallback.
 Non-visual attributes (`kind: "sensory"` — voice, scent, taste) and `excludeFromPrompts`
 fields never reach an image prompt.
 
 The **waist-up frame** is the camera's, not a lane-side filter: the `waist_up` band decides
 which optional facts the selection keeps and which regions the adapter's exposure claims may
-name, with signature feature morphology kept whatever its root (a pelvis-rooted tail sweeps up
-into frame). The lane maintains no omit list of its own.
+name. Full-figure-only height, leg, hand and surface detail stays out, while required core facts
+and signature feature morphology remain protected. An applicable chest build may be stated; on
+a body with breasts, `breasts.size` replaces `chest.size` and may state the coverage-safe bust
+silhouette through clothing. Other intimate breast detail remains gated. The lane maintains no
+omit list of its own.
 
 The operation states the honest default style — a photographic medium and no descriptors. The
 studio's `realistic`/`stylized` toggle is recorded on the row's meta and does **not** become a

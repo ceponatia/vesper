@@ -16,6 +16,7 @@ export const faceGroup = defineAttributeGroup("face", [
     ],
     bodyLocationId: "face",
     aliases: ["face shape"],
+    imageAppearance: { class: "core", referenceFreeRequired: true },
   },
   {
     id: "face.freckles",
@@ -28,6 +29,7 @@ export const faceGroup = defineAttributeGroup("face", [
     allowedValues: ["none", "faint", "light_dusting", "scattered", "prominent", "heavy"],
     bodyLocationId: "face",
     aliases: ["freckles", "freckled"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "face.expression_default",
@@ -43,6 +45,7 @@ export const faceGroup = defineAttributeGroup("face", [
     ],
     bodyLocationId: "face",
     aliases: ["resting expression", "default expression"],
+    imageAppearance: { class: "fallback", maximumFraming: "waist_up" },
     promptHints: ["Treat the default expression as a baseline the scene's mood moves away from, not a mask."],
   },
 ]);

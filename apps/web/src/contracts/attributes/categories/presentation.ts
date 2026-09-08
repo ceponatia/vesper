@@ -14,6 +14,7 @@ export const presentationGroup = defineAttributeGroup("presentation", [
       "flamboyant", "bohemian", "minimalist", "rugged", "vintage", "edgy",
     ],
     aliases: ["style", "fashion sense", "dress sense"],
+    imageAppearance: { class: "fallback", minimumFraming: "portrait" },
     promptHints: ["Style guides how new outfits are described; the worn items themselves are wardrobe state."],
   },
   {
@@ -26,6 +27,7 @@ export const presentationGroup = defineAttributeGroup("presentation", [
     mutability: "mutable",
     allowedValues: ["unkempt", "careless", "low_maintenance", "neat", "well_groomed", "meticulous", "immaculate"],
     aliases: ["grooming", "well groomed"],
+    imageAppearance: { class: "fallback", minimumFraming: "portrait" },
   },
   {
     id: "presentation.scent_baseline",
