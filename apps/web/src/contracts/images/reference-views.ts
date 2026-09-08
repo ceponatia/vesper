@@ -382,14 +382,39 @@ export type ReferenceViewMethod = z.infer<typeof referenceViewMethodSchema>;
  * reports every slot, so a grid with a hole in it is a hole the owner can act on
  * rather than a tile that failed to load.
  */
-export const referenceViewStates = ["missing", "pending", "unreviewed", "approved", "rejected", "failed", "stale"] as const;
+export const referenceViewStates = ["missing", "pending", "unreviewed", "approved", "rejected", "failed", "stale", "ineligible"] as const;
 export const referenceViewStateSchema = z.enum(referenceViewStates);
 export type ReferenceViewState = z.infer<typeof referenceViewStateSchema>;
+
+/** Optional owner feedback; recorded as provenance, never a generation instruction. */
+export const referenceViewFeedbackReasons = ["wrong_outfit", "wrong_angle", "identity_mismatch", "image_defect"] as const;
+export const referenceViewFeedbackSchema = z.object({
+  reasons: z.array(z.enum(referenceViewFeedbackReasons)).max(referenceViewFeedbackReasons.length),
+  correction: z.string().trim().max(1000),
+});
+export type ReferenceViewFeedback = z.infer<typeof referenceViewFeedbackSchema>;
+
+export const referenceViewReviewRequestSchema = z.object({
+  attemptId: z.string().min(1).max(128),
+  expectedRevision: z.number().int().nonnegative(),
+  verdict: z.enum(["approve", "reject", "undo"]),
+  feedback: referenceViewFeedbackSchema.optional(),
+});
+export type ReferenceViewReviewRequest = z.infer<typeof referenceViewReviewRequestSchema>;
+
+export const referenceViewRestoreRequestSchema = z.object({
+  attemptId: z.string().min(1).max(128),
+  expectedCurrentAttemptId: z.string().min(1).max(128).nullable(),
+  expectedCurrentRevision: z.number().int().nonnegative(),
+});
 
 export const referenceViewSummarySchema = z.object({
   angle: referenceViewAngleIdSchema,
   wardrobe: referenceViewWardrobeSchema,
   state: referenceViewStateSchema,
+  attemptId: z.string().nullable().default(null),
+  reviewRevision: z.number().int().nonnegative().default(0),
+  feedback: referenceViewFeedbackSchema.nullable().default(null),
   /** The rendered or uploaded asset, when there is one. Null while pending and after a failure. */
   imageId: z.string().nullable(),
   method: z.string().nullable(),
@@ -398,7 +423,7 @@ export const referenceViewSummarySchema = z.object({
   failureMessage: z.string().nullable(),
   updatedAt: z.string().nullable(),
   /**
-   * This view may be sent to a render. The four conditions behind it live in
+   * This view may be sent to a render. The conditions behind it live in
    * exactly one function ({@link isConsumableReferenceView}); nothing else
    * recomputes them, because a second reading of "usable" is how an unreviewed
    * or stale view reaches a scene.
@@ -412,7 +437,7 @@ export const referenceViewSetSummarySchema = z.object({
   acceptedImageId: z.string().nullable(),
   /** A build job is in flight for this character. */
   building: z.boolean(),
-  /** Always every `angles × wardrobes` slot, `missing` where no row exists. */
+  /** Always every `angles × wardrobes` slot; a plan-withheld slot is `ineligible`. */
   views: z.array(referenceViewSummarySchema),
 });
 export type ReferenceViewSetSummary = z.infer<typeof referenceViewSetSummarySchema>;
@@ -426,6 +451,9 @@ export function emptyReferenceViewSetSummary(): ReferenceViewSetSummary {
       angle: view.angle,
       wardrobe: view.wardrobe,
       state: "missing" as const,
+      attemptId: null,
+      reviewRevision: 0,
+      feedback: null,
       imageId: null,
       method: null,
       reviewedAt: null,
@@ -442,6 +470,8 @@ export function emptyReferenceViewSetSummary(): ReferenceViewSetSummary {
  * decides the answer, so the rule can be exercised without a database.
  */
 export interface ReferenceViewProjectionInput {
+  /** The slot is present in the character's current age-gated plan. */
+  readonly eligible: boolean;
   /** The row is the slot's current one. A retired row can never be consumable. */
   readonly current: boolean;
   readonly status: ReferenceViewStatus;
@@ -458,10 +488,11 @@ export interface ReferenceViewProjectionInput {
 }
 
 /**
- * **The one consumability rule.** A view may be sent to a render iff all four
+ * **The one consumability rule.** A view may be sent to a render iff all five
  * hold: it is the slot's current row and `ready` under the current generation
  * version, it was rendered from the portrait the character has accepted right
- * now, its asset exists and is itself `ready`, and the owner has reviewed it.
+ * now, its asset exists and is itself `ready`, the owner has reviewed it, and
+ * the slot remains in the character's current age-gated plan.
  *
  * The last condition is the point of the whole review step. A render the owner
  * has not looked at is a guess about what this character's back looks like, and
@@ -480,6 +511,10 @@ export function isConsumableReferenceView(row: ReferenceViewProjectionInput): bo
  * because nothing rewrote them when the pointer moved.
  */
 export function projectReferenceViewState(row: ReferenceViewProjectionInput): ReferenceViewState {
+  // Eligibility outranks the row's old verdict. An approved bare attempt must
+  // stop being usable as soon as the character's apparent age becomes minor or
+  // unresolved, even though its stored review provenance remains intact.
+  if (!row.eligible) return "ineligible";
   if (row.status === "rejected") return "rejected";
   if (row.status === "failed") return "failed";
   if (row.status === "pending") return "pending";
@@ -677,8 +712,8 @@ export function selectReferenceView(input: ReferenceViewSelectionInput): Referen
  * `superseded` the instant the next attempt claims the slot, so a rejection and
  * an approval read identically the moment either is replaced, and a history
  * built from `status` would tell the owner nothing about what they already
- * ruled. The verdict is written once, by a review or an upload, and nothing —
- * supersession included — ever clears it.
+ * ruled. Review or upload records it; explicit Undo clears the last verdict on
+ * the current attempt. Supersession never clears it.
  */
 export const referenceViewVerdicts = ["approved", "rejected"] as const;
 export const referenceViewVerdictSchema = z.enum(referenceViewVerdicts);
@@ -731,6 +766,8 @@ export const referenceViewHistoryEntrySchema = z.object({
   imageId: z.string(),
   method: referenceViewMethodSchema.nullable(),
   verdict: referenceViewHistoryVerdictSchema,
+  feedback: referenceViewFeedbackSchema.nullable().default(null),
+  restoreUnavailable: z.enum(["current", "expired", "incompatible", "ineligible", "busy", "unavailable"]).nullable().default("unavailable"),
   /** This attempt is the slot's current one — what the studio tile shows. */
   current: z.boolean(),
   createdAt: z.string(),

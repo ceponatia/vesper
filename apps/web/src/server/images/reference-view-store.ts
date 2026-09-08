@@ -1,4 +1,6 @@
-import { and, asc, desc, eq, inArray, isNotNull, lt } from "drizzle-orm";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -12,15 +14,20 @@ import {
   REFERENCE_VIEW_GENERATION_VERSION,
   referenceViewAngleIdSchema,
   referenceViewHistoryVerdict,
+  referenceViewFeedbackSchema,
   referenceViewWardrobeSchema,
   type ReferenceView,
   type ReferenceViewHistoryEntry,
   type ReferenceViewMethod,
   type ReferenceViewSetSummary,
   type ReferenceViewSummary,
+  type ReferenceViewReviewRequest,
 } from "@/contracts";
-import { characterReferenceViews, characters, db, hasLiveCharacterJob, images } from "../db";
-import { readImageBytes } from "./asset-storage";
+import { characterReferenceViews, characters, db, hasLiveCharacterJob, images, jobs, JOB_STALE_MS } from "../db";
+import { createImageAsset, readImageBytes } from "./asset-storage";
+import { deleteOwnedImage } from "./asset-deletion";
+import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
+import { log } from "@/server/log";
 import { sourceContentHashOf } from "./identity-pack-store";
 
 /**
@@ -56,6 +63,57 @@ export const REFERENCE_VIEW_UNKNOWN = "images.reference_views.unknown_view";
 
 export type ReferenceViewRow = typeof characterReferenceViews.$inferSelect;
 
+/** The same character lock serializes reservation, review and restoration. */
+type ReferenceViewTransaction = Parameters<Parameters<ReturnType<typeof db>["transaction"]>[0]>[0];
+export type ReferenceViewExecutor = ReturnType<typeof db> | ReferenceViewTransaction;
+export async function withReferenceViewLock<T>(
+  characterId: string,
+  operation: (tx: ReferenceViewTransaction) => Promise<T>,
+): Promise<T> {
+  return db().transaction(async (tx) => {
+    await tx.select({ id: characters.id }).from(characters).where(eq(characters.id, characterId)).for("update");
+    return operation(tx);
+  });
+}
+
+/** Same staleness rule as db/job-liveness, queried on the transaction's own connection. */
+async function hasLiveReferenceViewJob(executor: ReferenceViewExecutor, characterId: string): Promise<boolean> {
+  const rows = await executor.select({ id: jobs.id }).from(jobs).where(and(
+    eq(jobs.type, "reference_views"), inArray(jobs.status, ["queued", "running"]),
+    gt(jobs.createdAt, new Date(Date.now() - JOB_STALE_MS)), sql`${jobs.payload} ->> 'characterId' = ${characterId}`,
+  )).limit(1);
+  return rows.length > 0;
+}
+
+/** Includes the reservation window and abandoned pending attempts visible in the studio. */
+export async function referenceViewBuildInFlight(characterId: string, executor: ReferenceViewExecutor = db()): Promise<boolean> {
+  if (await hasLiveReferenceViewJob(executor, characterId)) return true;
+  const pending = await executor.select({ id: characterReferenceViews.id }).from(characterReferenceViews).where(and(
+    eq(characterReferenceViews.characterId, characterId), eq(characterReferenceViews.current, true),
+    eq(characterReferenceViews.status, "pending"),
+  )).limit(1);
+  return pending.length > 0;
+}
+
+/** Shared with the sweep; restoration eligibility expires even before a delayed sweep runs. */
+export const REFERENCE_VIEW_RETENTION_MS = 7 * 24 * 60 * 60_000;
+
+function restoreUnavailable(
+  row: ReferenceViewRow,
+  source: AcceptedPortraitSource,
+  busy: boolean,
+  eligible: boolean,
+): ReferenceViewHistoryEntry["restoreUnavailable"] {
+  if (!eligible) return "ineligible";
+  if (row.current) return "current";
+  if (row.updatedAt.getTime() < Date.now() - REFERENCE_VIEW_RETENTION_MS) return "expired";
+  if (!row.imageId || !row.method) return "unavailable";
+  if (!source.ok || row.sourceImageId !== source.imageId || row.sourceContentHash !== source.contentHash ||
+      row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION) return "incompatible";
+  if (busy) return "busy";
+  return null;
+}
+
 /**
  * The slot key as one comparable string — the map key the projection groups
  * on. A visible separator: registry ids carry no colon, and a key nobody can
@@ -65,13 +123,17 @@ function slotKey(view: ReferenceView): string {
   return `${view.angle}:${view.wardrobe}`;
 }
 
+function planIncludes(plan: readonly ReferenceView[], view: ReferenceView): boolean {
+  return plan.some((candidate) => candidate.angle === view.angle && candidate.wardrobe === view.wardrobe);
+}
+
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
 /** The character's accepted portrait, or null when the character is not this owner's. */
-async function readAcceptedPortrait(characterId: string, ownerId: string): Promise<string | null | undefined> {
-  const [row] = await db()
+async function readAcceptedPortrait(characterId: string, ownerId: string, executor: ReferenceViewExecutor = db()): Promise<string | null | undefined> {
+  const [row] = await executor
     .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
@@ -93,12 +155,23 @@ export async function plannedReferenceViewsForCharacter(
   ownerId: string,
   sink?: DiagnosticSink,
 ): Promise<readonly ReferenceView[]> {
-  const [row] = await db()
+  const plan = await readReferenceViewPlan(characterId, ownerId, db(), sink);
+  return plan ?? [];
+}
+
+/** Read the age-gated plan on the caller's connection so writes can check it under the character lock. */
+async function readReferenceViewPlan(
+  characterId: string,
+  ownerId: string,
+  executor: ReferenceViewExecutor,
+  sink?: DiagnosticSink,
+): Promise<readonly ReferenceView[] | undefined> {
+  const [row] = await executor
     .select({ profile: characters.profile })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .limit(1);
-  if (row === undefined) return [];
+  if (row === undefined) return undefined;
   return plannedReferenceViews(
     parseOr(characterProfileSchema, row.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile"),
   );
@@ -119,12 +192,12 @@ export type AcceptedPortraitSource =
   | { ok: true; imageId: string; contentHash: string }
   | { ok: false; reason: "not_found" | "not_accepted" | "source_unreadable" };
 
-export async function readAcceptedPortraitSource(characterId: string, ownerId: string): Promise<AcceptedPortraitSource> {
-  const accepted = await readAcceptedPortrait(characterId, ownerId);
+export async function readAcceptedPortraitSource(characterId: string, ownerId: string, executor: ReferenceViewExecutor = db()): Promise<AcceptedPortraitSource> {
+  const accepted = await readAcceptedPortrait(characterId, ownerId, executor);
   if (accepted === undefined) return { ok: false, reason: "not_found" };
   if (accepted === null) return { ok: false, reason: "not_accepted" };
 
-  const [row] = await db()
+  const [row] = await executor
     .select()
     .from(images)
     .where(and(eq(images.id, accepted), eq(images.ownerId, ownerId)))
@@ -136,8 +209,11 @@ export async function readAcceptedPortraitSource(characterId: string, ownerId: s
 }
 
 /** Every current row for this character, whatever slot it belongs to. */
-export async function currentReferenceViewRows(characterId: string): Promise<readonly ReferenceViewRow[]> {
-  return db()
+export async function currentReferenceViewRows(
+  characterId: string,
+  executor: ReferenceViewExecutor = db(),
+): Promise<readonly ReferenceViewRow[]> {
+  return executor
     .select()
     .from(characterReferenceViews)
     .where(and(eq(characterReferenceViews.characterId, characterId), eq(characterReferenceViews.current, true)));
@@ -147,8 +223,9 @@ export async function currentReferenceViewRows(characterId: string): Promise<rea
 export async function currentReferenceViewRow(
   characterId: string,
   view: ReferenceView,
+  executor: ReferenceViewExecutor = db(),
 ): Promise<ReferenceViewRow | undefined> {
-  const [row] = await db()
+  const [row] = await executor
     .select()
     .from(characterReferenceViews)
     .where(
@@ -187,10 +264,13 @@ export async function referenceViewHistory(
 }
 
 /** The asset statuses of every image a set's rows point at, by image id. */
-async function readViewImageStatuses(rows: readonly ReferenceViewRow[]): Promise<Map<string, string>> {
+async function readViewImageStatuses(
+  rows: readonly ReferenceViewRow[],
+  executor: ReferenceViewExecutor = db(),
+): Promise<Map<string, string>> {
   const ids = [...new Set(rows.flatMap((row) => (row.imageId === null ? [] : [row.imageId])))];
   if (ids.length === 0) return new Map();
-  const assets = await db().select({ id: images.id, status: images.status }).from(images).where(inArray(images.id, ids));
+  const assets = await executor.select({ id: images.id, status: images.status }).from(images).where(inArray(images.id, ids));
   return new Map(assets.map((asset) => [asset.id, asset.status]));
 }
 
@@ -238,6 +318,11 @@ export async function referenceViewHistoryEntries(
     )
     .orderBy(desc(characterReferenceViews.createdAt));
   const statuses = await readViewImageStatuses(rows);
+  const source = await readAcceptedPortraitSource(characterId, ownerId);
+  const busy = await hasLiveCharacterJob("reference_views", characterId);
+  const plan = await readReferenceViewPlan(characterId, ownerId, db());
+  if (plan === undefined) return [];
+  const eligible = planIncludes(plan, view);
 
   return rows.flatMap((row) => {
     const imageId = row.imageId;
@@ -248,6 +333,8 @@ export async function referenceViewHistoryEntries(
         imageId,
         method: row.method,
         verdict: referenceViewHistoryVerdict(row),
+        feedback: parseOrNull(referenceViewFeedbackSchema, row.feedback),
+        restoreUnavailable: restoreUnavailable(row, source, busy, eligible),
         current: row.current,
         createdAt: row.createdAt.toISOString(),
         reviewedAt: row.reviewedAt === null ? null : row.reviewedAt.toISOString(),
@@ -264,12 +351,16 @@ function summarizeRow(
   row: ReferenceViewRow | undefined,
   acceptedImageId: string | null,
   imageStatus: string | null,
+  eligible: boolean,
 ): ReferenceViewSummary {
   if (row === undefined) {
     return {
       angle: view.angle,
       wardrobe: view.wardrobe,
-      state: "missing",
+      state: eligible ? "missing" : "ineligible",
+      attemptId: null,
+      reviewRevision: 0,
+      feedback: null,
       imageId: null,
       method: null,
       reviewedAt: null,
@@ -280,6 +371,7 @@ function summarizeRow(
     };
   }
   const projection = {
+    eligible,
     current: row.current,
     status: row.status,
     sourceImageId: row.sourceImageId,
@@ -293,6 +385,9 @@ function summarizeRow(
     angle: view.angle,
     wardrobe: view.wardrobe,
     state: projectReferenceViewState(projection),
+    attemptId: row.id,
+    reviewRevision: row.reviewRevision,
+    feedback: parseOrNull(referenceViewFeedbackSchema, row.feedback),
     // The asset id rides even on a stale or rejected row: the studio shows the
     // owner what it is calling stale, which is the difference between a state
     // they can act on and one they have to take on faith.
@@ -318,12 +413,16 @@ export async function getReferenceViewSet(
   characterId: string,
   ownerId: string,
   sink?: DiagnosticSink,
+  executor: ReferenceViewExecutor = db(),
 ): Promise<ReferenceViewSetSummary> {
-  const accepted = await readAcceptedPortrait(characterId, ownerId);
+  const accepted = await readAcceptedPortrait(characterId, ownerId, executor);
   if (accepted === undefined) return emptyReferenceViewSetSummary();
+  const plan = await readReferenceViewPlan(characterId, ownerId, executor, sink);
+  if (plan === undefined) return emptyReferenceViewSetSummary();
+  const eligibleSlots = new Set(plan.map(slotKey));
 
-  const rows = await currentReferenceViewRows(characterId);
-  const statuses = await readViewImageStatuses(rows);
+  const rows = await currentReferenceViewRows(characterId, executor);
+  const statuses = await readViewImageStatuses(rows, executor);
 
   const bySlot = new Map<string, ReferenceViewRow>();
   for (const row of rows) {
@@ -345,13 +444,39 @@ export async function getReferenceViewSet(
 
   return {
     acceptedImageId: accepted,
-    building: await hasLiveCharacterJob("reference_views", characterId),
+    building: await hasLiveReferenceViewJob(executor, characterId),
     views: allReferenceViews().map((view) => {
       const row = bySlot.get(slotKey(view));
       const imageStatus = row === undefined || row.imageId === null ? null : (statuses.get(row.imageId) ?? null);
-      return summarizeRow(view, row, accepted, imageStatus);
+      return summarizeRow(view, row, accepted, imageStatus, eligibleSlots.has(slotKey(view)));
     }),
   };
+}
+
+/**
+ * Hold the character lock across eligibility projection and the selected asset
+ * read. This is the consumer boundary: an apparent-age edit cannot commit
+ * between approving a bare slot for use and opening its bytes.
+ */
+export async function withLockedReferenceViewSet<T>(
+  characterId: string,
+  ownerId: string,
+  sink: DiagnosticSink | undefined,
+  operation: (snapshot: {
+    set: ReferenceViewSetSummary;
+    readReadyBytes: (imageId: string) => Promise<Buffer | null>;
+  }) => Promise<T>,
+): Promise<T> {
+  return withReferenceViewLock(characterId, async (tx) => {
+    const set = await getReferenceViewSet(characterId, ownerId, sink, tx);
+    const readReadyBytes = async (imageId: string): Promise<Buffer | null> => {
+      const [asset] = await tx.select().from(images).where(and(
+        eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view"),
+      )).limit(1);
+      return asset?.status === "ready" ? readImageBytes(asset) : null;
+    };
+    return operation({ set, readReadyBytes });
+  });
 }
 
 /** One slot's summary, read fresh — what every per-view write answers with. */
@@ -364,7 +489,7 @@ export async function getReferenceViewSummary(
   const set = await getReferenceViewSet(characterId, ownerId, sink);
   return (
     set.views.find((entry) => entry.angle === view.angle && entry.wardrobe === view.wardrobe) ??
-    summarizeRow(view, undefined, set.acceptedImageId, null)
+    summarizeRow(view, undefined, set.acceptedImageId, null, false)
   );
 }
 
@@ -374,6 +499,7 @@ export async function getReferenceViewSummary(
 
 export interface ReserveReferenceViewInput {
   characterId: string;
+  ownerId: string;
   view: ReferenceView;
   /** The accepted portrait this attempt renders from. */
   sourceImageId: string;
@@ -391,9 +517,16 @@ export interface ReserveReferenceViewInput {
  * as history, and its asset is collected by the sweep a week later rather than
  * the instant the owner asked for a retry.
  */
-export async function reserveReferenceView(input: ReserveReferenceViewInput): Promise<string> {
+export async function reserveReferenceView(input: ReserveReferenceViewInput): Promise<string | null> {
   const { characterId, view } = input;
-  return db().transaction(async (tx) => {
+  return withReferenceViewLock(characterId, async (tx) => {
+    // The build reads and hashes its portrait before workers reserve slots. If
+    // the owner accepts another portrait while those workers are waiting for
+    // this lock, refuse the stale reservation before any provider call.
+    const acceptedImageId = await readAcceptedPortrait(characterId, input.ownerId, tx);
+    if (acceptedImageId !== input.sourceImageId) return null;
+    const plan = await readReferenceViewPlan(characterId, input.ownerId, tx);
+    if (plan === undefined || !planIncludes(plan, view)) return null;
     await tx
       .update(characterReferenceViews)
       // `updated_at` is bumped by the column's own `$onUpdate`, and it is what the
@@ -436,6 +569,46 @@ export interface FinalizeReferenceViewInput {
   reviewedByUserId?: string;
 }
 
+export interface InstallUploadedReferenceViewInput extends ReserveReferenceViewInput {
+  imageId: string;
+  expectedCurrentAttemptId: string | null;
+  expectedCurrentRevision: number;
+}
+
+export type InstallUploadedReferenceViewResult =
+  | { status: "uploaded"; view: ReferenceViewSummary }
+  | { status: "busy" }
+  | { status: "changed" }
+  | { status: "not_found" }
+  | { status: "not_accepted" }
+  | { status: "ineligible" };
+
+/** Install a processed upload only while the slot and accepted source still match its initial read. */
+export async function installUploadedReferenceView(input: InstallUploadedReferenceViewInput): Promise<InstallUploadedReferenceViewResult> {
+  return withReferenceViewLock<InstallUploadedReferenceViewResult>(input.characterId, async (tx) => {
+    const plan = await readReferenceViewPlan(input.characterId, input.ownerId, tx);
+    if (plan === undefined) return { status: "not_found" };
+    if (!planIncludes(plan, input.view)) return { status: "ineligible" };
+    const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
+    if (!source.ok) return { status: source.reason === "not_found" ? "not_found" : "not_accepted" };
+    if (await referenceViewBuildInFlight(input.characterId, tx)) return { status: "busy" };
+    const current = await currentReferenceViewRow(input.characterId, input.view, tx);
+    if (source.imageId !== input.sourceImageId || source.contentHash !== input.sourceContentHash ||
+        (current?.id ?? null) !== input.expectedCurrentAttemptId || (current?.reviewRevision ?? 0) !== input.expectedCurrentRevision) {
+      return { status: "changed" };
+    }
+    if (current) await tx.update(characterReferenceViews).set({ current: false, status: "superseded" }).where(eq(characterReferenceViews.id, current.id));
+    const [candidate] = await tx.insert(characterReferenceViews).values({
+      characterId: input.characterId, angleId: input.view.angle, wardrobe: input.view.wardrobe,
+      current: true, status: "ready", sourceImageId: source.imageId, sourceContentHash: source.contentHash,
+      generationVersion: REFERENCE_VIEW_GENERATION_VERSION, imageId: input.imageId, method: "uploaded",
+      verdict: "approved", reviewedByUserId: input.ownerId, reviewedAt: new Date(),
+    }).returning();
+    if (!candidate) throw new Error("reference upload returned no candidate");
+    return { status: "uploaded", view: summarizeRow(input.view, candidate, source.imageId, "ready", true) };
+  });
+}
+
 /** What a finalize concluded — `ready` or the honest `stale` when the portrait moved under it. */
 export type FinalizeReferenceViewResult = "ready" | "stale";
 
@@ -455,9 +628,13 @@ export type FinalizeReferenceViewResult = "ready" | "stale";
  * supplying it, performed the review the render path asks them for.
  */
 export async function finalizeReferenceView(input: FinalizeReferenceViewInput): Promise<FinalizeReferenceViewResult> {
-  return db().transaction(async (tx) => {
+  return withReferenceViewLock(input.characterId, async (tx) => {
     const [row] = await tx
-      .select({ sourceImageId: characterReferenceViews.sourceImageId })
+      .select({
+        sourceImageId: characterReferenceViews.sourceImageId,
+        angleId: characterReferenceViews.angleId,
+        wardrobe: characterReferenceViews.wardrobe,
+      })
       .from(characterReferenceViews)
       .where(eq(characterReferenceViews.id, input.viewId))
       .limit(1);
@@ -466,11 +643,16 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
       .from(characters)
       .where(and(eq(characters.id, input.characterId), eq(characters.ownerId, input.ownerId)))
       .limit(1);
+    const angle = row === undefined ? null : parseOrNull(referenceViewAngleIdSchema, row.angleId);
+    const wardrobe = row === undefined ? null : parseOrNull(referenceViewWardrobeSchema, row.wardrobe);
+    const plan = await readReferenceViewPlan(input.characterId, input.ownerId, tx);
+    const eligible = angle !== null && wardrobe !== null && plan !== undefined && planIncludes(plan, { angle, wardrobe });
     const stale =
       row === undefined ||
       row.sourceImageId === null ||
       character === undefined ||
-      character.acceptedAvatarImageId !== row.sourceImageId;
+      character.acceptedAvatarImageId !== row.sourceImageId ||
+      !eligible;
     const reviewed = input.reviewedByUserId;
     await tx
       .update(characterReferenceViews)
@@ -510,59 +692,130 @@ export async function failReferenceView(viewId: string, failureCode: string, fai
     .where(eq(characterReferenceViews.id, viewId));
 }
 
-/**
- * The review REQUEST's verb — what the owner just clicked. Distinct from the
- * contract's `ReferenceViewVerdict`, which is the noun this write stores.
- */
-export type ReferenceViewReviewVerdict = "approve" | "reject";
-
+export type ReferenceViewReviewVerdict = ReferenceViewReviewRequest["verdict"];
+export type ReferenceViewWriteRefusal = "not_found" | "not_ready" | "changed" | "incompatible" | "ineligible" | "busy" | "expired" | "unavailable";
 export type ReviewReferenceViewResult =
   | { status: "reviewed"; view: ReferenceViewSummary }
-  /** Nothing current and `ready` to rule on — an empty slot, a pending render, an already-failed one. */
-  | { status: "not_ready" }
-  | { status: "not_found" };
+  | { status: ReferenceViewWriteRefusal };
 
-/**
- * Record the owner's eye on one view.
- *
- * Approving is what makes a view consumable — a rendered back nobody looked at
- * is a guess, and a guess that anchors every later scene is worse than no anchor
- * at all. Rejecting is TERMINAL for that row: it keeps its bytes and its
- * history, it is never sent anywhere, and the way back is a regenerate, which
- * supersedes it with a new attempt rather than reviving this one.
- */
-export async function reviewReferenceView(input: {
+/** Review exactly the attempt and revision displayed; Undo only clears that last verdict. */
+export async function reviewReferenceView(input: ReferenceViewReviewRequest & {
   characterId: string;
   ownerId: string;
   view: ReferenceView;
-  verdict: ReferenceViewReviewVerdict;
   sink?: DiagnosticSink;
 }): Promise<ReviewReferenceViewResult> {
+  return withReferenceViewLock<ReviewReferenceViewResult>(input.characterId, async (tx) => {
+    const plan = await readReferenceViewPlan(input.characterId, input.ownerId, tx, input.sink);
+    if (plan === undefined) return { status: "not_found" };
+    if (!planIncludes(plan, input.view)) return { status: "ineligible" };
+    const accepted = await readAcceptedPortrait(input.characterId, input.ownerId, tx);
+    if (accepted === undefined) return { status: "not_found" };
+    const row = await currentReferenceViewRow(input.characterId, input.view, tx);
+    if (!row || row.id !== input.attemptId || row.reviewRevision !== input.expectedRevision) return { status: "changed" };
+    const undo = input.verdict === "undo";
+    if (undo ? row.reviewedAt === null || !["ready", "rejected"].includes(row.status)
+      : row.status !== "ready" || row.reviewedAt !== null) return { status: "not_ready" };
+    const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
+    if (!source.ok || row.sourceImageId !== source.imageId || row.sourceContentHash !== source.contentHash ||
+        row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION) return { status: "incompatible" };
+    const [asset] = await tx.select().from(images).where(and(eq(images.id, row.imageId ?? ""), eq(images.ownerId, input.ownerId))).limit(1);
+    if (!asset || asset.status !== "ready" || await readImageBytes(asset) === null) return { status: "unavailable" };
+    const [updated] = await tx.update(characterReferenceViews).set({
+      status: input.verdict === "reject" ? "rejected" : "ready",
+      verdict: undo ? null : input.verdict === "reject" ? "rejected" : "approved",
+      reviewedByUserId: undo ? null : input.ownerId,
+      reviewedAt: undo ? null : new Date(),
+      reviewRevision: row.reviewRevision + 1,
+      ...(input.verdict === "reject" ? { feedback: input.feedback ?? null } : {}),
+    }).where(and(eq(characterReferenceViews.id, row.id), eq(characterReferenceViews.current, true),
+      eq(characterReferenceViews.reviewRevision, input.expectedRevision))).returning();
+    if (!updated) return { status: "changed" };
+    return { status: "reviewed", view: summarizeRow(input.view, updated, accepted, asset.status, true) };
+  });
+}
+
+export type RestoreReferenceViewResult =
+  | { status: "restored"; view: ReferenceViewSummary }
+  | { status: ReferenceViewWriteRefusal };
+
+/** A fresh candidate owns its own bytes. The original attempt and its verdict remain history. */
+export async function restoreReferenceView(input: {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  attemptId: string;
+  expectedCurrentAttemptId: string | null;
+  expectedCurrentRevision: number;
+}): Promise<RestoreReferenceViewResult> {
   const accepted = await readAcceptedPortrait(input.characterId, input.ownerId);
   if (accepted === undefined) return { status: "not_found" };
+  const initialPlan = await readReferenceViewPlan(input.characterId, input.ownerId, db());
+  if (initialPlan === undefined) return { status: "not_found" };
+  if (!planIncludes(initialPlan, input.view)) return { status: "ineligible" };
+  const [attempt] = await db().select().from(characterReferenceViews).where(and(
+    eq(characterReferenceViews.id, input.attemptId), eq(characterReferenceViews.characterId, input.characterId),
+    eq(characterReferenceViews.angleId, input.view.angle), eq(characterReferenceViews.wardrobe, input.view.wardrobe),
+  )).limit(1);
+  if (!attempt) return { status: "not_found" };
+  const source = await readAcceptedPortraitSource(input.characterId, input.ownerId);
+  const unavailable = restoreUnavailable(attempt, source, await hasLiveCharacterJob("reference_views", input.characterId), true);
+  if (unavailable) return { status: unavailable === "current" ? "changed" : unavailable };
+  const [asset] = await db().select().from(images).where(and(eq(images.id, attempt.imageId ?? ""),
+    eq(images.ownerId, input.ownerId), eq(images.kind, "reference_view"))).limit(1);
+  const bytes = asset?.status === "ready" ? await readImageBytes(asset) : null;
+  if (!asset || !bytes) return { status: "unavailable" };
 
-  const row = await currentReferenceViewRow(input.characterId, input.view);
-  if (row === undefined || row.status !== "ready") return { status: "not_ready" };
-
-  await db()
-    .update(characterReferenceViews)
-    .set({
-      ...(input.verdict === "reject" ? { status: "rejected" as const } : {}),
-      // The ruling, stored where supersession cannot reach it. `status` records
-      // a rejection only until the next attempt overwrites it with
-      // `superseded`, and records an approval nowhere at all — so a history
-      // built on `status` would forget what the owner already decided about
-      // every replaced attempt, which is the one thing it exists to show.
-      verdict: input.verdict === "reject" ? ("rejected" as const) : ("approved" as const),
-      reviewedByUserId: input.ownerId,
-      reviewedAt: new Date(),
-    })
-    .where(eq(characterReferenceViews.id, row.id));
-
-  return {
-    status: "reviewed",
-    view: await getReferenceViewSummary(input.characterId, input.ownerId, input.view, input.sink),
-  };
+  const copy = await createImageAsset({ ownerId: input.ownerId, kind: "reference_view", entityKind: "character",
+    entityId: input.characterId, prompt: asset.prompt,
+    meta: { restoredFromAttemptId: attempt.id, restoredFromImageId: asset.id } });
+  let installed = false;
+  try {
+    const destination = absoluteImagePath(copy);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(containedAbsoluteImagePath(destination), bytes, { flag: "wx", mode: 0o600 });
+    const result = await withReferenceViewLock<RestoreReferenceViewResult>(input.characterId, async (tx) => {
+      // Recheck ownership and accepted bytes after copying: no stale read authorizes a write.
+      const latestSource = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
+      if (!latestSource.ok) return { status: latestSource.reason === "not_found" ? "not_found" : "incompatible" };
+      const latestPlan = await readReferenceViewPlan(input.characterId, input.ownerId, tx);
+      if (latestPlan === undefined) return { status: "not_found" };
+      if (!planIncludes(latestPlan, input.view)) return { status: "ineligible" };
+      const current = await currentReferenceViewRow(input.characterId, input.view, tx);
+      if ((current?.id ?? null) !== input.expectedCurrentAttemptId || (current?.reviewRevision ?? 0) !== input.expectedCurrentRevision) {
+        return { status: "changed" };
+      }
+      const [latest] = await tx.select().from(characterReferenceViews).where(eq(characterReferenceViews.id, attempt.id)).limit(1);
+      if (!latest) return { status: "unavailable" };
+      const busy = current?.status === "pending" || await hasLiveReferenceViewJob(tx, input.characterId);
+      const refusal = restoreUnavailable(latest, latestSource, busy, true);
+      if (refusal) return { status: refusal === "current" ? "changed" : refusal };
+      const [liveAsset] = await tx.select({ status: images.status }).from(images).where(eq(images.id, asset.id)).limit(1);
+      if (liveAsset?.status !== "ready" || latest.imageId !== asset.id) return { status: "unavailable" };
+      // The retained image can expire immediately after this check; the candidate's independent bytes survive it.
+      await tx.update(images).set({ status: "ready", bytes: bytes.length }).where(eq(images.id, copy.id));
+      if (current) await tx.update(characterReferenceViews).set({ current: false, status: "superseded" }).where(eq(characterReferenceViews.id, current.id));
+      const [candidate] = await tx.insert(characterReferenceViews).values({
+        characterId: input.characterId, angleId: input.view.angle, wardrobe: input.view.wardrobe,
+        current: true, status: "ready", sourceImageId: latestSource.imageId,
+        sourceContentHash: latestSource.contentHash, generationVersion: latest.generationVersion,
+        imageId: copy.id, method: latest.method,
+      }).returning();
+      if (!candidate) throw new Error("reference restoration returned no candidate");
+      return { status: "restored", view: summarizeRow(input.view, candidate, latestSource.imageId, "ready", true) };
+    });
+    installed = result.status === "restored";
+    return result;
+  } catch (error) {
+    log.warn("images", "reference restoration failed", { characterId: input.characterId, attemptId: input.attemptId, error: String(error).slice(0, 300) });
+    return { status: "unavailable" };
+  } finally {
+    // Only this operation's unused copy is compensated. No retained attempt is deleted.
+    if (!installed) {
+      try { await deleteOwnedImage(copy.id, input.ownerId, { kind: "reference_view" }); }
+      catch (error) { log.warn("images", "unused reference copy cleanup failed", { imageId: copy.id, error: String(error).slice(0, 300) }); }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

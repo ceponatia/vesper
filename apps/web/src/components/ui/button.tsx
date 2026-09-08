@@ -17,7 +17,7 @@ const variants: Record<ButtonVariant, string> = {
   primary:
     "bg-accent-500 text-ink-950 font-medium hover:bg-accent-400 disabled:bg-ink-600 disabled:text-paper-500",
   ghost:
-    "border border-ink-600 text-paper-200 hover:border-ink-500 hover:bg-ink-800 disabled:text-paper-500",
+    "border border-ink-500 bg-ink-800 text-paper-200 hover:border-control-border hover:bg-ink-700 disabled:border-ink-600 disabled:text-paper-500",
   quiet: "text-paper-400 hover:text-paper-100 hover:bg-ink-800 disabled:text-paper-500",
   danger:
     "border border-danger-500/40 text-danger-300 hover:bg-danger-500/10 hover:border-danger-500 disabled:text-paper-500",
@@ -28,7 +28,7 @@ const sizes: Record<ButtonSize, string> = {
   // keeps the compact h-7 (mobile-ux W3 task 1: 40+ sm call sites were a 28px tap
   // target on phones).
   sm: "h-7 px-2.5 text-xs gap-1.5 touch-target",
-  md: "h-9 px-3.5 text-sm gap-2",
+  md: "h-9 px-3.5 text-sm gap-2 touch-target",
 };
 
 export function Spinner({ className }: { className?: string }) {

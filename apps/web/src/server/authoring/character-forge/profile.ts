@@ -1,6 +1,8 @@
 import { z } from "zod";
-import { DEFAULT_SPECIES_ID, diag, canonicalTagId, dispositionTags, DRIVES_MAX, DRIVE_WANT_MAX_CHARS, DRIVE_WHY_MAX_CHARS, familiarityBandById, familiarityBands, interactionConceptIds, interactionFamilies, MICRO_EXEMPLARS_MAX, normalizeTag, axisRange, PLAYER_RELATIONSHIP_NOTE_MAX, RELATIONSHIP_HISTORY_TEXT_MAX, RELATIONSHIP_KIND_MAX, regardBandById, regardBands, scheduleDayPartById, traitRegistry, voiceAnchorsSchema, type CharacterProfile, type DiagnosticSink, type Drive, type MicroExemplar, type VoiceAnchors, type Preference, type ScheduleEntry, type SocialReactionCard, type TraitValue } from "@/contracts";
+import { DEFAULT_SPECIES_ID, emptyCharacterProfile, scheduleEntrySchema, authoredRelationshipRecordSchema, diag, canonicalTagId, dispositionTags, DRIVES_MAX, DRIVE_WANT_MAX_CHARS, DRIVE_WHY_MAX_CHARS, familiarityBandById, familiarityBands, interactionConceptIds, interactionFamilies, MICRO_EXEMPLARS_MAX, normalizeTag, axisRange, PLAYER_RELATIONSHIP_NOTE_MAX, RELATIONSHIP_HISTORY_TEXT_MAX, RELATIONSHIP_KIND_MAX, regardBandById, regardBands, scheduleDayPartById, traitRegistry, voiceAnchorsSchema, type CharacterProfile, type DiagnosticSink, type Drive, type MicroExemplar, type VoiceAnchors, type Preference, type ScheduleEntry, type SocialReactionCard, type TraitValue } from "@/contracts";
+import { characterSections, type CharacterSheetScope } from "@/lib/character-scopes";
 import { fnv1a32 } from "@/lib/hash";
+import { parseOrNull } from "@/lib/parse";
 import { generateChecked } from "@/server/ai";
 import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
 import { heritageForForgeContext, speciesForgeDescriptor, speciesForForgeContext } from "./context";
@@ -113,6 +115,26 @@ const profileSectionSchema = z.object({
 });
 
 type ProfileSection = z.infer<typeof profileSectionSchema>;
+
+/** Request only the fields the visible section owns; grounding still uses full defaults. */
+export const scopedPlayerRelationshipSchema = authoredRelationshipRecordSchema.extend({
+  note: z.string().max(PLAYER_RELATIONSHIP_NOTE_MAX).default(""),
+});
+const scopedScheduleSchema = z.array(scheduleEntrySchema.extend({
+  activity: z.string().trim().min(1),
+  locationName: z.string().trim().min(1),
+}));
+
+export function buildProfileSectionSchema(scope?: CharacterSheetScope) {
+  if (!scope) return profileSectionSchema;
+  const shape: Record<string, z.ZodType> = {};
+  for (const key of characterSections[scope].profileOutput) {
+    shape[key] = key === "schedule" ? scopedScheduleSchema.optional()
+      : key === "playerRelationship" ? scopedPlayerRelationshipSchema.optional()
+        : profileSectionSchema.shape[key as keyof ProfileSection];
+  }
+  return z.object(shape);
+}
 
 /** Ground forge preference targets against the concept vocabulary; drop unknowns. */
 function groundPreferences(raw: ProfileSection["preferences"], sink?: DiagnosticSink): Preference[] {
@@ -285,6 +307,33 @@ export function groundSchedule(raw: ProfileSection["schedule"], sink?: Diagnosti
     });
   }
   return out;
+}
+
+/** Scoped rewrites retain precise windows, weekday masks and outfit mappings. */
+export function groundScopedSchedule(
+  raw: unknown,
+  authored: readonly ScheduleEntry[],
+  sink?: DiagnosticSink,
+): ScheduleEntry[] {
+  if (raw === undefined) return [...authored];
+  const parsed = parseOrNull(scopedScheduleSchema, raw, sink, "forge.character.profile.scoped_schedule");
+  // Invalid or absent structured output cannot erase an authored routine.
+  if (!parsed) return [...authored];
+  return parsed.map((row) => ({
+    ...row,
+    activity: row.activity.trim(),
+    locationName: row.locationName.trim(),
+    ...(row.days ? { days: [...new Set(row.days)].sort((a, b) => a - b) } : {}),
+  }));
+}
+
+export function groundScopedPlayerRelationship(
+  raw: unknown,
+  authored: CharacterProfile["playerRelationship"],
+  sink?: DiagnosticSink,
+): CharacterProfile["playerRelationship"] {
+  if (raw === undefined) return authored;
+  return parseOrNull(scopedPlayerRelationshipSchema, raw, sink, "forge.character.profile.scoped_relationship") ?? authored;
 }
 
 /**
@@ -489,21 +538,37 @@ function profilePrompt(context: CharacterForgeContext): string {
   if (context.draft?.name) {
     lines.push("", `You are regenerating the profile of the draft currently named "${context.draft.name}". Keep the core concept.`);
   }
+  if (context.scope) {
+    lines.push("", `Section boundary: return ONLY ${characterSections[context.scope].profileOutput.join(", ")}. Instructions for other fields above do not apply to this request.`);
+    if (context.scope === "profile") {
+      lines.push("For this rewrite, schedule uses exact startMinute/endMinute (0-1439), activity, locationName, optional days and outfitPresetId. Preserve custom windows, weekdays and outfit mappings unless a requested revision changes them. Do not reduce an authored schedule to a four-row sketch.");
+    }
+    if (context.scope === "relationships") {
+      lines.push("For this rewrite, playerRelationship uses familiarity, regard, kind, history, optional presented: {lean: masks_warmth|masks_dislike, note}, looming and note (premise). Preserve the outward-mask note and premise; do not substitute the create-only mask field. Omit this object if there is nothing to change.");
+    }
+  }
   return lines.join("\n");
 }
 
 export async function forgeProfileSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
-  const { value } = await generateChecked({
+  const { value, degraded } = await generateChecked<Record<string, unknown>>({
     ...FORGE_LEG_OPTIONS,
-    schema: profileSectionSchema,
+    schema: buildProfileSectionSchema(context.scope),
     system: PROFILE_SYSTEM,
     prompt: profilePrompt(context),
     temperature: 0.7,
     code: "forge.character.profile",
     sink: context.sink,
-    fallback: context.useFallbacks === false ? undefined : demoCharacterProfileSection,
+    fallback: context.scope || context.useFallbacks === false ? undefined : demoCharacterProfileSection,
   });
-  const section = value ?? profileSectionSchema.parse({});
+  if (context.scope && (degraded || !value)) return {};
+  // Scoped fields use their full authored shape; the create parser must not strip them.
+  const createShape = { ...value };
+  if (context.scope) {
+    delete createShape.schedule;
+    delete createShape.playerRelationship;
+  }
+  const section = profileSectionSchema.parse(createShape);
   const preferences = groundPreferences(section.preferences, context.sink);
   const profile: Partial<CharacterProfile> = {
     bio: section.bio.trim(),
@@ -515,16 +580,21 @@ export async function forgeProfileSection(context: CharacterForgeContext): Promi
     microExemplars: groundMicroExemplars(section.microExemplars, context.sink),
     voiceAnchors: groundVoiceAnchors(section.voiceAnchors),
     drives: groundDrives(section.drives, context.sink),
-    schedule: groundSchedule(section.schedule, context.sink),
+    schedule: context.scope === "profile"
+      ? groundScopedSchedule(value?.schedule, context.draft?.profile.schedule ?? [], context.sink)
+      : groundSchedule(section.schedule, context.sink),
   };
-  const playerRelationship = groundPlayerRelationship(section.playerRelationship, context.sink);
+  const playerRelationship = context.scope === "relationships"
+    ? groundScopedPlayerRelationship(value?.playerRelationship, context.draft?.profile.playerRelationship ?? emptyCharacterProfile().playerRelationship, context.sink)
+    : groundPlayerRelationship(section.playerRelationship, context.sink);
   if (playerRelationship) profile.playerRelationship = playerRelationship;
+  else if (context.scope === "relationships") profile.playerRelationship = emptyCharacterProfile().playerRelationship;
   const socialCards = groundSocialCards(section.cards, preferences, context.sink);
-  if (socialCards.length > 0) profile.socialCards = socialCards;
+  if (socialCards.length > 0 || context.scope === "disposition") profile.socialCards = socialCards;
   const voice = section.voice.trim();
-  if (voice) profile.voice = voice;
+  if (voice || context.scope === "personality") profile.voice = voice || undefined;
   const intimacy = section.intimacy.trim();
-  if (intimacy) profile.intimacy = intimacy;
+  if (intimacy || context.scope === "disposition") profile.intimacy = intimacy || undefined;
   const age = section.age.trim();
   if (age) profile.age = age;
   const species = speciesForForgeContext(context);
@@ -535,6 +605,13 @@ export async function forgeProfileSection(context: CharacterForgeContext): Promi
     profile.bodyPlanId = species.bodyPlanId;
     const groups = [...(species.defaultFeatureGroups ?? []), ...(heritage?.defaultFeatureGroups ?? [])];
     profile.bodyFeatures = groups.length > 0 ? [...new Set(groups)] : undefined;
+  }
+  if (context.scope) {
+    const scopedProfile: Partial<CharacterProfile> = {};
+    for (const field of characterSections[context.scope].fields) {
+      if (field in profile) Object.assign(scopedProfile, { [field]: profile[field] });
+    }
+    return { profile: scopedProfile };
   }
   return {
     name: section.name.trim(),

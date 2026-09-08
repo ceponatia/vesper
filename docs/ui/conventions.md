@@ -26,6 +26,22 @@ script in the root layout, so there is no flash. The pure read/parse/apply path 
 Controlled state plus zod validation on submit; shared `Field` primitives; a sticky save bar with
 dirty-state indication on long editors.
 
+`Input`, `Select`, `Textarea`, and `TagInput` share the form surface tokens
+(`control-fill`, `control-border`, and `control-hover`) rather than decorative card borders.
+These boundaries remain visible on dark surfaces without lifting all surrounding chrome;
+the high-contrast theme strengthens them further. `Field` uses sentence-case labels, and
+`Select` retains a visible dropdown indicator. Both button sizes and single-line controls
+use the shared coarse-pointer touch target.
+
+`Textarea` grows with its content and explicitly derives its minimum writing height from
+`rows`, capped at 60vh. CSS content sizing ignores native row sizing; callers set `rows`
+instead of adding competing minimum-height utility classes.
+
+`Disclosure` groups optional detail behind a native summary and keeps its children mounted
+while folded. `ActionMenu` groups secondary actions with outside-pointer and Escape dismissal,
+arrow-key navigation, and focus returned to its trigger after a selection. Keep the useful
+primary action outside these disclosures and menus.
+
 Editor drafts seed from fetched data **exactly once per entity**
 (`components/hooks/draft-seed.ts`, applied during render): refetches and silent reloads never
 clobber in-progress edits, and navigating between entities drops the stale draft until the new one
@@ -69,6 +85,10 @@ winner: a `className="max-w-lg"` override silently renders at `max-w-md`.
 backdrop, image scaled to fit, Escape and backdrop close, Tab trapped inside. Every surface that
 enlarges an image opens the same component, and a page mounts one instance rather than one per
 thumbnail.
+
+Reference review supplies optional comparison, navigation and action content to this viewer.
+Ordinary callers keep the same enlargement behavior. Review controls stay inside the focus trap
+and remain usable on phones; opening or dismissing an image never implies approval.
 
 Beside the image it renders an **admin-and-desktop-only side panel** — gated by `useIsAdmin` and
 hidden below the `md` breakpoint so it never crowds the picture on a phone. It holds the

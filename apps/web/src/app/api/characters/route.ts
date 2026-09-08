@@ -1,22 +1,14 @@
 import type { NextRequest } from "next/server";
 import { inArray, eq, and, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  materializeBodyDefaults,
-  seedBodyConfigFromAttributes,
-  seedRegistryDefaultValues,
-  withItemsInDefaultOutfit,
-} from "@/contracts";
-import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
 import { characters, db } from "@/server/db";
 import {
   characterCreateSchema,
+  createOwnedCharacter,
   jsonError,
   jsonOk,
-  materializeSuggestedItems,
   parseTagsParam,
-  queueEmbedRefresh,
   readBody,
   searchLibraryIds,
   withUser,
@@ -56,44 +48,21 @@ export const GET = withUser(async (user, req: NextRequest) => {
 export const POST = withUser(async (user, req: NextRequest) => {
   const body = await readBody(req, characterCreateSchema);
   if (!body.ok) return body.response;
-  // Forge outfit suggestions become real library items before the character
-  // row exists — a stray item is harmless, a dangling outfit id is not.
-  const sink = new DiagnosticCollector();
-  const suggestedIds = await materializeSuggestedItems(user.id, body.value.suggestedItems, sink);
-  // A truly blank profile (the library's New button) is born with the curated
-  // registry defaults + the body-config those imply (gender=female seeds
-  // vulva/breasts). Any profile arriving WITH attributes — forge drafts,
-  // clones, API callers — is authored data and passes through untouched.
-  const blank = body.value.profile.attributes.length === 0;
-  const seeded = blank ? seedRegistryDefaultValues(body.value.profile.attributes) : body.value.profile.attributes;
-  const seededConfig = blank ? seedBodyConfigFromAttributes(seeded) : null;
-  // Persisted-baseline facts (materializeDefault) are grounded on EVERY create —
-  // blank, forged, imported, cloned, raw API — against the profile's own
-  // realized body (post-seed body-config, so a blank creation's gender seed
-  // counts). Fill-only: anything the author or forge supplied wins.
-  const attributes = materializeBodyDefaults(seeded, {
-    speciesId: body.value.profile.speciesId,
-    heritageId: body.value.profile.heritageId,
-    bodyPlanId: body.value.profile.bodyPlanId,
-    intimateRegions: seededConfig?.intimateRegions ?? body.value.profile.intimateRegions,
-    bodyFeatures: seededConfig?.bodyFeatures ?? body.value.profile.bodyFeatures,
-  });
-  const profile = withItemsInDefaultOutfit(
-    {
-      ...body.value.profile,
-      attributes,
-      ...(seededConfig
-        ? { intimateRegions: seededConfig.intimateRegions, bodyFeatures: seededConfig.bodyFeatures }
-        : {}),
-    },
-    suggestedIds,
-  );
-
-  const [row] = await db()
-    .insert(characters)
-    .values({ ownerId: user.id, name: body.value.name, profile, tags: body.value.tags })
-    .returning();
-  if (!row) return jsonError("create_failed", "character insert returned no row", 500);
-  queueEmbedRefresh("character", row.id);
-  return jsonOk({ character: row, diagnostics: sink.items }, 201);
+  const outcome = await createOwnedCharacter(user.id, body.value);
+  if (outcome.status === "idempotency_mismatch") {
+    return jsonOk({
+      error: {
+        code: "idempotency_mismatch",
+        message: "This creation request already saved a character from a different draft. Review the retained edits before saving again.",
+      },
+      ...(outcome.recovery ? { recovery: outcome.recovery } : {}),
+    }, 409);
+  }
+  if (outcome.status === "replay_invalid") {
+    return jsonError("idempotency_replay_invalid", "the saved creation receipt could not be replayed", 500);
+  }
+  if (outcome.status === "create_failed") {
+    return jsonError("create_failed", "character insert returned no row", 500);
+  }
+  return jsonOk(outcome.response, outcome.httpStatus);
 });

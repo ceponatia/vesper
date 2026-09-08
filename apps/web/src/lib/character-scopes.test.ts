@@ -6,7 +6,7 @@ import {
   type CharacterProfile,
 } from "@/contracts";
 import type { FillableDraft } from "./character-fill";
-import { mergeRedraftScope } from "./character-scopes";
+import { characterSections, characterSheetScopes, mergeFillScope, mergeRedraftScope } from "./character-scopes";
 
 const attr = (id: string, value: AttributeValue["value"], source: AttributeValue["source"]): AttributeValue => ({
   id: id as AttributeValue["id"],
@@ -22,8 +22,8 @@ const draftOf = (over: Partial<FillableDraft> = {}, profile: Partial<CharacterPr
   profile: { ...emptyCharacterProfile(), ...profile },
 });
 
-describe("mergeRedraftScope — profile (ruling 1: prose fields only)", () => {
-  it("rewrites bio/personality/voice and nothing else — not name, age, aliases, or tags", () => {
+describe("mergeRedraftScope — profile (background and daily rhythm)", () => {
+  it("rewrites bio and rhythm without changing identity, personality or voice", () => {
     const base = draftOf(
       { name: "Mira", tags: ["old-tag"] },
       {
@@ -53,8 +53,8 @@ describe("mergeRedraftScope — profile (ruling 1: prose fields only)", () => {
     );
     const merged = mergeRedraftScope(base, incoming, "profile");
     expect(merged.profile.bio).toBe("Clean background bio.");
-    expect(merged.profile.personality).toBe("Wry, patient, allergic to flattery.");
-    expect(merged.profile.voice).toBe("Low and dry.");
+    expect(merged.profile.personality).toBe(base.profile.personality);
+    expect(merged.profile.voice).toBe(base.profile.voice);
     // Not this tab's re-sync surface: identity facts + library bookkeeping.
     expect(merged.name).toBe("Mira");
     expect(merged.tags).toEqual(["old-tag"]);
@@ -102,14 +102,17 @@ describe("mergeRedraftScope — attributes (full re-sync)", () => {
 });
 
 describe("mergeRedraftScope — personality", () => {
-  it("replaces only the personality-category attributes, wholesale", () => {
+  it("replaces voice prose and expression attributes, leaving physical details unchanged", () => {
     const base = draftOf({}, {
+      voice: "Old voice",
       attributes: [attr("hair.color", "black", "manual"), attr("voice.pitch", "low", "manual"), attr("movement.gait", "gliding", "creation")],
     });
     const incoming = draftOf({}, {
+      voice: "Dry and unhurried",
       attributes: [attr("voice.pitch", "high", "creation"), attr("presentation.scent_baseline", "cedar", "creation")],
     });
     const merged = mergeRedraftScope(base, incoming, "personality");
+    expect(merged.profile.voice).toBe("Dry and unhurried");
     expect(merged.profile.attributes).toContainEqual(attr("hair.color", "black", "manual"));
     expect(merged.profile.attributes).toContainEqual(attr("voice.pitch", "high", "creation"));
     expect(merged.profile.attributes).toContainEqual(attr("presentation.scent_baseline", "cedar", "creation"));
@@ -153,5 +156,51 @@ describe("mergeRedraftScope — disposition and outfit", () => {
     expect(merged.profile.outfits).toEqual(preset(["item_gen"]));
     expect(merged.suggestedItems).toEqual([suggested]);
     expect(merged.profile.bio).toBe("Authored.");
+  });
+});
+
+
+describe("section ownership and scoped fill", () => {
+  it("gives each profile field one section owner", () => {
+    const fields = characterSheetScopes.flatMap((scope) => [...characterSections[scope].fields]);
+    expect(new Set(fields).size).toBe(fields.length);
+  });
+
+  it("rewrites schedule, social cards, and player seed only in their visible owner", () => {
+    const base = draftOf({ name: "Mira" }, { creationBrief: "An adult human lighthouse keeper." });
+    const incoming = draftOf({}, {
+      creationBrief: "A different character.",
+      schedule: [{ startMinute: 540, endMinute: 1020, activity: "maintain the beacon", locationName: "Lighthouse" }],
+      socialCards: [{ id: "card_1", label: "Respect the beacon", description: "Never tamper with the light", kind: "taboo", severity: 40, triggers: [], reactionOverrides: [] }],
+      playerRelationship: { ...base.profile.playerRelationship, familiarity: "familiar", history: "Shared night watches" },
+    });
+    for (const scope of characterSheetScopes) {
+      const merged = mergeRedraftScope(base, incoming, scope);
+      expect(merged.profile.schedule).toEqual(scope === "profile" ? incoming.profile.schedule : base.profile.schedule);
+      expect(merged.profile.socialCards).toEqual(scope === "disposition" ? incoming.profile.socialCards : base.profile.socialCards);
+      expect(merged.profile.playerRelationship).toEqual(scope === "relationships" ? incoming.profile.playerRelationship : base.profile.playerRelationship);
+      expect(merged.profile.creationBrief).toBe(base.profile.creationBrief);
+    }
+  });
+
+  it("preserves authored attribute order when completing appearance", () => {
+    const base = draftOf({}, { attributes: [attr("hair.color", "black", "manual"), attr("voice.pitch", "low", "manual")] });
+    const incoming = draftOf({}, { attributes: [attr("hair.color", "auburn", "creation"), attr("eyes.color", "green", "creation")] });
+    expect(mergeFillScope(base, incoming, "attributes").profile.attributes).toEqual([
+      ...base.profile.attributes, incoming.profile.attributes[1],
+    ]);
+  });
+
+  it("completes a section without overwriting manual details or filling another section", () => {
+    const base = draftOf({}, { personality: "Independent", preferences: [{ target: "compliment", valence: "dislike", intensity: 4 }] });
+    const incoming = draftOf({ name: "Unrequested" }, {
+      bio: "Unrequested background", personality: "Dependent",
+      preferences: [{ target: "compliment", valence: "like", intensity: 9 }, { target: "confide", valence: "like", intensity: 5 }],
+    });
+    const merged = mergeFillScope(base, incoming, "disposition");
+    expect(merged.name).toBe(base.name);
+    expect(merged.profile.bio).toBe(base.profile.bio);
+    expect(merged.profile.personality).toBe("Independent");
+    expect(merged.profile.preferences).toEqual([base.profile.preferences[0], incoming.profile.preferences[1]]);
   });
 });

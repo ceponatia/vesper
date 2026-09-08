@@ -26,16 +26,15 @@ import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
  * only proves that this module reads that verdict rather than recomputing it.
  */
 
-vi.mock("./reference-view-store", () => ({ getReferenceViewSet: vi.fn() }));
-vi.mock("./owned-image-reads", () => ({ readOwnedImageBytes: vi.fn() }));
+vi.mock("./reference-view-store", () => ({ withLockedReferenceViewSet: vi.fn() }));
 
-import { readOwnedImageBytes } from "./owned-image-reads";
-import { getReferenceViewSet } from "./reference-view-store";
+import { withLockedReferenceViewSet } from "./reference-view-store";
 import { loadConsumableReferenceView, REFERENCE_VIEW_UNAVAILABLE } from "./reference-view-consume";
 
 const VIEW = { angle: "back_full", wardrobe: "clothed" } as const;
 const PORTRAIT = "img-portrait";
 const VIEW_ASSET = "img-back-clothed";
+const readReadyBytes = vi.fn<(imageId: string) => Promise<Buffer | null>>();
 
 /** The sheet as the store projects it, with this one slot forced into a state. */
 function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): ReferenceViewSetSummary {
@@ -48,6 +47,9 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         angle: view.angle,
         wardrobe: view.wardrobe,
         state: target ? state : ("missing" as const),
+        attemptId: null,
+        reviewRevision: 0,
+        feedback: null,
         imageId: target ? imageId : null,
         method: target ? "rendered" : null,
         reviewedAt: null,
@@ -64,12 +66,19 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(readOwnedImageBytes).mockResolvedValue(Buffer.from("view-bytes"));
+  readReadyBytes.mockResolvedValue(Buffer.from("view-bytes"));
 });
+
+function project(set: ReferenceViewSetSummary) {
+  vi.mocked(withLockedReferenceViewSet).mockImplementation(
+    (async (_characterId, _ownerId, _sink, operation) =>
+      operation({ set, readReadyBytes })) as typeof withLockedReferenceViewSet,
+  );
+}
 
 describe("loadConsumableReferenceView", () => {
   it("hands over an approved view's bytes, its asset id and the portrait behind it", async () => {
-    vi.mocked(getReferenceViewSet).mockResolvedValue(sheet("approved"));
+    project(sheet("approved"));
     const sink = new DiagnosticCollector();
 
     const loaded = await loadConsumableReferenceView({
@@ -98,10 +107,11 @@ describe("loadConsumableReferenceView", () => {
     ["rejected", "rejected"],
     ["failed", "failed"],
     ["stale", "stale"],
+    ["ineligible", "ineligible"],
   ];
 
   it.each(refusals)("a %s slot is never sent (%s)", async (state, reason) => {
-    vi.mocked(getReferenceViewSet).mockResolvedValue(sheet(state));
+    project(sheet(state));
     const sink = new DiagnosticCollector();
 
     const loaded = await loadConsumableReferenceView({ ownerId: "user1", characterId: "chr1", view: VIEW, sink });
@@ -109,13 +119,13 @@ describe("loadConsumableReferenceView", () => {
     expect(loaded).toEqual({ ok: false, reason });
     // The bytes are never even read: a slot that may not be sent is not an
     // asset this render is allowed to open.
-    expect(readOwnedImageBytes).not.toHaveBeenCalled();
+    expect(readReadyBytes).not.toHaveBeenCalled();
     expectDiagnostic(sink, REFERENCE_VIEW_UNAVAILABLE);
   });
 
   it("degrades when an approved view's bytes will not read", async () => {
-    vi.mocked(getReferenceViewSet).mockResolvedValue(sheet("approved"));
-    vi.mocked(readOwnedImageBytes).mockResolvedValue(null);
+    project(sheet("approved"));
+    readReadyBytes.mockResolvedValue(null);
     const sink = new DiagnosticCollector();
 
     const loaded = await loadConsumableReferenceView({ ownerId: "user1", characterId: "chr1", view: VIEW, sink });

@@ -12,6 +12,9 @@ import {
   referenceViewAngleIds,
   referenceViewAngles,
   referenceViewFaceVisibility,
+  referenceViewFeedbackReasons,
+  referenceViewReviewRequestSchema,
+  referenceViewRestoreRequestSchema,
   referenceViewHistoryVerdict,
   referenceViewWardrobeEntries,
   referenceViewWardrobes,
@@ -45,7 +48,7 @@ import type { AttributeValue } from "../attributes/value";
  *    stop matching and the divergence is visible here rather than leaking into a
  *    prompt.
  * 2. **Consumability.** Exactly one function decides whether a view may be sent
- *    to a render, and every one of its four conditions is a way a wrong picture
+ *    to a render, and every one of its five conditions is a way a wrong picture
  *    reaches a scene: a view of the portrait the owner replaced, a view nobody
  *    looked at, a view whose asset is gone, a view built by wording this code no
  *    longer emits. The table below kills the implementation that checks
@@ -215,6 +218,7 @@ describe("normalizeReferenceViewTargets", () => {
 describe("what a stored row projects to, and what may be sent to a render", () => {
   const ACCEPTED = "portrait-a";
   const base: ReferenceViewProjectionInput = {
+    eligible: true,
     current: true,
     status: "ready",
     sourceImageId: ACCEPTED,
@@ -238,6 +242,7 @@ describe("what a stored row projects to, and what may be sent to a render", () =
     ["its asset never became readable", { imageStatus: "pending" }, "stale", false],
     ["its asset is gone", { imageId: null, imageStatus: null }, "stale", false],
     ["it was built by wording this code no longer emits", { generationVersion: 0 }, "stale", false],
+    ["its slot is no longer in the character's age-gated plan", { eligible: false }, "ineligible", false],
   ];
 
   it.each(cases)("%s ⇒ %s", (_name, patch, state, consumable) => {
@@ -421,5 +426,21 @@ describe("what a past attempt's verdict reads as", () => {
 
   it.each(cases)("%s ⇒ %s", (_name, row, expected) => {
     expect(referenceViewHistoryVerdict(row)).toBe(expected);
+  });
+});
+
+
+describe("reference review wire guards", () => {
+  const request = { attemptId: "attempt", expectedRevision: 0, verdict: "reject" };
+  it("requires an exact attempt and revision for review and restoration", () => {
+    expect(referenceViewReviewRequestSchema.safeParse({ verdict: "approve" }).success).toBe(false);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, expectedRevision: -1 }).success).toBe(false);
+    expect(referenceViewRestoreRequestSchema.safeParse({ attemptId: "old-attempt" }).success).toBe(false);
+  });
+  it("accepts optional registered feedback and rejects oversized or unknown correction data", () => {
+    expect(referenceViewReviewRequestSchema.safeParse(request).success).toBe(true);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: [...referenceViewFeedbackReasons], correction: "Keep the original jacket." } }).success).toBe(true);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: [], correction: "x".repeat(1001) } }).success).toBe(false);
+    expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: ["invented_reason"], correction: "" } }).success).toBe(false);
   });
 });

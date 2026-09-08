@@ -258,6 +258,39 @@ export const characters = pgTable(
 );
 
 /**
+ * Durable receipts for character-creation intents. The browser keeps one UUID
+ * for a creation draft; a committed POST whose response is lost can therefore
+ * replay the exact successful envelope instead of creating a second character
+ * or a second set of suggested items. A request id is owner-scoped, and reuse
+ * with a different payload hash is rejected by the route.
+ *
+ * The receipt has the same lifetime as its character. Deleting the character
+ * cascades this row, so a deliberately deleted draft does not leave permanent
+ * request metadata behind.
+ */
+export const characterCreationRequests = pgTable(
+  "character_creation_requests",
+  {
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** The recorded successful JSON envelope, replayed without recomputation. */
+    response: jsonb("response").notNull(),
+    httpStatus: integer("http_status").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ name: "character_creation_requests_owner_request_pk", columns: [t.ownerId, t.requestId] }),
+    index("character_creation_requests_character_idx").on(t.characterId),
+  ],
+);
+
+/**
  * **Personas** — the player as a library entity: who *you*
  * are in a chat, with a body, a wardrobe and a bio. The graduated successor to the
  * single inline `users.player_persona` blob (one per account); a chat picks one.
@@ -628,6 +661,19 @@ export const characterRelationships = pgTable(
   },
   (t) => [primaryKey({ columns: [t.fromCharacterId, t.toCharacterId] })],
 );
+
+/**
+ * One optimistic-concurrency revision per character's library relationship set.
+ * The separate row gives an empty set a durable version and lets a replace-set
+ * save claim exactly the server version it read before changing any edges.
+ */
+export const characterRelationshipVersions = pgTable("character_relationship_versions", {
+  characterId: text("character_id")
+    .primaryKey()
+    .references(() => characters.id, { onDelete: "cascade" }),
+  revision: integer("revision").notNull().default(0),
+  updatedAt: updatedAt(),
+});
 
 export const chatScenarioPresets = pgTable(
   "chat_scenario_presets",
@@ -1963,7 +2009,7 @@ export const characterReferenceViews = pgTable(
     failureMessage: text("failure_message"),
     /**
      * The owner's ruling on THIS attempt, written by a review or an upload and
-     * never cleared — the one review fact that survives supersession.
+     * cleared only by explicit Undo — the review fact survives supersession.
      *
      * `status` cannot carry it: a retired row's status becomes `superseded` the
      * instant the next attempt claims the slot, flattening a rejection and an
@@ -1971,6 +2017,10 @@ export const characterReferenceViews = pgTable(
      * replaced, which is an honest and ordinary outcome rather than missing data.
      */
     verdict: text("verdict", { enum: referenceViewVerdicts }),
+    /** Monotonic token for attempt-bound review and undo. */
+    reviewRevision: integer("review_revision").notNull().default(0),
+    /** Optional rejection provenance, parsed with referenceViewFeedbackSchema on read. */
+    feedback: jsonb("feedback"),
     /** The owner whose eye approved or rejected this view, or who uploaded it (an
      * owner-supplied view is the owner's own review). No cascade, for the same reason
      * as `image_identity_packs.reviewed_by_user_id`: an audit trail that erases itself

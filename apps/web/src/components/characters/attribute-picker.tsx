@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useId, useMemo, useState } from "react";
 import {
   attributeGroups,
   FEATURE_GROUPS,
@@ -369,10 +369,12 @@ interface NestedGroup {
 const setCountOf = (definitions: readonly AttributeDefinition[], byId: Map<string, AttributeValue>): number =>
   definitions.filter((d) => byId.has(d.id)).length;
 
-/** Set values of a section as short human words, in registry order. */
+/** Keep defining appearance first; use registry order within each visual tier. */
 function setValueWords(definitions: readonly AttributeDefinition[], byId: Map<string, AttributeValue>): string[] {
   const words: string[] = [];
-  for (const def of definitions) {
+  const priority = (def: AttributeDefinition) =>
+    def.coreVisual || def.identityAnchor ? 0 : def.renderVisual ? 1 : 2;
+  for (const def of [...definitions].sort((a, b) => priority(a) - priority(b))) {
     const held = byId.get(def.id);
     if (held === undefined) continue;
     const v = held.value;
@@ -384,29 +386,26 @@ function setValueWords(definitions: readonly AttributeDefinition[], byId: Map<st
   return words;
 }
 
-/** Preview length past which the header falls back to "N set". */
-const SECTION_PREVIEW_MAX = 64;
-
 /**
- * Collapsed-header summary: the section's set values
- * as a scannable phrase — "auburn, shoulder-length, wavy" — falling back to
- * "N set" when it gets long, with a distinct italic "empty" when nothing is
- * authored. What makes a fully-authored section distinguishable at a glance
- * (and Forge-the-rest / From-portrait output reviewable without expanding).
+ * Appearance stays readable even when many values are set. The count is a
+ * secondary cue; detailed anatomy can keep a count-only summary.
  */
 function SectionCount({ count, open, preview }: { count: number; open: boolean; preview?: string }) {
-  const label =
-    count === 0 ? undefined : preview && preview.length <= SECTION_PREVIEW_MAX ? preview : `${count} set`;
   return (
-    <span className="flex min-w-0 items-center text-xs text-paper-500">
-      {label !== undefined ? (
-        <span className="max-w-44 truncate sm:max-w-80" title={preview}>
-          {label}
-        </span>
+    <span className="flex w-full min-w-0 flex-1 items-center gap-3 text-xs text-paper-500 sm:w-auto sm:justify-end">
+      {count > 0 ? (
+        <>
+          {preview ? (
+            <span className="line-clamp-2 min-w-0 break-words text-paper-400 sm:text-right" title={preview}>
+              {preview}
+            </span>
+          ) : null}
+          <span className="shrink-0">{count} set</span>
+        </>
       ) : (
-        <span className="text-paper-600 italic">empty</span>
+        <span className="italic">empty</span>
       )}
-      <span className={cx("ml-2 inline-block shrink-0 transition-transform", open && "rotate-90")}>›</span>
+      <span className={cx("ml-auto inline-block shrink-0 transition-transform sm:ml-0", open && "rotate-90")}>›</span>
     </span>
   );
 }
@@ -477,7 +476,7 @@ function AttributeGroupSection({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-left"
+        className="flex w-full cursor-pointer flex-col items-start gap-1.5 px-4 py-3 text-left sm:flex-row sm:items-center sm:justify-between sm:gap-4"
       >
         <span className="shrink-0 text-sm font-medium text-paper-100 capitalize">{category}</span>
         <SectionCount count={totalSet} open={open} preview={preview} />
@@ -582,15 +581,17 @@ function AttributeRow({
   onSet: (v: AttributeValue["value"]) => void;
   onRemove: () => void;
 }) {
+  const controlId = useId();
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
-        <span
+        <label
+          htmlFor={def.valueType === "enum_list" ? undefined : controlId}
           className={cx("text-xs font-medium", value ? "text-paper-300" : "text-paper-500")}
           title={def.description}
         >
           {def.label}
-        </span>
+        </label>
         {value && isAiSourced(value) ? <AiTag /> : null}
         {/* Materialized baselines (materializeDefault) never offer "clear" — the
             server re-materializes the registry default on save, so clearing here
@@ -606,13 +607,14 @@ function AttributeRow({
           </button>
         ) : null}
       </div>
-      <AttributeControl def={def} value={value} allowed={allowed} seed={seed} onSet={onSet} onRemove={onRemove} />
+      <AttributeControl id={controlId} def={def} value={value} allowed={allowed} seed={seed} onSet={onSet} onRemove={onRemove} />
       {note ? <p className="text-xs italic text-paper-500">{note}</p> : null}
     </div>
   );
 }
 
 function AttributeControl({
+  id,
   def,
   value,
   allowed,
@@ -620,6 +622,7 @@ function AttributeControl({
   onSet,
   onRemove,
 }: {
+  id: string;
   def: AttributeDefinition;
   /** Stored value; undefined renders the blank state (nothing written yet). */
   value: AttributeValue | undefined;
@@ -645,6 +648,7 @@ function AttributeControl({
       const outOfRule = isOutOfRuleValue(allowed, current);
       return (
         <Select
+          id={id}
           value={current}
           // Picking "—" on a set attribute clears it back to unset (the blank
           // option only exists when clearable, so onRemove is unreachable otherwise).
@@ -707,6 +711,7 @@ function AttributeControl({
       // writes a value (there is no "blank" a slider can render).
       return (
         <Slider
+          id={id}
           value={current}
           min={bounds.min}
           max={bounds.max}
@@ -720,6 +725,7 @@ function AttributeControl({
     case "text":
       return (
         <Input
+          id={id}
           value={value && typeof value.value === "string" ? value.value : ""}
           // Emptying the field clears the attribute back to unset.
           onChange={(e) => (e.target.value === "" ? onRemove() : onSet(e.target.value))}
@@ -732,6 +738,7 @@ function AttributeControl({
       return (
         <label className="touch-target flex w-fit cursor-pointer items-center gap-2 text-xs text-paper-300">
           <input
+            id={id}
             type="checkbox"
             checked={value?.value === true}
             onChange={(e) => onSet(e.target.checked)}

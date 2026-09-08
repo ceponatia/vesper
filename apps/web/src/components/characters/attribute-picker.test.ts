@@ -37,7 +37,7 @@ function chestSection(intimateRegions: readonly string[], values: readonly Attri
 
 /** Row labels in document order: each attribute row's label span carries the description as its title. */
 const rowLabels = (section: string): string[] =>
-  [...section.matchAll(/ title="[^"]*">([^<]+)<\/span>/g)].map((m) => m[1] ?? "");
+  [...section.matchAll(/<(?:span|label)[^>]* title="[^"]*"[^>]*>([^<]+)<\/(?:span|label)>/g)].map((m) => m[1] ?? "");
 
 describe("AttributePicker — the Chest section", () => {
   it("renders the breast fields as peers of the chest rows, with no nested sub-group", () => {

@@ -1,14 +1,26 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Button } from "./button";
 import { imageUrl, type ImageRecord } from "@/lib/client/api";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { cx } from "./cx";
 import { useFocusTrap } from "./use-focus-trap";
+import { lightboxStateForView, updateLightboxImageStatus, type LightboxImageStatus, type LightboxView } from "./image-lightbox-state";
 
 export interface ImageLightboxProps {
   /** Image to enlarge, or null to render nothing. */
   imageId: string | null;
+  /** Reference review can stay open while a slot is pending or missing. */
+  open?: boolean;
+  /** Optional attempt/slot identity when multiple views can share an image id. */
+  viewKey?: string;
+  comparisonImageId?: string | null;
+  controls?: ReactNode | ((state: { imageStatus: LightboxImageStatus }) => ReactNode);
+  emptyMessage?: string;
+  onPrevious?: () => void;
+  onNext?: () => void;
   alt: string;
   onClose: () => void;
   /** Optional caption under the image (e.g. a short label). */
@@ -43,25 +55,41 @@ export interface ImageLightboxProps {
  * provenance — the resolved camera, the staging, and each reference view the
  * render sent (dev troubleshooting; docs/ui/conventions.md §Image lightbox).
  */
-export function ImageLightbox({ imageId, alt, onClose, caption, prompt, meta }: ImageLightboxProps) {
+export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, prompt, meta, comparisonImageId, controls, emptyMessage, onPrevious, onNext }: ImageLightboxProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useIsAdmin();
-  useFocusTrap(Boolean(imageId), onClose, panelRef);
+  const visible = open ?? Boolean(imageId);
+  const view: LightboxView = { viewKey, imageId, comparisonImageId, visible };
+  const [viewState, setViewState] = useState(() => lightboxStateForView(null, view));
+  const currentState = lightboxStateForView(viewState, view);
+  if (currentState !== viewState) setViewState(currentState);
+  const { showComparison, imageStatus } = currentState;
+  useEffect(() => {
+    if (!visible) return;
+    const trigger = document.activeElement;
+    return () => { if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus(); };
+  }, [visible]);
+  useFocusTrap(visible, onClose, panelRef);
 
-  if (!imageId) return null;
+  if (!visible || typeof document === "undefined") return null;
 
   const promptText = prompt?.trim() ?? "";
   const provenance = provenanceLines(meta);
   const showPrompt = isAdmin && (promptText.length > 0 || provenance.length > 0);
 
-  return (
+  return createPortal(
     <div
       ref={panelRef}
       role="dialog"
       aria-modal="true"
       aria-label={alt}
       tabIndex={-1}
-      className="fixed inset-0 z-50 flex items-center justify-center gap-4 bg-ink-950/85 p-6 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex flex-col bg-ink-950/95 pt-12 text-paper-100 backdrop-blur-[2px]"
+      onKeyDown={(event) => {
+        if (event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) return;
+        if (event.key === "ArrowLeft" && onPrevious) { event.preventDefault(); onPrevious(); }
+        if (event.key === "ArrowRight" && onNext) { event.preventDefault(); onNext(); }
+      }}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -70,23 +98,29 @@ export function ImageLightbox({ imageId, alt, onClose, caption, prompt, meta }: 
         type="button"
         onClick={onClose}
         aria-label="Close image"
-        className="absolute top-4 right-5 cursor-pointer rounded-md px-2 py-1 text-2xl leading-none text-paper-400 hover:text-paper-50"
+        className="touch-target absolute top-2 right-3 z-10 cursor-pointer rounded-md px-3 py-2 text-2xl leading-none text-paper-400 hover:text-paper-50"
       >
         ×
       </button>
-      <div className="flex min-w-0 flex-col items-center gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; next/image adds nothing here */}
-        <img
-          src={imageUrl(imageId)}
-          alt={alt}
-          className="max-h-[85vh] max-w-full rounded-card border border-ink-600 object-contain shadow-lift"
-        />
-        {caption ? (
-          <p className="max-w-2xl truncate text-center text-xs text-paper-400" title={caption}>
-            {caption}
-          </p>
+      {comparisonImageId ? (
+        <div className="mb-2 flex justify-center md:hidden">
+          <Button size="sm" variant="ghost" aria-pressed={showComparison} onClick={() => setViewState((value) => ({ ...value, showComparison: !value.showComparison }))}>
+            {showComparison ? "Show reference view" : "Compare accepted portrait"}
+          </Button>
+        </div>
+      ) : null}
+      <div className="flex min-h-0 flex-1 items-stretch justify-center gap-4 overflow-auto px-3 pb-3 md:px-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+        <div className={cx("flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2", comparisonImageId && showComparison ? "hidden md:flex" : "")} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+          <LightboxImage key={JSON.stringify([viewKey, imageId, comparisonImageId])} imageId={imageId} alt={alt} emptyMessage={emptyMessage}
+            onStatusChange={(status) => setViewState((previous) => updateLightboxImageStatus(previous, view, status))} />
+          {caption ? <p className="shrink-0 text-center text-sm text-paper-300">{caption}</p> : null}
+        </div>
+        {comparisonImageId ? (
+          <div className={cx("min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2", showComparison ? "flex" : "hidden md:flex")} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+            <LightboxImage key={comparisonImageId} imageId={comparisonImageId} alt="Accepted portrait" />
+            <p className="shrink-0 text-center text-sm text-paper-300">Accepted portrait</p>
+          </div>
         ) : null}
-      </div>
       {showPrompt ? (
         // Desktop only: hidden below md so the prompt panel never crowds the
         // image on a phone (docs/ui/mobile.md uses the same md breakpoint).
@@ -117,8 +151,28 @@ export function ImageLightbox({ imageId, alt, onClose, caption, prompt, meta }: 
           ) : null}
         </aside>
       ) : null}
-    </div>
+      </div>
+      {controls ? <div className="max-h-[45dvh] shrink-0 overflow-y-auto border-t border-ink-600 bg-ink-900 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-6">{typeof controls === "function" ? controls({ imageStatus }) : controls}</div> : null}
+    </div>, document.body,
   );
+}
+
+function LightboxImage({ imageId, alt, emptyMessage, onStatusChange }: { imageId: string | null; alt: string; emptyMessage?: string; onStatusChange?: (status: LightboxImageStatus) => void }) {
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [retry, setRetry] = useState(0);
+  if (!imageId) return <p className="p-6 text-center text-paper-400">{emptyMessage ?? "No image is available."}</p>;
+  if (failed) return <div className="flex flex-col items-center gap-2 p-4" role="status"><p>This image could not be loaded.</p><Button size="sm" onClick={() => { setFailed(false); setLoaded(false); setRetry((value) => value + 1); onStatusChange?.("loading"); }}>Retry image</Button></div>;
+  return <>
+    {!loaded ? <p role="status" className="text-sm text-paper-400">Loading image…</p> : null}
+    {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; review preserves the entire image */}
+    <img key={retry} ref={imageRef} src={`${imageUrl(imageId)}${retry ? `?retry=${String(retry)}` : ""}`} alt={alt}
+      onLoad={(event) => { if (imageRef.current !== event.currentTarget || !event.currentTarget.isConnected) return; setLoaded(true); onStatusChange?.("loaded"); }}
+      onError={(event) => { if (imageRef.current !== event.currentTarget || !event.currentTarget.isConnected) return; setFailed(true); setLoaded(false); onStatusChange?.("failed"); }}
+      className="min-h-0 max-h-full max-w-full rounded-card border border-ink-600 object-contain shadow-lift" />
+  </>;
+
 }
 
 /**

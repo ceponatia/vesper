@@ -41,6 +41,11 @@ the character's default outfit preset ([character-forge.md](character-forge.md) 
 - Model-written cross-references resolve through `fuzzyResolveName` (exact →
   punctuation-normalized → unique containment); genuine misses are dropped with a "did you mean"
   hint in the diagnostic.
-- Drafts are plain JSON in component state until save; an abandoned forge writes nothing.
+- New and Forge share a recoverable creation draft. The original creation brief remains
+  available across section revisions; saving creates the library character. Draft persistence
+  and destination handling belong to [character-forge.md](character-forge.md).
+- Generated revisions are proposals until explicitly accepted. Ordinary author edits continue
+  autosaving independently; saving or starting another operation never accepts a proposal.
+  [in-sheet-forge.md](in-sheet-forge.md) owns completion, rewrite, review, and undo semantics.
 - Forge calls are rate-limited per user — cheap insurance, since they are the most expensive
   non-play operations.

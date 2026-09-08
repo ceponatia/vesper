@@ -32,16 +32,16 @@ rather than narrowing the clone).
 
 ## Disclosure at the publish control
 
-The consent lives at the publish control, in two layers, both owned by `PublishToggle`
+The consent lives at the publishing action, owned by `PublishToggle`
 (`components/library/publish-toggle.tsx`), with the copy and the flow rule extracted to the pure
 `publish-disclosure.ts` beside it so `publish-disclosure.test.ts` pins the wording:
 
-1. **Inline helper text** under the control, for every kind — an author should read it while
-   deciding, not dismiss it afterwards.
-2. **A confirmation step on character publish only** (`publishConfirmRequired`, private → public).
-   It states all three facts: a copy takes the full profile including the private fields, its
-   images are duplicated too, and unpublishing later does not recall copies people already made.
-   Cancel leaves it private.
+- **Character publishing** (`publishConfirmRequired`, private → public) opens a confirmation.
+  It states all three facts: a copy takes the full profile including the private fields, its
+  images are duplicated too, and unpublishing later does not recall copies people already made.
+  Cancel leaves it private. This disclosure appears when choosing Publish, keeping the private
+  editor focused on authoring.
+- **Other kinds** show a brief inline disclosure beside their one-click publishing control.
 
 Everything else stays one click: **unpublishing** for every kind (it takes nothing away the author
 cannot redo), and publishing a location, item or social card — they have no private-versus-preview

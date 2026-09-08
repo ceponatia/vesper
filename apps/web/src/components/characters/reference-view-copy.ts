@@ -64,6 +64,11 @@ export const referenceViewStateCopy: Record<ReferenceViewState, ReferenceViewSta
     tone: "accent",
     hint: "This was made from a portrait the character no longer has. Build it again from the current one.",
   },
+  ineligible: {
+    label: "not eligible",
+    tone: "default",
+    hint: "Undressed references are unavailable unless the character has a recognized adult apparent age.",
+  },
 };
 
 /**
@@ -125,3 +130,19 @@ export function referenceViewSelectionActionLabel(count: number): string {
 export function referenceViewRebuildQueuedTitle(count: number): string {
   return count === 1 ? "Rebuilding that view…" : `Rebuilding ${String(count)} reference views…`;
 }
+
+export const referenceViewFeedbackReasonCopy = {
+  wrong_outfit: "Wrong outfit",
+  wrong_angle: "Wrong angle",
+  identity_mismatch: "Identity mismatch",
+  image_defect: "Image defect",
+} as const;
+
+export const referenceViewRestoreUnavailableCopy = {
+  current: "This version is already on the card.",
+  expired: "Outside the retention window. Choose a more recent image or regenerate.",
+  incompatible: "This version does not match the accepted portrait or current reference version.",
+  ineligible: "This undressed version is unavailable unless the character has a recognized adult apparent age.",
+  busy: "Wait for the current build to finish, then refresh.",
+  unavailable: "This image is no longer available to restore.",
+} as const;

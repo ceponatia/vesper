@@ -18,9 +18,8 @@ export type ShareableKind = "character" | "location" | "item" | "social_card";
  */
 
 /**
- * One-line helper under the control. Characters are the surface with private
- * authored fields and the one with a confirmation step, so their line stays a
- * brief summary of the fuller confirm copy — never a contradiction of it.
+ * Brief publishing disclosure for surfaces without the full confirmation copy.
+ * It agrees with the character confirmation's disclosure of private fields.
  */
 export const CLONE_DISCLOSURE: Readonly<Record<ShareableKind, string>> = {
   character:

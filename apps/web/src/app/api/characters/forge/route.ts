@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { CHARACTER_CREATION_BRIEF_MAX } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSheetScopeSchema } from "@/lib/character-scopes";
 import {
@@ -16,7 +17,7 @@ import { backpressureRejection, dailyBudgetRejection, jsonError, jsonOk, readBod
 
 const forgeBodySchema = z.object({
   /** Required for create mode; fill and redraft work from the draft alone (sheet-only, no guidance). */
-  prompt: z.string().trim().min(1).max(4000).optional(),
+  prompt: z.string().trim().min(1).max(CHARACTER_CREATION_BRIEF_MAX).optional(),
   /**
    * "create" (default): prose prompt → full draft, or one `section` of it.
    * "fill": complete a partially-authored sheet without overwriting anything
@@ -25,7 +26,7 @@ const forgeBodySchema = z.object({
   mode: z.enum(["create", "fill", "redraft"]).default("create"),
   /** Regenerate a single section against the supplied draft (docs/authoring/character-forge.md). */
   section: characterForgeSectionSchema.optional(),
-  /** The tab to rewrite (redraft mode). */
+  /** The section to complete or rewrite; omitted fill completes the whole sheet. */
   scope: characterSheetScopeSchema.optional(),
   draft: characterDraftSchema.optional(),
 });
@@ -45,7 +46,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   const { prompt, mode, section, scope, draft } = body.value;
   if (mode === "fill") {
     if (!draft) return jsonError("invalid_body", "fill mode requires the current draft", 400);
-    const filled = await forgeCharacterFill({ draft, userId: user.id, sink });
+    const filled = await forgeCharacterFill({ draft, scope, userId: user.id, sink });
     return jsonOk({ draft: filled, diagnostics: sink.items });
   }
   if (mode === "redraft") {

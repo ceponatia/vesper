@@ -3,23 +3,43 @@
 The grids, editors and pickers behind `/characters`, `/personas`, `/locations`, `/items` and
 `/social-cards`.
 
+## Character editing and Forge review
+
+The character editor keeps its useful completion action in the header, with Duplicate and Delete
+under **Character actions**. The sticky save bar reports author edits and saving; generated
+suggestions have their own explicit review surface. Character section navigation sticks beneath
+the global header, with a compact selector on phones. Field ownership and generation scopes share
+one registry ([../authoring/in-sheet-forge.md](../authoring/in-sheet-forge.md)). Optional voice
+examples and anchors, daily rhythm, and intimate disposition use shared disclosures. Detailed
+anatomy remains in the attribute accordion.
+
+After a full Forge, the generated character leads the page. Section revisions stay beside the tabs;
+the original brief remains available as authoring context. New and Forge share a recoverable
+creation draft and preserve its selected destination when saving
+([../authoring/character-forge.md](../authoring/character-forge.md)). Generation notes remain
+available through a summarized disclosure. These surfaces share the same editor and form
+primitives as manual authoring.
+
 ## The portrait studio
 
 `components/characters/portrait-studio.tsx` generates the canonical avatar from attributes,
 accumulates pose/outfit/expression/setting variants, and promotes any variant to canonical.
 
-Between the avatar prompt and the variant controls sit three blocks, in the order the decisions are
-made. **Portrait acceptance** states whether the portrait on screen is the one the character's
+The empty studio presents the portrait, acceptance, and reference-review sequence beside its
+generation and upload controls. A responsive portrait card becomes the working surface once
+an image exists. **Portrait acceptance** states whether the portrait on screen is the one the character's
 identity comes from, in three badge states — *Accepted* (it is), *Not accepted* ("Conversations
 keep rendering the last accepted portrait until you accept this one", the state a newly generated,
-uploaded or promoted portrait lands in), and *No accepted portrait* ("Accept a portrait to derive
-its identity reference") — beside **Accept this portrait**, disabled when there is no portrait or
-it is already accepted, and a quiet **Clear acceptance** shown only when something is accepted.
+uploaded or promoted portrait lands in), and *No accepted portrait* ("Use this portrait to establish
+the character's appearance in new images") — with **Use this portrait** attached to the image, disabled and labelled
+**Portrait in use** when it is already accepted. When the candidate differs, a second card shows
+the exact accepted image. **Clear acceptance** sits in **Portrait actions** only when something
+is accepted. The image source, model, and generation prompt sit under **Details**.
 Accepting names the image on screen, so a portrait that changed in another tab is refused with
 "The portrait changed — review the new one and accept again" and the studio refetches instead of
 accepting a picture nobody looked at.
 
-Under it, the **Identity reference** block
+Below the portrait cards, the **Identity reference** block appears when an accepted image exists
 (`identity-reference-panel.tsx`): a status chip for the character's identity pack plus **Adjust
 face crop**, which opens `identity-crop-dialog.tsx` — a draggable, resizable square over the
 **accepted** portrait with live preview, plain-language warnings, save/retry/reset actions, and (for
@@ -28,18 +48,23 @@ admins) the lazily-loaded revision-history and override inspector
 
 Under that, the **Reference views** panel (`reference-views-panel.tsx`;
 [../images/pipelines/reference-views.md](../images/pipelines/reference-views.md)): a grid grouped by
-wardrobe state, one tile per angle, always showing every slot the registry defines. Each tile carries
-the view or a placeholder, a state chip and one line of copy from the exhaustive state map in
+wardrobe state, one tile per angle in responsive equal-width columns. The empty sheet stays hidden
+before the first portrait is accepted; existing attempts and live builds remain accessible if
+acceptance is cleared. Each tile carries the view or a placeholder and a prominent angle and state
+chip from the exhaustive state map in
 `reference-view-copy.ts` — *not built*, *building…*, *needs your eye*, *approved*, *rejected*,
-*failed*, *out of date* — plus the actions that state allows: **Approve** / **Reject** on an
-unreviewed view, **Regenerate** on anything already attempted, and **Upload** always. Clicking a
+*failed*, *out of date* — plus the actions that state allows: **Review** opens the full-size viewer, **Regenerate** appears on
+anything already attempted, and **Upload** sits in its **More** menu.
+Review guidance appears once above the grid; actionable failures remain on their tile. Clicking a
 tile's image opens it in the shared `ImageLightbox` ([conventions.md](conventions.md)
-§Image lightbox), captioned with its angle and wardrobe; opening or closing the viewer changes no
-review state. A **Build N reference views** button appears when a portrait is accepted and any
+§Image lightbox), captioned with its angle and wardrobe. The viewer offers comparison with the
+accepted portrait, previous/next, approval, rejection and undo. Opening or closing it alone changes
+no verdict. Rejection can capture optional reasons and a correction retained with that attempt;
+the notes are review history and do not alter generation prompts. A **Build N reference views**
+button appears when a portrait is accepted and any
 slot is missing, stale or failed, labelled with the count the server will actually render. The
-panel polls while a build is live or any slot is pending, and — like the identity-reference block —
-renders **nothing** while loading or on error, so the studio is unchanged when the surface is
-unavailable.
+panel polls while a build is live or any slot is pending. Loading and retrieval errors remain
+visible, with a retry action; a failed refresh keeps the last loaded views on screen.
 
 **Regeneration is a selection, not a queue the owner works through.** Every already-attempted tile
 carries a checkbox; ticking any of them raises **Regenerate N selected views** and **Clear
@@ -52,23 +77,23 @@ selection; a refused one keeps it, so the owner never has to tick the same slots
 of the selection, and every other count on this panel comes from the reference-view registries and
 the character's plan.
 
-**History** sits beside Upload on every tile that has been attempted, and opens that slot's past
+**History** sits with Upload in the **More** menu on every tile that has been attempted, and opens that slot's past
 images (`reference-view-history.tsx`): a dialog over the sheet listing every image the slot has
 produced, newest first, rendered and uploaded alike, each carrying a verdict chip — *approved*,
 *rejected* or *never reviewed* — a marker on the one the tile is showing now, how it was made, and
 when. Clicking an entry enlarges it in the same shared `ImageLightbox`, and closing the enlargement
-returns to the list. The list is **read-only**: nothing in it approves, rejects, regenerates or
-restores, so a history opened in the middle of a review leaves the slot's current image and verdict
-exactly as they were. It closes on the bound it is subject to — how many days a replaced image keeps
-its bytes, read from the retention window rather than typed here
-([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Lifecycle) —
-because an attempt whose bytes the maintenance sweep has collected is not listed at all.
+returns to the list. **Use this version** restores an eligible image as a new, unreviewed
+candidate; the original attempt's verdict and feedback remain history. Availability and
+compatibility explanations sit beside ineligible entries. The dialog shows how many days a
+replaced image keeps its bytes, derived from the retention window
+([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Lifecycle).
 
 Accepting a portrait reports what happened to the views in the accept toast: *Building N reference
 views…*, or *Accepted, but the views were not built* with the reason and an invitation to build them
 later. The acceptance always stands.
 
-Its **Portrait history** grid keeps non-canonical avatar attempts and variants visible; failed
+**Create a variant** folds the optional pose, outfit, expression, and setting controls.
+The **Portrait history** grid keeps non-canonical avatar attempts and variants visible; failed
 rows render as error cards using `images.meta.error` so provider failures do not vanish after
 polling.
 
@@ -158,23 +183,25 @@ full faceted browse:
   data keeps them.
 - Characters and items get a hover-revealed **Duplicate** action on cards and rows (the
   `config.clone` seam → the kind's `/clone` endpoint; it works on public entries too —
-  copy-on-use) that opens the copy's editor. The character edit page header and the item editor
-  SaveBar carry the same **Duplicate**, save-first like the Forge. Wardrobe near-variants ("same
+  copy-on-use) that opens the copy's editor. The character editor's **Character actions** menu and
+  the item editor SaveBar carry the same **Duplicate**, save-first like the Forge. Wardrobe near-variants ("same
   top in three colors") and archetype characters start here.
-- **New** creates the entity immediately with a **randomized placeholder name** ("Untitled item
+- **New** opens the shared creation draft for characters. Other entity kinds are created
+  immediately with a **randomized placeholder name** ("Untitled item
   k3f7" — concurrent drafts never collide) and routes to its editor: create-on-new means a draft
   can never be lost before its first save.
 - **Editor autosave** (`components/hooks/use-autosave.ts`): the character and item editors save
   silently ~1.5s after the last change, and immediately when focus leaves a field (`onBlur` on
   the editable container — free text lands on field exit, never mid-typing). The Save button
   stays as a loud manual flush, and `beforeunload` warns only while something is unsaved or in
-  flight. **Forge-draft discipline**: a staged ✦/↻/◉ result pauses autosave until the manual Save,
-  because the SaveBar is the review step. Advisory inline validation never blocks: empty Name, a
+  flight. Character AI suggestions stay outside the authored draft until explicitly accepted, so
+  pending review does not pause ordinary edits. The item editor retains its own staged-draft
+  review through the SaveBar. Advisory inline validation never blocks: empty Name, a
   drive with a blank want, a schedule row with a blank activity ("this row is dropped on save").
 - **Attribute accordion summaries**: each collapsed section header previews its set values
-  ("auburn, shoulder-length, wavy", falling back to "N set" when long) with a distinct italic
-  *empty* for unauthored sections — fully-authored versus empty is scannable without expanding,
-  and Forge-the-rest and From-portrait output is reviewable at a glance.
+  ("auburn, shoulder-length, wavy"), prioritizing defining appearance from the registry's visual
+  tiers. Long previews wrap to two lines with a secondary count; unauthored sections read *empty*.
+  This shared picker gives characters and personas the same scannable appearance summaries.
 - **Generate images** (Items and Locations): ids visible under the active filter that lack an
   image → confirm dialog → background batch, the grid polls, and the button is hidden on an empty
   library. Items adds **Organize** beside it — the facet classify backfill: visible items missing a

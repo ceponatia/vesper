@@ -1,22 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
-import { attributeRegistry, type Diagnostic } from "@/contracts";
-import { mergeFillDraft } from "@/lib/character-fill";
-import { mergeRedraftScope, type CharacterSheetScope } from "@/lib/character-scopes";
-import {
-  characterDraftSchema,
-  charactersApi,
-  type CharacterDraft,
-  type PortraitReview,
-} from "@/lib/client/api";
-import { resolveChatModelId } from "@/lib/narrative-models";
-import { decideDraftSeed } from "@/components/hooks/draft-seed";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type Diagnostic } from "@/contracts";
+import { characterEditorTabs, characterSections, type CharacterEditorTab, type CharacterSheetScope } from "@/lib/character-scopes";
+import { charactersApi } from "@/lib/client/api";
+import { useSession } from "@/components/auth/auth-client";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
+import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -25,277 +19,105 @@ import { SaveBar } from "@/components/ui/save-bar";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
-
-/** Render an attribute value for the portrait review rows. */
-function formatPortraitValue(value: string | readonly string[] | number | boolean): string {
-  return Array.isArray(value) ? value.join(", ") : String(value);
-}
+import { withCreationBrief } from "./character-creation-draft";
+import { CharacterProposalReview } from "./character-proposal-review";
+import { characterReviewStateSchema, emptyCharacterReview, proposalChanges, reconcileMaterializedUndo } from "./character-proposals";
+import { CharacterAuthorRecoveryNotice } from "./character-author-recovery";
+import { useCharacterAuthorDraft } from "./use-character-author-draft";
+import { CharacterGenerationStatus } from "./character-generation-status";
+import { hasReceivedGeneration, receiveGenerationReview } from "./character-generation-record";
+import { useCharacterGeneration } from "./use-character-generation";
+import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
 export function CharacterEditPage({ characterId }: { characterId: string }) {
+  const session = useSession();
+  const ownerId = session.data?.user.id;
+  if (!ownerId) return <PageContainer><SkeletonText lines={6} /></PageContainer>;
+  // Param navigation and account changes remount every draft, queue and async guard.
+  return <CharacterEditSession key={`${ownerId}:${characterId}`} characterId={characterId} ownerId={ownerId} />;
+}
+
+function CharacterEditSession({ characterId, ownerId }: { characterId: string; ownerId: string }) {
   const router = useRouter();
   const toast = useToast();
   const detail = useAsyncData(() => charactersApi.get(characterId), [characterId]);
-
-  const [draft, setDraft] = useState<CharacterDraft | null>(null);
-  // The chat tab's narrator pick lives here (not in the chat component) so it outlives
-  // that tab unmounting on a tab switch; persisted out-of-band to `characters.chatModel`
-  // (not the editor draft), so it's saved on pick rather than via the SaveBar.
-  const [chatModel, setChatModel] = useState<string>(() => resolveChatModelId(null));
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [forging, setForging] = useState(false);
-  const [redrafting, setRedrafting] = useState<CharacterSheetScope | null>(null);
-  const [derivingPortrait, setDerivingPortrait] = useState(false);
-  // The portrait review dialog: what the vision pass read —
-  // disagreements offered as current → proposed, auto-fills listed for testing
-  // visibility. Opens after every read that saw anything.
-  const [portraitReview, setPortraitReview] = useState<PortraitReview | null>(null);
-  const [acceptedIds, setAcceptedIds] = useState<ReadonlySet<string>>(new Set());
+  const [preparing, setPreparing] = useState<"fill" | "redraft" | "portrait" | null>(null);
+  const busyRef = useRef(false);
+  const [preparingScope, setPreparingScope] = useState<CharacterSheetScope | null>(null);
+  const [tab, setTab] = useState<CharacterEditorTab>("profile");
   const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [cloning, setCloning] = useState(false);
-  /** A ✦/↻/◉ result landed and awaits review — autosave pauses (forge-draft discipline). */
-  const [stagedForge, setStagedForge] = useState(false);
-  /** Bumped on every edit so a completing save can't clear newer dirtiness. */
-  const editGenRef = useRef(0);
-  /** Bumped on every chat-model pick so a superseded pick is skipped, plus the serializing chain. */
-  const chatModelGenRef = useRef(0);
-  const chatModelChainRef = useRef<Promise<void>>(Promise.resolve());
+  const alive = useRef(true);
+  const reviewStore = useCharacterDraftStorage(`vesper:character-review:${ownerId}:${characterId}`, characterReviewStateSchema, emptyCharacterReview);
+  const author = useCharacterAuthorDraft(characterId, ownerId, detail.data ?? null, (sent, saved, diagnostics) => {
+    reviewStore.update((review) => reconcileMaterializedUndo(review, sent, saved.profile));
+    if (alive.current) { setForgeDiagnostics(diagnostics); detail.reload({ silent: true }); }
+  });
+  const { draft, chatModel, dirty, saving, save, changeDraft, changeChatModel } = author;
+  const referencePlanKey = JSON.stringify(
+    detail.data?.profile.attributes.find((value) => value.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value ?? null,
+  );
 
-  // Seed the editable draft from the loaded character during render (the
-  // React "adjust state while rendering" pattern). Each character is seeded
-  // exactly once, so refetches — silent avatar polling, the reload after a
-  // save — can never clobber in-progress edits.
-  const [seededId, setSeededId] = useState<string | null>(null);
-  const seedAction = decideDraftSeed({ entityId: characterId, seededId, loadedId: detail.data?.id ?? null });
-  if (seedAction === "seed" && detail.data) {
-    setSeededId(characterId);
-    setDirty(false);
-    setDraft(
-      characterDraftSchema.parse({
-        name: detail.data.name,
-        tags: detail.data.tags,
-        profile: detail.data.profile,
-      }),
-    );
-    setChatModel(resolveChatModelId(detail.data.chatModel));
-  } else if (seedAction === "clear") {
-    setSeededId(null);
-    setDraft(null);
-    setDirty(false);
-    setChatModel(resolveChatModelId(null));
-  }
-
-  const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
-    if (!draft) return false;
-    const gen = editGenRef.current;
-    // Outfit suggestions the Forge/Re-draft drafted ride along: the server turns
-    // them into real library items and appends the ids to the default preset, so
-    // "saved as new items with this character" is what Save actually does.
-    const pendingSuggestions = draft.suggestedItems;
-    setSaving(true);
-    const result = await charactersApi.update(characterId, {
-      name: draft.name,
-      tags: draft.tags,
-      profile: draft.profile,
-      suggestedItems: pendingSuggestions,
-    });
-    setSaving(false);
-    if (result.ok) {
-      // Edits made while the save was in flight stay marked unsaved.
-      if (editGenRef.current === gen) {
-        setDirty(false);
-        if (pendingSuggestions.length > 0) {
-          // Adopt the saved profile — it carries the new item ids the client can't
-          // know — and clear the now-materialized suggestion rows. Skipped when an
-          // edit landed mid-flight: the next save re-sends them and
-          // `materializeSuggestedItems` reuses by name, so nothing duplicates.
-          setDraft((current) =>
-            current ? { ...current, profile: result.data.character.profile, suggestedItems: [] } : current,
-          );
-          setForgeDiagnostics(result.data.diagnostics);
-        }
-      }
-      setStagedForge(false); // a save IS the review acceptance
-      if (!opts.silent) toast.push({ title: "Character saved", tone: "success" });
-      detail.reload({ silent: true });
-      return true;
+  useEffect(() => {
+    alive.current = true;
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (characterEditorTabs.some((id) => id === requested)) {
+      void Promise.resolve().then(() => { if (alive.current) setTab(requested as CharacterEditorTab); });
     }
-    toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
-    return false;
-  };
+    return () => { alive.current = false; };
+  }, []);
 
-  /**
-   * In-sheet Forge: complete every empty part
-   * of the sheet from what the player entered; never overwrites it. Typed
-   * content is committed BEFORE the LLM runs (save-first, abort on failure),
-   * and the generated additions land as an unsaved draft — the save bar is the
-   * review/undo step.
-   */
-  const forgeFill = async () => {
-    if (!draft || forging || redrafting || saving) return;
-    if (dirty && !(await save())) return;
-    setForging(true);
-    const result = await charactersApi.forge({ mode: "fill", draft });
-    setForging(false);
-    if (!result.ok) {
-      toast.push({ title: "Forge failed", description: result.error.message, tone: "error" });
-      return;
+  const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record) => {
+    if (reviewStore.isBlocked() || author.isBlocked() || record.ownerId !== ownerId || record.target.id !== characterId || !record.result) return false;
+    if (!hasReceivedGeneration(reviewStore.current.current, record.id)) {
+      setForgeDiagnostics(record.result.diagnostics);
+      reviewStore.update((review) => receiveGenerationReview(review, record));
+      if (!proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
     }
-    const { draft: filled, diagnostics } = result.data;
-    setForgeDiagnostics(diagnostics);
-    // Fill-merge over the CURRENT draft so edits made while the request was in
-    // flight also beat the generated content.
-    editGenRef.current += 1;
-    setDraft((current) => (current ? mergeFillDraft(current, filled) : filled));
-    setDirty(true);
-    setStagedForge(true); // pause autosave — the SaveBar is the review step
-    toast.push({ title: "Sheet forged", description: "Review the additions, then save.", tone: "success" });
+    await reviewStore.flush();
+    return reviewStore.isPersisted();
+  });
+  const busy = preparing ?? generation.active?.operation ?? null;
+  const scopeBusy = preparingScope ?? generation.active?.scope ?? null;
+  const generate = async (mode: "fill" | "redraft" | "portrait", scope?: CharacterSheetScope) => {
+    const currentDraft = author.current.current?.draft;
+    if (!currentDraft || busyRef.current || generation.isRunning() || !reviewStore.ready || author.isBlocked() || reviewStore.isBlocked()) return;
+    busyRef.current = true;
+    setPreparing(mode); setPreparingScope(scope ?? null);
+    try {
+      const withBrief = withCreationBrief(currentDraft);
+      if (withBrief !== currentDraft) changeDraft(withBrief);
+      if (!(await save({ silent: true })) || !alive.current) return;
+      const base = author.current.current?.draft;
+      if (!base) return;
+      const section = scope ? characterSections[scope].label : "character";
+      generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
+        label: mode === "portrait" ? "portrait changes" : mode === "fill" ? `missing ${section} details` : `${section} rewrite` });
+    } finally { if (alive.current) { busyRef.current = false; setPreparing(null); setPreparingScope(null); } }
   };
 
-  /**
-   * Per-tab Re-draft: rewrite ONE tab from the
-   * whole sheet, narrator-formatted. Same save-first discipline as the Forge;
-   * the scope merge keeps player-set attribute/trait values and reports any
-   * conflicts as diagnostics instead of applying them.
-   */
-  const redraft = async (scope: CharacterSheetScope) => {
-    if (!draft || forging || redrafting || saving) return;
-    if (dirty && !(await save())) return;
-    setRedrafting(scope);
-    const result = await charactersApi.forge({ mode: "redraft", scope, draft });
-    setRedrafting(null);
-    if (!result.ok) {
-      toast.push({ title: "Re-draft failed", description: result.error.message, tone: "error" });
-      return;
-    }
-    const { draft: redrafted, diagnostics } = result.data;
-    setForgeDiagnostics(diagnostics);
-    editGenRef.current += 1;
-    setDraft((current) => (current ? mergeRedraftScope(current, redrafted, scope) : redrafted));
-    setDirty(true);
-    setStagedForge(true); // pause autosave — the SaveBar is the review step
-    toast.push({ title: "Tab re-drafted", description: "Review the rewrite, then save.", tone: "success" });
-  };
-
-  /**
-   * Portrait → attributes: a vision
-   * pass over the canonical avatar fills unset appearance attributes;
-   * disagreements with existing values surface as diagnostics, never applied.
-   */
-  const derivePortrait = async () => {
-    if (!draft || forging || redrafting || derivingPortrait || saving) return;
-    if (dirty && !(await save())) return;
-    setDerivingPortrait(true);
-    const result = await charactersApi.attributesFromPortrait(characterId, draft);
-    setDerivingPortrait(false);
-    if (!result.ok) {
-      toast.push({ title: "Portrait read failed", description: result.error.message, tone: "error" });
-      return;
-    }
-    const { draft: derived, diagnostics, portrait } = result.data;
-    setForgeDiagnostics(diagnostics);
-    editGenRef.current += 1;
-    // Same fill-merge as the Forge: additions only, current draft wins.
-    setDraft((current) => (current ? mergeFillDraft(current, derived) : derived));
-    setDirty(true);
-    setStagedForge(true); // pause autosave — the SaveBar is the review step
-    if (portrait.conflicts.length || portrait.filled.length) {
-      // Conflicts pre-checked: the button's purpose is "accept what the picture shows".
-      setAcceptedIds(new Set(portrait.conflicts.map((c) => c.id)));
-      setPortraitReview(portrait);
-    } else {
-      toast.push({ title: "Portrait read", description: "Nothing new was visible — the sheet already matches.", tone: "success" });
-    }
-  };
-
-  /** Apply the checked portrait values over the sheet's (source stays AI-owned). */
-  const applyPortraitReview = () => {
-    const review = portraitReview;
-    setPortraitReview(null);
-    if (!review) return;
-    const accepted = review.conflicts.filter((c) => acceptedIds.has(c.id));
-    if (accepted.length === 0) return;
-    const byId = new Map(accepted.map((c) => [c.id, c.proposed]));
-    editGenRef.current += 1;
-    setDraft((current) =>
-      current
-        ? {
-            ...current,
-            profile: {
-              ...current.profile,
-              attributes: current.profile.attributes.map((a) =>
-                byId.has(a.id) ? { ...a, value: byId.get(a.id) as typeof a.value, source: "creation" as const } : a,
-              ),
-            },
-          }
-        : current,
-    );
-    setDirty(true);
-    toast.push({
-      title: `Applied ${accepted.length} portrait value${accepted.length === 1 ? "" : "s"}`,
-      description: "Review the sheet, then save.",
-      tone: "success",
-    });
-  };
-
-  /**
-   * Persist the chat-tab narrator pick immediately (save-on-update), out-of-band
-   * from the SaveBar. PATCHes are serialized through a promise chain so rapid
-   * picks can't overlap and land out of order server-side (the unguarded version
-   * could persist a stale pick, codebase-review A10); a pick superseded before
-   * its turn is skipped entirely.
-   */
-  const saveChatModel = (modelId: string) => {
-    setChatModel(modelId);
-    const gen = ++chatModelGenRef.current;
-    chatModelChainRef.current = chatModelChainRef.current.then(async () => {
-      if (gen !== chatModelGenRef.current) return; // a newer pick superseded this one
-      const result = await charactersApi.update(characterId, { chatModel: modelId });
-      if (gen !== chatModelGenRef.current) return;
-      if (!result.ok) {
-        toast.push({ title: "Couldn't save the chat model", description: result.error.message, tone: "error" });
-      }
-    });
-  };
-
-  /** Same save-first discipline as the Forge — the clone copies the saved row. */
   const clone = async () => {
-    if (cloning || forging || redrafting || saving) return;
-    if (dirty && !(await save())) return;
+    if (cloning || author.isBlocked()) return;
+    if (!(await save()) || !alive.current) return;
     setCloning(true);
     const result = await charactersApi.clone(characterId);
+    if (!alive.current) return;
     setCloning(false);
-    if (result.ok) {
-      toast.push({ title: "Character duplicated", description: "You're now editing the copy.", tone: "success" });
-      router.push(`/characters/${result.data.id}`);
-    } else {
-      toast.push({ title: "Duplicate failed", description: result.error.message, tone: "error" });
-    }
+    if (result.ok) { toast.push({ title: "Character duplicated", tone: "success" }); router.push(`/characters/${result.data.id}`); }
+    else toast.push({ title: "Duplicate failed", description: result.error.message, tone: "error" });
   };
-
-  // Autosave: silent saves on change/blur; paused
-  // while a forge/re-draft/portrait result awaits review. Save stays manual flush.
-  const autosave = useAutosave({
-    enabled: !stagedForge,
-    dirty,
-    saving: saving || forging || redrafting !== null || derivingPortrait,
-    save: () => save({ silent: true }),
-    signal: draft,
-  });
-
+  const autosaveSignal = useMemo(() => ({ draft, chatModel }), [draft, chatModel]);
+  const autosave = useAutosave({ enabled: (detail.data?.mine ?? false) && !author.blocked, dirty, saving, save: () => save({ silent: true }), signal: autosaveSignal });
   const remove = async () => {
     setDeleting(true);
+    await author.settled();
     const result = await charactersApi.remove(characterId);
+    if (!alive.current) return;
     setDeleting(false);
-    if (result.ok) {
-      toast.push({ title: "Character deleted" });
-      router.push("/characters");
-    } else {
-      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
-      setConfirmDelete(false);
-    }
+    if (result.ok) { toast.push({ title: "Character deleted" }); router.push("/characters"); }
+    else { toast.push({ title: "Delete failed", description: result.error.message, tone: "error" }); setConfirmDelete(false); }
   };
 
   if (detail.loading && !draft) {
@@ -329,7 +151,7 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
           <h1 className="prose-display min-w-0 truncate text-2xl">{detail.data.name || "Untitled character"}</h1>
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={() => router.push(`/chat?new=${characterId}`)}>Chat</Button>
-            <Button variant="primary" busy={cloning} onClick={() => void clone()}>
+            <Button variant="primary" busy={cloning} disabled={author.blocked} onClick={() => void clone()}>
               Duplicate to my library
             </Button>
           </div>
@@ -360,114 +182,74 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
         <h1 className="prose-display min-w-0 truncate text-2xl">{draft.name || "Untitled character"}</h1>
         <div className="flex flex-wrap items-center gap-3">
           <Button
-            onClick={() => void forgeFill()}
-            busy={forging}
-            disabled={saving || redrafting !== null}
-            title="Complete every empty part of the sheet from what you've entered — never changes what you wrote. Saves your edits first."
+            variant="primary"
+            onClick={() => void generate("fill")}
+            busy={busy === "fill"}
+            disabled={busy !== null || author.blocked || !reviewStore.ready || reviewStore.conflict}
+            title="Propose missing details for review. Your existing values stay unchanged."
           >
-            ✦ Forge the rest
+            Complete all missing details
           </Button>
-          <Button
-            onClick={() => void clone()}
-            busy={cloning}
-            disabled={saving || forging || redrafting !== null}
-            title="Copy this character into a new library entry and open it — an archetype starting point."
-          >
-            Duplicate
-          </Button>
-          {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
+          {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} onChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }} /> : null}
+          <ActionMenu
+            label="Character actions"
+            items={[
+              {
+                label: "Duplicate",
+                onSelect: () => void clone(),
+                busy: cloning,
+                disabled: busy !== null || author.blocked,
+              },
+              { label: "Delete character", onSelect: () => setConfirmDelete(true), danger: true },
+            ]}
+          />
         </div>
       </div>
+      {reviewStore.notice ? <p role="status" className="mb-3 text-sm text-warning">{reviewStore.notice}</p> : null}
+      {reviewStore.conflict || reviewStore.recoveries.length ? <div className="mb-3 flex flex-wrap gap-2"><Button onClick={() => reviewStore.resume()}>Resume saved review</Button>{reviewStore.recoveries.map((copy) => <Button key={copy.key} onClick={() => reviewStore.resume(copy.key)}>Recover review from {copy.label}</Button>)}</div> : null}
+      {author.storage.notice ? <p role="status" className="mb-3 text-sm text-warning">{author.storage.notice}</p> : null}
+      {author.storage.conflict || author.storage.recoveries.length ? <div className="mb-3 flex flex-wrap gap-2">
+        <Button disabled={saving} onClick={() => void author.resumeBrowser()}>Resume latest browser edits</Button>
+        {author.storage.recoveries.map((copy) => <Button key={copy.key} disabled={saving} onClick={() => void author.resumeBrowser(copy.key)}>Recover edits from {copy.label}</Button>)}
+        <Button disabled={saving} onClick={() => void author.resetToServer()}>Use saved character</Button>
+      </div> : null}
+      {author.recovery ? <CharacterAuthorRecoveryNotice key={author.recovery.id} recovery={author.recovery} disabled={saving || author.storage.conflict} onRestore={author.resolveRecovery} onDiscard={() => void author.discardRecovery()} /> : null}
+      <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={author.blocked || reviewStore.conflict || preparing !== null} onRetry={generation.retry} onDismiss={generation.dismiss} />
+      <CharacterProposalReview draft={draft} review={reviewStore.data} onReviewChange={reviewStore.update} onChange={changeDraft}
+        disabled={!reviewStore.ready || reviewStore.conflict || author.blocked} isBlocked={() => reviewStore.isBlocked() || author.isBlocked()} />
       <div onBlur={autosave.onBlur}>
+      <fieldset disabled={author.blocked} className="min-w-0">
       <CharacterEditor
         draft={draft}
-        onChange={(next) => {
-          editGenRef.current += 1;
-          setDraft(next);
-          setDirty(true);
-        }}
+        onChange={changeDraft}
+        tab={tab}
+        onTabChange={setTab}
         characterId={characterId}
         avatarImageId={detail.data?.avatarImageId ?? null}
+        referencePlanKey={referencePlanKey}
         {...(detail.data ? { acceptance: detail.data.acceptance } : {})}
-        onAvatarChanged={() => detail.reload({ silent: true })}
+        onAvatarChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }}
         chatModel={chatModel}
-        onChatModelChange={(modelId) => void saveChatModel(modelId)}
-        onRedraft={(scope) => void redraft(scope)}
-        redrafting={redrafting}
-        onPortraitAttributes={() => void derivePortrait()}
-        derivingPortrait={derivingPortrait}
+        onChatModelChange={changeChatModel}
+        onRedraft={(scope) => void generate("redraft", scope)}
+        redrafting={busy === "redraft" ? scopeBusy : null}
+        onComplete={(scope) => void generate("fill", scope)}
+        completing={busy === "fill" ? scopeBusy : null}
+        generationDisabled={busy !== null || !reviewStore.ready || reviewStore.conflict || author.blocked}
+        saving={saving}
+        onPortraitAttributes={() => void generate("portrait")}
+        derivingPortrait={busy === "portrait"}
         diagnostics={forgeDiagnostics}
       />
+      </fieldset>
       </div>
       <SaveBar
         dirty={dirty}
         saving={saving}
-        onSave={() => void save()}
-        secondary={
-          <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
-            Delete
-          </Button>
-        }
+        disabled={author.blocked}
+        status={author.blocked ? "Resolve recovered edits to save" : undefined}
+        onSave={() => { if (!author.isBlocked()) void save(); }}
       />
-      <Dialog
-        open={portraitReview !== null}
-        onClose={() => setPortraitReview(null)}
-        title="Review portrait changes"
-        footer={
-          <>
-            <Button onClick={() => setPortraitReview(null)}>Keep sheet values</Button>
-            <Button variant="primary" onClick={applyPortraitReview} disabled={acceptedIds.size === 0 && (portraitReview?.conflicts.length ?? 0) > 0}>
-              {portraitReview?.conflicts.length ? `Apply checked (${acceptedIds.size})` : "Done"}
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4 text-sm">
-          {portraitReview?.conflicts.length ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-paper-300">The portrait disagrees with the sheet — check what the picture should win:</p>
-              {portraitReview.conflicts.map((conflict) => {
-                const label = attributeRegistry.byId(conflict.id as never)?.label ?? conflict.id;
-                return (
-                  <label key={conflict.id} className="flex items-start gap-2 rounded-md border border-ink-600 bg-ink-850 px-2.5 py-2">
-                    <input
-                      type="checkbox"
-                      checked={acceptedIds.has(conflict.id)}
-                      onChange={(e) =>
-                        setAcceptedIds((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(conflict.id);
-                          else next.delete(conflict.id);
-                          return next;
-                        })
-                      }
-                      className="mt-0.5"
-                    />
-                    <span className="min-w-0">
-                      <span className="text-paper-200">{label}:</span>{" "}
-                      <span className="text-paper-500 line-through">{formatPortraitValue(conflict.current)}</span>
-                      {" → "}
-                      <span className="text-accent-300">{formatPortraitValue(conflict.proposed)}</span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          ) : null}
-          {portraitReview?.filled.length ? (
-            <div className="flex flex-col gap-1">
-              <p className="text-paper-300">Filled in from the portrait (was empty):</p>
-              <ul className="flex flex-col gap-0.5 text-xs text-paper-400">
-                {portraitReview.filled.map((entry) => (
-                  <li key={entry.id}>
-                    {attributeRegistry.byId(entry.id as never)?.label ?? entry.id}: {formatPortraitValue(entry.value)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      </Dialog>
       <Dialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

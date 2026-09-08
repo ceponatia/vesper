@@ -111,19 +111,26 @@ export type { CharacterPortraitAcceptance };
  * diagnostics (materializing a forge outfit suggestion reports reuse/degradation).
  * Resilient throughout: a visibility-only toggle reads the same envelope.
  */
-export const characterSaveSchema = z
-  .object({
-    character: z
-      .object({
-        profile: characterProfileSchema.catch(() => emptyCharacterProfile()),
-      })
-      .catch(() => ({ profile: emptyCharacterProfile() })),
-    diagnostics: arrayOf(diagnosticSchema),
-  })
-  .catch(() => ({
-    character: { profile: emptyCharacterProfile() },
-    diagnostics: [],
-  }));
+export const characterSaveSchema = z.object({
+  character: characterDetailSchema,
+  diagnostics: arrayOf(diagnosticSchema),
+  materializedSuggestions: arrayOf(z.object({ index: z.number().int().nonnegative(), itemId: z.string() })),
+});
+/** A creation UUID already committed a different payload. The server returns
+ * both the original receipt and the current owner-scoped row so the retained
+ * browser draft can bind and enter explicit three-way recovery. */
+export const characterCreationMismatchSchema = z.object({
+  error: z.object({ code: z.literal("idempotency_mismatch"), message: z.string() }),
+  recovery: z.object({
+    created: characterSaveSchema,
+    character: characterDetailSchema,
+  }),
+});
+/** The conflict response carries the current owned row for three-way recovery. */
+export const characterSaveConflictSchema = z.object({
+  error: z.object({ code: z.literal("character_conflict"), message: z.string() }),
+  character: characterDetailSchema,
+});
 export type CharacterSaveResult = z.infer<typeof characterSaveSchema>;
 
 /**
@@ -391,6 +398,7 @@ export const charactersApi = {
       `/api/characters/${id}`,
     ),
   create: (body: unknown) => apiPost(createdRefSchema, "/api/characters", body),
+  createDraft: (body: unknown) => apiPost(characterSaveSchema, "/api/characters", body),
   /**
    * The saved profile comes BACK because the save can add to it: `suggestedItems`
    * in the body are materialized into library items server-side and their ids
@@ -421,8 +429,9 @@ export const charactersApi = {
   /** Replace-set save of the character's outgoing default edges. */
   saveRelationships: (
     id: string,
+    baseRevision: number,
     edges: { toCharacterId: string; record: AuthoredEdgeRecord }[],
-  ) => apiPut(z.unknown(), `/api/characters/${id}/relationships`, { edges }),
+  ) => apiPut(libraryRelationshipsSchema, `/api/characters/${id}/relationships`, { baseRevision, edges }),
   /**
    * Vision pass over the canonical avatar → unset appearance attributes filled
    * on the draft, plus the review-dialog data: disagreements as current →

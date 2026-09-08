@@ -57,6 +57,8 @@ export { ambientSchema };
 // (docs/authoring/README.md §"Saving drafts (draft → create-input)").
 export const characterCreateSchema = z
   .object({
+    /** Stable UUID for one durable New/Forge creation intent. */
+    creationRequestId: z.uuid().optional(),
     name: nameSchema,
     profile: characterProfileSchema.default(() => characterProfileSchema.parse({})),
     tags: tagsSchema.default([]),
@@ -72,6 +74,8 @@ export const characterCreateSchema = z
 export type CharacterCreateBody = z.infer<typeof characterCreateSchema>;
 
 export const characterPatchSchema = z.object({
+  /** Optional optimistic precondition; omitted callers retain ordinary PATCH semantics. */
+  expectedUpdatedAt: z.iso.datetime().optional(),
   name: nameSchema.optional(),
   // The raw object shape — partial() needs a ZodObject; the legacy-outfit lift
   // only matters when READING stored rows, and a PATCH merges over a lifted read.

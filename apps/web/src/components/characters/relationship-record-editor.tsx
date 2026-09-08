@@ -14,6 +14,7 @@ import {
   type AuthoredRelationshipRecord,
   type PresentedLean,
 } from "@/contracts";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -159,13 +160,9 @@ export function RelationshipRecordEditor({
         ) : null}
       </div>
 
-      <div className="rounded-card border border-ink-600 bg-ink-900/60 p-3">
-        <p className="mb-1.5 flex items-baseline justify-between text-xs font-medium tracking-wide text-paper-500 uppercase">
-          <span>What the narrator will read</span>
-          <span className="normal-case tracking-normal text-paper-400">{region}</span>
-        </p>
-        <pre className="text-[11px] leading-relaxed whitespace-pre-wrap text-paper-400">{preview}</pre>
-      </div>
+      <Disclosure title="How this shapes the story" description={region}>
+        <pre className="text-xs leading-relaxed whitespace-pre-wrap text-paper-400">{preview}</pre>
+      </Disclosure>
     </div>
   );
 }

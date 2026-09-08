@@ -17,7 +17,9 @@ import { IdentityReferencePanel } from "./identity-reference-panel";
 import { referenceViewRefusalCopy } from "./reference-view-copy";
 import { ReferenceViewsPanel } from "./reference-views-panel";
 import { ImageProfileSelect, pickedProfileId } from "./image-profile-select";
+import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
@@ -30,6 +32,8 @@ import { useToast } from "@/components/ui/toast";
 
 export interface PortraitStudioProps {
   characterId: string;
+  /** Identity of the saved apparent-age plan used by portrait references. */
+  referencePlanKey: string;
   name: string;
   /** The portrait CANDIDATE — what this studio shows and edits. */
   avatarImageId: string | null;
@@ -74,7 +78,7 @@ function portraitAcceptanceChip(acceptance: CharacterPortraitAcceptance): {
   return {
     tone: "default",
     label: "No accepted portrait",
-    hint: "Accept a portrait to derive its identity reference.",
+    hint: "Use this portrait to establish the character's appearance in new images.",
   };
 }
 
@@ -103,6 +107,7 @@ function portraitKindLabel(image: ImageRecord): string {
  */
 export function PortraitStudio({
   characterId,
+  referencePlanKey,
   name,
   avatarImageId,
   acceptance,
@@ -321,29 +326,107 @@ export function PortraitStudio({
       ? canonical.prompt
       : null;
   const acceptanceChip = portraitAcceptanceChip(acceptance);
+  const acceptedPortrait = acceptance.acceptedImageId
+    ? rows.find((img) => img.id === acceptance.acceptedImageId)
+    : undefined;
+  const showAcceptedPortrait = !!acceptance.acceptedImageId && acceptance.acceptedImageId !== avatarImageId;
+  const hasPortrait = !!avatarImageId || !!acceptance.acceptedImageId;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start gap-5">
-        <button
-          type="button"
-          onClick={() => avatarImageId && setEnlarged({ id: avatarImageId, prompt: canonicalPrompt })}
-          disabled={!avatarImageId}
-          aria-label={avatarImageId ? "Enlarge avatar" : undefined}
-          className="cursor-pointer rounded-card disabled:cursor-default"
-        >
-          <EntityImage
-            imageId={avatarImageId}
-            name={name}
-            className="aspect-[3/4] w-44 rounded-card border border-ink-600 text-3xl"
-          />
-        </button>
-        <div className="flex max-w-sm flex-col gap-2">
-          <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Canonical avatar</h3>
+      <div
+        className={showAcceptedPortrait && avatarImageId
+          ? "grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(16rem,0.8fr)]"
+          : "grid items-start gap-5 lg:grid-cols-[minmax(0,24rem)_minmax(16rem,1fr)]"}
+      >
+        {hasPortrait ? (
+          <div className={showAcceptedPortrait && avatarImageId ? "grid min-w-0 gap-4 sm:grid-cols-2" : "min-w-0"}>
+            {avatarImageId ? (
+              <figure className="overflow-hidden rounded-card border border-ink-600 bg-ink-800">
+                <button
+                  type="button"
+                  onClick={() => setEnlarged({ id: avatarImageId, prompt: canonicalPrompt })}
+                  aria-label="Enlarge candidate portrait"
+                  className="block w-full cursor-pointer"
+                >
+                  <EntityImage imageId={avatarImageId} name={name} className="aspect-[3/4] w-full text-3xl" />
+                </button>
+                <figcaption className="flex flex-col gap-3 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-medium text-paper-100">
+                      {acceptance.isCurrent ? "Your portrait" : "Candidate portrait"}
+                    </h3>
+                    <Tag tone={acceptanceChip.tone}>{acceptanceChip.label}</Tag>
+                  </div>
+                  <p className="text-sm text-paper-400">{acceptanceChip.hint}</p>
+                  <Button
+                    variant="primary"
+                    busy={acceptingPortrait}
+                    onClick={acceptPortrait}
+                    disabled={acceptance.isCurrent}
+                    className="w-full"
+                  >
+                    {acceptance.isCurrent ? "Portrait in use" : "Use this portrait"}
+                  </Button>
+                </figcaption>
+              </figure>
+            ) : null}
+            {showAcceptedPortrait && acceptance.acceptedImageId ? (
+              <figure className="overflow-hidden rounded-card border border-ink-600 bg-ink-800">
+                <button
+                  type="button"
+                  onClick={() => acceptance.acceptedImageId && setEnlarged({
+                      id: acceptance.acceptedImageId,
+                      prompt: acceptedPortrait?.prompt || null,
+                    })}
+                  aria-label="Enlarge accepted portrait"
+                  className="block w-full cursor-pointer"
+                >
+                  <EntityImage
+                    imageId={acceptance.acceptedImageId}
+                    name={name}
+                    alt={`Accepted portrait of ${name}`}
+                    className="aspect-[3/4] w-full text-3xl"
+                  />
+                </button>
+                <figcaption className="flex flex-col gap-2 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-medium text-paper-100">Currently in use</h3>
+                    <Tag tone="ok">Accepted</Tag>
+                  </div>
+                  <p className="text-sm text-paper-400">
+                    New images keep this appearance until you use another portrait.
+                  </p>
+                </figcaption>
+              </figure>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-card border border-ink-600 bg-ink-800 p-5 sm:p-6">
+            <h3 className="prose-display text-2xl text-paper-100">Give {name || "your character"} a face</h3>
+            <ol className="mt-4 flex list-decimal flex-col gap-3 pl-5 text-sm text-paper-300">
+              <li>Generate a portrait from the character&apos;s appearance, or upload your own.</li>
+              <li>Choose <span className="font-medium text-paper-100">Use this portrait</span> when it feels right.</li>
+              <li>Review the reference views to keep their appearance consistent.</li>
+            </ol>
+          </div>
+        )}
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-base font-medium text-paper-100">
+              {hasPortrait ? "Create another portrait" : "Create a portrait"}
+            </h3>
+            {acceptance.acceptedImageId ? (
+              <ActionMenu
+                label="Portrait actions"
+                items={[{ label: "Clear acceptance", onSelect: () => void clearAcceptance(), busy: acceptingPortrait }]}
+              />
+            ) : null}
+          </div>
           <p className="text-sm text-paper-400">
-            Generated from this character&apos;s attributes — the registry phrasing is the prompt.
+            Generate from the character&apos;s saved appearance, or choose an image of your own.
           </p>
-          <Field label="Model" className="w-56">
+          <Field label="Image model">
             {(id) => (
               <ImageProfileSelect
                 id={id}
@@ -355,53 +438,33 @@ export function PortraitStudio({
             )}
           </Field>
           <div className="flex flex-wrap gap-2">
-            <Button variant="primary" onClick={generateAvatar} busy={generatingAvatar}>
-              {avatarImageId ? "Regenerate avatar" : "Generate avatar"}
+            <Button
+              variant={avatarImageId && !acceptance.isCurrent ? "ghost" : "primary"}
+              onClick={generateAvatar}
+              busy={generatingAvatar}
+            >
+              {avatarImageId ? "Regenerate portrait" : "Generate portrait"}
             </Button>
             <Button variant="ghost" onClick={() => setUploadOpen(true)}>
               Upload image
             </Button>
           </div>
           {generatingAvatar ? <p className="text-xs text-paper-500">Working — this can take a minute…</p> : null}
-        </div>
-      </div>
-
-      {canonicalPrompt ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Avatar prompt</h3>
-            {canonical?.meta?.model ? <Tag>{canonical.meta.model}</Tag> : null}
-          </div>
-          <p className="rounded-card border border-ink-600 bg-ink-950/40 px-3 py-2 text-sm whitespace-pre-wrap text-paper-300">
-            {canonicalPrompt}
-          </p>
-        </div>
-      ) : null}
-
-      {/* Acceptance first, then the crop derived from what was accepted: the block
-          below is about which portrait the character's identity comes from, and
-          the panel under it is about how that portrait is cropped. */}
-      <div className="flex flex-col gap-3">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Portrait acceptance</h3>
-        <div className="flex flex-wrap items-center gap-3 rounded-card border border-ink-600 bg-ink-950/40 px-3 py-2">
-          <Tag tone={acceptanceChip.tone}>{acceptanceChip.label}</Tag>
-          <span className="min-w-0 text-xs text-paper-500">{acceptanceChip.hint}</span>
-          <span className="ml-auto flex flex-wrap items-center gap-2">
-            {acceptance.acceptedImageId ? (
-              <Button size="sm" variant="ghost" busy={acceptingPortrait} onClick={clearAcceptance}>
-                Clear acceptance
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              busy={acceptingPortrait}
-              onClick={acceptPortrait}
-              disabled={!avatarImageId || acceptance.isCurrent}
-              title={avatarImageId ? undefined : "Generate or upload a portrait first"}
-            >
-              Accept this portrait
-            </Button>
-          </span>
+          {canonicalPrompt || canonical?.meta?.model || canonical?.meta?.source === "upload" ? (
+            <Disclosure title="Details" description="Image source and generation prompt">
+              <div className="flex flex-col gap-3">
+                {canonical?.meta?.model ? (
+                  <p className="text-xs break-words text-paper-400">Model: {canonical.meta.model}</p>
+                ) : null}
+                {canonical?.meta?.source === "upload" ? <p className="text-sm text-paper-400">Uploaded image</p> : null}
+                {canonicalPrompt ? (
+                  <p className="max-h-64 overflow-y-auto text-sm break-words whitespace-pre-wrap text-paper-300">
+                    {canonicalPrompt}
+                  </p>
+                ) : null}
+              </div>
+            </Disclosure>
+          ) : null}
         </div>
       </div>
 
@@ -409,166 +472,176 @@ export function PortraitStudio({
           variant machinery none of it has anything to do with: the face crop
           identity-critical renders receive, then the sheet of views that says
           what the rest of this body looks like. */}
-      <IdentityReferencePanel characterId={characterId} name={name} acceptedImageId={acceptance.acceptedImageId} />
+      {acceptance.acceptedImageId ? (
+        <IdentityReferencePanel characterId={characterId} name={name} acceptedImageId={acceptance.acceptedImageId} />
+      ) : null}
 
-      <ReferenceViewsPanel characterId={characterId} acceptance={acceptance} onChanged={onAvatarChanged} />
+      <ReferenceViewsPanel
+        characterId={characterId}
+        planKey={referencePlanKey}
+        acceptance={acceptance}
+        onChanged={onAvatarChanged}
+      />
 
-      <div className="flex flex-col gap-3">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">New variant</h3>
-        <div className="flex flex-wrap items-end gap-3">
-          <Field label="Kind" className="w-36">
-            {(id) => (
-              <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as PortraitVariantKind)}>
-                {portraitVariantKinds.map((k) => (
-                  <option key={k} value={k}>
-                    {portraitVariantKindLabel(k)}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          {/* Edit-capable profiles only — a variant is a reference edit of the
-              canonical portrait, so a text-to-image profile would paint a
-              different-looking person (owner ruling 2026-07-29; the variant
-              task's eligibility rules enforce it server-side). */}
-          <Field label="Model" className="w-56">
-            {(id) => (
-              <ImageProfileSelect
-                id={id}
-                profiles={variantProfiles.data}
-                value={variantProfileId}
-                onChange={setVariantProfileId}
-                emptyHint="No variant profile is offered."
-              />
-            )}
-          </Field>
-          <Field label="Instruction" className="min-w-64 flex-1">
-            {(id) => (
-              <Textarea
-                id={id}
-                rows={2}
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                placeholder={
-                  nsfwTest ? "lying back across the bed, one knee raised" : "leaning on the harbor rail at dusk, wind in her hair"
-                }
-              />
-            )}
-          </Field>
-          <Button
-            variant="primary"
-            onClick={submitVariant}
-            busy={submittingVariant}
-            disabled={!avatarImageId || !instruction.trim()}
-            title={avatarImageId ? undefined : "Generate an avatar first — variants edit the canonical portrait"}
-          >
-            Create variant
-          </Button>
-        </div>
-        {/* The bench kind pairs the picked profile with the intimate model, so
-            say so where the picker is: the profile still decides prompt strategy,
-            references and controls, but the render leaves on Qwen Image Edit 2511
-            carrying the anatomy LoRA. Clothing is deliberately unmentioned — the
-            instruction owns it. */}
-        {nsfwTest ? (
-          <p className="text-xs text-paper-500">
-            Renders the canonical portrait through the NSFW LoRA on Qwen Image Edit 2511, whichever profile is
-            picked, and states this character’s intimate attributes in the prompt. Describe the shot — including what
-            they are or aren’t wearing — in the instruction.
-          </p>
-        ) : null}
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Portrait history</h3>
-        {portraits.loading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {Array.from({ length: 4 }, (_, i) => (
-              <Skeleton key={i} className="aspect-[3/4]" />
-            ))}
+      {avatarImageId ? (
+        <Disclosure title="Create a variant" description="Try a different pose, outfit, expression or setting">
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="Kind" className="w-full sm:w-36">
+              {(id) => (
+                <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as PortraitVariantKind)}>
+                  {portraitVariantKinds.map((k) => (
+                    <option key={k} value={k}>
+                      {portraitVariantKindLabel(k)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            {/* Edit-capable profiles only — a variant is a reference edit of the
+                canonical portrait, so a text-to-image profile would paint a
+                different-looking person (owner ruling 2026-07-29; the variant
+                task's eligibility rules enforce it server-side). */}
+            <Field label="Model" className="w-full sm:w-56">
+              {(id) => (
+                <ImageProfileSelect
+                  id={id}
+                  profiles={variantProfiles.data}
+                  value={variantProfileId}
+                  onChange={setVariantProfileId}
+                  emptyHint="No variant profile is offered."
+                />
+              )}
+            </Field>
+            <Field label="Instruction" className="min-w-0 basis-full lg:flex-1">
+              {(id) => (
+                <Textarea
+                  id={id}
+                  rows={2}
+                  value={instruction}
+                  onChange={(e) => setInstruction(e.target.value)}
+                  placeholder={
+                    nsfwTest ? "lying back across the bed, one knee raised" : "leaning on the harbor rail at dusk, wind in her hair"
+                  }
+                />
+              )}
+            </Field>
+            <Button
+              variant="primary"
+              onClick={submitVariant}
+              busy={submittingVariant}
+              disabled={!avatarImageId || !instruction.trim()}
+              title={avatarImageId ? undefined : "Generate an avatar first — variants edit the canonical portrait"}
+            >
+              Create variant
+            </Button>
           </div>
-        ) : portraits.error ? (
-          <ErrorState error={portraits.error} onRetry={() => portraits.reload()} />
-        ) : variants.length === 0 && !showPainting ? (
-          <p className="text-sm text-paper-500">No alternate portraits yet.</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {showPainting ? (
-              <figure className="relative overflow-hidden rounded-card border border-ink-600">
-                <Skeleton className="aspect-[3/4] rounded-none" />
-                <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
-                  <Tag>generating…</Tag>
-                </figcaption>
-              </figure>
-            ) : null}
-            {variants.map((img) => {
-              const error = generationError(img);
-              const label = portraitKindLabel(img);
-              return (
-                <figure key={img.id} className="group relative overflow-hidden rounded-card border border-ink-600">
-                  {img.status === "pending" ? (
-                    <Skeleton className="aspect-[3/4] rounded-none" />
-                  ) : img.status === "failed" ? (
-                    <div className="flex aspect-[3/4] w-full flex-col justify-center gap-2 bg-ink-950/60 px-3 py-4">
-                      <Tag tone="danger" className="self-start">
-                        failed
-                      </Tag>
-                      <p className="text-xs font-medium text-paper-200">{label} generation failed</p>
-                      <p className="max-h-24 overflow-y-auto text-xs break-words text-paper-400" title={error ?? undefined}>
-                        {error ?? "The image provider returned an error."}
-                      </p>
-                      {img.meta?.model ? <p className="text-[11px] break-words text-paper-500">{img.meta.model}</p> : null}
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
-                      aria-label="Enlarge portrait"
-                      className="block w-full cursor-pointer"
-                    >
-                      <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
-                    </button>
-                  )}
+          {/* The bench kind pairs the picked profile with the intimate model, so
+              say so where the picker is: the profile still decides prompt strategy,
+              references and controls, but the render leaves on Qwen Image Edit 2511
+              carrying the anatomy LoRA. Clothing is deliberately unmentioned — the
+              instruction owns it. */}
+          {nsfwTest ? (
+            <p className="text-xs text-paper-500">
+              Renders the canonical portrait through the NSFW LoRA on Qwen Image Edit 2511, whichever profile is
+              picked, and states this character’s intimate attributes in the prompt. Describe the shot — including what
+              they are or aren’t wearing — in the instruction.
+            </p>
+          ) : null}
+        </Disclosure>
+      ) : null}
+
+      {hasPortrait || portraits.loading || portraits.error || variants.length > 0 || showPainting ? (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Portrait history</h3>
+          {portraits.loading ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {Array.from({ length: 4 }, (_, i) => (
+                <Skeleton key={i} className="aspect-[3/4]" />
+              ))}
+            </div>
+          ) : portraits.error ? (
+            <ErrorState error={portraits.error} onRetry={() => portraits.reload()} />
+          ) : variants.length === 0 && !showPainting ? (
+            <p className="text-sm text-paper-500">No alternate portraits yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {showPainting ? (
+                <figure className="relative overflow-hidden rounded-card border border-ink-600">
+                  <Skeleton className="aspect-[3/4] rounded-none" />
                   <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
-                    {img.status === "pending" ? (
-                      <Tag>generating…</Tag>
-                    ) : img.status === "failed" ? (
-                      <span className="truncate" title={error ?? undefined}>
-                        {error ?? "Generation failed"}
-                      </span>
-                    ) : (
-                      <span className="truncate" title={img.prompt}>
-                        {img.prompt || img.kind}
-                      </span>
-                    )}
-                    <span className="hover-reveal ml-auto flex gap-1">
-                      {img.status === "ready" ? (
-                        <Button
-                          size="sm"
-                          className="touch-target"
-                          busy={busyImageId === img.id}
-                          onClick={() => promote(img.id)}
-                        >
-                          Promote
-                        </Button>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        className="touch-target"
-                        busy={busyImageId === img.id}
-                        onClick={() => removeVariant(img.id)}
-                      >
-                        ✕
-                      </Button>
-                    </span>
+                    <Tag>generating…</Tag>
                   </figcaption>
                 </figure>
-              );
-            })}
-          </div>
-        )}
-      </div>
+              ) : null}
+              {variants.map((img) => {
+                const error = generationError(img);
+                const label = portraitKindLabel(img);
+                return (
+                  <figure key={img.id} className="group relative overflow-hidden rounded-card border border-ink-600">
+                    {img.status === "pending" ? (
+                      <Skeleton className="aspect-[3/4] rounded-none" />
+                    ) : img.status === "failed" ? (
+                      <div className="flex aspect-[3/4] w-full flex-col justify-center gap-2 bg-ink-950/60 px-3 py-4">
+                        <Tag tone="danger" className="self-start">
+                          failed
+                        </Tag>
+                        <p className="text-xs font-medium text-paper-200">{label} generation failed</p>
+                        <p className="max-h-24 overflow-y-auto text-xs break-words text-paper-400" title={error ?? undefined}>
+                          {error ?? "The image provider returned an error."}
+                        </p>
+                        {img.meta?.model ? <p className="text-[11px] break-words text-paper-500">{img.meta.model}</p> : null}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
+                        aria-label="Enlarge portrait"
+                        className="block w-full cursor-pointer"
+                      >
+                        <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
+                      </button>
+                    )}
+                    <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
+                      {img.status === "pending" ? (
+                        <Tag>generating…</Tag>
+                      ) : img.status === "failed" ? (
+                        <span className="truncate" title={error ?? undefined}>
+                          {error ?? "Generation failed"}
+                        </span>
+                      ) : (
+                        <span className="truncate" title={img.prompt}>
+                          {img.prompt || img.kind}
+                        </span>
+                      )}
+                      <span className="hover-reveal ml-auto flex gap-1">
+                        {img.status === "ready" ? (
+                          <Button
+                            size="sm"
+                            className="touch-target"
+                            busy={busyImageId === img.id}
+                            onClick={() => promote(img.id)}
+                          >
+                            Promote
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          className="touch-target"
+                          busy={busyImageId === img.id}
+                          onClick={() => removeVariant(img.id)}
+                        >
+                          ✕
+                        </Button>
+                      </span>
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <AvatarUploadDialog
         open={uploadOpen}

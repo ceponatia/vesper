@@ -4,6 +4,7 @@ import {
   normalizeReferenceViewTargets,
   referenceViewAngleIdSchema,
   referenceViewSchema,
+  referenceViewReviewRequestSchema,
   referenceViewWardrobeSchema,
   type ReferenceView,
   type ReferenceViewQueueOutcome,
@@ -66,7 +67,7 @@ export const referenceViewUploadBodySchema = z.object({
     .refine((value) => value.startsWith("data:image/"), "dataUrl must be an image data URL"),
 });
 
-export const referenceViewReviewBodySchema = z.object({ verdict: z.enum(["approve", "reject"]) });
+export const referenceViewReviewBodySchema = referenceViewReviewRequestSchema;
 
 /**
  * `{ targets }` — the slots an explicit regeneration names.
@@ -218,3 +219,15 @@ export async function regenerateReferenceViews(input: {
   });
   return jsonOk({ views: outcome });
 }
+
+/** Expected conflicts tell an open reviewer how to recover without silently changing its target. */
+export const referenceViewWriteMessages = {
+  not_found: "This character or attempt is no longer available.",
+  not_ready: "This image cannot be reviewed yet. Refresh to see its current status.",
+  changed: "This view changed elsewhere. Refresh and review the current image before trying again.",
+  incompatible: "This image does not match the accepted portrait or current reference version. Choose a compatible image or regenerate.",
+  ineligible: "Undressed references require a recognized adult apparent age. Update the character profile before using this slot.",
+  busy: "Reference views are still being built. Wait for them to finish, then refresh.",
+  expired: "This image is outside the history retention window. Choose a more recent image or regenerate.",
+  unavailable: "This image could not be read. Refresh, choose another image, or regenerate.",
+} as const;
