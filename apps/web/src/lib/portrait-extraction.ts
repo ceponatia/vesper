@@ -60,5 +60,5 @@ export const portraitExtractionEvidenceSchema = z.object({
 export type PortraitExtractionEvidence = z.infer<typeof portraitExtractionEvidenceSchema>;
 
 export function portraitVisibilityLabel(visibility: PortraitVisibility): string {
-  return visibility === "out_of_frame" ? "Out of frame" : visibility[0]!.toUpperCase() + visibility.slice(1);
+  return visibility === "out_of_frame" ? "Out of frame" : visibility.charAt(0).toUpperCase() + visibility.slice(1);
 }

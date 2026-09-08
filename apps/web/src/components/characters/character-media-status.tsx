@@ -17,15 +17,16 @@ export interface CharacterMediaStatusProps {
 /** One persistent status surface for portrait, variant, identity and reference work. */
 export function CharacterMediaStatus({ characterId, onRetry }: CharacterMediaStatusProps) {
   const state = useAsyncData(() => characterMediaJobsApi.list(characterId), [characterId]);
+  const reload = state.reload;
   const jobs = state.data?.jobs ?? [];
   const active = jobs.some((job) => job.lifecycle === "queued" || job.lifecycle === "running");
 
   useEffect(() => {
     // The quiet interval discovers work started by a nested tab without coupling
     // that tab to this status owner. Active work tightens the interval.
-    const timer = window.setInterval(() => state.reload({ silent: true }), active ? 2_500 : 15_000);
+    const timer = window.setInterval(() => reload({ silent: true }), active ? 2_500 : 15_000);
     return () => window.clearInterval(timer);
-  }, [active, state.reload]);
+  }, [active, reload]);
 
   if (state.loading && jobs.length === 0) return null;
   if (jobs.length === 0 && !state.error) return null;

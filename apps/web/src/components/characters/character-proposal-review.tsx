@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { imageUrl, type CharacterDraft } from "@/lib/client/api";
+import type { CharacterDraft } from "@/lib/client/api";
 import { portraitVisibilityLabel, type PortraitFieldEvidence } from "@/lib/portrait-extraction";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { EntityImage } from "@/components/ui/entity-image";
 import { Select } from "@/components/ui/select";
 import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, valueAt, type CharacterProposal, type CharacterReviewState, type ProposalChoices } from "./character-proposals";
 
@@ -16,7 +17,7 @@ function evidenceForChange(proposal: CharacterProposal, path: readonly (string |
 function EvidenceRegion({ imageId, field }: { imageId: string; field: PortraitFieldEvidence }) {
   const region = field.evidenceRegion;
   return <div className="relative mt-2 aspect-[3/4] w-36 overflow-hidden rounded-md border border-ink-600 bg-ink-900">
-    <img src={imageUrl(imageId)} alt={`Portrait evidence for ${field.id}`} className="size-full object-cover" />
+    <EntityImage imageId={imageId} name={field.id} alt={`Portrait evidence for ${field.id}`} className="size-full object-cover" />
     {region ? <span aria-hidden className="absolute border-2 border-accent-400 bg-accent-500/10" style={{
       left: `${region.left / 100}%`, top: `${region.top / 100}%`, width: `${region.width / 100}%`, height: `${region.height / 100}%`,
     }} /> : null}
@@ -106,7 +107,7 @@ export function CharacterProposalDialog({ draft, proposal, onClose, onAccept, on
     </div>}>
       <p className="mb-4 text-sm text-paper-400">{purpose === "recovery" ? "These edits were retained in your browser. Compare them with the saved character and choose which changes to restore." : proposal.undo ? "Restore accepted changes. Any later edits are kept unless you explicitly choose to replace them." : "Compare the original values with these suggestions. Changes you made since generation started are shown as conflicts."}</p>
       {portrait ? <div className="mb-4 flex flex-wrap items-start gap-3 rounded-md border border-ink-600 bg-ink-900/60 p-3">
-        <img src={imageUrl(portrait.source.imageId)} alt="Portrait inspected for these suggestions" className="h-28 w-24 rounded-md object-cover" />
+        <EntityImage imageId={portrait.source.imageId} name={proposal.label} alt="Portrait inspected for these suggestions" className="h-28 w-24 rounded-md object-cover" />
         <div className="min-w-0 text-xs text-paper-400">
           <p className="font-medium text-paper-200">Inspected portrait evidence</p>
           <p className="mt-1">{portrait.model.id} · {portrait.model.promptVersion}</p>

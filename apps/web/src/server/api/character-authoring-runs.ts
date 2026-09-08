@@ -14,7 +14,7 @@ import {
 } from "@/contracts";
 import { mergeFillDraft } from "@/lib/character-fill";
 import { characterSheetScopeSchema, mergeFillScope, mergeRedraftScope } from "@/lib/character-scopes";
-import { applyCharacterProposal, proposalChanges, proposalConflicts, reconcileMaterializedUndo, type ProposalChoices } from "@/lib/character-proposals";
+import { applyCharacterProposal, proposalChanges, reconcileMaterializedUndo, type ProposalChoices, type proposalConflicts } from "@/lib/character-proposals";
 import { portraitExtractionEvidenceSchema, type PortraitDecision } from "@/lib/portrait-extraction";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images, jobs } from "@/server/db";
@@ -236,7 +236,8 @@ export async function listCharacterAuthoringRuns(ownerId: string, target: z.infe
 
 async function canonicalizeStart(ownerId: string, input: StartInput): Promise<StartInput | { conflict: "not_found" | "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed"; currentRevision?: number; currentImageId?: string | null }> {
   if (input.target.kind === "creation") return input;
-  const source = input.source!;
+  const source = input.source;
+  if (!source) return { conflict: "not_found" };
   const reserved = await reserveCharacterAuthoringAction({
     characterId: input.target.id,
     ownerId,
@@ -568,7 +569,8 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
         },
       };
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
-      return { status: "accepted", run: projectRun(saved!, next) };
+      if (!saved) tx.rollback();
+      return { status: "accepted", run: projectRun(saved, next) };
     }
     if (job.status !== "done" || !payload.result) return { status: "invalid_run" };
     if (input.action === "reject" && payload.intent.target.kind === "creation") {
@@ -577,7 +579,8 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       const proposal = { id: runId, label: payload.intent.label, base: payload.intent.base, proposed: payload.result.proposed, undo: false as const };
       const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
-      return { status: "accepted", run: projectRun(saved!, next) };
+      if (!saved) tx.rollback();
+      return { status: "accepted", run: projectRun(saved, next) };
     }
 
     const proposal = input.action === "undo" ? payload.proposal.undo : {
@@ -595,7 +598,8 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       const undo = input.action === "accept" && applied.undo ? { ...applied.undo, sourceRunId: runId, proposalRevision: revision } : null;
       const next = { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, choices: input.choices, appliedDraft: applied.draft, undo } };
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
-      return { status: "accepted", run: projectRun(saved!, next) };
+      if (!saved) tx.rollback();
+      return { status: "accepted", run: projectRun(saved, next) };
     }
 
     const [character] = await tx.select().from(characters).where(and(
@@ -617,7 +621,8 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       const revision = payload.proposal.revision + 1;
       const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
-      return { status: "accepted", run: projectRun(saved!, next) };
+      if (!saved) tx.rollback();
+      return { status: "accepted", run: projectRun(saved, next) };
     }
     const current = rowDraft(character);
     const applied = applyCharacterProposal(current, proposal, input.choices as ProposalChoices);
@@ -650,7 +655,8 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       revision,
     );
     const [savedJob] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
-    return { status: "accepted", run: projectRun(savedJob!, next), character: savedCharacter };
+    if (!savedJob) tx.rollback();
+    return { status: "accepted", run: projectRun(savedJob, next), character: savedCharacter };
   });
   if (outcome.status === "accepted" && outcome.character) {
     for (const id of newItems) queueEmbedRefresh("item", id);

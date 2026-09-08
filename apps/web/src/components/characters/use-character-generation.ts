@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   characterAuthoringRunsApi,
   type CharacterAuthoringDecision,
+  type CharacterDraft,
 } from "@/lib/client/api";
 import {
   generationCacheKey,
@@ -16,7 +17,6 @@ import {
   type GenerationInput,
   type GenerationTarget,
 } from "./character-generation-record";
-import type { CharacterDraft } from "@/lib/client/api";
 import type { ProposalChoices } from "./character-proposals";
 
 const POLL_MS = 2500;
@@ -72,6 +72,8 @@ export function useCharacterGeneration(
   destination: unknown,
   onComplete: (record: CharacterGeneration, actions: CharacterGenerationCompletionActions) => Promise<boolean>,
 ) {
+  const { kind, id } = target;
+  const cacheKey = generationCacheKey(ownerId, { kind, id });
   const [records, setRecords] = useState<CharacterGeneration[]>([]);
   const [unavailable, setUnavailable] = useState(false);
   const [projectedReceipts, setProjectedReceipts] = useState<ReadonlySet<string>>(() => new Set());
@@ -86,8 +88,6 @@ export function useCharacterGeneration(
   const projectionRetryTimer = useRef<number | null>(null);
   const recordsRef = useRef(records);
   const projectedReceiptsRef = useRef(projectedReceipts);
-  const { kind, id } = target;
-  const cacheKey = generationCacheKey(ownerId, { kind, id });
   const cacheKeyRef = useRef(cacheKey);
   useEffect(() => {
     mounted.current = true;
@@ -98,10 +98,7 @@ export function useCharacterGeneration(
   useEffect(() => { projectedReceiptsRef.current = projectedReceipts; }, [projectedReceipts]);
 
   useEffect(() => {
-    const empty = new Set<string>();
     cacheKeyRef.current = cacheKey;
-    projectedReceiptsRef.current = empty;
-    setProjectedReceipts(empty);
     processing.current.clear();
     if (projectionRetryTimer.current !== null) {
       window.clearTimeout(projectionRetryTimer.current);
@@ -128,11 +125,16 @@ export function useCharacterGeneration(
   }, [id, kind, store]);
 
   useEffect(() => {
-    try {
-      const cached = readGenerationCache(localStorage.getItem(cacheKey));
-      store(cached);
-    } catch { setUnavailable(true); }
-    void refresh();
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      try {
+        const cached = readGenerationCache(localStorage.getItem(cacheKey));
+        store(cached);
+      } catch { setUnavailable(true); }
+      if (!cancelled) void refresh();
+    });
+    return () => { cancelled = true; };
   }, [cacheKey, refresh, store]);
 
   useEffect(() => {
@@ -203,7 +205,7 @@ export function useCharacterGeneration(
       }
     });
     return () => { cancelled = true; };
-  }, [ready, blocked, destination, records, decide, projectedReceipts, projectionRetry, scheduleProjectionRetry]);
+  }, [ready, blocked, destination, records, decide, projectedReceipts, projectionRetry, scheduleProjectionRetry, cacheKey]);
 
   const hasActiveWork = useCallback((candidateRecords: readonly CharacterGeneration[]) => candidateRecords.some(
     (record) => record.status === "pending" || needsGenerationProjection(record, projectedReceiptsRef.current),

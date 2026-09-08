@@ -128,7 +128,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       const base = prepared.draft;
       const section = scope ? characterSections[scope].label : "character";
       await generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
-        source: { authoringRevision: prepared.authoringRevision, imageId: mode === "portrait" ? displayedPortraitId! : null },
+        source: { authoringRevision: prepared.authoringRevision, imageId: mode === "portrait" ? displayedPortraitId : null },
         label: mode === "portrait" ? "portrait changes" : mode === "fill" ? `missing ${section} details` : `${section} rewrite` });
     } finally { if (alive.current) { busyRef.current = false; setPreparing(null); setPreparingScope(null); } }
   };

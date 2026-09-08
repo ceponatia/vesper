@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { imageUrl } from "@/lib/client/api";
+import { EntityImage } from "@/components/ui/entity-image";
 import type { CharacterGeneration } from "./character-generation-record";
 
 export function CharacterGenerationStatus({ records, activeId, blocked, unavailable, onRetry, onDismiss }: {
@@ -20,7 +20,7 @@ export function CharacterGenerationStatus({ records, activeId, blocked, unavaila
           : `Generating ${record.label}. You can leave this page and return for the result.`
         : record.status === "completed" ? "Suggestions are ready. Resolve any draft recovery above to review them." : record.status === "failed" ? `${record.persisted ? "Generation failed" : "Generation did not start"}: ${record.error}` : "Generation was interrupted or is still running in another page. Nothing restarts automatically."}</p>
       {record.status === "failed" && record.result?.portrait ? <div className="mt-3 flex items-start gap-3 text-xs text-paper-400">
-        <img src={imageUrl(record.result.portrait.source.imageId)} alt="Portrait inspected by the failed run" className="h-20 w-16 rounded-md object-cover" />
+        <EntityImage imageId={record.result.portrait.source.imageId} name={record.label} alt="Portrait inspected by the failed run" className="h-20 w-16 rounded-md object-cover" />
         <div>
           <p>{record.result.portrait.fields.length
             ? record.result.portrait.fields.map((field) => `${field.id}: ${field.visibility}, ${Math.round(field.confidence / 100)}%`).join(" · ")

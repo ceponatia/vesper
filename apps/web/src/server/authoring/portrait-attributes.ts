@@ -72,13 +72,16 @@ export function portraitAttributeDefinitions(
 export function portraitAuthoringFingerprint(draft: CharacterDraft): string {
   const eligible = new Set(portraitAttributeDefinitions(draft).map((definition) => definition.id));
   const profile = draft.profile;
+  const intimateRegions = Array.isArray(profile.intimateRegions) ? profile.intimateRegions : [];
+  const bodyFeatures = Array.isArray(profile.bodyFeatures) ? profile.bodyFeatures : [];
+  const attributes = Array.isArray(profile.attributes) ? profile.attributes : [];
   return createHash("sha256").update(JSON.stringify({
     speciesId: profile.speciesId,
     heritageId: profile.heritageId,
     bodyPlanId: profile.bodyPlanId,
-    intimateRegions: [...profile.intimateRegions].sort(),
-    bodyFeatures: [...profile.bodyFeatures].sort(),
-    attributes: profile.attributes
+    intimateRegions: [...intimateRegions].sort(),
+    bodyFeatures: [...bodyFeatures].sort(),
+    attributes: attributes
       .filter((attribute) => eligible.has(attribute.id))
       .map((attribute) => ({ id: attribute.id, value: attribute.value }))
       .sort((left, right) => left.id.localeCompare(right.id)),

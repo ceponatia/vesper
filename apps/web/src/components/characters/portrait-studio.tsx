@@ -150,8 +150,11 @@ export function PortraitStudio({
   const [prevAvatarImageId, setPrevAvatarImageId] = useState(avatarImageId);
   if (avatarImageId !== prevAvatarImageId) {
     setPrevAvatarImageId(avatarImageId);
-    if (avatarImageId) { setAvatarPhase(null); avatarActionRef.current = false; }
+    if (avatarImageId) setAvatarPhase(null);
   }
+  useEffect(() => {
+    if (avatarImageId) avatarActionRef.current = false;
+  }, [avatarImageId]);
 
   const nsfwTest = kind === "nsfw_test";
   const rows = portraits.data?.portraits ?? [];

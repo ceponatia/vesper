@@ -86,7 +86,7 @@ describe("server character generation records", () => {
     const run = fixture();
     expect(matchesGeneration(run, "other", run.target)).toBe(false);
     expect(matchesGeneration(run, run.ownerId, { kind: "character", id: "other" })).toBe(false);
-    const creation = fixture({ target: { kind: "creation", id: "draft-a" }, operation: "create", source: null });
+    const creation = fixture({ target: { kind: "creation", id: "draft-a" }, operation: "create", scope: null, source: null });
     expect(matchesGeneration(creation, creation.ownerId, { kind: "creation", id: "new-browser-draft" })).toBe(false);
     expect(matchesGeneration(creation, creation.ownerId, { kind: "creation", id: "draft-a" })).toBe(true);
     expect(generationCacheKey(creation.ownerId, creation.target)).toContain("draft-a");
