@@ -20,6 +20,11 @@ The owner-scoped definition rows: who the account is, and the reusable entities 
   narrator-model override; empty ⇒ default), **`visibility` (`private`/`public`) — the
   cross-account share scope ([../auth/README.md](../auth/README.md))**, `cloned_from_id?` (soft
   remix provenance), `search_embedding` vector.
+- **`character_creation_requests`** — one immutable receipt per (`owner_id`,
+  `request_id`) creation intent: canonical payload hash, character id, successful HTTP status and
+  replayable response JSON. The receipt is written in the same transaction as its character and
+  materialized suggestions. Reusing a request id with different content is refused; deleting the
+  character cascades its receipt.
 - **`personas`** — `owner_id`, **`title` — UNIQUE per owner (`personas_owner_title_unique`)**,
   `name`, `profile` JSONB (`PersonaProfile`: bio, voice, intimacy, species/heritage/bodyPlan,
   `intimateRegions`, `bodyFeatures`, `attributes`, `outfits`), `tags` JSONB, `avatar_image_id`,

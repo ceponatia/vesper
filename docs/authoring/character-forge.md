@@ -40,6 +40,14 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
 - A successful save clears only the browser version it saved. If newer edits exist, the saved
   character remains linked and the newer draft stays available. Subsequent saves of that draft
   update the linked character rather than creating another character.
+- The first save freezes an `initialSaveDraft` and sends the creation draft's UUID as
+  `creationRequestId`. The server commits the character, its materialized items and a replayable
+  response receipt in one transaction. A lost-response retry with the same request and payload
+  returns that original character, version and item receipt; reuse of the UUID with different
+  content is refused. An acknowledgment never clears newer authored changes.
+- A linked creation draft retains the last saved server snapshot and `updatedAt` token. Later
+  writes use that token for compare-and-set recovery: authored conflicts require explicit review,
+  while a metadata-only server change advances the token without hiding local edits.
 - Failed saves retain the entire draft. Browser storage failures surface a notice and keep the
   in-memory draft available. Corrupt records stay retained until an explicit replacement.
 - Browser writes compare versions and use a per-draft Web Lock where available. A conflicting
@@ -162,13 +170,14 @@ A suggestion whose name matches an existing item reuses it, never duplicating. F
 name match, a **conservative embedding backstop** (`fuzzyResolve` at `ITEM_DEDUPE_MIN_SCORE`, same
 item kind) collapses a near-identical garment the agent missed
 (`api.library.suggested_item.fuzzy_reused`); an embedding failure degrades to a fresh insert.
+Suggestion embeddings are batched before the character transaction. After the character row is
+locked and its version is rechecked, exact and fuzzy candidates are queried again through that
+transaction before any item is inserted. A stale save creates no items, and embedding refreshes
+are queued only after commit.
 
 New rows keep the `suggested` tag, and the resulting ids are appended to the default outfit preset.
 A bad suggestion degrades — invalid coverage ids are dropped with a diagnostic — and never fails
-the save. The PATCH response returns the saved profile so the sheet editor can adopt the new ids
-and clear its suggestion rows: the outfit tab's "suggested" rows are pending until a save, and
-Save is what creates them. Returned item ids merge into the latest surviving outfit; only the
-suggestions sent in that save are removed. Newer prose, outfit edits and suggestions survive.
-If a create succeeds before its saved profile can be loaded, the browser stores the created id
-and sent draft, and resolves that acknowledgment before sending suggestions again. This avoids
-recreating the character or submitting the same suggestions on a retry.
+the save. POST and PATCH return the full saved character plus an index-to-item-id receipt for the
+exact suggestion array they received. The editor adds ids only for sent suggestions that are still
+present when the acknowledgment arrives; a suggestion the author discarded stays discarded.
+Newer prose, outfit edits and suggestions survive.

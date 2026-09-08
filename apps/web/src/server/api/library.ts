@@ -3,7 +3,7 @@ import { z } from "zod";
 import { diag, itemDefinitionSchema, type Diagnostic, type DiagnosticSink, type ItemDefinition } from "@/contracts";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
-import { currentEmbedder, embedText, toVectorLiteral } from "@/server/ai";
+import { currentEmbedder, embedText, embedTexts, toVectorLiteral, type Embedded } from "@/server/ai";
 import { db, images, items, locationLinks, locations, type Db } from "@/server/db";
 import { escapeLikePattern } from "@/server/authoring";
 import { fuzzyResolve, ITEM_DEDUPE_MIN_SCORE, refreshSearchEmbedding, type LibraryKind } from "@/server/memory";
@@ -278,6 +278,45 @@ export function queueEmbedRefresh(kind: LibraryKind, id: string): void {
   });
 }
 
+export type PreparedSuggestedItemEmbedding =
+  | { ok: true; embedded: Embedded }
+  | { ok: false; error: string };
+
+export interface MaterializedSuggestion {
+  /** Index into the exact suggestion array received by the save request. */
+  index: number;
+  itemId: string;
+}
+
+export interface MaterializedSuggestedItems {
+  ids: string[];
+  materializedSuggestions: MaterializedSuggestion[];
+}
+
+/**
+ * Batch the provider work for suggestion dedupe before a caller takes a row
+ * lock. The returned array stays index-aligned with the request, so the locked
+ * materialization pass can recheck current rows without another remote call.
+ */
+export async function prepareSuggestedItemEmbeddings(
+  suggestions: readonly ItemDefinition[],
+): Promise<PreparedSuggestedItemEmbedding[]> {
+  const names = suggestions.map((suggestion) => suggestion.name.trim());
+  if (names.length === 0) return [];
+  try {
+    const embedded = await embedTexts(names);
+    return names.map((_, index) => {
+      const value = embedded[index];
+      return value
+        ? { ok: true as const, embedded: value }
+        : { ok: false as const, error: "embedding provider returned no vector" };
+    });
+  } catch (err) {
+    const error = errorText(err);
+    return names.map(() => ({ ok: false as const, error }));
+  }
+}
+
 /**
  * Materialize forge item suggestions as library items
  * (docs/authoring/character-forge.md §Saving a draft):
@@ -290,11 +329,16 @@ export async function materializeSuggestedItems(
   ownerId: string,
   suggestions: readonly ItemDefinition[],
   sink: DiagnosticSink,
-  options: { executor?: Pick<Db, "select" | "insert" | "execute">; onCreated?: (id: string) => void } = {},
-): Promise<string[]> {
+  options: {
+    executor?: Pick<Db, "select" | "insert" | "execute">;
+    onCreated?: (id: string) => void;
+    preparedEmbeddings?: readonly PreparedSuggestedItemEmbedding[];
+  } = {},
+): Promise<MaterializedSuggestedItems> {
   const ids: string[] = [];
+  const materializedSuggestions: MaterializedSuggestion[] = [];
   const executor = options.executor ?? db();
-  for (const def of suggestions) {
+  for (const [index, def] of suggestions.entries()) {
     const name = def.name.trim();
     if (!name) continue;
     const existing = await executor
@@ -305,6 +349,7 @@ export async function materializeSuggestedItems(
     if (match) {
       sink.push(diag("info", "api.library.suggested_item.reused", `"${name}" matched an existing library item`));
       ids.push(match.id);
+      materializedSuggestions.push({ index, itemId: match.id });
       continue;
     }
 
@@ -313,11 +358,17 @@ export async function materializeSuggestedItems(
     // whose name is near-identical to an existing same-kind item collapses into
     // it rather than spawning a near-duplicate. Conservative threshold so only
     // obvious dupes merge; an embedding failure degrades to a new insert.
+    const prepared = options.preparedEmbeddings?.[index];
     const fuzzy = await fuzzyResolve("item", ownerId, name, {
       executor,
       minScore: ITEM_DEDUPE_MIN_SCORE,
       itemKind: def.kind,
       sink,
+      ...(prepared?.ok
+        ? { precomputedEmbedding: prepared.embedded }
+        : prepared
+          ? { precomputedEmbedding: null, precomputedEmbeddingError: prepared.error }
+          : {}),
     });
     if (fuzzy) {
       sink.push(
@@ -328,6 +379,7 @@ export async function materializeSuggestedItems(
         ),
       );
       ids.push(fuzzy.id);
+      materializedSuggestions.push({ index, itemId: fuzzy.id });
       continue;
     }
 
@@ -372,8 +424,9 @@ export async function materializeSuggestedItems(
     if (options.onCreated) options.onCreated(row.id);
     else queueEmbedRefresh("item", row.id);
     ids.push(row.id);
+    materializedSuggestions.push({ index, itemId: row.id });
   }
-  return ids;
+  return { ids, materializedSuggestions };
 }
 
 /** Full ItemDefinition from an items row (columns + extras JSONB). */

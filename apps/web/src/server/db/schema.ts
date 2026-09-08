@@ -258,6 +258,39 @@ export const characters = pgTable(
 );
 
 /**
+ * Durable receipts for character-creation intents. The browser keeps one UUID
+ * for a creation draft; a committed POST whose response is lost can therefore
+ * replay the exact successful envelope instead of creating a second character
+ * or a second set of suggested items. A request id is owner-scoped, and reuse
+ * with a different payload hash is rejected by the route.
+ *
+ * The receipt has the same lifetime as its character. Deleting the character
+ * cascades this row, so a deliberately deleted draft does not leave permanent
+ * request metadata behind.
+ */
+export const characterCreationRequests = pgTable(
+  "character_creation_requests",
+  {
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestId: text("request_id").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** The recorded successful JSON envelope, replayed without recomputation. */
+    response: jsonb("response").notNull(),
+    httpStatus: integer("http_status").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ name: "character_creation_requests_owner_request_pk", columns: [t.ownerId, t.requestId] }),
+    index("character_creation_requests_character_idx").on(t.characterId),
+  ],
+);
+
+/**
  * **Personas** — the player as a library entity: who *you*
  * are in a chat, with a body, a wardrobe and a bio. The graduated successor to the
  * single inline `users.player_persona` blob (one per account); a chat picks one.

@@ -35,11 +35,14 @@ describe.skipIf(!ready)("character PATCH optimistic recovery", () => {
     const names = ["Harbor copper mantle 719", "Mountain violet boots 824"];
     const responses = await Promise.all(names.map((name) => patch(row.id, { name, expectedUpdatedAt: row.updatedAt.toISOString(), suggestedItems: [itemDefinitionSchema.parse({ name, kind: "clothing" })] })));
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
-    const winner = characterSaveSchema.parse(await expectJson(responses.find((response) => response.status === 200)!)).character;
+    const winnerResponse = characterSaveSchema.parse(await expectJson(responses.find((response) => response.status === 200)!));
+    const winner = winnerResponse.character;
     const conflict = characterSaveConflictSchema.parse(await expectJson(responses.find((response) => response.status === 409)!, 409));
     expect(conflict.character).toEqual(winner);
     const created = await db().select({ name: items.name }).from(items).where(eq(items.ownerId, authState.user.id));
     expect(created.filter((item) => names.includes(item.name))).toEqual([{ name: winner.name }]);
+    expect(winnerResponse.materializedSuggestions).toHaveLength(1);
+    expect(winner.profile.outfits[0]?.itemIds).toContain(winnerResponse.materializedSuggestions[0]?.itemId);
   });
 
   it("returns monotonic tokens for immediate saves and keeps a no-op token unchanged", async () => {
