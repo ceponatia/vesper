@@ -262,9 +262,10 @@ describe("renderResolvedScene identity provenance", () => {
     await renderResolvedScene(baseInput({}));
     expect(produced?.ok).toBe(false);
     expect(mockIntent).toHaveBeenCalledTimes(2);
-    expect(produced?.error).toBe("every scene image provider failed: edit boom");
+    if (!produced || produced.ok) throw new Error("expected the exhausted scene chain to fail");
+    expect(produced.error).toBe("every scene image provider failed: edit boom");
     // The deeper `edit` rung's attempt, not the primary `multi_edit` plan's.
-    expect((produced?.meta?.render as ResolvedImageAttempt | undefined)?.predictionId).toBe("pred-edit");
+    expect((produced.meta?.render as ResolvedImageAttempt | undefined)?.predictionId).toBe("pred-edit");
   });
 
   it("an unbound chain reports a pre-provider refusal instead of provider exhaustion", async () => {
@@ -288,8 +289,9 @@ describe("renderResolvedScene identity provenance", () => {
 
     expect(mockIntent).not.toHaveBeenCalled();
     expect(produced?.ok).toBe(false);
-    expect(produced?.error).toBe("the selected image model cannot render this scene");
-    expect(produced?.error).not.toContain("provider");
+    if (!produced || produced.ok) throw new Error("expected the unbound scene chain to fail");
+    expect(produced.error).toBe("the selected image model cannot render this scene");
+    expect(produced.error).not.toContain("provider");
     expect(sink.items.some((entry) => entry.code === "images.scene_render.program_unbound")).toBe(true);
     expect(sink.items.some((entry) => entry.code === "images.scene_render.no_attempt")).toBe(true);
   });

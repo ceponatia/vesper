@@ -12,6 +12,7 @@ import {
 import {
   emptyGarmentCueState,
   visualStateGarmentFixture,
+  visualStateLocusKey,
   visualStateSceneFixture,
   VISUAL_STATE_SCENE_NPC,
   VISUAL_STATE_SCENE_PLAYER,
@@ -387,10 +388,16 @@ describe("production chat cuts are narrowed to the scene cast", () => {
     // The participant map still retains the cast side of the committed scene:
     // the NPC's specific facing-toward-player relation survives even though the
     // player is no longer a subject in this digest.
-    const facing = program.subjects[0]?.facts.find((fact) => fact.key.includes("body_language.facing"));
+    const facingLocus = visualStateLocusKey({
+      kind: "relation",
+      relationId: `facing:${VISUAL_STATE_SCENE_NPC}:${VISUAL_STATE_SCENE_PLAYER}`,
+    });
+    const facing = program.subjects[0]?.facts.find((fact) =>
+      fact.key.includes(`/${facingLocus}/body_language.facing`),
+    );
     expect(facing).toMatchObject({
       concept: "subject.body_language",
-      value: { facing: "toward", towardSubjectId: String(VISUAL_STATE_SCENE_PLAYER) },
+      value: "toward",
     });
     expect(program.missingRequired).toEqual([]);
   });
