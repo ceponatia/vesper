@@ -261,8 +261,39 @@ describe("renderResolvedScene identity provenance", () => {
 
     await renderResolvedScene(baseInput({}));
     expect(produced?.ok).toBe(false);
+    expect(mockIntent).toHaveBeenCalledTimes(2);
+    if (!produced || produced.ok) throw new Error("expected the exhausted scene chain to fail");
+    expect(produced.error).toBe("every scene image provider failed: edit boom");
     // The deeper `edit` rung's attempt, not the primary `multi_edit` plan's.
-    expect((produced?.meta?.render as ResolvedImageAttempt | undefined)?.predictionId).toBe("pred-edit");
+    expect((produced.meta?.render as ResolvedImageAttempt | undefined)?.predictionId).toBe("pred-edit");
+  });
+
+  it("an unbound chain reports a pre-provider refusal instead of provider exhaustion", async () => {
+    const unboundProfile: ResolvedImageProfile = {
+      ...profile,
+      model: imageModelSchema.parse({
+        ...profile.model,
+        id: "mdl-unbound-scene",
+        slug: "test-only/unbound-scene",
+      }),
+    };
+    const sink = new DiagnosticCollector();
+    let produced: ImageProduceResult | undefined;
+    mockPipeline.mockImplementation(async (opts) => {
+      pipelineCalls.push(opts);
+      produced = await opts.produce({ id: "img1" } as unknown as ImageRow);
+      return { imageId: "img1", status: produced.ok ? "ready" : "failed" };
+    });
+
+    await renderResolvedScene(baseInput({ profile: unboundProfile, sink }));
+
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(produced?.ok).toBe(false);
+    if (!produced || produced.ok) throw new Error("expected the unbound scene chain to fail");
+    expect(produced.error).toBe("the selected image model cannot render this scene");
+    expect(produced.error).not.toContain("provider");
+    expect(sink.items.some((entry) => entry.code === "images.scene_render.program_unbound")).toBe(true);
+    expect(sink.items.some((entry) => entry.code === "images.scene_render.no_attempt")).toBe(true);
   });
 
   /**

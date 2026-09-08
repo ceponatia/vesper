@@ -1194,9 +1194,11 @@ function sceneFailureMessage(items: readonly Diagnostic[]): string {
   const terminal = [...items]
     .reverse()
     .find((diagnostic) =>
-      diagnostic.code === "images.scene_render.all_failed" || diagnostic.code === "images.scene_render.service_outage",
+      diagnostic.code === "images.scene_render.all_failed" ||
+      diagnostic.code === "images.scene_render.service_outage" ||
+      diagnostic.code === "images.scene_render.no_attempt",
     );
-  return terminal?.message ?? "all scene image providers failed";
+  return terminal?.message ?? "scene image generation failed";
 }
 
 export function shouldGenerateScene(scene: SceneGenState, turnNumber: number, directorWorthIt: boolean): boolean {

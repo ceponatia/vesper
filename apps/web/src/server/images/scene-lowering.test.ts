@@ -9,6 +9,15 @@ import {
   type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
+import {
+  emptyGarmentCueState,
+  visualStateGarmentFixture,
+  visualStateLocusKey,
+  visualStateSceneFixture,
+  VISUAL_STATE_SCENE_NPC,
+  VISUAL_STATE_SCENE_PLAYER,
+  type ChatGarmentStore,
+} from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
@@ -20,6 +29,7 @@ import {
 } from "@/contracts/images/scene-camera";
 import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { ViewerBodyPartId } from "@/contracts/images/viewer-body";
+import { safeBuildVisualStateShadow } from "@/server/visual-state";
 import {
   expectOrder,
   expectSections,
@@ -45,7 +55,7 @@ import {
   type SceneLoweringViewer,
   type SceneProgramInputs,
 } from "./scene-lowering";
-import { applySceneCastVisual } from "./scene-subject-visual";
+import { applySceneCastVisual, SCENE_VISUAL_CAMERA_ID } from "./scene-subject-visual";
 
 /**
  * THE SCENE REACHES THE COMPILED PROMPT (issue #388).
@@ -321,6 +331,97 @@ describe("the shared appearance owners in a scene", () => {
 
     expect(program.prompt).toMatch(/hair color: platinum/i);
     expect(program.prompt).toMatch(/eye color: blue/i);
+  });
+});
+
+describe("production chat cuts are narrowed to the scene cast", () => {
+  /**
+   * The shared chat factory carries three visual owners in one cut: the cast
+   * character, the player (whose committed posture lives in scene state), and
+   * a room locus for a discarded garment. Only the first is a character
+   * program subject. Before this projection existed, strict compilation
+   * refused this ordinary cut on `subject.player.exposure`, despite there being
+   * no provider failure and no missing character data.
+   */
+  it("keeps cast and room facts without compiling auxiliary player or room subjects", () => {
+    const [subject, bystander] = laneProbeCastSubjects();
+    if (subject === undefined || bystander === undefined) throw new Error("the probe cast fixture lost a member");
+    const coat = visualStateGarmentFixture({
+      id: "g_scene_coat",
+      categoryId: "outerwear",
+      name: "grey wool coat",
+      locus: { kind: "scene", placeName: "the study", anchor: "over the desk chair" },
+    });
+    const store: ChatGarmentStore = {
+      seeded: true,
+      blueprints: { [coat.instance.blueprintHash]: coat.blueprint },
+      instances: [coat.instance],
+      cues: emptyGarmentCueState(),
+      coverage: {},
+    };
+    const productionSubject = (castSubject: LaneProbeCastSubject): LaneProbeCastSubject => ({
+      ...castSubject,
+      shadow: {
+        ...castSubject.shadow,
+        garments: { store, actorId: `c:${castSubject.member.characterId}`, layersByGarmentId: new Map() },
+        playerSubjectId: "player",
+        sceneSubjectId: "scene",
+        sceneRelations: {
+          scene: visualStateSceneFixture(),
+          subjectsByParticipant: new Map([
+            [String(VISUAL_STATE_SCENE_NPC), castSubject.member.characterId],
+            [String(VISUAL_STATE_SCENE_PLAYER), "player"],
+          ]),
+        },
+      },
+    });
+    const focalSubject = productionSubject(subject);
+    const productionCast = [focalSubject, productionSubject(bystander)];
+    const plan = laneProbeCastScenePlan(productionCast.map((entry) => entry.member));
+
+    // Control: without the scene lane's projection, the shared chat cut really
+    // does assemble both auxiliary subjects; this is not a sterile fixture.
+    const shared = safeBuildVisualStateShadow({
+      ...focalSubject.shadow,
+      camera: { cameraId: SCENE_VISUAL_CAMERA_ID, spec: plan.camera },
+    });
+    expect(shared?.snapshot.subjects).toEqual(
+      expect.arrayContaining([subject.member.characterId, "player", "scene"]),
+    );
+
+    const realized = applySceneCastVisual({ plan, members: productionCast });
+    expect(realized.refusal).toBeNull();
+    expect(
+      realized.visuals.map((visual) => visual.digest.subjects.map((digestSubject) => digestSubject.subjectId)),
+    ).toEqual([[subject.member.characterId], [bystander.member.characterId]]);
+
+    const { program } = compileScene(plan, false, undefined, () => true, productionCast);
+    expect(program.subjects.map((compiled) => compiled.entityId)).toEqual([
+      subject.member.characterId,
+      bystander.member.characterId,
+    ]);
+    // The participant map still retains the cast side of the committed scene:
+    // the NPC's specific facing-toward-player relation survives even though the
+    // player is no longer a subject in this digest.
+    const facingLocus = visualStateLocusKey({
+      kind: "relation",
+      relationId: `facing:${VISUAL_STATE_SCENE_NPC}:${VISUAL_STATE_SCENE_PLAYER}`,
+    });
+    const facing = program.subjects[0]?.facts.find((fact) =>
+      fact.key.includes(`/${facingLocus}/body_language.facing`),
+    );
+    expect(facing).toMatchObject({
+      concept: "subject.body_language",
+      value: "toward",
+    });
+    const coatFactsBySubject = program.subjects.map(
+      (compiled) =>
+        compiled.facts.filter((fact) => fact.concept === "location.contents" && fact.value === "grey wool coat")
+          .length,
+    );
+    expect(coatFactsBySubject).toEqual([1, 0]);
+    expect(program.prompt.match(/Grey wool coat\./g)).toHaveLength(1);
+    expect(program.missingRequired).toEqual([]);
   });
 });
 
