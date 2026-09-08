@@ -34,6 +34,16 @@ type CharacterCreationRecoveryCharacter = Pick<
   typeof characters.$inferSelect,
   "id" | "name" | "profile" | "tags" | "avatarImageId" | "updatedAt" | "visibility" | "chatModel"
 >;
+const creationRecoveryColumns = {
+  id: characters.id,
+  name: characters.name,
+  profile: characters.profile,
+  tags: characters.tags,
+  avatarImageId: characters.avatarImageId,
+  updatedAt: characters.updatedAt,
+  visibility: characters.visibility,
+  chatModel: characters.chatModel,
+};
 
 export type CharacterCreationOutcome =
   | { status: "created" | "replayed"; response: z.infer<typeof characterCreationResponseSchema>; httpStatus: number }
@@ -78,9 +88,9 @@ function profileForCreate(body: CharacterCreateBody, suggestedIds: readonly stri
   );
 }
 
-function parseReplay(response: unknown): z.infer<typeof characterCreationResponseSchema> | null {
+function parseReplay(response: unknown, characterId: string): z.infer<typeof characterCreationResponseSchema> | null {
   const parsed = characterCreationResponseSchema.safeParse(response);
-  return parsed.success ? parsed.data : null;
+  return parsed.success && parsed.data.character.id === characterId ? parsed.data : null;
 }
 
 /**
@@ -97,18 +107,30 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
   // races.
   if (requestId) {
     const [existing] = await db()
-      .select({ payloadHash: characterCreationRequests.payloadHash, response: characterCreationRequests.response, httpStatus: characterCreationRequests.httpStatus })
+      .select({
+        payloadHash: characterCreationRequests.payloadHash,
+        response: characterCreationRequests.response,
+        httpStatus: characterCreationRequests.httpStatus,
+        characterId: characterCreationRequests.characterId,
+      })
       .from(characterCreationRequests)
       .where(and(eq(characterCreationRequests.ownerId, ownerId), eq(characterCreationRequests.requestId, requestId)))
       .limit(1);
     if (existing) {
       if (existing.payloadHash === hash) {
         if (existing.httpStatus !== 201) return { status: "replay_invalid" };
-        const response = parseReplay(existing.response);
+        const response = parseReplay(existing.response, existing.characterId);
         return response
           ? { status: "replayed", response, httpStatus: existing.httpStatus }
           : { status: "replay_invalid" };
       }
+      const created = existing.httpStatus === 201 ? parseReplay(existing.response, existing.characterId) : null;
+      const [character] = await db().select(creationRecoveryColumns).from(characters)
+        .where(and(eq(characters.id, existing.characterId), eq(characters.ownerId, ownerId)))
+        .limit(1);
+      return created && character
+        ? { status: "idempotency_mismatch", recovery: { created, character } }
+        : { status: "idempotency_mismatch" };
     }
   }
 
@@ -135,17 +157,8 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
         .for("update");
       if (existing) {
         if (existing.payloadHash !== hash) {
-          const created = existing.httpStatus === 201 ? parseReplay(existing.response) : null;
-          const [character] = await tx.select({
-            id: characters.id,
-            name: characters.name,
-            profile: characters.profile,
-            tags: characters.tags,
-            avatarImageId: characters.avatarImageId,
-            updatedAt: characters.updatedAt,
-            visibility: characters.visibility,
-            chatModel: characters.chatModel,
-          }).from(characters)
+          const created = existing.httpStatus === 201 ? parseReplay(existing.response, existing.characterId) : null;
+          const [character] = await tx.select(creationRecoveryColumns).from(characters)
             .where(and(eq(characters.id, existing.characterId), eq(characters.ownerId, ownerId)))
             .limit(1);
           return created && character
@@ -153,7 +166,7 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
             : { status: "idempotency_mismatch" };
         }
         if (existing.httpStatus !== 201) return { status: "replay_invalid" };
-        const response = parseReplay(existing.response);
+        const response = parseReplay(existing.response, existing.characterId);
         return response
           ? { status: "replayed", response, httpStatus: existing.httpStatus }
           : { status: "replay_invalid" };

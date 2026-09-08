@@ -9,7 +9,12 @@ const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Character create", role: "admin" as const },
 }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
+vi.mock("@/server/ai", async () => {
+  const actual = await vi.importActual<typeof import("@/server/ai")>("@/server/ai");
+  return { ...actual, embedTexts: vi.fn(actual.embedTexts) };
+});
 
+import { embedTexts } from "@/server/ai";
 import {
   apiRequest,
   bindAuthUser,
@@ -22,6 +27,8 @@ import {
   withAuthUser,
 } from "@/server/test-support";
 import { POST } from "./route";
+
+const mockEmbedTexts = vi.mocked(embedTexts);
 
 const ready = await probeIntegrationDb("character-create.int.test", "character_creation_requests");
 const requestId = "67546fd0-8169-4a1a-bef1-d50b94034bc0";
@@ -77,6 +84,7 @@ describe.skipIf(!ready)("character POST creation recovery", () => {
     const first = characterSaveSchema.parse(await expectJson(await create(draft("Stable Nora", id))));
     await db().update(characters).set({ name: "Server Nora", updatedAt: new Date("2026-09-07T19:00:00.000Z") })
       .where(eq(characters.id, first.character.id));
+    mockEmbedTexts.mockClear();
     const mismatch = characterCreationMismatchSchema.parse(await expectJson(
       await create(draft("Different Nora", id)),
       409,
@@ -84,6 +92,7 @@ describe.skipIf(!ready)("character POST creation recovery", () => {
     expect(mismatch.recovery.created.character.name).toBe("Stable Nora");
     expect(mismatch.recovery.character.name).toBe("Server Nora");
     expect(mismatch.recovery.character.id).toBe(first.character.id);
+    expect(mockEmbedTexts).not.toHaveBeenCalled();
 
     const [stored] = await db().select({ name: characters.name }).from(characters).where(eq(characters.id, first.character.id));
     expect(stored?.name).toBe("Server Nora");
@@ -93,6 +102,21 @@ describe.skipIf(!ready)("character POST creation recovery", () => {
       .where(and(eq(items.ownerId, authState.user.id), eq(items.name, "Different Nora copper coat")));
     expect(differentCharacters).toEqual([]);
     expect(differentItems).toEqual([]);
+  });
+
+  it("never exposes a corrupted receipt as the recovery base", async () => {
+    const id = "397e5c7d-56f2-4c08-935f-f29ebcccbab4";
+    characterSaveSchema.parse(await expectJson(await create(draft("Receipt Iris", id))));
+    const [receipt] = await db().select({ response: characterCreationRequests.response })
+      .from(characterCreationRequests)
+      .where(and(eq(characterCreationRequests.ownerId, authState.user.id), eq(characterCreationRequests.requestId, id)));
+    const response = receipt?.response as { character?: Record<string, unknown> } | undefined;
+    await db().update(characterCreationRequests).set({
+      response: { ...response, character: { ...response?.character, id: "unrelated-character" } },
+    }).where(and(eq(characterCreationRequests.ownerId, authState.user.id), eq(characterCreationRequests.requestId, id)));
+    const raw = await expectJson<{ error: { code: string }; recovery?: unknown }>(await create(draft("Different Receipt Iris", id)), 409);
+    expect(raw.error.code).toBe("idempotency_mismatch");
+    expect(raw.recovery).toBeUndefined();
   });
 
   it("scopes the same request UUID independently per owner", async () => {
