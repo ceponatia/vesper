@@ -261,8 +261,9 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
  * `buildOne` MUST NOT throw. That is what keeps settlement per-slot: each target
  * reserves, renders and settles its own row, so a moderated bare view fails
  * exactly one tile and the other seven finish. `buildOneReferenceView` is
- * written to that contract, and a throw from it is a defect that fails the whole
- * pass loudly rather than being counted as a refusal.
+ * written to that contract. A defect that does throw still waits for every
+ * sibling to settle and release its lease before failing the whole pass loudly,
+ * rather than being counted as a refusal.
  *
  * Extracted so the concurrency promise can be exercised on its own: the claim is
  * about the fan-out, not about the database underneath one view.
@@ -271,13 +272,19 @@ export async function runReferenceViewBuilds(
   targets: readonly ReferenceView[],
   buildOne: (target: ReferenceView) => Promise<boolean>,
 ): Promise<{ built: number; failed: number }> {
-  const settled = await Promise.all(targets.map((target) => buildOne(target)));
+  const settled = await Promise.allSettled(targets.map((target) => buildOne(target)));
   let built = 0;
   let failed = 0;
-  for (const ok of settled) {
-    if (ok) built += 1;
+  let rejected: PromiseRejectedResult | undefined;
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      rejected ??= result;
+      continue;
+    }
+    if (result.value) built += 1;
     else failed += 1;
   }
+  if (rejected) throw rejected.reason;
   return { built, failed };
 }
 
