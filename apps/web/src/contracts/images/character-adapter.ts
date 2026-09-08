@@ -659,8 +659,21 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
   }
   const digestSubjectById = new Map(digest.subjects.map((subject) => [subject.subjectId, subject]));
   const ageOmitted = input.apparentAge === "omit";
+  const baseEntityIds = new Set(base.subjects.map((subject) => subject.entityId));
+  const sourceOnlySubjects: ImageSubjectDigest[] = Object.keys(input.sources)
+    .filter((subjectId) => !baseEntityIds.has(subjectId))
+    .sort()
+    .map((subjectId) => ({
+      kind: "subject",
+      ref: `subject.${subjectId}`,
+      entityId: subjectId,
+      label: input.labels?.[subjectId]?.trim() || "the subject",
+      facts: [],
+      morphology: [],
+      missingRequired: [],
+    }));
 
-  const subjects = base.subjects.map((slice): ImageSubjectDigest => {
+  const subjects = [...base.subjects, ...sourceOnlySubjects].map((slice): ImageSubjectDigest => {
     const sources = input.sources[slice.entityId];
     const digestSubject = digestSubjectById.get(slice.entityId);
     const selected = [...(digestSubject?.required ?? []), ...(digestSubject?.optional ?? [])];

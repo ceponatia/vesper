@@ -487,6 +487,39 @@ function adapterSlices(digest: VisualImageDigest, overrides: Partial<CharacterSu
 }
 
 describe("projectCharacterWorldSlices", () => {
+  it("creates a complete source-backed subject when visual selection contains no facts", () => {
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "waist_up" } }),
+    });
+    expect(digest.subjects).toEqual([]);
+
+    const complete = adapterSlices(digest);
+    expect(complete.subjects).toHaveLength(1);
+    expect(complete.subjects[0]).toMatchObject({
+      ref: `subject.${SUBJECT}`,
+      entityId: SUBJECT,
+      label: "the subject",
+      missingRequired: [],
+    });
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "hair.color")?.value).toBe(
+      "Hair color: platinum",
+    );
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
+      "Eye color: blue",
+    );
+
+    const withoutHair = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        ADULT_AGE_VALUE,
+      ]).filter((attribute) => attribute.id !== "hair.color"),
+    });
+    expect(withoutHair.subjects[0]?.missingRequired).toContain(
+      `subject.${SUBJECT}.appearance.hair.color`,
+    );
+  });
+
   it("adds canonical appearance facts once and protects required reference-free identity", () => {
     const slices = adapterSlices(characterDigest([ageAnchorFeature()]));
     const subject = slices.subjects[0];
