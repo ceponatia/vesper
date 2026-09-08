@@ -56,6 +56,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
     id: `${store.data.id}:${conflict.updatedAt}`,
     server: conflict.snapshot,
     updatedAt: conflict.updatedAt,
+    authoringRevision: conflict.authoringRevision,
     record: { base: store.data.serverSnapshot ?? { draft: emptyCharacterDraft(), chatModel: conflict.snapshot.chatModel }, authored: { draft, chatModel: store.data.serverSnapshot?.chatModel ?? conflict.snapshot.chatModel }, serverUpdatedAt: store.data.serverUpdatedAt },
   } : null;
   const changeDraft = (next: CharacterDraft) => { if (!store.current.current.serverConflict) store.update((current) => ({ ...current, draft: next })); };
@@ -166,7 +167,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       if (snapshot.savedCharacterId && (!snapshot.serverUpdatedAt || !snapshot.serverSnapshot)) {
         const fresh = await charactersApi.get(snapshot.savedCharacterId);
         if (!fresh.ok) { if (active.current) toast.push({ title: "Save paused", description: "Could not check the saved character. Your draft is retained.", tone: "error" }); return; }
-        if (store.current.current.id === snapshot.id) store.update((current) => ({ ...current, serverConflict: { snapshot: authorSnapshotFromDetail(fresh.data), updatedAt: fresh.data.updatedAt } }));
+        if (store.current.current.id === snapshot.id) store.update((current) => ({ ...current, serverConflict: { snapshot: authorSnapshotFromDetail(fresh.data), updatedAt: fresh.data.updatedAt, authoringRevision: fresh.data.authoringRevision } }));
         return;
       }
       const body = { name: authored.name || "Untitled character", tags: authored.tags, profile: authored.profile, suggestedItems: authored.suggestedItems };
@@ -198,7 +199,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
           return;
         }
         const changed = parseOrNull(characterSaveConflictSchema, result.error.body);
-        if (store.current.current.id === snapshot.id && changed) store.update((current) => ({ ...current, serverConflict: { snapshot: authorSnapshotFromDetail(changed.character), updatedAt: changed.character.updatedAt } }));
+        if (store.current.current.id === snapshot.id && changed) store.update((current) => ({ ...current, serverConflict: { snapshot: authorSnapshotFromDetail(changed.character), updatedAt: changed.character.updatedAt, authoringRevision: changed.character.authoringRevision } }));
         else {
           if (result.error.code === "invalid_body" && !snapshot.savedCharacterId && store.current.current.id === snapshot.id) store.update((current) => ({ ...current, initialSaveDraft: null }));
           if (active.current) toast.push({ title: "Save failed", description: result.error.message, tone: "error" });

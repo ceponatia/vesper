@@ -15,6 +15,7 @@ export const characterCreationStateSchema = z.object({
   serverConflict: z.object({
     snapshot: characterAuthorSnapshotSchema,
     updatedAt: z.string().nullable(),
+    authoringRevision: z.number().int().positive(),
     reason: z.enum(["saved_change", "creation_mismatch"]).optional(),
   }).nullable().default(null),
   saveDestination: z.enum(characterEditorTabs).nullable().default(null),
@@ -142,6 +143,7 @@ export function recoverCreationMismatch(
     serverConflict: {
       snapshot: authorSnapshotFromDetail(character),
       updatedAt: character.updatedAt,
+      authoringRevision: character.authoringRevision,
       reason: "creation_mismatch",
     },
   };

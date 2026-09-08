@@ -58,6 +58,7 @@ describe("character browser draft persistence", () => {
       name: "Server Iris",
       profile: { bio: "Current saved value" },
       updatedAt: "2026-09-07T19:00:00.000Z",
+      authoringRevision: 7,
     });
     const recovered = recoverCreationMismatch(state, created, current);
     expect(recovered.savedCharacterId).toBe("saved-iris");
@@ -65,6 +66,7 @@ describe("character browser draft persistence", () => {
     expect(recovered.draft.profile.bio).toBe("Local edit");
     expect(recovered.serverSnapshot?.draft.name).toBe("Original Iris");
     expect(recovered.serverConflict?.snapshot.draft.name).toBe("Server Iris");
+    expect(recovered.serverConflict?.authoringRevision).toBe(7);
     expect(recovered.serverConflict?.reason).toBe("creation_mismatch");
     expect(recovered.serverUpdatedAt).toBe(current.updatedAt);
     expect(recovered.initialSaveDraft).toBeNull();
