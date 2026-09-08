@@ -145,6 +145,15 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(reservation);
   });
 
+  it("refuses a stale source at reservation before a build can call the provider", async () => {
+    const state = await fixture();
+    const replacement = await asset(state.input.characterId, "avatar");
+    await db().update(characters).set({ acceptedAvatarImageId: replacement.id, acceptedAt: new Date() })
+      .where(eq(characters.id, state.input.characterId));
+    expect(await reserveReferenceView(state.reserve)).toBeNull();
+    expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(state.first.id);
+  });
+
   it.each(["queued", "running"] as const)("refuses an upload during a %s build without changing the current attempt or creating an asset", async (status) => {
     const state = await fixture();
     await db().insert(jobs).values({ ownerId, type: "reference_views", status, payload: { characterId: state.input.characterId } });

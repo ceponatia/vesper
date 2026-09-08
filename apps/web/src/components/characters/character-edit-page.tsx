@@ -223,6 +223,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         onTabChange={setTab}
         characterId={characterId}
         avatarImageId={detail.data?.avatarImageId ?? null}
+        referencePlanRevision={detail.data?.updatedAt ?? null}
         {...(detail.data ? { acceptance: detail.data.acceptance } : {})}
         onAvatarChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }}
         chatModel={chatModel}

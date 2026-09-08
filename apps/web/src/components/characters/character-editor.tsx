@@ -66,6 +66,8 @@ export interface CharacterEditorProps {
   characterId?: string;
   /** The portrait candidate on screen. */
   avatarImageId?: string | null;
+  /** Saved row revision used to refresh age-gated portrait reference plans. */
+  referencePlanRevision?: string | null;
   /** Which portrait is the character's identity source (owner read; absent ⇒ none). */
   acceptance?: CharacterPortraitAcceptance;
   onAvatarChanged?: () => void;
@@ -95,6 +97,7 @@ export function CharacterEditor({
   derivingPortrait = false,
   characterId,
   avatarImageId = null,
+  referencePlanRevision = null,
   acceptance = emptyCharacterPortraitAcceptance(),
   onAvatarChanged,
   diagnostics = [],
@@ -457,6 +460,7 @@ export function CharacterEditor({
             characterId={characterId}
             name={draft.name || "Untitled"}
             avatarImageId={avatarImageId}
+            referencePlanRevision={referencePlanRevision}
             acceptance={acceptance}
             onAvatarChanged={onAvatarChanged ?? (() => {})}
           />

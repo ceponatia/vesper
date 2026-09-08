@@ -520,6 +520,11 @@ export interface ReserveReferenceViewInput {
 export async function reserveReferenceView(input: ReserveReferenceViewInput): Promise<string | null> {
   const { characterId, view } = input;
   return withReferenceViewLock(characterId, async (tx) => {
+    // The build reads and hashes its portrait before workers reserve slots. If
+    // the owner accepts another portrait while those workers are waiting for
+    // this lock, refuse the stale reservation before any provider call.
+    const acceptedImageId = await readAcceptedPortrait(characterId, input.ownerId, tx);
+    if (acceptedImageId !== input.sourceImageId) return null;
     const plan = await readReferenceViewPlan(characterId, input.ownerId, tx);
     if (plan === undefined || !planIncludes(plan, view)) return null;
     await tx

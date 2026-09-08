@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   referenceViewAngles,
   referenceViewWardrobeEntries,
@@ -76,6 +76,8 @@ function slotKey(view: { angle: string; wardrobe: string }): string {
 
 export interface ReferenceViewsPanelProps {
   characterId: string;
+  /** Saved character revision; apparent-age saves can change the eligible plan. */
+  planRevision: string | null;
   /**
    * Which portrait the character's identity comes from, and whether the one on
    * screen is it. Views are measured against the ACCEPTED portrait, so the read
@@ -87,10 +89,10 @@ export interface ReferenceViewsPanelProps {
   onChanged: () => void;
 }
 
-export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: ReferenceViewsPanelProps) {
+export function ReferenceViewsPanel({ characterId, planRevision, acceptance, onChanged }: ReferenceViewsPanelProps) {
   const views = useAsyncData(
     () => referenceViewsApi.get(characterId),
-    [characterId, acceptance.acceptedImageId],
+    [characterId, acceptance.acceptedImageId, planRevision],
   );
   const toast = useToast();
   const [busySlot, setBusySlot] = useState<string | null>(null);
@@ -126,6 +128,21 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     // pruned them, so a batch that settles before the first tick cannot leave a
     // tile busy forever.
     submitted.size > 0;
+
+  // A saved apparent-age change can make a previously selected bare slot
+  // ineligible. Remove anything the refreshed server plan no longer offers for
+  // regeneration so an invisible checkbox cannot poison a mixed batch.
+  useEffect(() => {
+    const current = views.data?.set;
+    if (!current) return;
+    const eligible = new Set(current.views
+      .filter((view) => view.state !== "ineligible" && view.attemptId !== null)
+      .map(slotKey));
+    setSelected((previous) => {
+      const next = new Set([...previous].filter((key) => eligible.has(key)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [views.data?.set]);
 
   usePollWhile(
     inFlight,
