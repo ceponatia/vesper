@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  IDENTITY_PACK_DERIVATION_VERSION,
+  IDENTITY_PACK_POLICY_VERSION,
+  IDENTITY_PACK_SCHEMA_VERSION,
+} from "@vesper/image-core";
 import { REFERENCE_VIEW_GENERATION_VERSION } from "@/contracts";
-import { characterReferenceViews, characters, db, jobs } from "@/server/db";
+import { characterReferenceViews, characters, db, imageIdentityPacks, jobs } from "@/server/db";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 import { listCharacterMediaJobs } from "./character-media-jobs";
 
@@ -172,5 +177,80 @@ describe.skipIf(!ready)("owner-scoped character media jobs", () => {
       .toEqual([attempts[1]!.id]);
     expect(projected.flatMap((job) => job.results).map((result) => result.id))
       .not.toContain(attempts[2]!.id);
+  });
+
+  it("attributes overlapping identity packs by exact ids and bounds legacy fallback", async () => {
+    const [character] = await db()
+      .insert(characters)
+      .values({ ownerId, name: "Identity result ownership" })
+      .returning({ id: characters.id });
+    if (!character) throw new Error("failed to seed identity ownership character");
+
+    const windowStart = new Date(Date.now() - 4_000);
+    const packs = await db()
+      .insert(imageIdentityPacks)
+      .values([1, 2, 3].map((revision) => ({
+        characterId: character.id,
+        revision,
+        current: false,
+        status: "ready" as const,
+        sourceContentHash: `${revision}`.repeat(64),
+        sourceWidth: 96,
+        sourceHeight: 128,
+        schemaVersion: IDENTITY_PACK_SCHEMA_VERSION,
+        derivationVersion: IDENTITY_PACK_DERIVATION_VERSION,
+        policyVersion: IDENTITY_PACK_POLICY_VERSION,
+        method: "heuristic" as const,
+        createdAt: new Date(windowStart.getTime() + revision * 1_000),
+      })))
+      .returning({ id: imageIdentityPacks.id });
+    expect(packs).toHaveLength(3);
+    const windowEnd = new Date(windowStart.getTime() + 4_000);
+
+    const inserted = await db()
+      .insert(jobs)
+      .values([
+        {
+          ownerId,
+          type: "identity_pack",
+          status: "done",
+          payload: { characterId: character.id, identityPackIds: [packs[0]!.id] },
+          createdAt: windowStart,
+          heartbeatAt: windowEnd,
+          startedAt: windowStart,
+          finishedAt: windowEnd,
+        },
+        {
+          ownerId,
+          type: "identity_pack",
+          status: "done",
+          payload: { characterId: character.id, identityPackIds: [packs[1]!.id] },
+          createdAt: windowStart,
+          heartbeatAt: windowEnd,
+          startedAt: windowStart,
+          finishedAt: windowEnd,
+        },
+        {
+          ownerId,
+          type: "identity_pack",
+          status: "done",
+          payload: { characterId: character.id },
+          createdAt: windowStart,
+          heartbeatAt: windowEnd,
+          startedAt: windowStart,
+          finishedAt: windowEnd,
+        },
+      ])
+      .returning({ id: jobs.id });
+
+    const projected = await listCharacterMediaJobs(character.id, ownerId);
+    expect(projected.find((job) => job.id === inserted[0]?.id)?.results.map((result) => result.id))
+      .toEqual([packs[0]!.id]);
+    expect(projected.find((job) => job.id === inserted[1]?.id)?.results.map((result) => result.id))
+      .toEqual([packs[1]!.id]);
+    expect(projected.find((job) => job.id === inserted[2]?.id)?.results.map((result) => result.id))
+      .toEqual([packs[2]!.id]);
+    expect(projected.filter((job) => job.id !== inserted[2]?.id).flatMap((job) => job.results).map((result) => result.id))
+      .not.toContain(packs[2]!.id);
   });
 });

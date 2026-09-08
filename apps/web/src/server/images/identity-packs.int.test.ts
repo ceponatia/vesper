@@ -1162,6 +1162,35 @@ describe.skipIf(!ready)("read-time policy projection", () => {
  * B ends up prepared with no `ensureIdentityPack` call of the test's own.
  */
 describe.skipIf(!ready)("background preparation convergence", () => {
+  it("does not let a late worker overwrite an externally terminal job", async () => {
+    const subject = await seedSubject("Terminal preparation fence");
+    const gate = gatedDetector();
+    setIdentityFaceDetectorForTesting(gate.detector);
+
+    const running = runIdentityPackPreparationForTesting(subject.characterId, userId, 10);
+    await waitForReservation(subject.characterId);
+    const [job] = await packJobs(subject.characterId);
+    if (!job) throw new Error("preparation job was not inserted");
+    const externallySettled = {
+      characterId: subject.characterId,
+      identityPackIds: [],
+      convergence: "expired",
+    };
+    await db()
+      .update(jobs)
+      .set({ status: "failed", payload: externallySettled, error: "lease expired", finishedAt: new Date() })
+      .where(eq(jobs.id, job.id));
+
+    gate.release();
+    await running;
+
+    const [settled] = await db()
+      .select({ status: jobs.status, payload: jobs.payload, error: jobs.error })
+      .from(jobs)
+      .where(eq(jobs.id, job.id));
+    expect(settled).toEqual({ status: "failed", payload: externallySettled, error: "lease expired" });
+  }, 20_000);
+
   it("prepares the portrait that was promoted while the earlier derivation was in flight", async () => {
     const subject = await seedSubject("Convergence Subject");
     const gate = gatedDetector();

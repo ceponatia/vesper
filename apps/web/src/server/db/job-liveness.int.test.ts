@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { hasLiveChatJob, JOB_STALE_MS } from "./job-liveness";
 import { db, jobs } from "@/server/db";
+import { queueDepth } from "../api/backpressure";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 
 // Integration suite for the one-live-per-chat dedupe. The behavior that matters
@@ -62,8 +63,16 @@ describe.skipIf(!ready)("hasLiveChatJob", () => {
   });
 
   it("keeps an old job live while its heartbeat remains fresh", async () => {
+    const before = await queueDepth();
     await insertRunning(1_000, JOB_STALE_MS + 60_000);
     expect(await hasLiveChatJob("chat_scene_image", CHAT)).toBe(true);
+    expect(await queueDepth()).toBe(before + 1);
+  });
+
+  it("drops a recent-created job from queue depth after its heartbeat expires", async () => {
+    const before = await queueDepth();
+    await insertRunning(JOB_STALE_MS + 60_000, 1_000);
+    expect(await queueDepth()).toBe(before);
   });
 
   it("is scoped by type and by chat", async () => {
