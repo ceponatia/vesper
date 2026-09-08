@@ -36,13 +36,15 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
   Oversized existing briefs retain their opening and closing constraints within that limit.
 - Revisions do not replace the original brief. Fill and rewrite receive it alongside the current
   sheet, whose later authored values remain authoritative when they disagree with the original.
-- Save and open Portrait Studio or Chat preserves the requested destination. Pending proposals
-  carry into the saved character's review storage without acceptance. Repeated saves replace
+- An ordinary successful first save opens the persisted character at the creation draft's active
+  section. Save and open Portrait Studio or Chat opens the persisted destination directly. Pending
+  proposals carry into the saved character's review storage without acceptance. Repeated saves replace
   that creation draft's pending contribution and preserve decisions made on either surface,
   without removing proposals created independently on the saved character. A failed review
   transfer retains the creation draft and a link to the requested Portrait Studio or Chat destination.
-- A successful save clears only the browser version it saved. If newer edits exist, the saved
-  character remains linked and the newer draft stays available. Subsequent saves of that draft
+- A successful save clears only the browser version it saved. A completed generation receipt that
+  is already represented in the durable draft or review does not delay the transition. If newer
+  edits exist, the saved character remains linked and the newer draft stays available. Subsequent saves of that draft
   update the linked character rather than creating another character.
 - The first save freezes an `initialSaveDraft` and sends the creation draft's UUID as
   `creationRequestId`. The server commits the character, its materialized items and a replayable

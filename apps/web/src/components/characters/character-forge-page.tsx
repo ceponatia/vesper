@@ -19,7 +19,7 @@ import { SkeletonText } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
-import { canApplyCreationForgePreview, characterCreationStateSchema, completeCreationForge, creationForgeStart, emptyCharacterCreation, isPristineCharacterDraft, prepareCreationSave, recoverCreationMismatch, savedCreationHref, withCreationBrief } from "./character-creation-draft";
+import { canApplyCreationForgePreview, characterCreationStateSchema, completeCreationForge, creationForgeStart, creationSaveNavigationHref, emptyCharacterCreation, isPristineCharacterDraft, prepareCreationSave, recoverCreationMismatch, savedCreationHref, withCreationBrief } from "./character-creation-draft";
 import { CharacterProposalReview } from "./character-proposal-review";
 import { readDraft, writeDraft } from "./character-draft-storage";
 import { characterReviewStateSchema, proposalChanges, reconcileMaterializedUndo, transferCreationReview } from "./character-proposals";
@@ -223,7 +223,11 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         if (active.current) toast.push({ title: "Character saved", description: "Browser review storage is unavailable. This creation draft stays open so you can finish reviewing.", tone: "success" });
         return;
       }
-      if (generation.hasOutstanding() || !unchanged || !authoredMatchesSaved || store.current.current.id !== snapshot.id || store.revision.current !== boundRevision) {
+      const navigationHref = creationSaveNavigationHref(store.current.current, generation.recordsNow(), {
+        characterId, requestId: snapshot.id, savedSnapshotUnchanged: unchanged, authoredMatchesSaved,
+        revisionMatches: store.revision.current === boundRevision,
+      });
+      if (!navigationHref) {
         if (active.current) toast.push({ title: "Snapshot saved", description: "Your edits and any unfinished generation remain in this draft. Open the saved character using the link below.", tone: "success" });
         return;
       }
@@ -233,7 +237,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         toast.push({ title: "Character saved", description: "The browser draft is kept because its stored version changed or storage is unavailable.", tone: "success" });
         return;
       }
-      router.push(savedCreationHref(store.current.current) ?? `/characters/${characterId}`);
+      router.push(navigationHref);
     } finally { if (active.current) { setSaving(false); saveInFlight.current = false; } }
   };
 

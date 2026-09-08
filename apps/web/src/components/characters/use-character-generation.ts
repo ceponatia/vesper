@@ -218,6 +218,7 @@ export function useCharacterGeneration(
     unavailable,
     isRunning: () => recordsRef.current.some((record) => record.status === "pending"),
     hasOutstanding: () => recordsRef.current.some((record) => record.status === "pending" || record.status === "failed" || record.proposal.status === "unresolved"),
+    recordsNow: () => recordsRef.current,
     start,
     retry,
     dismiss,
