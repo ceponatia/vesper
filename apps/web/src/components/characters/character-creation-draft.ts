@@ -3,6 +3,7 @@ import { attributeRegistry, boundCharacterCreationBrief, traitRegistry } from "@
 import { characterEditorTabs } from "@/lib/character-scopes";
 import { characterDraftSchema, emptyCharacterDraft, type CharacterDetail, type CharacterDraft } from "@/lib/client/api";
 import { authorSnapshotFromDetail, characterAuthorSnapshotSchema } from "./character-author-draft";
+import { hasReceivedGeneration, type CharacterGeneration } from "./character-generation-record";
 import { characterReviewStateSchema, describeProposalValue, emptyCharacterReview, proposalChanges } from "./character-proposals";
 
 export const characterCreationStateSchema = z.object({
@@ -96,6 +97,25 @@ export function completeCreationForge(current: CharacterCreationState, started: 
 
 export function savedCreationHref(state: CharacterCreationState): string | null {
   return state.savedCharacterId ? `/characters/${state.savedCharacterId}?tab=${state.saveDestination ?? state.tab}` : null;
+}
+
+/** Resolve the successful-save transition only when every newer author state is
+ * either in the acknowledgment or transferred review. A completed generation
+ * receipt may briefly remain after its result is durable and does not block. */
+export function creationSaveNavigationHref(
+  state: CharacterCreationState,
+  sourceRecords: readonly Pick<CharacterGeneration, "id" | "status">[],
+  result: {
+    characterId: string;
+    requestId: string;
+    savedSnapshotUnchanged: boolean;
+    authoredMatchesSaved: boolean;
+    revisionMatches: boolean;
+  },
+): string | null {
+  const generationBlocks = sourceRecords.some((record) => record.status !== "completed" || !hasReceivedGeneration(state.review, record.id));
+  if (generationBlocks || !result.savedSnapshotUnchanged || !result.authoredMatchesSaved || state.id !== result.requestId || !result.revisionMatches) return null;
+  return savedCreationHref(state) ?? `/characters/${result.characterId}`;
 }
 
 /** Bind a retained local draft to the character already committed under its

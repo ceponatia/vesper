@@ -100,7 +100,7 @@ export function useCharacterGeneration(ownerId: string, target: GenerationTarget
   return {
     records, active, unavailable: storage.unavailable(prefix),
     isRunning: () => list(ownerId, target).some((record) => running.has(generationKey(record))),
-    hasOutstanding: () => list(ownerId, target).length > 0,
+    recordsNow: () => list(ownerId, target),
     start: (input: GenerationInput) => {
       const record: CharacterGeneration = { ...input, id: crypto.randomUUID(), ownerId, target, status: "pending", result: null, error: null };
       storage.setItem(generationKey(record), JSON.stringify(record)); run(record);
