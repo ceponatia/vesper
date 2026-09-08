@@ -25,6 +25,7 @@ import { characterReviewStateSchema, emptyCharacterReview, proposalChanges, reco
 import { CharacterAuthorRecoveryNotice } from "./character-author-recovery";
 import { useCharacterAuthorDraft } from "./use-character-author-draft";
 import { CharacterGenerationStatus } from "./character-generation-status";
+import { CharacterMediaStatus } from "./character-media-status";
 import { hasReceivedGeneration, receiveGenerationReview } from "./character-generation-record";
 import { useCharacterGeneration } from "./use-character-generation";
 import { useCharacterDraftStorage } from "./use-character-draft-storage";
@@ -225,6 +226,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         <Button disabled={saving} onClick={() => void author.resetToServer()}>Use saved character</Button>
       </div> : null}
       {author.recovery ? <CharacterAuthorRecoveryNotice key={author.recovery.id} recovery={author.recovery} disabled={saving || author.storage.conflict} onRestore={author.resolveRecovery} onDiscard={() => void author.discardRecovery()} /> : null}
+      <CharacterMediaStatus characterId={characterId} onRetry={() => setTab("portrait")} />
       <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={author.blocked || reviewStore.conflict || preparing !== null} onRetry={generation.retry} onDismiss={generation.dismiss} />
       <CharacterProposalReview draft={draft} review={reviewStore.data} onReviewChange={reviewStore.update} onChange={changeDraft}
         disabled={!reviewStore.ready || reviewStore.conflict || author.blocked} isBlocked={() => reviewStore.isBlocked() || author.isBlocked()} />
