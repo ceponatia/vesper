@@ -54,11 +54,13 @@ const resultSchema = z.object({
 const undoSchema = z.object({
   id: z.string(), label: z.string(), base: characterDraftSchema, proposed: characterDraftSchema,
   undo: z.literal(true), sourceRunId: z.string(), proposalRevision: z.number().int().positive(),
+  decidedAt: z.string().datetime().nullable().default(null),
   portraitEvidence: portraitExtractionEvidenceSchema.optional(),
 });
 const proposalStateSchema = z.object({
   revision: z.number().int().positive().default(1),
   status: z.enum(["unresolved", "accepted", "rejected", "undone", "dismissed"]).default("unresolved"),
+  decidedAt: z.string().datetime().nullable().default(null),
   choices: z.record(z.string(), z.enum(["current", "proposed"])).default({}),
   appliedDraft: characterDraftSchema.nullable().default(null),
   undo: undoSchema.nullable().default(null),
@@ -416,7 +418,7 @@ async function launch(ownerId: string, input: StartInput, retryOf: string | null
   const payload: StoredPayload = {
     kind: "character_authoring_run",
     intent,
-    proposal: { revision: 1, status: "unresolved", choices: {}, appliedDraft: null, undo: null },
+    proposal: { revision: 1, status: "unresolved", decidedAt: null, choices: {}, appliedDraft: null, undo: null },
     result: null,
   };
   const started = await startJobAfterAdmission({
@@ -600,12 +602,14 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     const payload = parsed.data;
     if (payload.proposal.revision !== input.expectedProposalRevision) return { status: "proposal_changed" };
     if (input.action === "dismiss") {
+      const decidedAt = new Date().toISOString();
       const next = {
         ...payload,
         proposal: {
           ...payload.proposal,
           revision: payload.proposal.revision + 1,
           status: payload.proposal.status === "accepted" ? "accepted" as const : "dismissed" as const,
+          decidedAt,
           undo: null,
         },
       };
@@ -616,9 +620,10 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     if (job.status !== "done" || !payload.result) return { status: "invalid_run" };
     if (input.action === "reject" && payload.intent.target.kind === "creation") {
       if (payload.proposal.status !== "unresolved") return { status: "proposal_changed" };
+      const decidedAt = new Date().toISOString();
       const revision = payload.proposal.revision + 1;
       const proposal = { id: runId, label: payload.intent.label, base: payload.intent.base, proposed: payload.result.proposed, undo: false as const };
-      const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
+      const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, decidedAt, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
       if (!saved) return tx.rollback();
       return { status: "accepted", run: projectRun(saved, next) };
@@ -635,9 +640,10 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       if (!input.currentDraft) return { status: "invalid_run" };
       const applied = applyCharacterProposal(input.currentDraft, proposal, input.choices as ProposalChoices);
       if (applied.unresolved.length) return { status: "authoring_conflict", conflicts: applied.unresolved };
+      const decidedAt = new Date().toISOString();
       const revision = payload.proposal.revision + 1;
-      const undo = input.action === "accept" && applied.undo ? { ...applied.undo, undo: true as const, sourceRunId: runId, proposalRevision: revision } : null;
-      const next = { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, choices: input.choices, appliedDraft: applied.draft, undo } };
+      const undo = input.action === "accept" && applied.undo ? { ...applied.undo, undo: true as const, sourceRunId: runId, proposalRevision: revision, decidedAt } : null;
+      const next = { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, decidedAt, choices: input.choices, appliedDraft: applied.draft, undo } };
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
       if (!saved) return tx.rollback();
       return { status: "accepted", run: projectRun(saved, next) };
@@ -661,8 +667,9 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     }
     if (input.action === "reject") {
       if (payload.proposal.status !== "unresolved") return { status: "proposal_changed" };
+      const decidedAt = new Date().toISOString();
       const revision = payload.proposal.revision + 1;
-      const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
+      const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, decidedAt, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
       if (!saved) return tx.rollback();
       return { status: "accepted", run: projectRun(saved, next) };
@@ -686,11 +693,12 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     }).where(and(eq(characters.id, character.id), eq(characters.ownerId, ownerId))).returning();
     if (!savedCharacter) return { status: "not_found" };
 
+    const decidedAt = new Date().toISOString();
     const revision = payload.proposal.revision + 1;
     const review = reconcileMaterializedUndo({ pending: [], undo: applied.undo }, applied.draft, savedDraft.profile);
-    const undo = input.action === "accept" && review.undo ? { ...review.undo, undo: true as const, sourceRunId: runId, proposalRevision: revision } : null;
+    const undo = input.action === "accept" && review.undo ? { ...review.undo, undo: true as const, sourceRunId: runId, proposalRevision: revision, decidedAt } : null;
     const next = settlePortraitDecision(
-      { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, choices: input.choices, appliedDraft: savedDraft, undo } },
+      { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, decidedAt, choices: input.choices, appliedDraft: savedDraft, undo } },
       proposal,
       input.action,
       input.choices,

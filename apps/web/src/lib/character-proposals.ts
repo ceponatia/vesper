@@ -10,6 +10,8 @@ export const characterProposalSchema = z.object({
   /** Durable authoring run and compare-and-set revision, when server-backed. */
   sourceRunId: z.string().optional(),
   proposalRevision: z.number().int().positive().optional(),
+  /** Durable decision order for choosing the current undo across run replay. */
+  decidedAt: z.string().datetime().nullable().optional(),
   portraitEvidence: portraitExtractionEvidenceSchema.optional(),
   base: characterDraftSchema,
   proposed: characterDraftSchema,

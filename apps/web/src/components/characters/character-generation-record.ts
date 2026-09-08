@@ -100,6 +100,22 @@ function proposalFor(record: CharacterGeneration): CharacterProposal | null {
   };
 }
 
+function currentUndo(
+  existing: CharacterProposal | null,
+  candidate: CharacterProposal,
+): CharacterProposal {
+  if (!existing || existing.sourceRunId === candidate.sourceRunId) return candidate;
+  if (!existing.sourceRunId) return existing;
+  const existingAt = existing.decidedAt ? Date.parse(existing.decidedAt) : Number.NaN;
+  const candidateAt = candidate.decidedAt ? Date.parse(candidate.decidedAt) : Number.NaN;
+  if (Number.isFinite(candidateAt) && (!Number.isFinite(existingAt) || candidateAt > existingAt)) {
+    return candidate;
+  }
+  // Legacy receipts have no decision timestamp. The server lists newest-created
+  // runs first, so retaining the first replayed undo is the safest fallback.
+  return existing;
+}
+
 /** Project server proposal state into the browser cache without resurrecting a decision. */
 export function receiveGenerationReview(review: CharacterReviewState, record: CharacterGeneration): CharacterReviewState {
   const proposal = proposalFor(record);
@@ -113,13 +129,17 @@ export function receiveGenerationReview(review: CharacterReviewState, record: Ch
     return { ...review, pending: withoutRun, handledIds: [...new Set([...(review.handledIds ?? []), record.id])] };
   }
   if (record.proposal.status === "accepted" && record.proposal.undo) {
+    const undo = {
+      ...record.proposal.undo,
+      decidedAt: record.proposal.undo.decidedAt ?? record.proposal.decidedAt ?? null,
+    };
     if (withoutRun.length === review.pending.length && review.handledIds?.includes(record.id)
-      && review.undo?.sourceRunId === record.id && review.undo.proposalRevision === record.proposal.undo.proposalRevision) return review;
+      && review.undo?.sourceRunId === record.id && review.undo.proposalRevision === undo.proposalRevision) return review;
     return {
       ...review,
       pending: withoutRun,
       handledIds: [...new Set([...(review.handledIds ?? []), record.id])],
-      undo: record.proposal.undo,
+      undo: currentUndo(review.undo, undo),
     };
   }
   if (withoutRun.length === review.pending.length && review.handledIds?.includes(record.id)

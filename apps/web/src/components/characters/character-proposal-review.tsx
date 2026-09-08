@@ -99,9 +99,12 @@ export function CharacterProposalDialog({ draft, proposal, onClose, onAccept, on
   const conflicts = proposalConflicts(draft, proposal);
   const unresolved = conflicts.filter((change) => !choices[change.key]);
   const portrait = proposal.portraitEvidence;
+  const requestClose = () => {
+    if (!disabled) onClose();
+  };
   return (
-    <Dialog open onClose={onClose} size="xl" title={proposal.label} footer={<div className="flex flex-wrap justify-end gap-2">
-      <Button onClick={onClose}>Review later</Button>
+    <Dialog open onClose={requestClose} size="xl" title={proposal.label} footer={<div className="flex flex-wrap justify-end gap-2">
+      <Button disabled={disabled} onClick={requestClose}>Review later</Button>
       <Button disabled={disabled} onClick={onReject}>{purpose === "recovery" ? "Use saved version" : proposal.undo ? "Dismiss undo" : "Reject"}</Button>
       <Button variant="primary" disabled={disabled || acceptDisabled || unresolved.length > 0} onClick={() => onAccept(choices)}>{purpose === "recovery" ? "Restore selected" : proposal.undo ? "Undo selected" : "Accept selected"}</Button>
     </div>}>

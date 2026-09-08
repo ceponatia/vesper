@@ -31,11 +31,13 @@ const authoringUndoSchema = z.object({
   undo: z.literal(true),
   sourceRunId: z.string(),
   proposalRevision: z.number().int().positive(),
+  decidedAt: z.string().datetime().nullable().optional(),
 });
 
 export const characterAuthoringProposalStateSchema = z.object({
   revision: z.number().int().positive().default(1),
   status: z.enum(["unresolved", "accepted", "rejected", "undone", "dismissed"]).default("unresolved"),
+  decidedAt: z.string().datetime().nullable().optional(),
   choices: z.record(z.string(), z.enum(["current", "proposed"])).default({}),
   appliedDraft: characterDraftSchema.nullable().default(null),
   undo: authoringUndoSchema.nullable().default(null),

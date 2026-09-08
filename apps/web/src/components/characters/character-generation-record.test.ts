@@ -51,6 +51,44 @@ describe("server character generation records", () => {
     expect(receiveGenerationReview(review, accepted)).toBe(review);
   });
 
+  it("keeps the latest accepted undo when server runs replay in either order", () => {
+    const older = fixture({ id: "older", createdAt: new Date(1).toISOString() });
+    const newer = fixture({ id: "newer", createdAt: new Date(2).toISOString() });
+    const oldUndo = {
+      id: "older-undo", label: "Undo older", base: older.result!.proposed, proposed: older.base,
+      undo: true as const, sourceRunId: older.id, proposalRevision: 2, decidedAt: new Date(10).toISOString(),
+    };
+    const newUndo = {
+      id: "newer-undo", label: "Undo newer", base: newer.result!.proposed, proposed: newer.base,
+      undo: true as const, sourceRunId: newer.id, proposalRevision: 2, decidedAt: new Date(20).toISOString(),
+    };
+    const acceptedOlder = fixture({
+      ...older,
+      proposal: {
+        revision: 2, status: "accepted", decidedAt: oldUndo.decidedAt,
+        choices: {}, appliedDraft: older.result!.proposed, undo: oldUndo,
+      },
+    });
+    const acceptedNewer = fixture({
+      ...newer,
+      proposal: {
+        revision: 2, status: "accepted", decidedAt: newUndo.decidedAt,
+        choices: {}, appliedDraft: newer.result!.proposed, undo: newUndo,
+      },
+    });
+
+    const newestFirst = receiveGenerationReview(
+      receiveGenerationReview(emptyCharacterReview(), acceptedNewer),
+      acceptedOlder,
+    );
+    const oldestFirst = receiveGenerationReview(
+      receiveGenerationReview(emptyCharacterReview(), acceptedOlder),
+      acceptedNewer,
+    );
+    expect(newestFirst.undo).toMatchObject({ sourceRunId: newer.id, decidedAt: newUndo.decidedAt });
+    expect(oldestFirst.undo).toMatchObject({ sourceRunId: newer.id, decidedAt: newUndo.decidedAt });
+  });
+
   it("keeps an already-handled empty proposal referentially stable", () => {
     const run = fixture({ result: { proposed: emptyCharacterDraft(), diagnostics: [] } });
     const received = receiveGenerationReview(emptyCharacterReview(), run);
