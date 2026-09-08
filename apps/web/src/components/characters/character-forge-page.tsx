@@ -47,20 +47,39 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
   const [saving, setSaving] = useState(false);
   const [abandoning, setAbandoning] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
+  const [recoveryRefreshAttempt, setRecoveryRefreshAttempt] = useState(0);
+  const [recoveryRefreshFailed, setRecoveryRefreshFailed] = useState(false);
   const active = useRef(true);
   const saveInFlight = useRef(false);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
 
   const conflict = store.data.serverConflict;
-  const creationRecovery = conflict ? {
+  const creationRecovery = conflict?.authoringRevision !== undefined ? {
     id: `${store.data.id}:${conflict.updatedAt}`,
     server: conflict.snapshot,
     updatedAt: conflict.updatedAt,
     authoringRevision: conflict.authoringRevision,
     record: { base: store.data.serverSnapshot ?? { draft: emptyCharacterDraft(), chatModel: conflict.snapshot.chatModel }, authored: { draft, chatModel: store.data.serverSnapshot?.chatModel ?? conflict.snapshot.chatModel }, serverUpdatedAt: store.data.serverUpdatedAt },
   } : null;
+  useEffect(() => {
+    if (!store.ready || !conflict || conflict.authoringRevision !== undefined) return;
+    const characterId = store.data.savedCharacterId;
+    if (!characterId) { setRecoveryRefreshFailed(true); return; }
+    let cancelled = false;
+    setRecoveryRefreshFailed(false);
+    void charactersApi.get(characterId).then((fresh) => {
+      if (cancelled) return;
+      if (!fresh.ok) { setRecoveryRefreshFailed(true); return; }
+      store.update((current) => {
+        const pending = current.serverConflict;
+        if (current.savedCharacterId !== characterId || pending !== conflict || pending.authoringRevision !== undefined) return current;
+        return { ...current, serverConflict: { ...pending, snapshot: authorSnapshotFromDetail(fresh.data), updatedAt: fresh.data.updatedAt, authoringRevision: fresh.data.authoringRevision } };
+      });
+    }).catch(() => { if (!cancelled) setRecoveryRefreshFailed(true); });
+    return () => { cancelled = true; };
+  }, [conflict, recoveryRefreshAttempt, store.data.savedCharacterId, store.ready, store.update]);
   const changeDraft = (next: CharacterDraft) => { if (!store.current.current.serverConflict) store.update((current) => ({ ...current, draft: next })); };
-  const generation = useCharacterGeneration(ownerId, { kind: "creation", id: store.data.id }, store.ready, store.conflict || !!creationRecovery, store.data, async (record, actions) => {
+  const generation = useCharacterGeneration(ownerId, { kind: "creation", id: store.data.id }, store.ready, store.conflict || !!conflict, store.data, async (record, actions) => {
     if (store.isBlocked() || store.current.current.serverConflict || record.ownerId !== ownerId || !record.result) return false;
     if (store.current.current.id !== record.target.id) return false;
     const firstReceipt = !hasReceivedGeneration(store.current.current.review, record.id);
@@ -268,7 +287,11 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       {store.notice ? <p role="status" className="mb-3 text-sm text-warning">{store.notice}</p> : null}
       {store.conflict || store.recoveries.length ? <div className="mb-4 flex flex-wrap gap-2"><Button disabled={saving || busy !== null} onClick={() => store.resume()}>Resume latest draft</Button>{store.recoveries.map((copy) => <Button key={copy.key} disabled={saving || busy !== null} onClick={() => store.resume(copy.key)}>Recover draft from {copy.label}</Button>)}</div> : null}
       {savedHref ? <p className="mb-4 text-sm"><Link className="text-accent-300 underline" href={savedHref}>Open saved character{store.data.saveDestination === "chat" ? " in Chat" : store.data.saveDestination === "portrait" ? " in Portrait Studio" : ""}</Link></p> : null}
-      {creationRecovery ? <CharacterAuthorRecoveryNotice key={creationRecovery.id} recovery={creationRecovery} disabled={saving || store.conflict}
+      {conflict && !creationRecovery ? <section role="status" className="mb-4 rounded-card border border-ink-600 bg-ink-850 p-4">
+        <p className="text-sm font-medium">Checking recovered edits</p>
+        <p className="mt-1 text-sm text-paper-400">{recoveryRefreshFailed ? "The saved character could not be checked. Your browser draft is retained; try again." : "Loading the saved character version before review…"}</p>
+        {recoveryRefreshFailed ? <Button className="mt-3" disabled={saving || store.conflict} onClick={() => setRecoveryRefreshAttempt((attempt) => attempt + 1)}>Try again</Button> : null}
+      </section> : creationRecovery ? <CharacterAuthorRecoveryNotice key={creationRecovery.id} recovery={creationRecovery} disabled={saving || store.conflict}
         title={conflict?.reason === "creation_mismatch" ? "Saved character found" : undefined}
         description={conflict?.reason === "creation_mismatch" ? "This creation request already saved a character. Your retained draft is linked to it; review the differences before saving again." : undefined}
         onRestore={(choices, modelChoice) => {
@@ -278,10 +301,10 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       }} onDiscard={() => {
         if (!store.isBlocked() && !saveInFlight.current && store.current.current.serverConflict === conflict) store.update((current) => ({ ...current, draft: creationRecovery.server.draft, serverSnapshot: creationRecovery.server, serverUpdatedAt: creationRecovery.updatedAt, serverConflict: null }));
       }} /> : null}
-      <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={store.conflict || !!creationRecovery || saving} onRetry={generation.retry} onDismiss={generation.dismiss} />
+      <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={store.conflict || !!conflict || saving} onRetry={generation.retry} onDismiss={generation.dismiss} />
       <Disclosure title={draft.profile.creationBrief ? "Original creation brief" : "Creation brief"} description={draft.profile.creationBrief ? "Kept as context for later suggestions" : "Describe the character to draft with the Forge"} defaultOpen={mode === "forge"} className="mb-5">
         <Field label={draft.profile.creationBrief ? "Original brief (read only)" : "Describe your character"}>{(id) => <Textarea id={id} rows={5} maxLength={CHARACTER_CREATION_BRIEF_MAX} value={draft.profile.creationBrief || prompt} readOnly={!!draft.profile.creationBrief || busy === "create"} onChange={(event) => store.update((current) => ({ ...current, prompt: event.target.value }))} placeholder="A human woman in her forties, a harbor-master with dry humor, auburn hair and a weathered blue coat…" />}</Field>
-        <Button className="mt-3" variant={draft.profile.creationBrief ? "ghost" : "primary"} busy={busy === "create"} disabled={!(prompt.trim() || draft.profile.creationBrief) || busy !== null || saving || store.conflict || !!creationRecovery} onClick={() => void generate("create")}>{draft.profile.creationBrief ? "Regenerate character suggestions" : "Forge character suggestions"}</Button>
+        <Button className="mt-3" variant={draft.profile.creationBrief ? "ghost" : "primary"} busy={busy === "create"} disabled={!(prompt.trim() || draft.profile.creationBrief) || busy !== null || saving || store.conflict || !!conflict} onClick={() => void generate("create")}>{draft.profile.creationBrief ? "Regenerate character suggestions" : "Forge character suggestions"}</Button>
         {draft.profile.creationBrief ? <p className="mt-2 text-xs text-paper-400">Use the section actions to refine one part. Starting a new draft creates a new original brief.</p> : null}
       </Disclosure>
       <CharacterProposalReview draft={draft} review={review} onReviewChange={(next) => store.update((current) => ({ ...current, review: next }))} onChange={changeDraft}
@@ -311,17 +334,17 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
           }
           return { applyLocally: action === "accept" || action === "undo", appliedDraft: decided.appliedDraft, undo: decided.run.proposal.undo };
         }}
-        disabled={!store.ready || store.conflict || !!creationRecovery} isBlocked={() => store.isBlocked() || !!store.current.current.serverConflict} />
-      <div className="mb-4"><Button busy={busy === "fill" && scopeBusy === null} disabled={busy !== null || saving || store.conflict || !!creationRecovery} onClick={() => void generate("fill")}>Complete all missing details</Button></div>
-      <fieldset disabled={!!creationRecovery} className="min-w-0">
+        disabled={!store.ready || store.conflict || !!conflict} isBlocked={() => store.isBlocked() || !!store.current.current.serverConflict} />
+      <div className="mb-4"><Button busy={busy === "fill" && scopeBusy === null} disabled={busy !== null || saving || store.conflict || !!conflict} onClick={() => void generate("fill")}>Complete all missing details</Button></div>
+      <fieldset disabled={!!conflict} className="min-w-0">
       <CharacterEditor draft={draft} onChange={changeDraft} tab={tab} onTabChange={(next) => store.update((current) => ({ ...current, tab: next }))}
         onComplete={(scope) => void generate("fill", scope)} completing={busy === "fill" ? scopeBusy : null}
         onRedraft={(scope) => void generate("redraft", scope)} redrafting={busy === "redraft" ? scopeBusy : null}
-        generationDisabled={busy !== null || saving || store.conflict || !!creationRecovery}
+        generationDisabled={busy !== null || saving || store.conflict || !!conflict}
         saving={saving || busy !== null} onSaveAndOpen={(destination) => void save(destination)}
         diagnostics={diagnostics.filter((item) => item.severity !== "info")} />
       </fieldset>
-      <SaveBar dirty={busy === null && !store.conflict} saving={saving} disabled={!!creationRecovery} status={creationRecovery ? "Resolve recovered edits to save" : undefined} onSave={() => void save()} saveLabel="Save authored character" />
+      <SaveBar dirty={busy === null && !store.conflict} saving={saving} disabled={!!conflict} status={conflict ? "Resolve recovered edits to save" : undefined} onSave={() => void save()} saveLabel="Save authored character" />
       <Dialog open={confirmNew} onClose={() => { if (!abandoning) setConfirmNew(false); }} title="Start a new character draft?" footer={<><Button disabled={abandoning} onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" busy={abandoning} disabled={generation.settling} onClick={() => { void (async () => {
         setAbandoning(true);
         const abandoned = await generation.abandon();

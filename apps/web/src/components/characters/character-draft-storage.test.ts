@@ -66,7 +66,11 @@ describe("character browser draft persistence", () => {
     expect(recovered.draft.profile.bio).toBe("Local edit");
     expect(recovered.serverSnapshot?.draft.name).toBe("Original Iris");
     expect(recovered.serverConflict?.snapshot.draft.name).toBe("Server Iris");
-    expect(recovered.serverConflict?.authoringRevision).toBe(7);
+    const persisted = readDraft(JSON.stringify({ revision: "recovery", data: recovered }), characterCreationStateSchema)?.data;
+    expect(persisted?.serverConflict?.authoringRevision).toBe(7);
+    const legacy = structuredClone(recovered);
+    delete legacy.serverConflict?.authoringRevision;
+    expect(readDraft(JSON.stringify({ revision: "legacy-recovery", data: legacy }), characterCreationStateSchema)?.data.serverConflict?.authoringRevision).toBeUndefined();
     expect(recovered.serverConflict?.reason).toBe("creation_mismatch");
     expect(recovered.serverUpdatedAt).toBe(current.updatedAt);
     expect(recovered.initialSaveDraft).toBeNull();
