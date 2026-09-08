@@ -595,7 +595,7 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       const applied = applyCharacterProposal(input.currentDraft, proposal, input.choices as ProposalChoices);
       if (applied.unresolved.length) return { status: "authoring_conflict", conflicts: applied.unresolved };
       const revision = payload.proposal.revision + 1;
-      const undo = input.action === "accept" && applied.undo ? { ...applied.undo, sourceRunId: runId, proposalRevision: revision } : null;
+      const undo = input.action === "accept" && applied.undo ? { ...applied.undo, undo: true as const, sourceRunId: runId, proposalRevision: revision } : null;
       const next = { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, choices: input.choices, appliedDraft: applied.draft, undo } };
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
       if (!saved) return tx.rollback();
