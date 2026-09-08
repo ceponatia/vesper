@@ -19,6 +19,7 @@ installReferenceViewMaintenance();
 // promotion halves, the lab's five lanes and the staged bench's subject cut.
 
 export { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
+export { CHARACTER_MEDIA_JOB_LIMIT, listCharacterMediaJobs } from "./character-media-jobs";
 export {
   type ImageRow,
   type ImageKind,

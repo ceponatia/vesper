@@ -20,6 +20,12 @@ and a slow 4K location model in another.
 - `providerOverrides`, `timeoutMs` (null, or 30s–15min), `enabled` / `isDefault` / `builtin`, and
   `sort`.
 
+Player-facing purpose and tradeoff copy is code-owned beside this contract rather than stored on
+each profile row. `imageProfileDisclosure` maps a task to its purpose and a stable profile key to a
+`fast`, `standard`, `quality`, or `specialized` tradeoff. An operator-created key receives a safe
+task-and-model-specific standard description, so adding a valid profile cannot produce an empty
+picker explanation.
+
 `(imageModelId, key)` is unique, at most **one enabled default per task globally** (a partial
 unique index), and profiles cascade-delete with their model. A profile may *narrow* a model; it
 can never claim a capability the model does not expose.
@@ -40,9 +46,17 @@ resolution does not exist, and neither does a model picker.
 The player-facing selects (`ImageProfileSelect` — the portrait studio's two sections, the chat
 scene strip, the scenario modal) list offered profiles grouped per model from
 `GET /api/image-profiles?task=…`, lead with an explicit "Task default" option (an empty value;
-the server resolves the task default), and show the selected profile's operator warning as helper
-text. The stored value rides the same `modelId` / `sceneModel` fields, so a legacy stored model
-id keeps resolving through the degrade chain below.
+the server resolves the task default), and identify the resolved profile, model, tier, purpose,
+tradeoff, and model operator warning before generation. The default option names the profile and
+model it currently resolves to. An unavailable saved selection says that it was substituted and
+names the fallback instead of displaying a blank control. The stored value rides the same
+`modelId` / `sceneModel` fields, so a legacy stored model id keeps resolving through the degrade
+chain below.
+
+The endpoint accepts an optional `stored` query value and returns the same resolved disclosure in
+its `resolved` member. This makes default and saved-selection resolution inspectable without
+copying the resolver into another server route; the existing list client continues to consume the
+`profiles` member.
 
 ## The seeded standard set
 

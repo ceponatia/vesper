@@ -94,10 +94,17 @@ export type {
 } from "./api/identity-packs";
 export { imageGeneratorApi } from "./api/image-generator";
 export { imageLabApi } from "./api/image-lab";
+export { characterMediaJobsApi, characterMediaJobsClientResponseSchema } from "./api/character-media";
+export type {
+  CharacterMediaJob,
+  CharacterMediaJobsClientResponse,
+  CharacterMediaRetryTarget,
+} from "./api/character-media";
 export {
   imageModelSchema,
   imageReferenceTransports,
   imageProfileOptionSchema,
+  imageProfileResolutionSchema,
   imageProfilesApi,
   imageVersionBlockedBodySchema,
   adminImageModelsApi,
@@ -120,6 +127,7 @@ export type {
   ImageProfileTask,
   ImageReferenceTransport,
   ImageProfileOption,
+  ImageProfileResolution,
   ImageVersionProfileFindings,
   ImageVersionProbeResponse,
   ImageVersionSmokeResponse,

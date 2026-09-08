@@ -59,6 +59,9 @@ export const imageProfileOptionSchema = z.object({
   isDefault: z.boolean().catch(false),
   modelId: textOr(""),
   modelLabel: textOr(""),
+  tier: z.enum(["fast", "standard", "quality", "specialized"]).catch("standard"),
+  purpose: textOr("Create an image for this task."),
+  tradeoff: textOr("Uses this profile's configured model and controls."),
   operatorWarning: z
     .string()
     .nullish()
@@ -67,12 +70,36 @@ export const imageProfileOptionSchema = z.object({
 });
 export type ImageProfileOption = z.infer<typeof imageProfileOptionSchema>;
 
+export const imageProfileResolutionSchema = z.object({
+  requested: z.string().nullable().catch(null),
+  profileId: z.string().min(1),
+  profileLabel: textOr("Image profile"),
+  modelId: z.string().min(1),
+  modelLabel: textOr("Image model"),
+  substituted: z.boolean().catch(false),
+  tier: z.enum(["fast", "standard", "quality", "specialized"]).catch("standard"),
+  purpose: textOr("Create an image for this task."),
+  tradeoff: textOr("Uses this profile's configured model and controls."),
+}).nullable();
+export type ImageProfileResolution = z.infer<typeof imageProfileResolutionSchema>;
+
+const imageProfilesResponseSchema = z.object({
+  profiles: listOf(imageProfileOptionSchema, "profiles"),
+  resolved: imageProfileResolutionSchema.catch(null),
+});
+
 export const imageProfilesApi = {
   /** The offered profiles for one task — exactly what resolution would accept. */
   list: (task: ImageProfileTask) =>
     apiGet(
       listOf(imageProfileOptionSchema, "profiles"),
       `/api/image-profiles?task=${task}`,
+    ),
+  /** The same list plus the server's resolution of a saved/default selection. */
+  describe: (task: ImageProfileTask, stored?: string) =>
+    apiGet(
+      imageProfilesResponseSchema,
+      `/api/image-profiles?task=${task}${stored ? `&stored=${encodeURIComponent(stored)}` : ""}`,
     ),
 };
 

@@ -411,6 +411,81 @@ export interface ResolvedImageProfile {
   model: ImageModel;
 }
 
+export const imageProfileTiers = ["fast", "standard", "quality", "specialized"] as const;
+export type ImageProfileTier = (typeof imageProfileTiers)[number];
+
+export interface ImageProfileDisclosure {
+  tier: ImageProfileTier;
+  purpose: string;
+  tradeoff: string;
+}
+
+const purposeByTask: Record<ImageProfileTask, string> = {
+  portrait: "Create the character's main portrait.",
+  variant: "Create another view of the accepted portrait.",
+  scene: "Illustrate the current scene while preserving its cast.",
+  item: "Create the item's library image.",
+  location: "Create the location's establishing image.",
+  chat_look: "Create a conversation look reference.",
+  chat_place: "Create a conversation place reference.",
+  text_repair: "Repair text represented inside an image.",
+  example_transform: "Transform an example image into the requested style.",
+  image_set: "Create a coherent set of related images.",
+};
+
+const curatedDisclosure: Record<string, Pick<ImageProfileDisclosure, "tier" | "tradeoff">> = {
+  "qwen/qwen-image-2512:portrait-fast": {
+    tier: "fast",
+    tradeoff: "Uses fewer render steps for a quicker result with less fine detail.",
+  },
+  "qwen/qwen-image-2512:portrait-quality": {
+    tier: "quality",
+    tradeoff: "Uses the model's full quality path for more detail and a longer wait.",
+  },
+  "bytedance/seedream-4.5:ensemble-scene-2k": {
+    tier: "specialized",
+    tradeoff: "Prioritizes several people and objects at 2K; complex casts can take longer to resolve.",
+  },
+  "bytedance/seedream-4.5:location-4k": {
+    tier: "quality",
+    tradeoff: "Renders a 4K establishing image with higher detail, latency, and cost.",
+  },
+  "bytedance/seedream-5-lite:quality-scene-3k": {
+    tier: "quality",
+    tradeoff: "Renders a 3K scene for higher detail with a longer wait.",
+  },
+  "stability-ai/stable-diffusion-3.5-large:stylized-portrait-high-guidance": {
+    tier: "specialized",
+    tradeoff: "Pushes harder toward the requested style; realism and subtle variation may decrease.",
+  },
+  "wan-video/wan-2.7-image-pro:multi-reference-edit-2k": {
+    tier: "specialized",
+    tradeoff: "Prioritizes several supplied references at 2K and may take longer than a standard edit.",
+  },
+};
+
+/**
+ * Player-facing intent for a resolved profile.
+ *
+ * Copy is code-owned beside profile resolution rather than repeated in each
+ * picker. Unknown operator-created profiles still receive an honest generic
+ * disclosure derived from their task and operation.
+ */
+export function imageProfileDisclosure(
+  profile: Pick<ImageModelProfile, "key" | "task" | "operation">,
+  model: Pick<ImageModel, "label" | "slug">,
+): ImageProfileDisclosure {
+  const curated = curatedDisclosure[`${model.slug}:${profile.key}`];
+  if (curated) return { purpose: purposeByTask[profile.task], ...curated };
+  return {
+    tier: "standard",
+    purpose: purposeByTask[profile.task],
+    tradeoff: profile.operation === "edit"
+      ? `Balances identity fidelity, detail, and wait time on ${model.label}.`
+      : `Balances detail, consistency, and wait time on ${model.label}.`,
+  };
+}
+
 /**
  * Every profile actually offerable for one task, joined to its model and in sort
  * order. Two things drop a row here — a profile for a different task, and a
