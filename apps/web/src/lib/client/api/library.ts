@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 import type { CharacterSheetScope } from "@/lib/character-scopes";
+import { portraitExtractionEvidenceSchema } from "@/lib/portrait-extraction";
 
 import {
-  referenceViewQueueOutcomeSchema,
   type PortraitVariantKind,
   type CharacterPortraitAcceptance,
   characterPortraitAcceptanceSchema,
@@ -69,6 +69,8 @@ export type CharacterSummary = z.infer<typeof characterSummarySchema>;
 
 export const characterDetailSchema = characterSummarySchema.extend({
   profile: characterProfileSchema.catch(() => emptyCharacterProfile()),
+  /** Saved character-content revision; portrait/publication writes do not move it. */
+  authoringRevision: z.number().int().positive().catch(1),
   visibility: visibilitySchema,
   /** The owner's last character-chat narrator pick (a NARRATIVE_MODELS id); empty ⇒ the chat default. */
   chatModel: textOr(""),
@@ -86,22 +88,9 @@ export const characterDetailSchema = characterSummarySchema.extend({
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
-/**
- * `{ acceptance, views }` — the body the accept write answers with.
- *
- * `views` reports what the accept did about the character's reference view set,
- * and it is deliberately forgiving: an accept whose views could not be queued is
- * still an accept, so a body that omits or malforms the field degrades to
- * "queued nothing, no reason given" rather than failing a request whose real
- * work succeeded.
- */
+/** `{ acceptance }` — portrait selection never starts paid reference renders. */
 const portraitAcceptanceResponseSchema = z.object({
   acceptance: characterPortraitAcceptanceSchema,
-  views: referenceViewQueueOutcomeSchema.catch({
-    queued: false,
-    reason: null,
-    planned: 0,
-  }),
 });
 
 export type { CharacterPortraitAcceptance };
@@ -326,31 +315,8 @@ export function emptyCharacterDraft(): CharacterDraft {
   return characterDraftSchema.parse({});
 }
 
-/** An attribute value as the portrait review renders it (contracts' value union). */
-const portraitValueSchema = z.union([
-  z.string(),
-  z.array(z.string()),
-  z.number(),
-  z.boolean(),
-]);
-
-/** The portrait review-dialog payload. */
-export const portraitReviewSchema = z
-  .object({
-    conflicts: z
-      .array(
-        z.object({
-          id: z.string(),
-          current: portraitValueSchema,
-          proposed: portraitValueSchema,
-        }),
-      )
-      .catch([]),
-    filled: z
-      .array(z.object({ id: z.string(), value: portraitValueSchema }))
-      .catch([]),
-  })
-  .catch({ conflicts: [], filled: [] });
+/** Evidence-bearing portrait review payload. */
+export const portraitReviewSchema = portraitExtractionEvidenceSchema;
 export type PortraitReview = z.infer<typeof portraitReviewSchema>;
 
 /** Forge endpoints may return the draft bare or wrapped with diagnostics. */
@@ -437,17 +403,18 @@ export const charactersApi = {
    * on the draft, plus the review-dialog data: disagreements as current →
    * proposed and the list of auto-filled blanks.
    */
-  attributesFromPortrait: (id: string, draft: CharacterDraft) =>
+  attributesFromPortrait: (id: string, source: { authoringRevision: number; imageId: string }) =>
     apiPost(
       z.object({
         draft: characterDraftSchema,
         diagnostics: arrayOf(diagnosticSchema),
         portrait: portraitReviewSchema,
+        source: z.object({ authoringRevision: z.number().int().positive(), imageId: idSchema, imageContentHash: z.string() }),
       }),
       `/api/characters/${id}/attributes/from-portrait`,
-      { draft },
+      source,
     ),
-  generateAvatar: (id: string, body: { modelId?: string } = {}) =>
+  generateAvatar: (id: string, body: { authoringRevision?: number; modelId?: string } = {}) =>
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>
     apiPost(

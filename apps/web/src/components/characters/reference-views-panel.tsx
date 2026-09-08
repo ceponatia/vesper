@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type SetStateAction } from "react";
+import { useState, type SetStateAction } from "react";
 import {
   referenceViewAngles,
   referenceViewWardrobeEntries,
@@ -32,6 +32,8 @@ import {
 } from "./reference-view-review-drafts";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
+import { PortraitCropUploadDialog } from "./avatar-upload-dialog";
+import { settledReferenceViewSelectionKeys } from "./reference-view-selection";
 
 /**
  * The portrait tab's reference view sheet: the accepted portrait seen from the
@@ -123,11 +125,13 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
   // The viewer may close through Escape or its backdrop. Keep unfinished notes
   // at the panel session boundary so reopening the exact attempt restores them.
   const [reviewDrafts, setReviewDrafts] = useState<ReferenceViewFeedbackDrafts>({});
-  const fileInput = useRef<HTMLInputElement | null>(null);
-  const uploadTarget = useRef<{ angle: ReferenceViewAngleId; wardrobe: ReferenceViewWardrobe } | null>(null);
+  const [uploadTarget, setUploadTarget] = useState<{
+    angle: ReferenceViewAngleId;
+    wardrobe: ReferenceViewWardrobe;
+    label: string;
+  } | null>(null);
 
   const set = views.data?.set ?? null;
-  const planned = views.data?.planned ?? 0;
   // A build is live server-side, or a slot is still holding a pending row. Both
   // arm the poll: the job row covers the stretch before the first row is
   // reserved, where the rows alone say nothing is happening.
@@ -174,13 +178,18 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
   if (!acceptance.acceptedImageId && !inFlight && set.views.every((view) => view.state === "missing" || view.state === "ineligible")) return null;
 
   const bySlot = new Map(set.views.map((view) => [slotKey(view), view]));
-  const buildable = set.views.some(
+  const buildableViews = set.views.filter(
     (view) => view.state === "missing" || view.state === "stale" || view.state === "failed",
   );
   // Read back off the set rather than out of the checkbox state, so a slot that
   // vanished between tick and submit cannot inflate the count the owner is shown.
   const selectedViews = set.views.filter(
-    (view) => view.state !== "ineligible" && view.attemptId !== null && selected.has(slotKey(view)),
+    (view) =>
+      view.state !== "ineligible" &&
+      view.state !== "pending" &&
+      view.attemptId !== null &&
+      !submitted.has(slotKey(view)) &&
+      selected.has(slotKey(view)),
   );
 
   const refetch = () => {
@@ -189,11 +198,23 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
   };
 
   const reportQueue = (
-    outcome: { queued: boolean; reason: "budget" | "storage" | "busy" | null; planned: number },
+    outcome: {
+      queued: boolean;
+      reason: "budget" | "storage" | "busy" | null;
+      planned: number;
+      admitted: number;
+      targets: readonly { state: "queued" | "busy" | "budget" | "storage" }[];
+    },
     queuedTitle: string,
   ) => {
     if (outcome.queued) {
-      toast.push({ title: queuedTitle });
+      const busy = outcome.targets.filter((target) => target.state === "busy").length;
+      toast.push({
+        title: queuedTitle,
+        ...(busy > 0
+          ? { description: `${String(busy)} selected ${busy === 1 ? "slot is" : "slots are"} already building.` }
+          : {}),
+      });
       return;
     }
     const reason = outcome.reason;
@@ -212,7 +233,7 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
       toast.push({ title: "Could not build the views", description: result.error.message, tone: "error" });
       return;
     }
-    reportQueue(result.data.views, `Building ${String(result.data.views.planned)} reference views…`);
+    reportQueue(result.data.views, `Building ${String(result.data.views.admitted)} reference views…`);
     refetch();
   };
 
@@ -229,9 +250,9 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
    * this call with one target, so both paths are charged, admitted and run the
    * same way.
    *
-   * The selection survives a refusal. A batch the server would not take (a live
-   * build, a spent budget) is work the owner still wants, and clearing their
-   * ticks would make them reassemble it.
+   * A budget or storage refusal preserves the selection. Queued targets and
+   * targets the server reports as already busy both leave the selection because
+   * they need no second submission.
    */
   const regenerate = async (targets: readonly ReferenceViewSummary[]) => {
     if (targets.length === 0) return;
@@ -252,46 +273,51 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
       });
       return;
     }
-    if (result.data.views.queued) {
-      setSelected(NO_SLOTS);
-    } else {
-      unmark(keys);
+    const queued = new Set(
+      result.data.views.targets
+        .filter((target) => target.state === "queued")
+        .map(slotKey),
+    );
+    const accepted = settledReferenceViewSelectionKeys(result.data.views.targets);
+    unmark(keys.filter((key) => !queued.has(key)));
+    if (accepted.size > 0) {
+      setSelected((current) => {
+        const next = new Set(current);
+        for (const key of accepted) next.delete(key);
+        return next;
+      });
     }
-    reportQueue(result.data.views, referenceViewRebuildQueuedTitle(keys.length));
+    reportQueue(result.data.views, referenceViewRebuildQueuedTitle(result.data.views.admitted));
     refetch();
   };
 
   const pickUpload = (view: ReferenceViewSummary) => {
-    if (inFlight || submitting || busySlot !== null) return;
-    uploadTarget.current = { angle: view.angle, wardrobe: view.wardrobe };
-    fileInput.current?.click();
+    const slot = slotKey(view);
+    if (view.state === "pending" || submitted.has(slot) || submitting || busySlot !== null) return;
+    const angle = referenceViewAngles.find((entry) => entry.id === view.angle)?.label ?? view.angle;
+    const wardrobe = referenceViewWardrobeEntries.find((entry) => entry.id === view.wardrobe)?.label ?? view.wardrobe;
+    setUploadTarget({ angle: view.angle, wardrobe: view.wardrobe, label: `${angle}, ${wardrobe}` });
   };
 
-  const onFilePicked = async (file: File | undefined) => {
-    const target = uploadTarget.current;
-    uploadTarget.current = null;
-    if (!file || !target) return;
-    if (inFlight || submitting) {
-      toast.push({ title: "Wait for the reference build", description: "Upload your image after the reference views finish building." });
-      return;
+  const uploadReference = async (dataUrl: string): Promise<{ ok: true } | { ok: false; message: string }> => {
+    const target = uploadTarget;
+    if (!target) return { ok: false, message: "Choose a reference-view slot again." };
+    const current = set?.views.find((view) => slotKey(view) === slotKey(target));
+    if (current?.state === "pending" || submitted.has(slotKey(target)) || submitting) {
+      refetch();
+      return { ok: false, message: "That slot is building. Wait for it to finish, then confirm this image again." };
     }
     const slot = slotKey(target);
     setBusySlot(slot);
-    const dataUrl = await readAsDataUrl(file);
-    if (dataUrl === null) {
-      setBusySlot(null);
-      toast.push({ title: "Could not read that file", tone: "error" });
-      return;
-    }
     const result = await referenceViewsApi.upload(characterId, target.angle, target.wardrobe, dataUrl);
     setBusySlot(null);
     if (!result.ok) {
-      toast.push({ title: "Upload failed", description: result.error.message, tone: "error" });
       refetch();
-      return;
+      return { ok: false, message: result.error.message };
     }
     toast.push({ title: "View replaced", description: "Your own image is now this angle's reference." });
     refetch();
+    return { ok: true };
   };
 
   return (
@@ -307,11 +333,11 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
           <p className="text-xs text-paper-500">
             Open an image for a closer look. Select attempted views to regenerate them together.
           </p>
-          {inFlight || submitting ? <p className="text-xs text-paper-400">Uploads are available after the reference build finishes.</p> : null}
+          {inFlight || submitting ? <p className="text-xs text-paper-400">Slots that are not building remain available.</p> : null}
         </div>
-        {buildable && acceptance.acceptedImageId ? (
-          <Button size="sm" variant="primary" className="ml-auto" busy={building} disabled={set.building} onClick={buildAll}>
-            {`Build ${String(planned)} reference views`}
+        {buildableViews.length > 0 && acceptance.acceptedImageId ? (
+          <Button size="sm" variant="primary" className="ml-auto" busy={building} onClick={buildAll}>
+            {`Build ${String(buildableViews.length)} reference views`}
           </Button>
         ) : null}
       </div>
@@ -322,8 +348,6 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
             size="sm"
             variant="primary"
             busy={submitting}
-            disabled={set.building}
-            title={set.building ? referenceViewRefusalCopy.busy : undefined}
             onClick={() => void regenerate(selectedViews)}
           >
             {referenceViewSelectionActionLabel(selectedViews.length)}
@@ -349,13 +373,14 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
               // there is nothing to REbuild in an empty or still-rendering one.
               const attempted = view.attemptId !== null;
               const eligible = view.state !== "ineligible";
+              const slotBuilding = view.state === "pending" || submitted.has(slot);
               return (
                 <div
                   key={angle.id}
                   className="flex min-w-0 flex-col gap-3 rounded-card border border-ink-600 bg-ink-800 p-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    {attempted && eligible ? (
+                    {attempted && eligible && !slotBuilding ? (
                       <label className="touch-target flex cursor-pointer items-center gap-2 text-sm font-medium text-paper-100">
                         <input
                           type="checkbox"
@@ -411,9 +436,9 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
                       <Button
                         size="sm"
                         variant="ghost"
-                        busy={submitted.has(slot)}
-                        disabled={set.building}
-                        title={set.building ? referenceViewRefusalCopy.busy : undefined}
+                        busy={slotBuilding}
+                        disabled={slotBuilding}
+                        title={slotBuilding ? referenceViewRefusalCopy.busy : undefined}
                         onClick={() => void regenerate([view])}
                       >
                         Regenerate
@@ -423,7 +448,7 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
                       label="More"
                       ariaLabel={`${label} actions`}
                       items={[
-                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: !eligible || inFlight || submitting || busySlot !== null },
+                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: !eligible || slotBuilding || submitting || busySlot !== null },
                         ...(attempted ? [{
                           label: "History",
                           // Read-only: a busy upload or review must not disable history.
@@ -439,19 +464,15 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
         </div>
       ))}
 
-      <input
-        ref={fileInput}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/avif"
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          // Cleared before the async work so picking the same file twice in a row
-          // still fires a change event.
-          event.target.value = "";
-          void onFilePicked(file);
-        }}
-      />
+      {uploadTarget ? <PortraitCropUploadDialog
+        open
+        onClose={() => setUploadTarget(null)}
+        name={uploadTarget.label}
+        title={`Upload ${uploadTarget.label} view`}
+        description="Crop or fit the image in the 3:4 frame, then confirm the exact preview that will replace this reference view."
+        confirmLabel="Use this reference view"
+        onUpload={uploadReference}
+      /> : null}
 
       {enlarged ? <ReferenceViewReviewer characterId={characterId} initialView={enlarged} set={set}
         drafts={reviewDrafts}
@@ -468,15 +489,4 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
       )}
     </div>
   );
-}
-
-/** The picked file as a data URL, or null when it could not be read. The server
- * re-fits it to the canonical 3:4 portrait, so no client-side crop is needed. */
-function readAsDataUrl(file: File): Promise<string | null> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(file);
-  });
 }

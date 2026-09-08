@@ -12,7 +12,7 @@ import { runReferenceViewBuilds } from "./reference-view-build";
  * decide that upstream, and the batch is admitted and charged once before this
  * function is reached — so the only thing the throttle bought was latency.
  *
- * Two claims, both invisible in a passing render and both cheap to lose again:
+ * Three claims, all invisible in a passing render and cheap to lose again:
  *
  * 1. **Every target starts before any target settles.** The deferred builds
  *    below never resolve until the assertion has run, so a worker pool of any
@@ -23,18 +23,24 @@ import { runReferenceViewBuilds } from "./reference-view-build";
  *    expected instance — is one `false` among the results. It may not cancel,
  *    delay or miscount the targets beside it, because each one has already
  *    settled its own row.
+ * 3. **A thrown defect fails only after sibling settlement.** Fulfilled workers
+ *    must finish their finalization and lease release before the batch reports
+ *    the rejection to its shared job.
  *
  * The build of a single view is not re-proven here; `buildOneReferenceView`
- * owns that, and its never-throwing contract is what this fan-out relies on.
+ * owns expected failures. The rejection case pins the batch cleanup boundary
+ * when a defect breaches that never-throwing contract.
  */
 
 /** A build that hangs until the test releases it, so "started" and "settled" are distinguishable. */
-function deferred(): { promise: Promise<boolean>; resolve: (ok: boolean) => void } {
+function deferred(): { promise: Promise<boolean>; resolve: (ok: boolean) => void; reject: (reason: unknown) => void } {
   let resolve: (ok: boolean) => void = () => undefined;
-  const promise = new Promise<boolean>((settle) => {
+  let reject: (reason: unknown) => void = () => undefined;
+  const promise = new Promise<boolean>((settle, fail) => {
     resolve = settle;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe("runReferenceViewBuilds", () => {
@@ -60,5 +66,42 @@ describe("runReferenceViewBuilds", () => {
     for (const gate of pending.slice(1)) gate.resolve(true);
 
     await expect(run).resolves.toEqual({ built: targets.length - 1, failed: 1 });
+  });
+
+  it("waits for every worker to settle before propagating a rejection", async () => {
+    const targets = allReferenceViews().slice(0, 2);
+    const rejected = deferred();
+    const sibling = deferred();
+    const finalized: string[] = [];
+    let call = 0;
+    const failure = new Error("worker defect");
+
+    const run = runReferenceViewBuilds(targets, () => {
+      if (call++ === 0) return rejected.promise;
+      return sibling.promise.then((ok) => {
+        finalized.push("sibling");
+        return ok;
+      });
+    });
+    let propagated: unknown;
+    const observed = run.then(
+      () => "resolved" as const,
+      (error: unknown) => { propagated = error; return "rejected" as const; },
+    );
+    const rejectionObserved = rejected.promise.catch(() => undefined);
+
+    rejected.reject(failure);
+    // Wait through the rejected worker and the batch's own reaction turn. A
+    // fail-fast Promise.all has propagated by now; this batch must stay pending
+    // because its sibling has not finalized yet.
+    await rejectionObserved;
+    await Promise.resolve();
+    expect(propagated).toBeUndefined();
+    expect(finalized).toEqual([]);
+
+    sibling.resolve(true);
+    await expect(observed).resolves.toBe("rejected");
+    expect(finalized).toEqual(["sibling"]);
+    expect(propagated).toBe(failure);
   });
 });

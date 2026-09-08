@@ -15,6 +15,8 @@ export const characterCreationStateSchema = z.object({
   serverConflict: z.object({
     snapshot: characterAuthorSnapshotSchema,
     updatedAt: z.string().nullable(),
+    /** Absent only on browser recovery records saved before revisions were persisted. */
+    authoringRevision: z.number().int().positive().optional(),
     reason: z.enum(["saved_change", "creation_mismatch"]).optional(),
   }).nullable().default(null),
   saveDestination: z.enum(characterEditorTabs).nullable().default(null),
@@ -81,6 +83,12 @@ export function creationForgeStart(state: CharacterCreationState) {
   return { draft: structuredClone(state.draft), prompt: state.prompt, initialPreview: isPristineCharacterDraft(state.draft) && !state.review.pending.length && !state.savedCharacterId };
 }
 
+export function canApplyCreationForgePreview(current: CharacterCreationState, started: ReturnType<typeof creationForgeStart>): boolean {
+  return started.initialPreview
+    && JSON.stringify(current.draft) === JSON.stringify(started.draft)
+    && current.prompt === started.prompt;
+}
+
 export function completeCreationForge(current: CharacterCreationState, started: ReturnType<typeof creationForgeStart>, base: CharacterDraft, proposed: CharacterDraft, proposalId: string): CharacterCreationState {
   const proposal = { id: proposalId, label: "forged character", base, proposed, undo: false };
   const hasChanges = proposalChanges(proposal).length > 0;
@@ -89,8 +97,7 @@ export function completeCreationForge(current: CharacterCreationState, started: 
   if (!hasChanges && started.initialPreview && !started.draft.profile.creationBrief) return current;
   const draft = { ...current.draft, profile: { ...current.draft.profile, creationBrief: current.draft.profile.creationBrief || base.profile.creationBrief } };
   const result = { ...proposed, profile: { ...proposed.profile, creationBrief: draft.profile.creationBrief } };
-  const initialPreview = started.initialPreview
-    && JSON.stringify(current.draft) === JSON.stringify(started.draft) && current.prompt === started.prompt;
+  const initialPreview = canApplyCreationForgePreview(current, started);
   if (initialPreview) return { ...current, draft: result };
   return { ...current, draft, review: hasChanges ? { ...current.review, pending: [...current.review.pending, { ...proposal, proposed: result }] } : current.review };
 }
@@ -137,6 +144,7 @@ export function recoverCreationMismatch(
     serverConflict: {
       snapshot: authorSnapshotFromDetail(character),
       updatedAt: character.updatedAt,
+      authoringRevision: character.authoringRevision,
       reason: "creation_mismatch",
     },
   };

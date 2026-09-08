@@ -36,6 +36,7 @@ import { MicroExemplarsEditor } from "./micro-exemplars-editor";
 import { VoiceAnchorsEditor } from "./voice-anchors-editor";
 import { OutfitEditor } from "./outfit-editor";
 import { PortraitStudio } from "./portrait-studio";
+import type { CharacterAuthoringActionDraft } from "./use-character-author-draft";
 import { PreferencesEditor } from "./preferences-editor";
 import { ScheduleEditor } from "./schedule-editor";
 
@@ -71,6 +72,9 @@ export interface CharacterEditorProps {
   /** Which portrait is the character's identity source (owner read; absent ⇒ none). */
   acceptance?: CharacterPortraitAcceptance;
   onAvatarChanged?: () => void;
+  /** Joins portrait generation to the saved-character action queue. */
+  preparePortraitGeneration?: () => Promise<CharacterAuthoringActionDraft | null>;
+  pendingProposalCount?: number;
   diagnostics?: readonly Diagnostic[];
   /**
    * The page owns narrator selection and autosaves it with the character draft.
@@ -100,6 +104,8 @@ export function CharacterEditor({
   referencePlanKey = "null",
   acceptance = emptyCharacterPortraitAcceptance(),
   onAvatarChanged,
+  preparePortraitGeneration,
+  pendingProposalCount = 0,
   diagnostics = [],
   chatModel,
   onChatModelChange,
@@ -204,8 +210,8 @@ export function CharacterEditor({
             </Button>
           ) : null}
           {onPortraitAttributes && tab === "attributes" && avatarImageId ? (
-            <Button size="sm" onClick={onPortraitAttributes} busy={derivingPortrait} disabled={generationBusy}
-              title="Read the portrait and propose appearance details. Review disagreements before accepting.">
+            <Button size="sm" onClick={onPortraitAttributes} busy={derivingPortrait} disabled={generationBusy || pendingProposalCount > 0}
+              title={pendingProposalCount > 0 ? "Review pending character suggestions before completing from the portrait" : "Read the portrait and propose appearance details. Review disagreements before accepting."}>
               Complete using portrait
             </Button>
           ) : null}
@@ -463,6 +469,9 @@ export function CharacterEditor({
             referencePlanKey={referencePlanKey}
             acceptance={acceptance}
             onAvatarChanged={onAvatarChanged ?? (() => {})}
+            prepareGeneration={preparePortraitGeneration ?? (async () => null)}
+            generationDisabled={generationDisabled}
+            pendingProposalCount={pendingProposalCount}
           />
         ) : (
           <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-400">

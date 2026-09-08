@@ -1,64 +1,87 @@
 import { describe, expect, it } from "vitest";
-import { DiagnosticCollector } from "@/contracts";
+import { DiagnosticCollector, attributeRegistry, visualExtractionImageRegionSchema } from "@/contracts";
+import { portraitFieldEvidenceSchema, type PortraitFieldEvidence } from "@/lib/portrait-extraction";
 import { attr, draftWith } from "@/server/test-support";
 import { emptyCharacterDraft } from "./drafts";
-import { derivePortraitAttributes, mergePortraitReadings, portraitAttributeDefinitions } from "./portrait-attributes";
+import {
+  derivePortraitAttributes,
+  mergePortraitReadings,
+  portraitAttributeDefinitions,
+  portraitAuthoringFingerprint,
+  portraitObservationCanPropose,
+} from "./portrait-attributes";
 
-describe("portraitAttributeDefinitions", () => {
-  it("offers appearance categories and excludes personality + intimate ones", () => {
+const hash = "a".repeat(64);
+const region = visualExtractionImageRegionSchema.parse({ left: 1_000, top: 1_000, width: 4_000, height: 4_000 });
+function field(overrides: Partial<PortraitFieldEvidence> = {}): PortraitFieldEvidence {
+  return portraitFieldEvidenceSchema.parse({
+    id: "eyes.color",
+    value: "green",
+    confidence: 9_000,
+    visibility: "clear",
+    evidence: "Both irises are visible in even light.",
+    evidenceRegion: region,
+    defaultSelected: true,
+    ...overrides,
+  });
+}
+
+describe("portrait evidence classification", () => {
+  it("excludes non-pixel identity fields and requires direct teeth visibility", () => {
     const definitions = portraitAttributeDefinitions(emptyCharacterDraft());
-    const categories = new Set(definitions.map((d) => d.category));
-    expect(categories.has("hair")).toBe(true);
-    expect(categories.has("eyes")).toBe(true);
-    expect(categories.has("voice")).toBe(false);
-    expect(categories.has("presentation")).toBe(false);
-    expect(categories.has("movement")).toBe(false);
-    expect(categories.has("vulva")).toBe(false);
-    expect(categories.has("breasts")).toBe(false);
-  });
-});
-
-describe("mergePortraitReadings", () => {
-  it("fills unset ids and returns disagreements as structured conflicts (never applied)", () => {
-    const sink = new DiagnosticCollector();
-    const draft = draftWith((d) => {
-      d.profile.attributes = [attr("hair.color", "black", "manual")];
-    });
-    const result = mergePortraitReadings(draft, [attr("hair.color", "auburn"), attr("eyes.color", "green")], sink);
-    expect(result.draft.profile.attributes).toEqual([attr("hair.color", "black", "manual"), attr("eyes.color", "green")]);
-    // The review dialog's data: the disagreement as current → proposed, the fill listed.
-    expect(result.conflicts).toEqual([{ id: "hair.color", current: "black", proposed: "auburn" }]);
-    expect(result.filled).toEqual([attr("eyes.color", "green")]);
-    const conflict = sink.items.find((d) => d.code === "forge.character.portrait.portrait_conflict");
-    expect(conflict?.message).toContain("hair.color");
+    expect(definitions.map((definition) => definition.id)).not.toContain("identity.heritage");
+    expect(definitions.map((definition) => definition.id)).not.toContain("identity.gender");
+    expect(definitions.map((definition) => definition.id)).not.toContain("identity.natal_sex");
+    const teeth = attributeRegistry.byId("teeth.shape");
+    expect(portraitObservationCanPropose(teeth, "occluded", region)).toBe(false);
+    expect(portraitObservationCanPropose(teeth, "clear", null)).toBe(false);
+    expect(portraitObservationCanPropose(teeth, "clear", region)).toBe(true);
   });
 
-  it("is silent when the portrait agrees with the sheet", () => {
-    const sink = new DiagnosticCollector();
-    const draft = draftWith((d) => {
-      d.profile.attributes = [attr("hair.color", "black", "manual")];
-    });
-    const result = mergePortraitReadings(draft, [attr("hair.color", "black")], sink);
-    expect(result.draft.profile.attributes).toEqual(draft.profile.attributes);
-    expect(result.conflicts).toEqual([]);
-    expect(result.filled).toEqual([]);
-    expect(sink.items).toEqual([]);
+  it("distinguishes evidence-bearing proposals, supported matches, and failed reads", () => {
+    const draft = draftWith((value) => { value.profile.attributes = [attr("hair.color", "black", "manual")]; });
+    const proposal = mergePortraitReadings(draft, [field()], new DiagnosticCollector());
+    expect(proposal.outcome).toBe("proposals");
+    expect(proposal.filled).toEqual([attr("eyes.color", "green")]);
+
+    const match = mergePortraitReadings(draft, [field({ id: "hair.color", value: "black" })]);
+    expect(match.outcome).toBe("supported_match");
+
+    const unsupported = mergePortraitReadings(draft, [field({ id: "hair.color", value: "black", visibility: "uncertain", confidence: 3_000, defaultSelected: false })]);
+    expect(unsupported.outcome).toBe("read_failed");
+  });
+
+  it("fingerprints appearance inputs without staling on biography edits", () => {
+    const draft = emptyCharacterDraft();
+    const changedBio = { ...draft, profile: { ...draft.profile, bio: "Unrelated biography edit" } };
+    const changedEyes = { ...draft, profile: { ...draft.profile, attributes: [attr("eyes.color", "blue")] } };
+    expect(portraitAuthoringFingerprint(changedBio)).toBe(portraitAuthoringFingerprint(draft));
+    expect(portraitAuthoringFingerprint(changedEyes)).not.toBe(portraitAuthoringFingerprint(draft));
+  });
+
+  it("distinguishes inherited species features from an explicit empty override", () => {
+    const inherited = emptyCharacterDraft();
+    inherited.profile.speciesId = "succubus";
+    const withoutFeatures = structuredClone(inherited);
+    withoutFeatures.profile.bodyFeatures = [];
+
+    expect(portraitAuthoringFingerprint(withoutFeatures)).not.toBe(portraitAuthoringFingerprint(inherited));
   });
 });
 
 describe("derivePortraitAttributes (keyless demo mode)", () => {
-  it("degrades to a no-op with a diagnostic — never invents a reading of an image nobody looked at", async () => {
+  it("returns a typed retryable read failure instead of a no-change result", async () => {
     const sink = new DiagnosticCollector();
-    const draft = draftWith((d) => {
-      d.profile.attributes = [attr("hair.color", "black", "manual")];
-    });
+    const draft = draftWith((value) => { value.profile.attributes = [attr("hair.color", "black", "manual")]; });
     const result = await derivePortraitAttributes({
       draft,
       image: { data: new Uint8Array([1, 2, 3]), mediaType: "image/webp" },
+      source: { imageId: "portrait", contentHash: hash, authoringRevision: 4, authoringFingerprint: hash },
       sink,
     });
-    expect(result.draft.profile.attributes).toEqual(draft.profile.attributes);
-    expect(result.conflicts).toEqual([]);
-    expect(sink.items.some((d) => d.code === "forge.character.portrait.degraded")).toBe(true);
+    expect(result.evidence.outcome).toBe("read_failed");
+    expect(result.evidence.readFailure).toBe("provider_or_parse");
+    expect(result.draft).toEqual(draft);
+    expect(sink.items.some((item) => item.code === "forge.character.portrait.degraded")).toBe(true);
   });
 });

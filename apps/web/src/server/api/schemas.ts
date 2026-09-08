@@ -76,6 +76,11 @@ export type CharacterCreateBody = z.infer<typeof characterCreateSchema>;
 export const characterPatchSchema = z.object({
   /** Optional optimistic precondition; omitted callers retain ordinary PATCH semantics. */
   expectedUpdatedAt: z.iso.datetime().optional(),
+  /**
+   * Preferred authoring-content precondition. Unlike `expectedUpdatedAt`, this
+   * does not move when a portrait pointer or publication setting changes.
+   */
+  expectedAuthoringRevision: z.number().int().positive().max(2_147_483_647).optional(),
   name: nameSchema.optional(),
   // The raw object shape — partial() needs a ZodObject; the legacy-outfit lift
   // only matters when READING stored rows, and a PATCH merges over a lifted read.

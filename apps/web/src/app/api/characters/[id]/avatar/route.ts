@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { generateAvatar } from "@/server/images";
-import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withAuthorizedResource } from "@/server/api";
+import { imageRenderRejection, jobCapRejection, jsonError, jsonOk, readBody, reserveCharacterAuthoringAction, startJobAfterAdmission, withAuthorizedResource } from "@/server/api";
 import { logDiagnostics } from "@/server/log";
 import { findOwnedCharacter } from "../owned";
 
@@ -17,6 +17,8 @@ const avatarBodySchema = z.object({
    * page just added. An unknown id degrades to the surface default downstream.
    */
   modelId: z.string().trim().max(64).optional(),
+  /** The saved editor revision the owner chose to render. */
+  authoringRevision: z.number().int().positive().max(2_147_483_647).optional(),
 });
 
 /**
@@ -34,18 +36,50 @@ const avatarBodySchema = z.object({
 export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnType<typeof findOwnedCharacter>>>>(
   "character",
   async (user, params) => (await findOwnedCharacter(params.id, user.id)) ?? null,
-  async (user, _character, req: NextRequest, ctx) => {
+  async (user, character, req: NextRequest, ctx) => {
     const { id } = await ctx.params;
     const body = await readBody(req, avatarBodySchema);
     if (!body.ok) return body.response;
 
-    const blocked = await imageRenderRejection(user, req);
-    if (blocked) return blocked;
+    // Reserve the immutable source before the guard consumes daily budget. The
+    // transaction releases its row lock before the provider job can start.
+    const reservation = await reserveCharacterAuthoringAction({
+      characterId: id,
+      ownerId: user.id,
+      expectedAuthoringRevision: body.value.authoringRevision ?? character.authoringRevision,
+    });
+    if (reservation.status === "not_found") return jsonError("not_found", "character not found", 404);
+    if (reservation.status === "authoring_revision_changed") {
+      return jsonOk({
+        error: {
+          code: "authoring_revision_changed",
+          message: "The saved character changed. Review the latest saved details, then generate again.",
+        },
+        authoringRevision: reservation.currentRevision,
+        avatarImageId: reservation.currentImageId,
+      }, 409);
+    }
+    if (reservation.status !== "reserved") {
+      return jsonError("portrait_changed", "the displayed portrait changed", 409);
+    }
 
-    const job = await startJob({
+    // Claim the per-owner job slot before image admission can charge budget.
+    // A saturated account returns without consuming a daily render.
+    const source = reservation.source;
+    const job = await startJobAfterAdmission({
       type: "avatar",
       ownerId: user.id,
-      payload: { characterId: id, style: body.value.style, modelId: body.value.modelId },
+      payload: {
+        characterId: id,
+        authoringRevision: source.authoringRevision,
+        source: {
+          name: source.name,
+          profile: source.profile,
+          tags: source.tags,
+        },
+        style: body.value.style,
+        modelId: body.value.modelId,
+      },
       run: async () => {
         // Detached job, no route sink to answer to: the lane's degradation
         // diagnostics (`images.avatar.outfit_load_failed`, digest-ineligible
@@ -58,6 +92,11 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
             characterId: id,
             userId: user.id,
             style: body.value.style,
+            source: {
+              name: source.name,
+              profile: source.profile,
+              revision: String(source.authoringRevision),
+            },
             sink: collected,
             ...(body.value.modelId ? { modelId: body.value.modelId } : {}),
           });
@@ -66,8 +105,12 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
           logDiagnostics("images.avatar", collected.items, { characterId: id });
         }
       },
-    });
-    if (!job.ok) return jobCapRejection(job, user, req);
+    }, async () => imageRenderRejection(user, req));
+    if (!job.ok) {
+      if ("admission" in job) return job.admission;
+      if ("admissionPending" in job) return jsonError("admission_pending", "this portrait request is still being admitted; retry shortly", 409);
+      return jobCapRejection(job, user, req);
+    }
     return jsonOk({ jobId: job.jobId, characterId: id }, 202);
   },
   { limit: "image_generate" },

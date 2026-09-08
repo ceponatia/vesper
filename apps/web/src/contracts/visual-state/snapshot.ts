@@ -58,6 +58,12 @@ export interface VisualStateSnapshotInput {
   readonly scope: VisualStateScopeRef;
   readonly atMinutes: number;
   readonly cutId: string;
+  /**
+   * Subjects declared by the cut, including subjects whose owners project no
+   * recognition feature. Identity in an image cannot depend on whether the
+   * observer-recognition catalog happens to describe one of its traits.
+   */
+  readonly declaredSubjectIds?: readonly string[];
   readonly contributions: readonly VisualStateContribution[];
   readonly sink?: DiagnosticSink;
 }
@@ -127,7 +133,7 @@ export function buildVisualStateSnapshot(input: VisualStateSnapshotInput): Visua
   const seen = new Set<string>();
   const kept: VisualStateFeature[] = [];
   const suppressions: VisualStateSuppression[] = [];
-  const subjects = new Set<string>();
+  const subjects = new Set<string>(input.declaredSubjectIds ?? []);
 
   for (const contribution of contributionsInAdapterOrder(input.contributions)) {
     // Adapter suppressions ride ahead of the contribution's own duplicate-key

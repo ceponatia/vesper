@@ -20,8 +20,16 @@ import {
   type WornItemInput,
 } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { assembleVisualStateSnapshot, buildVisualStateImageDigest } from "@/server/visual-state";
-import { toWornInputs, type AvatarWardrobeItem } from "./avatar-wardrobe";
+import {
+  assembleVisualStateSnapshot,
+  buildVisualStateImageDigest,
+  type VisualStateLaneGarments,
+} from "@/server/visual-state";
+import {
+  standaloneWardrobeGarments,
+  toWornInputs,
+  type AvatarWardrobeItem,
+} from "./avatar-wardrobe";
 import type { CharacterPromptSubjectCut } from "./character-prompt-program";
 
 /**
@@ -162,6 +170,8 @@ export interface StandaloneSubjectCutInput {
    * the two halves can never disagree about what a garment hides.
    */
   readonly worn: readonly WornItemInput[];
+  /** Visible garment identities materialized through the canonical wardrobe owner. */
+  readonly garments?: VisualStateLaneGarments;
   /**
    * The wardrobe lookup FAILED — `worn` is unknown state, not a confirmed
    * undressed character. Coverage then reads as unreadable: no exposure claims
@@ -265,6 +275,7 @@ export function buildStandaloneSubjectCut(input: StandaloneSubjectCutInput): Sta
       intimateRegions: profile.intimateRegions,
       bodyFeatures: profile.bodyFeatures,
     },
+    ...(input.garments === undefined ? {} : { garments: input.garments }),
     ...(sink === undefined ? {} : { sink }),
   });
 
@@ -309,9 +320,15 @@ export function buildStandaloneLaneCut(
   viewpoint: StandaloneLaneViewpoint,
 ): StandaloneSubjectCut {
   const { wardrobe, ...rest } = input;
+  const reads = visualCameraReadsOfSceneCamera(viewpoint.camera);
+  const framing = reads.framing.status === "known" ? reads.framing.value : "full_figure";
+  const coverageUnreadable = input.wardrobeUnavailable === true || input.coverageUnreliable === true;
   return buildStandaloneSubjectCut({
     ...rest,
     worn: toWornInputs(wardrobe),
+    ...(coverageUnreadable
+      ? {}
+      : { garments: standaloneWardrobeGarments({ characterId: input.characterId, wardrobe, framing }) }),
     camera: viewpoint.camera,
     cameraId: viewpoint.cameraId,
     intimateAllowed: false,
@@ -337,4 +354,3 @@ export function standaloneSubjectPromptCut(
     realizedBody: cut.realizedBody,
   };
 }
-

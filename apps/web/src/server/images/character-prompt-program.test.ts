@@ -14,6 +14,7 @@ import {
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { IMAGE_CHARACTER_APPEARANCE_OWNER } from "@/contracts/images/character-adapter";
 import { expectDiagnostic } from "@/test/diagnostics";
 import {
   LANE_PROBE_NAME,
@@ -488,6 +489,16 @@ describe("characterPromptTransport", () => {
  */
 describe("what a variant render actually sends", () => {
   const program = (): CharacterPromptProgram => compiled(buildCharacterPromptProgram(programInput()));
+
+  it("lets the identity reference own inherent appearance while keeping mutable current facts", () => {
+    const facts = program().subjects.flatMap((subject) => subject.facts);
+    const appearanceKeys = facts
+      .filter((fact) => fact.source.owner === IMAGE_CHARACTER_APPEARANCE_OWNER)
+      .map((fact) => fact.source.key);
+    expect(appearanceKeys).toContain("hair.color");
+    expect(appearanceKeys).not.toContain("skin.tone");
+    expect(appearanceKeys).not.toContain("face.shape");
+  });
 
   /**
    * The identity lock must come from the WORLD.

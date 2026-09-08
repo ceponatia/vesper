@@ -8,7 +8,7 @@ import {
 } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { runInBatches } from "@/lib/batches";
-import { characters, db, hasLiveCharacterJob, jobs } from "../db";
+import { characters, db, hasLiveCharacterJob, jobs, JOB_HEARTBEAT_INTERVAL_MS } from "../db";
 import { log } from "@/server/log";
 import { ensureIdentityPack, runDerivation } from "./identity-pack-ensure";
 import { invalidateIdentityPackForSource } from "./identity-pack-maintenance";
@@ -67,7 +67,11 @@ export function queueIdentityPackPreparation(characterId: string, ownerId: strin
   });
 }
 
-async function prepareIdentityPackJob(characterId: string, ownerId: string): Promise<void> {
+async function prepareIdentityPackJob(
+  characterId: string,
+  ownerId: string,
+  heartbeatIntervalMs = JOB_HEARTBEAT_INTERVAL_MS,
+): Promise<void> {
   // Invalidate BEFORE the dedupe, always: the assignment path marks any previous
   // current pack stale before or while
   // requesting the new derivation. Order is the whole point: promoting portrait B
@@ -99,7 +103,7 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
       type: "identity_pack",
       ownerId,
       status: "running",
-      payload: { characterId },
+      payload: { characterId, identityPackIds: [] },
       attempts: 1,
       startedAt: new Date(),
     })
@@ -107,6 +111,19 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
   if (!job) return;
 
   const passes: PreparationPass[] = [];
+  const beat = setInterval(() => {
+    void (async () => {
+      try {
+        await db()
+          .update(jobs)
+          .set({ heartbeatAt: new Date() })
+          .where(and(eq(jobs.id, job.id), eq(jobs.status, "running")));
+      } catch {
+        // Best effort. A sustained database outage lets the ordinary lease expire.
+      }
+    })();
+  }, heartbeatIntervalMs);
+  beat.unref?.();
   try {
     const convergence = await convergeIdentityPackPreparation(characterId, ownerId, passes);
     await db()
@@ -116,7 +133,7 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
         payload: preparationPayload(characterId, passes, convergence),
         finishedAt: new Date(),
       })
-      .where(eq(jobs.id, job.id));
+      .where(and(eq(jobs.id, job.id), eq(jobs.status, "running")));
   } catch (err) {
     // NO recheck from here, deliberately. `ensureIdentityPack` contains its own
     // failures and returns `blocked` rather than throwing, so reaching this catch
@@ -135,7 +152,9 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
         payload: preparationPayload(characterId, passes, "threw"),
         finishedAt: new Date(),
       })
-      .where(eq(jobs.id, job.id));
+      .where(and(eq(jobs.id, job.id), eq(jobs.status, "running")));
+  } finally {
+    clearInterval(beat);
   }
 }
 
@@ -152,8 +171,12 @@ async function prepareIdentityPackJob(characterId: string, ownerId: string): Pro
  * test-shaped: the invalidation, the dedupe, the job row and the convergence loop
  * are all exactly what a portrait promotion runs.
  */
-export function runIdentityPackPreparationForTesting(characterId: string, ownerId: string): Promise<void> {
-  return prepareIdentityPackJob(characterId, ownerId);
+export function runIdentityPackPreparationForTesting(
+  characterId: string,
+  ownerId: string,
+  heartbeatIntervalMs = JOB_HEARTBEAT_INTERVAL_MS,
+): Promise<void> {
+  return prepareIdentityPackJob(characterId, ownerId, heartbeatIntervalMs);
 }
 
 /**
@@ -184,6 +207,8 @@ interface PreparationPass {
   /** The canonical pointer as of the top of this pass; null if the character had none. */
   sourceImageId: string | null;
   outcome: EnsureIdentityPackResult["status"];
+  /** Exact pack revision returned by this pass, when it produced an answer. */
+  packId?: string;
   code?: ImageIdentityPackFailureCode;
   retryable?: boolean;
 }
@@ -229,6 +254,7 @@ async function convergeIdentityPackPreparation(
     passes.push({
       sourceImageId: target,
       outcome: result.status,
+      ...(result.status === "ready" ? { packId: result.pack.id } : {}),
       ...(result.status === "blocked" ? { code: result.code, retryable: result.retryable } : {}),
     });
 
@@ -335,6 +361,7 @@ function preparationPayload(
   const diagnostic = preparationDiagnostic(convergence);
   return {
     characterId,
+    identityPackIds: [...new Set(passes.flatMap((pass) => pass.packId ? [pass.packId] : []))],
     ...(last ? { outcome: last.outcome, ...(last.code ? { code: last.code, retryable: last.retryable } : {}) } : {}),
     passes,
     convergence,

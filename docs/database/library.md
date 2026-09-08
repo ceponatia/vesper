@@ -19,7 +19,9 @@ The owner-scoped definition rows: who the account is, and the reusable entities 
   [../images/identity-packs.md](../images/identity-packs.md)), `chat_model` (persisted character-chat
   narrator-model override; empty ⇒ default), **`visibility` (`private`/`public`) — the
   cross-account share scope ([../auth/README.md](../auth/README.md))**, `cloned_from_id?` (soft
-  remix provenance), `search_embedding` vector.
+  remix provenance), `authoring_revision` (monotonic content version), `search_embedding` vector.
+  A database trigger advances the authoring revision only when `name`, `profile`, or `tags`
+  changes. Portrait pointers, acceptance, visibility, and operational settings retain it.
 - **`character_creation_requests`** — one immutable receipt per (`owner_id`,
   `request_id`) creation intent: canonical payload hash, character id, successful HTTP status and
   replayable response JSON. The receipt is written in the same transaction as its character and

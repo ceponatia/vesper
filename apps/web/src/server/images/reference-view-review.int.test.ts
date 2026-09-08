@@ -12,7 +12,7 @@ import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngB
 import { createImageAsset, readImageBytes, saveImageBuffer } from "./asset-storage";
 import { absoluteImagePath } from "./paths";
 import { referenceViewSweepPass } from "./reference-view-maintenance";
-import { currentReferenceViewRow, finalizeReferenceView, getReferenceViewSummary, installUploadedReferenceView, readAcceptedPortraitSource, referenceViewHistoryEntries, reserveReferenceView, restoreReferenceView, reviewReferenceView, withReferenceViewLock, REFERENCE_VIEW_RETENTION_MS } from "./reference-view-store";
+import { claimReferenceViewLeases, currentReferenceViewRow, finalizeReferenceView, getReferenceViewSummary, installUploadedReferenceView, readAcceptedPortraitSource, referenceViewHistoryEntries, reserveReferenceView, restoreReferenceView, reviewReferenceView, withReferenceViewLock, REFERENCE_VIEW_RETENTION_MS } from "./reference-view-store";
 import { uploadReferenceView } from "./reference-view-upload";
 import { loadConsumableReferenceView } from "./reference-view-consume";
 
@@ -64,15 +64,34 @@ async function fixture(fixtureView: ReferenceView = view) {
   if (!source.ok) throw new Error("fixture portrait unreadable");
   const input = { characterId: character.id, ownerId, view: fixtureView };
   const reserve = { characterId: character.id, ownerId, view: fixtureView, sourceImageId: source.imageId, sourceContentHash: source.contentHash };
+  const claimSlot = async () => {
+    const [job] = await db().insert(jobs).values({
+      ownerId,
+      type: "reference_views",
+      status: "running",
+      payload: { characterId: character.id, targets: [], leases: [] },
+    }).returning({ id: jobs.id });
+    if (!job) throw new Error("fixture job insert failed");
+    const claim = await claimReferenceViewLeases({
+      characterId: character.id,
+      ownerId,
+      jobId: job.id,
+      targets: [fixtureView],
+    });
+    if (claim.claimed.length !== 1) throw new Error("fixture lease claim failed");
+    return job.id;
+  };
   const addAttempt = async () => {
-    const id = await reserveReferenceView(reserve);
+    const jobId = await claimSlot();
+    const id = await reserveReferenceView({ ...reserve, jobId });
     if (id === null) throw new Error("fixture view unexpectedly ineligible");
     const image = await asset(character.id, "reference_view");
-    await finalizeReferenceView({ viewId: id, characterId: character.id, ownerId, imageId: image.id, method: "rendered" });
+    await finalizeReferenceView({ jobId, viewId: id, characterId: character.id, ownerId, imageId: image.id, method: "rendered" });
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, jobId));
     return { id, image };
   };
   const first = await addAttempt();
-  return { input, reserve, addAttempt, first, portrait };
+  return { input, reserve, claimSlot, addAttempt, first, portrait };
 }
 
 async function retainedFixture() {
@@ -141,8 +160,9 @@ describe.skipIf(!ready)("reference review and recovery", () => {
 
   it("keeps reservation and restoration atomic when a new generation claims the slot", async () => {
     const state = await retainedFixture();
-    const [result, reservation] = await Promise.all([restoreReferenceView(state.restore), reserveReferenceView(state.reserve)]);
-    expect(["restored", "changed"]).toContain(result.status);
+    const jobId = await state.claimSlot();
+    const [result, reservation] = await Promise.all([restoreReferenceView(state.restore), reserveReferenceView({ ...state.reserve, jobId })]);
+    expect(["restored", "changed", "busy"]).toContain(result.status);
     expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(reservation);
   });
 
@@ -151,13 +171,18 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     const replacement = await asset(state.input.characterId, "avatar");
     await db().update(characters).set({ acceptedAvatarImageId: replacement.id, acceptedAt: new Date() })
       .where(eq(characters.id, state.input.characterId));
-    expect(await reserveReferenceView(state.reserve)).toBeNull();
+    const jobId = await state.claimSlot();
+    expect(await reserveReferenceView({ ...state.reserve, jobId })).toBeNull();
     expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(state.first.id);
   });
 
   it.each(["queued", "running"] as const)("refuses an upload during a %s build without changing the current attempt or creating an asset", async (status) => {
     const state = await fixture();
-    await db().insert(jobs).values({ ownerId, type: "reference_views", status, payload: { characterId: state.input.characterId } });
+    await db().insert(jobs).values({ ownerId, type: "reference_views", status, payload: {
+      characterId: state.input.characterId,
+      targets: [`${view.angle}:${view.wardrobe}`],
+      leases: [{ ...view, attemptId: null }],
+    } });
     const before = await db().select({ id: images.id }).from(images).where(eq(images.entityId, state.input.characterId));
     const result = await uploadReferenceView({ ...state.input, dataUrl: `data:image/png;base64,${(await testPngBuffer()).toString("base64")}` });
     expect(result.status).toBe("busy");
@@ -176,7 +201,11 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     const admission = withReferenceViewLock(state.input.characterId, async (tx) => {
       entered();
       await resume;
-      await tx.insert(jobs).values({ ownerId, type: "reference_views", status: "queued", payload: { characterId: state.input.characterId } });
+      await tx.insert(jobs).values({ ownerId, type: "reference_views", status: "queued", payload: {
+        characterId: state.input.characterId,
+        targets: [`${view.angle}:${view.wardrobe}`],
+        leases: [{ ...view, attemptId: null }],
+      } });
     });
     await locked;
     const installation = installUploadedReferenceView({ ...state.reserve, imageId: image.id,
@@ -196,7 +225,8 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     expect(results.filter((result) => result.status === "changed")).toHaveLength(1);
     const current = await currentReferenceViewRow(state.input.characterId, view);
     expect(current).toMatchObject({ current: true, status: "ready", verdict: "approved", imageId: image.id });
-    const pending = await reserveReferenceView(state.reserve);
+    const jobId = await state.claimSlot();
+    const pending = await reserveReferenceView({ ...state.reserve, jobId });
     expect((await installUploadedReferenceView({ ...input, expectedCurrentAttemptId: pending })).status).toBe("busy");
     expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(pending);
   });
@@ -253,7 +283,8 @@ describe.skipIf(!ready)("reference review and recovery", () => {
       expectedCurrentAttemptId: state.first.id,
       expectedCurrentRevision: 1,
     })).status).toBe("ineligible");
-    expect(await reserveReferenceView(state.reserve)).toBeNull();
+    const jobId = await state.claimSlot();
+    expect(await reserveReferenceView({ ...state.reserve, jobId })).toBeNull();
     expect((await uploadReferenceView({
       ...state.input,
       dataUrl: `data:image/png;base64,${(await testPngBuffer()).toString("base64")}`,
@@ -262,11 +293,13 @@ describe.skipIf(!ready)("reference review and recovery", () => {
 
   it("settles a bare render as stale when apparent age changes after reservation", async () => {
     const state = await fixture(bareView);
-    const pending = await reserveReferenceView(state.reserve);
+    const jobId = await state.claimSlot();
+    const pending = await reserveReferenceView({ ...state.reserve, jobId });
     if (pending === null) throw new Error("adult bare reservation unexpectedly refused");
     const image = await asset(state.input.characterId, "reference_view");
     await db().update(characters).set({ profile: profileWithAge("teen") }).where(eq(characters.id, state.input.characterId));
     expect(await finalizeReferenceView({
+      jobId,
       viewId: pending,
       characterId: state.input.characterId,
       ownerId,
@@ -291,7 +324,11 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     await db().update(characterReferenceViews).set({ generationVersion: REFERENCE_VIEW_GENERATION_VERSION, sourceContentHash: "changed bytes" }).where(eq(characterReferenceViews.id, state.first.id));
     expect((await restoreReferenceView(state.restore)).status).toBe("incompatible");
     await db().update(characterReferenceViews).set({ sourceContentHash: state.reserve.sourceContentHash }).where(eq(characterReferenceViews.id, state.first.id));
-    const [job] = await db().insert(jobs).values({ ownerId, type: "reference_views", status: "running", payload: { characterId: state.input.characterId } }).returning();
+    const [job] = await db().insert(jobs).values({ ownerId, type: "reference_views", status: "running", payload: {
+      characterId: state.input.characterId,
+      targets: [`${view.angle}:${view.wardrobe}`],
+      leases: [{ ...view, attemptId: null }],
+    } }).returning();
     expect((await restoreReferenceView(state.restore)).status).toBe("busy");
     if (job) await db().update(jobs).set({ status: "done" }).where(eq(jobs.id, job.id));
     await fs.unlink(absoluteImagePath(state.first.image));

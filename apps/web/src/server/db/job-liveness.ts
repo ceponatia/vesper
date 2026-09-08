@@ -21,26 +21,26 @@ import { jobs } from "./schema";
  *
  * So liveness is bounded exactly as the per-user concurrency cap already bounds
  * its slot count (`server/api/concurrency.ts` — same constant, same reasoning):
- * a job older than {@link JOB_STALE_MS} is presumed dead and no longer blocks a
- * new one. The cost of being wrong is one duplicate job after 15 minutes; the
- * cost of the alternative is a feature that never works again.
+ * a job whose heartbeat is older than {@link JOB_STALE_MS} is presumed dead and
+ * no longer blocks a new one. Active runners refresh that timestamp, so a long
+ * healthy render keeps its lease while a dead process releases it.
  */
 
 /**
- * How long a `queued`/`running` row counts as in flight. Anything slower than
- * this is either dead or so slow the user has long since given up — 15 minutes
- * against observed scene renders of 15–110s.
+ * How long a `queued`/`running` row may go without a heartbeat and remain live.
  */
 export const JOB_STALE_MS = 15 * 60_000;
+
+/** Refresh cadence for API-launched jobs whose leases are measured from `heartbeat_at`. */
+export const JOB_HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** The chat-scoped job types that dedupe one-live-per-chat. */
 export type JobType = (typeof jobs.$inferSelect)["type"];
 
 /**
- * Fail every `queued`/`running` row older than {@link JOB_STALE_MS} — the rows whose
- * process is gone. Nothing re-drives this table (a `queued` row is kicked in-process the
- * moment it is inserted, and only that process ever settles it), so a row past the bound
- * is dead by construction, not merely slow.
+ * Fail every `queued`/`running` row whose heartbeat expired. Nothing re-drives
+ * this table (a `queued` row is kicked in-process the moment it is inserted, and
+ * only that process ever settles it), so a heartbeat past the bound is orphaned.
  *
  * The staleness bound already makes those rows harmless; this is the bookkeeping half,
  * so the table reads honestly and an operator looking at `running` sees work that is
@@ -58,7 +58,7 @@ export async function reclaimOrphanedJobs(now: Date = new Date()): Promise<numbe
     .where(
       and(
         inArray(jobs.status, ["queued", "running"]),
-        lt(jobs.createdAt, new Date(now.getTime() - JOB_STALE_MS)),
+        lt(jobs.heartbeatAt, new Date(now.getTime() - JOB_STALE_MS)),
       ),
     )
     .returning({ id: jobs.id });
@@ -112,7 +112,7 @@ function hasLiveJobForSubject(type: JobType, subject: LiveJobSubject, id: string
       and(
         eq(jobs.type, type),
         inArray(jobs.status, ["queued", "running"]),
-        gt(jobs.createdAt, new Date(Date.now() - JOB_STALE_MS)),
+        gt(jobs.heartbeatAt, new Date(Date.now() - JOB_STALE_MS)),
         sql`${jobs.payload} ->> ${sql.raw(`'${subject}'`)} = ${id}`,
       ),
     )

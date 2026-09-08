@@ -47,10 +47,9 @@ export function ImageProfileSelect({
     return <p className="text-xs text-paper-500">{emptyHint}</p>;
   }
 
-  const displayed = displayedProfileId(value, profiles);
-  // Only an actually-selected profile shows its operator warning — "Task
-  // default" names no profile here, so it caveats nothing.
-  const selected = displayed ? profiles?.find((profile) => profile.id === displayed) : undefined;
+  const selection = resolveProfileSelection(value, profiles);
+  const displayed = selection.displayedId;
+  const selected = selection.profile;
 
   // Group under each model's label, preserving the offered (sort) order.
   const groups: { modelLabel: string; entries: ImageProfileOption[] }[] = [];
@@ -75,7 +74,11 @@ export function ImageProfileSelect({
           <option value="">Loading profiles…</option>
         ) : (
           <>
-            <option value="">Task default</option>
+            <option value="">
+              {selection.defaultProfile
+                ? `Task default — ${selection.defaultProfile.label} · ${selection.defaultProfile.modelLabel}`
+                : "Task default"}
+            </option>
             {groups.map((group) => (
               <optgroup key={group.modelLabel} label={group.modelLabel}>
                 {group.entries.map((profile) => (
@@ -88,10 +91,16 @@ export function ImageProfileSelect({
           </>
         )}
       </Select>
-      {selected?.operatorWarning ? (
-        <p className="text-[11px] text-paper-500" title={selected.operatorWarning}>
-          {selected.operatorWarning}
-        </p>
+      {selected ? (
+        <div className="flex flex-col gap-0.5 text-[11px] text-paper-500">
+          <p>
+            {selection.substituted ? "Saved choice unavailable. Using " : "Using "}
+            <span className="text-paper-300">{selected.label}</span>{" "}
+            on <span className="text-paper-300">{selected.modelLabel}</span> · {profileTierLabel(selected.tier)}
+          </p>
+          <p>{selected.purpose} {selected.tradeoff}</p>
+          {selected.operatorWarning ? <p title={selected.operatorWarning}>{selected.operatorWarning}</p> : null}
+        </div>
       ) : null}
     </div>
   );
@@ -105,12 +114,28 @@ export function ImageProfileSelect({
  * the explicit "Task default" option — exactly what the server resolves for a
  * value it cannot honor.
  */
-function displayedProfileId(value: string, profiles: ImageProfileOption[] | null): string {
-  if (!value || !profiles) return value;
-  if (profiles.some((profile) => profile.id === value)) return value;
+export function resolveProfileSelection(value: string, profiles: ImageProfileOption[] | null): {
+  displayedId: string;
+  profile: ImageProfileOption | null;
+  defaultProfile: ImageProfileOption | null;
+  substituted: boolean;
+} {
+  if (!profiles) return { displayedId: value, profile: null, defaultProfile: null, substituted: false };
+  const defaultProfile = profiles.find((profile) => profile.isDefault) ?? profiles[0] ?? null;
+  if (!value) return { displayedId: "", profile: defaultProfile, defaultProfile, substituted: false };
+  const explicit = profiles.find((profile) => profile.id === value);
+  if (explicit) return { displayedId: explicit.id, profile: explicit, defaultProfile, substituted: false };
   const onModel = profiles.filter((profile) => profile.modelId === value);
-  const preferred = onModel.find((profile) => profile.isDefault) ?? onModel[0];
-  return preferred?.id ?? "";
+  const legacy = onModel.find((profile) => profile.isDefault) ?? onModel[0] ?? null;
+  if (legacy) return { displayedId: legacy.id, profile: legacy, defaultProfile, substituted: false };
+  return { displayedId: "", profile: defaultProfile, defaultProfile, substituted: true };
+}
+
+function profileTierLabel(tier: ImageProfileOption["tier"]): string {
+  if (tier === "fast") return "Fast";
+  if (tier === "quality") return "Quality";
+  if (tier === "specialized") return "Specialized";
+  return "Standard";
 }
 
 /**

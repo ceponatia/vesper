@@ -5,6 +5,7 @@ import {
   imageModelProfileListSchema,
   imageModelProfileSchema,
   imageProfileCandidates,
+  imageProfileDisclosure,
   imageProfileOffered,
   imageReferencePolicySchema,
   isImageIdentityCriticalTask,
@@ -440,5 +441,28 @@ describe("resolveImageProfile", () => {
     expect(resolveImageProfile(allProfiles, allModels, "text_repair", null)).toBeNull();
     expect(resolveImageProfile([], [], "scene", "prf-scene-edit")).toBeNull();
     expect(resolveImageProfile([sceneRemix], [remixModel], "scene", "prf-scene-remix")).toBeNull();
+  });
+});
+
+describe("imageProfileDisclosure", () => {
+  it("owns the fast and quality tradeoffs for curated portrait profiles", () => {
+    const qwen = model({ slug: "qwen/qwen-image-2512" });
+    expect(imageProfileDisclosure(profile({ key: "portrait-fast", task: "portrait", operation: "generate" }), qwen))
+      .toEqual({
+        tier: "fast",
+        purpose: "Create the character's main portrait.",
+        tradeoff: "Uses fewer render steps for a quicker result with less fine detail.",
+      });
+    expect(imageProfileDisclosure(profile({ key: "portrait-quality", task: "portrait", operation: "generate" }), qwen).tier)
+      .toBe("quality");
+  });
+
+  it("gives an operator-created profile honest task and model-specific fallback copy", () => {
+    expect(imageProfileDisclosure(profile({ key: "owner-edit", task: "variant", operation: "edit" }), model({ label: "My Model" })))
+      .toEqual({
+        tier: "standard",
+        purpose: "Create another view of the accepted portrait.",
+        tradeoff: "Balances identity fidelity, detail, and wait time on My Model.",
+      });
   });
 });

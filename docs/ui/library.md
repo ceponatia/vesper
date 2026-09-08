@@ -73,7 +73,8 @@ selection** above the grid, and that action submits the whole selection as one r
 identically. The submit action is disabled while a build is live for the character, hinted with the
 busy-refusal line from the same copy map the tiles read, but the selection can still be assembled
 meanwhile, and only the slots a batch actually claimed read busy. A queued batch clears the
-selection; a refused one keeps it, so the owner never has to tick the same slots twice. N is the size
+selection for queued slots and slots the server reports as already busy. Budget and storage
+refusals keep their selections, so the owner never has to tick the same slots twice. N is the size
 of the selection, and every other count on this panel comes from the reference-view registries and
 the character's plan.
 
@@ -88,9 +89,13 @@ compatibility explanations sit beside ineligible entries. The dialog shows how m
 replaced image keeps its bytes, derived from the retention window
 ([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Lifecycle).
 
-Accepting a portrait reports what happened to the views in the accept toast: *Building N reference
-views…*, or *Accepted, but the views were not built* with the reason and an invitation to build them
-later. The acceptance always stands.
+Accepting a portrait changes the character's identity source without starting reference renders.
+The reference-view panel discloses the number of missing views and requires a separate **Build N
+reference views** action before it admits and charges the batch.
+
+**Upload image** opens the shared 3:4 crop and fit dialog before writing the selected slot. The
+owner can pan, zoom out to preserve the full frame with a chosen backdrop, and confirm the exact
+768×1024 preview. Only **Use this reference view** submits the normalized image.
 
 **Create a variant** folds the optional pose, outfit, expression, and setting controls.
 The **Portrait history** grid keeps non-canonical avatar attempts and variants visible; failed

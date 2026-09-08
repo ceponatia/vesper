@@ -78,6 +78,15 @@ export {
   withQuery,
 } from "./api/http";
 export type { ApiError, ApiResult } from "./api/http";
+export { characterAuthoringRunsApi, characterAuthoringRunSchema } from "./api/character-authoring-runs";
+export type {
+  CharacterAuthoringDecision,
+  CharacterAuthoringGenerationInput,
+  CharacterAuthoringResult,
+  CharacterAuthoringRun,
+  CharacterAuthoringSource,
+  CharacterAuthoringTarget,
+} from "./api/character-authoring-runs";
 export {
   identityPackConflictSummary,
   identityPackRejectionCode,
@@ -94,10 +103,17 @@ export type {
 } from "./api/identity-packs";
 export { imageGeneratorApi } from "./api/image-generator";
 export { imageLabApi } from "./api/image-lab";
+export { characterMediaJobsApi, characterMediaJobsClientResponseSchema } from "./api/character-media";
+export type {
+  CharacterMediaJob,
+  CharacterMediaJobsClientResponse,
+  CharacterMediaRetryTarget,
+} from "./api/character-media";
 export {
   imageModelSchema,
   imageReferenceTransports,
   imageProfileOptionSchema,
+  imageProfileResolutionSchema,
   imageProfilesApi,
   imageVersionBlockedBodySchema,
   adminImageModelsApi,
@@ -120,6 +136,7 @@ export type {
   ImageProfileTask,
   ImageReferenceTransport,
   ImageProfileOption,
+  ImageProfileResolution,
   ImageVersionProfileFindings,
   ImageVersionProbeResponse,
   ImageVersionSmokeResponse,

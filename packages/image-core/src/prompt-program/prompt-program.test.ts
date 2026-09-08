@@ -637,6 +637,11 @@ describe("compiling a prompt program", () => {
       input: () => compileInput(itemWorld(), { binding: { ...itemBinding, promptStrategy: "instruction_edit" as const } }),
       code: "image_prompt_program.strategy_mismatch",
     },
+    {
+      name: "a digest whose subjects differ from the caller-resolved cast",
+      input: () => compileInput(itemWorld(), { expectedSubjectRefs: ["subject.missing"] }),
+      code: "image_prompt_program.subject_set_mismatch",
+    },
   ])("refuses $name before provider spend", ({ input, code }) => {
     const result = compileImagePromptProgram(input());
     expect(result.ok).toBe(false);
