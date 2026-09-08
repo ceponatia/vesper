@@ -16,6 +16,7 @@ import {
   queueEmbedRefresh,
 } from "./library";
 import type { CharacterCreateBody } from "./schemas";
+import { bindCreationAuthoringRuns } from "./character-authoring-runs";
 
 const materializedSuggestionSchema = z.object({
   index: z.number().int().nonnegative(),
@@ -214,6 +215,10 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
   if (outcome.status === "created") {
     for (const id of newItemIds) queueEmbedRefresh("item", id);
     if (createdCharacterId) queueEmbedRefresh("character", createdCharacterId);
+  }
+  if (requestId && (outcome.status === "created" || outcome.status === "replayed")) {
+    const character = outcome.response.character as { id: string; authoringRevision?: number };
+    await bindCreationAuthoringRuns(ownerId, requestId, character.id, character.authoringRevision ?? 1);
   }
   return outcome;
 }

@@ -57,27 +57,29 @@ The section registry owns placement, generation scopes and section detail counts
   independent edits survive; later edits to the same field require a choice. Materialized outfit
   item ids join the undo receipt even when the save completes after leaving the editor. Undo
   removes their character references, not the library items.
-- Pending reviews and the undo receipt persist in browser storage under the authenticated account
-  and character. Account or character navigation resets the editor and guards late async results.
-  Reviews saved on this device are not synchronized between devices.
+- Pending reviews, decisions and the undo receipt persist with the owner-scoped server run. The
+  browser retains a bounded cache for fast recovery, while another signed-in browser can resume
+  the same pending run or review without starting another model call.
 
 ## Recovering character generation
 
-- Full Forge, missing-detail completion, section rewrites and portrait-derived suggestions keep
-  a browser request record scoped to the authenticated account, character or creation draft,
-  operation and section. Execution continues through internal navigation; a completed response
-  waits for its matching editor and never changes another character or account.
-- Returning to the editor delivers each result once. A request id joins the destination's pending
-  or handled review receipts; rejecting or accepting a result cannot make it reappear. The source
-  response clears only after the destination draft or review is persisted successfully. A saved
-  creation draft with unfinished generation remains available from New or Forge.
-- A pending record after reload offers **Retry generation** and **Dismiss**. Resume alone never
-  starts a model call. Retry checks the initiating account and serializes the same request across
-  browser tabs. A full browser shutdown cannot recover a still-running synchronous response;
-  an already stored completed result remains recoverable.
-- A browser-storage outage retains the request and response in memory through internal navigation
-  and shows a notice to keep the browser open. Restored storage respects a competing stored version.
-  These records remain on this browser and are not synchronized between devices.
+- Full Forge, missing-detail completion, section rewrites and portrait-derived suggestions create
+  an owner-scoped `character_authoring` job. Its request id is the idempotency key; duplicate starts
+  converge on the same row before admission or provider work. The row keeps immutable input,
+  operation and section, lifecycle, result or error, retry lineage, proposal revision and decision.
+- Returning to either browser reads the saved runs and projects each server proposal into the
+  matching creation draft or saved character. Reload and resume never start a model call. A failed
+  run offers explicit **Retry generation**, which creates a new run linked to the same root and
+  immutable source; **Dismiss** records the decision on the server.
+- Accept, Reject and Undo compare both the proposal revision and the saved character's authoring
+  revision inside one transaction. Acceptance uses a three-way merge against the run's immutable
+  base, so unrelated edits survive and overlapping edits require an explicit choice. Provider work,
+  including suggested-item embeddings, runs before database locks are taken.
+- Saving a creation draft binds its runs to the new character. Review decisions then remain
+  available from the saved editor. The API returns at most the newest 25 runs for a surface, and
+  malformed stored payloads are omitted with a diagnostic instead of breaking the editor.
+- Browser storage is a bounded read cache. If it is unavailable, the editor reports the temporary
+  loss of cached status and refreshes from server authority when the connection returns.
 
 ## Recovering ordinary edits
 

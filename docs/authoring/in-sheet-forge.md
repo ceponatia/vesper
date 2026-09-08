@@ -86,13 +86,17 @@ objects retain authored data instead of clearing it; invalid objects also produc
 
 Generated changes enter explicit proposal review. Accept applies the chosen changes, Reject
 leaves the authored draft alone, and Undo restores accepted values where subsequent edits do not
-conflict. A save indicator is not a substitute for generation review.
+conflict. A save indicator is not a substitute for generation review. Each action is recorded on
+the owner-scoped authoring run and conditioned on its proposal revision and the character's content
+revision. Another browser can resume the same review, while a stale decision receives a conflict
+instead of replacing newer work.
 
 ## Complete using portrait
 
-`POST /api/characters/:id/attributes/from-portrait` reads the owned character's ready canonical
-avatar. It proposes only visible appearance attributes, excluding expression and intimate
-categories. Registry grounding returns proposed additions and structured disagreements with
-existing values for review before acceptance.
+Portrait completion starts an authoring run bound to the displayed ready image id and the saved
+character revision. It proposes only visible appearance attributes, excluding expression and
+intimate categories. Registry grounding returns proposed additions and structured disagreements
+with existing values for review before acceptance. The run retains that immutable image reference;
+changing the displayed portrait before submission returns a focused conflict without model spend.
 
 Keyless demo mode is a no-op for portrait understanding; it never invents an image reading.

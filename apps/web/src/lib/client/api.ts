@@ -78,6 +78,15 @@ export {
   withQuery,
 } from "./api/http";
 export type { ApiError, ApiResult } from "./api/http";
+export { characterAuthoringRunsApi, characterAuthoringRunSchema } from "./api/character-authoring-runs";
+export type {
+  CharacterAuthoringDecision,
+  CharacterAuthoringGenerationInput,
+  CharacterAuthoringResult,
+  CharacterAuthoringRun,
+  CharacterAuthoringSource,
+  CharacterAuthoringTarget,
+} from "./api/character-authoring-runs";
 export {
   identityPackConflictSummary,
   identityPackRejectionCode,

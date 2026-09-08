@@ -26,7 +26,7 @@ import { CharacterAuthorRecoveryNotice } from "./character-author-recovery";
 import { useCharacterAuthorDraft } from "./use-character-author-draft";
 import { CharacterGenerationStatus } from "./character-generation-status";
 import { CharacterMediaStatus } from "./character-media-status";
-import { hasReceivedGeneration, receiveGenerationReview } from "./character-generation-record";
+import { receiveGenerationReview } from "./character-generation-record";
 import { useCharacterGeneration } from "./use-character-generation";
 import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
@@ -73,10 +73,14 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
 
   const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record) => {
     if (reviewStore.isBlocked() || author.isBlocked() || record.ownerId !== ownerId || record.target.id !== characterId || !record.result) return false;
-    if (!hasReceivedGeneration(reviewStore.current.current, record.id)) {
-      setForgeDiagnostics(record.result.diagnostics);
-      reviewStore.update((review) => receiveGenerationReview(review, record));
-      if (!proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
+    const firstReceipt = !reviewStore.current.current.pending.some((item) => item.sourceRunId === record.id || item.id === record.id)
+      && !reviewStore.current.current.handledIds?.includes(record.id);
+    setForgeDiagnostics(record.result.diagnostics);
+    reviewStore.update((review) => receiveGenerationReview(review, record));
+    if (firstReceipt && !proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
+    if (record.proposal.status === "accepted" || record.proposal.status === "undone") {
+      await author.refreshServer();
+      detail.reload({ silent: true });
     }
     await reviewStore.flush();
     return reviewStore.isPersisted();
@@ -104,8 +108,8 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       }
       const base = prepared.draft;
       const section = scope ? characterSections[scope].label : "character";
-      generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
-        source: mode === "portrait" ? { authoringRevision: prepared.authoringRevision, imageId: displayedPortraitId! } : null,
+      await generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
+        source: { authoringRevision: prepared.authoringRevision, imageId: mode === "portrait" ? displayedPortraitId! : null },
         label: mode === "portrait" ? "portrait changes" : mode === "fill" ? `missing ${section} details` : `${section} rewrite` });
     } finally { if (alive.current) { busyRef.current = false; setPreparing(null); setPreparingScope(null); } }
   };
@@ -229,6 +233,27 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       <CharacterMediaStatus characterId={characterId} onRetry={() => setTab("portrait")} />
       <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={author.blocked || reviewStore.conflict || preparing !== null} onRetry={generation.retry} onDismiss={generation.dismiss} />
       <CharacterProposalReview draft={draft} review={reviewStore.data} onReviewChange={reviewStore.update} onChange={changeDraft}
+        onDecision={async (proposal, action, choices) => {
+          let expectedAuthoringRevision: number | undefined;
+          if (action === "accept" || action === "reject" || action === "undo") {
+            const prepared = await author.prepareAction();
+            if (!prepared) return null;
+            expectedAuthoringRevision = prepared.authoringRevision;
+          }
+          const decided = await generation.decide(proposal, action, choices, {
+            ...(expectedAuthoringRevision === undefined ? {} : { expectedAuthoringRevision }),
+          });
+          if (!decided) {
+            toast.push({ title: "Review changed", description: "The saved character or proposal changed. Review the latest values and try again.", tone: "error" });
+            await author.refreshServer();
+            return null;
+          }
+          if (action === "accept" || action === "undo") {
+            await author.refreshServer();
+            detail.reload({ silent: true });
+          }
+          return { applyLocally: false, appliedDraft: null, undo: decided.run.proposal.undo };
+        }}
         disabled={!reviewStore.ready || reviewStore.conflict || author.blocked} isBlocked={() => reviewStore.isBlocked() || author.isBlocked()} />
       <div onBlur={autosave.onBlur}>
       <fieldset disabled={author.blocked} className="min-w-0">

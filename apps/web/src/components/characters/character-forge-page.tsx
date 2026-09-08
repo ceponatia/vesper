@@ -19,7 +19,7 @@ import { SkeletonText } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
-import { characterCreationStateSchema, completeCreationForge, creationForgeStart, emptyCharacterCreation, prepareCreationSave, recoverCreationMismatch, savedCreationHref, withCreationBrief } from "./character-creation-draft";
+import { characterCreationStateSchema, completeCreationForge, creationForgeStart, emptyCharacterCreation, isPristineCharacterDraft, prepareCreationSave, recoverCreationMismatch, savedCreationHref, withCreationBrief } from "./character-creation-draft";
 import { CharacterProposalReview } from "./character-proposal-review";
 import { readDraft, writeDraft } from "./character-draft-storage";
 import { characterReviewStateSchema, proposalChanges, reconcileMaterializedUndo, transferCreationReview } from "./character-proposals";
@@ -59,15 +59,44 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
   } : null;
   const changeDraft = (next: CharacterDraft) => { if (!store.current.current.serverConflict) store.update((current) => ({ ...current, draft: next })); };
   const generation = useCharacterGeneration(ownerId, { kind: "creation", id: store.data.id }, store.ready, store.conflict || !!creationRecovery, store.data, async (record) => {
-    if (store.isBlocked() || store.current.current.serverConflict || store.current.current.id !== record.target.id || record.ownerId !== ownerId || !record.result) return false;
-    if (!hasReceivedGeneration(store.current.current.review, record.id)) {
+    if (store.isBlocked() || store.current.current.serverConflict || record.ownerId !== ownerId || !record.result) return false;
+    if (store.current.current.id !== record.target.id) {
+      const current = store.current.current;
+      const canResume = !current.savedCharacterId && !current.prompt.trim() && !current.review.pending.length && isPristineCharacterDraft(current.draft);
+      if (!canResume) return false;
+      store.update({
+        ...current,
+        id: record.target.id,
+        draft: record.creationStart?.draft ?? record.base,
+        prompt: record.creationStart?.prompt ?? record.base.profile.creationBrief,
+      });
+    }
+    const firstReceipt = !hasReceivedGeneration(store.current.current.review, record.id);
+    if (firstReceipt && record.operation === "create" && record.creationStart
+      && (record.proposal.status === "unresolved" || record.creationStart.initialPreview)) {
       setDiagnostics(record.result.diagnostics);
-      if (record.operation === "create" && record.creationStart) {
-        const next = completeCreationForge(store.current.current, record.creationStart, record.base, record.result.proposed, record.id);
-        const staged = hasReceivedGeneration(next.review, record.id);
-        store.update(staged ? next : { ...next, review: { ...next.review, handledIds: [...(next.review.handledIds ?? []), record.id] } });
-      } else store.update((current) => ({ ...current, review: receiveGenerationReview(current.review, record) }));
+      const completed = completeCreationForge(store.current.current, record.creationStart, record.base, record.result.proposed, record.id);
+      const next = {
+        ...completed,
+        review: {
+          ...completed.review,
+          pending: completed.review.pending.map((proposal) => proposal.id === record.id
+            ? { ...proposal, sourceRunId: record.id, proposalRevision: record.proposal.revision }
+            : proposal),
+        },
+      };
+      const staged = hasReceivedGeneration(next.review, record.id);
+      store.update(staged ? next : { ...next, review: { ...next.review, handledIds: [...(next.review.handledIds ?? []), record.id] } });
       if (!proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
+    } else {
+      setDiagnostics(record.result.diagnostics);
+      store.update((current) => ({
+        ...current,
+        review: receiveGenerationReview(current.review, record),
+        ...(firstReceipt && record.proposal.status === "accepted" && record.proposal.appliedDraft && isPristineCharacterDraft(current.draft)
+          ? { draft: record.proposal.appliedDraft }
+          : {}),
+      }));
     }
     await store.flush();
     return store.isPersisted();
@@ -79,14 +108,14 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [saving, busy, store.notice]);
-  const generate = (kind: "create" | "fill" | "redraft", scope?: CharacterSheetScope) => {
+  const generate = async (kind: "create" | "fill" | "redraft", scope?: CharacterSheetScope) => {
     if (!store.ready || generation.isRunning() || saveInFlight.current || store.isBlocked() || store.current.current.serverConflict) return;
     const started = store.current.current;
     if (kind === "create" && !started.prompt.trim() && !started.draft.profile.creationBrief.trim()) return;
     const base = withCreationBrief(structuredClone(started.draft), started.prompt);
     if (kind !== "create") store.update((current) => ({ ...current, draft: base }));
     const section = scope ? characterSections[scope].label : "character";
-    generation.start({ operation: kind, scope: scope ?? null, base, source: null, creationStart: kind === "create" ? creationForgeStart(started) : null,
+    await generation.start({ operation: kind, scope: scope ?? null, base, source: null, creationStart: kind === "create" ? creationForgeStart(started) : null,
       label: kind === "create" ? "forged character" : kind === "fill" ? `missing ${section} details` : `${section} rewrite` });
   };
 
@@ -222,7 +251,34 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         <Button className="mt-3" variant={draft.profile.creationBrief ? "ghost" : "primary"} busy={busy === "create"} disabled={!(prompt.trim() || draft.profile.creationBrief) || busy !== null || saving || store.conflict || !!creationRecovery} onClick={() => void generate("create")}>{draft.profile.creationBrief ? "Regenerate character suggestions" : "Forge character suggestions"}</Button>
         {draft.profile.creationBrief ? <p className="mt-2 text-xs text-paper-400">Use the section actions to refine one part. Starting a new draft creates a new original brief.</p> : null}
       </Disclosure>
-      <CharacterProposalReview draft={draft} review={review} onReviewChange={(next) => store.update((current) => ({ ...current, review: next }))} onChange={changeDraft} disabled={!store.ready || store.conflict || !!creationRecovery} isBlocked={() => store.isBlocked() || !!store.current.current.serverConflict} />
+      <CharacterProposalReview draft={draft} review={review} onReviewChange={(next) => store.update((current) => ({ ...current, review: next }))} onChange={changeDraft}
+        onDecision={async (proposal, action, choices) => {
+          const savedCharacterId = store.current.current.savedCharacterId;
+          let expectedAuthoringRevision: number | undefined;
+          if (savedCharacterId && (action === "accept" || action === "reject" || action === "undo")) {
+            const fresh = await charactersApi.get(savedCharacterId);
+            if (!fresh.ok) return null;
+            expectedAuthoringRevision = fresh.data.authoringRevision;
+          }
+          const decided = await generation.decide(proposal, action, choices, {
+            currentDraft: store.current.current.draft,
+            ...(expectedAuthoringRevision === undefined ? {} : { expectedAuthoringRevision }),
+          });
+          if (!decided) {
+            toast.push({ title: "Review changed", description: "This proposal was decided in another session. The latest saved review is loading.", tone: "error" });
+            return null;
+          }
+          if (savedCharacterId && (action === "accept" || action === "undo")) {
+            const fresh = await charactersApi.get(savedCharacterId);
+            if (fresh.ok) store.update((current) => ({
+              ...current,
+              serverSnapshot: authorSnapshotFromDetail(fresh.data),
+              serverUpdatedAt: fresh.data.updatedAt,
+            }));
+          }
+          return { applyLocally: action === "accept" || action === "undo", appliedDraft: decided.appliedDraft, undo: decided.run.proposal.undo };
+        }}
+        disabled={!store.ready || store.conflict || !!creationRecovery} isBlocked={() => store.isBlocked() || !!store.current.current.serverConflict} />
       <div className="mb-4"><Button busy={busy === "fill" && scopeBusy === null} disabled={busy !== null || saving || store.conflict || !!creationRecovery} onClick={() => void generate("fill")}>Complete all missing details</Button></div>
       <fieldset disabled={!!creationRecovery} className="min-w-0">
       <CharacterEditor draft={draft} onChange={changeDraft} tab={tab} onTabChange={(next) => store.update((current) => ({ ...current, tab: next }))}

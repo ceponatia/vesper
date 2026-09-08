@@ -56,6 +56,7 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
     case "chat_scene_sketch":
     case "chat_meanwhile":
     case "item_classify":
+    case "character_authoring":
       return "text";
     case "image_sweep":
     case "identity_pack":
@@ -92,6 +93,8 @@ export interface JobRunContext {
 
 export interface StartJobOptions {
   type: ApiJobType;
+  /** Stable request id for idempotent starts. */
+  requestedJobId?: string;
   /**
    * Who the work is for. The per-user concurrency cap counts over this, so a
    * call that omits it submits uncapped work — reserved for system and
@@ -133,15 +136,18 @@ export type StartJobResult =
 export type StartJobAfterAdmissionResult<T> = StartJobResult | { readonly ok: false; readonly admission: T };
 
 /** Returns the new job id, or the refusal to hand back to the caller. */
-async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<StartJobResult, { ok: false }>> {
+type InsertedJob = { readonly jobId: string; readonly inserted: boolean };
+
+async function insertJobRow(opts: StartJobOptions): Promise<InsertedJob | Extract<StartJobResult, { ok: false }>> {
   if (opts.ownerId !== undefined) {
     const claim: JobSlotClaim = await claimJobSlot({
       ownerId: opts.ownerId,
       type: opts.type,
       payload: opts.payload,
+      ...(opts.requestedJobId === undefined ? {} : { requestedJobId: opts.requestedJobId }),
       ...(opts.chatId === undefined ? {} : { chatId: opts.chatId }),
     });
-    return claim.ok ? claim.jobId : { ok: false, active: claim.active, limit: claim.limit };
+    return claim.ok ? { jobId: claim.jobId, inserted: claim.inserted } : { ok: false, active: claim.active, limit: claim.limit };
   }
 
   const [row] = await db()
@@ -156,7 +162,7 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
     })
     .returning({ id: jobs.id });
   if (!row) throw new Error("jobs insert returned no row");
-  return row.id;
+  return { jobId: row.id, inserted: true };
 }
 
 /**
@@ -236,23 +242,24 @@ export async function startJobAfterAdmission<T>(
   admit: (jobId: string) => Promise<T | null>,
 ): Promise<StartJobAfterAdmissionResult<T>> {
   const jobId = await insertJobRow(opts);
-  if (typeof jobId !== "string") return jobId;
+  if ("ok" in jobId) return jobId;
+  if (!jobId.inserted) return { ok: true, jobId: jobId.jobId };
 
   let admission: T | null;
   try {
     admission = await admit(jobId);
   } catch (err) {
-    await db().delete(jobs).where(eq(jobs.id, jobId));
+    await db().delete(jobs).where(eq(jobs.id, jobId.jobId));
     throw err;
   }
 
   if (admission !== null) {
-    await db().delete(jobs).where(eq(jobs.id, jobId));
+    await db().delete(jobs).where(eq(jobs.id, jobId.jobId));
     return { ok: false, admission };
   }
 
-  launchInsertedJob(jobId, opts);
-  return { ok: true, jobId };
+  launchInsertedJob(jobId.jobId, opts);
+  return { ok: true, jobId: jobId.jobId };
 }
 
 /**
@@ -275,7 +282,7 @@ export async function startJobAfterAdmission<T>(
  */
 export async function startJob(opts: StartJobOptions): Promise<StartJobResult> {
   const jobId = await insertJobRow(opts);
-  if (typeof jobId !== "string") return jobId;
-  launchInsertedJob(jobId, opts);
-  return { ok: true, jobId };
+  if ("ok" in jobId) return jobId;
+  if (jobId.inserted) launchInsertedJob(jobId.jobId, opts);
+  return { ok: true, jobId: jobId.jobId };
 }

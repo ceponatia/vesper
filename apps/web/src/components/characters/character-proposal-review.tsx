@@ -7,23 +7,36 @@ import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, valueAt, type CharacterProposal, type CharacterReviewState, type ProposalChoices } from "./character-proposals";
 
-export function CharacterProposalReview({ draft, review, onReviewChange, onChange, disabled = false, isBlocked }: {
+export function CharacterProposalReview({ draft, review, onReviewChange, onChange, onDecision, disabled = false, isBlocked }: {
   draft: CharacterDraft;
   review: CharacterReviewState;
   disabled?: boolean;
   isBlocked?: () => boolean;
   onReviewChange: (review: CharacterReviewState) => void;
   onChange: (draft: CharacterDraft) => void;
+  onDecision?: (proposal: CharacterProposal, action: "accept" | "reject" | "undo" | "dismiss", choices: ProposalChoices) => Promise<{
+    applyLocally: boolean;
+    appliedDraft: CharacterDraft | null;
+    undo: CharacterProposal | null;
+  } | null>;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const proposal = review.pending.find((p) => p.id === openId) ?? (review.undo?.id === openId ? review.undo : null);
   const blocked = () => disabled || isBlocked?.() === true;
-  const accept = (item: CharacterProposal, choices: ProposalChoices) => {
+  const [deciding, setDeciding] = useState(false);
+  const accept = async (item: CharacterProposal, choices: ProposalChoices) => {
     if (blocked()) return;
     const result = applyCharacterProposal(draft, item, choices);
     if (result.unresolved.length) return;
-    onChange(result.draft);
-    onReviewChange({ ...review, pending: review.pending.filter((p) => p.id !== item.id), handledIds: [...new Set([...(review.handledIds ?? []), item.id])], undo: item.undo ? null : result.undo });
+    setDeciding(true);
+    const persisted = item.sourceRunId && onDecision
+      ? await onDecision(item, item.undo ? "undo" : "accept", choices)
+      : { applyLocally: true, appliedDraft: result.draft, undo: item.undo ? null : result.undo };
+    setDeciding(false);
+    if (!persisted) return;
+    if (persisted.applyLocally && persisted.appliedDraft) onChange(persisted.appliedDraft);
+    const handledId = item.sourceRunId ?? item.id;
+    onReviewChange({ ...review, pending: review.pending.filter((p) => p.id !== item.id), handledIds: [...new Set([...(review.handledIds ?? []), handledId])], undo: persisted.undo });
     setOpenId(null);
   };
   if (!review.pending.length && !review.undo) return null;
@@ -35,10 +48,19 @@ export function CharacterProposalReview({ draft, review, onReviewChange, onChang
         {review.pending.map((item) => <Button key={item.id} disabled={disabled} onClick={() => { if (!blocked()) setOpenId(item.id); }}>Review {item.label}</Button>)}
         {review.undo ? <Button variant="ghost" disabled={disabled} onClick={() => { if (!blocked()) setOpenId(review.undo?.id ?? null); }}>Undo last accepted changes</Button> : null}
       </div>
-      {proposal && !disabled ? <CharacterProposalDialog key={proposal.id} draft={draft} proposal={proposal} onClose={() => setOpenId(null)} onAccept={(choices) => accept(proposal, choices)} onReject={() => {
+      {proposal && !disabled ? <CharacterProposalDialog key={proposal.id} draft={draft} proposal={proposal} disabled={deciding} onClose={() => setOpenId(null)} onAccept={(choices) => { void accept(proposal, choices); }} onReject={() => {
         if (blocked()) return;
-        onReviewChange({ ...review, pending: review.pending.filter((p) => p.id !== proposal.id), handledIds: [...new Set([...(review.handledIds ?? []), proposal.id])], undo: proposal.undo ? null : review.undo });
-        setOpenId(null);
+        void (async () => {
+          setDeciding(true);
+          const persisted = proposal.sourceRunId && onDecision
+            ? await onDecision(proposal, proposal.undo ? "dismiss" : "reject", {})
+            : { applyLocally: false, appliedDraft: null, undo: proposal.undo ? null : review.undo };
+          setDeciding(false);
+          if (!persisted) return;
+          const handledId = proposal.sourceRunId ?? proposal.id;
+          onReviewChange({ ...review, pending: review.pending.filter((p) => p.id !== proposal.id), handledIds: [...new Set([...(review.handledIds ?? []), handledId])], undo: persisted.undo });
+          setOpenId(null);
+        })();
       }} /> : null}
     </section>
   );
