@@ -629,6 +629,19 @@ export const characterRelationships = pgTable(
   (t) => [primaryKey({ columns: [t.fromCharacterId, t.toCharacterId] })],
 );
 
+/**
+ * One optimistic-concurrency revision per character's library relationship set.
+ * The separate row gives an empty set a durable version and lets a replace-set
+ * save claim exactly the server version it read before changing any edges.
+ */
+export const characterRelationshipVersions = pgTable("character_relationship_versions", {
+  characterId: text("character_id")
+    .primaryKey()
+    .references(() => characters.id, { onDelete: "cascade" }),
+  revision: integer("revision").notNull().default(0),
+  updatedAt: updatedAt(),
+});
+
 export const chatScenarioPresets = pgTable(
   "chat_scenario_presets",
   {

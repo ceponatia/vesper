@@ -7,7 +7,7 @@ const edgeDraftSchema = z.object({
   record: authoredRelationshipRecordSchema,
 });
 export type EdgeDraft = z.infer<typeof edgeDraftSchema>;
-export const relationshipRecoverySchema = z.object({ base: z.string(), edges: z.array(edgeDraftSchema) }).nullable();
+export const relationshipRecoverySchema = z.object({ baseRevision: z.number().int().nonnegative(), edges: z.array(edgeDraftSchema) }).nullable();
 export type RelationshipRecovery = z.infer<typeof relationshipRecoverySchema>;
 
 /** Display names are not saved relationship state and cannot make a draft dirty. */
@@ -28,10 +28,10 @@ export const relationshipSnapshot = (edges: readonly EdgeDraft[]): string =>
  * A recovered version from another baseline still requires explicit reconciliation. */
 export function rebaseRelationshipRecovery(
   current: RelationshipRecovery,
-  previousBase: string,
-  savedBase: string,
+  previousBaseRevision: number,
+  savedRevision: number,
   blocked: boolean,
 ): RelationshipRecovery {
-  if (!current || blocked || current.base !== previousBase) return current;
-  return { base: savedBase, edges: current.edges };
+  if (!current || blocked || current.baseRevision !== previousBaseRevision) return current;
+  return { baseRevision: savedRevision, edges: current.edges };
 }

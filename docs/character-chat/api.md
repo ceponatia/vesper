@@ -44,7 +44,9 @@ path performs the explicit permission and contact rollback instead.
 - **`GET/PUT /api/chats/:chatId/relationships`** — the conversation's directed NPC↔NPC
   matrix + roster · upsert authored edges (band picks → live scalars; roster-validated).
 - **`GET/PUT /api/characters/:id/relationships`** — the character's library-default edges
-  (the editor's Relationships tab; replace-set save; seeds new conversations).
+  (the editor's Relationships tab; seeds new conversations). GET returns the full set and its
+  revision. PUT supplies that revision and replaces the set transactionally; a stale write returns
+  409 `relationship_conflict` with the current set and revision for explicit recovery.
 - **`GET /api/chats/:chatId/relationship`** — Relationship-panel payload: both axis bands +
   scalars, region label, texture, history samples, milestones, story-so-far, open loops.
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { familiarityBands, regardBands } from "@/contracts";
-import { charactersApi, type AuthoredEdgeRecord } from "@/lib/client/api";
+import { charactersApi, libraryRelationshipsConflictSchema, type AuthoredEdgeRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { EntityPickerDialog } from "@/components/library/entity-picker";
 import { Button } from "@/components/ui/button";
@@ -52,25 +52,28 @@ export function RelationshipsEditor({ characterId, name, onSaveStatusChange }: R
   if (!stored.data) return null;
   const storageKey = `vesper:character-relationships:${session.user.id}:${characterId}`;
   return <RelationshipDraftEditor key={storageKey} storageKey={storageKey} characterId={characterId}
-    name={name} initialEdges={stored.data.edges} onSaveStatusChange={onSaveStatusChange} />;
+    name={name} initialEdges={stored.data.edges} initialRevision={stored.data.revision}
+    onSaveStatusChange={onSaveStatusChange} />;
 }
 
-function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges, onSaveStatusChange }: {
+function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges, initialRevision, onSaveStatusChange }: {
   characterId: string;
   name: string;
   storageKey: string;
   initialEdges: EdgeDraft[];
+  initialRevision: number;
   onSaveStatusChange?: RelationshipsEditorProps["onSaveStatusChange"];
 }) {
   const storage = useCharacterDraftStorage(storageKey, relationshipRecoverySchema, emptyRecovery);
   const [savedEdges, setSavedEdges] = useState(initialEdges);
+  const [savedRevision, setSavedRevision] = useState(initialRevision);
   const [savedSnapshot, setSavedSnapshot] = useState(() => snapshotOf(initialEdges));
-  const acknowledged = useRef(savedSnapshot);
+  const acknowledgedRevision = useRef(initialRevision);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const inFlight = useRef<Promise<void> | null>(null);
-  const serverConflict = storage.data !== null && storage.data.base !== savedSnapshot;
+  const serverConflict = storage.data !== null && storage.data.baseRevision !== savedRevision;
   const edges = storage.data?.edges ?? savedEdges;
   const dirty = storage.data !== null && snapshotOf(edges) !== savedSnapshot;
   const blocked = storage.conflict || serverConflict;
@@ -80,7 +83,10 @@ function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges, 
   }, [onSaveStatusChange, saveStatus]);
   const setDrafts = (next: EdgeDraft[]) => {
     setSaveError(null);
-    storage.update({ base: acknowledged.current, edges: next });
+    storage.update({
+      baseRevision: storage.current.current?.baseRevision ?? acknowledgedRevision.current,
+      edges: next,
+    });
   };
   const update = (index: number, patch: Partial<AuthoredEdgeRecord>) => {
     setDrafts(edges.map((edge, i) => i === index ? { ...edge, record: { ...edge.record, ...patch } } : edge));
@@ -89,24 +95,43 @@ function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges, 
   const save = (): Promise<void> => {
     if (inFlight.current) return inFlight.current;
     const current = storage.current.current;
-    if (!storage.ready || blocked || !current || snapshotOf(current.edges) === acknowledged.current) return Promise.resolve();
-    const previousBase = acknowledged.current;
+    if (!storage.ready || blocked || !current || snapshotOf(current.edges) === savedSnapshot) return Promise.resolve();
+    const previousBaseRevision = current.baseRevision;
     const snapshot = snapshotOf(current.edges);
     setSaving(true);
     const request = (async () => {
       try {
         const writeSnapshot = async () => {
           await storage.flush();
-          if (storage.isBlocked() || storage.current.current?.base !== previousBase) return;
-          const result = await charactersApi.saveRelationships(characterId,
+          if (storage.isBlocked() || storage.current.current?.baseRevision !== previousBaseRevision) return;
+          const result = await charactersApi.saveRelationships(characterId, previousBaseRevision,
             current.edges.map(({ toCharacterId, record }) => ({ toCharacterId, record })));
-          if (!result.ok) { setSaveError(result.error.message); return; }
+          if (!result.ok) {
+            const conflict = libraryRelationshipsConflictSchema.safeParse(result.error.body);
+            if (result.error.code === "relationship_conflict" && conflict.success) {
+              const currentServer = conflict.data.current;
+              acknowledgedRevision.current = currentServer.revision;
+              setSavedRevision(currentServer.revision);
+              setSavedEdges(currentServer.edges);
+              setSavedSnapshot(snapshotOf(currentServer.edges));
+              setSaveError(null);
+              return;
+            }
+            setSaveError(result.error.message);
+            return;
+          }
           // Rebase pending continuation on the acknowledged server version without replacing edits.
-          const continuation = rebaseRelationshipRecovery(storage.current.current, previousBase, snapshot, storage.isBlocked());
+          const continuation = rebaseRelationshipRecovery(
+            storage.current.current,
+            previousBaseRevision,
+            result.data.revision,
+            storage.isBlocked(),
+          );
           if (continuation !== storage.current.current) storage.update(continuation);
-          acknowledged.current = snapshot;
-          setSavedSnapshot(snapshot);
-          setSavedEdges(current.edges);
+          acknowledgedRevision.current = result.data.revision;
+          setSavedRevision(result.data.revision);
+          setSavedSnapshot(snapshotOf(result.data.edges));
+          setSavedEdges(result.data.edges);
           setSaveError(null);
           if (storage.current.current && snapshotOf(storage.current.current.edges) === snapshot) {
             await storage.clear(storage.revision.current);
@@ -157,8 +182,13 @@ function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges, 
       {storage.notice ? <p role="status" className="text-sm text-paper-400">{storage.notice}</p> : null}
       {serverConflict ? (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="w-full text-sm text-paper-400">Saved relationships changed since this browser draft. Choose which version to keep.</p>
-          <Button size="sm" disabled={saving} onClick={() => setDrafts(edges)}>Use recovered edits</Button>
+          <p className="w-full text-sm text-paper-400">Saved relationships changed in another tab or device. Review the choice; nothing has been overwritten.</p>
+          <p className="w-full text-xs text-paper-500">
+            The saved copy has {savedEdges.length === 0
+              ? "no library relationships"
+              : savedEdges.map((edge) => edge.toName).join(", ")}.
+          </p>
+          <Button size="sm" disabled={saving} onClick={() => storage.update({ baseRevision: savedRevision, edges })}>Keep my recovered edits</Button>
           <Button size="sm" disabled={saving} onClick={() => storage.reset()}>Use saved relationships</Button>
         </div>
       ) : null}
