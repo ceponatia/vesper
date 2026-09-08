@@ -587,39 +587,51 @@ describe("projectCharacterWorldSlices", () => {
     expect(hasPiercing(atFraming("wide"))).toBe(false);
   });
 
-  it("lets emitted live hairstyle and grooming replace their sheet fallbacks", () => {
+  it("lets an emitted live hairstyle replace both sheet hair fallbacks", () => {
     const attributes = completeFixtureAttributes([
       ...crookedNoseAttributes(),
       ADULT_AGE_VALUE,
       { id: "hair.arrangement", value: "ponytail", source: "manual" },
       { id: "hair.style", value: "sheet curls", source: "manual" },
-      { id: "presentation.grooming", value: "neat", source: "manual" },
     ]);
     const digest = buildVisualImageDigest({
-      snapshot: visualAttentionSnapshotFixture([hairstyleFeature(), groomingFeature(), ageAnchorFeature()]),
+      snapshot: visualAttentionSnapshotFixture([hairstyleFeature(), ageAnchorFeature()]),
       context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
     });
-    expect(digest.optionalFacts.map((fact) => fact.kindId)).toEqual(
-      expect.arrayContaining(["presentation.hairstyle", "presentation.grooming"]),
-    );
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.hairstyle");
     const subject = adapterSlices(digest, {
       attributes,
     }).subjects[0];
     const sourceKeys = (subject?.facts ?? []).map((fact) => fact.source.key);
     expect(sourceKeys).not.toContain("hair.arrangement");
     expect(sourceKeys).not.toContain("hair.style");
-    expect(sourceKeys).not.toContain("presentation.grooming");
     expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("loose");
+  });
+
+  it("lets an emitted live grooming fact replace the sheet grooming fallback", () => {
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([groomingFeature(), ageAnchorFeature()]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
+    });
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.grooming");
+    const subject = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([
+        ...crookedNoseAttributes(),
+        ADULT_AGE_VALUE,
+        { id: "presentation.grooming", value: "neat", source: "manual" },
+      ]),
+    }).subjects[0];
+    expect(subject?.facts.some((fact) => fact.source.key === "presentation.grooming")).toBe(false);
     expect(subject?.facts.find((fact) => fact.key.includes("presentation.grooming:brows"))?.value).toContain("shaped");
   });
 
-  it("keeps a sheet fallback when the selected current fact is unreadable", () => {
+  it("keeps a sheet fallback when an invalid current fact is rejected by selection", () => {
     const unreadableGrooming = { ...groomingFeature(), value: {} };
     const digest = buildVisualImageDigest({
       snapshot: visualAttentionSnapshotFixture([unreadableGrooming, ageAnchorFeature()]),
       context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
     });
-    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.grooming");
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).not.toContain("presentation.grooming");
     const subject = adapterSlices(digest, {
       attributes: completeFixtureAttributes([
         ...crookedNoseAttributes(),
