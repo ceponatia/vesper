@@ -597,8 +597,11 @@ describe("projectCharacterWorldSlices", () => {
     ]);
     const digest = buildVisualImageDigest({
       snapshot: visualAttentionSnapshotFixture([hairstyleFeature(), groomingFeature(), ageAnchorFeature()]),
-      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "full_figure" } }),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
     });
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toEqual(
+      expect.arrayContaining(["presentation.hairstyle", "presentation.grooming"]),
+    );
     const subject = adapterSlices(digest, {
       attributes,
     }).subjects[0];
@@ -614,8 +617,9 @@ describe("projectCharacterWorldSlices", () => {
     const unreadableGrooming = { ...groomingFeature(), value: {} };
     const digest = buildVisualImageDigest({
       snapshot: visualAttentionSnapshotFixture([unreadableGrooming, ageAnchorFeature()]),
-      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "full_figure" } }),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
     });
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.grooming");
     const subject = adapterSlices(digest, {
       attributes: completeFixtureAttributes([
         ...crookedNoseAttributes(),
