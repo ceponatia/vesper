@@ -99,4 +99,14 @@ describe.skipIf(!ready)("character POST creation recovery", () => {
       .where(eq(characterCreationRequests.requestId, id));
     expect(receipts.map((row) => row.ownerId).sort()).toEqual([authState.user.id, otherOwnerId].sort());
   });
+
+  it("removes the request receipt when its character is deleted", async () => {
+    const id = "1a73111b-7219-470c-960d-488b6ec35437";
+    const made = characterSaveSchema.parse(await expectJson(await create(draft("Ephemeral June", id))));
+    await db().delete(characters).where(eq(characters.id, made.character.id));
+    const receipts = await db().select({ requestId: characterCreationRequests.requestId })
+      .from(characterCreationRequests)
+      .where(and(eq(characterCreationRequests.ownerId, authState.user.id), eq(characterCreationRequests.requestId, id)));
+    expect(receipts).toEqual([]);
+  });
 });

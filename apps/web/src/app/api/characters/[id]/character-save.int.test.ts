@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { itemDefinitionSchema } from "@/contracts";
 import { characterSaveConflictSchema, characterSaveSchema } from "@/lib/client/api/library";
+import { pseudoEmbed } from "@/server/ai";
 import { characters, db, items } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
 
@@ -53,6 +54,26 @@ describe.skipIf(!ready)("character PATCH optimistic recovery", () => {
     expect(Date.parse(second.updatedAt!)).toBeGreaterThan(Date.parse(first.updatedAt!));
     const noOp = characterSaveSchema.parse(await expectJson(await patch(row.id, { expectedUpdatedAt: second.updatedAt }))).character;
     expect(noOp.updatedAt).toBe(second.updatedAt);
+  });
+
+  it("rechecks fuzzy item candidates in the save transaction using the prepared embedding", async () => {
+    const row = await subject("Fuzzy save subject");
+    const [existing] = await db().insert(items).values({
+      ownerId: authState.user.id,
+      kind: "clothing",
+      name: "Faded Sky Route Shirt",
+      searchEmbedding: pseudoEmbed("Route blue tee 883"),
+      embedder: "pseudo",
+    }).returning({ id: items.id });
+    const saved = characterSaveSchema.parse(await expectJson(await patch(row.id, {
+      expectedUpdatedAt: row.updatedAt.toISOString(),
+      suggestedItems: [itemDefinitionSchema.parse({ kind: "clothing", name: "Route blue tee 883" })],
+    })));
+    expect(saved.materializedSuggestions).toEqual([{ index: 0, itemId: existing!.id }]);
+    expect(saved.character.profile.outfits[0]?.itemIds).toContain(existing!.id);
+    const duplicates = await db().select({ id: items.id }).from(items)
+      .where(and(eq(items.ownerId, authState.user.id), eq(items.name, "Route blue tee 883")));
+    expect(duplicates).toEqual([]);
   });
 
   it("preserves partial merges for callers without a token and owner-only writes", async () => {

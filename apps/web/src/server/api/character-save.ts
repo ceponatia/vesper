@@ -9,6 +9,17 @@ import type { CharacterPatchBody } from "./schemas";
  * creates no items; response versions advance even for writes within one millisecond. */
 export async function patchOwnedCharacter(characterId: string, ownerId: string, body: CharacterPatchBody) {
   const newItems: string[] = [];
+  // Refuse an already-stale/non-owned request before paying for embeddings.
+  // This read is only a fast path: the locked read below repeats both checks
+  // because the row may change while provider work is in flight.
+  if (body.expectedUpdatedAt !== undefined) {
+    const [snapshot] = await db().select().from(characters)
+      .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)));
+    if (!snapshot) return { status: "not_found" as const };
+    if (body.expectedUpdatedAt !== snapshot.updatedAt.toISOString()) {
+      return { status: "conflict" as const, character: snapshot };
+    }
+  }
   // Provider latency must never extend the character row lock. The transaction
   // below still rechecks exact and fuzzy candidates against its current rows.
   const sink = new DiagnosticCollector();
