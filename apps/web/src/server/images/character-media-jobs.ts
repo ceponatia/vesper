@@ -1,12 +1,13 @@
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   characterMediaOwnedResultIds,
+  characterMediaPrimaryImageId,
   projectCharacterMediaJob,
   type CharacterMediaJob,
   type CharacterMediaJobProjectionInput,
   type CharacterMediaResult,
 } from "@/contracts";
-import { characterReferenceViews, db, imageIdentityPacks, jobs, JOB_STALE_MS } from "@/server/db";
+import { characterReferenceViews, db, imageIdentityPacks, images, jobs, JOB_STALE_MS } from "@/server/db";
 
 const CHARACTER_MEDIA_JOB_TYPES = ["avatar", "portrait_variant", "identity_pack", "reference_views"] as const;
 const CHARACTER_MEDIA_RECENT_MS = 24 * 60 * 60_000;
@@ -63,7 +64,7 @@ export async function listCharacterMediaJobs(
       projectCharacterMediaJob(input, {
         now,
         staleAfterMs: JOB_STALE_MS,
-        results: await resultIdentifiers(row, characterId),
+        results: await resultIdentifiers(row, characterId, ownerId),
       }),
     ),
   );
@@ -86,8 +87,28 @@ function toProjectionInput(row: CharacterMediaJobRow): CharacterMediaJobProjecti
 }
 
 /** Exact job-owned results, with a bounded time-window fallback for legacy rows. */
-async function resultIdentifiers(row: CharacterMediaJobRow, characterId: string): Promise<CharacterMediaResult[]> {
-  if (row.type !== "identity_pack" && row.type !== "reference_views") return [];
+async function resultIdentifiers(
+  row: CharacterMediaJobRow,
+  characterId: string,
+  ownerId: string,
+): Promise<CharacterMediaResult[]> {
+  if (row.type === "avatar" || row.type === "portrait_variant") {
+    const imageId = characterMediaPrimaryImageId(row.payload);
+    if (imageId === null) return [];
+    const [image] = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(and(
+        eq(images.id, imageId),
+        eq(images.ownerId, ownerId),
+        eq(images.entityKind, "character"),
+        eq(images.entityId, characterId),
+        eq(images.kind, row.type === "avatar" ? "avatar" : "portrait_variant"),
+        eq(images.status, "ready"),
+      ))
+      .limit(1);
+    return image === undefined ? [] : [{ kind: "image", id: image.id, imageId: image.id }];
+  }
   const owned = characterMediaOwnedResultIds(row.payload);
   const end = row.finishedAt ?? new Date();
 

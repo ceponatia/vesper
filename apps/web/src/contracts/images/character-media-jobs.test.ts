@@ -85,13 +85,31 @@ describe("character media job projection", () => {
     }, {
       now,
       staleAfterMs: 15 * 60_000,
-      results: [{ kind: "identity_pack", id: "pack-1", imageId: "crop-1" }],
+      results: [
+        { kind: "image", id: "image-1", imageId: "image-1" },
+        { kind: "identity_pack", id: "pack-1", imageId: "crop-1" },
+      ],
     });
     expect(projected.results).toEqual([
       { kind: "image", id: "image-1", imageId: "image-1" },
       { kind: "identity_pack", id: "pack-1", imageId: "crop-1" },
     ]);
     expect(JSON.stringify(projected)).not.toContain("provider-secret");
+  });
+
+  it("fails a settled portrait whose claimed image was not validated", () => {
+    const projected = projectCharacterMediaJob({
+      ...base,
+      status: "done",
+      payload: { imageId: "failed-image" },
+      finishedAt: now,
+    }, { now, staleAfterMs: 15 * 60_000, results: [] });
+
+    expect(projected).toMatchObject({
+      lifecycle: "failed",
+      results: [],
+      retry: { operation: "portrait", targets: [] },
+    });
   });
 
   it("reports contained identity and reference refusals as failures even when their runners settled", () => {

@@ -67,6 +67,7 @@ export interface CharacterMediaJobProjectionInput {
 export interface CharacterMediaJobProjectionContext {
   now?: Date;
   staleAfterMs: number;
+  /** Results already validated against their owning durable rows. */
   results?: readonly CharacterMediaResult[];
 }
 
@@ -129,6 +130,12 @@ export function characterMediaOwnedResultIds(payload: unknown): {
   };
 }
 
+/** The allowlisted image id a portrait job claims to have produced. */
+export function characterMediaPrimaryImageId(payload: unknown): string | null {
+  const parsed = payloadSchema.safeParse(payload);
+  return parsed.success ? (parsed.data.imageId ?? null) : null;
+}
+
 /**
  * Project a jobs row into the character-facing contract.
  *
@@ -150,6 +157,10 @@ export function projectCharacterMediaJob(
   const targetCount = Math.max(1, targets.length > 0 ? targets.length : (safe.planned ?? 0));
   const built = Math.min(targetCount, safe.built ?? 0);
   const failedCount = Math.min(targetCount - built, safe.failed ?? 0);
+  const results = [...(context.results ?? [])];
+  const expectsPrimaryImage = input.type === "avatar" || input.type === "portrait_variant";
+  const hasReadyPrimaryImage = safe.imageId !== undefined
+    && results.some((result) => result.kind === "image" && result.id === safe.imageId);
   const createdAt = new Date(input.createdAt);
   const heartbeatAt = input.heartbeatAt === null || input.heartbeatAt === undefined
     ? null
@@ -167,6 +178,7 @@ export function projectCharacterMediaJob(
   else if (input.status === "failed") lifecycle = "failed";
   else if (input.type === "identity_pack" && safe.outcome === "blocked") lifecycle = "failed";
   else if (input.type === "reference_views" && safe.status && safe.status !== "built") lifecycle = "failed";
+  else if (expectsPrimaryImage && !hasReadyPrimaryImage) lifecycle = "failed";
   else if (failedCount > 0) lifecycle = built > 0 ? "partial" : "failed";
   else lifecycle = "succeeded";
 
@@ -176,11 +188,6 @@ export function projectCharacterMediaJob(
     : lifecycle === "interrupted"
       ? `${descriptor.label} was interrupted. Retry it from the character tools.`
       : `${descriptor.label} failed. Retry it from the character tools.`;
-  const results = [...(context.results ?? [])];
-  if (safe.imageId && !results.some((result) => result.kind === "image" && result.id === safe.imageId)) {
-    results.unshift({ kind: "image", id: safe.imageId, imageId: safe.imageId });
-  }
-
   return characterMediaJobSchema.parse({
     id: input.id,
     operation: descriptor.operation,

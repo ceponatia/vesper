@@ -5,8 +5,14 @@ import {
   IDENTITY_PACK_SCHEMA_VERSION,
 } from "@vesper/image-core";
 import { REFERENCE_VIEW_GENERATION_VERSION } from "@/contracts";
-import { characterReferenceViews, characters, db, imageIdentityPacks, jobs } from "@/server/db";
-import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
+import { characterReferenceViews, characters, db, imageIdentityPacks, images, jobs } from "@/server/db";
+import {
+  canonicalImageRow,
+  endTestPool,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+} from "@/server/test-support";
 import { listCharacterMediaJobs } from "./character-media-jobs";
 
 const ready = await probeIntegrationDb("character-media-jobs.int.test", "jobs");
@@ -34,12 +40,23 @@ afterAll(async () => {
 describe.skipIf(!ready)("owner-scoped character media jobs", () => {
   it("returns only this owner's jobs for this character and strips raw payload/error data", async () => {
     const now = new Date();
+    const [readyImage] = await db()
+      .insert(images)
+      .values(canonicalImageRow({
+        ownerId,
+        kind: "avatar" as const,
+        entityKind: "character" as const,
+        entityId: characterId,
+        status: "ready" as const,
+      }))
+      .returning({ id: images.id });
+    if (!readyImage) throw new Error("failed to seed ready avatar image");
     await db().insert(jobs).values([
       {
         ownerId,
         type: "avatar",
         status: "done",
-        payload: { characterId, imageId: "image-safe", prompt: "private prompt", providerToken: "secret" },
+        payload: { characterId, imageId: readyImage.id, prompt: "private prompt", providerToken: "secret" },
         error: "provider returned https://token@example.test",
         startedAt: new Date(now.getTime() - 2_000),
         finishedAt: new Date(now.getTime() - 1_000),
@@ -60,13 +77,129 @@ describe.skipIf(!ready)("owner-scoped character media jobs", () => {
     expect(projected[0]).toMatchObject({
       operation: "portrait",
       lifecycle: "succeeded",
-      results: [{ kind: "image", id: "image-safe", imageId: "image-safe" }],
+      results: [{ kind: "image", id: readyImage.id, imageId: readyImage.id }],
     });
     const serialized = JSON.stringify(projected);
     expect(serialized).not.toContain("private prompt");
     expect(serialized).not.toContain("secret");
     expect(serialized).not.toContain("foreign-image");
     expect(serialized).not.toContain("example.test");
+  });
+
+  it("fails settled portrait jobs whose claimed image is not a ready owned asset for this character and kind", async () => {
+    const [subject, otherCharacter] = await db()
+      .insert(characters)
+      .values([
+        { ownerId, name: "Media validation subject" },
+        { ownerId, name: "Different media subject" },
+      ])
+      .returning({ id: characters.id });
+    if (!subject || !otherCharacter) throw new Error("failed to seed media validation characters");
+
+    const assets = await db()
+      .insert(images)
+      .values([
+        canonicalImageRow({
+          ownerId,
+          kind: "portrait_variant" as const,
+          entityKind: "character" as const,
+          entityId: subject.id,
+          status: "ready" as const,
+        }),
+        canonicalImageRow({
+          ownerId,
+          kind: "portrait_variant" as const,
+          entityKind: "character" as const,
+          entityId: subject.id,
+          status: "failed" as const,
+        }),
+        canonicalImageRow({
+          ownerId: foreignOwnerId,
+          kind: "avatar" as const,
+          entityKind: "character" as const,
+          entityId: subject.id,
+          status: "ready" as const,
+        }),
+        canonicalImageRow({
+          ownerId,
+          kind: "avatar" as const,
+          entityKind: "character" as const,
+          entityId: otherCharacter.id,
+          status: "ready" as const,
+        }),
+      ])
+      .returning({ id: images.id });
+    const [readyVariant, failedVariant, foreignAvatar, otherCharacterAvatar] = assets;
+    if (!readyVariant || !failedVariant || !foreignAvatar || !otherCharacterAvatar) {
+      throw new Error("failed to seed media validation images");
+    }
+
+    const jobRows = await db()
+      .insert(jobs)
+      .values([
+        {
+          ownerId,
+          type: "portrait_variant" as const,
+          status: "done" as const,
+          payload: { characterId: subject.id, kind: "pose", imageId: readyVariant.id },
+          startedAt: new Date(),
+          finishedAt: new Date(),
+        },
+        {
+          ownerId,
+          type: "portrait_variant" as const,
+          status: "done" as const,
+          payload: { characterId: subject.id, kind: "pose", imageId: failedVariant.id },
+          startedAt: new Date(),
+          finishedAt: new Date(),
+        },
+        ...[foreignAvatar.id, otherCharacterAvatar.id, readyVariant.id, "missing-image"].map((imageId) => ({
+          ownerId,
+          type: "avatar" as const,
+          status: "done" as const,
+          payload: { characterId: subject.id, imageId },
+          startedAt: new Date(),
+          finishedAt: new Date(),
+        })),
+      ])
+      .returning({ id: jobs.id });
+    expect(jobRows).toHaveLength(6);
+    const [
+      readyVariantJob,
+      failedVariantJob,
+      foreignImageJob,
+      wrongCharacterJob,
+      wrongKindJob,
+      missingImageJob,
+    ] = jobRows;
+    if (
+      !readyVariantJob
+      || !failedVariantJob
+      || !foreignImageJob
+      || !wrongCharacterJob
+      || !wrongKindJob
+      || !missingImageJob
+    ) {
+      throw new Error("failed to seed media validation jobs");
+    }
+
+    const projected = await listCharacterMediaJobs(subject.id, ownerId);
+    const byId = new Map(projected.map((job) => [job.id, job]));
+    expect(byId.get(readyVariantJob.id)).toMatchObject({
+      lifecycle: "succeeded",
+      results: [{ kind: "image", id: readyVariant.id, imageId: readyVariant.id }],
+      retry: { operation: "variant", targets: ["pose"] },
+    });
+    for (const job of [failedVariantJob, foreignImageJob, wrongCharacterJob, wrongKindJob, missingImageJob]) {
+      expect(byId.get(job.id)).toMatchObject({
+        lifecycle: "failed",
+        results: [],
+      });
+    }
+    expect(byId.get(failedVariantJob.id)?.retry).toEqual({ operation: "variant", targets: ["pose"] });
+    for (const job of [foreignImageJob, wrongCharacterJob, wrongKindJob, missingImageJob]) {
+      expect(byId.get(job.id)?.retry).toEqual({ operation: "portrait", targets: [] });
+    }
   });
 
   it("bounds recent history and excludes another character owned by the same user", async () => {
