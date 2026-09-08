@@ -42,7 +42,8 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
   const router = useRouter();
   const toast = useToast();
   const store = useCharacterDraftStorage(`vesper:character-creation:${ownerId}`, characterCreationStateSchema, emptyCharacterCreation);
-  const { draft, prompt, review, tab } = store.data;
+  const { data: storedCreation, ready: storeReady, update: updateStore } = store;
+  const { draft, prompt, review, tab } = storedCreation;
   const [diagnostics, setDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [saving, setSaving] = useState(false);
   const [abandoning, setAbandoning] = useState(false);
@@ -53,31 +54,31 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
   const saveInFlight = useRef(false);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
 
-  const conflict = store.data.serverConflict;
+  const conflict = storedCreation.serverConflict;
+  const savedCharacterId = storedCreation.savedCharacterId;
   const creationRecovery = conflict?.authoringRevision !== undefined ? {
-    id: `${store.data.id}:${conflict.updatedAt}`,
+    id: `${storedCreation.id}:${conflict.updatedAt}`,
     server: conflict.snapshot,
     updatedAt: conflict.updatedAt,
     authoringRevision: conflict.authoringRevision,
-    record: { base: store.data.serverSnapshot ?? { draft: emptyCharacterDraft(), chatModel: conflict.snapshot.chatModel }, authored: { draft, chatModel: store.data.serverSnapshot?.chatModel ?? conflict.snapshot.chatModel }, serverUpdatedAt: store.data.serverUpdatedAt },
+    record: { base: storedCreation.serverSnapshot ?? { draft: emptyCharacterDraft(), chatModel: conflict.snapshot.chatModel }, authored: { draft, chatModel: storedCreation.serverSnapshot?.chatModel ?? conflict.snapshot.chatModel }, serverUpdatedAt: storedCreation.serverUpdatedAt },
   } : null;
   useEffect(() => {
-    if (!store.ready || !conflict || conflict.authoringRevision !== undefined) return;
-    const characterId = store.data.savedCharacterId;
-    if (!characterId) { setRecoveryRefreshFailed(true); return; }
+    if (!storeReady || !conflict || conflict.authoringRevision !== undefined) return;
     let cancelled = false;
-    setRecoveryRefreshFailed(false);
-    void charactersApi.get(characterId).then((fresh) => {
+    const refresh = savedCharacterId ? charactersApi.get(savedCharacterId) : Promise.resolve(null);
+    void refresh.then((fresh) => {
       if (cancelled) return;
-      if (!fresh.ok) { setRecoveryRefreshFailed(true); return; }
-      store.update((current) => {
+      if (!fresh || !fresh.ok) { setRecoveryRefreshFailed(true); return; }
+      setRecoveryRefreshFailed(false);
+      updateStore((current) => {
         const pending = current.serverConflict;
-        if (current.savedCharacterId !== characterId || pending !== conflict || pending.authoringRevision !== undefined) return current;
+        if (current.savedCharacterId !== savedCharacterId || pending !== conflict || pending.authoringRevision !== undefined) return current;
         return { ...current, serverConflict: { ...pending, snapshot: authorSnapshotFromDetail(fresh.data), updatedAt: fresh.data.updatedAt, authoringRevision: fresh.data.authoringRevision } };
       });
     }).catch(() => { if (!cancelled) setRecoveryRefreshFailed(true); });
     return () => { cancelled = true; };
-  }, [conflict, recoveryRefreshAttempt, store.data.savedCharacterId, store.ready, store.update]);
+  }, [conflict, recoveryRefreshAttempt, savedCharacterId, storeReady, updateStore]);
   const changeDraft = (next: CharacterDraft) => { if (!store.current.current.serverConflict) store.update((current) => ({ ...current, draft: next })); };
   const generation = useCharacterGeneration(ownerId, { kind: "creation", id: store.data.id }, store.ready, store.conflict || !!conflict, store.data, async (record, actions) => {
     if (store.isBlocked() || store.current.current.serverConflict || record.ownerId !== ownerId || !record.result) return false;
@@ -290,7 +291,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       {conflict && !creationRecovery ? <section role="status" className="mb-4 rounded-card border border-ink-600 bg-ink-850 p-4">
         <p className="text-sm font-medium">Checking recovered edits</p>
         <p className="mt-1 text-sm text-paper-400">{recoveryRefreshFailed ? "The saved character could not be checked. Your browser draft is retained; try again." : "Loading the saved character version before review…"}</p>
-        {recoveryRefreshFailed ? <Button className="mt-3" disabled={saving || store.conflict} onClick={() => setRecoveryRefreshAttempt((attempt) => attempt + 1)}>Try again</Button> : null}
+        {recoveryRefreshFailed ? <Button className="mt-3" disabled={saving || store.conflict} onClick={() => { setRecoveryRefreshFailed(false); setRecoveryRefreshAttempt((attempt) => attempt + 1); }}>Try again</Button> : null}
       </section> : creationRecovery ? <CharacterAuthorRecoveryNotice key={creationRecovery.id} recovery={creationRecovery} disabled={saving || store.conflict}
         title={conflict?.reason === "creation_mismatch" ? "Saved character found" : undefined}
         description={conflict?.reason === "creation_mismatch" ? "This creation request already saved a character. Your retained draft is linked to it; review the differences before saving again." : undefined}
