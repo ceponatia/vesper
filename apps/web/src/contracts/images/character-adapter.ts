@@ -660,12 +660,16 @@ function attributeFitsExposure(attributeId: string, imageReveal: "shape" | "skin
   return region === undefined || exposure[region] !== "covered";
 }
 
-function attributeValueOrDefault(def: ReturnType<typeof attributeRegistry.byId>, sources: CharacterSubjectSources): unknown {
+function attributeValueOrDefault(
+  def: ReturnType<typeof attributeRegistry.byId>,
+  sources: CharacterSubjectSources,
+): AttributeValue["value"] | undefined {
   if (def === undefined) return undefined;
   const stored = sources.attributes?.find((entry) => entry.id === def.id)?.value;
-  if (stored !== undefined) return stored;
-  const speciesDefault = sources.realizedBody?.defaultValueFor(def);
-  return speciesDefault ?? def.defaultValue;
+  const candidate = stored ?? sources.realizedBody?.defaultValueFor(def) ?? def.defaultValue;
+  if (candidate === undefined) return undefined;
+  const parsed = attributeRegistry.parseValue(def.id, candidate);
+  return parsed.ok ? parsed.value : undefined;
 }
 
 /**
