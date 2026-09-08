@@ -547,6 +547,13 @@ export const referenceViewQueueRefusals = ["budget", "storage", "busy"] as const
 export const referenceViewQueueRefusalSchema = z.enum(referenceViewQueueRefusals);
 export type ReferenceViewQueueRefusal = z.infer<typeof referenceViewQueueRefusalSchema>;
 
+export const referenceViewTargetQueueStates = ["queued", "busy", "budget", "storage"] as const;
+export const referenceViewTargetQueueStateSchema = z.enum(referenceViewTargetQueueStates);
+export const referenceViewTargetQueueOutcomeSchema = referenceViewSchema.extend({
+  state: referenceViewTargetQueueStateSchema,
+});
+export type ReferenceViewTargetQueueOutcome = z.infer<typeof referenceViewTargetQueueOutcomeSchema>;
+
 /**
  * What an accept (or a later build) did about the views.
  *
@@ -559,6 +566,10 @@ export const referenceViewQueueOutcomeSchema = z.object({
   reason: referenceViewQueueRefusalSchema.nullable().default(null),
   /** How many views the request would build — the registry count after the age gate. */
   planned: z.number(),
+  /** How many requested slots this call newly leased and charged. */
+  admitted: z.number().int().nonnegative().default(0),
+  /** One exact outcome per normalized requested target, in request order. */
+  targets: z.array(referenceViewTargetQueueOutcomeSchema).max(32).default([]),
 });
 export type ReferenceViewQueueOutcome = z.infer<typeof referenceViewQueueOutcomeSchema>;
 

@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { db, jobs } from "@/server/db";
+import { and, eq } from "drizzle-orm";
+import { db, jobs, JOB_HEARTBEAT_INTERVAL_MS } from "@/server/db";
 import { log } from "@/server/log";
 import { errorText } from "./respond";
 import { claimJobSlot, type JobSlotClaim } from "./concurrency";
@@ -177,6 +177,20 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
   };
   const laneOutcome = (settled: boolean): boolean | null => (reported === undefined ? settled : reported);
 
+  const beat = setInterval(() => {
+    void (async () => {
+      try {
+        await db()
+          .update(jobs)
+          .set({ heartbeatAt: new Date() })
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
+      } catch {
+        // Heartbeats are best-effort. The lease expires if the database remains unavailable.
+      }
+    })();
+  }, JOB_HEARTBEAT_INTERVAL_MS);
+  beat.unref?.();
+
   void opts
     .run(context)
     .then(async (result) => {
@@ -185,7 +199,7 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
       await db()
         .update(jobs)
         .set({ status: "done", payload: { ...opts.payload, ...result }, finishedAt: new Date() })
-        .where(eq(jobs.id, jobId));
+        .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
     })
     .catch(async (err: unknown) => {
       // A run that reported a success and then threw is telling the truth twice:
@@ -198,11 +212,12 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
         await db()
           .update(jobs)
           .set({ status: "failed", error: message, finishedAt: new Date() })
-          .where(eq(jobs.id, jobId));
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
       } catch (updateErr) {
         log.error("api.jobs", "failed to record job failure", { jobId, error: errorText(updateErr) });
       }
-    });
+    })
+    .finally(() => clearInterval(beat));
 }
 
 /**
@@ -218,14 +233,14 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
  */
 export async function startJobAfterAdmission<T>(
   opts: StartJobOptions,
-  admit: () => Promise<T | null>,
+  admit: (jobId: string) => Promise<T | null>,
 ): Promise<StartJobAfterAdmissionResult<T>> {
   const jobId = await insertJobRow(opts);
   if (typeof jobId !== "string") return jobId;
 
   let admission: T | null;
   try {
-    admission = await admit();
+    admission = await admit(jobId);
   } catch (err) {
     await db().delete(jobs).where(eq(jobs.id, jobId));
     throw err;

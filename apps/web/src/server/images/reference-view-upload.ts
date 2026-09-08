@@ -10,7 +10,7 @@ import {
   currentReferenceViewRow,
   installUploadedReferenceView,
   readAcceptedPortraitSource,
-  referenceViewBuildInFlight,
+  referenceViewSlotBusy,
   type InstallUploadedReferenceViewResult,
 } from "./reference-view-store";
 
@@ -78,7 +78,7 @@ export async function uploadReferenceView(input: UploadReferenceViewInput): Prom
     if (source.reason === "not_found") return { status: "not_found" };
     return { status: "not_accepted" };
   }
-  if (await referenceViewBuildInFlight(input.characterId)) return { status: "busy" };
+  if (await referenceViewSlotBusy(input.characterId, input.ownerId, input.view)) return { status: "busy" };
   const current = await currentReferenceViewRow(input.characterId, input.view);
 
   const asset = await createImageAsset({

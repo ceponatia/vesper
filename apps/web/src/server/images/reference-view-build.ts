@@ -26,6 +26,7 @@ import {
 import { characters, db } from "../db";
 import { hasReplicate, isDemoMode } from "../ai";
 import { runImagePipeline } from "./assets";
+import { deleteOwnedImage } from "./asset-deletion";
 import { loadDefaultWardrobeWithRevisions, type AvatarWardrobeLoad } from "./avatar";
 import { toWornInputs } from "./avatar-wardrobe";
 import {
@@ -86,6 +87,8 @@ const SCOPE = "images.reference_views";
 export const REFERENCE_VIEW_BUILD_FAILED = `${SCOPE}.build_failed`;
 
 export interface BuildReferenceViewsInput {
+  /** The heartbeat-live job whose payload owns each target lease. */
+  jobId: string;
   characterId: string;
   ownerId: string;
   /** The slots to build. Absent builds every planned slot. */
@@ -133,6 +136,7 @@ export function referenceViewInstruction(view: ReferenceView, name: string): str
 
 /** Everything one character's whole pass shares, read once. */
 interface BuildContext {
+  readonly jobId: string;
   readonly characterId: string;
   readonly ownerId: string;
   readonly name: string;
@@ -226,6 +230,7 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
 
   const wardrobe = await loadDefaultWardrobeWithRevisions(ownerId, outfitItems(profile), sink);
   const context: BuildContext = {
+    jobId: input.jobId,
     characterId,
     ownerId,
     name: character.name,
@@ -307,6 +312,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
   if (angle === undefined || wardrobeEntry === undefined || instruction === null) return false;
 
   const viewId = await reserveReferenceView({
+    jobId: context.jobId,
     characterId,
     ownerId,
     view,
@@ -425,7 +431,14 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
 
   if (status !== "ready") {
     const message = failure ?? "the reference view render produced no image";
-    await failReferenceView(viewId, classifyImageFailureMessage(message), message);
+    await failReferenceView({
+      jobId: context.jobId,
+      viewId,
+      characterId,
+      ownerId,
+      failureCode: classifyImageFailureMessage(message),
+      failureMessage: message,
+    });
     sink.push(
       diag("warn", REFERENCE_VIEW_BUILD_FAILED, message.slice(0, 300), {
         path: SCOPE,
@@ -435,8 +448,27 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     return false;
   }
 
-  await finalizeReferenceView({ viewId, characterId, ownerId, imageId, method: "rendered" });
-  return true;
+  const finalized = await finalizeReferenceView({
+    jobId: context.jobId,
+    viewId,
+    characterId,
+    ownerId,
+    imageId,
+    method: "rendered",
+  });
+  if (finalized === "fenced") {
+    // This worker lost the lease before settlement. Its produced asset belongs
+    // to no attempt, so compensate only that unused output.
+    try {
+      await deleteOwnedImage(imageId, ownerId, { kind: "reference_view" });
+    } catch (error) {
+      log.warn("images", "unused fenced reference view cleanup failed", {
+        imageId,
+        error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+      });
+    }
+  }
+  return finalized === "ready";
 }
 
 /**

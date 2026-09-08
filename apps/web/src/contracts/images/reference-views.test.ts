@@ -15,6 +15,7 @@ import {
   referenceViewFeedbackReasons,
   referenceViewReviewRequestSchema,
   referenceViewRestoreRequestSchema,
+  referenceViewQueueOutcomeSchema,
   referenceViewHistoryVerdict,
   referenceViewWardrobeEntries,
   referenceViewWardrobes,
@@ -442,5 +443,19 @@ describe("reference review wire guards", () => {
     expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: [...referenceViewFeedbackReasons], correction: "Keep the original jacket." } }).success).toBe(true);
     expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: [], correction: "x".repeat(1001) } }).success).toBe(false);
     expect(referenceViewReviewRequestSchema.safeParse({ ...request, feedback: { reasons: ["invented_reason"], correction: "" } }).success).toBe(false);
+  });
+});
+
+describe("reference build admission wire guards", () => {
+  it("preserves per-slot outcomes and defaults new fields for older responses", () => {
+    expect(referenceViewQueueOutcomeSchema.parse({
+      queued: true,
+      reason: null,
+      planned: 8,
+      admitted: 1,
+      targets: [{ angle: "front_full", wardrobe: "clothed", state: "queued" }],
+    })).toMatchObject({ admitted: 1, targets: [{ state: "queued" }] });
+    expect(referenceViewQueueOutcomeSchema.parse({ queued: false, reason: null, planned: 0 }))
+      .toMatchObject({ admitted: 0, targets: [] });
   });
 });

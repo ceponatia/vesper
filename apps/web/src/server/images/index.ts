@@ -142,6 +142,7 @@ export * from "./identity-pack-consume";
 export * from "./portrait-acceptance";
 export {
   clearReferenceViewAssetPointers,
+  claimReferenceViewLeases,
   currentReferenceViewRow,
   currentReferenceViewRows,
   failReferenceView,
@@ -150,6 +151,10 @@ export {
   getReferenceViewSummary,
   plannedReferenceViewsForCharacter,
   readAcceptedPortraitSource,
+  reconcileExpiredReferenceViewWork,
+  reconcileOrphanedReferenceViewAttempts,
+  referenceViewSlotBusy,
+  REFERENCE_VIEW_LEASE_EXPIRED,
   REFERENCE_VIEW_UNKNOWN,
   referenceViewHistory,
   referenceViewHistoryEntries,
@@ -161,6 +166,8 @@ export {
   withReferenceViewLock,
   type AcceptedPortraitSource,
   type ReferenceViewReviewVerdict,
+  type ReferenceViewLease,
+  type ReferenceViewLeaseClaim,
   type ReferenceViewRow,
   type ReviewReferenceViewResult,
 } from "./reference-view-store";

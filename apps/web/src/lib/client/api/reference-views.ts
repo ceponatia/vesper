@@ -59,6 +59,8 @@ const referenceViewQueueResponseSchema = z.object({
     queued: false,
     reason: null,
     planned: 0,
+    admitted: 0,
+    targets: [],
   }),
 });
 
