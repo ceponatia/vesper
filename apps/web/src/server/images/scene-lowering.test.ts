@@ -333,9 +333,9 @@ describe("production chat cuts are narrowed to the scene cast", () => {
    * refused this ordinary cut on `subject.player.exposure`, despite there being
    * no provider failure and no missing character data.
    */
-  it("keeps the cast member's scene facts without compiling auxiliary player or room subjects", () => {
-    const subject = laneProbeCastSubjects()[0];
-    if (subject === undefined) throw new Error("the probe cast fixture lost its focal member");
+  it("keeps cast and room facts without compiling auxiliary player or room subjects", () => {
+    const [subject, bystander] = laneProbeCastSubjects();
+    if (subject === undefined || bystander === undefined) throw new Error("the probe cast fixture lost a member");
     const coat = visualStateGarmentFixture({
       id: "g_scene_coat",
       categoryId: "outerwear",
@@ -349,42 +349,47 @@ describe("production chat cuts are narrowed to the scene cast", () => {
       cues: emptyGarmentCueState(),
       coverage: {},
     };
-    const productionSubject: LaneProbeCastSubject = {
-      ...subject,
+    const productionSubject = (castSubject: LaneProbeCastSubject): LaneProbeCastSubject => ({
+      ...castSubject,
       shadow: {
-        ...subject.shadow,
-        garments: { store, actorId: `c:${subject.member.characterId}`, layersByGarmentId: new Map() },
+        ...castSubject.shadow,
+        garments: { store, actorId: `c:${castSubject.member.characterId}`, layersByGarmentId: new Map() },
         playerSubjectId: "player",
         sceneSubjectId: "scene",
         sceneRelations: {
           scene: visualStateSceneFixture(),
           subjectsByParticipant: new Map([
-            [String(VISUAL_STATE_SCENE_NPC), subject.member.characterId],
+            [String(VISUAL_STATE_SCENE_NPC), castSubject.member.characterId],
             [String(VISUAL_STATE_SCENE_PLAYER), "player"],
           ]),
         },
       },
-    };
-    const plan = laneProbeCastScenePlan([subject.member]);
+    });
+    const focalSubject = productionSubject(subject);
+    const productionCast = [focalSubject, productionSubject(bystander)];
+    const plan = laneProbeCastScenePlan(productionCast.map((entry) => entry.member));
 
     // Control: without the scene lane's projection, the shared chat cut really
     // does assemble both auxiliary subjects; this is not a sterile fixture.
     const shared = safeBuildVisualStateShadow({
-      ...productionSubject.shadow,
+      ...focalSubject.shadow,
       camera: { cameraId: SCENE_VISUAL_CAMERA_ID, spec: plan.camera },
     });
     expect(shared?.snapshot.subjects).toEqual(
       expect.arrayContaining([subject.member.characterId, "player", "scene"]),
     );
 
-    const realized = applySceneCastVisual({ plan, members: [productionSubject] });
+    const realized = applySceneCastVisual({ plan, members: productionCast });
     expect(realized.refusal).toBeNull();
-    expect(realized.visuals[0]?.digest.subjects.map((digestSubject) => digestSubject.subjectId)).toEqual([
-      subject.member.characterId,
-    ]);
+    expect(
+      realized.visuals.map((visual) => visual.digest.subjects.map((digestSubject) => digestSubject.subjectId)),
+    ).toEqual([[subject.member.characterId], [bystander.member.characterId]]);
 
-    const { program } = compileScene(plan, false, undefined, () => true, [productionSubject]);
-    expect(program.subjects.map((compiled) => compiled.entityId)).toEqual([subject.member.characterId]);
+    const { program } = compileScene(plan, false, undefined, () => true, productionCast);
+    expect(program.subjects.map((compiled) => compiled.entityId)).toEqual([
+      subject.member.characterId,
+      bystander.member.characterId,
+    ]);
     // The participant map still retains the cast side of the committed scene:
     // the NPC's specific facing-toward-player relation survives even though the
     // player is no longer a subject in this digest.
@@ -399,6 +404,13 @@ describe("production chat cuts are narrowed to the scene cast", () => {
       concept: "subject.body_language",
       value: "toward",
     });
+    const coatFactsBySubject = program.subjects.map(
+      (compiled) =>
+        compiled.facts.filter((fact) => fact.concept === "location.contents" && fact.value === "grey wool coat")
+          .length,
+    );
+    expect(coatFactsBySubject).toEqual([1, 0]);
+    expect(program.prompt.match(/Grey wool coat\./g)).toHaveLength(1);
     expect(program.missingRequired).toEqual([]);
   });
 });

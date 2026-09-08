@@ -242,7 +242,10 @@ export function applySceneCastVisual(input: SceneCastVisualInput): SceneSubjectV
       );
       continue;
     }
-    const produced = produceSubjectVisual(viewpoint, subject, sink);
+    // The room is shared by the whole cast. File its loose-garment facts under
+    // the focal cut exactly once rather than creating an auxiliary subject in
+    // every cut or duplicating the same setting fact across the ensemble.
+    const produced = produceSubjectVisual(viewpoint, subject, visuals.length === 0, sink);
     if (!produced.ok) {
       // Refuse, never describe the rest of the cast from somewhere else: the row
       // is reserved and failed with this text before any provider is called. The
@@ -308,17 +311,21 @@ function sceneViewpoint(plan: SceneRenderPlan): VisualStateCameraBinding {
  * Preserve the committed scene itself, but scope its participant map to the
  * cast subject. This keeps that person's posture, support, facing and contact
  * facts while preventing the other participants from becoming subjects in this
- * per-person digest. Player appearance remains the scene lowerer's separate
- * `viewer.*` channel; it is not a character subject here.
+ * per-person digest. Loose garments in the room are shared setting facts, so
+ * the focal cut files them under its one subject and later cast cuts omit them;
+ * the subject-digest adapter still routes them to `location.contents` rather
+ * than character appearance. Player appearance remains the scene lowerer's
+ * separate `viewer.*` channel; it is not a character subject here.
  */
 function sceneSubjectCut(
   cut: Omit<VisualStateShadowInput, "sink" | "camera">,
+  includeSceneFacts: boolean,
 ): Omit<VisualStateShadowInput, "sink" | "camera"> {
   const { sceneRelations } = cut;
   return {
     ...cut,
     playerSubjectId: undefined,
-    sceneSubjectId: undefined,
+    sceneSubjectId: includeSceneFacts && cut.sceneSubjectId !== undefined ? cut.subjectId : undefined,
     ...(sceneRelations === undefined
       ? {}
       : {
@@ -344,6 +351,7 @@ function sceneSubjectCut(
 function produceSubjectVisual(
   camera: VisualStateCameraBinding,
   subject: SceneCastVisualSubject,
+  includeSceneFacts: boolean,
   sink?: DiagnosticSink,
 ): SceneSubjectVisualProduction {
   const { member, shadow } = subject;
@@ -370,7 +378,7 @@ function produceSubjectVisual(
 
   const build = safeBuildVisualStateShadow(
     {
-      ...sceneSubjectCut(shadow),
+      ...sceneSubjectCut(shadow, includeSceneFacts),
       camera,
       ...(sink === undefined ? {} : { sink }),
     },
