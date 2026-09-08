@@ -53,6 +53,7 @@ export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharact
     }
     if (result.status === "rejected") return jsonError("bad_request", result.error, 400);
     if (result.status === "busy") return jsonError("busy", "Reference views are still being built. Wait for them to finish, then upload your image again.", 409);
+    if (result.status === "ineligible") return jsonError("ineligible", "Undressed references require a recognized adult apparent age. Update the character profile before uploading this slot.", 409);
     if (result.status === "changed") return jsonError("changed", "This view or its accepted portrait changed during upload. Refresh the reference views, then upload your image again.", 409);
     return jsonOk({ view: result.view }, 201);
   },

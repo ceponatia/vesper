@@ -226,6 +226,7 @@ export const referenceViewWriteMessages = {
   not_ready: "This image cannot be reviewed yet. Refresh to see its current status.",
   changed: "This view changed elsewhere. Refresh and review the current image before trying again.",
   incompatible: "This image does not match the accepted portrait or current reference version. Choose a compatible image or regenerate.",
+  ineligible: "Undressed references require a recognized adult apparent age. Update the character profile before using this slot.",
   busy: "Reference views are still being built. Wait for them to finish, then refresh.",
   expired: "This image is outside the history retention window. Choose a more recent image or regenerate.",
   unavailable: "This image could not be read. Refresh, choose another image, or regenerate.",

@@ -65,7 +65,7 @@ export type ReferenceViewRow = typeof characterReferenceViews.$inferSelect;
 
 /** The same character lock serializes reservation, review and restoration. */
 type ReferenceViewTransaction = Parameters<Parameters<ReturnType<typeof db>["transaction"]>[0]>[0];
-type ReferenceViewExecutor = ReturnType<typeof db> | ReferenceViewTransaction;
+export type ReferenceViewExecutor = ReturnType<typeof db> | ReferenceViewTransaction;
 export async function withReferenceViewLock<T>(
   characterId: string,
   operation: (tx: ReferenceViewTransaction) => Promise<T>,
@@ -102,7 +102,9 @@ function restoreUnavailable(
   row: ReferenceViewRow,
   source: AcceptedPortraitSource,
   busy: boolean,
+  eligible: boolean,
 ): ReferenceViewHistoryEntry["restoreUnavailable"] {
+  if (!eligible) return "ineligible";
   if (row.current) return "current";
   if (row.updatedAt.getTime() < Date.now() - REFERENCE_VIEW_RETENTION_MS) return "expired";
   if (!row.imageId || !row.method) return "unavailable";
@@ -119,6 +121,10 @@ function restoreUnavailable(
  */
 function slotKey(view: ReferenceView): string {
   return `${view.angle}:${view.wardrobe}`;
+}
+
+function planIncludes(plan: readonly ReferenceView[], view: ReferenceView): boolean {
+  return plan.some((candidate) => candidate.angle === view.angle && candidate.wardrobe === view.wardrobe);
 }
 
 // ---------------------------------------------------------------------------
@@ -149,12 +155,23 @@ export async function plannedReferenceViewsForCharacter(
   ownerId: string,
   sink?: DiagnosticSink,
 ): Promise<readonly ReferenceView[]> {
-  const [row] = await db()
+  const plan = await readReferenceViewPlan(characterId, ownerId, db(), sink);
+  return plan ?? [];
+}
+
+/** Read the age-gated plan on the caller's connection so writes can check it under the character lock. */
+async function readReferenceViewPlan(
+  characterId: string,
+  ownerId: string,
+  executor: ReferenceViewExecutor,
+  sink?: DiagnosticSink,
+): Promise<readonly ReferenceView[] | undefined> {
+  const [row] = await executor
     .select({ profile: characters.profile })
     .from(characters)
     .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
     .limit(1);
-  if (row === undefined) return [];
+  if (row === undefined) return undefined;
   return plannedReferenceViews(
     parseOr(characterProfileSchema, row.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile"),
   );
@@ -192,8 +209,11 @@ export async function readAcceptedPortraitSource(characterId: string, ownerId: s
 }
 
 /** Every current row for this character, whatever slot it belongs to. */
-export async function currentReferenceViewRows(characterId: string): Promise<readonly ReferenceViewRow[]> {
-  return db()
+export async function currentReferenceViewRows(
+  characterId: string,
+  executor: ReferenceViewExecutor = db(),
+): Promise<readonly ReferenceViewRow[]> {
+  return executor
     .select()
     .from(characterReferenceViews)
     .where(and(eq(characterReferenceViews.characterId, characterId), eq(characterReferenceViews.current, true)));
@@ -244,10 +264,13 @@ export async function referenceViewHistory(
 }
 
 /** The asset statuses of every image a set's rows point at, by image id. */
-async function readViewImageStatuses(rows: readonly ReferenceViewRow[]): Promise<Map<string, string>> {
+async function readViewImageStatuses(
+  rows: readonly ReferenceViewRow[],
+  executor: ReferenceViewExecutor = db(),
+): Promise<Map<string, string>> {
   const ids = [...new Set(rows.flatMap((row) => (row.imageId === null ? [] : [row.imageId])))];
   if (ids.length === 0) return new Map();
-  const assets = await db().select({ id: images.id, status: images.status }).from(images).where(inArray(images.id, ids));
+  const assets = await executor.select({ id: images.id, status: images.status }).from(images).where(inArray(images.id, ids));
   return new Map(assets.map((asset) => [asset.id, asset.status]));
 }
 
@@ -297,6 +320,9 @@ export async function referenceViewHistoryEntries(
   const statuses = await readViewImageStatuses(rows);
   const source = await readAcceptedPortraitSource(characterId, ownerId);
   const busy = await hasLiveCharacterJob("reference_views", characterId);
+  const plan = await readReferenceViewPlan(characterId, ownerId, db());
+  if (plan === undefined) return [];
+  const eligible = planIncludes(plan, view);
 
   return rows.flatMap((row) => {
     const imageId = row.imageId;
@@ -308,7 +334,7 @@ export async function referenceViewHistoryEntries(
         method: row.method,
         verdict: referenceViewHistoryVerdict(row),
         feedback: parseOrNull(referenceViewFeedbackSchema, row.feedback),
-        restoreUnavailable: restoreUnavailable(row, source, busy),
+        restoreUnavailable: restoreUnavailable(row, source, busy, eligible),
         current: row.current,
         createdAt: row.createdAt.toISOString(),
         reviewedAt: row.reviewedAt === null ? null : row.reviewedAt.toISOString(),
@@ -325,12 +351,13 @@ function summarizeRow(
   row: ReferenceViewRow | undefined,
   acceptedImageId: string | null,
   imageStatus: string | null,
+  eligible: boolean,
 ): ReferenceViewSummary {
   if (row === undefined) {
     return {
       angle: view.angle,
       wardrobe: view.wardrobe,
-      state: "missing",
+      state: eligible ? "missing" : "ineligible",
       attemptId: null,
       reviewRevision: 0,
       feedback: null,
@@ -344,6 +371,7 @@ function summarizeRow(
     };
   }
   const projection = {
+    eligible,
     current: row.current,
     status: row.status,
     sourceImageId: row.sourceImageId,
@@ -385,12 +413,16 @@ export async function getReferenceViewSet(
   characterId: string,
   ownerId: string,
   sink?: DiagnosticSink,
+  executor: ReferenceViewExecutor = db(),
 ): Promise<ReferenceViewSetSummary> {
-  const accepted = await readAcceptedPortrait(characterId, ownerId);
+  const accepted = await readAcceptedPortrait(characterId, ownerId, executor);
   if (accepted === undefined) return emptyReferenceViewSetSummary();
+  const plan = await readReferenceViewPlan(characterId, ownerId, executor, sink);
+  if (plan === undefined) return emptyReferenceViewSetSummary();
+  const eligibleSlots = new Set(plan.map(slotKey));
 
-  const rows = await currentReferenceViewRows(characterId);
-  const statuses = await readViewImageStatuses(rows);
+  const rows = await currentReferenceViewRows(characterId, executor);
+  const statuses = await readViewImageStatuses(rows, executor);
 
   const bySlot = new Map<string, ReferenceViewRow>();
   for (const row of rows) {
@@ -412,13 +444,39 @@ export async function getReferenceViewSet(
 
   return {
     acceptedImageId: accepted,
-    building: await hasLiveCharacterJob("reference_views", characterId),
+    building: await hasLiveReferenceViewJob(executor, characterId),
     views: allReferenceViews().map((view) => {
       const row = bySlot.get(slotKey(view));
       const imageStatus = row === undefined || row.imageId === null ? null : (statuses.get(row.imageId) ?? null);
-      return summarizeRow(view, row, accepted, imageStatus);
+      return summarizeRow(view, row, accepted, imageStatus, eligibleSlots.has(slotKey(view)));
     }),
   };
+}
+
+/**
+ * Hold the character lock across eligibility projection and the selected asset
+ * read. This is the consumer boundary: an apparent-age edit cannot commit
+ * between approving a bare slot for use and opening its bytes.
+ */
+export async function withLockedReferenceViewSet<T>(
+  characterId: string,
+  ownerId: string,
+  sink: DiagnosticSink | undefined,
+  operation: (snapshot: {
+    set: ReferenceViewSetSummary;
+    readReadyBytes: (imageId: string) => Promise<Buffer | null>;
+  }) => Promise<T>,
+): Promise<T> {
+  return withReferenceViewLock(characterId, async (tx) => {
+    const set = await getReferenceViewSet(characterId, ownerId, sink, tx);
+    const readReadyBytes = async (imageId: string): Promise<Buffer | null> => {
+      const [asset] = await tx.select().from(images).where(and(
+        eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view"),
+      )).limit(1);
+      return asset?.status === "ready" ? readImageBytes(asset) : null;
+    };
+    return operation({ set, readReadyBytes });
+  });
 }
 
 /** One slot's summary, read fresh — what every per-view write answers with. */
@@ -431,7 +489,7 @@ export async function getReferenceViewSummary(
   const set = await getReferenceViewSet(characterId, ownerId, sink);
   return (
     set.views.find((entry) => entry.angle === view.angle && entry.wardrobe === view.wardrobe) ??
-    summarizeRow(view, undefined, set.acceptedImageId, null)
+    summarizeRow(view, undefined, set.acceptedImageId, null, false)
   );
 }
 
@@ -441,6 +499,7 @@ export async function getReferenceViewSummary(
 
 export interface ReserveReferenceViewInput {
   characterId: string;
+  ownerId: string;
   view: ReferenceView;
   /** The accepted portrait this attempt renders from. */
   sourceImageId: string;
@@ -458,9 +517,11 @@ export interface ReserveReferenceViewInput {
  * as history, and its asset is collected by the sweep a week later rather than
  * the instant the owner asked for a retry.
  */
-export async function reserveReferenceView(input: ReserveReferenceViewInput): Promise<string> {
+export async function reserveReferenceView(input: ReserveReferenceViewInput): Promise<string | null> {
   const { characterId, view } = input;
   return withReferenceViewLock(characterId, async (tx) => {
+    const plan = await readReferenceViewPlan(characterId, input.ownerId, tx);
+    if (plan === undefined || !planIncludes(plan, view)) return null;
     await tx
       .update(characterReferenceViews)
       // `updated_at` is bumped by the column's own `$onUpdate`, and it is what the
@@ -504,7 +565,6 @@ export interface FinalizeReferenceViewInput {
 }
 
 export interface InstallUploadedReferenceViewInput extends ReserveReferenceViewInput {
-  ownerId: string;
   imageId: string;
   expectedCurrentAttemptId: string | null;
   expectedCurrentRevision: number;
@@ -515,11 +575,15 @@ export type InstallUploadedReferenceViewResult =
   | { status: "busy" }
   | { status: "changed" }
   | { status: "not_found" }
-  | { status: "not_accepted" };
+  | { status: "not_accepted" }
+  | { status: "ineligible" };
 
 /** Install a processed upload only while the slot and accepted source still match its initial read. */
 export async function installUploadedReferenceView(input: InstallUploadedReferenceViewInput): Promise<InstallUploadedReferenceViewResult> {
   return withReferenceViewLock<InstallUploadedReferenceViewResult>(input.characterId, async (tx) => {
+    const plan = await readReferenceViewPlan(input.characterId, input.ownerId, tx);
+    if (plan === undefined) return { status: "not_found" };
+    if (!planIncludes(plan, input.view)) return { status: "ineligible" };
     const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
     if (!source.ok) return { status: source.reason === "not_found" ? "not_found" : "not_accepted" };
     if (await referenceViewBuildInFlight(input.characterId, tx)) return { status: "busy" };
@@ -536,7 +600,7 @@ export async function installUploadedReferenceView(input: InstallUploadedReferen
       verdict: "approved", reviewedByUserId: input.ownerId, reviewedAt: new Date(),
     }).returning();
     if (!candidate) throw new Error("reference upload returned no candidate");
-    return { status: "uploaded", view: summarizeRow(input.view, candidate, source.imageId, "ready") };
+    return { status: "uploaded", view: summarizeRow(input.view, candidate, source.imageId, "ready", true) };
   });
 }
 
@@ -561,7 +625,11 @@ export type FinalizeReferenceViewResult = "ready" | "stale";
 export async function finalizeReferenceView(input: FinalizeReferenceViewInput): Promise<FinalizeReferenceViewResult> {
   return withReferenceViewLock(input.characterId, async (tx) => {
     const [row] = await tx
-      .select({ sourceImageId: characterReferenceViews.sourceImageId })
+      .select({
+        sourceImageId: characterReferenceViews.sourceImageId,
+        angleId: characterReferenceViews.angleId,
+        wardrobe: characterReferenceViews.wardrobe,
+      })
       .from(characterReferenceViews)
       .where(eq(characterReferenceViews.id, input.viewId))
       .limit(1);
@@ -570,11 +638,16 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
       .from(characters)
       .where(and(eq(characters.id, input.characterId), eq(characters.ownerId, input.ownerId)))
       .limit(1);
+    const angle = row === undefined ? null : parseOrNull(referenceViewAngleIdSchema, row.angleId);
+    const wardrobe = row === undefined ? null : parseOrNull(referenceViewWardrobeSchema, row.wardrobe);
+    const plan = await readReferenceViewPlan(input.characterId, input.ownerId, tx);
+    const eligible = angle !== null && wardrobe !== null && plan !== undefined && planIncludes(plan, { angle, wardrobe });
     const stale =
       row === undefined ||
       row.sourceImageId === null ||
       character === undefined ||
-      character.acceptedAvatarImageId !== row.sourceImageId;
+      character.acceptedAvatarImageId !== row.sourceImageId ||
+      !eligible;
     const reviewed = input.reviewedByUserId;
     await tx
       .update(characterReferenceViews)
@@ -615,7 +688,7 @@ export async function failReferenceView(viewId: string, failureCode: string, fai
 }
 
 export type ReferenceViewReviewVerdict = ReferenceViewReviewRequest["verdict"];
-export type ReferenceViewWriteRefusal = "not_found" | "not_ready" | "changed" | "incompatible" | "busy" | "expired" | "unavailable";
+export type ReferenceViewWriteRefusal = "not_found" | "not_ready" | "changed" | "incompatible" | "ineligible" | "busy" | "expired" | "unavailable";
 export type ReviewReferenceViewResult =
   | { status: "reviewed"; view: ReferenceViewSummary }
   | { status: ReferenceViewWriteRefusal };
@@ -628,6 +701,9 @@ export async function reviewReferenceView(input: ReferenceViewReviewRequest & {
   sink?: DiagnosticSink;
 }): Promise<ReviewReferenceViewResult> {
   return withReferenceViewLock<ReviewReferenceViewResult>(input.characterId, async (tx) => {
+    const plan = await readReferenceViewPlan(input.characterId, input.ownerId, tx, input.sink);
+    if (plan === undefined) return { status: "not_found" };
+    if (!planIncludes(plan, input.view)) return { status: "ineligible" };
     const accepted = await readAcceptedPortrait(input.characterId, input.ownerId, tx);
     if (accepted === undefined) return { status: "not_found" };
     const row = await currentReferenceViewRow(input.characterId, input.view, tx);
@@ -650,7 +726,7 @@ export async function reviewReferenceView(input: ReferenceViewReviewRequest & {
     }).where(and(eq(characterReferenceViews.id, row.id), eq(characterReferenceViews.current, true),
       eq(characterReferenceViews.reviewRevision, input.expectedRevision))).returning();
     if (!updated) return { status: "changed" };
-    return { status: "reviewed", view: summarizeRow(input.view, updated, accepted, asset.status) };
+    return { status: "reviewed", view: summarizeRow(input.view, updated, accepted, asset.status, true) };
   });
 }
 
@@ -669,13 +745,16 @@ export async function restoreReferenceView(input: {
 }): Promise<RestoreReferenceViewResult> {
   const accepted = await readAcceptedPortrait(input.characterId, input.ownerId);
   if (accepted === undefined) return { status: "not_found" };
+  const initialPlan = await readReferenceViewPlan(input.characterId, input.ownerId, db());
+  if (initialPlan === undefined) return { status: "not_found" };
+  if (!planIncludes(initialPlan, input.view)) return { status: "ineligible" };
   const [attempt] = await db().select().from(characterReferenceViews).where(and(
     eq(characterReferenceViews.id, input.attemptId), eq(characterReferenceViews.characterId, input.characterId),
     eq(characterReferenceViews.angleId, input.view.angle), eq(characterReferenceViews.wardrobe, input.view.wardrobe),
   )).limit(1);
   if (!attempt) return { status: "not_found" };
   const source = await readAcceptedPortraitSource(input.characterId, input.ownerId);
-  const unavailable = restoreUnavailable(attempt, source, await hasLiveCharacterJob("reference_views", input.characterId));
+  const unavailable = restoreUnavailable(attempt, source, await hasLiveCharacterJob("reference_views", input.characterId), true);
   if (unavailable) return { status: unavailable === "current" ? "changed" : unavailable };
   const [asset] = await db().select().from(images).where(and(eq(images.id, attempt.imageId ?? ""),
     eq(images.ownerId, input.ownerId), eq(images.kind, "reference_view"))).limit(1);
@@ -694,6 +773,9 @@ export async function restoreReferenceView(input: {
       // Recheck ownership and accepted bytes after copying: no stale read authorizes a write.
       const latestSource = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
       if (!latestSource.ok) return { status: latestSource.reason === "not_found" ? "not_found" : "incompatible" };
+      const latestPlan = await readReferenceViewPlan(input.characterId, input.ownerId, tx);
+      if (latestPlan === undefined) return { status: "not_found" };
+      if (!planIncludes(latestPlan, input.view)) return { status: "ineligible" };
       const current = await currentReferenceViewRow(input.characterId, input.view, tx);
       if ((current?.id ?? null) !== input.expectedCurrentAttemptId || (current?.reviewRevision ?? 0) !== input.expectedCurrentRevision) {
         return { status: "changed" };
@@ -701,7 +783,7 @@ export async function restoreReferenceView(input: {
       const [latest] = await tx.select().from(characterReferenceViews).where(eq(characterReferenceViews.id, attempt.id)).limit(1);
       if (!latest) return { status: "unavailable" };
       const busy = current?.status === "pending" || await hasLiveReferenceViewJob(tx, input.characterId);
-      const refusal = restoreUnavailable(latest, latestSource, busy);
+      const refusal = restoreUnavailable(latest, latestSource, busy, true);
       if (refusal) return { status: refusal === "current" ? "changed" : refusal };
       const [liveAsset] = await tx.select({ status: images.status }).from(images).where(eq(images.id, asset.id)).limit(1);
       if (liveAsset?.status !== "ready" || latest.imageId !== asset.id) return { status: "unavailable" };
@@ -715,7 +797,7 @@ export async function restoreReferenceView(input: {
         imageId: copy.id, method: latest.method,
       }).returning();
       if (!candidate) throw new Error("reference restoration returned no candidate");
-      return { status: "restored", view: summarizeRow(input.view, candidate, latestSource.imageId, "ready") };
+      return { status: "restored", view: summarizeRow(input.view, candidate, latestSource.imageId, "ready", true) };
     });
     installed = result.status === "restored";
     return result;

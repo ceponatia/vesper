@@ -308,10 +308,15 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
 
   const viewId = await reserveReferenceView({
     characterId,
+    ownerId,
     view,
     sourceImageId: context.acceptedImageId,
     sourceContentHash: context.sourceContentHash,
   });
+  // The character can cross the age gate after the job was admitted. The
+  // reservation rechecks under the character lock and spends nothing for a
+  // slot that is no longer eligible.
+  if (viewId === null) return false;
 
   const intimate = wardrobeEntry.intimate;
   const picked = await resolveImageProfileForTask("variant", undefined, sink);

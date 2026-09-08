@@ -25,6 +25,11 @@ import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ReferenceViewFeedbackNote, ReferenceViewReviewer } from "./reference-view-reviewer";
+import {
+  discardReferenceViewFeedbackDraft,
+  writeReferenceViewFeedbackDraft,
+  type ReferenceViewFeedbackDrafts,
+} from "./reference-view-review-drafts";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 
@@ -102,6 +107,9 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
   const [submitting, setSubmitting] = useState(false);
   const [enlarged, setEnlarged] = useState<ReferenceViewSummary | null>(null);
   const [historySlot, setHistorySlot] = useState<ReferenceViewHistorySlot | null>(null);
+  // The viewer may close through Escape or its backdrop. Keep unfinished notes
+  // at the panel session boundary so reopening the exact attempt restores them.
+  const [reviewDrafts, setReviewDrafts] = useState<ReferenceViewFeedbackDrafts>({});
   const fileInput = useRef<HTMLInputElement | null>(null);
   const uploadTarget = useRef<{ angle: ReferenceViewAngleId; wardrobe: ReferenceViewWardrobe } | null>(null);
 
@@ -150,7 +158,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
 
   // Before the first portrait is chosen, there is nothing to review or configure.
   // Keep existing attempts and live builds visible even if acceptance is cleared.
-  if (!acceptance.acceptedImageId && !inFlight && set.views.every((view) => view.state === "missing")) return null;
+  if (!acceptance.acceptedImageId && !inFlight && set.views.every((view) => view.state === "missing" || view.state === "ineligible")) return null;
 
   const bySlot = new Map(set.views.map((view) => [slotKey(view), view]));
   const buildable = set.views.some(
@@ -324,14 +332,15 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
               const label = `${angle.label}, ${wardrobe.label}`;
               // A slot is selectable once something has been attempted in it —
               // there is nothing to REbuild in an empty or still-rendering one.
-              const attempted = view.state !== "missing" && view.state !== "pending";
+              const attempted = view.attemptId !== null;
+              const eligible = view.state !== "ineligible";
               return (
                 <div
                   key={angle.id}
                   className="flex min-w-0 flex-col gap-3 rounded-card border border-ink-600 bg-ink-800 p-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    {attempted ? (
+                    {attempted && eligible ? (
                       <label className="touch-target flex cursor-pointer items-center gap-2 text-sm font-medium text-paper-100">
                         <input
                           type="checkbox"
@@ -369,7 +378,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                       <span className="px-2 text-center text-xs text-paper-500">{copy.label}</span>
                     )}
                   </div>
-                  {view.state === "failed" || view.state === "rejected" || view.state === "stale" ? (
+                  {view.state === "failed" || view.state === "rejected" || view.state === "stale" || view.state === "ineligible" ? (
                     <p className="text-xs leading-relaxed text-paper-400">
                       {view.state === "failed" && view.failureMessage ? view.failureMessage : copy.hint}
                     </p>
@@ -383,7 +392,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                         </Button>
                       </>
                     ) : null}
-                    {attempted ? (
+                    {attempted && eligible ? (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -399,7 +408,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                       label="More"
                       ariaLabel={`${label} actions`}
                       items={[
-                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: inFlight || submitting || busySlot !== null },
+                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: !eligible || inFlight || submitting || busySlot !== null },
                         ...(attempted ? [{
                           label: "History",
                           // Read-only: a busy upload or review must not disable history.
@@ -430,6 +439,9 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
       />
 
       {enlarged ? <ReferenceViewReviewer characterId={characterId} initialView={enlarged} set={set}
+        drafts={reviewDrafts}
+        onDraftChange={(attemptId, feedback) => setReviewDrafts((current) => writeReferenceViewFeedbackDraft(current, attemptId, feedback))}
+        onDraftDiscard={(attemptId) => setReviewDrafts((current) => discardReferenceViewFeedbackDraft(current, attemptId))}
         onClose={() => setEnlarged(null)} onChanged={refetch} /> : null}
 
       {/* Mounted only while open, so the read happens on the click rather than on
