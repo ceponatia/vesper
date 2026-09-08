@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { diagnosticSchema } from "@/contracts";
 import { characterSheetScopes } from "@/lib/character-scopes";
+import { portraitExtractionEvidenceSchema } from "@/lib/portrait-extraction";
 import { apiGet, apiPatch, apiPost, withQuery } from "./http";
 import { characterDetailSchema, characterDraftSchema } from "./library";
 
@@ -12,11 +13,14 @@ export const characterAuthoringTargetSchema = z.object({
 export const characterAuthoringSourceSchema = z.object({
   authoringRevision: z.number().int().positive(),
   imageId: z.string().min(1).nullable().default(null),
+  imageContentHash: z.string().regex(/^[0-9a-f]{64}$/).nullable().optional(),
+  authoringFingerprint: z.string().regex(/^[0-9a-f]{64}$/).nullable().optional(),
 });
 
 export const characterAuthoringResultSchema = z.object({
   proposed: characterDraftSchema,
   diagnostics: z.array(diagnosticSchema),
+  portrait: portraitExtractionEvidenceSchema.nullable().optional(),
 });
 
 const authoringUndoSchema = z.object({
@@ -54,6 +58,7 @@ export const characterAuthoringRunSchema = z.object({
   status: z.enum(["pending", "completed", "failed"]),
   result: characterAuthoringResultSchema.nullable(),
   error: z.string().nullable(),
+  errorCode: z.string().nullable().optional(),
   retryOf: z.string().nullable(),
   rootRunId: z.string(),
   proposal: characterAuthoringProposalStateSchema,

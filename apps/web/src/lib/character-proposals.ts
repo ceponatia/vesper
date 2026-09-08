@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { attributeRegistry, traitRegistry } from "@/contracts";
 import { characterDraftSchema, type CharacterDraft } from "@/lib/client/api";
+import { portraitExtractionEvidenceSchema } from "@/lib/portrait-extraction";
 
 export const characterProposalSchema = z.object({
   id: z.string(),
@@ -9,6 +10,7 @@ export const characterProposalSchema = z.object({
   /** Durable authoring run and compare-and-set revision, when server-backed. */
   sourceRunId: z.string().optional(),
   proposalRevision: z.number().int().positive().optional(),
+  portraitEvidence: portraitExtractionEvidenceSchema.optional(),
   base: characterDraftSchema,
   proposed: characterDraftSchema,
   undo: z.boolean().default(false),
@@ -125,6 +127,7 @@ export function applyCharacterProposal(current: CharacterDraft, proposal: Charac
       undo: true,
       ...(proposal.sourceRunId ? { sourceRunId: proposal.sourceRunId } : {}),
       ...(proposal.proposalRevision ? { proposalRevision: proposal.proposalRevision } : {}),
+      ...(proposal.portraitEvidence ? { portraitEvidence: proposal.portraitEvidence } : {}),
     },
   };
 }

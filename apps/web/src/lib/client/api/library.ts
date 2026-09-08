@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { CharacterSheetScope } from "@/lib/character-scopes";
+import { portraitExtractionEvidenceSchema } from "@/lib/portrait-extraction";
 
 import {
   referenceViewQueueOutcomeSchema,
@@ -330,31 +331,8 @@ export function emptyCharacterDraft(): CharacterDraft {
   return characterDraftSchema.parse({});
 }
 
-/** An attribute value as the portrait review renders it (contracts' value union). */
-const portraitValueSchema = z.union([
-  z.string(),
-  z.array(z.string()),
-  z.number(),
-  z.boolean(),
-]);
-
-/** The portrait review-dialog payload. */
-export const portraitReviewSchema = z
-  .object({
-    conflicts: z
-      .array(
-        z.object({
-          id: z.string(),
-          current: portraitValueSchema,
-          proposed: portraitValueSchema,
-        }),
-      )
-      .catch([]),
-    filled: z
-      .array(z.object({ id: z.string(), value: portraitValueSchema }))
-      .catch([]),
-  })
-  .catch({ conflicts: [], filled: [] });
+/** Evidence-bearing portrait review payload. */
+export const portraitReviewSchema = portraitExtractionEvidenceSchema;
 export type PortraitReview = z.infer<typeof portraitReviewSchema>;
 
 /** Forge endpoints may return the draft bare or wrapped with diagnostics. */
@@ -447,7 +425,7 @@ export const charactersApi = {
         draft: characterDraftSchema,
         diagnostics: arrayOf(diagnosticSchema),
         portrait: portraitReviewSchema,
-        source: z.object({ authoringRevision: z.number().int().positive(), imageId: idSchema }),
+        source: z.object({ authoringRevision: z.number().int().positive(), imageId: idSchema, imageContentHash: z.string() }),
       }),
       `/api/characters/${id}/attributes/from-portrait`,
       source,

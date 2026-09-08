@@ -1,107 +1,142 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   diag,
   isIntimateAttributeCategory,
   isPersonalityAttributeCategory,
   realizeBody,
+  visualExtractionImageRegionSchema,
   type AttributeDefinition,
   type AttributeValue,
   type DiagnosticSink,
 } from "@/contracts";
-import { generateChecked, visionModelId, type GenerateImagePart } from "@/server/ai";
 import {
-  characterAttributeDefinitions,
-  describeConstraint,
-  groundAttributeValues,
-  type RawAttributeEntry,
-} from "./character-forge/attributes";
+  portraitExtractionEvidenceSchema,
+  portraitVisibilitySchema,
+  type PortraitExtractionEvidence,
+  type PortraitFieldEvidence,
+} from "@/lib/portrait-extraction";
+import { generateChecked, visionModelId, type GenerateImagePart } from "@/server/ai";
+import { characterAttributeDefinitions, describeConstraint, groundAttributeValues } from "./character-forge/attributes";
 import type { CharacterDraft } from "./drafts";
 
-/**
- * Portrait → attributes: a vision
- * model reads the character's generated portrait and proposes appearance
- * attributes — the codebase's first image-understanding capability. Strictly
- * appearance: personality-tab categories (voice/presentation/movement) can't
- * be seen in a still image and are excluded, as is everything intimate (the
- * avatar pipeline never renders it). Fill-blanks only: an id the sheet already
- * has keeps its value; a disagreement is REPORTED as a conflict diagnostic,
- * never applied.
- */
+export const PORTRAIT_ATTRIBUTE_PROMPT_VERSION = "portrait-attributes/v2";
+export const PORTRAIT_DEFAULT_CONFIDENCE = 7_000;
+
+export function portraitObservationCanPropose(
+  definition: AttributeDefinition | undefined,
+  visibility: "clear" | "partial" | "occluded" | "out_of_frame" | "uncertain",
+  evidenceRegion: z.infer<typeof visualExtractionImageRegionSchema> | null,
+): boolean {
+  return definition?.category !== "teeth" || (visibility === "clear" && evidenceRegion !== null);
+}
 
 const PORTRAIT_SYSTEM = [
-  "You extract a character's visible physical attributes from a portrait image into a fixed vocabulary.",
-  "Use only the listed attribute ids and allowed values.",
-  "Emit ONLY what the image clearly shows — omit anything uncertain, occluded, or out of frame.",
-  "Never infer personality, backstory, or anything not literally visible.",
+  "You compare a character portrait with a fixed vocabulary of visible physical attributes.",
+  "Use only the listed attribute ids and allowed values. Never infer heritage, ancestry, natal sex, personality, backstory, or other facts that pixels cannot establish.",
+  "For each observation, report confidence from 0 to 10000, visibility, a short literal description of the visual evidence, and its normalized image rectangle from 0 to 10000.",
+  "A tentative value may be reported when visibility is partial or uncertain; it will require explicit human selection. Use null when no value is defensible.",
+  "Mark occluded or out-of-frame details honestly. Do not convert absence of evidence into a normal/default value.",
+  "Teeth may receive a value only when an open mouth visibly exposes the relevant teeth. A closed mouth, covered mouth, or distant face must use null.",
 ].join("\n");
 
 function realizedBodyFor(draft: CharacterDraft) {
-  const p = draft.profile;
+  const profile = draft.profile;
   return realizeBody({
-    speciesId: p.speciesId,
-    heritageId: p.heritageId,
-    bodyPlanId: p.bodyPlanId,
-    intimateRegions: p.intimateRegions,
-    bodyFeatures: p.bodyFeatures,
+    speciesId: profile.speciesId,
+    heritageId: profile.heritageId,
+    bodyPlanId: profile.bodyPlanId,
+    intimateRegions: profile.intimateRegions,
+    bodyFeatures: profile.bodyFeatures,
   });
 }
 
-/** The attribute definitions a portrait may speak to, for THIS draft's realized body. */
+/** The attribute definitions a portrait may speak to for this realized body. */
 export function portraitAttributeDefinitions(
   draft: CharacterDraft,
   realizedBody = realizedBodyFor(draft),
 ): readonly AttributeDefinition[] {
-  // characterAttributeDefinitions gates feature categories on the realized body
-  // and admits the render-visual intimate size (breasts.size) so a concept can
-  // state it; the portrait excludes everything intimate — the avatar pipeline
-  // never renders it — and the personality-tab categories (not visible in a
-  // still image).
   return characterAttributeDefinitions({ prompt: "", userId: "", draft }).filter(
-    (d) =>
-      !isIntimateAttributeCategory(d.category) &&
-      !isPersonalityAttributeCategory(d.category) &&
-      realizedBody.isAttributeApplicable(d),
+    (definition) =>
+      !isIntimateAttributeCategory(definition.category) &&
+      !isPersonalityAttributeCategory(definition.category) &&
+      definition.id !== "identity.heritage" &&
+      definition.id !== "identity.natal_sex" &&
+      realizedBody.isAttributeApplicable(definition),
   );
 }
 
+/** Hash only the character facts that define this extraction's vocabulary or
+ * comparison. Biography, tags and other unrelated edits do not stale it. */
+export function portraitAuthoringFingerprint(draft: CharacterDraft): string {
+  const eligible = new Set(portraitAttributeDefinitions(draft).map((definition) => definition.id));
+  const profile = draft.profile;
+  return createHash("sha256").update(JSON.stringify({
+    speciesId: profile.speciesId,
+    heritageId: profile.heritageId,
+    bodyPlanId: profile.bodyPlanId,
+    intimateRegions: [...profile.intimateRegions].sort(),
+    bodyFeatures: [...profile.bodyFeatures].sort(),
+    attributes: profile.attributes
+      .filter((attribute) => eligible.has(attribute.id))
+      .map((attribute) => ({ id: attribute.id, value: attribute.value }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  })).digest("hex");
+}
+
 interface PortraitSection {
-  attributes: RawAttributeEntry[];
+  attributes: {
+    id: string;
+    value: string | string[] | number | boolean | null;
+    confidence: number;
+    visibility: "clear" | "partial" | "occluded" | "out_of_frame" | "uncertain";
+    evidence: string;
+    evidenceRegion: z.infer<typeof visualExtractionImageRegionSchema> | null;
+  }[];
 }
 
 function buildPortraitSchema(definitions: readonly AttributeDefinition[]): z.ZodType<PortraitSection> {
-  const ids = definitions.map((d) => d.id as string);
+  const ids = definitions.map((definition) => definition.id as string);
   const idSchema = ids.length > 0 ? z.enum(ids as [string, ...string[]]) : z.string().min(1);
+  const value = z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]);
   return z.object({
-    attributes: z
-      .array(
-        z.object({
-          id: idSchema,
-          value: z.union([z.string(), z.array(z.string()), z.number(), z.boolean()]),
-        }),
-      )
-      .default([]),
+    attributes: z.array(z.object({
+      id: idSchema,
+      value: value.nullable(),
+      confidence: z.number().int().min(0).max(10_000),
+      visibility: portraitVisibilitySchema,
+      evidence: z.string().trim().min(1).max(500),
+      evidenceRegion: visualExtractionImageRegionSchema.nullable().default(null),
+    })).default([]),
   });
 }
 
 function portraitPrompt(definitions: readonly AttributeDefinition[]): string {
-  const vocabulary = definitions.map((def) => `- ${def.id} (${describeConstraint(def)}): ${def.description}`).join("\n");
+  const vocabulary = definitions.map((definition) => `- ${definition.id} (${describeConstraint(definition)}): ${definition.description}`).join("\n");
   return [
-    "This is the character's portrait. Read the visible physical attributes off the image.",
+    "Inspect the supplied portrait and compare only what is visibly supported.",
     "",
     "Attribute vocabulary:",
     vocabulary,
     "",
-    "Emit a definite value for every attribute the image clearly shows; omit the rest.",
+    "Return one observation per attribute the image helps assess, including null-valued occluded, out-of-frame, or uncertain observations. Omit attributes the image provides no evidence about at all.",
   ].join("\n");
+}
+
+export interface PortraitSourceEvidence {
+  imageId: string;
+  contentHash: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
 }
 
 export interface PortraitAttributesInput {
   draft: CharacterDraft;
   image: GenerateImagePart;
+  source: PortraitSourceEvidence;
   sink?: DiagnosticSink;
 }
 
-/** One portrait-vs-sheet disagreement — the review dialog's row (followups ruling 2). */
 export interface PortraitConflict {
   id: string;
   current: AttributeValue["value"];
@@ -110,81 +145,179 @@ export interface PortraitConflict {
 
 export interface PortraitAttributesResult {
   draft: CharacterDraft;
-  /** Disagreements with existing values — NOT applied; the review dialog offers them. */
   conflicts: PortraitConflict[];
-  /** The unset ids the reading filled (source "creation"). */
   filled: AttributeValue[];
+  evidence: PortraitExtractionEvidence;
 }
 
-/**
- * Read the portrait and fill in unset appearance attributes. Existing values
- * (any provenance) are never changed by the run itself; a disagreement comes
- * back as a STRUCTURED conflict (plus a `portrait_conflict` diagnostic) so the
- * client's "Review portrait changes" dialog can offer each as current →
- * proposed with per-row accept (followups ruling 2). Degrades to a no-op
- * result — never a failed request, and never invented demo content: a
- * fabricated "reading" of an image nobody looked at would be worse than
- * nothing.
- */
+function evidenceEnvelope(input: {
+  outcome: PortraitExtractionEvidence["outcome"];
+  readFailure: PortraitExtractionEvidence["readFailure"];
+  source: PortraitSourceEvidence;
+  modelId: string;
+  provider: string | null;
+  startedAt: Date;
+  finishedAt: Date;
+  providerLatencyMs: number | null;
+  fields: PortraitFieldEvidence[];
+}): PortraitExtractionEvidence {
+  return portraitExtractionEvidenceSchema.parse({
+    outcome: input.outcome,
+    readFailure: input.readFailure,
+    source: input.source,
+    model: { id: input.modelId, promptVersion: PORTRAIT_ATTRIBUTE_PROMPT_VERSION, provider: input.provider },
+    timing: {
+      startedAt: input.startedAt.toISOString(),
+      finishedAt: input.finishedAt.toISOString(),
+      durationMs: Math.max(0, input.finishedAt.getTime() - input.startedAt.getTime()),
+      providerLatencyMs: input.providerLatencyMs,
+    },
+    fields: input.fields,
+    decision: null,
+  });
+}
+
+export function failedPortraitAttributes(input: {
+  draft: CharacterDraft;
+  source: PortraitSourceEvidence;
+  failure: "provider_or_parse" | "insufficient_visible_evidence" | "source_unavailable" | "source_changed";
+  fields?: PortraitFieldEvidence[];
+  sink?: DiagnosticSink;
+}): PortraitAttributesResult {
+  const now = new Date();
+  input.sink?.push(diag("error", `forge.character.portrait.${input.failure}`, "The portrait could not be read with enough evidence. Retry after checking the saved portrait."));
+  return {
+    draft: input.draft,
+    conflicts: [],
+    filled: [],
+    evidence: evidenceEnvelope({
+      outcome: "read_failed",
+      readFailure: input.failure,
+      source: input.source,
+      modelId: visionModelId(),
+      provider: null,
+      startedAt: now,
+      finishedAt: now,
+      providerLatencyMs: null,
+      fields: input.fields ?? [],
+    }),
+  };
+}
+
+/** Pure classification and merge. Weak observations remain reviewable but start
+ * on Keep current; only strong matching evidence can produce supported_match. */
+export function mergePortraitReadings(
+  draft: CharacterDraft,
+  fields: readonly PortraitFieldEvidence[],
+  sink?: DiagnosticSink,
+): Pick<PortraitAttributesResult, "draft" | "conflicts" | "filled"> & { outcome: "proposals" | "supported_match" | "read_failed" } {
+  const existing = new Map(draft.profile.attributes.map((attribute) => [attribute.id, attribute]));
+  const additions: AttributeValue[] = [];
+  const conflicts: PortraitConflict[] = [];
+  let supportedMatches = 0;
+  for (const field of fields) {
+    if (field.value === null) continue;
+    const read = { id: field.id as AttributeValue["id"], value: field.value, source: "creation" as const };
+    const current = existing.get(read.id);
+    if (!current) additions.push(read);
+    else if (JSON.stringify(current.value) !== JSON.stringify(read.value)) {
+      conflicts.push({ id: read.id, current: current.value, proposed: read.value });
+      sink?.push(diag("info", "forge.character.portrait.portrait_conflict", `Portrait evidence for ${read.id} differs from the sheet and requires review.`, {
+        context: { id: read.id, portrait: read.value, sheet: current.value },
+      }));
+    } else if (field.defaultSelected) supportedMatches += 1;
+  }
+  const next = additions.length === 0 ? draft : {
+    ...draft,
+    profile: { ...draft.profile, attributes: [...draft.profile.attributes, ...additions] },
+  };
+  const outcome = additions.length > 0 || conflicts.length > 0
+    ? "proposals" as const
+    : supportedMatches > 0 ? "supported_match" as const : "read_failed" as const;
+  return { draft: next, conflicts, filled: additions, outcome };
+}
+
 export async function derivePortraitAttributes(input: PortraitAttributesInput): Promise<PortraitAttributesResult> {
   const { draft, sink } = input;
-  const realizedBody = realizedBodyFor(draft);
-  const definitions = portraitAttributeDefinitions(draft, realizedBody);
-  const { value } = await generateChecked({
+  const definitions = portraitAttributeDefinitions(draft);
+  const startedAt = new Date();
+  const modelId = visionModelId();
+  const generated = await generateChecked({
     schema: buildPortraitSchema(definitions),
     system: PORTRAIT_SYSTEM,
     prompt: portraitPrompt(definitions),
     images: [input.image],
-    modelId: visionModelId(),
+    modelId,
     code: "forge.character.portrait",
     sink,
   });
-  const section = value ?? { attributes: [] };
-  // The realized body also gates grounding, so a reading outside the resolved
-  // species' narrowed value set drops instead of violating a species rule.
-  const grounded = groundAttributeValues(section.attributes, sink, "forge.character.portrait", realizedBody);
-  return mergePortraitReadings(draft, grounded, sink);
-}
+  const finishedAt = new Date();
+  if (generated.degraded || !generated.value) {
+    return {
+      draft,
+      conflicts: [],
+      filled: [],
+      evidence: evidenceEnvelope({
+        outcome: "read_failed",
+        readFailure: "provider_or_parse",
+        source: input.source,
+        modelId,
+        provider: generated.provider ?? null,
+        startedAt,
+        finishedAt,
+        providerLatencyMs: generated.latencyMs ?? null,
+        fields: [],
+      }),
+    };
+  }
 
-/**
- * Pure fill-blanks merge for grounded portrait readings: a reading for an
- * unset id lands (`filled`); a reading that disagrees with ANY existing value
- * (manual or creation) is returned as a structured conflict — and reported —
- * never applied here.
- */
-export function mergePortraitReadings(
-  draft: CharacterDraft,
-  readings: readonly AttributeValue[],
-  sink?: DiagnosticSink,
-): PortraitAttributesResult {
-  const existing = new Map(draft.profile.attributes.map((a) => [a.id, a]));
-  const additions: AttributeValue[] = [];
-  const conflicts: PortraitConflict[] = [];
-  for (const read of readings) {
-    const current = existing.get(read.id);
-    if (!current) {
-      additions.push(read);
+  const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
+  const seen = new Set<string>();
+  const fields: PortraitFieldEvidence[] = [];
+  const realizedBody = realizedBodyFor(draft);
+  for (const raw of generated.value.attributes) {
+    if (seen.has(raw.id)) {
+      sink?.push(diag("info", "forge.character.portrait.duplicate_id", `Dropped duplicate portrait observation for ${raw.id}.`));
       continue;
     }
-    if (JSON.stringify(current.value) !== JSON.stringify(read.value)) {
-      conflicts.push({ id: read.id, current: current.value, proposed: read.value });
-      sink?.push(
-        diag(
-          "info",
-          "forge.character.portrait.portrait_conflict",
-          `portrait shows ${read.id} = ${formatValue(read.value)}; the sheet has ${formatValue(current.value)} (kept)`,
-          { context: { id: read.id, portrait: read.value, sheet: current.value } },
-        ),
-      );
+    seen.add(raw.id);
+    const definition = definitionById.get(raw.id);
+    const directTeethSupport = portraitObservationCanPropose(definition, raw.visibility, raw.evidenceRegion);
+    const grounded = raw.value === null || !directTeethSupport
+      ? null
+      : groundAttributeValues([{ id: raw.id, value: raw.value }], sink, "forge.character.portrait", realizedBody)[0] ?? null;
+    if (!directTeethSupport && raw.value !== null) {
+      sink?.push(diag("info", "forge.character.portrait.unsupported_conditional", `Omitted ${raw.id} because the portrait does not visibly support that conditional detail.`, { context: { id: raw.id } }));
     }
+    const defaultSelected = grounded !== null && raw.visibility === "clear" && raw.confidence >= PORTRAIT_DEFAULT_CONFIDENCE && raw.evidenceRegion !== null;
+    fields.push({
+      id: raw.id,
+      value: grounded?.value ?? null,
+      confidence: raw.confidence,
+      visibility: raw.visibility,
+      evidence: raw.evidence,
+      evidenceRegion: raw.evidenceRegion,
+      defaultSelected,
+    });
   }
-  const next =
-    additions.length === 0
-      ? draft
-      : { ...draft, profile: { ...draft.profile, attributes: [...draft.profile.attributes, ...additions] } };
-  return { draft: next, conflicts, filled: additions };
-}
 
-function formatValue(value: AttributeValue["value"]): string {
-  return Array.isArray(value) ? value.join("+") : String(value);
+  const merged = mergePortraitReadings(draft, fields, sink);
+  const readFailure = merged.outcome === "read_failed" ? "insufficient_visible_evidence" as const : null;
+  if (readFailure) sink?.push(diag("warn", "forge.character.portrait.insufficient_visible_evidence", "The portrait read succeeded but did not produce enough visible evidence for a proposal or supported match."));
+  return {
+    draft: merged.draft,
+    conflicts: merged.conflicts,
+    filled: merged.filled,
+    evidence: evidenceEnvelope({
+      outcome: merged.outcome,
+      readFailure,
+      source: input.source,
+      modelId,
+      provider: generated.provider ?? null,
+      startedAt,
+      finishedAt,
+      providerLatencyMs: generated.latencyMs ?? null,
+      fields,
+    }),
+  };
 }

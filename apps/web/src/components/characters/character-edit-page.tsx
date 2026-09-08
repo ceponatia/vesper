@@ -77,7 +77,12 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       && !reviewStore.current.current.handledIds?.includes(record.id);
     setForgeDiagnostics(record.result.diagnostics);
     reviewStore.update((review) => receiveGenerationReview(review, record));
-    if (firstReceipt && !proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
+    if (firstReceipt && !proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) {
+      toast.push({
+        title: record.result.portrait?.outcome === "supported_match" ? "Portrait and sheet agree" : "No changes suggested",
+        tone: "success",
+      });
+    }
     if (record.proposal.status === "accepted" || record.proposal.status === "undone") {
       await author.refreshServer();
       detail.reload({ silent: true });

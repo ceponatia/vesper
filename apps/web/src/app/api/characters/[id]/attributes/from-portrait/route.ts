@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { characterDraftSchema, derivePortraitAttributes } from "@/server/authoring";
-import { backpressureRejection, dailyBudgetRejection, jsonError, jsonOk, readBody, reserveCharacterAuthoringAction, withUser } from "@/server/api";
+import { characterDraftSchema, derivePortraitAttributes, portraitAuthoringFingerprint } from "@/server/authoring";
+import { backpressureRejection, dailyBudgetRejection, jsonError, jsonOk, readBody, reserveCharacterAuthoringAction, withAuthorizedResource } from "@/server/api";
 import { db, images } from "@/server/db";
-import { absoluteImagePath } from "@/server/images";
+import { absoluteImagePath, sourceContentHashOf } from "@/server/images";
 import { findOwnedCharacter } from "../../owned";
 
 type Params = { id: string };
@@ -26,12 +26,13 @@ const fromPortraitBodySchema = z.object({
  * still this owned character's candidate; arbitrary image ids never reach the
  * file read. Disagreements come back as review conflicts. Never saves.
  */
-export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
+export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnType<typeof findOwnedCharacter>>>>(
+  "character",
+  async (user, params) => (await findOwnedCharacter(params.id, user.id)) ?? null,
+  async (user, character, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
   const body = await readBody(req, fromPortraitBodySchema);
   if (!body.ok) return body.response;
-  const character = await findOwnedCharacter(id, user.id);
-  if (!character) return jsonError("not_found", "character not found", 404);
   if (!character.avatarImageId) return jsonError("no_avatar", "generate or upload a portrait first", 400);
 
   const reservation = await reserveCharacterAuthoringAction({
@@ -74,32 +75,56 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     return jsonError("authoring_state_invalid", "the saved character details need to be repaired before portrait completion", 409);
   }
 
-  const shed = await backpressureRejection("text", user, req);
-  if (shed) return shed;
-  const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
-  if (overBudget) return overBudget;
-
-  const [row] = await db().select().from(images).where(eq(images.id, sourceImageId)).limit(1);
+  const [row] = await db().select().from(images).where(and(
+    eq(images.id, sourceImageId), eq(images.ownerId, user.id), eq(images.entityKind, "character"), eq(images.entityId, id),
+  )).limit(1);
   if (!row || row.status !== "ready") return jsonError("no_avatar", "the portrait is not ready yet", 400);
-  let data: Uint8Array;
+  let data: Buffer;
   try {
     data = await fs.readFile(absoluteImagePath(row));
   } catch {
     return jsonError("no_avatar", "the portrait file is missing", 400);
   }
+  const confirmed = await reserveCharacterAuthoringAction({
+    characterId: id,
+    ownerId: user.id,
+    expectedAuthoringRevision: source.authoringRevision,
+    expectedPortraitImageId: sourceImageId,
+  });
+  if (confirmed.status !== "reserved") return jsonError("portrait_source_changed", "the portrait or saved appearance changed while preparing the read", 409);
+
+  const shed = await backpressureRejection("text", user, req);
+  if (shed) return shed;
+  const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
+  if (overBudget) return overBudget;
 
   const sink = new DiagnosticCollector();
   const result = await derivePortraitAttributes({
     draft: sourceDraft.data,
     image: { data, mediaType: "image/webp" },
+    source: {
+      imageId: sourceImageId,
+      contentHash: sourceContentHashOf(data),
+      authoringRevision: source.authoringRevision,
+      authoringFingerprint: portraitAuthoringFingerprint(sourceDraft.data),
+    },
     sink,
   });
+  if (result.evidence.outcome === "read_failed") {
+    return jsonOk({
+      error: { code: "portrait_read_failed", message: "The portrait could not be read with enough evidence. Try again or use another portrait." },
+      diagnostics: sink.items,
+      portrait: result.evidence,
+    }, 502);
+  }
   // `portrait` is the review dialog's data: every disagreement as
   // current → proposed, plus what the reading auto-filled.
   return jsonOk({
     draft: result.draft,
     diagnostics: sink.items,
-    portrait: { conflicts: result.conflicts, filled: result.filled },
-    source: { authoringRevision: source.authoringRevision, imageId: sourceImageId },
+    portrait: result.evidence,
+    source: { authoringRevision: source.authoringRevision, imageId: sourceImageId, imageContentHash: result.evidence.source.contentHash },
   });
-}, { limit: "forge" });
+  },
+  { limit: "forge" },
+);

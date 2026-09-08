@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { emptyCharacterProfile } from "@/contracts";
@@ -8,19 +9,25 @@ import { resetRateLimits } from "@/server/api";
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Authoring runs", role: "admin" as const } }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
-import { apiRequest, bindAuthUser, endTestPool, expectJson, probeIntegrationDb, purgeOwnerRows, routeCtx, seedTestUser, withAuthUser } from "@/server/test-support";
+import { portraitAuthoringFingerprint } from "@/server/authoring";
+import { absoluteImagePath, createImageAsset, saveOwnedImageBuffer, sourceContentHashOf } from "@/server/images";
+import { apiRequest, bindAuthUser, endTestPool, expectJson, probeIntegrationDb, purgeOwnerRows, routeCtx, seedTestUser, testPngBuffer, withAuthUser, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { GET as listRuns, POST as startRun } from "./route";
 import { PATCH as decideRun } from "./[runId]/decision/route";
+import { POST as retryRun } from "./[runId]/retry/route";
 
 const ready = await probeIntegrationDb("character-authoring-runs.int.test", "jobs");
 let foreignId = "";
+let temp: TempDataRoot | undefined;
 beforeAll(async () => {
   if (!ready) return;
+  temp = await withTempDataRoot("vesper-character-authoring-runs-int");
   bindAuthUser(authState, await seedTestUser("character-authoring-runs", { role: "admin" }));
   foreignId = (await seedTestUser("character-authoring-runs-foreign", { role: "admin" })).id;
   resetRateLimits();
 });
 afterAll(async () => {
+  await temp?.cleanup();
   if (ready) await purgeOwnerRows([authState.user.id, foreignId]);
   await endTestPool();
 });
@@ -71,6 +78,75 @@ function storedRun(input: { id: string; characterId: string; revision: number; b
       },
       proposal: { revision: 1, status: "unresolved", choices: {}, appliedDraft: null, undo: null },
       result: { proposed, diagnostics: [] },
+    },
+  };
+}
+
+async function portraitSubject(name: string) {
+  const character = await subject(name);
+  const asset = await createImageAsset({
+    ownerId: authState.user.id,
+    kind: "avatar",
+    entityKind: "character",
+    entityId: character.id,
+    prompt: "portrait evidence fixture",
+  });
+  const portrait = await saveOwnedImageBuffer(asset.id, authState.user.id, await testPngBuffer(96, 128));
+  if (!portrait || portrait.status !== "ready") throw new Error("failed to seed portrait evidence fixture");
+  const [saved] = await db().update(characters).set({ avatarImageId: portrait.id }).where(eq(characters.id, character.id)).returning();
+  if (!saved) throw new Error("failed to attach portrait evidence fixture");
+  const bytes = await fs.readFile(absoluteImagePath(portrait));
+  const base = { ...emptyCharacterDraft(), name: saved.name, profile: saved.profile, tags: saved.tags };
+  return { character: saved, portrait, base, contentHash: sourceContentHashOf(bytes), fingerprint: portraitAuthoringFingerprint(base) };
+}
+
+function storedPortraitRun(input: Awaited<ReturnType<typeof portraitSubject>> & { id: string }) {
+  const proposed = {
+    ...input.base,
+    profile: { ...input.base.profile, attributes: [...input.base.profile.attributes, { id: "eyes.color" as const, value: "green", source: "creation" as const }] },
+  };
+  return {
+    id: input.id,
+    ownerId: authState.user.id,
+    type: "character_authoring" as const,
+    status: "done" as const,
+    attempts: 1,
+    startedAt: new Date(),
+    finishedAt: new Date(),
+    payload: {
+      kind: "character_authoring_run",
+      intent: {
+        requestId: input.id,
+        target: { kind: "character", id: input.character.id },
+        operation: "portrait",
+        scope: null,
+        label: "portrait changes",
+        base: input.base,
+        creationStart: null,
+        source: {
+          authoringRevision: input.character.authoringRevision,
+          imageId: input.portrait.id,
+          imageContentHash: input.contentHash,
+          authoringFingerprint: input.fingerprint,
+        },
+        retryOf: null,
+        rootRunId: input.id,
+        intentHash: "fixture",
+      },
+      proposal: { revision: 1, status: "unresolved", choices: {}, appliedDraft: null, undo: null },
+      result: {
+        proposed,
+        diagnostics: [{ severity: "info", code: "forge.character.portrait.portrait_conflict", message: "requires review" }],
+        portrait: {
+          outcome: "proposals",
+          readFailure: null,
+          source: { imageId: input.portrait.id, contentHash: input.contentHash, authoringRevision: input.character.authoringRevision, authoringFingerprint: input.fingerprint },
+          model: { id: "test/vision", promptVersion: "portrait-attributes/v2", provider: "test" },
+          timing: { startedAt: new Date(0).toISOString(), finishedAt: new Date(1).toISOString(), durationMs: 1, providerLatencyMs: 1 },
+          fields: [{ id: "eyes.color", value: "green", confidence: 9_000, visibility: "clear", evidence: "Both irises are visible.", evidenceRegion: { left: 1_000, top: 1_000, width: 4_000, height: 4_000 }, defaultSelected: true }],
+          decision: null,
+        },
+      },
     },
   };
 }
@@ -148,6 +224,54 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
       body: { action: "reject", expectedProposalRevision: 1, expectedAuthoringRevision: edited!.authoringRevision, choices: {} },
     }), routeCtx({ runId: "authoring-reject-run" }));
     expect((await expectJson<{ run: { proposal: { status: string } } }>(rejected)).run.proposal.status).toBe("rejected");
+  });
+
+  it("persists evidence decisions and hides run actions from another owner", async () => {
+    const state = await portraitSubject("Portrait evidence decision");
+    await db().insert(jobs).values(storedPortraitRun({ ...state, id: "portrait-evidence-decision" }));
+
+    await withAuthUser(authState, { id: foreignId }, async () => {
+      const decision = await decideRun(apiRequest("/api/characters/authoring-runs/portrait-evidence-decision/decision", {
+        method: "PATCH",
+        body: { action: "reject", expectedProposalRevision: 1, expectedAuthoringRevision: state.character.authoringRevision, choices: {} },
+      }), routeCtx({ runId: "portrait-evidence-decision" }));
+      expect(decision.status).toBe(404);
+      const retry = await retryRun(apiRequest("/api/characters/authoring-runs/portrait-evidence-decision/retry", {
+        method: "POST", body: { requestId: crypto.randomUUID() },
+      }), routeCtx({ runId: "portrait-evidence-decision" }));
+      expect(retry.status).toBe(404);
+    });
+
+    const rejected = await decideRun(apiRequest("/api/characters/authoring-runs/portrait-evidence-decision/decision", {
+      method: "PATCH",
+      body: { action: "reject", expectedProposalRevision: 1, expectedAuthoringRevision: state.character.authoringRevision, choices: {} },
+    }), routeCtx({ runId: "portrait-evidence-decision" }));
+    const body = await expectJson<{ run: { result: { diagnostics: { code: string }[]; portrait: { decision: { proposalRevision: number; action: string } } } } }>(rejected);
+    expect(body.run.result.portrait.decision).toEqual(expect.objectContaining({ proposalRevision: 2, action: "rejected" }));
+    expect(body.run.result.diagnostics.map((item) => item.code)).toContain("forge.character.portrait.review_rejected");
+    expect(body.run.result.diagnostics.map((item) => item.code)).not.toContain("forge.character.portrait.portrait_conflict");
+  });
+
+  it("refuses decisions when portrait bytes or relevant appearance inputs change", async () => {
+    const appearance = await portraitSubject("Portrait appearance stale");
+    await db().insert(jobs).values(storedPortraitRun({ ...appearance, id: "portrait-appearance-stale" }));
+    const [changed] = await db().update(characters).set({
+      profile: { ...appearance.base.profile, attributes: [{ id: "hair.color", value: "black", source: "manual" }] },
+    }).where(eq(characters.id, appearance.character.id)).returning();
+    const staleAppearance = await decideRun(apiRequest("/api/characters/authoring-runs/portrait-appearance-stale/decision", {
+      method: "PATCH",
+      body: { action: "accept", expectedProposalRevision: 1, expectedAuthoringRevision: changed!.authoringRevision, choices: {} },
+    }), routeCtx({ runId: "portrait-appearance-stale" }));
+    expect((await expectJson<{ error: { code: string } }>(staleAppearance, 409)).error.code).toBe("portrait_source_changed");
+
+    const bytes = await portraitSubject("Portrait bytes stale");
+    await db().insert(jobs).values(storedPortraitRun({ ...bytes, id: "portrait-bytes-stale" }));
+    await fs.writeFile(absoluteImagePath(bytes.portrait), Buffer.from("changed portrait bytes"));
+    const staleBytes = await decideRun(apiRequest("/api/characters/authoring-runs/portrait-bytes-stale/decision", {
+      method: "PATCH",
+      body: { action: "reject", expectedProposalRevision: 1, expectedAuthoringRevision: bytes.character.authoringRevision, choices: {} },
+    }), routeCtx({ runId: "portrait-bytes-stale" }));
+    expect((await expectJson<{ error: { code: string } }>(staleBytes, 409)).error.code).toBe("portrait_source_changed");
   });
 
   it("keeps overlapping edits unresolved and degrades malformed stored rows", async () => {

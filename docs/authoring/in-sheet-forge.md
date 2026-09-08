@@ -94,9 +94,22 @@ instead of replacing newer work.
 ## Complete using portrait
 
 Portrait completion starts an authoring run bound to the displayed ready image id and the saved
-character revision. It proposes only visible appearance attributes, excluding expression and
-intimate categories. Registry grounding returns proposed additions and structured disagreements
-with existing values for review before acceptance. The run retains that immutable image reference;
-changing the displayed portrait before submission returns a focused conflict without model spend.
+character revision. Before provider admission, the server records the exact stored-image content
+hash and a fingerprint of the appearance facts relevant to the read. It checks both again before a
+retry or review decision. Changing the image bytes, portrait selection, or relevant appearance
+facts returns a focused conflict without another model call.
+
+Portrait evidence has three outcomes: reviewable proposals, a supported match with the saved
+sheet, or a failed read. Each run stores the resolved vision model, prompt version, provider timing,
+retry lineage, and per-field confidence, visibility, literal evidence, and normalized image region.
+Heritage and natal sex never enter the portrait vocabulary. Teeth require a clearly visible open
+mouth and a localized evidence region. Weak, uncertain, occluded, and out-of-frame observations
+remain unselected and visible to the author instead of silently becoming character facts.
+
+Registry grounding returns proposed additions and structured disagreements with existing values
+for review before acceptance. Accept, Keep current, Reject, and Undo decisions attach to the
+resulting proposal revision, and replace transient conflict diagnostics with revision-bound review
+diagnostics. Owner-facing run errors use stable safe messages rather than stored provider or file
+errors.
 
 Keyless demo mode is a no-op for portrait understanding; it never invents an image reading.

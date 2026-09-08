@@ -54,6 +54,7 @@ function proposalFor(record: CharacterGeneration): CharacterProposal | null {
     base: record.base,
     proposed: record.result.proposed,
     undo: false,
+    ...(record.result.portrait ? { portraitEvidence: record.result.portrait } : {}),
   };
 }
 

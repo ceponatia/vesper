@@ -14,18 +14,21 @@ import {
 } from "@/contracts";
 import { mergeFillDraft } from "@/lib/character-fill";
 import { characterSheetScopeSchema, mergeFillScope, mergeRedraftScope } from "@/lib/character-scopes";
-import { applyCharacterProposal, proposalConflicts, reconcileMaterializedUndo, type ProposalChoices } from "@/lib/character-proposals";
+import { applyCharacterProposal, proposalChanges, proposalConflicts, reconcileMaterializedUndo, type ProposalChoices } from "@/lib/character-proposals";
+import { portraitExtractionEvidenceSchema, type PortraitDecision } from "@/lib/portrait-extraction";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images, jobs } from "@/server/db";
 import {
   characterDraftSchema,
   derivePortraitAttributes,
+  failedPortraitAttributes,
   forgeCharacter,
   forgeCharacterFill,
+  portraitAuthoringFingerprint,
   redraftCharacterScope,
   type CharacterDraft,
 } from "@/server/authoring";
-import { absoluteImagePath } from "@/server/images";
+import { absoluteImagePath, sourceContentHashOf } from "@/server/images";
 import { materializeSuggestedItems, prepareSuggestedItemEmbeddings, queueEmbedRefresh } from "./library";
 import { reserveCharacterAuthoringAction } from "./character-save";
 import { startJobAfterAdmission } from "./jobs";
@@ -39,12 +42,19 @@ export const authoringTargetSchema = z.object({
 export const authoringSourceSchema = z.object({
   authoringRevision: z.number().int().positive().max(2_147_483_647),
   imageId: z.string().min(1).nullable().default(null),
+  imageContentHash: z.string().regex(/^[0-9a-f]{64}$/).nullable().optional(),
+  authoringFingerprint: z.string().regex(/^[0-9a-f]{64}$/).nullable().optional(),
 });
 const creationStartSchema = z.object({ draft: characterDraftSchema, prompt: z.string(), initialPreview: z.boolean() });
-const resultSchema = z.object({ proposed: characterDraftSchema, diagnostics: z.array(diagnosticSchema) });
+const resultSchema = z.object({
+  proposed: characterDraftSchema,
+  diagnostics: z.array(diagnosticSchema),
+  portrait: portraitExtractionEvidenceSchema.nullable().optional(),
+});
 const undoSchema = z.object({
   id: z.string(), label: z.string(), base: characterDraftSchema, proposed: characterDraftSchema,
   undo: z.literal(true), sourceRunId: z.string(), proposalRevision: z.number().int().positive(),
+  portraitEvidence: portraitExtractionEvidenceSchema.optional(),
 });
 const proposalStateSchema = z.object({
   revision: z.number().int().positive().default(1),
@@ -119,7 +129,7 @@ function requestDigest(input: StartInput, retryOf: string | null, rootRunId: str
     label: input.label,
     ...(input.target.kind === "creation" ? { base: input.base } : {}),
     creationStart: input.creationStart,
-    source: input.source,
+    source: input.source ? { authoringRevision: input.source.authoringRevision, imageId: input.source.imageId } : null,
     retryOf,
     rootRunId,
   })).digest("hex");
@@ -140,6 +150,18 @@ function matchesStoredRequest(payload: StoredPayload, input: StartInput, retryOf
 }
 
 function projectRun(row: typeof jobs.$inferSelect, payload: StoredPayload) {
+  const portraitReadFailed = payload.result?.portrait?.outcome === "read_failed";
+  const readFailure = portraitReadFailed ? payload.result?.portrait?.readFailure ?? "provider_or_parse" : null;
+  const failed = row.status === "failed" || portraitReadFailed;
+  const safeError = readFailure === "source_changed"
+    ? "The saved portrait changed before it could be inspected. Retry from the current portrait."
+    : readFailure === "source_unavailable"
+      ? "The saved portrait could not be read. Check the portrait and retry."
+      : readFailure === "insufficient_visible_evidence"
+        ? "The portrait did not show enough evidence to compare these details. Try another portrait."
+        : readFailure === "provider_or_parse"
+          ? "Portrait reading failed. Retry the run."
+          : row.status === "failed" ? "Generation failed. Retry the run." : null;
   return {
     id: row.id,
     ownerId: row.ownerId ?? "",
@@ -150,9 +172,10 @@ function projectRun(row: typeof jobs.$inferSelect, payload: StoredPayload) {
     base: payload.intent.base,
     creationStart: payload.intent.creationStart,
     source: payload.intent.source,
-    status: row.status === "done" ? "completed" as const : row.status === "failed" ? "failed" as const : "pending" as const,
+    status: failed ? "failed" as const : row.status === "done" ? "completed" as const : "pending" as const,
     result: payload.result,
-    error: row.error,
+    error: safeError,
+    errorCode: readFailure ? `portrait_${readFailure}` : row.status === "failed" ? "generation_failed" : null,
     retryOf: payload.intent.retryOf,
     rootRunId: payload.intent.rootRunId,
     proposal: payload.proposal,
@@ -167,11 +190,29 @@ function parseRun(row: typeof jobs.$inferSelect): AuthoringRunDto | null {
   return payload.success ? projectRun(row, payload.data) : null;
 }
 
-async function ownedRunRow(ownerId: string, runId: string) {
+export async function resolveOwnedCharacterAuthoringRun(ownerId: string, runId: string) {
   const [row] = await db().select().from(jobs).where(and(
     eq(jobs.id, runId), eq(jobs.ownerId, ownerId), eq(jobs.type, "character_authoring"),
   )).limit(1);
   return row ?? null;
+}
+
+const ownedRunRow = resolveOwnedCharacterAuthoringRun;
+
+async function ownedPortraitBytes(ownerId: string, characterId: string, imageId: string) {
+  const [image] = await db().select().from(images).where(and(
+    eq(images.id, imageId),
+    eq(images.ownerId, ownerId),
+    eq(images.entityKind, "character"),
+    eq(images.entityId, characterId),
+  )).limit(1);
+  if (!image || image.status !== "ready") return null;
+  try {
+    const data = await fs.readFile(absoluteImagePath(image));
+    return { image, data, contentHash: sourceContentHashOf(data) };
+  } catch {
+    return null;
+  }
 }
 
 export async function listCharacterAuthoringRuns(ownerId: string, target: z.infer<typeof authoringTargetSchema>) {
@@ -192,7 +233,7 @@ export async function listCharacterAuthoringRuns(ownerId: string, target: z.infe
   return { runs: runs.filter((run) => run.proposal.status !== "dismissed"), diagnostics };
 }
 
-async function canonicalizeStart(ownerId: string, input: StartInput): Promise<StartInput | { conflict: "not_found" | "authoring_revision_changed" | "portrait_changed"; currentRevision?: number; currentImageId?: string | null }> {
+async function canonicalizeStart(ownerId: string, input: StartInput): Promise<StartInput | { conflict: "not_found" | "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed"; currentRevision?: number; currentImageId?: string | null }> {
   if (input.target.kind === "creation") return input;
   const source = input.source!;
   const reserved = await reserveCharacterAuthoringAction({
@@ -207,14 +248,45 @@ async function canonicalizeStart(ownerId: string, input: StartInput): Promise<St
       ...(reserved.status === "not_found" ? {} : { currentRevision: reserved.currentRevision, currentImageId: reserved.currentImageId }),
     };
   }
+  const base = characterDraftSchema.parse({
+    name: reserved.source.name,
+    profile: reserved.source.profile,
+    tags: reserved.source.tags,
+    suggestedItems: [],
+  });
+  if (input.operation === "portrait" && source.imageId) {
+    const portrait = await ownedPortraitBytes(ownerId, input.target.id, source.imageId);
+    if (!portrait) {
+      return { conflict: "portrait_source_changed", currentRevision: reserved.source.authoringRevision, currentImageId: reserved.source.avatarImageId };
+    }
+    // Re-check the character after the file read. Admission and provider work
+    // happen only after both the row identity and exact stored bytes are fixed.
+    const confirmed = await reserveCharacterAuthoringAction({
+      characterId: input.target.id,
+      ownerId,
+      expectedAuthoringRevision: reserved.source.authoringRevision,
+      expectedPortraitImageId: source.imageId,
+    });
+    if (confirmed.status !== "reserved") {
+      return {
+        conflict: confirmed.status,
+        ...(confirmed.status === "not_found" ? {} : { currentRevision: confirmed.currentRevision, currentImageId: confirmed.currentImageId }),
+      };
+    }
+    return {
+      ...input,
+      base,
+      source: {
+        authoringRevision: reserved.source.authoringRevision,
+        imageId: source.imageId,
+        imageContentHash: portrait.contentHash,
+        authoringFingerprint: portraitAuthoringFingerprint(base),
+      },
+    };
+  }
   return {
     ...input,
-    base: characterDraftSchema.parse({
-      name: reserved.source.name,
-      profile: reserved.source.profile,
-      tags: reserved.source.tags,
-      suggestedItems: [],
-    }),
+    base,
     source: { authoringRevision: reserved.source.authoringRevision, imageId: source.imageId },
   };
 }
@@ -223,20 +295,25 @@ async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>)
   const sink = new DiagnosticCollector();
   const base = intent.base;
   let proposed: CharacterDraft;
+  let portrait: z.infer<typeof portraitExtractionEvidenceSchema> | null = null;
   if (intent.operation === "portrait") {
     const imageId = intent.source?.imageId;
-    if (!imageId) throw new Error("portrait source is missing");
-    const [image] = await db().select().from(images).where(and(
-      eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.entityKind, "character"), eq(images.entityId, intent.target.id),
-    )).limit(1);
-    if (!image || image.status !== "ready") throw new Error("portrait source is not ready");
-    const data = await fs.readFile(absoluteImagePath(image));
-    const extracted = await derivePortraitAttributes({ draft: base, image: { data, mediaType: "image/webp" }, sink });
+    const contentHash = intent.source?.imageContentHash;
+    const authoringFingerprint = intent.source?.authoringFingerprint;
+    if (!imageId || !contentHash || !authoringFingerprint || !intent.source) throw new Error("portrait source is incomplete");
+    const source = { imageId, contentHash, authoringRevision: intent.source.authoringRevision, authoringFingerprint };
+    const loaded = await ownedPortraitBytes(ownerId, intent.target.id, imageId);
+    const extracted = !loaded
+      ? failedPortraitAttributes({ draft: base, source, failure: "source_unavailable", sink })
+      : loaded.contentHash !== contentHash
+        ? failedPortraitAttributes({ draft: base, source, failure: "source_changed", sink })
+        : await derivePortraitAttributes({ draft: base, image: { data: loaded.data, mediaType: "image/webp" }, source, sink });
     proposed = mergeFillDraft(base, extracted.draft);
     const conflicts = new Map(extracted.conflicts.map((item) => [item.id, item.proposed]));
     proposed.profile.attributes = proposed.profile.attributes.map((row) => conflicts.has(row.id)
       ? { ...row, value: conflicts.get(row.id) ?? row.value, source: "creation" as const }
       : row);
+    portrait = extracted.evidence;
   } else if (intent.operation === "fill") {
     const generated = await forgeCharacterFill({ draft: base, scope: intent.scope ?? undefined, userId: ownerId, sink });
     proposed = intent.scope ? mergeFillScope(base, generated, intent.scope) : mergeFillDraft(base, generated);
@@ -247,7 +324,7 @@ async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>)
     proposed = await forgeCharacter({ prompt: base.profile.creationBrief, userId: ownerId, sink });
     proposed = { ...proposed, profile: { ...proposed.profile, creationBrief: base.profile.creationBrief } };
   }
-  const result = { proposed, diagnostics: sink.items };
+  const result = { proposed, diagnostics: sink.items, ...(portrait ? { portrait } : {}) };
   const initial = intent.operation === "create" && intent.creationStart?.initialPreview === true;
   return {
     result,
@@ -262,7 +339,7 @@ export type StartAuthoringRunOutcome =
   | { status: "capacity"; active: number; limit: number }
   | { status: "admission"; response: Response }
   | { status: "not_found" }
-  | { status: "authoring_revision_changed" | "portrait_changed"; currentRevision?: number; currentImageId?: string | null }
+  | { status: "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed"; currentRevision?: number; currentImageId?: string | null }
   | { status: "idempotency_conflict" };
 
 async function launch(ownerId: string, input: StartInput, retryOf: string | null, rootRunId: string, admit: () => Promise<Response | null>, sourceAlreadyReserved = false): Promise<StartAuthoringRunOutcome> {
@@ -359,6 +436,17 @@ export async function retryCharacterAuthoringRun(ownerId: string, runId: string,
   const parsed = payloadSchema.safeParse(prior.payload);
   if (!parsed.success) return { status: "idempotency_conflict" };
   const old = parsed.data.intent;
+  if (old.operation === "portrait") {
+    const imageId = old.source?.imageId;
+    const contentHash = old.source?.imageContentHash;
+    const fingerprint = old.source?.authoringFingerprint;
+    if (!imageId || !contentHash || !fingerprint || old.target.kind !== "character") return { status: "portrait_source_changed" };
+    const [character] = await db().select().from(characters).where(and(eq(characters.id, old.target.id), eq(characters.ownerId, ownerId))).limit(1);
+    const loaded = await ownedPortraitBytes(ownerId, old.target.id, imageId);
+    if (!character || character.avatarImageId !== imageId || !loaded || loaded.contentHash !== contentHash || portraitAuthoringFingerprint(rowDraft(character)) !== fingerprint) {
+      return { status: "portrait_source_changed", currentRevision: character?.authoringRevision, currentImageId: character?.avatarImageId };
+    }
+  }
   const input = {
     requestId,
     target: old.target,
@@ -369,17 +457,60 @@ export async function retryCharacterAuthoringRun(ownerId: string, runId: string,
     creationStart: old.creationStart,
     source: old.source,
   } as StartInput;
-  // Retry reuses the immutable accepted source even if the live character has
-  // since moved; proposal acceptance still three-way merges against live truth.
+  // Retry reuses the immutable accepted source only while the portrait and the
+  // appearance facts relevant to the read still match it.
   return launch(ownerId, input, runId, old.rootRunId, admit, true);
 }
 
 export type DecideAuthoringRunOutcome =
   | { status: "accepted"; run: AuthoringRunDto; character?: typeof characters.$inferSelect }
-  | { status: "not_found" | "invalid_run" | "proposal_changed" | "authoring_conflict"; conflicts?: ReturnType<typeof proposalConflicts>; currentRevision?: number };
+  | { status: "not_found" | "invalid_run" | "proposal_changed" | "authoring_conflict" | "portrait_source_changed"; conflicts?: ReturnType<typeof proposalConflicts>; currentRevision?: number };
 
 function rowDraft(character: typeof characters.$inferSelect): CharacterDraft {
   return characterDraftSchema.parse({ name: character.name, profile: character.profile, tags: character.tags, suggestedItems: [] });
+}
+
+function settlePortraitDecision(
+  payload: StoredPayload,
+  proposal: NonNullable<ReturnType<typeof applyCharacterProposal>["undo"]> | {
+    id: string; label: string; base: CharacterDraft; proposed: CharacterDraft; undo: false;
+  },
+  action: "accept" | "reject" | "undo",
+  choices: ProposalChoices,
+  proposalRevision: number,
+): StoredPayload {
+  if (!payload.result?.portrait) return payload;
+  const changes = proposalChanges(proposal);
+  const fields: PortraitDecision["fields"] = [];
+  for (const field of payload.result.portrait.fields) {
+    const change = changes.find((candidate) => candidate.path.some((part) => typeof part === "object" && part.id === field.id));
+    if (!change) continue;
+    const decision = action === "reject" ? "rejected" as const
+      : action === "undo" ? "undone" as const
+        : choices[change.key] === "current" ? "kept" as const : "accepted" as const;
+    fields.push({ id: field.id, decision });
+  }
+  const decision: PortraitDecision = {
+    proposalRevision,
+    action: action === "accept" ? "accepted" : action === "reject" ? "rejected" : "undone",
+    fields,
+  };
+  const diagnostics = payload.result.diagnostics
+    .filter((item) => item.code !== "forge.character.portrait.portrait_conflict" && !item.code.startsWith("forge.character.portrait.review_"));
+  diagnostics.push(...fields.map((field) => diag(
+    "info",
+    `forge.character.portrait.review_${field.decision}`,
+    `${field.id}: ${field.decision} at portrait proposal revision ${proposalRevision}.`,
+    { context: { id: field.id, decision: field.decision, proposalRevision } },
+  )));
+  return {
+    ...payload,
+    result: {
+      ...payload.result,
+      diagnostics,
+      portrait: { ...payload.result.portrait, decision },
+    },
+  };
 }
 
 export async function decideCharacterAuthoringRun(ownerId: string, runId: string, input: DecideInput): Promise<DecideAuthoringRunOutcome> {
@@ -387,6 +518,12 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
   if (!before) return { status: "not_found" };
   const beforePayload = payloadSchema.safeParse(before.payload);
   if (!beforePayload.success) return { status: "invalid_run" };
+  if (beforePayload.data.intent.operation === "portrait" && input.action !== "dismiss") {
+    const source = beforePayload.data.result?.portrait?.source;
+    if (!source || beforePayload.data.result?.portrait?.outcome === "read_failed") return { status: "invalid_run" };
+    const loaded = await ownedPortraitBytes(ownerId, beforePayload.data.intent.target.id, source.imageId);
+    if (!loaded || loaded.contentHash !== source.contentHash) return { status: "portrait_source_changed" };
+  }
   const suggestionEmbeddings = input.action === "accept" || input.action === "undo"
     ? await prepareSuggestedItemEmbeddings((input.action === "undo" ? beforePayload.data.proposal.undo?.proposed : beforePayload.data.result?.proposed)?.suggestedItems ?? [])
     : [];
@@ -417,7 +554,9 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     if (job.status !== "done" || !payload.result) return { status: "invalid_run" };
     if (input.action === "reject" && payload.intent.target.kind === "creation") {
       if (payload.proposal.status !== "unresolved") return { status: "proposal_changed" };
-      const next = { ...payload, proposal: { ...payload.proposal, revision: payload.proposal.revision + 1, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } };
+      const revision = payload.proposal.revision + 1;
+      const proposal = { id: runId, label: payload.intent.label, base: payload.intent.base, proposed: payload.result.proposed, undo: false as const };
+      const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
       return { status: "accepted", run: projectRun(saved!, next) };
     }
@@ -425,6 +564,7 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     const proposal = input.action === "undo" ? payload.proposal.undo : {
       id: runId, label: payload.intent.label, base: payload.intent.base, proposed: payload.result.proposed,
       undo: false as const, sourceRunId: runId, proposalRevision: payload.proposal.revision,
+      ...(payload.result.portrait ? { portraitEvidence: payload.result.portrait } : {}),
     };
     if (!proposal || (input.action === "accept" && payload.proposal.status !== "unresolved") || (input.action === "undo" && payload.proposal.status !== "accepted")) return { status: "proposal_changed" };
 
@@ -447,9 +587,16 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     if (input.expectedAuthoringRevision !== character.authoringRevision) {
       return { status: "authoring_conflict", currentRevision: character.authoringRevision };
     }
+    if (payload.intent.operation === "portrait") {
+      const source = payload.result.portrait?.source;
+      if (!source || character.avatarImageId !== source.imageId || portraitAuthoringFingerprint(rowDraft(character)) !== source.authoringFingerprint) {
+        return { status: "portrait_source_changed", currentRevision: character.authoringRevision };
+      }
+    }
     if (input.action === "reject") {
       if (payload.proposal.status !== "unresolved") return { status: "proposal_changed" };
-      const next = { ...payload, proposal: { ...payload.proposal, revision: payload.proposal.revision + 1, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } };
+      const revision = payload.proposal.revision + 1;
+      const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
       const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
       return { status: "accepted", run: projectRun(saved!, next) };
     }
@@ -476,7 +623,13 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     const revision = payload.proposal.revision + 1;
     const review = reconcileMaterializedUndo({ pending: [], undo: applied.undo }, applied.draft, savedDraft.profile);
     const undo = input.action === "accept" && review.undo ? { ...review.undo, sourceRunId: runId, proposalRevision: revision } : null;
-    const next = { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, choices: input.choices, appliedDraft: savedDraft, undo } };
+    const next = settlePortraitDecision(
+      { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, choices: input.choices, appliedDraft: savedDraft, undo } },
+      proposal,
+      input.action,
+      input.choices,
+      revision,
+    );
     const [savedJob] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
     return { status: "accepted", run: projectRun(savedJob!, next), character: savedCharacter };
   });

@@ -44,7 +44,7 @@ export const POST = withUser(async (user, req: NextRequest) => {
   return jsonOk({
     error: {
       code: outcome.status,
-      message: outcome.status === "portrait_changed"
+      message: outcome.status === "portrait_changed" || outcome.status === "portrait_source_changed"
         ? "The displayed portrait changed. Review it and start again."
         : "The saved character changed. Review the latest details and start again.",
     },

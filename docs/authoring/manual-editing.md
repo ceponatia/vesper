@@ -116,8 +116,16 @@ The section registry owns placement, generation scopes and section detail counts
   budget admission or provider work. No database lock spans a provider call. An avatar job records
   the revision and immutable character snapshot it reads.
 - Portrait completion names both the displayed image id and the saved authoring revision. The
-  server refuses a changed revision or portrait with a focused conflict before model spend, and
-  derives its proposal from the reserved server snapshot rather than a client-supplied draft.
+  server binds the run to the portrait's exact content hash and an appearance-input fingerprint,
+  refuses a changed portrait or relevant appearance fact before model spend or review, and derives
+  its proposal from the reserved server snapshot rather than a client-supplied draft.
+- Portrait review shows the inspected image, resolved model and prompt version, timing, and literal
+  per-field evidence with a localized image region. High-confidence, clearly visible observations
+  start selected. Weak, uncertain, occluded, and out-of-frame observations start on **Keep my
+  current value**. Heritage and natal sex are excluded, and teeth require direct visible support.
+- The durable run distinguishes proposals, supported matches, and failed reads. Accept, Reject,
+  Keep current, and Undo evidence decisions are stored against the resulting proposal revision;
+  retry lineage and safe failure codes remain available across browsers.
 
 ## Outfit presets
 
