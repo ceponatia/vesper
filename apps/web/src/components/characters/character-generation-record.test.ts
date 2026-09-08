@@ -43,7 +43,7 @@ describe("server character generation records", () => {
 
   it("restores a durable undo receipt without resurrecting the accepted proposal", () => {
     const run = fixture();
-    const undo = { id: "request-undo", label: "Undo profile", base: run.result!.proposed, proposed: run.base, undo: true as const, sourceRunId: run.id, proposalRevision: 2 };
+    const undo = { id: "request-undo", label: "Undo profile", base: run.result!.proposed, proposed: run.base, undo: true as const, sourceRunId: run.id, proposalRevision: 2, decidedAt: null };
     const accepted = fixture({ proposal: { revision: 2, status: "accepted", choices: {}, appliedDraft: run.result!.proposed, undo } });
     const review = receiveGenerationReview(emptyCharacterReview(), accepted);
     expect(review.pending).toEqual([]);
