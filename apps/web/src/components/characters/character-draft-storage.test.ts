@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { characterDetailSchema } from "@/lib/client/api/library";
 import { promoteDraftRecovery, readDraft, writeDraft, type DraftStorage } from "./character-draft-storage";
-import { characterCreationStateSchema, emptyCharacterCreation, prepareCreationSave, recoverCreationMismatch, savedCreationHref } from "./character-creation-draft";
+import { characterCreationStateSchema, creationSaveNavigationHref, emptyCharacterCreation, prepareCreationSave, recoverCreationMismatch, savedCreationHref } from "./character-creation-draft";
 
 function memoryStorage(): DraftStorage {
   const rows = new Map<string, string>();
@@ -19,6 +19,27 @@ describe("character browser draft persistence", () => {
     expect(retry.initialSaveDraft?.name).toBe("Iris");
     expect(retry.draft.name).toBe("Newer edit");
     expect(retry.saveDestination).toBeNull();
+  });
+
+  it("does not keep a successful first save on the creation draft for an already-applied Forge receipt", () => {
+    const state = emptyCharacterCreation();
+    state.savedCharacterId = "saved-character";
+    state.tab = "portrait";
+    state.review.handledIds = ["completed-forge"];
+    const saved = { characterId: "saved-character", requestId: state.id, savedSnapshotUnchanged: true, authoredMatchesSaved: true, revisionMatches: true };
+    expect(creationSaveNavigationHref(state, [{ id: "completed-forge", status: "completed" }], saved)).toBe("/characters/saved-character?tab=portrait");
+    state.tab = "profile";
+    state.saveDestination = "portrait";
+    expect(creationSaveNavigationHref(state, [], saved)).toBe("/characters/saved-character?tab=portrait");
+    state.saveDestination = "chat";
+    expect(creationSaveNavigationHref(state, [], saved)).toBe("/characters/saved-character?tab=chat");
+    expect(creationSaveNavigationHref(state, [{ id: "unapplied-forge", status: "completed" }], saved)).toBeNull();
+    expect(creationSaveNavigationHref(state, [{ id: "pending-forge", status: "pending" }], saved)).toBeNull();
+    expect(creationSaveNavigationHref(state, [{ id: "failed-forge", status: "failed" }], saved)).toBeNull();
+    expect(creationSaveNavigationHref(state, [], { ...saved, savedSnapshotUnchanged: false })).toBeNull();
+    expect(creationSaveNavigationHref(state, [], { ...saved, authoredMatchesSaved: false })).toBeNull();
+    expect(creationSaveNavigationHref(state, [], { ...saved, requestId: "new-draft" })).toBeNull();
+    expect(creationSaveNavigationHref(state, [], { ...saved, revisionMatches: false })).toBeNull();
   });
 
   it("binds an idempotency mismatch without changing the retained authored draft", () => {

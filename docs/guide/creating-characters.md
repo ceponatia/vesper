@@ -7,7 +7,7 @@
 3. **Profile** also carries an **Age** field (basic info) — the character's *real* age, a number or free phrase ("ancient", "312 years"). It is deliberately separate from the **Apparent age** attribute (how old they *look*): the narrator reads the real age, while the portrait studio reads apparent age, so a centuries-old being can still read late-thirties on the page.
 4. **Appearance**: core visuals (gender, hair color, eye color, skin tone, height, frame, apparent age) are filled — inferred from the prompt when possible, seeded defaults otherwise. Everything is editable in the attribute picker; AI-filled values carry the `AI` chip until you touch them.
 5. **Outfit**: garments that match items already in your library by name link to them; the rest appear under "Suggested new items".
-6. **Save character**, or open Portrait studio and choose **Save and open Portrait Studio**. Suggested outfit items become library items automatically (tagged `suggested`, reused by name if one already exists) and land in the character's default outfit. Anything dropped during save shows up as a notice. A failed save keeps the draft for retry.
+6. **Save character** opens the persisted character on the section you were editing. Or open Portrait studio and choose **Save and open Portrait Studio** to save and go there directly. Suggested outfit items become library items automatically (tagged `suggested`, reused by name if one already exists) and land in the character's default outfit. Anything dropped during save shows up as a notice. A failed save keeps the draft for retry.
 
 ## Portraits
 
