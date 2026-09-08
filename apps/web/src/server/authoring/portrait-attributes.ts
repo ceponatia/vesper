@@ -61,6 +61,7 @@ export function portraitAttributeDefinitions(
       !isIntimateAttributeCategory(definition.category) &&
       !isPersonalityAttributeCategory(definition.category) &&
       definition.id !== "identity.heritage" &&
+      definition.id !== "identity.gender" &&
       definition.id !== "identity.natal_sex" &&
       realizedBody.isAttributeApplicable(definition),
   );

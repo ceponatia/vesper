@@ -30,6 +30,7 @@ describe("portrait evidence classification", () => {
   it("excludes non-pixel identity fields and requires direct teeth visibility", () => {
     const definitions = portraitAttributeDefinitions(emptyCharacterDraft());
     expect(definitions.map((definition) => definition.id)).not.toContain("identity.heritage");
+    expect(definitions.map((definition) => definition.id)).not.toContain("identity.gender");
     expect(definitions.map((definition) => definition.id)).not.toContain("identity.natal_sex");
     const teeth = attributeRegistry.byId("teeth.shape");
     expect(portraitObservationCanPropose(teeth, "occluded", region)).toBe(false);

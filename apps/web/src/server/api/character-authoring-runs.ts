@@ -302,10 +302,18 @@ async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>)
     const authoringFingerprint = intent.source?.authoringFingerprint;
     if (!imageId || !contentHash || !authoringFingerprint || !intent.source) throw new Error("portrait source is incomplete");
     const source = { imageId, contentHash, authoringRevision: intent.source.authoringRevision, authoringFingerprint };
-    const loaded = await ownedPortraitBytes(ownerId, intent.target.id, imageId);
+    const [loaded, characterRows] = await Promise.all([
+      ownedPortraitBytes(ownerId, intent.target.id, imageId),
+      db().select().from(characters).where(and(
+        eq(characters.id, intent.target.id), eq(characters.ownerId, ownerId),
+      )).limit(1),
+    ]);
+    const current = characterRows[0];
+    const sourceChanged = !current || current.avatarImageId !== imageId
+      || portraitAuthoringFingerprint(rowDraft(current)) !== authoringFingerprint;
     const extracted = !loaded
       ? failedPortraitAttributes({ draft: base, source, failure: "source_unavailable", sink })
-      : loaded.contentHash !== contentHash
+      : loaded.contentHash !== contentHash || sourceChanged
         ? failedPortraitAttributes({ draft: base, source, failure: "source_changed", sink })
         : await derivePortraitAttributes({ draft: base, image: { data: loaded.data, mediaType: "image/webp" }, source, sink });
     proposed = mergeFillDraft(base, extracted.draft);
@@ -518,7 +526,7 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
   if (!before) return { status: "not_found" };
   const beforePayload = payloadSchema.safeParse(before.payload);
   if (!beforePayload.success) return { status: "invalid_run" };
-  if (beforePayload.data.intent.operation === "portrait" && input.action !== "dismiss") {
+  if (beforePayload.data.intent.operation === "portrait" && input.action !== "dismiss" && input.action !== "reject") {
     const source = beforePayload.data.result?.portrait?.source;
     if (!source || beforePayload.data.result?.portrait?.outcome === "read_failed") return { status: "invalid_run" };
     const loaded = await ownedPortraitBytes(ownerId, beforePayload.data.intent.target.id, source.imageId);
@@ -587,7 +595,7 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     if (input.expectedAuthoringRevision !== character.authoringRevision) {
       return { status: "authoring_conflict", currentRevision: character.authoringRevision };
     }
-    if (payload.intent.operation === "portrait") {
+    if (payload.intent.operation === "portrait" && input.action !== "reject") {
       const source = payload.result.portrait?.source;
       if (!source || character.avatarImageId !== source.imageId || portraitAuthoringFingerprint(rowDraft(character)) !== source.authoringFingerprint) {
         return { status: "portrait_source_changed", currentRevision: character.authoringRevision };

@@ -269,9 +269,15 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     await fs.writeFile(absoluteImagePath(bytes.portrait), Buffer.from("changed portrait bytes"));
     const staleBytes = await decideRun(apiRequest("/api/characters/authoring-runs/portrait-bytes-stale/decision", {
       method: "PATCH",
-      body: { action: "reject", expectedProposalRevision: 1, expectedAuthoringRevision: bytes.character.authoringRevision, choices: {} },
+      body: { action: "accept", expectedProposalRevision: 1, expectedAuthoringRevision: bytes.character.authoringRevision, choices: {} },
     }), routeCtx({ runId: "portrait-bytes-stale" }));
     expect((await expectJson<{ error: { code: string } }>(staleBytes, 409)).error.code).toBe("portrait_source_changed");
+
+    const rejectedStale = await decideRun(apiRequest("/api/characters/authoring-runs/portrait-bytes-stale/decision", {
+      method: "PATCH",
+      body: { action: "reject", expectedProposalRevision: 1, expectedAuthoringRevision: bytes.character.authoringRevision, choices: {} },
+    }), routeCtx({ runId: "portrait-bytes-stale" }));
+    expect((await expectJson<{ run: { proposal: { status: string } } }>(rejectedStale)).run.proposal.status).toBe("rejected");
   });
 
   it("keeps overlapping edits unresolved and degrades malformed stored rows", async () => {
