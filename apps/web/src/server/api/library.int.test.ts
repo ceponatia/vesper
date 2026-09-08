@@ -44,8 +44,9 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
       .values({ ownerId, kind: "clothing", name: "Green Hoodie" })
       .returning({ id: items.id });
     const sink = new DiagnosticCollector();
-    const ids = await materializeSuggestedItems(ownerId, [suggest("green hoodie")], sink);
+    const { ids, materializedSuggestions } = await materializeSuggestedItems(ownerId, [suggest("green hoodie")], sink);
     expect(ids).toEqual([existing!.id]);
+    expect(materializedSuggestions).toEqual([{ index: 0, itemId: existing!.id }]);
     expect(sink.items.some((d) => d.code === "api.library.suggested_item.reused")).toBe(true);
   });
 
@@ -57,7 +58,7 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
       .values({ ownerId, kind: "clothing", name: "Faded Sky Shirt", searchEmbedding: pseudoEmbed("Blue Tee"), embedder: "pseudo" })
       .returning({ id: items.id });
     const sink = new DiagnosticCollector();
-    const ids = await materializeSuggestedItems(ownerId, [suggest("Blue Tee")], sink);
+    const { ids } = await materializeSuggestedItems(ownerId, [suggest("Blue Tee")], sink);
     expect(ids).toEqual([existing!.id]);
     expect(sink.items.some((d) => d.code === "api.library.suggested_item.fuzzy_reused")).toBe(true);
   });
@@ -65,7 +66,7 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
   it("inserts a fresh row when nothing is similar enough", async () => {
     const before = await db().select({ id: items.id }).from(items).where(eq(items.ownerId, ownerId));
     const sink = new DiagnosticCollector();
-    const ids = await materializeSuggestedItems(ownerId, [suggest("Unmistakably Unique Garment 9000")], sink);
+    const { ids } = await materializeSuggestedItems(ownerId, [suggest("Unmistakably Unique Garment 9000")], sink);
     expect(ids).toHaveLength(1);
     expect(before.map((r) => r.id)).not.toContain(ids[0]);
     expect(sink.items.some((d) => d.code === "api.library.suggested_item.fuzzy_reused")).toBe(false);
@@ -78,7 +79,8 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
       const [candidate] = await tx.insert(items).values({ ownerId, kind: "clothing", name: "Uncommitted Fuzzy Mantle", searchEmbedding: pseudoEmbed("Transaction copper robe"), embedder: "pseudo" }).returning({ id: items.id });
       const sink = new DiagnosticCollector();
       const created: string[] = [];
-      const ids = await materializeSuggestedItems(ownerId, [suggest("Transaction copper robe")], sink, { executor: tx, onCreated: (id) => created.push(id) });
+      const preparedEmbeddings = [{ ok: true as const, embedded: { vector: pseudoEmbed("Transaction copper robe"), embedder: "pseudo" } }];
+      const { ids } = await materializeSuggestedItems(ownerId, [suggest("Transaction copper robe")], sink, { executor: tx, preparedEmbeddings, onCreated: (id) => created.push(id) });
       expect(ids).toEqual([candidate!.id]);
       expect(created).toEqual([]);
       expect(sink.items.some((item) => item.code === "api.library.suggested_item.fuzzy_reused")).toBe(true);
@@ -95,7 +97,7 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
       category: "bra",
     });
     const sink = new DiagnosticCollector();
-    const ids = await materializeSuggestedItems(ownerId, [suggestion], sink);
+    const { ids } = await materializeSuggestedItems(ownerId, [suggestion], sink);
     expect(ids).toHaveLength(1);
     const [row] = await db().select({ definition: items.definition }).from(items).where(eq(items.id, ids[0]!));
     expect((row?.definition as { category?: string }).category).toBe("bra");
@@ -103,7 +105,7 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
 
   it("does not collapse a deliberately-distinct same-kind garment (conservative threshold)", async () => {
     const sink = new DiagnosticCollector();
-    const ids = await materializeSuggestedItems(ownerId, [suggest("Heavy Leather Trench Coat")], sink);
+    const { ids } = await materializeSuggestedItems(ownerId, [suggest("Heavy Leather Trench Coat")], sink);
     expect(sink.items.some((d) => d.code === "api.library.suggested_item.fuzzy_reused")).toBe(false);
     expect(ids).toHaveLength(1);
   });
@@ -115,7 +117,7 @@ describe.skipIf(!ready)("materializeSuggestedItems dedupe", () => {
       .insert(items)
       .values({ ownerId, kind: "object", name: "Old Clay Vessel", searchEmbedding: pseudoEmbed("Ceramic Mug Special"), embedder: "pseudo" });
     const sink = new DiagnosticCollector();
-    const ids = await materializeSuggestedItems(ownerId, [suggest("Ceramic Mug Special")], sink);
+    const { ids } = await materializeSuggestedItems(ownerId, [suggest("Ceramic Mug Special")], sink);
     expect(sink.items.some((d) => d.code === "api.library.suggested_item.fuzzy_reused")).toBe(false);
     expect(ids).toHaveLength(1);
     const [row] = await db().select({ kind: items.kind }).from(items).where(eq(items.id, ids[0]!));

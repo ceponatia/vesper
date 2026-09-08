@@ -74,7 +74,11 @@ export const PATCH = withAuthorizedResource(
     const saved = await patchOwnedCharacter(existing.id, user.id, body.value);
     if (saved.status === "not_found") return jsonError("not_found", "character not found", 404);
     if (saved.status === "conflict") return jsonOk({ error: { code: "character_conflict", message: "The saved character changed. Review your recovered edits before saving." }, character: saved.character }, 409);
-    return jsonOk({ character: saved.character, diagnostics: saved.diagnostics });
+    return jsonOk({
+      character: saved.character,
+      diagnostics: saved.diagnostics,
+      materializedSuggestions: saved.materializedSuggestions,
+    });
   },
 );
 

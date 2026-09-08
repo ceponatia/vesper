@@ -68,6 +68,15 @@ export interface FuzzyResolveOptions {
   minScore?: number;
   /** items-only: restrict matches to this item kind (e.g. dedupe clothing against clothing). */
   itemKind?: string;
+  /**
+   * A provider result computed before a caller enters a database transaction.
+   * `undefined` preserves the standalone resolver's normal embedding call;
+   * `null` records that precomputation failed and keeps the locked section
+   * database-only.
+   */
+  precomputedEmbedding?: Embedded | null;
+  /** Error captured while precomputing. Reported only if exact resolution also misses. */
+  precomputedEmbeddingError?: string;
 }
 
 /**
@@ -102,22 +111,33 @@ export async function fuzzyResolve(
   }
 
   let embedded: Embedded;
-  try {
-    embedded = await embedText(name.trim());
-  } catch (err) {
+  if (opts.precomputedEmbedding === null) {
     sink?.push(
-      diag("error", "memory.library.embed_failed", `fuzzy-resolve embedding failed: ${errorText(err)}`, {
+      diag("error", "memory.library.embed_failed", `fuzzy-resolve embedding failed: ${opts.precomputedEmbeddingError ?? "embedding unavailable"}`, {
         context: { kind, name },
       }),
     );
     return null;
+  } else if (opts.precomputedEmbedding !== undefined) {
+    embedded = opts.precomputedEmbedding;
+  } else {
+    try {
+      embedded = await embedText(name.trim());
+    } catch (err) {
+      sink?.push(
+        diag("error", "memory.library.embed_failed", `fuzzy-resolve embedding failed: ${errorText(err)}`, {
+          context: { kind, name },
+        }),
+      );
+      return null;
+    }
   }
 
   const vec = toVectorLiteral(embedded.vector);
   const result = await executor.execute(
     sql`select id, name, 1 - (search_embedding <=> ${vec}::vector) as score
         from ${sql.identifier(TABLE_NAMES[kind])}
-        where owner_id = ${ownerId} and embedder = ${currentEmbedder()} and search_embedding is not null${kindFilter}
+        where owner_id = ${ownerId} and embedder = ${embedded.embedder} and search_embedding is not null${kindFilter}
         order by search_embedding <=> ${vec}::vector
         limit 1`,
   );

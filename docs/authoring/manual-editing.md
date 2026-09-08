@@ -58,13 +58,33 @@ The section registry owns placement, generation scopes and section detail counts
   and character. Account or character navigation resets the editor and guards late async results.
   Reviews saved on this device are not synchronized between devices.
 
+## Recovering character generation
+
+- Full Forge, missing-detail completion, section rewrites and portrait-derived suggestions keep
+  a browser request record scoped to the authenticated account, character or creation draft,
+  operation and section. Execution continues through internal navigation; a completed response
+  waits for its matching editor and never changes another character or account.
+- Returning to the editor delivers each result once. A request id joins the destination's pending
+  or handled review receipts; rejecting or accepting a result cannot make it reappear. The source
+  response clears only after the destination draft or review is persisted successfully. A saved
+  creation draft with unfinished generation remains available from New or Forge.
+- A pending record after reload offers **Retry generation** and **Dismiss**. Resume alone never
+  starts a model call. Retry checks the initiating account and serializes the same request across
+  browser tabs. A full browser shutdown cannot recover a still-running synchronous response;
+  an already stored completed result remains recoverable.
+- A browser-storage outage retains the request and response in memory through internal navigation
+  and shows a notice to keep the browser open. Restored storage respects a competing stored version.
+  These records remain on this browser and are not synchronized between devices.
+
 ## Recovering ordinary edits
 
 - Authored values and narrator choice persist under an account-and-character browser key separate
   from suggestions. Each record stores the server baseline and its `updatedAt` version. Leaving
   the page keeps authorized queued writes and their recovery record alive; a failed save never
   clears that record. An acknowledgment clears only the exact stored snapshot it saved.
-- Loading an unchanged server version resumes retained edits. A changed server version opens
+- Loading an unchanged authored snapshot resumes retained edits. Publish and portrait-only
+  version changes advance the baseline without replacing authored values. Changes to authored
+  fields open
   **Review recovered edits**, with the same per-field three-way choices and an independent
   narrator choice. **Use saved version** explicitly discards those recovered edits. Competing
   browser tabs offer the latest browser record, separate recovery copies, or the saved character.
@@ -76,7 +96,8 @@ The section registry owns placement, generation scopes and section detail counts
   items. Omitted preconditions preserve ordinary PATCH semantics for other callers; a no-op
   leaves the version unchanged. Item embedding refresh runs after the transaction commits.
 - Save acknowledgments reconcile into the latest draft. Newer edits stay dirty; returned outfit
-  item ids and completed suggestions converge without repeated item submission. Browser storage
+  item ids and completed suggestions converge without repeated item submission. Per-suggestion
+  acknowledgments keep an in-flight discard discarded while retaining other completed garments. Browser storage
   failures keep the in-memory draft available and show a notice to keep the page open until saved.
 
 ## Outfit presets

@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { itemDefinitionSchema } from "@/contracts";
 import { characterSaveConflictSchema, characterSaveSchema } from "@/lib/client/api/library";
+import { pseudoEmbed } from "@/server/ai";
 import { characters, db, items } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
 
@@ -35,11 +36,14 @@ describe.skipIf(!ready)("character PATCH optimistic recovery", () => {
     const names = ["Harbor copper mantle 719", "Mountain violet boots 824"];
     const responses = await Promise.all(names.map((name) => patch(row.id, { name, expectedUpdatedAt: row.updatedAt.toISOString(), suggestedItems: [itemDefinitionSchema.parse({ name, kind: "clothing" })] })));
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
-    const winner = characterSaveSchema.parse(await expectJson(responses.find((response) => response.status === 200)!)).character;
+    const winnerResponse = characterSaveSchema.parse(await expectJson(responses.find((response) => response.status === 200)!));
+    const winner = winnerResponse.character;
     const conflict = characterSaveConflictSchema.parse(await expectJson(responses.find((response) => response.status === 409)!, 409));
     expect(conflict.character).toEqual(winner);
     const created = await db().select({ name: items.name }).from(items).where(eq(items.ownerId, authState.user.id));
     expect(created.filter((item) => names.includes(item.name))).toEqual([{ name: winner.name }]);
+    expect(winnerResponse.materializedSuggestions).toHaveLength(1);
+    expect(winner.profile.outfits[0]?.itemIds).toContain(winnerResponse.materializedSuggestions[0]?.itemId);
   });
 
   it("returns monotonic tokens for immediate saves and keeps a no-op token unchanged", async () => {
@@ -50,6 +54,26 @@ describe.skipIf(!ready)("character PATCH optimistic recovery", () => {
     expect(Date.parse(second.updatedAt!)).toBeGreaterThan(Date.parse(first.updatedAt!));
     const noOp = characterSaveSchema.parse(await expectJson(await patch(row.id, { expectedUpdatedAt: second.updatedAt }))).character;
     expect(noOp.updatedAt).toBe(second.updatedAt);
+  });
+
+  it("rechecks fuzzy item candidates in the save transaction using the prepared embedding", async () => {
+    const row = await subject("Fuzzy save subject");
+    const [existing] = await db().insert(items).values({
+      ownerId: authState.user.id,
+      kind: "clothing",
+      name: "Faded Sky Route Shirt",
+      searchEmbedding: pseudoEmbed("Route blue tee 883"),
+      embedder: "pseudo",
+    }).returning({ id: items.id });
+    const saved = characterSaveSchema.parse(await expectJson(await patch(row.id, {
+      expectedUpdatedAt: row.updatedAt.toISOString(),
+      suggestedItems: [itemDefinitionSchema.parse({ kind: "clothing", name: "Route blue tee 883" })],
+    })));
+    expect(saved.materializedSuggestions).toEqual([{ index: 0, itemId: existing!.id }]);
+    expect(saved.character.profile.outfits[0]?.itemIds).toContain(existing!.id);
+    const duplicates = await db().select({ id: items.id }).from(items)
+      .where(and(eq(items.ownerId, authState.user.id), eq(items.name, "Route blue tee 883")));
+    expect(duplicates).toEqual([]);
   });
 
   it("preserves partial merges for callers without a token and owner-only writes", async () => {

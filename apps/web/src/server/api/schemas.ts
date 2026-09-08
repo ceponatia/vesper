@@ -57,6 +57,8 @@ export { ambientSchema };
 // (docs/authoring/README.md §"Saving drafts (draft → create-input)").
 export const characterCreateSchema = z
   .object({
+    /** Stable UUID for one durable New/Forge creation intent. */
+    creationRequestId: z.uuid().optional(),
     name: nameSchema,
     profile: characterProfileSchema.default(() => characterProfileSchema.parse({})),
     tags: tagsSchema.default([]),

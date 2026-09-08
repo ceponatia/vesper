@@ -3,9 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Diagnostic } from "@/contracts";
-import { mergeFillDraft } from "@/lib/character-fill";
-import { characterEditorTabs, characterSections, mergeFillScope, mergeRedraftScope, type CharacterEditorTab, type CharacterSheetScope } from "@/lib/character-scopes";
-import { charactersApi, type CharacterDraft } from "@/lib/client/api";
+import { characterEditorTabs, characterSections, type CharacterEditorTab, type CharacterSheetScope } from "@/lib/character-scopes";
+import { charactersApi } from "@/lib/client/api";
 import { useSession } from "@/components/auth/auth-client";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useAutosave } from "@/components/hooks/use-autosave";
@@ -25,6 +24,9 @@ import { CharacterProposalReview } from "./character-proposal-review";
 import { characterReviewStateSchema, emptyCharacterReview, proposalChanges, reconcileMaterializedUndo } from "./character-proposals";
 import { CharacterAuthorRecoveryNotice } from "./character-author-recovery";
 import { useCharacterAuthorDraft } from "./use-character-author-draft";
+import { CharacterGenerationStatus } from "./character-generation-status";
+import { hasReceivedGeneration, receiveGenerationReview } from "./character-generation-record";
+import { useCharacterGeneration } from "./use-character-generation";
 import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
 export function CharacterEditPage({ characterId }: { characterId: string }) {
@@ -39,9 +41,9 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
   const router = useRouter();
   const toast = useToast();
   const detail = useAsyncData(() => charactersApi.get(characterId), [characterId]);
-  const [busy, setBusy] = useState<"fill" | "redraft" | "portrait" | null>(null);
+  const [preparing, setPreparing] = useState<"fill" | "redraft" | "portrait" | null>(null);
   const busyRef = useRef(false);
-  const [scopeBusy, setScopeBusy] = useState<CharacterSheetScope | null>(null);
+  const [preparingScope, setPreparingScope] = useState<CharacterSheetScope | null>(null);
   const [tab, setTab] = useState<CharacterEditorTab>("profile");
   const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -64,64 +66,33 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     return () => { alive.current = false; };
   }, []);
 
-  const stage = (base: CharacterDraft, proposed: CharacterDraft, label: string) => {
-    const proposal = { id: crypto.randomUUID(), label, base, proposed, undo: false };
-    if (!proposalChanges(proposal).length) {
-      toast.push({ title: "No changes suggested", tone: "success" });
-      return;
+  const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record) => {
+    if (reviewStore.isBlocked() || author.isBlocked() || record.ownerId !== ownerId || record.target.id !== characterId || !record.result) return false;
+    if (!hasReceivedGeneration(reviewStore.current.current, record.id)) {
+      setForgeDiagnostics(record.result.diagnostics);
+      reviewStore.update((review) => receiveGenerationReview(review, record));
+      if (!proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
     }
-    reviewStore.update((review) => ({ ...review, pending: [...review.pending, proposal] }));
-  };
-  const generate = async (mode: "fill" | "redraft", scope?: CharacterSheetScope) => {
+    await reviewStore.flush();
+    return reviewStore.isPersisted();
+  });
+  const busy = preparing ?? generation.active?.operation ?? null;
+  const scopeBusy = preparingScope ?? generation.active?.scope ?? null;
+  const generate = async (mode: "fill" | "redraft" | "portrait", scope?: CharacterSheetScope) => {
     const currentDraft = author.current.current?.draft;
-    if (!currentDraft || busyRef.current || !reviewStore.ready || author.isBlocked() || reviewStore.isBlocked()) return;
+    if (!currentDraft || busyRef.current || generation.isRunning() || !reviewStore.ready || author.isBlocked() || reviewStore.isBlocked()) return;
     busyRef.current = true;
-    setBusy(mode);
-    setScopeBusy(scope ?? null);
+    setPreparing(mode); setPreparingScope(scope ?? null);
     try {
       const withBrief = withCreationBrief(currentDraft);
       if (withBrief !== currentDraft) changeDraft(withBrief);
       if (!(await save({ silent: true })) || !alive.current) return;
-      const latestDraft = author.current.current?.draft;
-      if (!latestDraft) return;
-      const base = structuredClone(latestDraft);
-      const result = await charactersApi.forge({ mode, ...(scope ? { scope } : {}), draft: base });
-      if (!alive.current) return;
-      if (!result.ok) { toast.push({ title: "Generation failed", description: result.error.message, tone: "error" }); return; }
-      setForgeDiagnostics(result.data.diagnostics);
-      const proposed = scope
-        ? mode === "fill" ? mergeFillScope(base, result.data.draft, scope) : mergeRedraftScope(base, result.data.draft, scope)
-        : mergeFillDraft(base, result.data.draft);
+      const base = author.current.current?.draft;
+      if (!base) return;
       const section = scope ? characterSections[scope].label : "character";
-      stage(base, proposed, mode === "fill" ? `missing ${section} details` : `${section} rewrite`);
-    } finally {
-      if (alive.current) { busyRef.current = false; setBusy(null); setScopeBusy(null); }
-    }
-  };
-  const derivePortrait = async () => {
-    const currentDraft = author.current.current?.draft;
-    if (!currentDraft || busyRef.current || !reviewStore.ready || author.isBlocked() || reviewStore.isBlocked()) return;
-    busyRef.current = true;
-    setBusy("portrait");
-    try {
-      const withBrief = withCreationBrief(currentDraft);
-      if (withBrief !== currentDraft) changeDraft(withBrief);
-      if (!(await save({ silent: true })) || !alive.current) return;
-      const latestDraft = author.current.current?.draft;
-      if (!latestDraft) return;
-      const base = structuredClone(latestDraft);
-      const result = await charactersApi.attributesFromPortrait(characterId, base);
-      if (!alive.current) return;
-      if (!result.ok) { toast.push({ title: "Portrait read failed", description: result.error.message, tone: "error" }); return; }
-      setForgeDiagnostics(result.data.diagnostics);
-      const proposed = mergeFillDraft(base, result.data.draft);
-      const conflicts = new Map(result.data.portrait.conflicts.map((item) => [item.id, item.proposed]));
-      proposed.profile.attributes = proposed.profile.attributes.map((attribute) => conflicts.has(attribute.id)
-        ? { ...attribute, value: conflicts.get(attribute.id) ?? attribute.value, source: "creation" as const } : attribute);
-      stage(base, proposed, "portrait changes");
-    } finally {
-      if (alive.current) { busyRef.current = false; setBusy(null); }
-    }
+      generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
+        label: mode === "portrait" ? "portrait changes" : mode === "fill" ? `missing ${section} details` : `${section} rewrite` });
+    } finally { if (alive.current) { busyRef.current = false; setPreparing(null); setPreparingScope(null); } }
   };
 
   const clone = async () => {
@@ -216,7 +187,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
           >
             Complete all missing details
           </Button>
-          {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
+          {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} onChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }} /> : null}
           <ActionMenu
             label="Character actions"
             items={[
@@ -240,6 +211,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         <Button disabled={saving} onClick={() => void author.resetToServer()}>Use saved character</Button>
       </div> : null}
       {author.recovery ? <CharacterAuthorRecoveryNotice key={author.recovery.id} recovery={author.recovery} disabled={saving || author.storage.conflict} onRestore={author.resolveRecovery} onDiscard={() => void author.discardRecovery()} /> : null}
+      <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={author.blocked || reviewStore.conflict || preparing !== null} onRetry={generation.retry} onDismiss={generation.dismiss} />
       <CharacterProposalReview draft={draft} review={reviewStore.data} onReviewChange={reviewStore.update} onChange={changeDraft}
         disabled={!reviewStore.ready || reviewStore.conflict || author.blocked} isBlocked={() => reviewStore.isBlocked() || author.isBlocked()} />
       <div onBlur={autosave.onBlur}>
@@ -252,7 +224,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         characterId={characterId}
         avatarImageId={detail.data?.avatarImageId ?? null}
         {...(detail.data ? { acceptance: detail.data.acceptance } : {})}
-        onAvatarChanged={() => detail.reload({ silent: true })}
+        onAvatarChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }}
         chatModel={chatModel}
         onChatModelChange={changeChatModel}
         onRedraft={(scope) => void generate("redraft", scope)}
@@ -261,7 +233,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         completing={busy === "fill" ? scopeBusy : null}
         generationDisabled={busy !== null || !reviewStore.ready || reviewStore.conflict || author.blocked}
         saving={saving}
-        onPortraitAttributes={() => void derivePortrait()}
+        onPortraitAttributes={() => void generate("portrait")}
         derivingPortrait={busy === "portrait"}
         diagnostics={forgeDiagnostics}
       />

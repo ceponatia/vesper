@@ -184,5 +184,9 @@ export function useCharacterDraftStorage<T>(key: string, schema: z.ZodType<T>, i
     return cleared;
   }, [key, lock]);
 
-  return { data, update, current, revision, ready, notice, conflict, resume, reset, clear, flush: () => tail.current, isBlocked: () => blocked.current, recoveries };
+  const isPersisted = () => {
+    try { return !blocked.current && expected.current !== null && localStorage.getItem(key) === expected.current && readDraft(expected.current, schema)?.revision === revision.current; }
+    catch { return false; }
+  };
+  return { data, update, current, revision, ready, notice, conflict, resume, reset, clear, isPersisted, flush: () => tail.current, isBlocked: () => blocked.current, recoveries };
 }

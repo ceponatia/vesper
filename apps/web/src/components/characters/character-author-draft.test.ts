@@ -18,12 +18,12 @@ describe("saved author recovery", () => {
     expect(saved.chatModel).toBe(character.chatModel);
   });
 
-  it("resumes only an unchanged server baseline and recognizes an exact acknowledgment", () => {
+  it("resumes an unchanged authored baseline despite metadata version updates and recognizes an exact acknowledgment", () => {
     const base = snapshot("Before");
     const authored = snapshot("Browser edit", "model-b");
     const record = { base, authored, serverUpdatedAt: "version-1" };
     expect(authorRecoveryDisposition(base, "version-1", record)).toBe("resume");
-    expect(authorRecoveryDisposition(base, "version-2", record)).toBe("review");
+    expect(authorRecoveryDisposition(base, "version-2", record)).toBe("resume");
     expect(authorRecoveryDisposition(snapshot("Server edit"), "version-1", record)).toBe("review");
     expect(authorRecoveryDisposition(authored, "version-2", record)).toBe("acknowledged");
   });
@@ -63,6 +63,15 @@ describe("materialized character save acknowledgment", () => {
     const secondSave = { ...result, suggestedItems: [] };
     expect(reconcileCharacterSave(result, result, secondSave)).toEqual(secondSave);
     expect(reconcileCharacterSave(saved, sent, saved)).toEqual(saved);
+  });
+
+  it("does not restore discarded in-flight suggestions while retaining other acknowledgments", () => {
+    const sentBoth = { ...sent, suggestedItems: [coat, scarf] };
+    const returned = { ...saved, profile: { ...saved.profile, outfits: [{ id: "daily", name: "Daily", items: ["boots", "coat-id", "scarf-id"] }] } };
+    const latest = { ...sentBoth, suggestedItems: [scarf] };
+    const result = reconcileCharacterSave(latest, sentBoth, returned, [{ index: 0, itemId: "coat-id" }, { index: 1, itemId: "scarf-id" }]);
+    expect(result.profile.outfits[0]?.items).toEqual(["boots", "scarf-id"]);
+    expect(result.suggestedItems).toEqual([]);
   });
 
   it("keeps changed suggestions and does not resurrect an explicitly deleted preset", () => {

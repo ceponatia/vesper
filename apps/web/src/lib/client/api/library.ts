@@ -114,6 +114,7 @@ export type { CharacterPortraitAcceptance };
 export const characterSaveSchema = z.object({
   character: characterDetailSchema,
   diagnostics: arrayOf(diagnosticSchema),
+  materializedSuggestions: arrayOf(z.object({ index: z.number().int().nonnegative(), itemId: z.string() })),
 });
 /** The conflict response carries the current owned row for three-way recovery. */
 export const characterSaveConflictSchema = z.object({
@@ -387,6 +388,7 @@ export const charactersApi = {
       `/api/characters/${id}`,
     ),
   create: (body: unknown) => apiPost(createdRefSchema, "/api/characters", body),
+  createDraft: (body: unknown) => apiPost(characterSaveSchema, "/api/characters", body),
   /**
    * The saved profile comes BACK because the save can add to it: `suggestedItems`
    * in the body are materialized into library items server-side and their ids
