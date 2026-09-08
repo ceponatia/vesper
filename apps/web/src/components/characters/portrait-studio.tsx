@@ -287,7 +287,7 @@ export function PortraitStudio({
         views.queued
           ? {
               title: "Portrait accepted",
-              description: `New images will use this face. Building ${String(views.planned)} reference views…`,
+              description: `New images will use this face. Building ${String(views.admitted)} reference views…`,
               tone: "success",
             }
           : views.reason === null
