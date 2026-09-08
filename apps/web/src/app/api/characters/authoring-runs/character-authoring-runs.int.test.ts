@@ -9,7 +9,7 @@ import { bindCreationAuthoringRuns, claimJobSlot, resetRateLimits, startJobAfter
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Authoring runs", role: "admin" as const } }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
-import { portraitAuthoringFingerprint } from "@/server/authoring";
+import { characterDraftSchema, portraitAuthoringFingerprint } from "@/server/authoring";
 import { absoluteImagePath, createImageAsset, saveOwnedImageBuffer, sourceContentHashOf } from "@/server/images";
 import { apiRequest, bindAuthUser, endTestPool, expectJson, probeIntegrationDb, purgeOwnerRows, routeCtx, seedTestUser, testPngBuffer, withAuthUser, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { GET as listRuns, POST as startRun } from "./route";
@@ -131,7 +131,7 @@ async function portraitSubject(name: string) {
   const [saved] = await db().update(characters).set({ avatarImageId: portrait.id }).where(eq(characters.id, character.id)).returning();
   if (!saved) throw new Error("failed to attach portrait evidence fixture");
   const bytes = await fs.readFile(absoluteImagePath(portrait));
-  const base = { ...emptyCharacterDraft(), name: saved.name, profile: saved.profile, tags: saved.tags };
+  const base = characterDraftSchema.parse({ name: saved.name, profile: saved.profile, tags: saved.tags });
   return { character: saved, portrait, base, contentHash: sourceContentHashOf(bytes), fingerprint: portraitAuthoringFingerprint(base) };
 }
 
