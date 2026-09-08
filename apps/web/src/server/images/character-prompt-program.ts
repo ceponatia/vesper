@@ -27,7 +27,11 @@ import {
   mergeVisualImageCastDigests,
   type VisualImageCastMergeRefusal,
 } from "@/contracts/images/visual-digest";
-import type { CharacterApparentAgePolicy, CharacterSubjectSources } from "@/contracts/images/character-adapter";
+import {
+  applyCharacterAppearancePolicy,
+  type CharacterApparentAgePolicy,
+  type CharacterSubjectSources,
+} from "@/contracts/images/character-adapter";
 import { subjectIntimateRevealFacts } from "@/contracts/images/subject-reveal";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -608,8 +612,25 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     references: referenceFacts(lane, subjectOf, sentReferences),
   };
   const preview = assembleCharacterWorldDigest({ ...assembly, operation: characterPortraitImageOperation() });
-  const subjects = preview.input.subjects ?? [];
-  const built = buildImageWorldDigest({ ...preview.input, operation: input.operation(subjects) });
+  const identityAnchoredSubjectIds = new Set(
+    sentReferences
+      .filter((reference) => reference.role === "identity")
+      .map(subjectOf)
+      .filter((subjectId): subjectId is string => subjectId !== undefined),
+  );
+  const subjects = (preview.input.subjects ?? []).map((subject) => {
+    const sources = cast.sources[subject.entityId];
+    if (sources === undefined) return subject;
+    return applyCharacterAppearancePolicy({
+      subject,
+      sources,
+      referenceAnchored: identityAnchoredSubjectIds.has(subject.entityId),
+      requireStableIdentity: input.task === "portrait" && !identityAnchoredSubjectIds.has(subject.entityId),
+      includeDefaultExpression: lane === "avatar",
+    });
+  });
+  const missingRequired = [...new Set(subjects.flatMap((subject) => subject.missingRequired))].sort();
+  const built = buildImageWorldDigest({ ...preview.input, subjects, operation: input.operation(subjects) });
   for (const issue of built.issues) {
     sink?.push(
       diag("info", issue.code, "a character world digest dropped a fact it could not carry", {
@@ -631,6 +652,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     // version has a field at all. An empty `advancedCapabilities` means nobody
     // has looked, which is not the same as "yes".
     negativeFieldAvailable: profile.model.advancedCapabilities.controls.negativePrompt !== undefined,
+    expectedSubjectRefs: input.cuts.map((cut) => `subject.${cut.subjectId}`),
     refuseOnMissingRequired: input.refuseOnMissingRequired,
     ...(sink === undefined ? {} : { sink }),
   });
@@ -660,7 +682,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     binding,
     sentReferences,
     numberedReferences: planned.primary,
-    missingRequired: preview.missingRequired,
+    missingRequired,
     subjects,
     keptClaimIds: compiled.compiled.promptProgramProvenance.positiveClaimIds,
   };

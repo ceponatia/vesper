@@ -1,16 +1,29 @@
 import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
-import type { WornGarmentPart, WornItemInput } from "@/contracts/items/visibility";
+import {
+  resolveGarmentVisibility,
+  type WornGarmentPart,
+  type WornItemInput,
+} from "@/contracts/items/visibility";
 import type { ClothingLayer } from "@/contracts/items/item";
+import {
+  emptyChatGarmentStore,
+  garmentActorForCharacter,
+  syncWornGarments,
+  type GarmentSeed,
+} from "@/contracts/items/garment-store";
+import { sceneBodyZoneOf } from "@/contracts/affordances/scene";
+import type { VisualFramingBand } from "@/contracts/visual-state";
+import type { VisualStateLaneGarments } from "@/server/visual-state";
 
 /**
  * The default-outfit wardrobe as the image lanes load it, and its one mapping
  * onto the shared worn-item shape.
  *
- * Nothing here phrases a prompt. A standalone render's wardrobe reaches the
- * prompt program only through the coverage readout and the camera's perception
- * (`standalone-subject-visual.ts`), and the chat lanes feed the same rows to the
- * garment store; both consume {@link toWornInputs}, so the two can never
- * disagree about what a garment covers.
+ * Nothing here phrases a prompt. A standalone render uses the full wardrobe
+ * for coverage and camera perception, then materializes the visible rows into
+ * the same garment-owner contract a chat lane uses. Both halves consume
+ * {@link toWornInputs}, so garment identity cannot drift from what the cut says
+ * is visible or what its coverage hides.
  */
 
 /** The portrait studio's rendering toggle; recorded on the row's meta, never phrased. */
@@ -104,4 +117,92 @@ export function toWornInputs(items: ReadonlyArray<AvatarWardrobeItem>): WornItem
       ...hairOcclusion,
     }));
   });
+}
+
+const FRAME_ZONES: Readonly<Record<VisualFramingBand, ReadonlySet<string>>> = {
+  close_up: new Set(["head"]),
+  portrait: new Set(["head", "torso"]),
+  waist_up: new Set(["head", "torso", "arms"]),
+  full_figure: new Set(["head", "torso", "arms", "pelvis", "legs"]),
+  wide: new Set(["head", "torso", "arms", "pelvis", "legs"]),
+};
+
+function garmentReachesFrame(item: AvatarWardrobeItem, framing: VisualFramingBand): boolean {
+  // Coverage-free pieces are placement-bearing accessories or props. The
+  // wardrobe visibility resolver deliberately treats them as visible; without
+  // a location owner, retaining them is more honest than guessing them away.
+  if (item.coverage.length === 0) return true;
+  const zones = FRAME_ZONES[framing];
+  return item.coverage.some((locationId) => {
+    const zone = sceneBodyZoneOf(locationId);
+    return zone !== undefined && zones.has(zone);
+  });
+}
+
+/**
+ * Materialize the visible default outfit through the same garment-owner
+ * contract a committed chat uses. The full wardrobe remains the source for
+ * exposure and hair concealment; this store contains only garment identities
+ * that can appear in the requested frame, so a waist-up portrait names a
+ * kimono and never out-of-frame slippers.
+ */
+export function standaloneWardrobeGarments(input: {
+  readonly characterId: string;
+  readonly wardrobe: ReadonlyArray<AvatarWardrobeItem>;
+  readonly framing: VisualFramingBand;
+}): VisualStateLaneGarments {
+  const worn = toWornInputs(input.wardrobe);
+  const visibility = resolveGarmentVisibility(worn);
+  const visibleRows = input.wardrobe
+    .map((item, index) => ({ item, index, garmentKey: wardrobeGarmentKey(item, index) }))
+    .filter(
+      ({ item, garmentKey }) =>
+        visibility.get(garmentKey) !== "hidden" && garmentReachesFrame(item, input.framing),
+    )
+    .map(({ item, index, garmentKey }) => ({
+      item,
+      index,
+      garmentKey,
+      // Definition ids are unique per row so two copies of one definition stay
+      // two instances. The handle is provenance only and never reaches prose.
+      definitionId: `standalone:${garmentKey}:${index}`,
+    }));
+  const seeds = new Map<string, GarmentSeed>();
+  for (const row of visibleRows) {
+    seeds.set(row.definitionId, {
+      definitionId: row.definitionId,
+      name: row.item.name,
+      coverage: row.item.coverage,
+      ...(row.item.hairOcclusion === undefined ? {} : { hairOcclusion: row.item.hairOcclusion }),
+      ...(row.item.category === undefined ? {} : { categoryId: row.item.category }),
+    });
+  }
+  const actorId = garmentActorForCharacter(input.characterId);
+  let sequence = 0;
+  const store = syncWornGarments({
+    store: emptyChatGarmentStore(),
+    actorId,
+    wornDefinitionIds: visibleRows.map((row) => row.definitionId),
+    seeds,
+    mintId: () => `standalone:${input.characterId}:garment:${sequence++}`,
+    atMinutes: 0,
+  });
+  const rowByDefinition = new Map(visibleRows.map((row) => [row.definitionId, row]));
+  const layersByGarmentId = new Map<string, number>();
+  const categoriesByGarmentId = new Map<string, string>();
+  const subtypesByGarmentId = new Map<string, string>();
+  for (const instance of store.instances) {
+    const row = rowByDefinition.get(instance.definitionId);
+    if (row === undefined) continue;
+    layersByGarmentId.set(instance.id, clampWornLayer(row.item.layer ?? 1));
+    if (row.item.category !== undefined) categoriesByGarmentId.set(instance.id, row.item.category);
+    if (row.item.subtype !== null && row.item.subtype !== undefined) subtypesByGarmentId.set(instance.id, row.item.subtype);
+  }
+  return {
+    store,
+    actorId,
+    layersByGarmentId,
+    categoriesByGarmentId,
+    subtypesByGarmentId,
+  };
 }

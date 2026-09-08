@@ -105,6 +105,10 @@ export interface VisualStateLaneGarments {
    * the adapter's own degraded default, never a guessed order.
    */
   readonly layersByGarmentId?: ReadonlyMap<string, number>;
+  /** Library category per instance id, used only by the wardrobe adapter. */
+  readonly categoriesByGarmentId?: ReadonlyMap<string, string>;
+  /** Library subtype per instance id, so visible accessories keep their placement noun. */
+  readonly subtypesByGarmentId?: ReadonlyMap<string, string>;
   /**
    * THIS cut's staged effective-coverage capture for the subject (the affordance
    * read's `coverage`), preferred over the store's last-committed capture so the
@@ -226,13 +230,14 @@ function resolveShadowAttributes(input: VisualStateAssemblyInput): {
 function garmentInputsOf(garments: VisualStateLaneGarments): VisualStateGarmentInput[] {
   return garments.store.instances.map((instance) => {
     const layer = garments.layersByGarmentId?.get(instance.id);
+    const categoryId = garments.categoriesByGarmentId?.get(instance.id);
+    const subtypeId = garments.subtypesByGarmentId?.get(instance.id);
     return {
       instance,
       blueprint: garmentBlueprintFor(garments.store, instance),
-      // Category and subtype live on the library definition, which this cut does
-      // not carry; the adapter's documented degraded default (ordinary clothing)
-      // applies. Recorded as a slice-6 measurement caveat, not silently.
       ...(layer === undefined ? {} : { layer }),
+      ...(categoryId === undefined ? {} : { categoryId }),
+      ...(subtypeId === undefined ? {} : { subtypeId }),
     };
   });
 }
@@ -429,6 +434,7 @@ export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): Vi
     scope: input.scope,
     atMinutes: input.atMinutes,
     cutId: input.cutId,
+    declaredSubjectIds: [input.subjectId],
     contributions,
     ...(sink === undefined ? {} : { sink }),
   });

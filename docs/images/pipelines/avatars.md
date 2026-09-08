@@ -40,6 +40,12 @@ operation `characterPortraitImageOperation()`, and `refuseOnMissingRequired: tru
 of a specific character with a lost identity or morphology anchor is a picture of somebody
 else.
 
+A reference-free portrait also requires the applicable stable appearance set:
+gender, skin tone, visible hair color and length, eye color, face shape, frame
+and weight presentation, plus species or subtype for a non-human subject.
+Registry and species defaults may satisfy a missing stored value; anything
+still unresolved refuses before provider spend.
+
 Binding resolution is strict on the profile **key**: Qwen Image 2512 carries three portrait
 rows (`portrait-standard`, `portrait-fast`, `portrait-quality`) whose packs stay separately
 promotable, and SD 3.5 Large carries two, so a key with no row resolves `unbound` rather than
@@ -67,8 +73,9 @@ prompt at all.
 
 The digest carries the species feature-group **morphology** — the anchors an image model
 "corrects" away, the "human wearing fake wings" failure — the cataloged recognition marks, and
-the appearance facts the visual-state selection carries for this camera: the mandatory
-identity lane plus camera-visible optional detail. The character adapter
+an image-only projection of ordinary identity such as gender, skin tone, hair, eyes, face shape
+and build. This projection is independent of narrator recognition and follows the camera,
+coverage, concealment and realized-body gates. The character adapter
 (`contracts/images/character-adapter.ts`) values every fact from its canonical owner — the
 attribute registry, the located-fact rows, the anatomy rows — and never from a fingerprint.
 Non-visual attributes (`kind: "sensory"` — voice, scent, taste) and `excludeFromPrompts`
@@ -127,10 +134,13 @@ camera's per-location perception (`portraitPerception`), which gates optional fa
 covered locations — a chest tattoo under the saved outfit goes unstated rather than asserted
 onto a body nobody could see. Covered regions are silent; silence is the covered statement.
 
-The standalone snapshot has no wardrobe owner, so the portrait program states **coverage, not
-garments**: a portrait prompt names no garment. (A chat-backed cut is different — its wardrobe
-owner projects worn garments as `subject.wardrobe` facts;
-[scene-subjects.md](scene-subjects.md).)
+The standalone cut materializes its visible default outfit through the same
+wardrobe-owner contract as a chat-backed cut. The full wardrobe still owns
+coverage and hair concealment, while only garments intersecting the camera frame
+become `subject.wardrobe` facts: a waist-up portrait names the kimono and omits
+the slippers. A confirmed empty outfit contributes no garment. A failed or
+coverage-unreadable load contributes no garment identity because visibility
+cannot be established safely.
 
 **A failed or unreadable wardrobe is unknown state, never a bare body**
 ([../../resilience.md](../../resilience.md)). A thrown load (`wardrobeUnavailable`, warn
@@ -162,12 +172,14 @@ Replicate; OpenRouter stays for text only.
 
 ## Intimate-anatomy gating
 
-The portrait studio is **intimate-free by rule**, at two owners: the cut's selection runs with
+The portrait studio is **intimate-detail-free by rule**, at two owners: the cut's selection runs with
 the consent gate shut (`intimateAllowed: false`), so no intimate anatomy enters the digest
 whatever the default outfit exposes, and the program passes no `intimateReveal`, so the route
 projects none beside it. The `avatar.test.ts` field-policy pin holds both — the defect is a
 one-line one, and the picture it produces is a nude portrait of a character whose sheet merely
-lists their anatomy.
+lists their anatomy. The one ordinary exception is the applicable chest or
+breast size as a clothed silhouette; nipples and every other intimate detail
+remain absent.
 
 Intimate anatomy is **scene-render-only** ([scene-subjects.md](scene-subjects.md) §Subject body
 reveal). Non-intimate **`chest.hair`** stays exposure-gated in the avatar — selected only when
