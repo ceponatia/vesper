@@ -26,7 +26,7 @@ const materializedSuggestionSchema = z.object({
  * opaque here: it was produced by this route and the client owns its detailed
  * projection, while this guard proves the receipt envelope itself is intact. */
 const characterCreationResponseSchema = z.object({
-  character: z.unknown(),
+  character: z.object({ id: z.string() }).passthrough(),
   diagnostics: z.array(diagnosticSchema),
   materializedSuggestions: z.array(materializedSuggestionSchema),
 });
@@ -93,6 +93,7 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
       .limit(1);
     if (existing) {
       if (existing.payloadHash !== hash) return { status: "idempotency_mismatch" };
+      if (existing.httpStatus !== 201) return { status: "replay_invalid" };
       const response = parseReplay(existing.response);
       return response
         ? { status: "replayed", response, httpStatus: existing.httpStatus }
@@ -118,6 +119,7 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
         .for("update");
       if (existing) {
         if (existing.payloadHash !== hash) return { status: "idempotency_mismatch" };
+        if (existing.httpStatus !== 201) return { status: "replay_invalid" };
         const response = parseReplay(existing.response);
         return response
           ? { status: "replayed", response, httpStatus: existing.httpStatus }
