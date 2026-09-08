@@ -43,7 +43,7 @@ describe.skipIf(!ready)("character PATCH optimistic recovery", () => {
     const created = await db().select({ name: items.name }).from(items).where(eq(items.ownerId, authState.user.id));
     expect(created.filter((item) => names.includes(item.name))).toEqual([{ name: winner.name }]);
     expect(winnerResponse.materializedSuggestions).toHaveLength(1);
-    expect(winner.profile.outfits[0]?.itemIds).toContain(winnerResponse.materializedSuggestions[0]?.itemId);
+    expect(winner.profile.outfits[0]?.items).toContain(winnerResponse.materializedSuggestions[0]?.itemId);
   });
 
   it("returns monotonic tokens for immediate saves and keeps a no-op token unchanged", async () => {
@@ -70,7 +70,7 @@ describe.skipIf(!ready)("character PATCH optimistic recovery", () => {
       suggestedItems: [itemDefinitionSchema.parse({ kind: "clothing", name: "Route blue tee 883" })],
     })));
     expect(saved.materializedSuggestions).toEqual([{ index: 0, itemId: existing!.id }]);
-    expect(saved.character.profile.outfits[0]?.itemIds).toContain(existing!.id);
+    expect(saved.character.profile.outfits[0]?.items).toContain(existing!.id);
     const duplicates = await db().select({ id: items.id }).from(items)
       .where(and(eq(items.ownerId, authState.user.id), eq(items.name, "Route blue tee 883")));
     expect(duplicates).toEqual([]);
