@@ -1,14 +1,17 @@
 import sharp from "sharp";
 import { AVATAR_HEIGHT, AVATAR_WIDTH } from "@vesper/image-core";
-import { REFERENCE_VIEW_GENERATION_VERSION, type ReferenceView, type ReferenceViewSummary } from "@/contracts";
+import { REFERENCE_VIEW_GENERATION_VERSION, type ReferenceView } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { createImageAsset, failImage, saveImageBuffer, SHARP_DECODE_LIMITS } from "./asset-storage";
 import { decodeDataUrl } from "./upload";
+import { deleteOwnedImage } from "./asset-deletion";
+import { log } from "@/server/log";
 import {
-  finalizeReferenceView,
-  getReferenceViewSummary,
+  currentReferenceViewRow,
+  installUploadedReferenceView,
   readAcceptedPortraitSource,
-  reserveReferenceView,
+  referenceViewBuildInFlight,
+  type InstallUploadedReferenceViewResult,
 } from "./reference-view-store";
 
 /**
@@ -44,10 +47,7 @@ export interface UploadReferenceViewInput {
 }
 
 export type UploadReferenceViewResult =
-  | { status: "uploaded"; view: ReferenceViewSummary }
-  /** Nothing accepted, so nothing to hang the view off — the same precondition the build has. */
-  | { status: "not_accepted" }
-  | { status: "not_found" }
+  | InstallUploadedReferenceViewResult
   | { status: "rejected"; error: string };
 
 /**
@@ -78,6 +78,8 @@ export async function uploadReferenceView(input: UploadReferenceViewInput): Prom
     if (source.reason === "not_found") return { status: "not_found" };
     return { status: "not_accepted" };
   }
+  if (await referenceViewBuildInFlight(input.characterId)) return { status: "busy" };
+  const current = await currentReferenceViewRow(input.characterId, input.view);
 
   const asset = await createImageAsset({
     ownerId: input.ownerId,
@@ -115,25 +117,22 @@ export async function uploadReferenceView(input: UploadReferenceViewInput): Prom
   const saved = await saveImageBuffer(asset.id, buffer, input.sink);
   if (saved?.status !== "ready") return { status: "rejected", error: "failed to save that image" };
 
-  // Reserved only once the bytes are on disk: a decode that fails must not leave
-  // the slot holding a pending row nothing will ever settle.
-  const viewId = await reserveReferenceView({
-    characterId: input.characterId,
-    view: input.view,
-    sourceImageId: source.imageId,
-    sourceContentHash: source.contentHash,
-  });
-  await finalizeReferenceView({
-    viewId,
-    characterId: input.characterId,
-    ownerId: input.ownerId,
-    imageId: asset.id,
-    method: "uploaded",
-    reviewedByUserId: input.ownerId,
-  });
-
-  return {
-    status: "uploaded",
-    view: await getReferenceViewSummary(input.characterId, input.ownerId, input.view, input.sink),
-  };
+  // Decode and disk I/O never hold a database lock. Installation rechecks the
+  // live job and snapshot, then retires/inserts atomically without a pending gap.
+  let installed = false;
+  try {
+    const result = await installUploadedReferenceView({
+      characterId: input.characterId, ownerId: input.ownerId, view: input.view,
+      sourceImageId: source.imageId, sourceContentHash: source.contentHash, imageId: asset.id,
+      expectedCurrentAttemptId: current?.id ?? null, expectedCurrentRevision: current?.reviewRevision ?? 0,
+    });
+    installed = result.status === "uploaded";
+    return result;
+  } finally {
+    // A refused upload never touched history; only its unclaimed new asset is removed.
+    if (!installed) {
+      try { await deleteOwnedImage(asset.id, input.ownerId, { kind: "reference_view" }); }
+      catch (error) { log.warn("images", "unused reference upload cleanup failed", { imageId: asset.id, error: String(error).slice(0, 300) }); }
+    }
+  }
 }

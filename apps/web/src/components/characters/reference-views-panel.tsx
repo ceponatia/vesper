@@ -24,7 +24,7 @@ import { ReferenceViewHistory, type ReferenceViewHistorySlot } from "./reference
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
-import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { ReferenceViewFeedbackNote, ReferenceViewReviewer } from "./reference-view-reviewer";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 
@@ -38,10 +38,8 @@ import { useToast } from "@/components/ui/toast";
  * no row is a tile that says "not built" and offers to build it, which is
  * something the owner can act on; a hole in the grid is not.
  *
- * A failed read renders NOTHING, exactly like `IdentityReferencePanel`. This
- * surface is additive: with the routes unreachable, the portrait studio must
- * look precisely as it did rather than growing an error card about machinery
- * nobody asked about.
+ * Loading and failed reads retain the current viewer and offer retry. A polling
+ * failure must not discard an author's feedback or hide their review surface.
  *
  * A tile's image opens in the shared `ImageLightbox` (docs/ui/conventions.md
  * §Image lightbox) — a thumbnail is too small to judge identity, anatomy or
@@ -50,7 +48,7 @@ import { useToast } from "@/components/ui/toast";
  * rather than around them, so opening or closing it can neither reach nor be
  * reached by Approve, Reject, Regenerate or Upload.
  *
- * A tile's **History** opens that slot's past attempts in their own read-only
+ * A tile's **History** opens that slot's retained attempts in their own
  * overlay (`reference-view-history.tsx`), mounted last and only while open.
  *
  * **Regeneration is a selection, not a queue the owner works through.** Every
@@ -102,7 +100,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
    */
   const [submitted, setSubmitted] = useState<ReadonlySet<string>>(NO_SLOTS);
   const [submitting, setSubmitting] = useState(false);
-  const [enlarged, setEnlarged] = useState<{ imageId: string; label: string } | null>(null);
+  const [enlarged, setEnlarged] = useState<ReferenceViewSummary | null>(null);
   const [historySlot, setHistorySlot] = useState<ReferenceViewHistorySlot | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const uploadTarget = useRef<{ angle: ReferenceViewAngleId; wardrobe: ReferenceViewWardrobe } | null>(null);
@@ -143,7 +141,12 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     POLL_MS,
   );
 
-  if (views.loading || views.error || set === null) return null;
+  if (set === null) return (
+    <div className="space-y-2 text-sm text-paper-400" role="status">
+      <p>{views.error ? "Reference views could not be loaded." : "Loading reference views…"}</p>
+      {views.error ? <Button size="sm" onClick={() => views.reload()}>Retry reference views</Button> : null}
+    </div>
+  );
 
   // Before the first portrait is chosen, there is nothing to review or configure.
   // Keep existing attempts and live builds visible even if acceptance is cleared.
@@ -235,19 +238,8 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     refetch();
   };
 
-  const review = async (view: ReferenceViewSummary, verdict: "approve" | "reject") => {
-    const slot = slotKey(view);
-    setBusySlot(slot);
-    const result = await referenceViewsApi.review(characterId, view.angle, view.wardrobe, verdict);
-    setBusySlot(null);
-    if (!result.ok) {
-      toast.push({ title: "Could not record that", description: result.error.message, tone: "error" });
-      return;
-    }
-    refetch();
-  };
-
   const pickUpload = (view: ReferenceViewSummary) => {
+    if (inFlight || submitting || busySlot !== null) return;
     uploadTarget.current = { angle: view.angle, wardrobe: view.wardrobe };
     fileInput.current?.click();
   };
@@ -256,6 +248,10 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     const target = uploadTarget.current;
     uploadTarget.current = null;
     if (!file || !target) return;
+    if (inFlight || submitting) {
+      toast.push({ title: "Wait for the reference build", description: "Upload your image after the reference views finish building." });
+      return;
+    }
     const slot = slotKey(target);
     setBusySlot(slot);
     const dataUrl = await readAsDataUrl(file);
@@ -268,6 +264,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
     setBusySlot(null);
     if (!result.ok) {
       toast.push({ title: "Upload failed", description: result.error.message, tone: "error" });
+      refetch();
       return;
     }
     toast.push({ title: "View replaced", description: "Your own image is now this angle's reference." });
@@ -276,6 +273,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
 
   return (
     <div className="flex flex-col gap-5">
+      {views.error ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-paper-400"><span>Reference views could not be refreshed.</span><Button size="sm" onClick={() => views.reload({ silent: true })}>Retry</Button></div> : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 max-w-2xl flex-col gap-2">
           <h3 className="text-base font-medium text-paper-100">Reference views</h3>
@@ -286,6 +284,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
           <p className="text-xs text-paper-500">
             Open an image for a closer look. Select attempted views to regenerate them together.
           </p>
+          {inFlight || submitting ? <p className="text-xs text-paper-400">Uploads are available after the reference build finishes.</p> : null}
         </div>
         {buildable && acceptance.acceptedImageId ? (
           <Button size="sm" variant="primary" className="ml-auto" busy={building} disabled={set.building} onClick={buildAll}>
@@ -360,7 +359,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                     {view.imageId ? (
                       <button
                         type="button"
-                        onClick={() => view.imageId && setEnlarged({ imageId: view.imageId, label })}
+                        onClick={() => setEnlarged(view)}
                         aria-label={`Enlarge ${label}`}
                         className="block h-full w-full cursor-pointer"
                       >
@@ -375,14 +374,12 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                       {view.state === "failed" && view.failureMessage ? view.failureMessage : copy.hint}
                     </p>
                   ) : null}
+                  <ReferenceViewFeedbackNote feedback={view.feedback} />
                   <div className="mt-auto flex flex-wrap items-center gap-2">
                     {view.state === "unreviewed" ? (
                       <>
-                        <Button size="sm" variant="primary" busy={busy} onClick={() => void review(view, "approve")}>
-                          Approve
-                        </Button>
-                        <Button size="sm" variant="quiet" busy={busy} onClick={() => void review(view, "reject")}>
-                          Reject
+                        <Button size="sm" variant="primary" onClick={() => setEnlarged(view)}>
+                          Review image
                         </Button>
                       </>
                     ) : null}
@@ -391,6 +388,8 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                         size="sm"
                         variant="ghost"
                         busy={submitted.has(slot)}
+                        disabled={set.building}
+                        title={set.building ? referenceViewRefusalCopy.busy : undefined}
                         onClick={() => void regenerate([view])}
                       >
                         Regenerate
@@ -400,7 +399,7 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
                       label="More"
                       ariaLabel={`${label} actions`}
                       items={[
-                        { label: "Upload image", onSelect: () => pickUpload(view), busy },
+                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: inFlight || submitting || busySlot !== null },
                         ...(attempted ? [{
                           label: "History",
                           // Read-only: a busy upload or review must not disable history.
@@ -430,18 +429,15 @@ export function ReferenceViewsPanel({ characterId, acceptance, onChanged }: Refe
         }}
       />
 
-      <ImageLightbox
-        imageId={enlarged?.imageId ?? null}
-        alt={enlarged?.label ?? ""}
-        caption={enlarged?.label}
-        onClose={() => setEnlarged(null)}
-      />
+      {enlarged ? <ReferenceViewReviewer characterId={characterId} initialView={enlarged} set={set}
+        onClose={() => setEnlarged(null)} onChanged={refetch} /> : null}
 
       {/* Mounted only while open, so the read happens on the click rather than on
           every render of the sheet, and last in the tree so its overlay sits above
           the panel's own viewer. */}
       {historySlot === null ? null : (
-        <ReferenceViewHistory characterId={characterId} slot={historySlot} onClose={() => setHistorySlot(null)} />
+        <ReferenceViewHistory characterId={characterId} slot={historySlot} onClose={() => setHistorySlot(null)}
+          onRestored={(view) => { setHistorySlot(null); setEnlarged(view); refetch(); }} />
       )}
     </div>
   );

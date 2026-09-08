@@ -1963,7 +1963,7 @@ export const characterReferenceViews = pgTable(
     failureMessage: text("failure_message"),
     /**
      * The owner's ruling on THIS attempt, written by a review or an upload and
-     * never cleared — the one review fact that survives supersession.
+     * cleared only by explicit Undo — the review fact survives supersession.
      *
      * `status` cannot carry it: a retired row's status becomes `superseded` the
      * instant the next attempt claims the slot, flattening a rejection and an
@@ -1971,6 +1971,10 @@ export const characterReferenceViews = pgTable(
      * replaced, which is an honest and ordinary outcome rather than missing data.
      */
     verdict: text("verdict", { enum: referenceViewVerdicts }),
+    /** Monotonic token for attempt-bound review and undo. */
+    reviewRevision: integer("review_revision").notNull().default(0),
+    /** Optional rejection provenance, parsed with referenceViewFeedbackSchema on read. */
+    feedback: jsonb("feedback"),
     /** The owner whose eye approved or rejected this view, or who uploaded it (an
      * owner-supplied view is the owner's own review). No cascade, for the same reason
      * as `image_identity_packs.reviewed_by_user_id`: an audit trail that erases itself

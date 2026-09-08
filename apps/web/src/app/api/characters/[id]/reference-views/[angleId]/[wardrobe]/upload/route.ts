@@ -52,6 +52,8 @@ export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharact
       return jsonError("not_accepted", "accept a portrait before adding its reference views", 409);
     }
     if (result.status === "rejected") return jsonError("bad_request", result.error, 400);
+    if (result.status === "busy") return jsonError("busy", "Reference views are still being built. Wait for them to finish, then upload your image again.", 409);
+    if (result.status === "changed") return jsonError("changed", "This view or its accepted portrait changed during upload. Refresh the reference views, then upload your image again.", 409);
     return jsonOk({ view: result.view }, 201);
   },
   { limit: "upload" },

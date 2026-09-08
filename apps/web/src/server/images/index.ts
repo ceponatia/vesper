@@ -156,6 +156,8 @@ export {
   reserveReferenceView,
   retiredReferenceViewAssets,
   reviewReferenceView,
+  restoreReferenceView,
+  withReferenceViewLock,
   type AcceptedPortraitSource,
   type ReferenceViewReviewVerdict,
   type ReferenceViewRow,

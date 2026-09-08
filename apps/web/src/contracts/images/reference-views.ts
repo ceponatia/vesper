@@ -386,10 +386,35 @@ export const referenceViewStates = ["missing", "pending", "unreviewed", "approve
 export const referenceViewStateSchema = z.enum(referenceViewStates);
 export type ReferenceViewState = z.infer<typeof referenceViewStateSchema>;
 
+/** Optional owner feedback; recorded as provenance, never a generation instruction. */
+export const referenceViewFeedbackReasons = ["wrong_outfit", "wrong_angle", "identity_mismatch", "image_defect"] as const;
+export const referenceViewFeedbackSchema = z.object({
+  reasons: z.array(z.enum(referenceViewFeedbackReasons)).max(referenceViewFeedbackReasons.length),
+  correction: z.string().trim().max(1000),
+});
+export type ReferenceViewFeedback = z.infer<typeof referenceViewFeedbackSchema>;
+
+export const referenceViewReviewRequestSchema = z.object({
+  attemptId: z.string().min(1).max(128),
+  expectedRevision: z.number().int().nonnegative(),
+  verdict: z.enum(["approve", "reject", "undo"]),
+  feedback: referenceViewFeedbackSchema.optional(),
+});
+export type ReferenceViewReviewRequest = z.infer<typeof referenceViewReviewRequestSchema>;
+
+export const referenceViewRestoreRequestSchema = z.object({
+  attemptId: z.string().min(1).max(128),
+  expectedCurrentAttemptId: z.string().min(1).max(128).nullable(),
+  expectedCurrentRevision: z.number().int().nonnegative(),
+});
+
 export const referenceViewSummarySchema = z.object({
   angle: referenceViewAngleIdSchema,
   wardrobe: referenceViewWardrobeSchema,
   state: referenceViewStateSchema,
+  attemptId: z.string().nullable().default(null),
+  reviewRevision: z.number().int().nonnegative().default(0),
+  feedback: referenceViewFeedbackSchema.nullable().default(null),
   /** The rendered or uploaded asset, when there is one. Null while pending and after a failure. */
   imageId: z.string().nullable(),
   method: z.string().nullable(),
@@ -426,6 +451,9 @@ export function emptyReferenceViewSetSummary(): ReferenceViewSetSummary {
       angle: view.angle,
       wardrobe: view.wardrobe,
       state: "missing" as const,
+      attemptId: null,
+      reviewRevision: 0,
+      feedback: null,
       imageId: null,
       method: null,
       reviewedAt: null,
@@ -677,8 +705,8 @@ export function selectReferenceView(input: ReferenceViewSelectionInput): Referen
  * `superseded` the instant the next attempt claims the slot, so a rejection and
  * an approval read identically the moment either is replaced, and a history
  * built from `status` would tell the owner nothing about what they already
- * ruled. The verdict is written once, by a review or an upload, and nothing —
- * supersession included — ever clears it.
+ * ruled. Review or upload records it; explicit Undo clears the last verdict on
+ * the current attempt. Supersession never clears it.
  */
 export const referenceViewVerdicts = ["approved", "rejected"] as const;
 export const referenceViewVerdictSchema = z.enum(referenceViewVerdicts);
@@ -731,6 +759,8 @@ export const referenceViewHistoryEntrySchema = z.object({
   imageId: z.string(),
   method: referenceViewMethodSchema.nullable(),
   verdict: referenceViewHistoryVerdictSchema,
+  feedback: referenceViewFeedbackSchema.nullable().default(null),
+  restoreUnavailable: z.enum(["current", "expired", "incompatible", "busy", "unavailable"]).nullable().default("unavailable"),
   /** This attempt is the slot's current one — what the studio tile shows. */
   current: z.boolean(),
   createdAt: z.string(),
