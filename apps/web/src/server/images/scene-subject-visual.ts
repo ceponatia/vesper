@@ -294,6 +294,45 @@ function sceneViewpoint(plan: SceneRenderPlan): VisualStateCameraBinding {
 }
 
 /**
+ * One cast member's committed cut, narrowed to the one visual subject this
+ * realization describes.
+ *
+ * The shared chat cut is intentionally wider than an image subject: it also
+ * names the player so their wardrobe and body language can serve the narrator,
+ * and names the scene so a garment left in the room can become setting detail.
+ * Reassembling that full cut once per cast member would turn both auxiliary
+ * owners into character-program subjects. Neither has a character source row,
+ * so the strict scene compile then refuses on anchors such as
+ * `subject.player.exposure` before any provider is called.
+ *
+ * Preserve the committed scene itself, but scope its participant map to the
+ * cast subject. This keeps that person's posture, support, facing and contact
+ * facts while preventing the other participants from becoming subjects in this
+ * per-person digest. Player appearance remains the scene lowerer's separate
+ * `viewer.*` channel; it is not a character subject here.
+ */
+function sceneSubjectCut(
+  cut: Omit<VisualStateShadowInput, "sink" | "camera">,
+): Omit<VisualStateShadowInput, "sink" | "camera"> {
+  const { sceneRelations } = cut;
+  return {
+    ...cut,
+    playerSubjectId: undefined,
+    sceneSubjectId: undefined,
+    ...(sceneRelations === undefined
+      ? {}
+      : {
+          sceneRelations: {
+            scene: sceneRelations.scene,
+            subjectsByParticipant: new Map(
+              [...sceneRelations.subjectsByParticipant].filter(([, subjectId]) => subjectId === cut.subjectId),
+            ),
+          },
+        }),
+  };
+}
+
+/**
  * ONE subject's committed cut → the slice the program compiles: one shadow
  * assembly with the committed camera bound in, ONE camera-bound selection, one
  * digest realized from that exact selection.
@@ -331,7 +370,7 @@ function produceSubjectVisual(
 
   const build = safeBuildVisualStateShadow(
     {
-      ...shadow,
+      ...sceneSubjectCut(shadow),
       camera,
       ...(sink === undefined ? {} : { sink }),
     },
