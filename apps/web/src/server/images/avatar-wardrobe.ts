@@ -6,11 +6,11 @@ import {
 } from "@/contracts/items/visibility";
 import type { ClothingLayer } from "@/contracts/items/item";
 import {
-  emptyChatGarmentStore,
   garmentActorForCharacter,
   syncWornGarments,
   type GarmentSeed,
 } from "@/contracts/items/garment-store";
+import { emptyChatGarmentStore } from "@/contracts/items/garment-instance";
 import { sceneBodyZoneOf } from "@/contracts/affordances/scene";
 import type { VisualFramingBand } from "@/contracts/visual-state";
 import type { VisualStateLaneGarments } from "@/server/visual-state";
@@ -192,6 +192,7 @@ export function standaloneWardrobeGarments(input: {
   const categoriesByGarmentId = new Map<string, string>();
   const subtypesByGarmentId = new Map<string, string>();
   for (const instance of store.instances) {
+    if (instance.definitionId === undefined) continue;
     const row = rowByDefinition.get(instance.definitionId);
     if (row === undefined) continue;
     layersByGarmentId.set(instance.id, clampWornLayer(row.item.layer ?? 1));

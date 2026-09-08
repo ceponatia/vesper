@@ -16,7 +16,7 @@ import { characterChangeContract, characterVariantImageOperation } from "@/contr
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
 import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
-import { logDiagnostics } from "@/server/log";
+import { log, logDiagnostics } from "@/server/log";
 import {
   classifyImageFailureMessage,
   IMAGE_TARGET_ASPECT,
