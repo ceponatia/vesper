@@ -257,7 +257,7 @@ export async function startJobAfterAdmission<T>(
 
   let admission: T | null;
   try {
-    admission = await admit(jobId);
+    admission = await admit(jobId.jobId);
   } catch (err) {
     await db().delete(jobs).where(eq(jobs.id, jobId.jobId));
     throw err;

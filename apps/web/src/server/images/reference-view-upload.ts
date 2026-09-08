@@ -9,6 +9,7 @@ import { log } from "@/server/log";
 import {
   currentReferenceViewRow,
   installUploadedReferenceView,
+  plannedReferenceViewsForCharacter,
   readAcceptedPortraitSource,
   referenceViewSlotBusy,
   type InstallUploadedReferenceViewResult,
@@ -77,6 +78,10 @@ export async function uploadReferenceView(input: UploadReferenceViewInput): Prom
   if (!source.ok) {
     if (source.reason === "not_found") return { status: "not_found" };
     return { status: "not_accepted" };
+  }
+  const plan = await plannedReferenceViewsForCharacter(input.characterId, input.ownerId, input.sink);
+  if (!plan.some((view) => view.angle === input.view.angle && view.wardrobe === input.view.wardrobe)) {
+    return { status: "ineligible" };
   }
   if (await referenceViewSlotBusy(input.characterId, input.ownerId, input.view)) return { status: "busy" };
   const current = await currentReferenceViewRow(input.characterId, input.view);
