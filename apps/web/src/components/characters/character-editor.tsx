@@ -191,7 +191,7 @@ export function CharacterEditor({
           {onComplete ? (
             <Button size="sm" variant="primary" onClick={() => onComplete(scope)} busy={completing === scope}
               disabled={generationBusy} title="Suggest missing details in this section, preserving everything already authored.">
-              Complete missing details
+              Complete missing {characterSections[scope].label.toLowerCase()} details
             </Button>
           ) : null}
           {onRedraft ? (
