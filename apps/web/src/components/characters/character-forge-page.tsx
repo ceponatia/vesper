@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { CHARACTER_CREATION_BRIEF_MAX, type Diagnostic } from "@/contracts";
 import { characterSections, type CharacterSheetScope } from "@/lib/character-scopes";
 import { charactersApi, emptyCharacterDraft, type CharacterDraft } from "@/lib/client/api";
-import { characterSaveConflictSchema } from "@/lib/client/api/library";
+import { characterCreationMismatchSchema, characterSaveConflictSchema } from "@/lib/client/api/library";
 import { parseOrNull } from "@/lib/parse";
 import { useSession } from "@/components/auth/auth-client";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -19,7 +19,7 @@ import { SkeletonText } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
-import { characterCreationStateSchema, completeCreationForge, creationForgeStart, emptyCharacterCreation, prepareCreationSave, savedCreationHref, withCreationBrief } from "./character-creation-draft";
+import { characterCreationStateSchema, completeCreationForge, creationForgeStart, emptyCharacterCreation, prepareCreationSave, recoverCreationMismatch, savedCreationHref, withCreationBrief } from "./character-creation-draft";
 import { CharacterProposalReview } from "./character-proposal-review";
 import { readDraft, writeDraft } from "./character-draft-storage";
 import { characterReviewStateSchema, proposalChanges, reconcileMaterializedUndo, transferCreationReview } from "./character-proposals";
@@ -119,6 +119,23 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         }
       }
       if (!result.ok) {
+        const creationMismatch = !snapshot.savedCharacterId
+          ? parseOrNull(characterCreationMismatchSchema, result.error.body)
+          : null;
+        if (creationMismatch && store.current.current.id === snapshot.id) {
+          store.update((current) => recoverCreationMismatch(
+            current,
+            creationMismatch.recovery.created.character,
+            creationMismatch.recovery.character,
+          ));
+          await store.flush();
+          if (active.current) toast.push({
+            title: "Saved character found",
+            description: "This draft is now linked to the character already created from it. Review your retained edits before saving again.",
+            tone: "success",
+          });
+          return;
+        }
         const changed = parseOrNull(characterSaveConflictSchema, result.error.body);
         if (store.current.current.id === snapshot.id && changed) store.update((current) => ({ ...current, serverConflict: { snapshot: authorSnapshotFromDetail(changed.character), updatedAt: changed.character.updatedAt } }));
         else {
@@ -184,7 +201,10 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       {store.notice ? <p role="status" className="mb-3 text-sm text-warning">{store.notice}</p> : null}
       {store.conflict || store.recoveries.length ? <div className="mb-4 flex flex-wrap gap-2"><Button disabled={saving || busy !== null} onClick={() => store.resume()}>Resume latest draft</Button>{store.recoveries.map((copy) => <Button key={copy.key} disabled={saving || busy !== null} onClick={() => store.resume(copy.key)}>Recover draft from {copy.label}</Button>)}</div> : null}
       {savedCreationHref(store.data) ? <p className="mb-4 text-sm"><Link className="text-accent-300 underline" href={savedCreationHref(store.data)!}>Open saved character{store.data.saveDestination === "chat" ? " in Chat" : store.data.saveDestination === "portrait" ? " in Portrait Studio" : ""}</Link></p> : null}
-      {creationRecovery ? <CharacterAuthorRecoveryNotice key={creationRecovery.id} recovery={creationRecovery} disabled={saving || store.conflict} onRestore={(choices, modelChoice) => {
+      {creationRecovery ? <CharacterAuthorRecoveryNotice key={creationRecovery.id} recovery={creationRecovery} disabled={saving || store.conflict}
+        title={conflict?.reason === "creation_mismatch" ? "Saved character found" : undefined}
+        description={conflict?.reason === "creation_mismatch" ? "This creation request already saved a character. Your retained draft is linked to it; review the differences before saving again." : undefined}
+        onRestore={(choices, modelChoice) => {
         if (store.isBlocked() || saveInFlight.current || store.current.current.serverConflict !== conflict) return;
         const restored = rebaseAuthorRecovery(creationRecovery.server, creationRecovery.record, choices, modelChoice);
         if (restored) store.update((current) => ({ ...current, draft: restored.draft, serverSnapshot: creationRecovery.server, serverUpdatedAt: creationRecovery.updatedAt, serverConflict: null }));

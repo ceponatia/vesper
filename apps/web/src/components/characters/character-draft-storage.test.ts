@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { characterDetailSchema } from "@/lib/client/api/library";
 import { promoteDraftRecovery, readDraft, writeDraft, type DraftStorage } from "./character-draft-storage";
-import { characterCreationStateSchema, emptyCharacterCreation, prepareCreationSave, savedCreationHref } from "./character-creation-draft";
+import { characterCreationStateSchema, emptyCharacterCreation, prepareCreationSave, recoverCreationMismatch, savedCreationHref } from "./character-creation-draft";
 
 function memoryStorage(): DraftStorage {
   const rows = new Map<string, string>();
@@ -18,6 +19,34 @@ describe("character browser draft persistence", () => {
     expect(retry.initialSaveDraft?.name).toBe("Iris");
     expect(retry.draft.name).toBe("Newer edit");
     expect(retry.saveDestination).toBeNull();
+  });
+
+  it("binds an idempotency mismatch without changing the retained authored draft", () => {
+    const state = emptyCharacterCreation();
+    state.draft.name = "Retained Iris";
+    state.draft.profile.bio = "Local edit";
+    state.initialSaveDraft = structuredClone(state.draft);
+    const created = characterDetailSchema.parse({
+      id: "saved-iris",
+      name: "Original Iris",
+      profile: { bio: "Original saved value" },
+      updatedAt: "2026-09-07T18:00:00.000Z",
+    });
+    const current = characterDetailSchema.parse({
+      id: "saved-iris",
+      name: "Server Iris",
+      profile: { bio: "Current saved value" },
+      updatedAt: "2026-09-07T19:00:00.000Z",
+    });
+    const recovered = recoverCreationMismatch(state, created, current);
+    expect(recovered.savedCharacterId).toBe("saved-iris");
+    expect(recovered.draft.name).toBe("Retained Iris");
+    expect(recovered.draft.profile.bio).toBe("Local edit");
+    expect(recovered.serverSnapshot?.draft.name).toBe("Original Iris");
+    expect(recovered.serverConflict?.snapshot.draft.name).toBe("Server Iris");
+    expect(recovered.serverConflict?.reason).toBe("creation_mismatch");
+    expect(recovered.serverUpdatedAt).toBe(current.updatedAt);
+    expect(recovered.initialSaveDraft).toBeNull();
   });
 
   it("consumes the exact recovery copy only after shared promotion succeeds", () => {

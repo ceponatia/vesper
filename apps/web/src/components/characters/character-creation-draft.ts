@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { attributeRegistry, boundCharacterCreationBrief, traitRegistry } from "@/contracts";
 import { characterEditorTabs } from "@/lib/character-scopes";
-import { characterDraftSchema, emptyCharacterDraft, type CharacterDraft } from "@/lib/client/api";
-import { characterAuthorSnapshotSchema } from "./character-author-draft";
+import { characterDraftSchema, emptyCharacterDraft, type CharacterDetail, type CharacterDraft } from "@/lib/client/api";
+import { authorSnapshotFromDetail, characterAuthorSnapshotSchema } from "./character-author-draft";
 import { characterReviewStateSchema, describeProposalValue, emptyCharacterReview, proposalChanges } from "./character-proposals";
 
 export const characterCreationStateSchema = z.object({
@@ -11,7 +11,11 @@ export const characterCreationStateSchema = z.object({
   initialSaveDraft: characterDraftSchema.nullable().default(null),
   serverSnapshot: characterAuthorSnapshotSchema.nullable().default(null),
   serverUpdatedAt: z.string().nullable().default(null),
-  serverConflict: z.object({ snapshot: characterAuthorSnapshotSchema, updatedAt: z.string().nullable() }).nullable().default(null),
+  serverConflict: z.object({
+    snapshot: characterAuthorSnapshotSchema,
+    updatedAt: z.string().nullable(),
+    reason: z.enum(["saved_change", "creation_mismatch"]).optional(),
+  }).nullable().default(null),
   saveDestination: z.enum(characterEditorTabs).nullable().default(null),
   materializingDraft: characterDraftSchema.nullable().default(null),
   draft: characterDraftSchema,
@@ -92,6 +96,30 @@ export function completeCreationForge(current: CharacterCreationState, started: 
 
 export function savedCreationHref(state: CharacterCreationState): string | null {
   return state.savedCharacterId ? `/characters/${state.savedCharacterId}?tab=${state.saveDestination ?? state.tab}` : null;
+}
+
+/** Bind a retained local draft to the character already committed under its
+ * request UUID. The original receipt is the three-way base and the current
+ * owner-scoped row is the server side; authored values stay untouched until
+ * the author explicitly reviews them. */
+export function recoverCreationMismatch(
+  current: CharacterCreationState,
+  created: CharacterDetail,
+  character: CharacterDetail,
+): CharacterCreationState {
+  return {
+    ...current,
+    savedCharacterId: character.id,
+    initialSaveDraft: null,
+    materializingDraft: null,
+    serverSnapshot: authorSnapshotFromDetail(created),
+    serverUpdatedAt: character.updatedAt,
+    serverConflict: {
+      snapshot: authorSnapshotFromDetail(character),
+      updatedAt: character.updatedAt,
+      reason: "creation_mismatch",
+    },
+  };
 }
 
 

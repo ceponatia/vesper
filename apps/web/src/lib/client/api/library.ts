@@ -116,6 +116,16 @@ export const characterSaveSchema = z.object({
   diagnostics: arrayOf(diagnosticSchema),
   materializedSuggestions: arrayOf(z.object({ index: z.number().int().nonnegative(), itemId: z.string() })),
 });
+/** A creation UUID already committed a different payload. The server returns
+ * both the original receipt and the current owner-scoped row so the retained
+ * browser draft can bind and enter explicit three-way recovery. */
+export const characterCreationMismatchSchema = z.object({
+  error: z.object({ code: z.literal("idempotency_mismatch"), message: z.string() }),
+  recovery: z.object({
+    created: characterSaveSchema,
+    character: characterDetailSchema,
+  }),
+});
 /** The conflict response carries the current owned row for three-way recovery. */
 export const characterSaveConflictSchema = z.object({
   error: z.object({ code: z.literal("character_conflict"), message: z.string() }),

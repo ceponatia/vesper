@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { itemDefinitionSchema } from "@/contracts";
-import { characterSaveSchema } from "@/lib/client/api/library";
+import { characterCreationMismatchSchema, characterSaveSchema } from "@/lib/client/api/library";
 import { characterCreationRequests, characters, db, items } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
 
@@ -14,7 +14,6 @@ import {
   apiRequest,
   bindAuthUser,
   endTestPool,
-  expectApiError,
   expectJson,
   probeIntegrationDb,
   purgeOwnerRows,
@@ -76,10 +75,18 @@ describe.skipIf(!ready)("character POST creation recovery", () => {
   it("rejects the same request id with a different payload without creating or overwriting rows", async () => {
     const id = "3e17b15e-a882-4457-9a33-ac3762d640a8";
     const first = characterSaveSchema.parse(await expectJson(await create(draft("Stable Nora", id))));
-    await expectApiError(await create(draft("Different Nora", id)), 409, "idempotency_mismatch");
+    await db().update(characters).set({ name: "Server Nora", updatedAt: new Date("2026-09-07T19:00:00.000Z") })
+      .where(eq(characters.id, first.character.id));
+    const mismatch = characterCreationMismatchSchema.parse(await expectJson(
+      await create(draft("Different Nora", id)),
+      409,
+    ));
+    expect(mismatch.recovery.created.character.name).toBe("Stable Nora");
+    expect(mismatch.recovery.character.name).toBe("Server Nora");
+    expect(mismatch.recovery.character.id).toBe(first.character.id);
 
     const [stored] = await db().select({ name: characters.name }).from(characters).where(eq(characters.id, first.character.id));
-    expect(stored?.name).toBe("Stable Nora");
+    expect(stored?.name).toBe("Server Nora");
     const differentCharacters = await db().select({ id: characters.id }).from(characters)
       .where(and(eq(characters.ownerId, authState.user.id), eq(characters.name, "Different Nora")));
     const differentItems = await db().select({ id: items.id }).from(items)

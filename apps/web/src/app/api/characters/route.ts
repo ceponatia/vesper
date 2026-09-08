@@ -50,7 +50,13 @@ export const POST = withUser(async (user, req: NextRequest) => {
   if (!body.ok) return body.response;
   const outcome = await createOwnedCharacter(user.id, body.value);
   if (outcome.status === "idempotency_mismatch") {
-    return jsonError("idempotency_mismatch", "this creation request id was already used for a different character draft", 409);
+    return jsonOk({
+      error: {
+        code: "idempotency_mismatch",
+        message: "This creation request already saved a character from a different draft. Review the retained edits before saving again.",
+      },
+      ...(outcome.recovery ? { recovery: outcome.recovery } : {}),
+    }, 409);
   }
   if (outcome.status === "replay_invalid") {
     return jsonError("idempotency_replay_invalid", "the saved creation receipt could not be replayed", 500);

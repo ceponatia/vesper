@@ -30,10 +30,20 @@ const characterCreationResponseSchema = z.object({
   diagnostics: z.array(diagnosticSchema),
   materializedSuggestions: z.array(materializedSuggestionSchema),
 });
+type CharacterCreationRecoveryCharacter = Pick<
+  typeof characters.$inferSelect,
+  "id" | "name" | "profile" | "tags" | "avatarImageId" | "updatedAt" | "visibility" | "chatModel"
+>;
 
 export type CharacterCreationOutcome =
   | { status: "created" | "replayed"; response: z.infer<typeof characterCreationResponseSchema>; httpStatus: number }
-  | { status: "idempotency_mismatch" }
+  | {
+      status: "idempotency_mismatch";
+      recovery?: {
+        created: z.infer<typeof characterCreationResponseSchema>;
+        character: CharacterCreationRecoveryCharacter;
+      };
+    }
   | { status: "replay_invalid" }
   | { status: "create_failed" };
 
@@ -92,12 +102,13 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
       .where(and(eq(characterCreationRequests.ownerId, ownerId), eq(characterCreationRequests.requestId, requestId)))
       .limit(1);
     if (existing) {
-      if (existing.payloadHash !== hash) return { status: "idempotency_mismatch" };
-      if (existing.httpStatus !== 201) return { status: "replay_invalid" };
-      const response = parseReplay(existing.response);
-      return response
-        ? { status: "replayed", response, httpStatus: existing.httpStatus }
-        : { status: "replay_invalid" };
+      if (existing.payloadHash === hash) {
+        if (existing.httpStatus !== 201) return { status: "replay_invalid" };
+        const response = parseReplay(existing.response);
+        return response
+          ? { status: "replayed", response, httpStatus: existing.httpStatus }
+          : { status: "replay_invalid" };
+      }
     }
   }
 
@@ -113,12 +124,34 @@ export async function createOwnedCharacter(ownerId: string, body: CharacterCreat
       // avoid nullable/in-progress receipt rows.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`character_create:${ownerId}:${requestId}`}))`);
       const [existing] = await tx
-        .select({ payloadHash: characterCreationRequests.payloadHash, response: characterCreationRequests.response, httpStatus: characterCreationRequests.httpStatus })
+        .select({
+          payloadHash: characterCreationRequests.payloadHash,
+          response: characterCreationRequests.response,
+          httpStatus: characterCreationRequests.httpStatus,
+          characterId: characterCreationRequests.characterId,
+        })
         .from(characterCreationRequests)
         .where(and(eq(characterCreationRequests.ownerId, ownerId), eq(characterCreationRequests.requestId, requestId)))
         .for("update");
       if (existing) {
-        if (existing.payloadHash !== hash) return { status: "idempotency_mismatch" };
+        if (existing.payloadHash !== hash) {
+          const created = existing.httpStatus === 201 ? parseReplay(existing.response) : null;
+          const [character] = await tx.select({
+            id: characters.id,
+            name: characters.name,
+            profile: characters.profile,
+            tags: characters.tags,
+            avatarImageId: characters.avatarImageId,
+            updatedAt: characters.updatedAt,
+            visibility: characters.visibility,
+            chatModel: characters.chatModel,
+          }).from(characters)
+            .where(and(eq(characters.id, existing.characterId), eq(characters.ownerId, ownerId)))
+            .limit(1);
+          return created && character
+            ? { status: "idempotency_mismatch", recovery: { created, character } }
+            : { status: "idempotency_mismatch" };
+        }
         if (existing.httpStatus !== 201) return { status: "replay_invalid" };
         const response = parseReplay(existing.response);
         return response

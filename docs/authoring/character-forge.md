@@ -44,7 +44,10 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
   `creationRequestId`. The server commits the character, its materialized items and a replayable
   response receipt in one transaction. A lost-response retry with the same request and payload
   returns that original character, version and item receipt; reuse of the UUID with different
-  content is refused. An acknowledgment never clears newer authored changes.
+  content never creates or overwrites another row. That refusal carries the owner-scoped original
+  receipt and current character when both remain valid, so the browser binds the retained draft
+  to the existing character and presents their differences for explicit recovery. An
+  acknowledgment never clears newer authored changes.
 - A linked creation draft retains the last saved server snapshot and `updatedAt` token. Later
   writes use that token for compare-and-set recovery: authored conflicts require explicit review,
   while a metadata-only server change advances the token without hiding local edits.
