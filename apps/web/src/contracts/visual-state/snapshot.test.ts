@@ -85,6 +85,22 @@ describe("buildVisualStateSnapshot", () => {
     expect(snapshot.subjects).toEqual(["ana", "zoe"]);
   });
 
+  it("preserves declared subjects even when no recognition feature describes them", () => {
+    const snapshot = snapshotOf({ declaredSubjectIds: ["zoe", "ana", "zoe"] });
+    expect(snapshot.subjects).toEqual(["ana", "zoe"]);
+    expect(snapshot.features).toEqual([]);
+  });
+
+  it("unions declared subjects with subjects discovered in adapter features", () => {
+    const snapshot = snapshotOf({
+      declaredSubjectIds: ["ana"],
+      contributions: [
+        { adapterId: "appearance", features: [visualStateFeatureFixture({ subjectId: "zoe" })] },
+      ],
+    });
+    expect(snapshot.subjects).toEqual(["ana", "zoe"]);
+  });
+
   it("gives a duplicate key to the earlier adapter, whatever order the caller passed", () => {
     const sink = new DiagnosticCollector();
     const fromAppearance = visualStateFeatureFixture({ truthFingerprint: '"crooked"' });

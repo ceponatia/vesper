@@ -1162,13 +1162,58 @@ describe.skipIf(!ready)("read-time policy projection", () => {
  * B ends up prepared with no `ensureIdentityPack` call of the test's own.
  */
 describe.skipIf(!ready)("background preparation convergence", () => {
+  it("does not let a late worker overwrite an externally terminal job", async () => {
+    const subject = await seedSubject("Terminal preparation fence");
+    const gate = gatedDetector();
+    setIdentityFaceDetectorForTesting(gate.detector);
+
+    const running = runIdentityPackPreparationForTesting(subject.characterId, userId, 10);
+    await waitForReservation(subject.characterId);
+    const [job] = await packJobs(subject.characterId);
+    if (!job) throw new Error("preparation job was not inserted");
+    const externallySettled = {
+      characterId: subject.characterId,
+      identityPackIds: [],
+      convergence: "expired",
+    };
+    await db()
+      .update(jobs)
+      .set({ status: "failed", payload: externallySettled, error: "lease expired", finishedAt: new Date() })
+      .where(eq(jobs.id, job.id));
+
+    gate.release();
+    await running;
+
+    const [settled] = await db()
+      .select({ status: jobs.status, payload: jobs.payload, error: jobs.error })
+      .from(jobs)
+      .where(eq(jobs.id, job.id));
+    expect(settled).toEqual({ status: "failed", payload: externallySettled, error: "lease expired" });
+  }, 20_000);
+
   it("prepares the portrait that was promoted while the earlier derivation was in flight", async () => {
     const subject = await seedSubject("Convergence Subject");
     const gate = gatedDetector();
     setIdentityFaceDetectorForTesting(gate.detector);
 
-    const job = runIdentityPackPreparationForTesting(subject.characterId, userId);
+    const job = runIdentityPackPreparationForTesting(subject.characterId, userId, 10);
     await waitForReservation(subject.characterId);
+
+    // Liveness follows the worker heartbeat rather than the job's birth. Make
+    // this in-flight row look old, then prove the direct preparation runner
+    // refreshes it before the second trigger performs its dedupe read.
+    const [preparing] = await packJobs(subject.characterId);
+    if (!preparing) throw new Error("preparation job was not inserted");
+    const expired = new Date(Date.now() - JOB_STALE_MS - 60_000);
+    await db().update(jobs).set({ createdAt: expired, heartbeatAt: expired }).where(eq(jobs.id, preparing.id));
+    let refreshed: Date | null = null;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const [row] = await db().select({ heartbeatAt: jobs.heartbeatAt }).from(jobs).where(eq(jobs.id, preparing.id));
+      refreshed = row?.heartbeatAt ?? null;
+      if (refreshed && refreshed.getTime() > expired.getTime()) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(refreshed && refreshed.getTime()).toBeGreaterThan(expired.getTime());
 
     // Portrait B lands and is ACCEPTED while A's derivation is parked, in the
     // order acceptance produces it: pointer committed, then preparation
@@ -1214,6 +1259,7 @@ describe.skipIf(!ready)("background preparation convergence", () => {
     expect(jobRow?.status).toBe("done");
     expect(jobRow?.payload).toMatchObject({
       characterId: subject.characterId,
+      identityPackIds: [current!.id],
       outcome: "ready",
       convergence: "converged",
       passes: [

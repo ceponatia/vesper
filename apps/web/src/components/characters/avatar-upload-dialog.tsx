@@ -26,6 +26,16 @@ export interface AvatarUploadDialogProps {
   onUploaded: (avatarImageId: string) => void;
 }
 
+export interface PortraitCropUploadDialogProps {
+  open: boolean;
+  onClose: () => void;
+  name: string;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onUpload: (dataUrl: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+}
+
 /** The crop window's on-screen size (3:4, matches AVATAR_WIDTH:AVATAR_HEIGHT). */
 const FRAME = { fw: 288, fh: 384 };
 
@@ -52,7 +62,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * no adjustment reproduces the old fast path. No model runs, so this works in
  * demo mode and offline.
  */
-export function AvatarUploadDialog({ open, onClose, characterId, name, onUploaded }: AvatarUploadDialogProps) {
+export function PortraitCropUploadDialog({ open, onClose, name, title, description, confirmLabel, onUpload }: PortraitCropUploadDialogProps) {
   const [stage, setStage] = useState<Stage>("pick");
   const [image, setImage] = useState<LoadedImage | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -118,17 +128,16 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
     async (dataUrl: string) => {
       setStage("uploading");
       setError(null);
-      const result = await charactersApi.uploadAvatar(characterId, dataUrl);
+      const result = await onUpload(dataUrl);
       if (result.ok) {
         revoke(latest.current.image);
-        onUploaded(result.data.avatarImageId);
         onClose();
       } else {
-        setError(result.error.message || "Upload failed.");
+        setError(result.message || "Upload failed.");
         setStage(latest.current.image ? "crop" : "pick");
       }
     },
-    [characterId, onClose, onUploaded, revoke],
+    [onClose, onUpload, revoke],
   );
 
   const onFile = useCallback(
@@ -222,6 +231,9 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
   };
 
   const disp = image ? displaySize(FRAME, image, zoom) : { width: 0, height: 0 };
+  const requestClose = useCallback(() => {
+    if (stage !== "uploading") onClose();
+  }, [onClose, stage]);
 
   const footer =
     stage === "crop" ? (
@@ -230,17 +242,17 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
           Choose another
         </Button>
         <Button variant="primary" onClick={() => image && void upload(renderToDataUrl(image, zoom, offset, bgColor))}>
-          Use image
+          {confirmLabel}
         </Button>
       </>
     ) : (
-      <Button variant="ghost" onClick={onClose} disabled={stage === "uploading"}>
+      <Button variant="ghost" onClick={requestClose} disabled={stage === "uploading"}>
         Cancel
       </Button>
     );
 
   return (
-    <Dialog open={open} onClose={onClose} title="Upload profile image" footer={footer}>
+    <Dialog open={open} onClose={requestClose} title={title} footer={footer}>
       <input
         ref={fileInputRef}
         type="file"
@@ -254,13 +266,13 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
 
       {stage === "pick" ? (
         <div className="flex flex-col gap-4">
+          <p>{description}</p>
           <p>
-            Profile images are{" "}
+            The confirmed image is{" "}
             <span className="font-medium text-paper-200">
               {AVATAR_WIDTH} × {AVATAR_HEIGHT} px
             </span>{" "}
-            — a 3:4 portrait. Upload any photo or artwork, then reposition and zoom it in the crop window to frame the
-            shot you want; we&apos;ll scale it to fit.
+            — a 3:4 portrait. Reposition and zoom it in the crop window to frame the shot you want.
           </p>
           <button
             type="button"
@@ -336,4 +348,22 @@ export function AvatarUploadDialog({ open, onClose, characterId, name, onUploade
       )}
     </Dialog>
   );
+}
+
+/** Character-avatar specialization of the shared 3:4 preview and crop flow. */
+export function AvatarUploadDialog({ open, onClose, characterId, name, onUploaded }: AvatarUploadDialogProps) {
+  return <PortraitCropUploadDialog
+    open={open}
+    onClose={onClose}
+    name={name}
+    title="Upload profile image"
+    description="Upload any photo or artwork, then confirm how it will fit the character's portrait frame."
+    confirmLabel="Use image"
+    onUpload={async (dataUrl) => {
+      const result = await charactersApi.uploadAvatar(characterId, dataUrl);
+      if (!result.ok) return { ok: false, message: result.error.message };
+      onUploaded(result.data.avatarImageId);
+      return { ok: true };
+    }}
+  />;
 }

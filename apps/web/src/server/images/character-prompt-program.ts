@@ -631,6 +631,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     // version has a field at all. An empty `advancedCapabilities` means nobody
     // has looked, which is not the same as "yes".
     negativeFieldAvailable: profile.model.advancedCapabilities.controls.negativePrompt !== undefined,
+    expectedSubjectRefs: input.cuts.map((cut) => `subject.${cut.subjectId}`),
     refuseOnMissingRequired: input.refuseOnMissingRequired,
     ...(sink === undefined ? {} : { sink }),
   });

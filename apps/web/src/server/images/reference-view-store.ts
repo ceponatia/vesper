@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, asc, desc, eq, gt, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -23,7 +23,7 @@ import {
   type ReferenceViewSummary,
   type ReferenceViewReviewRequest,
 } from "@/contracts";
-import { characterReferenceViews, characters, db, hasLiveCharacterJob, images, jobs, JOB_STALE_MS } from "../db";
+import { characterReferenceViews, characters, db, images, jobs, JOB_STALE_MS } from "../db";
 import { createImageAsset, readImageBytes } from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
 import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
@@ -76,23 +76,228 @@ export async function withReferenceViewLock<T>(
   });
 }
 
-/** Same staleness rule as db/job-liveness, queried on the transaction's own connection. */
-async function hasLiveReferenceViewJob(executor: ReferenceViewExecutor, characterId: string): Promise<boolean> {
-  const rows = await executor.select({ id: jobs.id }).from(jobs).where(and(
-    eq(jobs.type, "reference_views"), inArray(jobs.status, ["queued", "running"]),
-    gt(jobs.createdAt, new Date(Date.now() - JOB_STALE_MS)), sql`${jobs.payload} ->> 'characterId' = ${characterId}`,
-  )).limit(1);
-  return rows.length > 0;
+/** A job payload lease. The attempt id is filled atomically when its worker reserves the row. */
+export interface ReferenceViewLease extends ReferenceView {
+  readonly attemptId: string | null;
 }
 
-/** Includes the reservation window and abandoned pending attempts visible in the studio. */
-export async function referenceViewBuildInFlight(characterId: string, executor: ReferenceViewExecutor = db()): Promise<boolean> {
-  if (await hasLiveReferenceViewJob(executor, characterId)) return true;
-  const pending = await executor.select({ id: characterReferenceViews.id }).from(characterReferenceViews).where(and(
-    eq(characterReferenceViews.characterId, characterId), eq(characterReferenceViews.current, true),
-    eq(characterReferenceViews.status, "pending"),
-  )).limit(1);
-  return pending.length > 0;
+export interface ReferenceViewLeaseClaim {
+  readonly claimed: readonly ReferenceViewLease[];
+  readonly busy: readonly ReferenceView[];
+}
+
+export const REFERENCE_VIEW_LEASE_EXPIRED = "images.reference_views.lease_expired";
+
+type ReferenceViewLeaseJob = Pick<typeof jobs.$inferSelect, "id" | "ownerId" | "payload" | "heartbeatAt">;
+
+function objectPayload(payload: unknown): Record<string, unknown> {
+  return typeof payload === "object" && payload !== null && !Array.isArray(payload)
+    ? { ...(payload as Record<string, unknown>) }
+    : {};
+}
+
+function payloadLeases(payload: unknown): ReferenceViewLease[] {
+  const candidate = objectPayload(payload).leases;
+  if (!Array.isArray(candidate)) return [];
+  return candidate.flatMap((value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+    const record = value as Record<string, unknown>;
+    const angle = parseOrNull(referenceViewAngleIdSchema, record.angle);
+    const wardrobe = parseOrNull(referenceViewWardrobeSchema, record.wardrobe);
+    const attemptId = record.attemptId === null || typeof record.attemptId === "string" ? record.attemptId : null;
+    return angle === null || wardrobe === null ? [] : [{ angle, wardrobe, attemptId }];
+  });
+}
+
+function payloadReferenceViewAttemptIds(payload: unknown): string[] {
+  const candidate = objectPayload(payload).referenceViewAttemptIds;
+  if (!Array.isArray(candidate)) return [];
+  return [...new Set(candidate.filter((value): value is string => typeof value === "string" && value.length > 0))]
+    .slice(0, 64);
+}
+
+async function liveReferenceViewLeaseJobs(
+  executor: ReferenceViewExecutor,
+  characterId: string,
+  now: Date,
+  ownerId?: string,
+  excludeJobId?: string,
+): Promise<readonly ReferenceViewLeaseJob[]> {
+  const rows = await executor
+    .select({ id: jobs.id, ownerId: jobs.ownerId, payload: jobs.payload, heartbeatAt: jobs.heartbeatAt })
+    .from(jobs)
+    .where(and(
+      eq(jobs.type, "reference_views"),
+      inArray(jobs.status, ["queued", "running"]),
+      gt(jobs.heartbeatAt, new Date(now.getTime() - JOB_STALE_MS)),
+      sql`${jobs.payload} ->> 'characterId' = ${characterId}`,
+      ownerId === undefined ? undefined : eq(jobs.ownerId, ownerId),
+      excludeJobId === undefined ? undefined : ne(jobs.id, excludeJobId),
+    ));
+  return rows.filter((row) => payloadLeases(row.payload).length > 0);
+}
+
+/** Lock one live lease job before binding or settling an attempt. */
+async function lockLiveReferenceViewLeaseJob(
+  tx: ReferenceViewTransaction,
+  input: { characterId: string; ownerId: string; jobId: string },
+  now: Date,
+): Promise<ReferenceViewLeaseJob | null> {
+  const [job] = await tx
+    .select({ id: jobs.id, ownerId: jobs.ownerId, payload: jobs.payload, heartbeatAt: jobs.heartbeatAt })
+    .from(jobs)
+    .where(and(
+      eq(jobs.id, input.jobId),
+      eq(jobs.ownerId, input.ownerId),
+      eq(jobs.type, "reference_views"),
+      eq(jobs.status, "running"),
+      gt(jobs.heartbeatAt, new Date(now.getTime() - JOB_STALE_MS)),
+      sql`${jobs.payload} ->> 'characterId' = ${input.characterId}`,
+    ))
+    .limit(1)
+    .for("update");
+  return job && payloadLeases(job.payload).length > 0 ? job : null;
+}
+
+async function reconcileReferenceViewLeasesInTransaction(
+  tx: ReferenceViewTransaction,
+  characterId: string,
+  now: Date,
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - JOB_STALE_MS);
+  await tx
+    .update(jobs)
+    .set({
+      status: "failed",
+      error: "reference view lease expired before the job settled",
+      finishedAt: now,
+    })
+    .where(and(
+      eq(jobs.type, "reference_views"),
+      inArray(jobs.status, ["queued", "running"]),
+      lt(jobs.heartbeatAt, cutoff),
+      sql`${jobs.payload} ->> 'characterId' = ${characterId}`,
+    ));
+
+  const liveJobs = await liveReferenceViewLeaseJobs(tx, characterId, now);
+  const leasedAttempts = new Set(liveJobs.flatMap((job) => payloadLeases(job.payload).flatMap((lease) =>
+    lease.attemptId === null ? [] : [lease.attemptId],
+  )));
+  const pending = await tx
+    .select({ id: characterReferenceViews.id })
+    .from(characterReferenceViews)
+    .where(and(
+      eq(characterReferenceViews.characterId, characterId),
+      eq(characterReferenceViews.current, true),
+      eq(characterReferenceViews.status, "pending"),
+    ));
+  const orphaned = pending.filter((row) => !leasedAttempts.has(row.id)).map((row) => row.id);
+  if (orphaned.length === 0) return 0;
+  await tx
+    .update(characterReferenceViews)
+    .set({
+      status: "failed",
+      imageId: null,
+      failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
+      failureMessage: "The previous build was interrupted. This slot is ready to retry.",
+    })
+    .where(inArray(characterReferenceViews.id, orphaned));
+  return orphaned.length;
+}
+
+/** Reconcile expired leases and their abandoned pending attempts under the character lock. */
+export function reconcileExpiredReferenceViewWork(characterId: string, now: Date = new Date()): Promise<number> {
+  return withReferenceViewLock(characterId, (tx) => reconcileReferenceViewLeasesInTransaction(tx, characterId, now));
+}
+
+/** Sweep every character that still has a pending attempt; live leases are preserved. */
+export async function reconcileOrphanedReferenceViewAttempts(now: Date = new Date()): Promise<number> {
+  const pending = await db()
+    .selectDistinct({ characterId: characterReferenceViews.characterId })
+    .from(characterReferenceViews)
+    .where(and(
+      eq(characterReferenceViews.current, true),
+      eq(characterReferenceViews.status, "pending"),
+    ));
+  let reconciled = 0;
+  for (const row of pending) {
+    reconciled += await reconcileExpiredReferenceViewWork(row.characterId, now);
+  }
+  return reconciled;
+}
+
+/** Claim every currently available requested slot for one already-inserted job. */
+export function claimReferenceViewLeases(input: {
+  characterId: string;
+  ownerId: string;
+  jobId: string;
+  targets: readonly ReferenceView[];
+  now?: Date;
+}): Promise<ReferenceViewLeaseClaim> {
+  return withReferenceViewLock(input.characterId, async (tx) => {
+    const now = input.now ?? new Date();
+    await reconcileReferenceViewLeasesInTransaction(tx, input.characterId, now);
+    const [job] = await tx
+      .select({ id: jobs.id, ownerId: jobs.ownerId, payload: jobs.payload, heartbeatAt: jobs.heartbeatAt })
+      .from(jobs)
+      .where(and(
+        eq(jobs.id, input.jobId),
+        eq(jobs.ownerId, input.ownerId),
+        eq(jobs.type, "reference_views"),
+        eq(jobs.status, "running"),
+        gt(jobs.heartbeatAt, new Date(now.getTime() - JOB_STALE_MS)),
+        sql`${jobs.payload} ->> 'characterId' = ${input.characterId}`,
+      ))
+      .limit(1)
+      .for("update");
+    if (!job) return { claimed: [], busy: [...input.targets] };
+
+    const occupied = new Set(
+      (await liveReferenceViewLeaseJobs(tx, input.characterId, now, input.ownerId, input.jobId))
+        .flatMap((row) => payloadLeases(row.payload).map(slotKey)),
+    );
+    const claimed: ReferenceViewLease[] = [];
+    const busy: ReferenceView[] = [];
+    for (const target of input.targets) {
+      if (occupied.has(slotKey(target))) busy.push(target);
+      else claimed.push({ ...target, attemptId: null });
+    }
+    const payload = objectPayload(job.payload);
+    const [updated] = await tx
+      .update(jobs)
+      .set({
+        payload: {
+          ...payload,
+          targets: claimed.map(slotKey),
+          leases: claimed,
+        },
+      })
+      .where(and(
+        eq(jobs.id, job.id),
+        eq(jobs.status, "running"),
+        gt(jobs.heartbeatAt, new Date(now.getTime() - JOB_STALE_MS)),
+      ))
+      .returning({ id: jobs.id });
+    if (!updated) return { claimed: [], busy: [...input.targets] };
+    return { claimed, busy };
+  });
+}
+
+/** Whether one slot currently belongs to a heartbeat-live build. */
+export async function referenceViewSlotBusy(
+  characterId: string,
+  ownerId: string,
+  view: ReferenceView,
+  executor: ReferenceViewExecutor = db(),
+  now: Date = new Date(),
+): Promise<boolean> {
+  const live = await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId);
+  return live.some((job) => payloadLeases(job.payload).some((lease) => slotKey(lease) === slotKey(view)));
+}
+
+/** Any leased slot keeps the set's background-status and polling surfaces active. */
+async function hasLiveReferenceViewJob(executor: ReferenceViewExecutor, characterId: string): Promise<boolean> {
+  return (await liveReferenceViewLeaseJobs(executor, characterId, new Date())).length > 0;
 }
 
 /** Shared with the sweep; restoration eligibility expires even before a delayed sweep runs. */
@@ -319,7 +524,7 @@ export async function referenceViewHistoryEntries(
     .orderBy(desc(characterReferenceViews.createdAt));
   const statuses = await readViewImageStatuses(rows);
   const source = await readAcceptedPortraitSource(characterId, ownerId);
-  const busy = await hasLiveCharacterJob("reference_views", characterId);
+  const busy = await referenceViewSlotBusy(characterId, ownerId, view);
   const plan = await readReferenceViewPlan(characterId, ownerId, db());
   if (plan === undefined) return [];
   const eligible = planIncludes(plan, view);
@@ -413,16 +618,20 @@ export async function getReferenceViewSet(
   characterId: string,
   ownerId: string,
   sink?: DiagnosticSink,
-  executor: ReferenceViewExecutor = db(),
+  executor?: ReferenceViewExecutor,
 ): Promise<ReferenceViewSetSummary> {
-  const accepted = await readAcceptedPortrait(characterId, ownerId, executor);
+  // Ordinary reads repair crash-left pending rows first. Callers already inside
+  // the character lock pass their executor and observe the transaction's snapshot.
+  if (executor === undefined) await reconcileExpiredReferenceViewWork(characterId);
+  const reader = executor ?? db();
+  const accepted = await readAcceptedPortrait(characterId, ownerId, reader);
   if (accepted === undefined) return emptyReferenceViewSetSummary();
-  const plan = await readReferenceViewPlan(characterId, ownerId, executor, sink);
+  const plan = await readReferenceViewPlan(characterId, ownerId, reader, sink);
   if (plan === undefined) return emptyReferenceViewSetSummary();
   const eligibleSlots = new Set(plan.map(slotKey));
 
-  const rows = await currentReferenceViewRows(characterId, executor);
-  const statuses = await readViewImageStatuses(rows, executor);
+  const rows = await currentReferenceViewRows(characterId, reader);
+  const statuses = await readViewImageStatuses(rows, reader);
 
   const bySlot = new Map<string, ReferenceViewRow>();
   for (const row of rows) {
@@ -444,7 +653,7 @@ export async function getReferenceViewSet(
 
   return {
     acceptedImageId: accepted,
-    building: await hasLiveReferenceViewJob(executor, characterId),
+    building: await hasLiveReferenceViewJob(reader, characterId),
     views: allReferenceViews().map((view) => {
       const row = bySlot.get(slotKey(view));
       const imageStatus = row === undefined || row.imageId === null ? null : (statuses.get(row.imageId) ?? null);
@@ -498,6 +707,8 @@ export async function getReferenceViewSummary(
 // ---------------------------------------------------------------------------
 
 export interface ReserveReferenceViewInput {
+  /** The heartbeat-live job that owns this slot's lease. */
+  jobId: string;
   characterId: string;
   ownerId: string;
   view: ReferenceView;
@@ -520,6 +731,10 @@ export interface ReserveReferenceViewInput {
 export async function reserveReferenceView(input: ReserveReferenceViewInput): Promise<string | null> {
   const { characterId, view } = input;
   return withReferenceViewLock(characterId, async (tx) => {
+    const now = new Date();
+    const job = await lockLiveReferenceViewLeaseJob(tx, input, now);
+    const lease = job && payloadLeases(job.payload).find((candidate) => slotKey(candidate) === slotKey(view));
+    if (!job || !lease || lease.attemptId !== null) return null;
     // The build reads and hashes its portrait before workers reserve slots. If
     // the owner accepts another portrait while those workers are waiting for
     // this lock, refuse the stale reservation before any provider call.
@@ -555,11 +770,32 @@ export async function reserveReferenceView(input: ReserveReferenceViewInput): Pr
       })
       .returning({ id: characterReferenceViews.id });
     if (!row) throw new Error("character_reference_views insert returned no row");
+    const leases = payloadLeases(job.payload).map((candidate) =>
+      slotKey(candidate) === slotKey(view) ? { ...candidate, attemptId: row.id } : candidate,
+    );
+    const payload = objectPayload(job.payload);
+    const [updated] = await tx
+      .update(jobs)
+      .set({
+        payload: {
+          ...payload,
+          leases,
+          referenceViewAttemptIds: [...new Set([...payloadReferenceViewAttemptIds(payload), row.id])].slice(0, 64),
+        },
+      })
+      .where(and(
+        eq(jobs.id, job.id),
+        eq(jobs.status, "running"),
+        gt(jobs.heartbeatAt, new Date(now.getTime() - JOB_STALE_MS)),
+      ))
+      .returning({ id: jobs.id });
+    if (!updated) throw new Error("reference view lease disappeared during reservation");
     return row.id;
   });
 }
 
 export interface FinalizeReferenceViewInput {
+  jobId: string;
   viewId: string;
   characterId: string;
   ownerId: string;
@@ -569,7 +805,7 @@ export interface FinalizeReferenceViewInput {
   reviewedByUserId?: string;
 }
 
-export interface InstallUploadedReferenceViewInput extends ReserveReferenceViewInput {
+export interface InstallUploadedReferenceViewInput extends Omit<ReserveReferenceViewInput, "jobId"> {
   imageId: string;
   expectedCurrentAttemptId: string | null;
   expectedCurrentRevision: number;
@@ -591,7 +827,7 @@ export async function installUploadedReferenceView(input: InstallUploadedReferen
     if (!planIncludes(plan, input.view)) return { status: "ineligible" };
     const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
     if (!source.ok) return { status: source.reason === "not_found" ? "not_found" : "not_accepted" };
-    if (await referenceViewBuildInFlight(input.characterId, tx)) return { status: "busy" };
+    if (await referenceViewSlotBusy(input.characterId, input.ownerId, input.view, tx)) return { status: "busy" };
     const current = await currentReferenceViewRow(input.characterId, input.view, tx);
     if (source.imageId !== input.sourceImageId || source.contentHash !== input.sourceContentHash ||
         (current?.id ?? null) !== input.expectedCurrentAttemptId || (current?.reviewRevision ?? 0) !== input.expectedCurrentRevision) {
@@ -609,8 +845,34 @@ export async function installUploadedReferenceView(input: InstallUploadedReferen
   });
 }
 
-/** What a finalize concluded — `ready` or the honest `stale` when the portrait moved under it. */
-export type FinalizeReferenceViewResult = "ready" | "stale";
+/** `fenced` means this worker no longer owns the current slot and wrote nothing. */
+export type FinalizeReferenceViewResult = "ready" | "stale" | "fenced";
+
+async function liveLeaseForAttempt(
+  tx: ReferenceViewTransaction,
+  input: { jobId: string; characterId: string; ownerId: string; viewId: string },
+): Promise<{ job: ReferenceViewLeaseJob; lease: ReferenceViewLease } | null> {
+  const job = await lockLiveReferenceViewLeaseJob(tx, input, new Date());
+  if (!job) return null;
+  const lease = payloadLeases(job.payload).find((candidate) => candidate.attemptId === input.viewId);
+  return lease ? { job, lease } : null;
+}
+
+async function releaseReferenceViewLease(
+  tx: ReferenceViewTransaction,
+  job: ReferenceViewLeaseJob,
+  viewId: string,
+): Promise<void> {
+  await tx
+    .update(jobs)
+    .set({
+      payload: {
+        ...objectPayload(job.payload),
+        leases: payloadLeases(job.payload).filter((candidate) => candidate.attemptId !== viewId),
+      },
+    })
+    .where(and(eq(jobs.id, job.id), eq(jobs.status, "running")));
+}
 
 /**
  * Settle a reserved row with the bytes it produced.
@@ -634,10 +896,21 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
         sourceImageId: characterReferenceViews.sourceImageId,
         angleId: characterReferenceViews.angleId,
         wardrobe: characterReferenceViews.wardrobe,
+        current: characterReferenceViews.current,
+        status: characterReferenceViews.status,
       })
       .from(characterReferenceViews)
       .where(eq(characterReferenceViews.id, input.viewId))
       .limit(1);
+    const ownedLease = await liveLeaseForAttempt(tx, input);
+    if (
+      row === undefined ||
+      !row.current ||
+      row.status !== "pending" ||
+      ownedLease === null ||
+      ownedLease.lease.angle !== row.angleId ||
+      ownedLease.lease.wardrobe !== row.wardrobe
+    ) return "fenced";
     const [character] = await tx
       .select({ acceptedAvatarImageId: characters.acceptedAvatarImageId })
       .from(characters)
@@ -654,7 +927,7 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
       character.acceptedAvatarImageId !== row.sourceImageId ||
       !eligible;
     const reviewed = input.reviewedByUserId;
-    await tx
+    const [updated] = await tx
       .update(characterReferenceViews)
       .set({
         status: stale ? "stale" : "ready",
@@ -667,7 +940,14 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
           ? {}
           : { verdict: "approved" as const, reviewedByUserId: reviewed, reviewedAt: new Date() }),
       })
-      .where(eq(characterReferenceViews.id, input.viewId));
+      .where(and(
+        eq(characterReferenceViews.id, input.viewId),
+        eq(characterReferenceViews.current, true),
+        eq(characterReferenceViews.status, "pending"),
+      ))
+      .returning({ id: characterReferenceViews.id });
+    if (!updated) return "fenced";
+    await releaseReferenceViewLease(tx, ownedLease.job, input.viewId);
     return stale ? "stale" : "ready";
   });
 }
@@ -680,16 +960,35 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
  * refusal so the studio can offer an upload instead. The row stays current —
  * there is nothing better to be current — and a regenerate makes a new one.
  */
-export async function failReferenceView(viewId: string, failureCode: string, failureMessage: string): Promise<void> {
-  await db()
-    .update(characterReferenceViews)
-    .set({
-      status: "failed",
-      imageId: null,
-      failureCode,
-      failureMessage: failureMessage.slice(0, 500),
-    })
-    .where(eq(characterReferenceViews.id, viewId));
+export async function failReferenceView(input: {
+  jobId: string;
+  viewId: string;
+  characterId: string;
+  ownerId: string;
+  failureCode: string;
+  failureMessage: string;
+}): Promise<"failed" | "fenced"> {
+  return withReferenceViewLock(input.characterId, async (tx) => {
+    const ownedLease = await liveLeaseForAttempt(tx, input);
+    if (ownedLease === null) return "fenced";
+    const [updated] = await tx
+      .update(characterReferenceViews)
+      .set({
+        status: "failed",
+        imageId: null,
+        failureCode: input.failureCode,
+        failureMessage: input.failureMessage.slice(0, 500),
+      })
+      .where(and(
+        eq(characterReferenceViews.id, input.viewId),
+        eq(characterReferenceViews.current, true),
+        eq(characterReferenceViews.status, "pending"),
+      ))
+      .returning({ id: characterReferenceViews.id });
+    if (!updated) return "fenced";
+    await releaseReferenceViewLease(tx, ownedLease.job, input.viewId);
+    return "failed";
+  });
 }
 
 export type ReferenceViewReviewVerdict = ReferenceViewReviewRequest["verdict"];
@@ -759,7 +1058,12 @@ export async function restoreReferenceView(input: {
   )).limit(1);
   if (!attempt) return { status: "not_found" };
   const source = await readAcceptedPortraitSource(input.characterId, input.ownerId);
-  const unavailable = restoreUnavailable(attempt, source, await hasLiveCharacterJob("reference_views", input.characterId), true);
+  const unavailable = restoreUnavailable(
+    attempt,
+    source,
+    await referenceViewSlotBusy(input.characterId, input.ownerId, input.view),
+    true,
+  );
   if (unavailable) return { status: unavailable === "current" ? "changed" : unavailable };
   const [asset] = await db().select().from(images).where(and(eq(images.id, attempt.imageId ?? ""),
     eq(images.ownerId, input.ownerId), eq(images.kind, "reference_view"))).limit(1);
@@ -787,7 +1091,8 @@ export async function restoreReferenceView(input: {
       }
       const [latest] = await tx.select().from(characterReferenceViews).where(eq(characterReferenceViews.id, attempt.id)).limit(1);
       if (!latest) return { status: "unavailable" };
-      const busy = current?.status === "pending" || await hasLiveReferenceViewJob(tx, input.characterId);
+      const busy = current?.status === "pending" ||
+        await referenceViewSlotBusy(input.characterId, input.ownerId, input.view, tx);
       const refusal = restoreUnavailable(latest, latestSource, busy, true);
       if (refusal) return { status: refusal === "current" ? "changed" : refusal };
       const [liveAsset] = await tx.select({ status: images.status }).from(images).where(eq(images.id, asset.id)).limit(1);

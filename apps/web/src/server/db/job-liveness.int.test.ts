@@ -2,6 +2,7 @@ import { inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { hasLiveChatJob, JOB_STALE_MS } from "./job-liveness";
 import { db, jobs } from "@/server/db";
+import { queueDepth } from "../api/backpressure";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 
 // Integration suite for the one-live-per-chat dedupe. The behavior that matters
@@ -19,8 +20,8 @@ async function clearJobs(): Promise<void> {
   if (owner) await db().delete(jobs).where(inArray(jobs.ownerId, [owner]));
 }
 
-/** Insert a `running` job for the chat, created `ageMs` ago. */
-async function insertRunning(ageMs: number): Promise<void> {
+/** Insert a `running` job whose last heartbeat was `ageMs` ago. */
+async function insertRunning(ageMs: number, createdAgeMs = ageMs): Promise<void> {
   await db()
     .insert(jobs)
     .values({
@@ -29,8 +30,9 @@ async function insertRunning(ageMs: number): Promise<void> {
       ownerId: owner,
       payload: { chatId: CHAT },
       attempts: 1,
-      createdAt: new Date(Date.now() - ageMs),
-      startedAt: new Date(Date.now() - ageMs),
+      createdAt: new Date(Date.now() - createdAgeMs),
+      startedAt: new Date(Date.now() - createdAgeMs),
+      heartbeatAt: new Date(Date.now() - ageMs),
     });
 }
 
@@ -58,6 +60,19 @@ describe.skipIf(!ready)("hasLiveChatJob", () => {
   it("ignores a job orphaned past the staleness bound", async () => {
     await insertRunning(JOB_STALE_MS + 60_000);
     expect(await hasLiveChatJob("chat_scene_image", CHAT)).toBe(false);
+  });
+
+  it("keeps an old job live while its heartbeat remains fresh", async () => {
+    const before = await queueDepth();
+    await insertRunning(1_000, JOB_STALE_MS + 60_000);
+    expect(await hasLiveChatJob("chat_scene_image", CHAT)).toBe(true);
+    expect(await queueDepth()).toBe(before + 1);
+  });
+
+  it("drops a recent-created job from queue depth after its heartbeat expires", async () => {
+    const before = await queueDepth();
+    await insertRunning(JOB_STALE_MS + 60_000, 1_000);
+    expect(await queueDepth()).toBe(before);
   });
 
   it("is scoped by type and by chat", async () => {

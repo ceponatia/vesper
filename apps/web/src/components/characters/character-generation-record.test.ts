@@ -1,83 +1,139 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterDraft } from "@/lib/client/api";
 import { emptyCharacterReview } from "./character-proposals";
-import { consumeGeneration, createGenerationStorage, finishGeneration, generationKey, matchesGeneration, readGeneration, receiveGenerationReview, type CharacterGeneration } from "./character-generation-record";
-import type { DraftStorage } from "./character-draft-storage";
+import { generationCacheKey, generationProjectionReceipt, generationRecordsForAbandonment, matchesGeneration, needsGenerationProjection, readGenerationCache, receiveGenerationReview, type CharacterGeneration } from "./character-generation-record";
 
-function fixture() {
-  const rows = new Map<string, string>();
-  const storage: DraftStorage = { getItem: (key) => rows.get(key) ?? null, setItem: (key, raw) => { rows.set(key, raw); }, removeItem: (key) => { rows.delete(key); } };
-  const record: CharacterGeneration = { id: "request", ownerId: "owner", target: { kind: "character", id: "iris" }, operation: "fill", scope: "profile", label: "missing Profile details", base: emptyCharacterDraft(), creationStart: null, status: "pending", result: null, error: null };
-  storage.setItem(generationKey(record), JSON.stringify(record));
-  return { storage, record };
+function fixture(overrides: Partial<CharacterGeneration> = {}): CharacterGeneration {
+  const base = emptyCharacterDraft();
+  return {
+    id: "request",
+    ownerId: "owner",
+    target: { kind: "character", id: "iris" },
+    operation: "fill",
+    scope: "profile",
+    label: "missing Profile details",
+    base,
+    creationStart: null,
+    source: { authoringRevision: 4, imageId: null },
+    status: "completed",
+    result: { proposed: { ...base, name: "Iris" }, diagnostics: [] },
+    error: null,
+    persisted: true,
+    retryOf: null,
+    rootRunId: "request",
+    proposal: { revision: 1, status: "unresolved", choices: {}, appliedDraft: null, undo: null },
+    createdAt: new Date(0).toISOString(),
+    startedAt: new Date(0).toISOString(),
+    finishedAt: new Date(1).toISOString(),
+    ...overrides,
+  };
 }
 
-describe("character generation request recovery", () => {
-  it("retains a response without a mounted editor and applies it only once on return", () => {
-    const { storage, record } = fixture();
-    const result = { proposed: { ...record.base, name: "Iris" }, diagnostics: [] };
-    expect(finishGeneration(storage, record, { result })).toBe(true);
-    const completed = readGeneration(storage.getItem(generationKey(record)))!;
-    const received = receiveGenerationReview(emptyCharacterReview(), completed);
+describe("server character generation records", () => {
+  it("projects an unresolved server proposal once and removes it after a persisted rejection", () => {
+    const run = fixture();
+    const received = receiveGenerationReview(emptyCharacterReview(), run);
     expect(received.pending).toHaveLength(1);
-    expect(receiveGenerationReview(received, completed)).toBe(received);
-    const rejected = { pending: [], undo: null, handledIds: [record.id] };
-    expect(receiveGenerationReview(rejected, completed)).toBe(rejected);
-    expect(consumeGeneration(storage, completed, false)).toBe(false);
-    expect(readGeneration(storage.getItem(generationKey(record)))?.status).toBe("completed");
-    expect(consumeGeneration(storage, completed, true)).toBe(true);
-    expect(storage.getItem(generationKey(record))).toBeNull();
+    expect(receiveGenerationReview(received, run)).toBe(received);
+    const rejected = fixture({ proposal: { ...run.proposal, revision: 2, status: "rejected" } });
+    const reconciled = receiveGenerationReview(received, rejected);
+    expect(reconciled.pending).toEqual([]);
+    expect(reconciled.handledIds).toContain(run.id);
   });
 
-  it("keeps owner, character, mode and scope attached to every late response", () => {
-    const { storage, record } = fixture();
-    expect(matchesGeneration(record, "other-owner", record.target)).toBe(false);
-    expect(matchesGeneration(record, record.ownerId, { kind: "character", id: "other" })).toBe(false);
-    const modified = { ...record, operation: "redraft" as const, scope: "attributes" as const };
-    storage.setItem(generationKey(record), JSON.stringify(modified));
-    expect(finishGeneration(storage, record, { result: { proposed: record.base, diagnostics: [] } })).toBe(false);
-    expect(readGeneration(storage.getItem(generationKey(record)))).toEqual(modified);
+  it("restores a durable undo receipt without resurrecting the accepted proposal", () => {
+    const run = fixture();
+    const undo = { id: "request-undo", label: "Undo profile", base: run.result!.proposed, proposed: run.base, undo: true as const, sourceRunId: run.id, proposalRevision: 2, decidedAt: null };
+    const accepted = fixture({ proposal: { revision: 2, status: "accepted", choices: {}, appliedDraft: run.result!.proposed, undo } });
+    const review = receiveGenerationReview(emptyCharacterReview(), accepted);
+    expect(review.pending).toEqual([]);
+    expect(review.undo).toEqual(undo);
+    expect(receiveGenerationReview(review, accepted)).toBe(review);
   });
 
-  it("does not recreate a dismissed request or erase a newer stored result", () => {
-    const { storage, record } = fixture();
-    storage.removeItem(generationKey(record));
-    expect(finishGeneration(storage, record, { result: { proposed: record.base, diagnostics: [] } })).toBe(false);
-    const completed = { ...record, status: "completed" as const, result: { proposed: record.base, diagnostics: [] } };
-    storage.setItem(generationKey(record), JSON.stringify({ ...completed, label: "newer receipt" }));
-    expect(consumeGeneration(storage, completed, true)).toBe(false);
-  });
-
-  it("does not treat an interrupted request as a completed proposal", () => {
-    const { record } = fixture();
-    const review = emptyCharacterReview();
-    expect(receiveGenerationReview(review, record)).toBe(review);
-    expect(matchesGeneration({ ...record, operation: "create" }, record.ownerId, record.target)).toBe(false);
-    expect(matchesGeneration({ ...record, operation: "portrait", scope: "profile" }, record.ownerId, record.target)).toBe(false);
-  });
-
-  it("retains a late response when storage fails and respects a changed record after recovery", () => {
-    const { storage: backing, record } = fixture();
-    let available = true;
-    const storage = createGenerationStorage({
-      getItem: (key) => { if (!available) throw new Error("unavailable"); return backing.getItem(key); },
-      setItem: (key, raw) => { if (!available) throw new Error("unavailable"); backing.setItem(key, raw); },
-      removeItem: (key) => { if (!available) throw new Error("unavailable"); backing.removeItem(key); },
+  it("keeps the latest accepted undo when server runs replay in either order", () => {
+    const older = fixture({ id: "older", createdAt: new Date(1).toISOString() });
+    const newer = fixture({ id: "newer", createdAt: new Date(2).toISOString() });
+    const oldUndo = {
+      id: "older-undo", label: "Undo older", base: older.result!.proposed, proposed: older.base,
+      undo: true as const, sourceRunId: older.id, proposalRevision: 2, decidedAt: new Date(10).toISOString(),
+    };
+    const newUndo = {
+      id: "newer-undo", label: "Undo newer", base: newer.result!.proposed, proposed: newer.base,
+      undo: true as const, sourceRunId: newer.id, proposalRevision: 2, decidedAt: new Date(20).toISOString(),
+    };
+    const acceptedOlder = fixture({
+      ...older,
+      proposal: {
+        revision: 2, status: "accepted", decidedAt: oldUndo.decidedAt,
+        choices: {}, appliedDraft: older.result!.proposed, undo: oldUndo,
+      },
     });
-    const key = generationKey(record);
-    storage.getItem(key);
-    available = false;
-    expect(finishGeneration(storage, record, { result: { proposed: { ...record.base, name: "Iris" }, diagnostics: [] } })).toBe(true);
-    const completed = readGeneration(storage.getItem(key))!;
-    expect(completed.status).toBe("completed");
-    expect(storage.unavailable(key)).toBe(true);
-    expect(consumeGeneration(storage, completed, true)).toBe(false);
-    available = true;
-    expect(readGeneration(storage.getItem(key))?.status).toBe("completed");
-    // A different tab explicitly dismissed the request during the outage.
-    backing.removeItem(key);
-    expect(storage.getItem(key)).toBeNull();
-    expect(consumeGeneration(storage, completed, true)).toBe(false);
+    const acceptedNewer = fixture({
+      ...newer,
+      proposal: {
+        revision: 2, status: "accepted", decidedAt: newUndo.decidedAt,
+        choices: {}, appliedDraft: newer.result!.proposed, undo: newUndo,
+      },
+    });
+
+    const newestFirst = receiveGenerationReview(
+      receiveGenerationReview(emptyCharacterReview(), acceptedNewer),
+      acceptedOlder,
+    );
+    const oldestFirst = receiveGenerationReview(
+      receiveGenerationReview(emptyCharacterReview(), acceptedOlder),
+      acceptedNewer,
+    );
+    expect(newestFirst.undo).toMatchObject({ sourceRunId: newer.id, decidedAt: newUndo.decidedAt });
+    expect(oldestFirst.undo).toMatchObject({ sourceRunId: newer.id, decidedAt: newUndo.decidedAt });
   });
 
+  it("keeps an already-handled empty proposal referentially stable", () => {
+    const run = fixture({ result: { proposed: emptyCharacterDraft(), diagnostics: [] } });
+    const received = receiveGenerationReview(emptyCharacterReview(), run);
+    expect(received.handledIds).toContain(run.id);
+    expect(receiveGenerationReview(received, run)).toBe(received);
+  });
+
+  it("replaces a captured optimistic request with its durable settlement without touching newer rows", () => {
+    const optimistic = fixture({ id: "optimistic", status: "pending", persisted: false, result: null });
+    const durable = fixture({ id: "durable", status: "pending", result: null });
+    const newer = fixture({ id: "newer", status: "pending", result: null });
+    expect(generationRecordsForAbandonment(
+      [optimistic],
+      [durable, newer],
+      [{ requestId: optimistic.id, run: durable }],
+    )).toEqual([durable]);
+  });
+
+  it("keeps a completed proposal active until its exact revision is projected", () => {
+    const completed = fixture();
+    const receipt = generationProjectionReceipt(completed);
+    expect(needsGenerationProjection(completed, new Set())).toBe(true);
+    expect(needsGenerationProjection(completed, new Set([receipt]))).toBe(false);
+    expect(needsGenerationProjection(
+      fixture({ proposal: { ...completed.proposal, revision: 2 } }),
+      new Set([receipt]),
+    )).toBe(true);
+    expect(needsGenerationProjection(fixture({ status: "pending", result: null }), new Set())).toBe(false);
+    expect(needsGenerationProjection(fixture({ result: null }), new Set())).toBe(false);
+  });
+
+  it("scopes character rows exactly while allowing a new browser to discover creation runs", () => {
+    const run = fixture();
+    expect(matchesGeneration(run, "other", run.target)).toBe(false);
+    expect(matchesGeneration(run, run.ownerId, { kind: "character", id: "other" })).toBe(false);
+    const creation = fixture({ target: { kind: "creation", id: "draft-a" }, operation: "create", scope: null, source: null });
+    expect(matchesGeneration(creation, creation.ownerId, { kind: "creation", id: "new-browser-draft" })).toBe(false);
+    expect(matchesGeneration(creation, creation.ownerId, { kind: "creation", id: "draft-a" })).toBe(true);
+    expect(generationCacheKey(creation.ownerId, creation.target)).toContain("draft-a");
+    expect(generationCacheKey(creation.ownerId, creation.target)).toContain(":creation:draft-a");
+  });
+
+  it("degrades malformed cache entries to an empty cache", () => {
+    expect(readGenerationCache("not json")).toEqual([]);
+    expect(readGenerationCache(JSON.stringify({ savedAt: Date.now(), records: [{ broken: true }] }))).toEqual([]);
+    expect(readGenerationCache(JSON.stringify({ savedAt: Date.now(), records: [fixture()] }))).toEqual([fixture()]);
+  });
 });

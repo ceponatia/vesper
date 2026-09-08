@@ -3,7 +3,12 @@ import { images } from "../db";
 import { log } from "@/server/log";
 import { purgeImagesWhere } from "./asset-deletion";
 import { registerReferenceViewMaintenance } from "./asset-lifecycle-hooks";
-import { REFERENCE_VIEW_RETENTION_MS, clearReferenceViewAssetPointers, retiredReferenceViewAssets } from "./reference-view-store";
+import {
+  REFERENCE_VIEW_RETENTION_MS,
+  clearReferenceViewAssetPointers,
+  reconcileOrphanedReferenceViewAttempts,
+  retiredReferenceViewAssets,
+} from "./reference-view-store";
 
 /**
  * Retention for the reference view set: the bounded pass that collects a
@@ -63,18 +68,19 @@ export interface ReferenceViewSweepOptions {
  */
 export async function referenceViewSweepPass(options: ReferenceViewSweepOptions = {}): Promise<Record<string, number>> {
   const now = options.now ?? new Date();
+  const referenceViewAttemptsReconciled = await reconcileOrphanedReferenceViewAttempts(now);
   const rows = await retiredReferenceViewAssets(
     new Date(now.getTime() - REFERENCE_VIEW_RETENTION_MS),
     options.limit ?? REFERENCE_VIEW_CLEANUP_LIMIT,
   );
-  if (rows.length === 0) return { referenceViewAssetsPurged: 0 };
+  if (rows.length === 0) return { referenceViewAssetsPurged: 0, referenceViewAttemptsReconciled };
 
   const imageIds = [...new Set(rows.flatMap((row) => (row.imageId === null ? [] : [row.imageId])))];
   // Kind-guarded like every purge here, so a pointer that somehow named another
   // class of asset can only ever delete nothing.
   const removed = await purgeImagesWhere(and(inArray(images.id, imageIds), eq(images.kind, "reference_view")));
   await clearReferenceViewAssetPointers(rows.map((row) => row.id));
-  return { referenceViewAssetsPurged: removed };
+  return { referenceViewAssetsPurged: removed, referenceViewAttemptsReconciled };
 }
 
 /**

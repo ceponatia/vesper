@@ -101,7 +101,7 @@ export async function queueDepth(): Promise<number> {
     .where(
       and(
         inArray(jobs.status, ["queued", "running"]),
-        gt(jobs.createdAt, new Date(Date.now() - JOB_SLOT_STALE_MS)),
+        gt(jobs.heartbeatAt, new Date(Date.now() - JOB_SLOT_STALE_MS)),
       ),
     );
   return row?.depth ?? 0;

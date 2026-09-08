@@ -12,7 +12,7 @@ Owns the view vocabulary, the build lane, the review lifecycle, and the storage 
 Does not own: the shared render shell and asset rules ([../asset-registry.md](../asset-registry.md)),
 the identity references every view render sends ([../identity-packs.md](../identity-packs.md)), the
 compiled prompt program ([../character-prompts.md](../character-prompts.md)), or portrait acceptance
-itself, which is the trigger.
+itself, which makes the explicit build action available.
 
 ## What a view depicts
 
@@ -75,8 +75,8 @@ digest and the program's own meta.
 `plannedReferenceViews` drops every intimate view unless the character's `identity.apparent_age`
 resolves to a value the image age vocabulary carries — the adult floor, with no exception. It is a
 **gate in the plan**, never a prompt instruction: the view is simply not built, and nothing about
-the character's age reaches a model. The accept route charges the budget from the same helper the
-build job plans from, so the charge and the work can never be two numbers.
+the character's age reaches a model. The explicit build route charges the budget from the same
+helper the job plans from, so the charge and the work can never be two numbers.
 
 Eligibility is live character truth rather than a creation-time decision. If apparent age later
 becomes minor or unresolved, every `bare` slot projects `ineligible` immediately, including an
@@ -87,24 +87,29 @@ lock; a render that crossed the gate after reservation settles stale. Consumptio
 lock across the plan projection and asset read, so an age edit cannot commit between eligibility
 approval and opening the bytes.
 
-## Cost and single flight
+## Cost and slot leases
 
-- Accepting a portrait queues the set and charges the daily image budget for exactly the planned
-  count. Reference views are a hidden kind, so the storage leg is skipped; backpressure and the
-  daily provider budget still apply.
-- **A refused build still accepts.** The acceptance pointer is committed before the build is
-  decided, so a budget denial, a saturated queue or a build already in flight comes back as
-  `views: { queued: false, reason }` on a 200 beside the acceptance. The studio says so and offers to
-  build them later.
-- Re-accepting the portrait that is already accepted writes nothing, queues nothing and charges
-  nothing.
-- **One build per character at a time**, staleness-bounded like every other job dedupe, so a deploy
-  that kills a build cannot wedge that character forever.
-- **A batch is one job, one admission and one charge — and every target in it starts together.**
-  The character, the accepted portrait's bytes and the wardrobe are read once; from there every
-  admitted target's provider request begins without waiting for another target in the same batch to
-  settle. There is no render-count limit inside the job. What a sheet may cost is the daily image
-  budget's question, and how many batches may run at all is the per-user job cap's.
+- Accepting a portrait writes the identity pointer only. It starts no reference-view job and spends
+  no image budget. Re-accepting the current portrait remains a no-op.
+- **Build N reference views** is a separate disclosed action. It charges the daily image budget for
+  exactly the slots the request newly claims. Reference views are a hidden kind, so the storage leg
+  is skipped; backpressure and the daily provider budget still apply.
+- **Each slot has one heartbeat-backed lease.** A request may claim every requested slot that has no
+  live lease while another job continues on disjoint slots. An overlapping slot converges on the
+  current attempt and reports `busy`; partial admission reports one result per requested target.
+- **A batch is one job, one admission and one charge over its newly claimed targets.** The character,
+  the accepted portrait's bytes and the wardrobe are read once; from there every admitted target's
+  provider request begins without waiting for another target in the same batch to settle. There is
+  no render-count limit inside the job. What a sheet may cost is the daily image budget's question,
+  and how many batches may run at all is the per-user job cap's.
+- A job records its leased slots in its bounded payload. Reservation binds the new pending attempt
+  id to that lease in the same short transaction that replaces the prior current row. Provider work
+  runs after the transaction commits, and settlement releases that slot while the job's other slots
+  may remain live.
+- Lease liveness follows `heartbeat_at`, not job creation time. An expired job is failed, its
+  abandoned pending attempts become retryable failures, and a later request may claim those slots.
+  A late worker must still own the live lease and the current pending attempt to finalize or fail it;
+  otherwise its write is fenced out.
 - **Duplicate slots converge to one attempt.** A request naming the same slot twice is normalized
   (`normalizeReferenceViewTargets`) before admission, so it is charged once and rendered once: two
   simultaneous attempts on one slot would supersede each other mid-render, and the second render's
@@ -153,9 +158,12 @@ approval and opening the bytes.
   is review provenance; it does not change generation instructions.
 - An **owner upload** is the second way a slot is ever filled, and it produces the same row with
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
-  supplying it. It runs no model, charges no render budget, and re-fits the image to the canonical
-  3:4 portrait under the avatar upload's decode guards. Uploads are unavailable during a live build
-  or pending attempt. After processing the bytes, installation rechecks generation activity, the
+  supplying it. It runs no model and charges no render budget. Before submission, the shared crop
+  dialog previews the exact 3:4 output, including pan, zoom and fitted backdrop; confirmation sends
+  the normalized 768×1024 JPEG. The server re-fits it under the avatar upload's decode guards as
+  defense in depth. An upload is unavailable while that slot has
+  a live lease or pending attempt; work on another slot does not block it. After processing the bytes,
+  installation rechecks generation activity, the
   accepted source and the current attempt/revision under the character lock before replacing the
   slot. A busy or changed result preserves the existing attempt and asks the owner to retry; only
   the refused upload's unclaimed asset is removed. A build admitted after installation can replace
@@ -165,7 +173,7 @@ approval and opening the bytes.
   correction and retry. A later attempt never overwrites an earlier attempt's review provenance.
 - History offers **Use this version** for a retained compatible attempt. Restoration checks
   ownership, slot, current attempt and revision, accepted portrait id and content hash, generation
-  version, available bytes, retention expiry and pending/live generation state. It copies the bytes
+  version, available bytes, retention expiry and that slot's pending/live generation state. It copies the bytes
   into an independent asset and creates a new unreviewed current candidate. The original attempt
   keeps its verdict and feedback; its cleanup cannot delete the restored candidate's file. A failed
   restoration compensates only its own unused copy. A build admitted after restoration can replace
@@ -261,8 +269,8 @@ studio's grid displays them.
 | Route                                                 | What it does                                                                              |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot; withheld slots are `ineligible`                          |
-| `POST /api/characters/:id/reference-views/build`      | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted`                      |
-| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — rebuilds the named slots as one batch, rejected ones included             |
+| `POST /api/characters/:id/reference-views/build`      | Claims every available `missing` / `failed` / `stale` slot; reports each target outcome   |
+| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — claims available named slots; reports `queued` / `busy` for each target   |
 | `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                              |
 | `POST …/reference-views/:angle/:wardrobe/upload`      | `{ dataUrl }` ⇒ the settled slot, synchronously                                           |
 | `POST …/reference-views/:angle/:wardrobe/review`      | `{ attemptId, expectedRevision, verdict, feedback? }` ⇒ settled slot                      |
@@ -284,5 +292,6 @@ upload that loses eligibility after its initial read returns a recoverable 409 `
 | `images.reference_views.provider_unavailable` | No image provider is configured, so nothing was rendered      |
 | `images.reference_views.unknown_view`         | A stored row names an angle or wardrobe the registry dropped  |
 | `images.reference_views.budget_refused`       | Admission refused the build; the acceptance still stands      |
+| `images.reference_views.lease_expired`        | An interrupted slot was reclaimed and is ready to retry       |
 | `images.reference_views.view_unavailable`     | A wanted view could not be sent; the render goes on unchanged |
 | `images.reference_views.dropped_for_capacity` | A consumable view did not fit the model's reference capacity  |

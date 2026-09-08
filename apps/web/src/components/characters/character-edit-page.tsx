@@ -25,7 +25,8 @@ import { characterReviewStateSchema, emptyCharacterReview, proposalChanges, reco
 import { CharacterAuthorRecoveryNotice } from "./character-author-recovery";
 import { useCharacterAuthorDraft } from "./use-character-author-draft";
 import { CharacterGenerationStatus } from "./character-generation-status";
-import { hasReceivedGeneration, receiveGenerationReview } from "./character-generation-record";
+import { CharacterMediaStatus } from "./character-media-status";
+import { receiveGenerationReview } from "./character-generation-record";
 import { useCharacterGeneration } from "./use-character-generation";
 import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
@@ -56,6 +57,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     if (alive.current) { setForgeDiagnostics(diagnostics); detail.reload({ silent: true }); }
   });
   const { draft, chatModel, dirty, saving, save, changeDraft, changeChatModel } = author;
+  const pendingProposalCount = reviewStore.data.pending.length;
   const referencePlanKey = JSON.stringify(
     detail.data?.profile.attributes.find((value) => value.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value ?? null,
   );
@@ -69,12 +71,35 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     return () => { alive.current = false; };
   }, []);
 
-  const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record) => {
+  const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record, actions) => {
     if (reviewStore.isBlocked() || author.isBlocked() || record.ownerId !== ownerId || record.target.id !== characterId || !record.result) return false;
-    if (!hasReceivedGeneration(reviewStore.current.current, record.id)) {
-      setForgeDiagnostics(record.result.diagnostics);
-      reviewStore.update((review) => receiveGenerationReview(review, record));
-      if (!proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) toast.push({ title: "No changes suggested", tone: "success" });
+    const firstReceipt = !reviewStore.current.current.pending.some((item) => item.sourceRunId === record.id || item.id === record.id)
+      && !reviewStore.current.current.handledIds?.includes(record.id);
+    const changes = proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false });
+    let projected = record;
+    if (record.proposal.status === "unresolved" && changes.length === 0) {
+      const current = await charactersApi.get(characterId);
+      if (!current.ok) return false;
+      const rejected = await actions.decide(
+        { sourceRunId: record.id, proposalRevision: record.proposal.revision },
+        "reject",
+        {},
+        { expectedAuthoringRevision: current.data.authoringRevision },
+      );
+      if (!rejected) return false;
+      projected = rejected.run;
+    }
+    setForgeDiagnostics(record.result.diagnostics);
+    reviewStore.update((review) => receiveGenerationReview(review, projected));
+    if (firstReceipt && changes.length === 0) {
+      toast.push({
+        title: record.result.portrait?.outcome === "supported_match" ? "Portrait and sheet agree" : "No changes suggested",
+        tone: "success",
+      });
+    }
+    if (projected.proposal.status === "accepted" || projected.proposal.status === "undone") {
+      await author.refreshServer();
+      detail.reload({ silent: true });
     }
     await reviewStore.flush();
     return reviewStore.isPersisted();
@@ -89,11 +114,21 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     try {
       const withBrief = withCreationBrief(currentDraft);
       if (withBrief !== currentDraft) changeDraft(withBrief);
-      if (!(await save({ silent: true })) || !alive.current) return;
-      const base = author.current.current?.draft;
-      if (!base) return;
+      const displayedPortraitId = mode === "portrait" ? detail.data?.avatarImageId ?? null : null;
+      if (mode === "portrait" && pendingProposalCount > 0) {
+        toast.push({ title: "Review character suggestions first", description: "Portrait completion uses only accepted, saved details.", tone: "error" });
+        return;
+      }
+      const prepared = await author.prepareAction();
+      if (!prepared || !alive.current) return;
+      if (mode === "portrait" && !displayedPortraitId) {
+        toast.push({ title: "Portrait unavailable", description: "Generate or upload a portrait first.", tone: "error" });
+        return;
+      }
+      const base = prepared.draft;
       const section = scope ? characterSections[scope].label : "character";
-      generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
+      await generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
+        source: { authoringRevision: prepared.authoringRevision, imageId: mode === "portrait" ? displayedPortraitId : null },
         label: mode === "portrait" ? "portrait changes" : mode === "fill" ? `missing ${section} details` : `${section} rewrite` });
     } finally { if (alive.current) { busyRef.current = false; setPreparing(null); setPreparingScope(null); } }
   };
@@ -214,8 +249,30 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         <Button disabled={saving} onClick={() => void author.resetToServer()}>Use saved character</Button>
       </div> : null}
       {author.recovery ? <CharacterAuthorRecoveryNotice key={author.recovery.id} recovery={author.recovery} disabled={saving || author.storage.conflict} onRestore={author.resolveRecovery} onDiscard={() => void author.discardRecovery()} /> : null}
+      <CharacterMediaStatus characterId={characterId} onRetry={() => setTab("portrait")} />
       <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={author.blocked || reviewStore.conflict || preparing !== null} onRetry={generation.retry} onDismiss={generation.dismiss} />
       <CharacterProposalReview draft={draft} review={reviewStore.data} onReviewChange={reviewStore.update} onChange={changeDraft}
+        onDecision={async (proposal, action, choices) => {
+          let expectedAuthoringRevision: number | undefined;
+          if (action === "accept" || action === "reject" || action === "undo") {
+            const prepared = await author.prepareAction();
+            if (!prepared) return null;
+            expectedAuthoringRevision = prepared.authoringRevision;
+          }
+          const decided = await generation.decide(proposal, action, choices, {
+            ...(expectedAuthoringRevision === undefined ? {} : { expectedAuthoringRevision }),
+          });
+          if (!decided) {
+            toast.push({ title: "Review changed", description: "The saved character or proposal changed. Review the latest values and try again.", tone: "error" });
+            await author.refreshServer();
+            return null;
+          }
+          if (action === "accept" || action === "undo") {
+            await author.refreshServer();
+            detail.reload({ silent: true });
+          }
+          return { applyLocally: false, appliedDraft: null, undo: decided.run.proposal.undo };
+        }}
         disabled={!reviewStore.ready || reviewStore.conflict || author.blocked} isBlocked={() => reviewStore.isBlocked() || author.isBlocked()} />
       <div onBlur={autosave.onBlur}>
       <fieldset disabled={author.blocked} className="min-w-0">
@@ -236,6 +293,8 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         onComplete={(scope) => void generate("fill", scope)}
         completing={busy === "fill" ? scopeBusy : null}
         generationDisabled={busy !== null || !reviewStore.ready || reviewStore.conflict || author.blocked}
+        pendingProposalCount={pendingProposalCount}
+        preparePortraitGeneration={author.prepareAction}
         saving={saving}
         onPortraitAttributes={() => void generate("portrait")}
         derivingPortrait={busy === "portrait"}

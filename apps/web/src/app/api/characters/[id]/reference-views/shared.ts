@@ -11,8 +11,13 @@ import {
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { imageRenderRejection, jsonError, jsonOk, startJobAfterAdmission } from "@/server/api";
-import { hasLiveCharacterJob } from "@/server/db";
-import { buildReferenceViews, getReferenceViewSet, plannedReferenceViewsForCharacter } from "@/server/images";
+import {
+  buildReferenceViews,
+  claimReferenceViewLeases,
+  getReferenceViewSet,
+  plannedReferenceViewsForCharacter,
+  type ReferenceViewLeaseClaim,
+} from "@/server/images";
 import { log } from "@/server/log";
 import { findOwnedCharacter } from "../owned";
 
@@ -21,8 +26,8 @@ import { findOwnedCharacter } from "../owned";
  *
  * Five owner routes share one authorization root, one slot parser, and one
  * decision about whether a build may start. Written out five times that is five
- * chances for one route to charge a different budget, skip the single-flight
- * guard, or answer a refusal as a failure — so each is stated once, here.
+ * chances for one route to charge a different budget, skip per-slot admission,
+ * or answer a refusal as a failure — so each is stated once, here.
  *
  * **Nothing in this file may turn a refusal into an error.** A build that cannot
  * start is an outcome the caller reports and the studio offers to retry; the
@@ -105,44 +110,65 @@ export interface QueueReferenceViewBuildInput {
  *
  * 1. **Nothing to do** ⇒ queued `false` with no reason. Every slot is already
  *    what it should be; charging for that would bill an owner for a no-op.
- * 2. **Single flight.** One build per character at a time
- *    (`hasLiveCharacterJob`, which is staleness-bounded so a deploy that kills a
- *    build cannot wedge the character forever). Refused as `busy` — the work the
- *    caller wants is already happening.
- * 3. **Capacity, then admission.** `startJobAfterAdmission` atomically claims the
+ * 2. **Capacity, then slot admission.** `startJobAfterAdmission` atomically claims the
  *    per-user job slot BEFORE `imageRenderRejection` can consume the daily
  *    provider budget. The claimed row is only a reservation until admission
  *    passes; a refusal deletes it and starts no provider work. Admission charges
- *    exactly `targets.length` renders and declares the hidden output kind so the
+ *    exactly the newly leased targets and declares the hidden output kind so the
  *    storage leg is skipped: these bytes are excluded from the owner's quota, so
- *    their admission must not spend visible headroom either. Backpressure and
+ *    their admission must not spend visible headroom either. Overlapping targets
+ *    report `busy` while disjoint targets proceed in the same request. Backpressure and
  *    the daily provider budget still apply, because they are about spend and
  *    queue depth rather than disk.
  *
- * A refusal is a VALUE. The caller — the accept route above all — reports it in
- * the response body and leaves everything else exactly as it was.
+ * A refusal is a VALUE. The explicit build or regenerate route reports it in
+ * the response body and leaves the accepted portrait exactly as it was.
  */
 export async function queueReferenceViewBuild(
   input: QueueReferenceViewBuildInput,
 ): Promise<ReferenceViewQueueOutcome> {
   const { characterId, ownerId, targets, planned } = input;
-  if (targets.length === 0) return { queued: false, reason: null, planned };
+  if (targets.length === 0) return { queued: false, reason: null, planned, admitted: 0, targets: [] };
 
-  if (await hasLiveCharacterJob("reference_views", characterId)) {
-    return { queued: false, reason: "busy", planned };
-  }
+  const payload: {
+    characterId: string;
+    targets: string[];
+    leases: ReferenceViewLeaseClaim["claimed"];
+    referenceViewAttemptIds: string[];
+  } = {
+    characterId,
+    targets: [],
+    leases: [],
+    referenceViewAttemptIds: [],
+  };
+  type Admission = { reason: "budget" | "busy"; claim: ReferenceViewLeaseClaim };
+  let claim: ReferenceViewLeaseClaim = { claimed: [], busy: [] };
+  let leaseJobId: string | null = null;
 
-  const started = await startJobAfterAdmission<"budget">(
+  const started = await startJobAfterAdmission<Admission>(
     {
       type: "reference_views",
       ownerId,
-      payload: { characterId, targets: targets.map((view) => `${view.angle}:${view.wardrobe}`) },
-      run: () =>
-        buildReferenceViews({ characterId, ownerId, targets }).then((result) => ({ ...result })),
+      payload,
+      run: () => {
+        if (leaseJobId === null) throw new Error("reference view job launched without admitted leases");
+        return buildReferenceViews({
+          jobId: leaseJobId,
+          characterId,
+          ownerId,
+          targets: claim.claimed,
+        }).then((result) => ({ ...result }));
+      },
     },
-    async () => {
+    async (jobId) => {
+      leaseJobId = jobId;
+      claim = await claimReferenceViewLeases({ characterId, ownerId, jobId, targets });
+      payload.targets = claim.claimed.map((view) => `${view.angle}:${view.wardrobe}`);
+      payload.leases = claim.claimed;
+      if (claim.claimed.length === 0) return { reason: "busy", claim };
+
       const refused = await imageRenderRejection(input.user, input.req, {
-        count: targets.length,
+        count: claim.claimed.length,
         outputKind: "reference_view",
       });
       if (!refused) return null;
@@ -154,19 +180,49 @@ export async function queueReferenceViewBuild(
         code: "images.reference_views.budget_refused",
         characterId,
         requested: targets.length,
+        claimed: claim.claimed.length,
         status: refused.status,
       });
-      return "budget";
+      return { reason: "budget", claim };
     },
   );
 
   if (!started.ok) {
-    if ("admission" in started) return { queued: false, reason: started.admission, planned };
+    if ("admission" in started) {
+      const admission = started.admission;
+      const busy = new Set(admission.claim.busy.map((view) => `${view.angle}:${view.wardrobe}`));
+      return {
+        queued: false,
+        reason: admission.reason,
+        planned,
+        admitted: 0,
+        targets: targets.map((view) => ({
+          ...view,
+          state: busy.has(`${view.angle}:${view.wardrobe}`) ? "busy" : admission.reason,
+        })),
+      };
+    }
     // The per-user job cap refused the reservation. The admission callback did
     // not run, so no daily provider budget was consumed.
-    return { queued: false, reason: "busy", planned };
+    return {
+      queued: false,
+      reason: "busy",
+      planned,
+      admitted: 0,
+      targets: targets.map((view) => ({ ...view, state: "busy" })),
+    };
   }
-  return { queued: true, reason: null, planned };
+  const busy = new Set(claim.busy.map((view) => `${view.angle}:${view.wardrobe}`));
+  return {
+    queued: true,
+    reason: null,
+    planned,
+    admitted: claim.claimed.length,
+    targets: targets.map((view) => ({
+      ...view,
+      state: busy.has(`${view.angle}:${view.wardrobe}`) ? "busy" : "queued",
+    })),
+  };
 }
 
 /**

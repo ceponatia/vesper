@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { db, jobs } from "@/server/db";
+import { and, eq, sql } from "drizzle-orm";
+import { db, jobs, JOB_HEARTBEAT_INTERVAL_MS } from "@/server/db";
 import { log } from "@/server/log";
 import { errorText } from "./respond";
 import { claimJobSlot, type JobSlotClaim } from "./concurrency";
@@ -56,6 +56,7 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
     case "chat_scene_sketch":
     case "chat_meanwhile":
     case "item_classify":
+    case "character_authoring":
       return "text";
     case "image_sweep":
     case "identity_pack":
@@ -92,6 +93,10 @@ export interface JobRunContext {
 
 export interface StartJobOptions {
   type: ApiJobType;
+  /** Stable request id for idempotent starts. */
+  requestedJobId?: string;
+  /** Coalesce active work that has different request ids but one logical root. */
+  activeDedupeKey?: string;
   /**
    * Who the work is for. The per-user concurrency cap counts over this, so a
    * call that omits it submits uncapped work — reserved for system and
@@ -130,18 +135,55 @@ export type StartJobResult =
  * concurrency capacity is secured. An admission refusal never starts the job and
  * carries the caller's own refusal value back unchanged.
  */
-export type StartJobAfterAdmissionResult<T> = StartJobResult | { readonly ok: false; readonly admission: T };
+export type StartJobAfterAdmissionResult<T> =
+  | { readonly ok: true; readonly jobId: string; readonly inserted: boolean }
+  | Extract<StartJobResult, { ok: false }>
+  | { readonly ok: false; readonly admission: T }
+  | { readonly ok: false; readonly admissionPending: true };
+
+const ADMISSION_STATE_KEY = "_jobAdmissionState";
+const ADMISSION_PENDING = "pending";
+const ADMISSION_WAIT_MS = 10_000;
+const ADMISSION_POLL_MS = 25;
+
+export function isJobAdmissionPending(payload: unknown): boolean {
+  return typeof payload === "object" && payload !== null && !Array.isArray(payload)
+    && (payload as Record<string, unknown>)[ADMISSION_STATE_KEY] === ADMISSION_PENDING;
+}
+
+/**
+ * Wait for a provisional job row to become admitted or disappear on refusal.
+ * The bounded pending result lets an HTTP caller retry without claiming work
+ * started when an admitting process has stalled or exited.
+ */
+export async function waitForJobAdmission(
+  jobId: string,
+  waitMs = ADMISSION_WAIT_MS,
+): Promise<"admitted" | "missing" | "pending"> {
+  const deadline = Date.now() + waitMs;
+  while (true) {
+    const [row] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
+    if (!row) return "missing";
+    if (!isJobAdmissionPending(row.payload)) return "admitted";
+    if (Date.now() >= deadline) return "pending";
+    await new Promise((resolve) => setTimeout(resolve, ADMISSION_POLL_MS));
+  }
+}
 
 /** Returns the new job id, or the refusal to hand back to the caller. */
-async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<StartJobResult, { ok: false }>> {
+type InsertedJob = { readonly jobId: string; readonly inserted: boolean };
+
+async function insertJobRow(opts: StartJobOptions): Promise<InsertedJob | Extract<StartJobResult, { ok: false }>> {
   if (opts.ownerId !== undefined) {
     const claim: JobSlotClaim = await claimJobSlot({
       ownerId: opts.ownerId,
       type: opts.type,
       payload: opts.payload,
+      ...(opts.requestedJobId === undefined ? {} : { requestedJobId: opts.requestedJobId }),
+      ...(opts.activeDedupeKey === undefined ? {} : { activeDedupeKey: opts.activeDedupeKey }),
       ...(opts.chatId === undefined ? {} : { chatId: opts.chatId }),
     });
-    return claim.ok ? claim.jobId : { ok: false, active: claim.active, limit: claim.limit };
+    return claim.ok ? { jobId: claim.jobId, inserted: claim.inserted } : { ok: false, active: claim.active, limit: claim.limit };
   }
 
   const [row] = await db()
@@ -156,7 +198,7 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
     })
     .returning({ id: jobs.id });
   if (!row) throw new Error("jobs insert returned no row");
-  return row.id;
+  return { jobId: row.id, inserted: true };
 }
 
 /**
@@ -177,15 +219,36 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
   };
   const laneOutcome = (settled: boolean): boolean | null => (reported === undefined ? settled : reported);
 
+  const beat = setInterval(() => {
+    void (async () => {
+      try {
+        await db()
+          .update(jobs)
+          .set({ heartbeatAt: new Date() })
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
+      } catch {
+        // Heartbeats are best-effort. The lease expires if the database remains unavailable.
+      }
+    })();
+  }, JOB_HEARTBEAT_INTERVAL_MS);
+  beat.unref?.();
+
   void opts
     .run(context)
     .then(async (result) => {
       const outcome = laneOutcome(true);
       if (lane && outcome !== null) recordProviderOutcome(lane, outcome);
-      await db()
-        .update(jobs)
-        .set({ status: "done", payload: { ...opts.payload, ...result }, finishedAt: new Date() })
-        .where(eq(jobs.id, jobId));
+      await db().transaction(async (tx) => {
+        const [current] = await tx.select({ payload: jobs.payload }).from(jobs)
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running"))).for("update");
+        if (!current) return;
+        const payload = current.payload && typeof current.payload === "object" && !Array.isArray(current.payload)
+          ? current.payload as Record<string, unknown>
+          : opts.payload;
+        await tx.update(jobs)
+          .set({ status: "done", payload: { ...payload, ...result }, finishedAt: new Date() })
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
+      });
     })
     .catch(async (err: unknown) => {
       // A run that reported a success and then threw is telling the truth twice:
@@ -198,11 +261,12 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
         await db()
           .update(jobs)
           .set({ status: "failed", error: message, finishedAt: new Date() })
-          .where(eq(jobs.id, jobId));
+          .where(and(eq(jobs.id, jobId), eq(jobs.status, "running")));
       } catch (updateErr) {
         log.error("api.jobs", "failed to record job failure", { jobId, error: errorText(updateErr) });
       }
-    });
+    })
+    .finally(() => clearInterval(beat));
 }
 
 /**
@@ -218,26 +282,47 @@ function launchInsertedJob(jobId: string, opts: StartJobOptions): void {
  */
 export async function startJobAfterAdmission<T>(
   opts: StartJobOptions,
-  admit: () => Promise<T | null>,
+  admit: (jobId: string) => Promise<T | null>,
 ): Promise<StartJobAfterAdmissionResult<T>> {
-  const jobId = await insertJobRow(opts);
-  if (typeof jobId !== "string") return jobId;
+  const reservation = {
+    ...opts,
+    payload: { ...opts.payload, [ADMISSION_STATE_KEY]: ADMISSION_PENDING },
+  };
+  let insertedJob: InsertedJob | null = null;
+  while (!insertedJob) {
+    const candidate = await insertJobRow(reservation);
+    if ("ok" in candidate) return candidate;
+    if (candidate.inserted) {
+      insertedJob = candidate;
+      break;
+    }
+    const state = await waitForJobAdmission(candidate.jobId);
+    if (state === "admitted") return { ok: true, jobId: candidate.jobId, inserted: false };
+    if (state === "pending") return { ok: false, admissionPending: true };
+    // The other request was refused and removed its provisional row. Reclaim
+    // this request id and run this caller's admission guard instead.
+  }
 
   let admission: T | null;
   try {
-    admission = await admit();
+    admission = await admit(insertedJob.jobId);
   } catch (err) {
-    await db().delete(jobs).where(eq(jobs.id, jobId));
+    await db().delete(jobs).where(eq(jobs.id, insertedJob.jobId));
     throw err;
   }
 
   if (admission !== null) {
-    await db().delete(jobs).where(eq(jobs.id, jobId));
+    await db().delete(jobs).where(eq(jobs.id, insertedJob.jobId));
     return { ok: false, admission };
   }
 
-  launchInsertedJob(jobId, opts);
-  return { ok: true, jobId };
+  const [admitted] = await db().update(jobs)
+    .set({ payload: sql`${jobs.payload} - ${ADMISSION_STATE_KEY}` })
+    .where(eq(jobs.id, insertedJob.jobId))
+    .returning({ id: jobs.id });
+  if (!admitted) throw new Error("admitted job row disappeared before launch");
+  launchInsertedJob(insertedJob.jobId, opts);
+  return { ok: true, jobId: insertedJob.jobId, inserted: true };
 }
 
 /**
@@ -260,7 +345,7 @@ export async function startJobAfterAdmission<T>(
  */
 export async function startJob(opts: StartJobOptions): Promise<StartJobResult> {
   const jobId = await insertJobRow(opts);
-  if (typeof jobId !== "string") return jobId;
-  launchInsertedJob(jobId, opts);
-  return { ok: true, jobId };
+  if ("ok" in jobId) return jobId;
+  if (jobId.inserted) launchInsertedJob(jobId.jobId, opts);
+  return { ok: true, jobId: jobId.jobId };
 }

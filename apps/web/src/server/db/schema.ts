@@ -249,6 +249,15 @@ export const characters = pgTable(
      * default (`DEFAULT_CHARACTER_CHAT_MODEL_ID`).
      */
     chatModel: text("chat_model").notNull().default(""),
+    /**
+     * Monotonic version of the authored character content (`name`, `profile`,
+     * and `tags`). A database trigger advances it only when one of those
+     * values changes, so portrait pointers, publication state, and operational
+     * settings cannot create false authoring conflicts. The trigger also keeps
+     * writes from an older application instance correct during a rolling
+     * release.
+     */
+    authoringRevision: integer("authoring_revision").notNull().default(1),
     searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
     embedder: text("embedder"),
     createdAt: createdAt(),
@@ -2617,7 +2626,7 @@ export const jobs = pgTable(
       // the image lane in `providerLaneFor`.
       // `generator_image`: one Image Generator run — an image-provider render,
       // so it maps to the image lane as well.
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract", "generator_image", "reference_views"],
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract", "generator_image", "reference_views", "character_authoring"],
     }).notNull(),
     /**
      * Who the work is being done for — the key the

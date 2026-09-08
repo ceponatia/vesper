@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CHARACTER_CREATION_BRIEF_MAX, boundCharacterCreationBrief } from "@/contracts";
 import { characterDraftSchema, emptyCharacterDraft } from "@/lib/client/api";
 import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, reconcileMaterializedUndo, transferCreationReview, type CharacterProposal } from "./character-proposals";
-import { completeCreationForge, creationForgeStart, emptyCharacterCreation, isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
+import { canApplyCreationForgePreview, completeCreationForge, creationForgeStart, emptyCharacterCreation, isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
 
 const proposal = (base: CharacterProposal["base"], proposed: CharacterProposal["proposed"]): CharacterProposal => ({ id: "generation", label: "Profile rewrite", base, proposed, undo: false });
 
@@ -205,6 +205,7 @@ describe("successful creation Forge preview", () => {
     started.prompt = "Human woman with auburn hair";
     const base = withCreationBrief(started.draft, started.prompt);
     const current = { ...started, draft: { ...started.draft, name: "My own name" } };
+    expect(canApplyCreationForgePreview(current, creationForgeStart(started))).toBe(false);
     const completed = completeCreationForge(current, creationForgeStart(started), base, { ...base, name: "Iris" }, "first");
     expect(completed.draft.name).toBe("My own name");
     expect(completed.draft.profile.creationBrief).toBe(started.prompt);

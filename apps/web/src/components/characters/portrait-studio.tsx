@@ -14,7 +14,6 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { IdentityReferencePanel } from "./identity-reference-panel";
-import { referenceViewRefusalCopy } from "./reference-view-copy";
 import { ReferenceViewsPanel } from "./reference-views-panel";
 import { ImageProfileSelect, pickedProfileId } from "./image-profile-select";
 import { ActionMenu } from "@/components/ui/action-menu";
@@ -29,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import type { CharacterAuthoringActionDraft } from "./use-character-author-draft";
 
 export interface PortraitStudioProps {
   characterId: string;
@@ -45,6 +45,10 @@ export interface PortraitStudioProps {
   acceptance: CharacterPortraitAcceptance;
   /** Called when the avatar or its acceptance may have changed — parent refetches. */
   onAvatarChanged: () => void;
+  /** Await the editor's serialized save and return its exact acknowledgment. */
+  prepareGeneration: () => Promise<CharacterAuthoringActionDraft | null>;
+  generationDisabled?: boolean;
+  pendingProposalCount?: number;
 }
 
 const POLL_MS = 2500;
@@ -112,6 +116,9 @@ export function PortraitStudio({
   avatarImageId,
   acceptance,
   onAvatarChanged,
+  prepareGeneration,
+  generationDisabled = false,
+  pendingProposalCount = 0,
 }: PortraitStudioProps) {
   const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
   const toast = useToast();
@@ -123,7 +130,8 @@ export function PortraitStudio({
   const [avatarProfileId, setAvatarProfileId] = useState<string>("");
   const [variantProfileId, setVariantProfileId] = useState<string>("");
   const [instruction, setInstruction] = useState("");
-  const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  const [avatarPhase, setAvatarPhase] = useState<"saving" | "generating" | null>(null);
+  const avatarActionRef = useRef(false);
   // POST in flight — the button stays busy for the WHOLE request, releasing only
   // when it settles: an unrelated live job (a running avatar regen) must not
   // re-enable the form mid-request and invite duplicate billable submissions.
@@ -142,8 +150,11 @@ export function PortraitStudio({
   const [prevAvatarImageId, setPrevAvatarImageId] = useState(avatarImageId);
   if (avatarImageId !== prevAvatarImageId) {
     setPrevAvatarImageId(avatarImageId);
-    if (avatarImageId) setGeneratingAvatar(false);
+    if (avatarImageId) setAvatarPhase(null);
   }
+  useEffect(() => {
+    if (avatarImageId) avatarActionRef.current = false;
+  }, [avatarImageId]);
 
   const nsfwTest = kind === "nsfw_test";
   const rows = portraits.data?.portraits ?? [];
@@ -152,6 +163,7 @@ export function PortraitStudio({
   // nothing is happening.
   const rendering = portraits.data?.rendering ?? false;
   const hasPendingRow = rows.some((img) => img.status === "pending");
+  const generatingAvatar = avatarPhase !== null;
   const hasPending = hasPendingRow || rendering || generatingAvatar || variantQueued;
 
   // Newest avatar-row id when a generation started — lets the effect below tell a
@@ -174,10 +186,11 @@ export function PortraitStudio({
   // (the previous-render block above) never fires. Detect the new failed avatar
   // row and release the spinner so the button doesn't stay stuck on "Working…".
   useEffect(() => {
-    if (!generatingAvatar) return;
+    if (avatarPhase !== "generating") return;
     const newestAvatar = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar");
     if (newestAvatar && newestAvatar.id !== genBaselineRef.current && newestAvatar.status === "failed") {
-      setGeneratingAvatar(false);
+      setAvatarPhase(null);
+      avatarActionRef.current = false;
       const error = generationError(newestAvatar);
       toast.push({
         title: "Avatar generation failed",
@@ -185,19 +198,30 @@ export function PortraitStudio({
         tone: "error",
       });
     }
-  }, [portraits.data, generatingAvatar, toast]);
+  }, [portraits.data, avatarPhase, toast]);
 
   const generateAvatar = async () => {
+    if (avatarActionRef.current || generationDisabled || pendingProposalCount > 0) return;
+    avatarActionRef.current = true;
     genBaselineRef.current = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar")?.id ?? null;
-    setGeneratingAvatar(true);
+    setAvatarPhase("saving");
+    const source = await prepareGeneration();
+    if (!source) {
+      setAvatarPhase(null);
+      avatarActionRef.current = false;
+      return;
+    }
+    setAvatarPhase("generating");
     const result = await charactersApi.generateAvatar(characterId, {
+      authoringRevision: source.authoringRevision,
       modelId: pickedProfileId(avatarProfileId),
     });
     if (result.ok) {
       toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
     } else {
       toast.push({ title: "Avatar generation failed", description: result.error.message, tone: "error" });
-      setGeneratingAvatar(false);
+      setAvatarPhase(null);
+      avatarActionRef.current = false;
     }
     portraits.reload({ silent: true });
   };
@@ -257,24 +281,7 @@ export function PortraitStudio({
     const result = await charactersApi.acceptPortrait(characterId, avatarImageId);
     setAcceptingPortrait(false);
     if (result.ok) {
-      // The acceptance ALWAYS stands. `views` only says whether its reference
-      // sheet started building, so a refused build reports as an accept that
-      // carries a caveat, never as a failed accept.
-      const views = result.data.views;
-      toast.push(
-        views.queued
-          ? {
-              title: "Portrait accepted",
-              description: `New images will use this face. Building ${String(views.planned)} reference views…`,
-              tone: "success",
-            }
-          : views.reason === null
-            ? { title: "Portrait accepted", description: "New images will use this face.", tone: "success" }
-            : {
-                title: "Accepted, but the views were not built",
-                description: `${referenceViewRefusalCopy[views.reason]} Build them later from the reference views panel.`,
-              },
-      );
+      toast.push({ title: "Portrait accepted", description: "New images will use this face.", tone: "success" });
       onAvatarChanged();
       return;
     }
@@ -442,14 +449,22 @@ export function PortraitStudio({
               variant={avatarImageId && !acceptance.isCurrent ? "ghost" : "primary"}
               onClick={generateAvatar}
               busy={generatingAvatar}
+              disabled={generationDisabled || pendingProposalCount > 0}
+              title={pendingProposalCount > 0 ? "Review pending character suggestions before generating a portrait" : undefined}
             >
-              {avatarImageId ? "Regenerate portrait" : "Generate portrait"}
+              {avatarPhase === "saving" ? "Saving…" : avatarImageId ? "Regenerate portrait" : "Generate portrait"}
             </Button>
             <Button variant="ghost" onClick={() => setUploadOpen(true)}>
               Upload image
             </Button>
           </div>
-          {generatingAvatar ? <p className="text-xs text-paper-500">Working — this can take a minute…</p> : null}
+          {pendingProposalCount > 0 ? (
+            <p className="text-xs text-warning">Review the {pendingProposalCount} pending character suggestion{pendingProposalCount === 1 ? "" : "s"} above before generating. Only accepted details belong in a portrait.</p>
+          ) : avatarPhase === "saving" ? (
+            <p className="text-xs text-paper-500">Saving the character before generation…</p>
+          ) : avatarPhase === "generating" ? (
+            <p className="text-xs text-paper-500">Generating — this can take a minute…</p>
+          ) : null}
           {canonicalPrompt || canonical?.meta?.model || canonical?.meta?.source === "upload" ? (
             <Disclosure title="Details" description="Image source and generation prompt">
               <div className="flex flex-col gap-3">
@@ -649,7 +664,8 @@ export function PortraitStudio({
         characterId={characterId}
         name={name}
         onUploaded={() => {
-          setGeneratingAvatar(false);
+          setAvatarPhase(null);
+          avatarActionRef.current = false;
           toast.push({ title: "Avatar updated", description: "Set from your uploaded image.", tone: "success" });
           onAvatarChanged();
           portraits.reload({ silent: true });

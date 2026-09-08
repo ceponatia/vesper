@@ -166,6 +166,37 @@ name beyond the reviewed residue — the identity-free `chat_place` shot and the
 composer's own instruction builder, neither of which describes a character from
 attributes.
 
+## Ordinary visual identity
+
+Image appearance does not depend on the observer-recognition catalog. The
+visual-state snapshot preserves every subject declared by the cut even when no
+recognition feature describes them, and the character adapter projects a
+separate, explicit image-only vocabulary from resolved sheet attributes. Those
+facts never enter narrator selection or visual memory.
+
+- The adapter reads resolved current values first, then applicable species or
+  registry defaults. It skips nonvisual and `excludeFromPrompts` fields, values
+  whose body location is absent, prompt-elided `none` values, concealed hair,
+  covered skin detail and detail outside the camera frame.
+- Current hairstyle and grooming facts supersede sheet fallbacks. A neutral
+  standalone portrait may use the sheet's default expression; other lanes do
+  not.
+- An ordinary prompt carries only the applicable chest silhouette owner:
+  `chest.size` for a body without breasts or `breasts.size` for a body with
+  breasts. The latter is the single clothed-silhouette intimate exception;
+  every other intimate attribute stays on the consent- and exposure-gated
+  reveal path.
+- A reference-free portrait requires apparent age, gender, skin tone, visible
+  hair color and length, eye color, face shape, frame and weight presentation,
+  plus species or subtype for a non-human subject. Missing applicable facts
+  refuse before provider spend. A sent subject-bound identity reference
+  satisfies stable identity completeness while current mutable sheet facts may
+  still guide the edit.
+
+The compiler receives the exact subject refs the caller resolved and refuses
+when the digest loses or adds one. Subject integrity is therefore
+checked before dialect wording or provider spend.
+
 ## Apparent age per lane
 
 Whether a compiled prompt states its subjects' apparent age is the lane's
@@ -255,13 +286,14 @@ names references by role, or names none, cannot misname a slot it never asserts.
 
 ## Identity on a reference-anchored render
 
-An edit lane's digest states no identity descriptors — the reference image
-carries the face, and describing it back invites the model to repaint what it
-should be copying. But saying nothing about a face and letting it change are
-opposite instructions, and a dialect emits its identity lock from a
-`subject.identity` claim. So a subject named by a REQUIRED identity reference
-carries an identity anchor in the digest: a model-neutral fact stating that this
-subject is the person in the reference.
+An edit lane's stable identity comes from the reference image. Inherent sheet
+descriptors are withheld because describing the face back invites the model to
+repaint what it should copy; mutable current appearance may still state a real
+change such as a haircut or weight change. Saying nothing about identity and
+letting it change are opposite instructions, and a dialect emits its identity
+lock from a `subject.identity` claim. A subject named by a required identity
+reference therefore carries an identity anchor in the digest: a model-neutral
+fact stating that this subject is the person in the reference.
 
 The anchor is required, so no budget squeeze can trade a likeness for optional
 detail, and it is synthesized only where a required identity reference actually

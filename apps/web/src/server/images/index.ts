@@ -19,6 +19,7 @@ installReferenceViewMaintenance();
 // promotion halves, the lab's five lanes and the staged bench's subject cut.
 
 export { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
+export { CHARACTER_MEDIA_JOB_LIMIT, listCharacterMediaJobs } from "./character-media-jobs";
 export {
   type ImageRow,
   type ImageKind,
@@ -141,6 +142,7 @@ export * from "./identity-pack-consume";
 export * from "./portrait-acceptance";
 export {
   clearReferenceViewAssetPointers,
+  claimReferenceViewLeases,
   currentReferenceViewRow,
   currentReferenceViewRows,
   failReferenceView,
@@ -149,6 +151,10 @@ export {
   getReferenceViewSummary,
   plannedReferenceViewsForCharacter,
   readAcceptedPortraitSource,
+  reconcileExpiredReferenceViewWork,
+  reconcileOrphanedReferenceViewAttempts,
+  referenceViewSlotBusy,
+  REFERENCE_VIEW_LEASE_EXPIRED,
   REFERENCE_VIEW_UNKNOWN,
   referenceViewHistory,
   referenceViewHistoryEntries,
@@ -160,6 +166,8 @@ export {
   withReferenceViewLock,
   type AcceptedPortraitSource,
   type ReferenceViewReviewVerdict,
+  type ReferenceViewLease,
+  type ReferenceViewLeaseClaim,
   type ReferenceViewRow,
   type ReviewReferenceViewResult,
 } from "./reference-view-store";

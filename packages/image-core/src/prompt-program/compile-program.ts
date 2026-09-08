@@ -108,6 +108,7 @@ export type ImagePromptProgramRefusalCode =
   | "image_prompt_program.dialect_unregistered"
   | "image_prompt_program.strategy_mismatch"
   | "image_prompt_program.world_stale"
+  | "image_prompt_program.subject_set_mismatch"
   | "image_prompt_program.pack_dialect_mismatch"
   | "image_prompt_program.missing_required_fact"
   | "image_prompt_program.mandatory_concept_suppressed"
@@ -149,6 +150,12 @@ export interface CompileImagePromptProgramInput {
   /** A read token the caller pinned — the "retry same composition" check. */
   readonly expectedReadToken?: string;
   /**
+   * Subject refs the caller resolved before world projection. A mismatch means
+   * identity was lost or invented between assembly and
+   * compilation, so the render must stop before provider spend.
+   */
+  readonly expectedSubjectRefs?: readonly string[];
+  /**
    * Whether a subject's missing mandatory facts refuse the render.
    *
    * The caller's call, because it is a TASK question rather than a prompt one: a
@@ -170,6 +177,20 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
       expected: input.expectedReadToken,
       actual: digest.read.token,
     });
+  }
+  if (input.expectedSubjectRefs !== undefined) {
+    const expected = [...input.expectedSubjectRefs].sort();
+    const actual = digest.subjects.map((subject) => subject.ref).sort();
+    if (
+      actual.length !== expected.length ||
+      actual.some((subjectRef, index) => subjectRef !== expected[index])
+    ) {
+      return refuse(
+        "image_prompt_program.subject_set_mismatch",
+        "the world digest does not contain the exact subjects the caller resolved",
+        { expected, actual },
+      );
+    }
   }
   if (binding.promptStrategy !== digest.operation.strategy) {
     return refuse("image_prompt_program.strategy_mismatch", "the binding and the operation disagree about the job", {

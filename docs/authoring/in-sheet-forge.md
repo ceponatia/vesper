@@ -86,13 +86,30 @@ objects retain authored data instead of clearing it; invalid objects also produc
 
 Generated changes enter explicit proposal review. Accept applies the chosen changes, Reject
 leaves the authored draft alone, and Undo restores accepted values where subsequent edits do not
-conflict. A save indicator is not a substitute for generation review.
+conflict. A save indicator is not a substitute for generation review. Each action is recorded on
+the owner-scoped authoring run and conditioned on its proposal revision and the character's content
+revision. Another browser can resume the same review, while a stale decision receives a conflict
+instead of replacing newer work.
 
 ## Complete using portrait
 
-`POST /api/characters/:id/attributes/from-portrait` reads the owned character's ready canonical
-avatar. It proposes only visible appearance attributes, excluding expression and intimate
-categories. Registry grounding returns proposed additions and structured disagreements with
-existing values for review before acceptance.
+Portrait completion starts an authoring run bound to the displayed ready image id and the saved
+character revision. Before provider admission, the server records the exact stored-image content
+hash and a fingerprint of the appearance facts relevant to the read. It checks both again before a
+retry or review decision. Changing the image bytes, portrait selection, or relevant appearance
+facts returns a focused conflict without another model call.
+
+Portrait evidence has three outcomes: reviewable proposals, a supported match with the saved
+sheet, or a failed read. Each run stores the resolved vision model, prompt version, provider timing,
+retry lineage, and per-field confidence, visibility, literal evidence, and normalized image region.
+Heritage and natal sex never enter the portrait vocabulary. Teeth require a clearly visible open
+mouth and a localized evidence region. Weak, uncertain, occluded, and out-of-frame observations
+remain unselected and visible to the author instead of silently becoming character facts.
+
+Registry grounding returns proposed additions and structured disagreements with existing values
+for review before acceptance. Accept, Keep current, Reject, and Undo decisions attach to the
+resulting proposal revision, and replace transient conflict diagnostics with revision-bound review
+diagnostics. Owner-facing run errors use stable safe messages rather than stored provider or file
+errors.
 
 Keyless demo mode is a no-op for portrait understanding; it never invents an image reading.

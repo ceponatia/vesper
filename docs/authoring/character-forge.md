@@ -20,12 +20,16 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
 - New and Forge open the same draft for the signed-in account on this browser. The draft stores
   authored values, the original brief, active section and pending proposals. Resume never starts
   generation or incurs model spend.
-- **Start a new draft** explicitly replaces the active creation draft after confirmation.
+- **Start a new draft** records durable abandonment for every running, failed or unresolved run
+  associated with that exact draft id. The browser resets only after those decisions succeed;
+  late job completion cannot reclaim the replacement draft.
 - The original brief is stored in the existing profile JSON as `creationBrief`, with an empty
   default for legacy records. It remains private in public profile projections. A prompt-based
   draft preserves the original prompt after its first successful full Forge that adds details.
-  A failed or empty first response leaves the brief editable. A successful response preserves concurrent edits and stages its
-  suggestions for review instead of replacing them. Before the first AI action on a manual or legacy saved
+  A failed or empty first response leaves the brief editable. The first Forge remains unresolved on
+  the server while it runs. A successful response becomes the editable preview only after the
+  browser proves that the draft and prompt still equal the request snapshot and records acceptance.
+  Otherwise it preserves concurrent edits and stages suggestions for explicit review. Before the first AI action on a manual or legacy saved
   character, the editor captures the original authored details if there is no brief. The durable
   brief shares the Forge request's 4,000-character limit. Manual capture reserves space for
   identity, appearance and outfit before bounded biography, personality, voice and traits.
@@ -63,6 +67,8 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
 - Browser drafts are scoped to the authenticated account, remain on this device between visits,
   and are not cloud drafts. Switching accounts remounts the authoring state and never loads the
   previous account's draft into the new account.
+- Creation-run queries, browser caches and completion projection require the exact creation draft
+  id. A run from an abandoned draft cannot attach itself to a pristine replacement.
 
 ## Species matching runs first
 

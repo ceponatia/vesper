@@ -122,6 +122,16 @@ function deepFreeze(value: unknown): void {
 }
 
 describe("assembleVisualStateSnapshot", () => {
+  it("preserves the declared subject when the narrow recognition catalog projects no feature", () => {
+    const { snapshot } = assembleVisualStateSnapshot({
+      ...simShadowInput(),
+      attributes: [{ id: "skin.tone", value: "bronze", source: "creation" }],
+      realize: {},
+    });
+    expect(snapshot.subjects).toEqual(["actor_primary"]);
+    expect(snapshot.features).toEqual([]);
+  });
+
   it("projects every owner this lane can hand over, in one deterministic snapshot", () => {
     const { snapshot } = assembleVisualStateSnapshot(chatShadowInput());
     const kinds = new Set(snapshot.features.map((feature) => feature.kindId));

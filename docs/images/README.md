@@ -64,9 +64,10 @@ other — application code is the bridge that reads simulated state and emits an
 | [asset-registry.md](asset-registry.md)            | `images` rows and files: row-before-file, serving gate, deletes, sweep                   |
 | [pipelines/](pipelines/README.md)                 | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art                  |
 | [prompt-programs/](prompt-programs/README.md)     | Plain-English end-state guide: components, behavior, testing, and worked examples        |
-| [prompt-programs.md](prompt-programs.md)          | Technical reference: world digests, positive claims, guarded negatives, endpoint dialects |
+| [prompt-programs.md](prompt-programs.md)          | Technical reference: world digests, positive claims, guarded negatives, endpoint dialect |
 | [character-prompts.md](character-prompts.md)      | The character seam: projection, cast, references, identity anchor                        |
 | [identity-packs.md](identity-packs.md)            | Derived face crops: derivation, lifecycle, surfaces, trial harness                       |
+| [media-jobs.md](media-jobs.md)                    | Owner-scoped portrait, variant, identity, and reference job status                       |
 | [vision.md](vision.md)                            | Models reading stored images: portrait→attributes, chat photo reads                      |
 
 ## Demo mode

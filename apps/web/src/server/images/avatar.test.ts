@@ -128,6 +128,7 @@ describe("generateAvatar program wiring", () => {
     id: "chr-1",
     name,
     profile,
+    authoringRevision: 4,
     updatedAt: new Date("2026-08-21T00:00:00Z"),
   });
   const bound = resolvedImageProfileFixture(LANE_PROBE_PORTRAIT_PROFILE);
@@ -277,7 +278,7 @@ describe("generateAvatar program wiring", () => {
  * portrait of a character whose sheet merely lists their anatomy.
  */
 describe("the portrait program's field policy", () => {
-  it("withholds intimate detail, non-visual senses and excluded fields — bare or dressed", () => {
+  it("states ordinary visual identity while withholding intimate skin, non-visual senses and excluded fields", () => {
     const base = laneProbeProfile();
     const profile: CharacterProfile = {
       ...base,
@@ -287,12 +288,35 @@ describe("the portrait program's field policy", () => {
       const program = laneProbeAvatarProgram({ profile, wardrobe });
       if (program.kind !== "compiled") throw new Error(`the avatar program did not compile: ${program.kind}`);
       expect(program.prompt).toMatch(/late twenties/); // the sheet does reach the prompt…
+      expect(program.prompt).toMatch(/female/i);
+      expect(program.prompt).toMatch(/brown/i);
+      expect(program.prompt).toMatch(/platinum/i);
       // The one permitted intimate-region fact is a coverage-safe silhouette.
       expect(program.prompt).toMatch(/breast size: ample/i);
       expect(program.prompt).not.toMatch(/\bpuffy\b/); // intimate surface detail remains gated
       expect(program.prompt).not.toMatch(/gravelly/); // voice.timbre never renders
       expect(program.prompt).not.toMatch(/natal/i); // identity.natal_sex is excludeFromPrompts
     }
+  });
+
+  it("names visible default wardrobe and omits garments outside the portrait frame", () => {
+    const program = laneProbeAvatarProgram({ wardrobe: laneProbeWardrobe() });
+    if (program.kind !== "compiled") throw new Error(`the avatar program did not compile: ${program.kind}`);
+    expect(program.prompt).toContain("silk kimono");
+    expect(program.prompt).not.toContain("slippers");
+  });
+
+  it("refuses a reference-free portrait whose applicable sheet identity is incomplete", () => {
+    const base = laneProbeProfile();
+    const profile = {
+      ...base,
+      attributes: base.attributes.filter((attribute) => attribute.id !== "face.shape"),
+    };
+    expect(laneProbeAvatarProgram({ profile })).toMatchObject({
+      kind: "refused",
+      code: "image_prompt_program.missing_required_fact",
+      context: { keys: [`subject.probe-character.appearance.face.shape`] },
+    });
   });
 });
 
