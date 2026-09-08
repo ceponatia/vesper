@@ -632,7 +632,7 @@ describe("projectCharacterWorldSlices", () => {
     expect(subject?.facts.find((fact) => fact.key.includes("presentation.grooming:brows"))?.value).toContain("shaped");
   });
 
-  it("keeps a sheet fallback when an invalid current fact is rejected by selection", () => {
+  it("keeps a sheet fallback when the selected current fact is unreadable", () => {
     const unreadableGrooming = { ...groomingFeature(), value: {} };
     const digest = buildVisualImageDigest({
       snapshot: visualAttentionSnapshotFixture([unreadableGrooming, ageAnchorFeature()]),
@@ -644,7 +644,7 @@ describe("projectCharacterWorldSlices", () => {
         framing: { status: "known", value: "portrait" },
       }),
     });
-    expect(digest.optionalFacts.map((fact) => fact.kindId)).not.toContain("presentation.grooming");
+    expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.grooming");
     const subject = adapterSlices(digest, {
       attributes: completeFixtureAttributes([
         ...crookedNoseAttributes(),
