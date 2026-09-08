@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyCharacterProfile } from "@/contracts";
 import { emptyCharacterDraft } from "@/lib/client/api";
 import { characters, db, jobs } from "@/server/db";
@@ -24,8 +24,8 @@ beforeAll(async () => {
   temp = await withTempDataRoot("vesper-character-authoring-runs-int");
   bindAuthUser(authState, await seedTestUser("character-authoring-runs", { role: "admin" }));
   foreignId = (await seedTestUser("character-authoring-runs-foreign", { role: "admin" })).id;
-  resetRateLimits();
 });
+beforeEach(() => resetRateLimits());
 afterAll(async () => {
   await temp?.cleanup();
   if (ready) await purgeOwnerRows([authState.user.id, foreignId]);
