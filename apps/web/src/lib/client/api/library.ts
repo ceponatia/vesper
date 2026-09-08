@@ -417,8 +417,9 @@ export const charactersApi = {
   /** Replace-set save of the character's outgoing default edges. */
   saveRelationships: (
     id: string,
+    baseRevision: number,
     edges: { toCharacterId: string; record: AuthoredEdgeRecord }[],
-  ) => apiPut(z.unknown(), `/api/characters/${id}/relationships`, { edges }),
+  ) => apiPut(libraryRelationshipsSchema, `/api/characters/${id}/relationships`, { baseRevision, edges }),
   /**
    * Vision pass over the canonical avatar → unset appearance attributes filled
    * on the draft, plus the review-dialog data: disagreements as current →

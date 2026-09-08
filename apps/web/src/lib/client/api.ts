@@ -22,6 +22,7 @@ export {
   liveEdgeRecordSchema,
   chatRelationshipsSchema,
   libraryRelationshipsSchema,
+  libraryRelationshipsConflictSchema,
   chatWorldSchema,
   simTravelResultSchema,
   simMoveTogetherResultSchema,

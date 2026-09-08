@@ -4,3 +4,4 @@ export * from "./character-forge";
 export * from "./character-fill";
 export * from "./character-redraft";
 export * from "./portrait-attributes";
+export * from "./library-relationships";

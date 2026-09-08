@@ -40,9 +40,12 @@ The stable scope identifiers are `profile`, `attributes`, `personality`, `dispos
 creation brief remains part of generation context and is never rewritten by a section action.
 
 The Relationships panel stays mounted across section changes, preserving debounced and in-flight
-writes. Library edits use owner-scoped browser recovery, revision-checked acknowledgements and
-serialized saves; a later edit remains dirty when an earlier write finishes. Conflicting browser
-or recovered server versions require an explicit choice before autosave resumes. An unavailable
+writes. Library edits use owner-scoped browser recovery and a durable server revision. Each save
+validates the source and every target, claims the revision, and replaces the full edge set in one
+transaction; two tabs or devices that save the same revision produce one winner and one conflict.
+The losing editor receives the winner's saved set while retaining its own draft, then requires an
+explicit choice before autosave resumes. A later local edit remains dirty when an earlier write
+finishes. Conflicting browser recovery copies also require an explicit choice. An unavailable
 browser store leaves the draft usable and reports that the page must stay open until saved.
 Pending, saving, blocked and failed library writes also appear beside the sticky character
 navigation, with a return action from other sections. This notice remains separate from the

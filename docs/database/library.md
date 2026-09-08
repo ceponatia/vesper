@@ -20,6 +20,10 @@ The owner-scoped definition rows: who the account is, and the reusable entities 
   narrator-model override; empty ⇒ default), **`visibility` (`private`/`public`) — the
   cross-account share scope ([../auth/README.md](../auth/README.md))**, `cloned_from_id?` (soft
   remix provenance), `search_embedding` vector.
+- **`character_relationships` / `character_relationship_versions`** — directed, owner-validated
+  library defaults from one character to another plus one revision row per authored source set.
+  A revision compare-and-swap and the complete edge replacement share one transaction, including
+  an empty set; the version row and every outgoing edge cascade with the source character.
 - **`personas`** — `owner_id`, **`title` — UNIQUE per owner (`personas_owner_title_unique`)**,
   `name`, `profile` JSONB (`PersonaProfile`: bio, voice, intimacy, species/heritage/bodyPlan,
   `intimateRegions`, `bodyFeatures`, `attributes`, `outfits`), `tags` JSONB, `avatar_image_id`,
