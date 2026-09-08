@@ -7,7 +7,7 @@ import {
   type ImageWorldFact,
 } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
-import { toUnitInterval } from "../affordances/core";
+import { affordancePerceptionView, toUnitInterval } from "../affordances/core";
 import { visualAttentionContextFixture, visualAttentionSnapshotFixture } from "../affordances/recognition";
 import { crookedNoseAttributes, freckleClusterFact, missingFingerState, projectFixture } from "../appearance-features";
 import type { AttributeValue } from "../attributes";
@@ -609,9 +609,16 @@ describe("projectCharacterWorldSlices", () => {
   });
 
   it("lets an emitted live grooming fact replace the sheet grooming fallback", () => {
+    const faceVisible = affordancePerceptionView({
+      exposure: { face: "visible" },
+      channels: { sight: "available" },
+    });
     const digest = buildVisualImageDigest({
       snapshot: visualAttentionSnapshotFixture([groomingFeature(), ageAnchorFeature()]),
-      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
+      context: visualAttentionContextFixture("image", {
+        perception: faceVisible,
+        framing: { status: "known", value: "portrait" },
+      }),
     });
     expect(digest.optionalFacts.map((fact) => fact.kindId)).toContain("presentation.grooming");
     const subject = adapterSlices(digest, {
@@ -629,7 +636,13 @@ describe("projectCharacterWorldSlices", () => {
     const unreadableGrooming = { ...groomingFeature(), value: {} };
     const digest = buildVisualImageDigest({
       snapshot: visualAttentionSnapshotFixture([unreadableGrooming, ageAnchorFeature()]),
-      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "portrait" } }),
+      context: visualAttentionContextFixture("image", {
+        perception: affordancePerceptionView({
+          exposure: { face: "visible" },
+          channels: { sight: "available" },
+        }),
+        framing: { status: "known", value: "portrait" },
+      }),
     });
     expect(digest.optionalFacts.map((fact) => fact.kindId)).not.toContain("presentation.grooming");
     const subject = adapterSlices(digest, {
