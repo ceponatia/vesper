@@ -473,27 +473,49 @@ function identityAnchoredSubjects(
   });
 }
 
+function requiredIdentityReferenceSubjects(
+  references: readonly ImageReferenceFact[],
+): ReadonlySet<string> {
+  return new Set(
+    references
+      .filter((reference) => reference.role === "identity" && reference.required && reference.subjectRef !== undefined)
+      .map((reference) => reference.subjectRef as string),
+  );
+}
+
 export function assembleCharacterWorldDigest(
   input: CharacterWorldDigestAssemblyInput,
 ): CharacterWorldDigestAssembly {
+  const references = input.references ?? [];
   const slices = projectCharacterWorldSlices({
     digest: input.digest,
     ...(input.labels === undefined ? {} : { labels: input.labels }),
     sources: input.sources,
     ...(input.apparentAge === undefined ? {} : { apparentAge: input.apparentAge }),
+    identityReferenceSubjects: requiredIdentityReferenceSubjects(references),
   });
   const { read, sourceRevisions, camera } = characterWorldRead(input);
   const routeFacts = input.subjectFacts ?? {};
   const subjects = slices.subjects.map((subject) => {
     const extra = routeFacts[subject.entityId] ?? [];
     if (extra.length === 0) return subject;
-    const known = new Set(subject.facts.map((fact) => fact.key));
-    return { ...subject, facts: [...subject.facts, ...extra.filter((fact) => !known.has(fact.key))] };
+    // An intimate route may restate the one ordinary-safe silhouette attribute
+    // (`breasts.size`) through subject-reveal. Let that route-owned typed fact
+    // replace the ordinary appearance spelling so the compiler receives the
+    // value exactly once; ordinary routes retain the appearance fact.
+    const routeAttributeIds = new Set(
+      extra.filter((fact) => fact.concept === "subject.intimate_anatomy").map((fact) => fact.source.key),
+    );
+    const baseFacts = subject.facts.filter(
+      (fact) => !(fact.concept === "subject.appearance" && routeAttributeIds.has(fact.source.key)),
+    );
+    const known = new Set(baseFacts.map((fact) => fact.key));
+    return { ...subject, facts: [...baseFacts, ...extra.filter((fact) => !known.has(fact.key))] };
   });
   const digestInput: ImageWorldDigestInput = {
     read,
     ...(input.scene === undefined ? {} : { scene: input.scene }),
-    subjects: identityAnchoredSubjects(subjects, input.references ?? []),
+    subjects: identityAnchoredSubjects(subjects, references),
     ...(input.location === undefined ? {} : { location: input.location }),
     ...(input.items === undefined ? {} : { items: input.items }),
     ...(input.relations === undefined ? {} : { relations: input.relations }),

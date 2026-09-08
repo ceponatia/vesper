@@ -314,6 +314,16 @@ describe("the compiled scene prompt over a populated plan", () => {
   });
 });
 
+describe("the shared appearance owners in a scene", () => {
+  it("reinforces the focal's visible platinum hair and blue eyes beside its identity reference", () => {
+    const plan = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
+    const { program } = compileScene(plan);
+
+    expect(program.prompt).toMatch(/hair color: platinum/i);
+    expect(program.prompt).toMatch(/eye color: blue/i);
+  });
+});
+
 describe("a default camera asserts nothing", () => {
   it("lowers no camera, keeps no camera claim, and emits no camera sentence", () => {
     const plan = populatedScenePlan({

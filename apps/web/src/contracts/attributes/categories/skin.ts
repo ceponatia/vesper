@@ -25,6 +25,7 @@ export const skinGroup = defineAttributeGroup("skin", [
       "pale_green", "sage_green", "crimson", "dusky_violet", "ghostly_white",
     ],
     aliases: ["skin tone", "skin color", "complexion"],
+    imageAppearance: { class: "core", referenceFreeRequired: true },
     coreVisual: true,
     defaultValue: "light",
   },
@@ -38,6 +39,7 @@ export const skinGroup = defineAttributeGroup("skin", [
     mutability: "inherent",
     allowedValues: ["cool", "neutral", "warm", "rosy", "golden", "olive"],
     aliases: ["undertone"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "skin.texture",
@@ -50,6 +52,7 @@ export const skinGroup = defineAttributeGroup("skin", [
     allowedValues: ["smooth", "soft", "dewy", "dry", "rough", "weathered", "leathery", ...SYNTHETIC_SKIN_TEXTURES],
     autoDefaultExcludes: [...SYNTHETIC_SKIN_TEXTURES],
     aliases: ["skin texture"],
+    imageAppearance: { class: "fine", maximumFraming: "portrait" },
     // Narrator-gloss authoring batch — DRAFTS AWAITING
     // OWNER REVIEW. Texture = surface feel only, never tone/color. Sparse: smooth/soft/dry stay bare.
     narratorGuidance: {

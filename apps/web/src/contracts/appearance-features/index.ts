@@ -14,6 +14,7 @@ export * from "./registry";
 export * from "./facts";
 export * from "./anatomy-state";
 export * from "./attribute-recognition";
+export * from "./image-projection";
 // `./priors` is deliberately absent: `./projection` re-exports it whole, so
 // the frozen seam keeps owning those names and the barrel exports them once.
 export * from "./projection";

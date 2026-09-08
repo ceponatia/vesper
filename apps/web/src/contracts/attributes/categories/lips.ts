@@ -13,6 +13,7 @@ export const lipsGroup = defineAttributeGroup("lips", [
     allowedValues: ["thin", "slight", "medium", "full", "very_full", "plush"],
     bodyLocationId: "lips",
     aliases: ["lips", "lip fullness"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "lips.shape",
@@ -29,6 +30,7 @@ export const lipsGroup = defineAttributeGroup("lips", [
     ],
     bodyLocationId: "lips",
     aliases: ["lip shape"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "lips.piercings",
@@ -41,5 +43,6 @@ export const lipsGroup = defineAttributeGroup("lips", [
     allowedValues: ["none", "labret", "vertical_labret", "medusa", "single_side", "snake_bites", "spider_bites"],
     bodyLocationId: "lips",
     aliases: ["lip piercing", "labret", "snake bites"],
+    imageAppearance: { class: "fine", maximumFraming: "close_up" },
   },
 ]);

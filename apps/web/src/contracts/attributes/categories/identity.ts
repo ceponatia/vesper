@@ -25,6 +25,7 @@ export const identityGroup = defineAttributeGroup("identity", [
       "nonbinary_born_male",
     ],
     aliases: ["gender"],
+    imageAppearance: { class: "core", referenceFreeRequired: true },
     identityAnchor: true,
     // coreVisual so the forge always fills it: gender is the seed input for the
     // body-config (activatesGroups below), and a missing gender used to leave a
@@ -117,6 +118,7 @@ export const identityGroup = defineAttributeGroup("identity", [
     description: "Ethnic or ancestral heritage as the text presents it (\"Latina\", \"Igbo\", \"wood-elf of the northern clans\").",
     mutability: "inherent",
     aliases: ["heritage", "ethnicity", "ancestry"],
+    imageAppearance: { class: "reinforcement" },
     identityAnchor: true,
   },
 ]);

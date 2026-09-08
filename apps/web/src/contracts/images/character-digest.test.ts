@@ -4,12 +4,15 @@ import { visualAttentionContextFixture, visualAttentionSnapshotFixture } from ".
 import { crookedNoseAttributes, freckleClusterFact, missingFingerState, projectFixture } from "../appearance-features";
 import type { AttributeValue } from "../attributes";
 import { FULLY_COVERED } from "../items/visibility";
+import { realizeBody } from "../species";
 import { adaptProjectedAppearanceTruth } from "../visual-state";
 import type { CharacterSubjectSources } from "./character-adapter";
 import {
   assembleCharacterWorldDigest,
   characterChangeContract,
   characterPortraitImageOperation,
+  characterSceneImageOperation,
+  characterVariantImageOperation,
 } from "./character-digest";
 import { standaloneCharacterReadToken } from "./subject-digest";
 import { buildVisualImageDigest, type VisualImageDigest } from "./visual-digest";
@@ -34,6 +37,16 @@ const FEATURES = adaptProjectedAppearanceTruth(
 const SUBJECT = FEATURES[0]?.subjectId ?? "";
 const REVISION = "2026-08-30T00:00:00.000Z";
 const AGE: AttributeValue = { id: "identity.apparent_age", value: "late_twenties", source: "creation" };
+const REQUIRED_APPEARANCE: readonly AttributeValue[] = [
+  { id: "identity.gender", value: "female", source: "creation" },
+  { id: "skin.tone", value: "light", source: "creation" },
+  { id: "hair.color", value: "platinum", source: "creation" },
+  { id: "hair.length", value: "shoulder_length", source: "creation" },
+  { id: "eyes.color", value: "blue", source: "creation" },
+  { id: "face.shape", value: "oval", source: "creation" },
+  { id: "build.frame", value: "slight", source: "creation" },
+  { id: "build.weight_presentation", value: "average", source: "creation" },
+];
 
 function visualDigest(): VisualImageDigest {
   return buildVisualImageDigest({
@@ -45,7 +58,7 @@ function visualDigest(): VisualImageDigest {
 function joinedSources(): Readonly<Record<string, CharacterSubjectSources>> {
   return {
     [SUBJECT]: {
-      attributes: [...crookedNoseAttributes(), AGE],
+      attributes: [...REQUIRED_APPEARANCE, ...crookedNoseAttributes(), AGE],
       locatedFacts: [freckleClusterFact()],
       anatomy: [missingFingerState()],
       exposure: FULLY_COVERED,
@@ -128,6 +141,73 @@ describe("assembleCharacterWorldDigest", () => {
     expect(built.read).toMatchObject({ kind: "committed_cut", token: digest.cutId, atMinutes: digest.atMinutes });
     expect(built.subjects[0]?.missingRequired).toContain(exposureKey);
     expect(built.suppressions.some((entry) => entry.key === exposureKey)).toBe(true);
+  });
+
+  it("relaxes stable-sheet completeness only for a planned required subject-bound identity reference", () => {
+    const sources = joinedSources();
+    const withoutHair = {
+      ...sources,
+      [SUBJECT]: {
+        ...sources[SUBJECT],
+        attributes: (sources[SUBJECT]?.attributes ?? []).filter(
+          (value) => value.id !== "hair.color" && value.id !== "identity.apparent_age",
+        ),
+      },
+    };
+    const reference = {
+      role: "identity" as const,
+      required: true,
+      subjectRef: `subject.${SUBJECT}`,
+      source: { owner: "test.fixture", key: "identity", entityId: SUBJECT },
+    };
+    const assembly = assembleCharacterWorldDigest({
+      digest: visualDigest(),
+      sources: withoutHair,
+      operation: characterVariantImageOperation(),
+      read: { kind: "committed_cut", token: "cut_fixture" },
+      references: [reference],
+    });
+    expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.appearance.hair.color`);
+    expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.apparent_age`);
+    expect(assembly.input.subjects[0]?.facts.some((fact) => fact.concept === "subject.identity")).toBe(true);
+    expect(assembly.input.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
+      "Eye color: blue",
+    );
+  });
+
+  it("lets an intimate route replace the ordinary bust silhouette instead of stating it twice", () => {
+    const sources = joinedSources();
+    const reveal: ImageWorldFact = {
+      key: `subject.${SUBJECT}.reveal.breasts.size`,
+      concept: "subject.intimate_anatomy",
+      value: "breast size: medium",
+      subjectRef: `subject.${SUBJECT}`,
+      locus: "breasts",
+      semanticTags: ["reveal:shape"],
+      disposition: "optional_visual",
+      priority: 5_000,
+      source: { owner: "images.subject_reveal", key: "breasts.size", entityId: SUBJECT },
+    };
+    const assembly = assembleCharacterWorldDigest({
+      digest: visualDigest(),
+      sources: {
+        ...sources,
+        [SUBJECT]: {
+          ...sources[SUBJECT],
+          attributes: [
+            ...(sources[SUBJECT]?.attributes ?? []),
+            { id: "breasts.size", value: "medium", source: "creation" },
+          ],
+          realizedBody: realizeBody({ intimateRegions: ["breasts"] }),
+        },
+      },
+      operation: characterSceneImageOperation({ subjectCount: 1 }),
+      read: { kind: "committed_cut", token: "cut_fixture" },
+      subjectFacts: { [SUBJECT]: [reveal] },
+    });
+    expect(assembly.input.subjects[0]?.facts.filter((fact) => fact.source.key === "breasts.size")).toEqual([
+      reveal,
+    ]);
   });
 });
 

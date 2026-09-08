@@ -31,6 +31,15 @@ type AttributeDefinition = {
   excludeFromPrompts?: boolean;
   renderNoneInPrompts?: boolean;
   coreVisual?: boolean;
+  renderVisual?: boolean;
+  imageAppearance?: {
+    class: "core" | "reinforcement" | "fine" | "fallback";
+    referenceFreeRequired?: boolean;
+    minimumFraming?: "close_up" | "portrait" | "waist_up" | "full_figure" | "wide";
+    maximumFraming?: "close_up" | "portrait" | "waist_up" | "full_figure" | "wide";
+    ordinarySilhouette?: boolean;
+    omitValues?: readonly string[];
+  };
   defaultValue?: string | string[] | number | boolean;
   imageReveal?: "shape" | "skin";
   identityAnchor?: boolean;
@@ -63,6 +72,7 @@ type AttributeDefinition = {
 - **`renderNoneInPrompts`** — Opt-in to render a resolved `"none"` in generated prompts. By default every prompt builder **elides** a `"none"` value (`promptValueWithNoneElided` in `value.ts`, applied in the image builders' `formatAttributeValue` and chat's `attributePhrase`; enum_lists have their `"none"` members filtered): "nose piercings: none" spends tokens to plant the very noun we don't want, and image models sometimes paint the mentioned feature anyway. Set only where the absence IS the appearance fact the model would otherwise invent around — today `vulva.pubic_hair_density` (fully bare) and `vulva.swelling` (doesn't swell when aroused), both with a `narratorGuidance` gloss turning the bare token into an explicit negative. Requires `"none"` in `allowedValues` (enforced at group-definition time). Storage/editing never affected — a stored `"none"` still pins the value down in the editor, unlike *unset*, which invites forge/narrator inference.
 - **`coreVisual`** — Always filled at character creation — first by forge inference, then a seeded default from `allowedValues` (enum only).
 - **`renderVisual`** — The second always-filled tier: silhouette/face-structure enums a scene render re-invents per image when unset (face/nose/brow/lip shape, hair length/texture, chest build or breast size, waist/hips, limb builds …). Same forge range-emission + seeded fill as `coreVisual` (`fillVisualDefaults`); with a realized body the fill seeds only the flagged attributes that body applies, so a body with breasts receives `breasts.size` and one without receives `chest.size`, never both. An intimate definition carrying the flag is the one intimate vocabulary the forge model sees, so a concept-stated `breasts.size` is emitted rather than invented (`docs/authoring/character-forge.md` §The attribute agent). **Autofill metadata only** — the flag is not image-projection policy (`imageReveal` and the reveal path own that). Enum-only; mark sparingly.
+- **`imageAppearance`** — Registry-owned image-description selection policy (see **Image appearance selection** below). It is independent of `coreVisual` / `renderVisual` creation filling, `identityAnchor` forge inference, `imageReveal`'s scene-body reveal, and the observer-recognition catalog.
 - **`defaultValue`** — Curated registry default (female-leaning where gendered — owner ruling 2026-07-11). `seedRegistryDefaultValues` stores these on a **truly blank** character *or persona* at create time (plus the body-config the seeded gender implies — see `docs/contracts/body.md` §Body-config); the editor's `defaultValueFor` prefers it when materializing a row. The forge does NOT use it for unconstrained fills — its concept-hashed variety is deliberate. Enum defaults are validated against `allowedValues` at group-definition time.
 - **`materializeDefault`** — **Persisted-baseline** tier: the `defaultValue` is materialized as a stored fact on **every** grounding — blank, forged, imported, cloned, persona create, profile PATCH (which re-materializes a removed row: the value is editable, the fact has no blank state) — via `materializeRegistryDefaults` / the body-aware `materializeBodyDefaults` (respects `realizeBody` applicability + species-narrowed vocabulary). Fill-only, `source: "creation"`, versioned `sourceId` `registry-default:<category>:vN`, so manual/narrative always wins. The editor mirrors the no-blank-state contract (`isClearableAttribute`): a flagged field offers no "clear" and no blank enum option — unset, its control rests dimmed on the default the server will store; any pick is `source: "manual"`. Today: the four foot structural fields (`feet.size/arch/nails/toes`, defaults `average/average/trimmed/average` — pinned in `registry.test.ts`) — never `feet.smell` (a default must not manufacture scent/moisture/contact). Requires `defaultValue`; enforced at group-definition time. Existing rows: `pnpm db:backfill-registry-defaults [--dry-run]` (counts by field/site before applying; compare-and-set per row, so it is safe against a live application — a concurrently edited row is re-read and replanned, never clobbered).
 - **`imageReveal`** — Whether/when this attribute appears in a full-body image (see **Image reveal tiers** below).
@@ -90,6 +100,37 @@ type AttributeDefinition = {
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `inherent` | Only a human (`manual`) or a supernatural transformation (`magic`). Narrative drift is rejected at the overlay write boundary (`overlaySourceMayChange`). |
 | `mutable`  | Any source.                                                                                                                                               |
+
+### Image appearance selection
+
+`imageAppearance` admits a resolved attribute to the shared character-image
+projection ([../images/character-prompts.md](../images/character-prompts.md)
+§Registry-backed image appearance). An attribute without this field does not
+enter that projection. The field does not change storage, editor visibility,
+forge filling or observer recognition.
+
+| Member                  | Meaning                                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `class`                 | Selection role: `core`, `reinforcement`, conditional `fine` detail, or sheet `fallback` behind a current owner.             |
+| `referenceFreeRequired` | Marks an applicable core value whose absence makes a reference-free character render incomplete.                            |
+| `minimumFraming`        | Tightest eligible band: `close_up`, `portrait`, `waist_up`, `full_figure`, or `wide`.                                       |
+| `maximumFraming`        | Widest eligible band; facts render only inside the inclusive minimum-to-maximum range.                                      |
+| `omitValues`            | Valid stored enum members that deliberately add no image instruction; every member must occur in `allowedValues`.           |
+| `ordinarySilhouette`    | Allows the one approved intimate shape fact to enter an ordinary character-image description through clothing.              |
+
+The projector still applies `excludeFromPrompts`, nonvisual-kind filtering,
+the ordinary `none` elision and realized-body applicability. It carries the
+attribute source and canonical truth fingerprint as provenance while
+`formatAttribute` supplies the provider-readable value. A valid subject-bound
+identity reference satisfies stable reference-free completeness for that
+subject, but available values remain text reinforcement.
+
+`ordinarySilhouette` is valid only on `breasts.size` together with
+`imageReveal: "shape"`; group-definition validation rejects it anywhere else.
+The realized body makes `chest.size` inapplicable whenever the `breasts` region
+exists, so an ordinary prompt receives either chest build or the coverage-safe
+bust silhouette, never both. Other breast fields remain governed by the
+intimate reveal path and its exposure rules.
 
 ### Image reveal tiers
 

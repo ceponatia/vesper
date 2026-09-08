@@ -64,6 +64,7 @@ export const hairGroup = defineAttributeGroup("hair", [
       "brunette",
       "dyed hair",
     ],
+    imageAppearance: { class: "core", referenceFreeRequired: true },
     coreVisual: true,
     defaultValue: "brown",
   },
@@ -88,6 +89,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     ],
     bodyLocationId: "hair",
     aliases: ["hair length"],
+    imageAppearance: { class: "core", referenceFreeRequired: true },
   },
   {
     id: "hair.texture",
@@ -101,6 +103,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: ["straight", "wavy", "curly", "coily", "kinky"],
     bodyLocationId: "hair",
     aliases: ["hair texture"],
+    imageAppearance: { class: "core" },
   },
   {
     id: "hair.density",
@@ -118,6 +121,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: ["sparse", "medium", "dense"],
     bodyLocationId: "hair",
     aliases: ["hair density"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "hair.strand_thickness",
@@ -132,6 +136,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     // No "fine hair" / "thick hair" aliases on purpose: colloquially those mean
     // DENSITY, so an ambiguous mention must not resolve to this axis.
     aliases: ["strand thickness"],
+    imageAppearance: { class: "fine", maximumFraming: "close_up" },
   },
   {
     id: "hair.condition",
@@ -148,6 +153,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: ["silky", "smooth", "healthy", "dry", "frizzy", "brittle", "straw_like"],
     bodyLocationId: "hair",
     aliases: ["hair condition"],
+    imageAppearance: { class: "fine", maximumFraming: "portrait" },
   },
   {
     id: "hair.arrangement",
@@ -165,6 +171,7 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: ["loose", "ponytail", "braid", "bun", "other"],
     bodyLocationId: "hair",
     aliases: ["hair arrangement"],
+    imageAppearance: { class: "fallback" },
     defaultValue: "loose",
     narratorGuidance: {
       loose: "hanging free — nothing binding or pinning it",
@@ -186,5 +193,6 @@ export const hairGroup = defineAttributeGroup("hair", [
     mutability: "mutable",
     bodyLocationId: "hair",
     aliases: ["hairstyle", "hair style"],
+    imageAppearance: { class: "fallback" },
   },
 ]);

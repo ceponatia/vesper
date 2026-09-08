@@ -33,12 +33,13 @@ Character subjects reach the digest through a two-module seam in
 `apps/web/src/contracts/images/`, and the split is an ownership boundary, not a
 convenience:
 
-| Layer                          | Owns                                              |
-| ------------------------------ | ------------------------------------------------- |
-| visual state                   | which facts apply, and required vs camera-visible |
-| canonical character owners     | the semantic value of each selected fact          |
-| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth          |
-| `character-adapter.ts`         | joining selection to values as complete claims    |
+| Layer                          | Owns                                                               |
+| ------------------------------ | ------------------------------------------------------------------ |
+| observer recognition           | the deliberately narrow catalog of distinctive recognizable cues   |
+| attribute registry             | image-description eligibility, class and canonical readable value  |
+| visual state                   | current presentation, camera-visible truth and transient state     |
+| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth                           |
+| `character-adapter.ts`         | render visibility, replacement and completeness over those owners  |
 
 `projectSubjectDigests` translates the visual digest's classification into
 concepts and dispositions, verbatim. `projectCharacterWorldSlices` consumes it
@@ -72,6 +73,90 @@ and states what translation alone cannot:
 - **Every emitted value is prompt-ready.** Record-shaped values resolve to their
   readable members with ids stripped; a record with nothing readable left is
   suppressed rather than flattened into a payload.
+
+### Registry-backed image appearance
+
+Ordinary image description is independent of observer recognition. The
+recognition projection remains a small catalog of features useful for noticing
+and identifying somebody; broadening it would make common hair, eye, face and
+build facts into recognition events. The attribute registry instead marks the
+values eligible for image description with `imageAppearance`, and
+`projectImageAppearanceAttributes` projects those resolved values without
+changing the recognition catalog or creating a lane-owned appearance string.
+
+The metadata divides eligible values by their use in an image:
+
+| Class           | Role                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------- |
+| `core`          | stable identity and silhouette description, including the reference-free completeness candidates      |
+| `reinforcement` | useful face, skin, hair and body detail when the shot can show it                                     |
+| `fine`          | close or full-body detail admitted only at a framing and exposure where it can contribute             |
+| `fallback`      | sheet presentation used only while no current hairstyle, grooming, expression or wardrobe owner wins  |
+
+The projector takes the last resolved row for each attribute id and applies the
+registry's policy before the adapter sees it:
+
+- attributes with no `imageAppearance` metadata, nonvisual attributes and
+  `excludeFromPrompts` definitions are absent;
+- realized-body applicability removes stale facts whose anatomy or body plan no
+  longer permits them;
+- `none` follows the registry's prompt-elision rule, and metadata may omit other
+  valid storage values that add no useful image instruction;
+- `formatAttribute` supplies the readable label and value. The source attribute
+  id and canonical truth fingerprint remain provenance and never become prompt
+  prose.
+
+The adapter then applies render-specific policy once for every lane. A fact's
+inclusive minimum-to-maximum framing range and body location decide whether the
+camera can use it; coverage removes hidden surface detail; and full hair
+concealment removes both sheet and
+current hair facts in favor of the required concealment claim. Full-figure facts
+such as categorical height, leg build and hands do not consume a waist-up or
+close prompt. Current hairstyle replaces sheet `hair.arrangement` and
+`hair.style`, current grooming replaces sheet `presentation.grooming`, and a
+current expression, pose or scene direction replaces `face.expression_default`.
+An actual wardrobe suppresses the sheet's personal dress style; that style may
+guide invention only when no wardrobe owner supplies the outfit.
+
+### Reference-free completeness
+
+Completeness is a property of the actual planned render, not of observer
+recognition or character creation. A subject without a valid identity reference
+must provide every applicable reference-free core value:
+
+- `identity.apparent_age`, under the lane's age policy, and `identity.gender`;
+- `skin.tone`;
+- `hair.color` and `hair.length`, unless hair is absent, inapplicable or fully
+  concealed;
+- `eyes.color`, unless eyes are inapplicable;
+- `face.shape`, `build.frame` and `build.weight_presentation`; and
+- species and subtype when the realized body is not a plain human.
+
+`identity.heritage`, hair texture, build musculature and categorical height may
+reinforce the description but do not satisfy a missing required core value. An
+unresolved required value enters `missingRequired`; a production lane compiled
+with `refuseOnMissingRequired` refuses before provider spend instead of drawing
+an unspecified person.
+
+A valid required identity reference satisfies the stable-identity completeness
+requirement only for the subject it names. It must survive reference planning,
+be eligible for identity-preserving use and carry that subject binding; merely
+using a model field that accepts an image is not sufficient. Available canonical
+appearance values still reinforce the reference in the compiled prompt, while
+missing optional sheet values alone do not refuse the render. Reference-carried
+identity does not satisfy current morphology, coverage, concealment, required
+reference roles or any other fact the image cannot honestly supply.
+
+### Chest and bust silhouette
+
+Realized-body applicability chooses one ordinary upper-torso size owner. When
+the realized body has no `breasts` region, applicable `chest.size` describes
+chest build under normal framing and coverage policy. When that region exists,
+it makes `chest.size` inapplicable and `breasts.size` owns the silhouette.
+`breasts.size` is the single `ordinarySilhouette` exception: its shape may be
+stated through clothing on an ordinary route. Other breast attributes remain on
+the intimate reveal path and retain their exposure rules, so an ordinary prompt
+never gains nipple or other surface detail from this exception.
 
 The adapter is the ONE owner of character appearance wording.
 `scripts/image-appearance-prose.test.ts` fails the build if a production module
@@ -294,4 +379,3 @@ rung is dropped and the row fails only when no rung survives
 rung, never a handoff to another prompt. The staged bench settles its row under
 the program's own code, or `image_prompt_program.unbound`
 ([../image-lab/staged-scene.md](../image-lab/staged-scene.md)).
-

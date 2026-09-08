@@ -10,6 +10,7 @@ import {
   bodyLocusKey,
   currentAnatomyStates,
   parseLocatedFactValue,
+  projectImageAppearanceAttributes,
   type AnatomyPartState,
   type BodyLocusRef,
   type LocatedAppearanceFact,
@@ -22,14 +23,16 @@ import {
   isNonVisualAttribute,
   type AttributeValue,
 } from "../attributes";
-import { bodyLocationRegistry } from "../body/locations";
+import { bodyLocationRegistry, isIntimateAttributeCategory } from "../body/locations";
 import type { HairOcclusion } from "../items/hair-occlusion";
-import type { RegionExposure } from "../items/visibility";
-import type { RealizedBody } from "../species";
+import { FULLY_COVERED, type RegionExposure } from "../items/visibility";
+import { DEFAULT_SPECIES_ID, speciesLabelPhrase, type RealizedBody } from "../species";
 import {
   visualStateSpeciesFeatureGroupValueSchema,
   visualStateWardrobeValueSchema,
   VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID,
+  VISUAL_STATE_PRESENTATION_GROOMING_KIND_ID,
+  VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID,
   VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
   VISUAL_STATE_WARDROBE_ITEM_KIND_ID,
   type VisualFramingBand,
@@ -48,6 +51,7 @@ import {
   type VisualImageFact,
 } from "./visual-digest";
 import { visualExposureReads } from "./visual-segments";
+import { revealSurfaces } from "./subject-reveal";
 
 /**
  * The character image adapter — the join between visual state's fact selection
@@ -132,6 +136,14 @@ export const IMAGE_CHARACTER_AGE_OMITTED = "character.apparent_age.omitted";
 export const IMAGE_CHARACTER_COVERAGE_UNRESOLVED = "character.wardrobe_coverage.unresolved";
 /** A record value with no readable member left after ids were stripped. */
 export const IMAGE_CHARACTER_VALUE_UNREADABLE = "character.value_unreadable";
+/** A canonical appearance fact was outside the shot's useful framing. */
+export const IMAGE_CHARACTER_APPEARANCE_OUT_OF_FRAME = "character.appearance.out_of_frame";
+/** A surface detail is hidden by opaque garment coverage. */
+export const IMAGE_CHARACTER_APPEARANCE_HIDDEN = "character.appearance.hidden";
+/** Current visual state replaced the character-sheet fallback. */
+export const IMAGE_CHARACTER_APPEARANCE_REPLACED = "character.appearance.replaced";
+/** A required reference-free appearance owner had no usable canonical value. */
+export const IMAGE_CHARACTER_APPEARANCE_UNRESOLVED = "character.appearance.unresolved";
 
 // ---------------------------------------------------------------------------
 // The image age vocabulary (owner ruling 2026-07-29)
@@ -239,6 +251,8 @@ export interface CharacterWorldSlicesInput {
   readonly sources: Readonly<Record<string, CharacterSubjectSources>>;
   /** The caller's apparent-age policy for every subject. Absent reads `state`. */
   readonly apparentAge?: CharacterApparentAgePolicy;
+  /** Subjects actually bound to planned, required identity references. */
+  readonly identityReferenceSubjects?: ReadonlySet<string>;
 }
 
 /** The completed subject slices plus everything the join lost, ready for `buildImageWorldDigest`. */
@@ -519,6 +533,101 @@ function isAgeAnchorFact(fact: Pick<VisualImageFact, "sourceRef">): boolean {
   );
 }
 
+const APPEARANCE_FRAMING_RANK: Readonly<Record<VisualFramingBand, number>> = {
+  close_up: 0,
+  portrait: 1,
+  waist_up: 2,
+  full_figure: 3,
+  wide: 4,
+};
+
+const APPEARANCE_PRIORITY = {
+  core: 8_500,
+  reinforcement: 6_000,
+  fine: 3_500,
+  fallback: 2_000,
+} as const;
+
+function digestFraming(digest: VisualImageDigest): VisualFramingBand | undefined {
+  return digest.cameraFacts.find((fact) => fact.component === "framing")?.band as
+    | VisualFramingBand
+    | undefined;
+}
+
+function isAppearanceAttributeFact(
+  fact: Pick<VisualImageFact, "sourceRef">,
+  attributeId: string,
+): boolean {
+  return (
+    fact.sourceRef.kind === "appearance" &&
+    fact.sourceRef.ref.kind === "attribute" &&
+    fact.sourceRef.ref.attributeId === attributeId
+  );
+}
+
+function appearanceReplacementReason(
+  attributeId: string,
+  selected: readonly VisualImageFact[],
+  emitted: readonly ImageWorldFact[],
+): string | undefined {
+  const emittedKind = (kindId: string): boolean =>
+    selected.some((selectedFact) => {
+      if (selectedFact.kindId !== kindId) return false;
+      return emitted.some((fact) => fact.key === selectedFact.key);
+    });
+  if (
+    (attributeId === "hair.arrangement" || attributeId === "hair.style") &&
+    emittedKind(VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID)
+  ) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
+  }
+  if (
+    attributeId === "presentation.grooming" &&
+    emittedKind(VISUAL_STATE_PRESENTATION_GROOMING_KIND_ID)
+  ) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
+  }
+  if (
+    attributeId === "face.expression_default" &&
+    selected.some(
+      (fact) =>
+        emitted.some((emittedFact) => emittedFact.key === fact.key) &&
+        (fact.segmentKind === "pose" ||
+          (fact.segmentKind === "current_state" && fact.sourceRef.kind === "scene_relation")),
+    )
+  ) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
+  }
+  if (attributeId === "presentation.style" && emitted.some((fact) => fact.concept === "subject.wardrobe")) {
+    return IMAGE_CHARACTER_APPEARANCE_REPLACED;
+  }
+  return undefined;
+}
+
+function speciesIdentityFact(
+  slice: ImageSubjectDigest,
+  sources: CharacterSubjectSources | undefined,
+): { readonly fact?: ImageWorldFact; readonly missing?: string } {
+  const body = sources?.realizedBody;
+  if (body === undefined || body.speciesId === DEFAULT_SPECIES_ID) return {};
+  const key = `${slice.ref}.species`;
+  const label = speciesLabelPhrase(body.speciesId, body.heritageId);
+  if (!label) return { missing: key };
+  return {
+    fact: {
+      key,
+      concept: "subject.morphology",
+      value: label,
+      subjectRef: slice.ref,
+      semanticTags: ["morphology.species", body.speciesId],
+      disposition: "required_visual",
+      priority: AFFORDANCE_UNIT_ONE,
+      source: { owner: "character.species", key: "species.label", entityId: slice.entityId },
+      truthFingerprint: `${body.speciesId}:${body.heritageId ?? ""}`,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The join
 // ---------------------------------------------------------------------------
@@ -554,6 +663,8 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
   const subjects = base.subjects.map((slice): ImageSubjectDigest => {
     const sources = input.sources[slice.entityId];
     const digestSubject = digestSubjectById.get(slice.entityId);
+    const selected = [...(digestSubject?.required ?? []), ...(digestSubject?.optional ?? [])];
+    const referenceAnchored = input.identityReferenceSubjects?.has(slice.ref) ?? false;
 
     // --- gap 5: hair the headwear fully hides is not visual truth ------------
     // Decided from the resolved band the lane carried beside its coverage
@@ -611,6 +722,115 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     let missingRequired = [...slice.missingRequired, ...unreadableRequired].filter((key) => !concealedHair(key));
     if (hairConcealed) facts.push(hairConcealmentFact(slice.ref, slice.entityId));
 
+    // --- registry-backed image appearance ------------------------------------
+    // One projection over the resolved sheet, independent of the deliberately
+    // narrow recognition catalog. The adapter alone applies render policy.
+    const projectedAppearance =
+      sources === undefined
+        ? []
+        : projectImageAppearanceAttributes({
+            attributes: sources.attributes ?? [],
+            isAttributeApplicable: (definition) =>
+              sources.realizedBody?.isAttributeApplicable(definition) ?? true,
+          });
+    const projectedIds = new Set(projectedAppearance.map((appearance) => appearance.attributeId));
+    const framing = digestFraming(digest);
+
+    for (const appearance of projectedAppearance) {
+      if (appearance.attributeId === VISUAL_IMAGE_AGE_ATTRIBUTE_ID) continue;
+      const key = `${slice.ref}.appearance.${appearance.attributeId}`;
+      if (hairConcealed && appearance.bodyLocationId === "hair") {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_HAIR_CONCEALED });
+        continue;
+      }
+      const replacement = appearanceReplacementReason(appearance.attributeId, selected, facts);
+      if (replacement !== undefined) {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: replacement });
+        continue;
+      }
+      if (isIntimateAttributeCategory(appearance.definition.category) && !appearance.ordinarySilhouette) {
+        continue;
+      }
+      if (
+        appearance.definition.imageReveal !== undefined &&
+        !revealSurfaces(appearance.definition, sources?.exposure ?? FULLY_COVERED, false)
+      ) {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_APPEARANCE_HIDDEN });
+        continue;
+      }
+
+      const required = appearance.referenceFreeRequired && !referenceAnchored;
+      const inFrame =
+        framing === undefined ||
+        (APPEARANCE_FRAMING_RANK[framing] >= APPEARANCE_FRAMING_RANK[appearance.minimumFraming] &&
+          APPEARANCE_FRAMING_RANK[framing] <= APPEARANCE_FRAMING_RANK[appearance.maximumFraming]);
+      if (!required && !inFrame) {
+        suppressions.push({ key, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_APPEARANCE_OUT_OF_FRAME });
+        continue;
+      }
+
+      const existingSource = selected.find((fact) => isAppearanceAttributeFact(fact, appearance.attributeId));
+      if (existingSource !== undefined) {
+        if (required) {
+          const index = facts.findIndex((fact) => fact.key === existingSource.key);
+          const existing = facts[index];
+          if (existing !== undefined) {
+            facts[index] = { ...existing, disposition: "required_visual", priority: AFFORDANCE_UNIT_ONE };
+            missingRequired = missingRequired.filter((missing) => missing !== existingSource.key);
+          }
+        }
+        continue;
+      }
+
+      facts.push({
+        key,
+        concept: "subject.appearance",
+        value: appearance.readableValue,
+        subjectRef: slice.ref,
+        ...(appearance.bodyLocationId === undefined ? {} : { locus: appearance.bodyLocationId }),
+        semanticTags: [`appearance:${appearance.class}`, `attribute:${appearance.attributeId}`],
+        disposition: required ? "required_visual" : "optional_visual",
+        priority: required ? AFFORDANCE_UNIT_ONE : APPEARANCE_PRIORITY[appearance.class],
+        source: {
+          owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+          key: appearance.attributeId,
+          entityId: slice.entityId,
+        },
+        truthFingerprint: appearance.truthFingerprint,
+      });
+    }
+
+    if (!referenceAnchored) {
+      for (const definition of attributeRegistry.definitions) {
+        if (!definition.imageAppearance?.referenceFreeRequired) continue;
+        if (definition.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID) continue;
+        if (sources?.realizedBody !== undefined && !sources.realizedBody.isAttributeApplicable(definition)) continue;
+        if (hairConcealed && definition.bodyLocationId === "hair") continue;
+        if (projectedIds.has(definition.id)) continue;
+        const key = `${slice.ref}.appearance.${definition.id}`;
+        suppressions.push({
+          key,
+          owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+          reason: IMAGE_CHARACTER_APPEARANCE_UNRESOLVED,
+        });
+        missingRequired.push(key);
+      }
+    }
+
+    const species = speciesIdentityFact(slice, sources);
+    if (
+      species.fact !== undefined &&
+      !facts.some(
+        (fact) => fact.source.owner === species.fact?.source.owner && fact.source.key === species.fact?.source.key,
+      )
+    ) {
+      facts.push(species.fact);
+    }
+    if (species.missing !== undefined) {
+      suppressions.push({ key: species.missing, owner: "character.species", reason: IMAGE_CHARACTER_APPEARANCE_UNRESOLVED });
+      missingRequired.push(species.missing);
+    }
+
     // --- gap 1: the apparent-age anchor ---------------------------------------
     const ref = slice.ref;
     const ageBand = sources?.attributes?.find((entry) => entry.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value;
@@ -651,6 +871,11 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
           };
         }
         missingRequired = missingRequired.filter((key) => key !== digestAgeFact.key);
+      } else if (referenceAnchored) {
+        // A required subject-bound identity image may carry a missing stable
+        // age anchor. Available age text remains authoritative and required;
+        // only absence stops refusing the reference edit.
+        missingRequired = missingRequired.filter((key) => key !== digestAgeFact.key);
       }
     } else {
       const ageKey = `${ref}.apparent_age`;
@@ -679,7 +904,7 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
         // legacy value): the age segment is mandatory, so this is degradation
         // and the lane must see it before spend.
         suppressions.push({ key: ageKey, owner: IMAGE_CHARACTER_ATTRIBUTE_OWNER, reason: IMAGE_CHARACTER_AGE_UNRESOLVED });
-        missingRequired = [...missingRequired, ageKey];
+        if (!referenceAnchored) missingRequired = [...missingRequired, ageKey];
       }
     }
 
@@ -707,8 +932,12 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
     const morphology = slice.morphology
       .map((fact) => byKey.get(fact.key))
       .filter((fact): fact is ImageWorldFact => fact !== undefined);
+    if (species.fact !== undefined) {
+      const emittedSpecies = byKey.get(species.fact.key);
+      if (emittedSpecies !== undefined) morphology.push(emittedSpecies);
+    }
 
-    return { ...slice, facts, morphology, missingRequired };
+    return { ...slice, facts, morphology, missingRequired: [...new Set(missingRequired)] };
   });
 
   return { subjects, suppressions };

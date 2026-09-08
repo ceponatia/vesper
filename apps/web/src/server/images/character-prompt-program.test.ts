@@ -489,6 +489,13 @@ describe("characterPromptTransport", () => {
 describe("what a variant render actually sends", () => {
   const program = (): CharacterPromptProgram => compiled(buildCharacterPromptProgram(programInput()));
 
+  it("reinforces the shared canonical platinum hair and blue eyes beside the identity reference", () => {
+    const result = program();
+
+    expect(result.prompt).toMatch(/hair color: platinum/i);
+    expect(result.prompt).toMatch(/eye color: blue/i);
+  });
+
   /**
    * The identity lock must come from the WORLD.
    *

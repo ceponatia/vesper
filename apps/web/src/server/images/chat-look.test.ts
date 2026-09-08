@@ -212,6 +212,13 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
     return program;
   }
 
+  it("reinforces the shared canonical platinum hair and blue eyes in a chat look", () => {
+    const program = compile(laneProbeShadowInput());
+
+    expect(program.prompt).toMatch(/hair color: platinum/i);
+    expect(program.prompt).toMatch(/eye color: blue/i);
+  });
+
   it("two cuts that differ only in a current-layer fact compile the same prompt", () => {
     const dry = compile({ ...laneProbeShadowInput(), conditions: [] });
     const soaked = compile({ ...laneProbeShadowInput(), conditions: [SOAKED] });

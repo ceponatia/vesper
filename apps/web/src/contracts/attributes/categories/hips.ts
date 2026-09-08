@@ -13,6 +13,7 @@ export const hipsGroup = defineAttributeGroup("hips", [
     allowedValues: ["narrow", "slim", "average", "rounded", "wide", "very_wide"],
     bodyLocationId: "hips",
     aliases: ["hips", "hip width", "wide hips", "curvy"],
+    imageAppearance: { class: "reinforcement", minimumFraming: "full_figure" },
     imageReveal: "shape",
   },
 ]);

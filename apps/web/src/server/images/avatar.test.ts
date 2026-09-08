@@ -124,15 +124,43 @@ describe("defaultOutfitPhrase degradation", () => {
  *   refused or not, so the visual moment survives a failed render.
  */
 describe("generateAvatar program wiring", () => {
-  const characterRow = (profile: unknown) => ({
+  const characterRow = (profile: unknown, name = "Mira") => ({
     id: "chr-1",
-    name: "Mira",
+    name,
     profile,
     updatedAt: new Date("2026-08-21T00:00:00Z"),
   });
   const bound = resolvedImageProfileFixture(LANE_PROBE_PORTRAIT_PROFILE);
 
-  function prime(options: { demo: boolean; profile: unknown; picked?: ResolvedImageProfile }): void {
+  /** Linda's complete plain-human sheet, without the lane probe's non-human body morphology. */
+  function lindaProfile(): CharacterProfile {
+    const shared = laneProbeProfile();
+    const core = new Set([
+      "identity.apparent_age",
+      "identity.gender",
+      "skin.tone",
+      "skin.undertone",
+      "hair.color",
+      "hair.length",
+      "eyes.color",
+      "face.shape",
+      "build.frame",
+      "build.weight_presentation",
+      "build.height",
+    ]);
+    return {
+      ...shared,
+      bio: "A decisive woman with a quiet sense of humor.",
+      personality: "Direct, observant, and warm.",
+      age: "29",
+      speciesId: "human",
+      bodyFeatures: [],
+      intimateRegions: [],
+      attributes: shared.attributes.filter((attribute) => core.has(attribute.id)),
+    };
+  }
+
+  function prime(options: { demo: boolean; profile: unknown; name?: string; picked?: ResolvedImageProfile }): void {
     vi.mocked(isDemoMode).mockReturnValue(options.demo);
     vi.mocked(resolveImageProfileForTask).mockResolvedValue(options.picked ?? null);
     vi.mocked(buildStandaloneLaneCut).mockImplementation(actualBuildStandaloneLaneCut);
@@ -148,7 +176,9 @@ describe("generateAvatar program wiring", () => {
       () =>
         ({
           select: () => ({
-            from: () => ({ where: () => ({ limit: () => Promise.resolve([characterRow(options.profile)]) }) }),
+            from: () => ({
+              where: () => ({ limit: () => Promise.resolve([characterRow(options.profile, options.name)]) }),
+            }),
           }),
         }) as unknown as ReturnType<typeof db>,
     );
@@ -171,8 +201,8 @@ describe("generateAvatar program wiring", () => {
     expect(sink.items.filter((d) => d.code.startsWith("images.avatar."))).toEqual([]);
   });
 
-  it("a bound model sends exactly the prompt the row stores, with the program's provenance beside the cut's", async () => {
-    prime({ demo: false, profile: laneProbeProfile(), picked: bound });
+  it("sends the saved platinum hair and blue eyes in exactly the prompt the row stores", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
     const sink = new DiagnosticCollector();
     await expect(generate(sink)).resolves.toBe("img-1");
     const opts = reserved();
@@ -180,6 +210,8 @@ describe("generateAvatar program wiring", () => {
     const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
     expect(intent?.prompt).toBe(opts?.asset.prompt);
     expect(intent?.prompt).toMatch(/late twenties/);
+    expect(intent?.prompt).toMatch(/hair color: platinum/i);
+    expect(intent?.prompt).toMatch(/eye color: blue/i);
     expect(Object.keys(opts?.asset.meta ?? {})).toEqual(
       expect.arrayContaining(["visualState", IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY]),
     );
@@ -202,12 +234,12 @@ describe("generateAvatar program wiring", () => {
   });
 
   it("a sheet the program cannot anchor fails the row before provider spend, with the compile's own code", async () => {
-    // A sheet that projects a subject but no apparent-age band: the age anchor
-    // is mandatory and fails closed.
-    const base = laneProbeProfile();
+    // Linda's otherwise-complete sheet without one required core appearance
+    // value: a reference-free portrait must not invent her hair color.
+    const base = lindaProfile();
     prime({
       demo: false,
-      profile: { ...base, attributes: base.attributes.filter((value) => value.id !== "identity.apparent_age") },
+      profile: { ...base, attributes: base.attributes.filter((value) => value.id !== "hair.color") },
       picked: bound,
     });
     const sink = new DiagnosticCollector();
@@ -239,12 +271,13 @@ describe("generateAvatar program wiring", () => {
  * prompt a portrait sends. The selection's consent gate, the adapter's
  * excluded-field and non-visual gates and the lane's decision not to project an
  * intimate reveal each have their own owner; this pins what they add up to for
- * THIS lane, because the defect is a one-line one — `intimateAllowed: true` or
- * an `intimateReveal` on the avatar program — and the picture it produces is a
- * nude portrait of a character whose sheet merely lists their anatomy.
+ * THIS lane, including the one ordinary-route exception for a coverage-safe
+ * bust silhouette. The defect is a one-line `intimateAllowed: true` or an
+ * `intimateReveal` on the avatar program, and the picture it produces is a nude
+ * portrait of a character whose sheet merely lists their anatomy.
  */
 describe("the portrait program's field policy", () => {
-  it("withholds intimate anatomy, non-visual senses and excluded fields — bare or dressed", () => {
+  it("withholds intimate detail, non-visual senses and excluded fields — bare or dressed", () => {
     const base = laneProbeProfile();
     const profile: CharacterProfile = {
       ...base,
@@ -254,7 +287,9 @@ describe("the portrait program's field policy", () => {
       const program = laneProbeAvatarProgram({ profile, wardrobe });
       if (program.kind !== "compiled") throw new Error(`the avatar program did not compile: ${program.kind}`);
       expect(program.prompt).toMatch(/late twenties/); // the sheet does reach the prompt…
-      expect(program.prompt).not.toMatch(/\bample\b|\bpuffy\b/); // …minus breasts.size / breasts.nipples
+      // The one permitted intimate-region fact is a coverage-safe silhouette.
+      expect(program.prompt).toMatch(/breast size: ample/i);
+      expect(program.prompt).not.toMatch(/\bpuffy\b/); // intimate surface detail remains gated
       expect(program.prompt).not.toMatch(/gravelly/); // voice.timbre never renders
       expect(program.prompt).not.toMatch(/natal/i); // identity.natal_sex is excludeFromPrompts
     }

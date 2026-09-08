@@ -20,6 +20,7 @@ export const noseGroup = defineAttributeGroup("nose", [
     autoDefaultExcludes: ["crooked"],
     bodyLocationId: "nose",
     aliases: ["nose", "nose shape"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "nose.size",
@@ -33,6 +34,7 @@ export const noseGroup = defineAttributeGroup("nose", [
     allowedValues: ["petite", "small", "medium", "prominent", "large"],
     bodyLocationId: "nose",
     aliases: ["nose size"],
+    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
   },
   {
     id: "nose.piercings",
@@ -45,5 +47,6 @@ export const noseGroup = defineAttributeGroup("nose", [
     allowedValues: ["none", "nostril", "double_nostril", "high_nostril", "septum", "bridge"],
     bodyLocationId: "nose",
     aliases: ["nose piercing", "septum", "nose ring"],
+    imageAppearance: { class: "fine", maximumFraming: "close_up" },
   },
 ]);

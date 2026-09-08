@@ -23,6 +23,7 @@ export const teethGroup = defineAttributeGroup("teeth", [
     autoDefaultExcludes: ["sharp_canines", "sharp_incisors", "fanged", "all_pointed", "serrated"],
     bodyLocationId: "face",
     aliases: ["teeth", "fangs", "canines"],
+    imageAppearance: { class: "fine", maximumFraming: "close_up" },
     promptHints: ["Sharp canines / fangs read vampiric, demonic, or predatory — surface them on a smile, a hiss, or up close."],
   },
   {
@@ -36,5 +37,6 @@ export const teethGroup = defineAttributeGroup("teeth", [
     allowedValues: ["pristine", "white", "neat", "yellowed", "stained", "chipped", "gold_capped"],
     bodyLocationId: "face",
     aliases: ["teeth condition"],
+    imageAppearance: { class: "fine", maximumFraming: "close_up" },
   },
 ]);

@@ -25,6 +25,41 @@ export type AttributeEntityKind = z.infer<typeof attributeEntityKindSchema>;
 
 export type AttributeIdPattern = `${AttributeCategory}.${string}`;
 
+/** Selection priority for canonical attributes in an image description. */
+export const imageAppearanceClasses = ["core", "reinforcement", "fine", "fallback"] as const;
+export const imageAppearanceClassSchema = z.enum(imageAppearanceClasses);
+export type ImageAppearanceClass = z.infer<typeof imageAppearanceClassSchema>;
+
+/**
+ * Ordered camera framing bands used by an inclusive minimum/maximum range.
+ * A face detail may span close_up through portrait; categorical height may
+ * span full_figure through wide.
+ * Required-completeness policy may retain a required core fact independently
+ * of this ordinary relevance hint.
+ */
+export const imageAppearanceMinimumFramings = [
+  "close_up",
+  "portrait",
+  "waist_up",
+  "full_figure",
+  "wide",
+] as const;
+export const imageAppearanceMinimumFramingSchema = z.enum(imageAppearanceMinimumFramings);
+export type ImageAppearanceMinimumFraming = z.infer<typeof imageAppearanceMinimumFramingSchema>;
+
+export const imageAppearanceMetadataSchema = z.object({
+  class: imageAppearanceClassSchema,
+  referenceFreeRequired: z.boolean().optional(),
+  minimumFraming: imageAppearanceMinimumFramingSchema.optional(),
+  maximumFraming: imageAppearanceMinimumFramingSchema.optional(),
+  /** Deliberate permission for an intimate shape fact to enter an ordinary image description. */
+  ordinarySilhouette: z.boolean().optional(),
+  /** Values that are valid storage vocabulary but add no useful image fact. */
+  omitValues: z.array(z.string().min(1)).readonly().optional(),
+});
+
+export type ImageAppearanceMetadata = z.infer<typeof imageAppearanceMetadataSchema>;
+
 export const attributeIdPatternSchema = z.custom<AttributeIdPattern>(
   (value) => {
     if (typeof value !== "string") return false;
@@ -99,6 +134,13 @@ export const attributeDefinitionSchema = z.object({
    * non-enum values can't be seeded from a closed list.
    */
   renderVisual: z.boolean().optional(),
+  /**
+   * Image-description selection policy. Separate from `coreVisual` /
+   * `renderVisual` creation fills, `identityAnchor` forge inference, and the
+   * narrow observer-recognition catalog. The registry owns eligibility and
+   * priority; render-specific completeness and visibility remain downstream.
+   */
+  imageAppearance: imageAppearanceMetadataSchema.optional(),
   /**
    * Curated registry default for this attribute (owner ruling 2026-07-11:
    * female-leaning where the attribute is gendered, since most characters are
@@ -248,6 +290,27 @@ export function defineAttributeGroup(category: AttributeCategory, definitions: r
     // set anywhere else it would silently do nothing (or mask a rename).
     if (def.renderNoneInPrompts && !def.allowedValues?.includes("none")) {
       throw new Error(`Attribute ${def.id} sets renderNoneInPrompts but "none" is not in allowedValues`);
+    }
+    if (def.imageAppearance?.ordinarySilhouette) {
+      if (def.id !== "breasts.size" || def.imageReveal !== "shape") {
+        throw new Error(
+          `Attribute ${def.id} sets imageAppearance.ordinarySilhouette outside the breasts.size shape exception`,
+        );
+      }
+    }
+    for (const value of def.imageAppearance?.omitValues ?? []) {
+      if (!def.allowedValues?.includes(value)) {
+        throw new Error(`Attribute ${def.id} imageAppearance omitValue "${value}" is not in allowedValues`);
+      }
+    }
+    if (def.imageAppearance?.minimumFraming && def.imageAppearance.maximumFraming) {
+      const minimum = imageAppearanceMinimumFramings.indexOf(def.imageAppearance.minimumFraming);
+      const maximum = imageAppearanceMinimumFramings.indexOf(def.imageAppearance.maximumFraming);
+      if (minimum > maximum) {
+        throw new Error(
+          `Attribute ${def.id} imageAppearance minimumFraming must not be wider than maximumFraming`,
+        );
+      }
     }
     // Narrator glosses key off enum members — a stray key would never render (or worse,
     // mask a vocabulary rename), so it fails loudly at definition time.
