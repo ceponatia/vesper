@@ -46,8 +46,8 @@ function realizedBodyFor(draft: CharacterDraft) {
     speciesId: profile.speciesId,
     heritageId: profile.heritageId,
     bodyPlanId: profile.bodyPlanId,
-    intimateRegions: profile.intimateRegions,
-    bodyFeatures: profile.bodyFeatures,
+    intimateRegions: Array.isArray(profile.intimateRegions) ? profile.intimateRegions : undefined,
+    bodyFeatures: Array.isArray(profile.bodyFeatures) ? profile.bodyFeatures : undefined,
   });
 }
 
@@ -70,17 +70,16 @@ export function portraitAttributeDefinitions(
 /** Hash only the character facts that define this extraction's vocabulary or
  * comparison. Biography, tags and other unrelated edits do not stale it. */
 export function portraitAuthoringFingerprint(draft: CharacterDraft): string {
-  const eligible = new Set(portraitAttributeDefinitions(draft).map((definition) => definition.id));
+  const realizedBody = realizedBodyFor(draft);
+  const eligible = new Set(portraitAttributeDefinitions(draft, realizedBody).map((definition) => definition.id));
   const profile = draft.profile;
-  const intimateRegions = Array.isArray(profile.intimateRegions) ? profile.intimateRegions : [];
-  const bodyFeatures = Array.isArray(profile.bodyFeatures) ? profile.bodyFeatures : [];
   const attributes = Array.isArray(profile.attributes) ? profile.attributes : [];
   return createHash("sha256").update(JSON.stringify({
     speciesId: profile.speciesId,
     heritageId: profile.heritageId,
     bodyPlanId: profile.bodyPlanId,
-    intimateRegions: [...intimateRegions].sort(),
-    bodyFeatures: [...bodyFeatures].sort(),
+    intimateRegions: [...realizedBody.intimateRegions].sort(),
+    bodyFeatures: [...realizedBody.bodyFeatures].sort(),
     attributes: attributes
       .filter((attribute) => eligible.has(attribute.id))
       .map((attribute) => ({ id: attribute.id, value: attribute.value }))
@@ -275,7 +274,9 @@ export async function derivePortraitAttributes(input: PortraitAttributesInput): 
     };
   }
 
-  const definitionById = new Map(definitions.map((definition) => [definition.id, definition]));
+  const definitionById = new Map<string, AttributeDefinition>(
+    definitions.map((definition) => [definition.id, definition]),
+  );
   const seen = new Set<string>();
   const fields: PortraitFieldEvidence[] = [];
   const realizedBody = realizedBodyFor(draft);
@@ -286,16 +287,20 @@ export async function derivePortraitAttributes(input: PortraitAttributesInput): 
     }
     seen.add(raw.id);
     const definition = definitionById.get(raw.id);
+    if (!definition) {
+      sink?.push(diag("warn", "forge.character.portrait.unknown_id", `Dropped unknown portrait observation for ${raw.id}.`));
+      continue;
+    }
     const directTeethSupport = portraitObservationCanPropose(definition, raw.visibility, raw.evidenceRegion);
     const grounded = raw.value === null || !directTeethSupport
       ? null
-      : groundAttributeValues([{ id: raw.id, value: raw.value }], sink, "forge.character.portrait", realizedBody)[0] ?? null;
+      : groundAttributeValues([{ id: definition.id, value: raw.value }], sink, "forge.character.portrait", realizedBody)[0] ?? null;
     if (!directTeethSupport && raw.value !== null) {
       sink?.push(diag("info", "forge.character.portrait.unsupported_conditional", `Omitted ${raw.id} because the portrait does not visibly support that conditional detail.`, { context: { id: raw.id } }));
     }
     const defaultSelected = grounded !== null && raw.visibility === "clear" && raw.confidence >= PORTRAIT_DEFAULT_CONFIDENCE && raw.evidenceRegion !== null;
     fields.push({
-      id: raw.id,
+      id: definition.id,
       value: grounded?.value ?? null,
       confidence: raw.confidence,
       visibility: raw.visibility,

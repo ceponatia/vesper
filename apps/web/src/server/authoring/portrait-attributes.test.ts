@@ -58,6 +58,15 @@ describe("portrait evidence classification", () => {
     expect(portraitAuthoringFingerprint(changedBio)).toBe(portraitAuthoringFingerprint(draft));
     expect(portraitAuthoringFingerprint(changedEyes)).not.toBe(portraitAuthoringFingerprint(draft));
   });
+
+  it("distinguishes inherited species features from an explicit empty override", () => {
+    const inherited = emptyCharacterDraft();
+    inherited.profile.speciesId = "succubus";
+    const withoutFeatures = structuredClone(inherited);
+    withoutFeatures.profile.bodyFeatures = [];
+
+    expect(portraitAuthoringFingerprint(withoutFeatures)).not.toBe(portraitAuthoringFingerprint(inherited));
+  });
 });
 
 describe("derivePortraitAttributes (keyless demo mode)", () => {
