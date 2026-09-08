@@ -57,7 +57,7 @@ export async function activeJobCount(ownerId: string, staleMs = JOB_SLOT_STALE_M
       and(
         eq(jobs.ownerId, ownerId),
         inArray(jobs.status, [...ACTIVE_STATUSES]),
-        gt(jobs.createdAt, new Date(Date.now() - staleMs)),
+        gt(jobs.heartbeatAt, new Date(Date.now() - staleMs)),
       ),
     );
   return row?.active ?? 0;
@@ -94,7 +94,7 @@ export async function claimJobSlot(input: ClaimJobSlotInput): Promise<JobSlotCla
         eq(jobs.ownerId, input.ownerId),
         eq(jobs.type, input.type),
         inArray(jobs.status, [...ACTIVE_STATUSES]),
-        gt(jobs.createdAt, new Date(Date.now() - JOB_SLOT_STALE_MS)),
+        gt(jobs.heartbeatAt, new Date(Date.now() - JOB_SLOT_STALE_MS)),
         sql`${jobs.payload} ->> '_activeDedupeKey' = ${input.activeDedupeKey}`,
       )).limit(1);
       if (active) return { existing: true, jobId: active.id, rows: [] };
@@ -109,7 +109,7 @@ export async function claimJobSlot(input: ClaimJobSlotInput): Promise<JobSlotCla
         SELECT count(*) FROM "jobs"
         WHERE "jobs"."owner_id" = ${input.ownerId}
           AND "jobs"."status" IN ('queued', 'running')
-          AND "jobs"."created_at" > ${staleCutoff}
+          AND "jobs"."heartbeat_at" > ${staleCutoff}
       ) < ${limit}
       RETURNING "id"
     `);

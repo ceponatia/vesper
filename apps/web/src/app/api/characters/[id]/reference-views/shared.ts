@@ -130,10 +130,16 @@ export async function queueReferenceViewBuild(
   const { characterId, ownerId, targets, planned } = input;
   if (targets.length === 0) return { queued: false, reason: null, planned, admitted: 0, targets: [] };
 
-  const payload: { characterId: string; targets: string[]; leases: ReferenceViewLeaseClaim["claimed"] } = {
+  const payload: {
+    characterId: string;
+    targets: string[];
+    leases: ReferenceViewLeaseClaim["claimed"];
+    referenceViewAttemptIds: string[];
+  } = {
     characterId,
     targets: [],
     leases: [],
+    referenceViewAttemptIds: [],
   };
   type Admission = { reason: "budget" | "busy"; claim: ReferenceViewLeaseClaim };
   let claim: ReferenceViewLeaseClaim = { claimed: [], busy: [] };

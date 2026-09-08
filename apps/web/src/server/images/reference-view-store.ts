@@ -109,6 +109,13 @@ function payloadLeases(payload: unknown): ReferenceViewLease[] {
   });
 }
 
+function payloadReferenceViewAttemptIds(payload: unknown): string[] {
+  const candidate = objectPayload(payload).referenceViewAttemptIds;
+  if (!Array.isArray(candidate)) return [];
+  return [...new Set(candidate.filter((value): value is string => typeof value === "string" && value.length > 0))]
+    .slice(0, 64);
+}
+
 async function liveReferenceViewLeaseJobs(
   executor: ReferenceViewExecutor,
   characterId: string,
@@ -766,9 +773,16 @@ export async function reserveReferenceView(input: ReserveReferenceViewInput): Pr
     const leases = payloadLeases(job.payload).map((candidate) =>
       slotKey(candidate) === slotKey(view) ? { ...candidate, attemptId: row.id } : candidate,
     );
+    const payload = objectPayload(job.payload);
     const [updated] = await tx
       .update(jobs)
-      .set({ payload: { ...objectPayload(job.payload), leases } })
+      .set({
+        payload: {
+          ...payload,
+          leases,
+          referenceViewAttemptIds: [...new Set([...payloadReferenceViewAttemptIds(payload), row.id])].slice(0, 64),
+        },
+      })
       .where(and(
         eq(jobs.id, job.id),
         eq(jobs.status, "running"),

@@ -413,31 +413,40 @@ export function startCharacterAuthoringRun(ownerId: string, input: StartInput, a
 
 /** Move creation-draft runs onto the character minted from that same request. */
 export async function bindCreationAuthoringRuns(ownerId: string, creationId: string, characterId: string, authoringRevision: number): Promise<void> {
-  const rows = await db().select().from(jobs).where(and(
-    eq(jobs.ownerId, ownerId),
-    eq(jobs.type, "character_authoring"),
-    sql`${jobs.payload} -> 'intent' -> 'target' ->> 'kind' = 'creation'`,
-    sql`${jobs.payload} -> 'intent' -> 'target' ->> 'id' = ${creationId}`,
-  ));
-  for (const row of rows) {
-    const parsed = payloadSchema.safeParse(row.payload);
-    if (!parsed.success) continue;
-    const prior = parsed.data;
-    const unsigned = {
-      requestId: prior.intent.requestId,
-      target: { kind: "character" as const, id: characterId },
-      operation: prior.intent.operation,
-      scope: prior.intent.scope,
-      label: prior.intent.label,
-      base: prior.intent.base,
-      creationStart: prior.intent.creationStart,
-      source: { authoringRevision, imageId: null },
-      retryOf: prior.intent.retryOf,
-      rootRunId: prior.intent.rootRunId,
-    };
-    const payload: StoredPayload = { ...prior, intent: { ...unsigned, intentHash: intentDigest(unsigned) } };
-    await db().update(jobs).set({ payload }).where(and(eq(jobs.id, row.id), eq(jobs.ownerId, ownerId)));
-  }
+  await db().transaction(async (tx) => {
+    // Binding can race both detached completion (which merges `result`) and an
+    // owner decision (which advances `proposal`). Lock and transform the current
+    // row so this narrow target rewrite cannot restore an earlier payload.
+    const rows = await tx.select().from(jobs).where(and(
+      eq(jobs.ownerId, ownerId),
+      eq(jobs.type, "character_authoring"),
+      sql`${jobs.payload} -> 'intent' -> 'target' ->> 'kind' = 'creation'`,
+      sql`${jobs.payload} -> 'intent' -> 'target' ->> 'id' = ${creationId}`,
+    )).for("update");
+    for (const row of rows) {
+      const parsed = payloadSchema.safeParse(row.payload);
+      if (!parsed.success) continue;
+      const prior = parsed.data;
+      const unsigned = {
+        requestId: prior.intent.requestId,
+        target: { kind: "character" as const, id: characterId },
+        operation: prior.intent.operation,
+        scope: prior.intent.scope,
+        label: prior.intent.label,
+        base: prior.intent.base,
+        creationStart: prior.intent.creationStart,
+        source: { authoringRevision, imageId: null },
+        retryOf: prior.intent.retryOf,
+        rootRunId: prior.intent.rootRunId,
+      };
+      const payload: StoredPayload = { ...prior, intent: { ...unsigned, intentHash: intentDigest(unsigned) } };
+      await tx.update(jobs).set({ payload }).where(and(
+        eq(jobs.id, row.id),
+        eq(jobs.ownerId, ownerId),
+        eq(jobs.type, "character_authoring"),
+      ));
+    }
+  });
 }
 
 export async function retryCharacterAuthoringRun(ownerId: string, runId: string, requestId: string, admit: () => Promise<Response | null>): Promise<StartAuthoringRunOutcome> {

@@ -54,6 +54,28 @@ describe("character media job projection", () => {
     expect(JSON.stringify(projected)).not.toContain("example.test");
   });
 
+  it("uses heartbeat age for current jobs and falls back to creation time for legacy inputs", () => {
+    const live = projectCharacterMediaJob({
+      ...base,
+      createdAt: "2026-09-08T17:00:00.000Z",
+      heartbeatAt: "2026-09-08T17:59:30.000Z",
+    }, { now, staleAfterMs: 15 * 60_000 });
+    expect(live.lifecycle).toBe("running");
+
+    const expired = projectCharacterMediaJob({
+      ...base,
+      createdAt: "2026-09-08T17:59:00.000Z",
+      heartbeatAt: "2026-09-08T17:00:00.000Z",
+    }, { now, staleAfterMs: 15 * 60_000 });
+    expect(expired.lifecycle).toBe("interrupted");
+
+    const legacy = projectCharacterMediaJob({
+      ...base,
+      createdAt: "2026-09-08T17:59:00.000Z",
+    }, { now, staleAfterMs: 15 * 60_000 });
+    expect(legacy.lifecycle).toBe("running");
+  });
+
   it("passes only typed result identifiers", () => {
     const projected = projectCharacterMediaJob({
       ...base,

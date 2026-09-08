@@ -83,14 +83,46 @@ describe.skipIf(!ready)("per-user job concurrency cap", () => {
     for (let i = 0; i < MAX_CONCURRENT_JOBS_PER_USER; i++) await claim(ownerA);
     expect((await claim(ownerA)).ok).toBe(false);
 
-    // Age every row past the staleness window, as a crashed runner would leave them.
+    // Age every heartbeat past the staleness window, as a crashed runner would leave them.
     await db()
       .update(jobs)
-      .set({ createdAt: new Date(Date.now() - JOB_SLOT_STALE_MS - 60_000) })
+      .set({ heartbeatAt: new Date(Date.now() - JOB_SLOT_STALE_MS - 60_000) })
       .where(eq(jobs.ownerId, ownerA));
 
     expect(await activeJobCount(ownerA)).toBe(0);
     expect((await claim(ownerA)).ok).toBe(true);
+  });
+
+  it("keeps an old job active and deduped while its heartbeat is recent", async () => {
+    const root = crypto.randomUUID();
+    const key = `media:${root}`;
+    const first = await claimJobSlot({
+      ownerId: ownerA,
+      type: "entity_image",
+      requestedJobId: crypto.randomUUID(),
+      activeDedupeKey: key,
+      payload: { probe: true },
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    await db()
+      .update(jobs)
+      .set({
+        createdAt: new Date(Date.now() - JOB_SLOT_STALE_MS - 60_000),
+        heartbeatAt: new Date(),
+      })
+      .where(eq(jobs.id, first.jobId));
+
+    expect(await activeJobCount(ownerA)).toBe(1);
+    const duplicate = await claimJobSlot({
+      ownerId: ownerA,
+      type: "entity_image",
+      requestedJobId: crypto.randomUUID(),
+      activeDedupeKey: key,
+      payload: { probe: true },
+    });
+    expect(duplicate).toEqual({ ok: true, jobId: first.jobId, inserted: false });
   });
 
   it("stores the owner and payload it was given", async () => {

@@ -126,6 +126,10 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
     const winnerJob = first.claimed.length === 1 ? firstJob : secondJob;
     const winnerAttempt = await reserve(state.characterId, state.source, winnerJob, front);
     expect(winnerAttempt).not.toBeNull();
+    const [ownedAttempt] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, winnerJob));
+    expect(ownedAttempt?.payload).toEqual(expect.objectContaining({
+      referenceViewAttemptIds: [winnerAttempt],
+    }));
 
     const partialJob = await job(state.characterId);
     const partial = await claimReferenceViewLeases({

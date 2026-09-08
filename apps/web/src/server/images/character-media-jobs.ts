@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
+  characterMediaOwnedResultIds,
   projectCharacterMediaJob,
   type CharacterMediaJob,
   type CharacterMediaJobProjectionInput,
@@ -14,6 +15,7 @@ export const CHARACTER_MEDIA_JOB_LIMIT = 8;
 type CharacterMediaJobRow = Pick<
   typeof jobs.$inferSelect,
   "id" | "type" | "status" | "payload" | "createdAt" | "startedAt" | "finishedAt"
+  | "heartbeatAt"
 >;
 
 /**
@@ -36,6 +38,7 @@ export async function listCharacterMediaJobs(
       status: jobs.status,
       payload: jobs.payload,
       createdAt: jobs.createdAt,
+      heartbeatAt: jobs.heartbeatAt,
       startedAt: jobs.startedAt,
       finishedAt: jobs.finishedAt,
     })
@@ -44,7 +47,7 @@ export async function listCharacterMediaJobs(
       and(
         eq(jobs.ownerId, ownerId),
         inArray(jobs.type, CHARACTER_MEDIA_JOB_TYPES),
-        gte(jobs.createdAt, new Date(now.getTime() - CHARACTER_MEDIA_RECENT_MS)),
+        gte(jobs.heartbeatAt, new Date(now.getTime() - CHARACTER_MEDIA_RECENT_MS)),
         sql`${jobs.payload} ->> 'characterId' = ${characterId}`,
       ),
     )
@@ -76,32 +79,37 @@ function toProjectionInput(row: CharacterMediaJobRow): CharacterMediaJobProjecti
     status: row.status,
     payload: row.payload,
     createdAt: row.createdAt,
+    heartbeatAt: row.heartbeatAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
   };
 }
 
-/** Result rows created by this job window, projected to identifiers only. */
+/** Exact job-owned results, with a bounded time-window fallback for legacy rows. */
 async function resultIdentifiers(row: CharacterMediaJobRow, characterId: string): Promise<CharacterMediaResult[]> {
   if (row.type !== "identity_pack" && row.type !== "reference_views") return [];
+  const owned = characterMediaOwnedResultIds(row.payload);
   const end = row.finishedAt ?? new Date();
 
   if (row.type === "identity_pack") {
+    if (owned.identityPackIds !== undefined && owned.identityPackIds.length === 0) return [];
     const packs = await db()
       .select({ id: imageIdentityPacks.id, imageId: imageIdentityPacks.faceCropImageId })
       .from(imageIdentityPacks)
       .where(
         and(
           eq(imageIdentityPacks.characterId, characterId),
-          gte(imageIdentityPacks.createdAt, row.createdAt),
-          lte(imageIdentityPacks.createdAt, end),
+          owned.identityPackIds === undefined
+            ? and(gte(imageIdentityPacks.createdAt, row.createdAt), lte(imageIdentityPacks.createdAt, end))
+            : inArray(imageIdentityPacks.id, [...owned.identityPackIds]),
         ),
       )
       .orderBy(desc(imageIdentityPacks.createdAt))
-      .limit(1);
+      .limit(owned.identityPackIds === undefined ? 1 : 32);
     return packs.map((pack) => ({ kind: "identity_pack" as const, id: pack.id, imageId: pack.imageId }));
   }
 
+  if (owned.referenceViewAttemptIds !== undefined && owned.referenceViewAttemptIds.length === 0) return [];
   const attempts = await db()
     .select({
       id: characterReferenceViews.id,
@@ -111,8 +119,9 @@ async function resultIdentifiers(row: CharacterMediaJobRow, characterId: string)
     .where(
       and(
         eq(characterReferenceViews.characterId, characterId),
-        gte(characterReferenceViews.createdAt, row.createdAt),
-        lte(characterReferenceViews.createdAt, end),
+        owned.referenceViewAttemptIds === undefined
+          ? and(gte(characterReferenceViews.createdAt, row.createdAt), lte(characterReferenceViews.createdAt, end))
+          : inArray(characterReferenceViews.id, [...owned.referenceViewAttemptIds]),
       ),
     )
     .orderBy(desc(characterReferenceViews.createdAt))

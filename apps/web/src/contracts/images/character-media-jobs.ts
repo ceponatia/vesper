@@ -58,6 +58,8 @@ export interface CharacterMediaJobProjectionInput {
   status: CharacterMediaJobStatus;
   payload: unknown;
   createdAt: Date | string;
+  /** The runner's liveness clock. Absent only for legacy callers/fixtures. */
+  heartbeatAt?: Date | string | null;
   startedAt: Date | string | null;
   finishedAt: Date | string | null;
 }
@@ -84,6 +86,8 @@ const payloadSchema = z
   })
   .passthrough();
 
+const ownedResultIdsSchema = z.array(z.string().min(1).max(128));
+
 const operationByType: Record<CharacterMediaJobType, { operation: CharacterMediaOperation; label: string }> = {
   avatar: { operation: "portrait", label: "Main portrait" },
   portrait_variant: { operation: "variant", label: "Portrait variant" },
@@ -101,6 +105,28 @@ function safeDiagnosticCode(payload: z.infer<typeof payloadSchema>): string {
   if (payload.status && payload.status !== "built") return `images.reference_views.${payload.status}`;
   const candidate = payload.code ?? payload.outcome;
   return candidate && /^[a-z0-9._-]+$/i.test(candidate) ? candidate : "media_job.failed";
+}
+
+/** Exact durable result ownership carried by current jobs. Missing keys identify
+ * legacy rows whose result lookup may use its bounded time-window fallback. */
+export function characterMediaOwnedResultIds(payload: unknown): {
+  identityPackIds?: readonly string[];
+  referenceViewAttemptIds?: readonly string[];
+} {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return {};
+  const record = payload as Record<string, unknown>;
+  const identity = Object.hasOwn(record, "identityPackIds")
+    ? ownedResultIdsSchema.max(32).safeParse(record.identityPackIds)
+    : null;
+  const references = Object.hasOwn(record, "referenceViewAttemptIds")
+    ? ownedResultIdsSchema.max(64).safeParse(record.referenceViewAttemptIds)
+    : null;
+  return {
+    ...(identity === null ? {} : { identityPackIds: identity.success ? [...new Set(identity.data)] : [] }),
+    ...(references === null
+      ? {}
+      : { referenceViewAttemptIds: references.success ? [...new Set(references.data)] : [] }),
+  };
 }
 
 /**
@@ -125,10 +151,14 @@ export function projectCharacterMediaJob(
   const built = Math.min(targetCount, safe.built ?? 0);
   const failedCount = Math.min(targetCount - built, safe.failed ?? 0);
   const createdAt = new Date(input.createdAt);
+  const heartbeatAt = input.heartbeatAt === null || input.heartbeatAt === undefined
+    ? null
+    : new Date(input.heartbeatAt);
+  const livenessAt = heartbeatAt !== null && Number.isFinite(heartbeatAt.getTime()) ? heartbeatAt : createdAt;
   const stale = (input.status === "queued" || input.status === "running")
     && context.now !== undefined
-    && Number.isFinite(createdAt.getTime())
-    && context.now.getTime() - createdAt.getTime() >= context.staleAfterMs;
+    && Number.isFinite(livenessAt.getTime())
+    && context.now.getTime() - livenessAt.getTime() >= context.staleAfterMs;
 
   let lifecycle: CharacterMediaLifecycle;
   if (stale) lifecycle = "interrupted";

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { characters, db, jobs } from "@/server/db";
+import { REFERENCE_VIEW_GENERATION_VERSION } from "@/contracts";
+import { characterReferenceViews, characters, db, jobs } from "@/server/db";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 import { listCharacterMediaJobs } from "./character-media-jobs";
 
@@ -80,5 +81,96 @@ describe.skipIf(!ready)("owner-scoped character media jobs", () => {
 
     const projected = await listCharacterMediaJobs(characterId, ownerId);
     expect(projected.every((job) => job.results.every((result) => result.id !== "other-image"))).toBe(true);
+  });
+
+  it("attributes overlapping disjoint reference attempts to their exact jobs", async () => {
+    const [character] = await db()
+      .insert(characters)
+      .values({ ownerId, name: "Disjoint result ownership" })
+      .returning({ id: characters.id });
+    if (!character) throw new Error("failed to seed result ownership character");
+
+    const attempts = await db()
+      .insert(characterReferenceViews)
+      .values([
+        {
+          characterId: character.id,
+          angleId: "front_full",
+          wardrobe: "clothed",
+          current: true,
+          status: "ready",
+          sourceContentHash: "a".repeat(64),
+          generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+          method: "rendered",
+        },
+        {
+          characterId: character.id,
+          angleId: "back_full",
+          wardrobe: "clothed",
+          current: true,
+          status: "ready",
+          sourceContentHash: "a".repeat(64),
+          generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+          method: "rendered",
+        },
+        {
+          characterId: character.id,
+          angleId: "side_left",
+          wardrobe: "clothed",
+          current: true,
+          status: "ready",
+          sourceContentHash: "a".repeat(64),
+          generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+          method: "rendered",
+        },
+      ])
+      .returning({ id: characterReferenceViews.id });
+    expect(attempts).toHaveLength(3);
+
+    const windowStart = new Date(Date.now() - 2_000);
+    const windowEnd = new Date(Date.now() + 2_000);
+    const inserted = await db()
+      .insert(jobs)
+      .values([
+        {
+          ownerId,
+          type: "reference_views",
+          status: "done",
+          payload: {
+            characterId: character.id,
+            targets: ["front_full:clothed"],
+            referenceViewAttemptIds: [attempts[0]!.id],
+            built: 1,
+          },
+          createdAt: windowStart,
+          heartbeatAt: windowEnd,
+          startedAt: windowStart,
+          finishedAt: windowEnd,
+        },
+        {
+          ownerId,
+          type: "reference_views",
+          status: "done",
+          payload: {
+            characterId: character.id,
+            targets: ["back_full:clothed"],
+            referenceViewAttemptIds: [attempts[1]!.id],
+            built: 1,
+          },
+          createdAt: windowStart,
+          heartbeatAt: windowEnd,
+          startedAt: windowStart,
+          finishedAt: windowEnd,
+        },
+      ])
+      .returning({ id: jobs.id });
+
+    const projected = await listCharacterMediaJobs(character.id, ownerId);
+    expect(projected.find((job) => job.id === inserted[0]?.id)?.results.map((result) => result.id))
+      .toEqual([attempts[0]!.id]);
+    expect(projected.find((job) => job.id === inserted[1]?.id)?.results.map((result) => result.id))
+      .toEqual([attempts[1]!.id]);
+    expect(projected.flatMap((job) => job.results).map((result) => result.id))
+      .not.toContain(attempts[2]!.id);
   });
 });

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { emptyCharacterProfile } from "@/contracts";
 import { emptyCharacterDraft } from "@/lib/client/api";
 import { characters, db, jobs } from "@/server/db";
-import { claimJobSlot, resetRateLimits, startJobAfterAdmission } from "@/server/api";
+import { bindCreationAuthoringRuns, claimJobSlot, resetRateLimits, startJobAfterAdmission } from "@/server/api";
 
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Authoring runs", role: "admin" as const } }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
@@ -80,6 +80,41 @@ function storedRun(input: { id: string; characterId: string; revision: number; b
       result: { proposed, diagnostics: [] },
     },
   };
+}
+
+function storedCreationRun(input: { id: string; creationId: string; before: string; after: string }) {
+  const stored = storedRun({
+    id: input.id,
+    characterId: input.creationId,
+    revision: 1,
+    before: input.before,
+    after: input.after,
+  });
+  return {
+    ...stored,
+    payload: {
+      ...stored.payload,
+      intent: {
+        ...stored.payload.intent,
+        target: { kind: "creation" as const, id: input.creationId },
+        source: null,
+      },
+    },
+  };
+}
+
+async function holdJobRowLock(jobId: string) {
+  let release!: () => void;
+  let acquired!: () => void;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  const locked = new Promise<void>((resolve) => { acquired = resolve; });
+  const done = db().transaction(async (tx) => {
+    await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, jobId)).for("update");
+    acquired();
+    await released;
+  });
+  await locked;
+  return { release, done };
 }
 
 async function portraitSubject(name: string) {
@@ -200,6 +235,89 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     expect(settled?.payload).toEqual(expect.objectContaining({
       proposal: expect.objectContaining({ status: "dismissed" }),
       result: fixture.payload.result,
+    }));
+  });
+
+  it("binds the locked completion payload without losing its result", async () => {
+    const destination = await subject("Bound completion destination");
+    const creationId = crypto.randomUUID();
+    const fixture = storedCreationRun({
+      id: crypto.randomUUID(),
+      creationId,
+      before: "Creation preview",
+      after: "Completed creation",
+    });
+    let finish!: () => void;
+    const waiting = new Promise<void>((resolve) => { finish = resolve; });
+    const started = await startJobAfterAdmission({
+      type: "character_authoring",
+      ownerId: authState.user.id,
+      requestedJobId: fixture.id,
+      payload: { ...fixture.payload, result: null },
+      run: async () => {
+        await waiting;
+        return { result: fixture.payload.result };
+      },
+    }, async () => null);
+    expect(started.ok).toBe(true);
+
+    const lock = await holdJobRowLock(fixture.id);
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const binding = bindCreationAuthoringRuns(
+      authState.user.id,
+      creationId,
+      destination.id,
+      destination.authoringRevision,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    lock.release();
+    await Promise.all([lock.done, binding]);
+    await waitForJob(fixture.id);
+
+    const [saved] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, fixture.id));
+    expect(saved?.payload).toEqual(expect.objectContaining({
+      intent: expect.objectContaining({
+        target: { kind: "character", id: destination.id },
+        source: { authoringRevision: destination.authoringRevision, imageId: null },
+      }),
+      proposal: expect.objectContaining({ status: "unresolved" }),
+      result: fixture.payload.result,
+    }));
+  });
+
+  it("binds the locked decision payload without restoring an unresolved proposal", async () => {
+    const destination = await subject("Bound decision destination");
+    const creationId = crypto.randomUUID();
+    const fixture = storedCreationRun({
+      id: crypto.randomUUID(),
+      creationId,
+      before: "Decision preview",
+      after: "Rejected creation",
+    });
+    await db().insert(jobs).values(fixture);
+
+    const lock = await holdJobRowLock(fixture.id);
+    const deciding = decideRun(apiRequest(`/api/characters/authoring-runs/${fixture.id}/decision`, {
+      method: "PATCH",
+      body: { action: "reject", expectedProposalRevision: 1, choices: {} },
+    }), routeCtx({ runId: fixture.id }));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const binding = bindCreationAuthoringRuns(
+      authState.user.id,
+      creationId,
+      destination.id,
+      destination.authoringRevision,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    lock.release();
+    const [decided] = await Promise.all([deciding, binding, lock.done]);
+    expect((await expectJson<{ run: { proposal: { status: string } } }>(decided)).run.proposal.status).toBe("rejected");
+
+    const [saved] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, fixture.id));
+    expect(saved?.payload).toEqual(expect.objectContaining({
+      intent: expect.objectContaining({ target: { kind: "character", id: destination.id } }),
+      proposal: expect.objectContaining({ status: "rejected", revision: 2 }),
     }));
   });
 
