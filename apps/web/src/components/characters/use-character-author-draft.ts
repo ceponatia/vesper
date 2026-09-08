@@ -88,8 +88,18 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
         if (alive.current) toast.push({ title: "Save paused", description: "The saved character version is unavailable. Reload to recover your browser edits safely.", tone: "error" });
         return false;
       }
-      const sent = current.current;
-      const response = await charactersApi.update(characterId, { name: sent.draft.name, tags: sent.draft.tags, profile: sent.draft.profile, suggestedItems: sent.draft.suggestedItems, chatModel: sent.chatModel, expectedUpdatedAt: baseline.current.updatedAt });
+      let sent = current.current;
+      const patch = () => charactersApi.update(characterId, { name: sent.draft.name, tags: sent.draft.tags, profile: sent.draft.profile, suggestedItems: sent.draft.suggestedItems, chatModel: sent.chatModel, expectedUpdatedAt: baseline.current!.updatedAt });
+      let response = await patch();
+      if (!response.ok) {
+        const changed = parseOrNull(characterSaveConflictSchema, response.error.body);
+        if (changed && sameAuthorSnapshot(authorSnapshotFromDetail(changed.character), baseline.current.snapshot)) {
+          baseline.current = { snapshot: baseline.current.snapshot, updatedAt: changed.character.updatedAt };
+          sent = current.current;
+          persist(sent);
+          response = await patch();
+        }
+      }
       if (!response.ok) {
         const conflict = parseOrNull(characterSaveConflictSchema, response.error.body);
         if (conflict) {
@@ -103,7 +113,7 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
       const acknowledged = authorSnapshotFromDetail(response.data.character);
       callbacks.current(sent.draft, response.data.character, response.data.diagnostics);
       const latest = current.current;
-      const reconciled = { draft: reconcileCharacterSave(latest.draft, sent.draft, acknowledged.draft), chatModel: latest.chatModel === sent.chatModel ? acknowledged.chatModel : latest.chatModel };
+      const reconciled = { draft: reconcileCharacterSave(latest.draft, sent.draft, acknowledged.draft, response.data.materializedSuggestions), chatModel: latest.chatModel === sent.chatModel ? acknowledged.chatModel : latest.chatModel };
       baseline.current = { snapshot: acknowledged, updatedAt: response.data.character.updatedAt };
       current.current = reconciled;
       dirtyRef.current = !sameAuthorSnapshot(reconciled, acknowledged);
@@ -145,6 +155,23 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     dirtyRef.current = false;
     setRecovery(null); setAuthored(review.server); setDirty(false);
   };
+  const refreshServer = async () => {
+    await tail.current;
+    if (!alive.current || !baseline.current || !current.current || pending.current || storage.isBlocked()) return;
+    const fresh = await charactersApi.get(characterId);
+    if (!fresh.ok || !alive.current || !baseline.current || !current.current || pending.current || writeCount.current) return;
+    if (fresh.data.updatedAt && baseline.current.updatedAt && Date.parse(fresh.data.updatedAt) < Date.parse(baseline.current.updatedAt)) return;
+    const server = authorSnapshotFromDetail(fresh.data);
+    if (sameAuthorSnapshot(server, baseline.current.snapshot)) {
+      baseline.current = { snapshot: server, updatedAt: fresh.data.updatedAt };
+      if (dirtyRef.current) persist(current.current);
+      return;
+    }
+    if (!dirtyRef.current) { load(fresh.data, null); return; }
+    const record = { base: baseline.current.snapshot, authored: current.current, serverUpdatedAt: baseline.current.updatedAt };
+    const review = { id: crypto.randomUUID(), record, server, updatedAt: fresh.data.updatedAt };
+    pending.current = review; setRecovery(review);
+  };
   const resumeBrowser = async (copyKey?: string) => {
     if (writeCount.current || transitionRef.current) return;
     transitionRef.current = true; setTransitioning(true);
@@ -172,6 +199,6 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     blocked: !storage.ready || storage.conflict || recovery !== null || transitioning,
     changeDraft: (draft: CharacterDraft) => { if (current.current) change({ ...current.current, draft }); },
     changeChatModel: (chatModel: string) => { if (current.current) change({ ...current.current, chatModel }); },
-    save, resolveRecovery, discardRecovery, resumeBrowser, resetToServer, isBlocked: () => !storage.ready || storage.isBlocked() || pending.current !== null || transitionRef.current, settled: () => tail.current,
+    save, resolveRecovery, discardRecovery, resumeBrowser, resetToServer, refreshServer, isBlocked: () => !storage.ready || storage.isBlocked() || pending.current !== null || transitionRef.current, settled: () => tail.current,
   };
 }

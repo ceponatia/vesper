@@ -64,7 +64,9 @@ The section registry owns placement, generation scopes and section detail counts
   from suggestions. Each record stores the server baseline and its `updatedAt` version. Leaving
   the page keeps authorized queued writes and their recovery record alive; a failed save never
   clears that record. An acknowledgment clears only the exact stored snapshot it saved.
-- Loading an unchanged server version resumes retained edits. A changed server version opens
+- Loading an unchanged authored snapshot resumes retained edits. Publish and portrait-only
+  version changes advance the baseline without replacing authored values. Changes to authored
+  fields open
   **Review recovered edits**, with the same per-field three-way choices and an independent
   narrator choice. **Use saved version** explicitly discards those recovered edits. Competing
   browser tabs offer the latest browser record, separate recovery copies, or the saved character.
@@ -76,7 +78,8 @@ The section registry owns placement, generation scopes and section detail counts
   items. Omitted preconditions preserve ordinary PATCH semantics for other callers; a no-op
   leaves the version unchanged. Item embedding refresh runs after the transaction commits.
 - Save acknowledgments reconcile into the latest draft. Newer edits stay dirty; returned outfit
-  item ids and completed suggestions converge without repeated item submission. Browser storage
+  item ids and completed suggestions converge without repeated item submission. Per-suggestion
+  acknowledgments keep an in-flight discard discarded while retaining other completed garments. Browser storage
   failures keep the in-memory draft available and show a notice to keep the page open until saved.
 
 ## Outfit presets

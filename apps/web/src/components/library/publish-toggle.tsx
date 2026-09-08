@@ -38,7 +38,7 @@ const updaters: Record<ShareableKind, (id: string, body: unknown) => Promise<Api
  * other kinds retain a brief inline notice before their one-click action. Copy and flow rule
  * both live in `./publish-disclosure` so a test pins them.
  */
-export function PublishToggle({ kind, id, visibility }: { kind: ShareableKind; id: string; visibility: Visibility }) {
+export function PublishToggle({ kind, id, visibility, onChanged }: { kind: ShareableKind; id: string; visibility: Visibility; onChanged?: () => void }) {
   const toast = useToast();
   const [current, setCurrent] = useState<Visibility>(visibility);
   const [busy, setBusy] = useState(false);
@@ -60,6 +60,7 @@ export function PublishToggle({ kind, id, visibility }: { kind: ShareableKind; i
     }
     setConfirming(false);
     setCurrent(next);
+    onChanged?.();
     toast.push({
       title: next === "public" ? "Published" : "Made private",
       description: next === "public" ? PUBLISHED_TOAST[kind] : MADE_PRIVATE_TOAST,

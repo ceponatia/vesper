@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { promoteDraftRecovery, readDraft, writeDraft, type DraftStorage } from "./character-draft-storage";
-import { characterCreationStateSchema, emptyCharacterCreation, savedCreationHref } from "./character-creation-draft";
+import { characterCreationStateSchema, emptyCharacterCreation, prepareCreationSave, savedCreationHref } from "./character-creation-draft";
 
 function memoryStorage(): DraftStorage {
   const rows = new Map<string, string>();
@@ -9,6 +9,17 @@ function memoryStorage(): DraftStorage {
 }
 
 describe("character browser draft persistence", () => {
+  it("freezes a create retry payload and lets ordinary Save replace an old destination", () => {
+    const first = emptyCharacterCreation();
+    first.draft.name = "Iris";
+    const requested = prepareCreationSave(first, "chat");
+    const retry = prepareCreationSave({ ...requested, draft: { ...requested.draft, name: "Newer edit" } }, null);
+    expect(retry.id).toBe(first.id);
+    expect(retry.initialSaveDraft?.name).toBe("Iris");
+    expect(retry.draft.name).toBe("Newer edit");
+    expect(retry.saveDestination).toBeNull();
+  });
+
   it("consumes the exact recovery copy only after shared promotion succeeds", () => {
     const storage = memoryStorage();
     storage.setItem("shared", "old");

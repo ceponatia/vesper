@@ -216,7 +216,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
           >
             Complete all missing details
           </Button>
-          {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
+          {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} onChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }} /> : null}
           <ActionMenu
             label="Character actions"
             items={[
@@ -252,7 +252,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         characterId={characterId}
         avatarImageId={detail.data?.avatarImageId ?? null}
         {...(detail.data ? { acceptance: detail.data.acceptance } : {})}
-        onAvatarChanged={() => detail.reload({ silent: true })}
+        onAvatarChanged={() => { void author.refreshServer(); detail.reload({ silent: true }); }}
         chatModel={chatModel}
         onChatModelChange={changeChatModel}
         onRedraft={(scope) => void generate("redraft", scope)}
