@@ -72,15 +72,19 @@ export function isPristineCharacterDraft(draft: CharacterDraft): boolean {
 
 /** Commit the original request context only after a successful full Forge. The
  * editable first preview is safe only while the author has not changed its input. */
-export function completeCreationForge(current: CharacterCreationState, started: CharacterCreationState, base: CharacterDraft, proposed: CharacterDraft, proposalId: string): CharacterCreationState {
+export function creationForgeStart(state: CharacterCreationState) {
+  return { draft: structuredClone(state.draft), prompt: state.prompt, initialPreview: isPristineCharacterDraft(state.draft) && !state.review.pending.length && !state.savedCharacterId };
+}
+
+export function completeCreationForge(current: CharacterCreationState, started: ReturnType<typeof creationForgeStart>, base: CharacterDraft, proposed: CharacterDraft, proposalId: string): CharacterCreationState {
   const proposal = { id: proposalId, label: "forged character", base, proposed, undo: false };
   const hasChanges = proposalChanges(proposal).length > 0;
   // An empty first response has established no character to preserve. Keep the
   // original prompt editable so the author can refine it and retry.
-  if (!hasChanges && isPristineCharacterDraft(started.draft) && !started.draft.profile.creationBrief && !started.savedCharacterId) return current;
+  if (!hasChanges && started.initialPreview && !started.draft.profile.creationBrief) return current;
   const draft = { ...current.draft, profile: { ...current.draft.profile, creationBrief: current.draft.profile.creationBrief || base.profile.creationBrief } };
   const result = { ...proposed, profile: { ...proposed.profile, creationBrief: draft.profile.creationBrief } };
-  const initialPreview = isPristineCharacterDraft(started.draft) && !started.review.pending.length && !started.savedCharacterId
+  const initialPreview = started.initialPreview
     && JSON.stringify(current.draft) === JSON.stringify(started.draft) && current.prompt === started.prompt;
   if (initialPreview) return { ...current, draft: result };
   return { ...current, draft, review: hasChanges ? { ...current.review, pending: [...current.review.pending, { ...proposal, proposed: result }] } : current.review };
