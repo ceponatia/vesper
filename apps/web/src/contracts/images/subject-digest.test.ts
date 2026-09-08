@@ -562,7 +562,11 @@ describe("projectCharacterWorldSlices", () => {
       { id: "hair.style", value: "sheet curls", source: "manual" },
       { id: "presentation.grooming", value: "neat", source: "manual" },
     ]);
-    const subject = adapterSlices(characterDigest([ageAnchorFeature(), groomingFeature()]), {
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([hairstyleFeature(), groomingFeature(), ageAnchorFeature()]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "full_figure" } }),
+    });
+    const subject = adapterSlices(digest, {
       attributes,
     }).subjects[0];
     const sourceKeys = (subject?.facts ?? []).map((fact) => fact.source.key);
@@ -575,7 +579,11 @@ describe("projectCharacterWorldSlices", () => {
 
   it("keeps a sheet fallback when the selected current fact is unreadable", () => {
     const unreadableGrooming = { ...groomingFeature(), value: {} };
-    const subject = adapterSlices(characterDigest([ageAnchorFeature(), unreadableGrooming]), {
+    const digest = buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([unreadableGrooming, ageAnchorFeature()]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "full_figure" } }),
+    });
+    const subject = adapterSlices(digest, {
       attributes: completeFixtureAttributes([
         ...crookedNoseAttributes(),
         ADULT_AGE_VALUE,

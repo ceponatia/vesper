@@ -145,11 +145,13 @@ describe("assembleCharacterWorldDigest", () => {
 
   it("relaxes stable-sheet completeness only for a planned required subject-bound identity reference", () => {
     const sources = joinedSources();
-    const withoutHair = {
+    const source = sources[SUBJECT];
+    if (source === undefined) throw new Error("fixture subject source is missing");
+    const withoutHair: Readonly<Record<string, CharacterSubjectSources>> = {
       ...sources,
       [SUBJECT]: {
-        ...sources[SUBJECT],
-        attributes: (sources[SUBJECT]?.attributes ?? []).filter(
+        ...source,
+        attributes: (source.attributes ?? []).filter(
           (value) => value.id !== "hair.color" && value.id !== "identity.apparent_age",
         ),
       },
@@ -167,16 +169,19 @@ describe("assembleCharacterWorldDigest", () => {
       read: { kind: "committed_cut", token: "cut_fixture" },
       references: [reference],
     });
+    const subject = assembly.input.subjects?.[0];
     expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.appearance.hair.color`);
     expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.apparent_age`);
-    expect(assembly.input.subjects[0]?.facts.some((fact) => fact.concept === "subject.identity")).toBe(true);
-    expect(assembly.input.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
+    expect(subject?.facts.some((fact) => fact.concept === "subject.identity")).toBe(true);
+    expect(subject?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
       "Eye color: blue",
     );
   });
 
   it("lets an intimate route replace the ordinary bust silhouette instead of stating it twice", () => {
     const sources = joinedSources();
+    const source = sources[SUBJECT];
+    if (source === undefined) throw new Error("fixture subject source is missing");
     const reveal: ImageWorldFact = {
       key: `subject.${SUBJECT}.reveal.breasts.size`,
       concept: "subject.intimate_anatomy",
@@ -193,9 +198,9 @@ describe("assembleCharacterWorldDigest", () => {
       sources: {
         ...sources,
         [SUBJECT]: {
-          ...sources[SUBJECT],
+          ...source,
           attributes: [
-            ...(sources[SUBJECT]?.attributes ?? []),
+            ...(source.attributes ?? []),
             { id: "breasts.size", value: "medium", source: "creation" },
           ],
           realizedBody: realizeBody({ intimateRegions: ["breasts"] }),
@@ -205,7 +210,7 @@ describe("assembleCharacterWorldDigest", () => {
       read: { kind: "committed_cut", token: "cut_fixture" },
       subjectFacts: { [SUBJECT]: [reveal] },
     });
-    expect(assembly.input.subjects[0]?.facts.filter((fact) => fact.source.key === "breasts.size")).toEqual([
+    expect(assembly.input.subjects?.[0]?.facts.filter((fact) => fact.source.key === "breasts.size")).toEqual([
       reveal,
     ]);
   });
