@@ -10,16 +10,22 @@ export const generationTargetSchema = z.object({ kind: z.enum(["creation", "char
 export type GenerationTarget = z.infer<typeof generationTargetSchema>;
 export const generationResultSchema = z.object({ proposed: characterDraftSchema, diagnostics: z.array(diagnosticSchema) });
 export type GenerationResult = z.infer<typeof generationResultSchema>;
+export const characterGenerationSourceSchema = z.object({
+  authoringRevision: z.number().int().positive(),
+  imageId: z.string().min(1),
+});
 export const characterGenerationSchema = z.object({
   id: z.string(), ownerId: z.string(), target: generationTargetSchema,
   operation: z.enum(["create", "fill", "redraft", "portrait"]),
   scope: z.enum(characterSheetScopes).nullable(), label: z.string(), base: characterDraftSchema,
   creationStart: z.object({ draft: characterDraftSchema, prompt: z.string(), initialPreview: z.boolean() }).nullable(),
+  /** Exact saved inputs for portrait extraction; absent on older retained records. */
+  source: characterGenerationSourceSchema.nullable().default(null),
   status: z.enum(["pending", "completed", "failed"]),
   result: generationResultSchema.nullable(), error: z.string().nullable(),
 });
 export type CharacterGeneration = z.infer<typeof characterGenerationSchema>;
-export type GenerationInput = Pick<CharacterGeneration, "operation" | "scope" | "label" | "base" | "creationStart">;
+export type GenerationInput = Pick<CharacterGeneration, "operation" | "scope" | "label" | "base" | "creationStart" | "source">;
 export const generationPrefix = (ownerId: string, target: GenerationTarget) => `vesper:character-generation:${ownerId}:${target.kind}:${target.id}:`;
 export const generationKey = (record: CharacterGeneration) => generationPrefix(record.ownerId, record.target) + record.id;
 export function matchesGeneration(record: CharacterGeneration, ownerId: string, target: GenerationTarget): boolean {
@@ -38,7 +44,8 @@ export function finishGeneration(storage: DraftStorage, started: CharacterGenera
   const raw = storage.getItem(key);
   const current = readGeneration(raw);
   if (!current || current.status !== "pending" || !matchesGeneration(current, started.ownerId, started.target)) return false;
-  if (current.operation !== started.operation || current.scope !== started.scope || JSON.stringify(current.base) !== JSON.stringify(started.base)) return false;
+  if (current.operation !== started.operation || current.scope !== started.scope || JSON.stringify(current.base) !== JSON.stringify(started.base)
+    || JSON.stringify(current.source) !== JSON.stringify(started.source)) return false;
   const next: CharacterGeneration = "result" in outcome
     ? { ...current, status: "completed", result: outcome.result, error: null }
     : { ...current, status: "failed", result: null, error: outcome.error };

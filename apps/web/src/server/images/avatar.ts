@@ -40,6 +40,12 @@ export interface GenerateAvatarInput {
   style?: AvatarStyle;
   /** Registry model id from the portrait studio; absent uses the surface default. */
   modelId?: string;
+  /** Immutable character input reserved before the provider job starts. */
+  source?: {
+    readonly name: string;
+    readonly profile: unknown;
+    readonly revision: string;
+  };
   sink?: DiagnosticSink;
 }
 
@@ -119,7 +125,7 @@ function tryBuildAvatarCut(input: Omit<AvatarCutInput, "sink">, sink?: Diagnosti
 export interface AvatarProgramInput {
   readonly characterId: string;
   readonly characterName: string;
-  /** `characters.updatedAt` as an ISO string. */
+  /** `characters.authoringRevision`, serialized for the shared read-token contract. */
   readonly revision: string;
   /** The wardrobe rows' revisions, folded into the read. */
   readonly extraRevisions: readonly ImageSourceRevision[];
@@ -225,7 +231,14 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
   const demo = isDemoMode();
   const resolved = demo ? null : await resolveImageProfileForTask("portrait", input.modelId, input.sink);
   const model = resolved?.model ?? null;
-  const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
+  const [storedCharacter] = input.source
+    ? [undefined]
+    : await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
+  const character = input.source
+    ? { name: input.source.name, profile: input.source.profile, revision: input.source.revision }
+    : storedCharacter
+      ? { name: storedCharacter.name, profile: storedCharacter.profile, revision: String(storedCharacter.authoringRevision) }
+      : undefined;
   const profile = parseOr(
     characterProfileSchema,
     character?.profile ?? {},
@@ -248,7 +261,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
           // this render — an edit to either mints a different token.
           readToken: standaloneCharacterReadToken({
             characterId: input.characterId,
-            revision: character.updatedAt.toISOString(),
+            revision: character.revision,
             extraRevisions: load.revisions,
           }),
         },
@@ -264,7 +277,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       ? buildAvatarProgram({
           characterId: input.characterId,
           characterName: character.name,
-          revision: character.updatedAt.toISOString(),
+          revision: character.revision,
           extraRevisions: load.revisions,
           cut,
           profile: resolved,

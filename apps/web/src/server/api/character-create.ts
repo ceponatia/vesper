@@ -33,6 +33,7 @@ const characterCreationResponseSchema = z.object({
 type CharacterCreationRecoveryCharacter = Pick<
   typeof characters.$inferSelect,
   "id" | "name" | "profile" | "tags" | "avatarImageId" | "updatedAt" | "visibility" | "chatModel"
+  | "authoringRevision"
 >;
 const creationRecoveryColumns = {
   id: characters.id,
@@ -43,6 +44,7 @@ const creationRecoveryColumns = {
   updatedAt: characters.updatedAt,
   visibility: characters.visibility,
   chatModel: characters.chatModel,
+  authoringRevision: characters.authoringRevision,
 };
 
 export type CharacterCreationOutcome =

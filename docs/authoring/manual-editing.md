@@ -47,6 +47,9 @@ The section registry owns placement, generation scopes and section detail counts
   and proposed value before acceptance can proceed.
 - Rejecting a proposal changes no authored value. Review later keeps the proposal pending.
   Saving, changing tabs and starting another generation never accept an earlier proposal.
+- Portrait generation and portrait-derived completion pause while suggestions await review. The
+  author accepts or rejects those suggestions first, so an unresolved proposal can neither enter
+  a portrait implicitly nor be mistaken for saved character content.
 - Ordinary saved-character edits autosave during generation and while proposals wait. Explicit
   saves and narrator-model changes share the same serialized write queue; a save response does
   not clear the dirty state of edits made while it was in flight.
@@ -90,15 +93,29 @@ The section registry owns placement, generation scopes and section detail counts
   browser tabs offer the latest browser record, separate recovery copies, or the saved character.
   Until recovery is resolved, Save and Duplicate are disabled and the save bar states
   **Resolve recovered edits to save** without marking unsaved edits as saved.
-- Saved-editor PATCH sends `expectedUpdatedAt`. The server locks the owned row, compares its
-  version, and performs item materialization and the character write in one transaction. A stale
-  version returns `409 character_conflict` with the current owned character before creating any
-  items. Omitted preconditions preserve ordinary PATCH semantics for other callers; a no-op
-  leaves the version unchanged. Item embedding refresh runs after the transaction commits.
+- Saved-editor PATCH sends `expectedAuthoringRevision`. The server locks the owned row, compares
+  its content version, and performs item materialization and the character write in one
+  transaction. A stale version returns `409 character_conflict` with the current owned character
+  before creating any items. The database advances this revision only when `name`, `profile`, or
+  `tags` changes; portrait pointers, publication state, and narrator choice cannot create false
+  authoring conflicts. Omitted preconditions preserve ordinary PATCH semantics for other callers;
+  a no-op leaves the version unchanged. Item embedding refresh runs after the transaction commits.
 - Save acknowledgments reconcile into the latest draft. Newer edits stay dirty; returned outfit
   item ids and completed suggestions converge without repeated item submission. Per-suggestion
   acknowledgments keep an in-flight discard discarded while retaining other completed garments. Browser storage
   failures keep the in-memory draft available and show a notice to keep the page open until saved.
+
+## Revision-bound portrait actions
+
+- Generate portrait and Complete using portrait join the editor's serialized save queue. A click
+  during autosave first shows the saving phase and then submits one generation action using the
+  exact acknowledged authoring revision; a local in-flight guard prevents duplicate submissions.
+- The server reserves the owned row's revision and accepted inputs in a short transaction before
+  budget admission or provider work. No database lock spans a provider call. An avatar job records
+  the revision and immutable character snapshot it reads.
+- Portrait completion names both the displayed image id and the saved authoring revision. The
+  server refuses a changed revision or portrait with a focused conflict before model spend, and
+  derives its proposal from the reserved server snapshot rather than a client-supplied draft.
 
 ## Outfit presets
 

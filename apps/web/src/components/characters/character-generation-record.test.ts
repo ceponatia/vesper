@@ -7,7 +7,7 @@ import type { DraftStorage } from "./character-draft-storage";
 function fixture() {
   const rows = new Map<string, string>();
   const storage: DraftStorage = { getItem: (key) => rows.get(key) ?? null, setItem: (key, raw) => { rows.set(key, raw); }, removeItem: (key) => { rows.delete(key); } };
-  const record: CharacterGeneration = { id: "request", ownerId: "owner", target: { kind: "character", id: "iris" }, operation: "fill", scope: "profile", label: "missing Profile details", base: emptyCharacterDraft(), creationStart: null, status: "pending", result: null, error: null };
+  const record: CharacterGeneration = { id: "request", ownerId: "owner", target: { kind: "character", id: "iris" }, operation: "fill", scope: "profile", label: "missing Profile details", base: emptyCharacterDraft(), creationStart: null, source: null, status: "pending", result: null, error: null };
   storage.setItem(generationKey(record), JSON.stringify(record));
   return { storage, record };
 }
@@ -37,6 +37,19 @@ describe("character generation request recovery", () => {
     storage.setItem(generationKey(record), JSON.stringify(modified));
     expect(finishGeneration(storage, record, { result: { proposed: record.base, diagnostics: [] } })).toBe(false);
     expect(readGeneration(storage.getItem(generationKey(record)))).toEqual(modified);
+  });
+
+  it("keeps portrait completion bound to the displayed image and saved revision", () => {
+    const { storage, record } = fixture();
+    const portrait = {
+      ...record,
+      operation: "portrait" as const,
+      scope: null,
+      source: { authoringRevision: 7, imageId: "portrait-a" },
+    };
+    storage.setItem(generationKey(record), JSON.stringify({ ...portrait, source: { authoringRevision: 8, imageId: "portrait-b" } }));
+    expect(finishGeneration(storage, portrait, { result: { proposed: portrait.base, diagnostics: [] } })).toBe(false);
+    expect(readGeneration(storage.getItem(generationKey(record)))?.source).toEqual({ authoringRevision: 8, imageId: "portrait-b" });
   });
 
   it("does not recreate a dismissed request or erase a newer stored result", () => {

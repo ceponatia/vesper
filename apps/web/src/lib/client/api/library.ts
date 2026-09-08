@@ -69,6 +69,8 @@ export type CharacterSummary = z.infer<typeof characterSummarySchema>;
 
 export const characterDetailSchema = characterSummarySchema.extend({
   profile: characterProfileSchema.catch(() => emptyCharacterProfile()),
+  /** Saved character-content revision; portrait/publication writes do not move it. */
+  authoringRevision: z.number().int().positive().catch(1),
   visibility: visibilitySchema,
   /** The owner's last character-chat narrator pick (a NARRATIVE_MODELS id); empty ⇒ the chat default. */
   chatModel: textOr(""),
@@ -437,17 +439,18 @@ export const charactersApi = {
    * on the draft, plus the review-dialog data: disagreements as current →
    * proposed and the list of auto-filled blanks.
    */
-  attributesFromPortrait: (id: string, draft: CharacterDraft) =>
+  attributesFromPortrait: (id: string, source: { authoringRevision: number; imageId: string }) =>
     apiPost(
       z.object({
         draft: characterDraftSchema,
         diagnostics: arrayOf(diagnosticSchema),
         portrait: portraitReviewSchema,
+        source: z.object({ authoringRevision: z.number().int().positive(), imageId: idSchema }),
       }),
       `/api/characters/${id}/attributes/from-portrait`,
-      { draft },
+      source,
     ),
-  generateAvatar: (id: string, body: { modelId?: string } = {}) =>
+  generateAvatar: (id: string, body: { authoringRevision?: number; modelId?: string } = {}) =>
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>
     apiPost(

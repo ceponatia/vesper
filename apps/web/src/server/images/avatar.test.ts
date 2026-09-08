@@ -128,6 +128,7 @@ describe("generateAvatar program wiring", () => {
     id: "chr-1",
     name: "Mira",
     profile,
+    authoringRevision: 4,
     updatedAt: new Date("2026-08-21T00:00:00Z"),
   });
   const bound = resolvedImageProfileFixture(LANE_PROBE_PORTRAIT_PROFILE);

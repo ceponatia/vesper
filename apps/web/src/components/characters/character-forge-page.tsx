@@ -86,7 +86,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
     const base = withCreationBrief(structuredClone(started.draft), started.prompt);
     if (kind !== "create") store.update((current) => ({ ...current, draft: base }));
     const section = scope ? characterSections[scope].label : "character";
-    generation.start({ operation: kind, scope: scope ?? null, base, creationStart: kind === "create" ? creationForgeStart(started) : null,
+    generation.start({ operation: kind, scope: scope ?? null, base, source: null, creationStart: kind === "create" ? creationForgeStart(started) : null,
       label: kind === "create" ? "forged character" : kind === "fill" ? `missing ${section} details` : `${section} rewrite` });
   };
 

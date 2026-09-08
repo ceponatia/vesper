@@ -16,7 +16,7 @@ id `portrait_studio`:
 
 - one snapshot of the character sheet (scope `standalone_character` — resolved attributes plus
   the realized body, projecting species feature groups and cataloged distinctive marks);
-- a **read token** minted from the character row's `updatedAt` plus every wardrobe row read
+- a **read token** minted from the character row's `authoringRevision` plus every wardrobe row read
   for the render (`standaloneCharacterReadToken` — an edit to either mints a different token;
   it stands in for a committed cut as the snapshot's cut id and the provenance's
   committed-cut name);
@@ -180,6 +180,11 @@ studio, the library card and the chat strip show, and it derives no identity ref
 character's identity source moves only when its owner accepts the portrait, which is what prepares
 the identity pack
 ([../identity-packs.md](../identity-packs.md) §The source is the ACCEPTED portrait).
+
+The editor saves before queueing and sends the acknowledged `authoringRevision`. The route reserves
+that exact revision and an immutable character snapshot in a short transaction before budget
+admission, records both on the `avatar` job, and releases the row lock before provider work. A
+changed revision returns a recoverable conflict without spending a render.
 
 The avatar runs as an `avatar` job. The pending image row is reserved **inside** the job (after
 the queue route's 202), so `GET /api/characters/:id/portraits` returns the rows plus a

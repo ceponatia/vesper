@@ -249,6 +249,15 @@ export const characters = pgTable(
      * default (`DEFAULT_CHARACTER_CHAT_MODEL_ID`).
      */
     chatModel: text("chat_model").notNull().default(""),
+    /**
+     * Monotonic version of the authored character content (`name`, `profile`,
+     * and `tags`). A database trigger advances it only when one of those
+     * values changes, so portrait pointers, publication state, and operational
+     * settings cannot create false authoring conflicts. The trigger also keeps
+     * writes from an older application instance correct during a rolling
+     * release.
+     */
+    authoringRevision: integer("authoring_revision").notNull().default(1),
     searchEmbedding: vector("search_embedding", { dimensions: 1536 }),
     embedder: text("embedder"),
     createdAt: createdAt(),

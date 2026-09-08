@@ -10,7 +10,8 @@ import { authorRecoveryDisposition, authorSnapshotFromDetail, characterAuthorRec
 import type { ProposalChoices } from "./character-proposals";
 import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
-export interface AuthorRecoveryReview { id: string; record: CharacterAuthorRecovery; server: CharacterAuthorSnapshot; updatedAt: string | null }
+export interface AuthorRecoveryReview { id: string; record: CharacterAuthorRecovery; server: CharacterAuthorSnapshot; updatedAt: string | null; authoringRevision: number }
+export interface CharacterAuthoringActionDraft { draft: CharacterDraft; authoringRevision: number }
 
 /** Ordinary edits have their own versioned browser record, independent of AI review.
  * An acknowledgment advances its baseline; failed/unmounted writes leave it recoverable. */
@@ -26,7 +27,7 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
   const writeCount = useRef(0);
   const [recovery, setRecovery] = useState<AuthorRecoveryReview | null>(null);
   const current = useRef<CharacterAuthorSnapshot | null>(null);
-  const baseline = useRef<{ snapshot: CharacterAuthorSnapshot; updatedAt: string | null } | null>(null);
+  const baseline = useRef<{ snapshot: CharacterAuthorSnapshot; updatedAt: string | null; authoringRevision: number } | null>(null);
   const pending = useRef<AuthorRecoveryReview | null>(null);
   const initialized = useRef(false);
   const alive = useRef(true);
@@ -41,10 +42,10 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     const server = authorSnapshotFromDetail(serverDetail);
     const updatedAt = serverDetail.updatedAt;
     const disposition = stored && serverDetail.mine ? authorRecoveryDisposition(server, updatedAt, stored) : "acknowledged";
-    baseline.current = { snapshot: server, updatedAt };
+    baseline.current = { snapshot: server, updatedAt, authoringRevision: serverDetail.authoringRevision };
     const next = disposition === "resume" && stored ? stored.authored : server;
     current.current = next;
-    const review = disposition === "review" && stored ? { id: crypto.randomUUID(), record: stored, server, updatedAt } : null;
+    const review = disposition === "review" && stored ? { id: crypto.randomUUID(), record: stored, server, updatedAt, authoringRevision: serverDetail.authoringRevision } : null;
     pending.current = review;
     dirtyRef.current = disposition === "resume";
     if (alive.current) { setAuthored(next); setDirty(dirtyRef.current); setRecovery(review); }
@@ -85,20 +86,19 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
       if (alive.current) setSaving(true);
       // The server compares this version while holding the row lock. A conflict
       // includes its current row, so recovery needs no racy follow-up GET.
-      let expectedUpdatedAt = baseline.current.updatedAt;
-      if (!expectedUpdatedAt) {
-        if (alive.current) toast.push({ title: "Save paused", description: "The saved character version is unavailable. Reload to recover your browser edits safely.", tone: "error" });
-        return false;
-      }
+      let expectedAuthoringRevision = baseline.current.authoringRevision;
       let sent = current.current;
-      const patch = () => charactersApi.update(characterId, { name: sent.draft.name, tags: sent.draft.tags, profile: sent.draft.profile, suggestedItems: sent.draft.suggestedItems, chatModel: sent.chatModel, expectedUpdatedAt });
+      const patch = () => charactersApi.update(characterId, { name: sent.draft.name, tags: sent.draft.tags, profile: sent.draft.profile, suggestedItems: sent.draft.suggestedItems, chatModel: sent.chatModel, expectedAuthoringRevision });
       let response = await patch();
       if (!response.ok) {
         const changed = parseOrNull(characterSaveConflictSchema, response.error.body);
         if (changed && sameAuthorSnapshot(authorSnapshotFromDetail(changed.character), baseline.current.snapshot)) {
-          if (!changed.character.updatedAt) return false;
-          baseline.current = { snapshot: baseline.current.snapshot, updatedAt: changed.character.updatedAt };
-          expectedUpdatedAt = changed.character.updatedAt;
+          baseline.current = {
+            snapshot: baseline.current.snapshot,
+            updatedAt: changed.character.updatedAt,
+            authoringRevision: changed.character.authoringRevision,
+          };
+          expectedAuthoringRevision = changed.character.authoringRevision;
           sent = current.current;
           persist(sent);
           response = await patch();
@@ -108,7 +108,7 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
         const conflict = parseOrNull(characterSaveConflictSchema, response.error.body);
         if (conflict) {
           const record: CharacterAuthorRecovery = { base: baseline.current.snapshot, authored: current.current, serverUpdatedAt: baseline.current.updatedAt };
-          const review = { id: crypto.randomUUID(), record, server: authorSnapshotFromDetail(conflict.character), updatedAt: conflict.character.updatedAt };
+          const review = { id: crypto.randomUUID(), record, server: authorSnapshotFromDetail(conflict.character), updatedAt: conflict.character.updatedAt, authoringRevision: conflict.character.authoringRevision };
           pending.current = review;
           if (alive.current) setRecovery(review);
         } else if (alive.current) toast.push({ title: "Save failed", description: `${response.error.message} Your edits are retained in this browser.`, tone: "error" });
@@ -118,7 +118,11 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
       callbacks.current(sent.draft, response.data.character, response.data.diagnostics);
       const latest = current.current;
       const reconciled = { draft: reconcileCharacterSave(latest.draft, sent.draft, acknowledged.draft, response.data.materializedSuggestions), chatModel: latest.chatModel === sent.chatModel ? acknowledged.chatModel : latest.chatModel };
-      baseline.current = { snapshot: acknowledged, updatedAt: response.data.character.updatedAt };
+      baseline.current = {
+        snapshot: acknowledged,
+        updatedAt: response.data.character.updatedAt,
+        authoringRevision: response.data.character.authoringRevision,
+      };
       current.current = reconciled;
       dirtyRef.current = !sameAuthorSnapshot(reconciled, acknowledged);
       if (alive.current) { setAuthored(reconciled); setDirty(dirtyRef.current); }
@@ -132,6 +136,18 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     tail.current = operation;
     return operation;
   };
+  /**
+   * Join a paid action to the serialized save queue and return the exact saved
+   * draft/revision it acknowledged. Edits arriving during the save remain
+   * dirty and cannot leak into this immutable action input.
+   */
+  const prepareAction = async (): Promise<CharacterAuthoringActionDraft | null> => {
+    if (!(await save({ silent: true }))) return null;
+    const saved = baseline.current;
+    return saved
+      ? { draft: structuredClone(saved.snapshot.draft), authoringRevision: saved.authoringRevision }
+      : null;
+  };
   useEffect(() => { cleanupSave.current = () => save({ silent: true }); });
 
   const resolveRecovery = (choices: ProposalChoices, modelChoice?: "current" | "proposed") => {
@@ -139,7 +155,7 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     const review = pending.current;
     const next = rebaseAuthorRecovery(review.server, review.record, choices, modelChoice);
     if (!next) return;
-    baseline.current = { snapshot: review.server, updatedAt: review.updatedAt };
+    baseline.current = { snapshot: review.server, updatedAt: review.updatedAt, authoringRevision: review.authoringRevision };
     pending.current = null;
     setRecovery(null);
     current.current = next;
@@ -153,7 +169,7 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     if (!pending.current || storage.isBlocked() || transitionRef.current || writeCount.current) return;
     const review = pending.current;
     if (!(await storage.clear(storage.revision.current)) || !alive.current || pending.current !== review) return;
-    baseline.current = { snapshot: review.server, updatedAt: review.updatedAt };
+    baseline.current = { snapshot: review.server, updatedAt: review.updatedAt, authoringRevision: review.authoringRevision };
     pending.current = null;
     current.current = review.server;
     dirtyRef.current = false;
@@ -167,13 +183,13 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     if (fresh.data.updatedAt && baseline.current.updatedAt && Date.parse(fresh.data.updatedAt) < Date.parse(baseline.current.updatedAt)) return;
     const server = authorSnapshotFromDetail(fresh.data);
     if (sameAuthorSnapshot(server, baseline.current.snapshot)) {
-      baseline.current = { snapshot: server, updatedAt: fresh.data.updatedAt };
+      baseline.current = { snapshot: server, updatedAt: fresh.data.updatedAt, authoringRevision: fresh.data.authoringRevision };
       if (dirtyRef.current) persist(current.current);
       return;
     }
     if (!dirtyRef.current) { load(fresh.data, null); return; }
     const record = { base: baseline.current.snapshot, authored: current.current, serverUpdatedAt: baseline.current.updatedAt };
-    const review = { id: crypto.randomUUID(), record, server, updatedAt: fresh.data.updatedAt };
+    const review = { id: crypto.randomUUID(), record, server, updatedAt: fresh.data.updatedAt, authoringRevision: fresh.data.authoringRevision };
     pending.current = review; setRecovery(review);
   };
   const resumeBrowser = async (copyKey?: string) => {
@@ -203,6 +219,6 @@ export function useCharacterAuthorDraft(characterId: string, ownerId: string, de
     blocked: !storage.ready || storage.conflict || recovery !== null || transitioning,
     changeDraft: (draft: CharacterDraft) => { if (current.current) change({ ...current.current, draft }); },
     changeChatModel: (chatModel: string) => { if (current.current) change({ ...current.current, chatModel }); },
-    save, resolveRecovery, discardRecovery, resumeBrowser, resetToServer, refreshServer, isBlocked: () => !storage.ready || storage.isBlocked() || pending.current !== null || transitionRef.current, settled: () => tail.current,
+    save, prepareAction, resolveRecovery, discardRecovery, resumeBrowser, resetToServer, refreshServer, isBlocked: () => !storage.ready || storage.isBlocked() || pending.current !== null || transitionRef.current, settled: () => tail.current,
   };
 }

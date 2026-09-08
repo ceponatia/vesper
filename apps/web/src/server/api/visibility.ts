@@ -112,8 +112,9 @@ export async function isPublicEntityImage(
  * Excluded everywhere by rule: `ownerId` (routes send the computed `mine` flag
  * instead — the viewer never needs another account's id), `searchEmbedding` /
  * `embedder` (retrieval internals, megabytes of dead payload), `clonedFromId`
- * (remix provenance, nothing renders it), and `updatedAt` (an authoring
- * timestamp; `createdAt` is the only one a public card would ever show).
+ * (remix provenance, nothing renders it), and `updatedAt` / `authoringRevision`
+ * (authoring concurrency internals; `createdAt` is the only timestamp a public
+ * card would ever show).
  *
  * Owner reads keep the full row — the edit surfaces need every column — so the
  * routes split on `row.ownerId === user.id`, never on the shape alone.

@@ -56,6 +56,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     if (alive.current) { setForgeDiagnostics(diagnostics); detail.reload({ silent: true }); }
   });
   const { draft, chatModel, dirty, saving, save, changeDraft, changeChatModel } = author;
+  const pendingProposalCount = reviewStore.data.pending.length;
   const referencePlanKey = JSON.stringify(
     detail.data?.profile.attributes.find((value) => value.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value ?? null,
   );
@@ -89,11 +90,21 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     try {
       const withBrief = withCreationBrief(currentDraft);
       if (withBrief !== currentDraft) changeDraft(withBrief);
-      if (!(await save({ silent: true })) || !alive.current) return;
-      const base = author.current.current?.draft;
-      if (!base) return;
+      const displayedPortraitId = mode === "portrait" ? detail.data?.avatarImageId ?? null : null;
+      if (mode === "portrait" && pendingProposalCount > 0) {
+        toast.push({ title: "Review character suggestions first", description: "Portrait completion uses only accepted, saved details.", tone: "error" });
+        return;
+      }
+      const prepared = await author.prepareAction();
+      if (!prepared || !alive.current) return;
+      if (mode === "portrait" && !displayedPortraitId) {
+        toast.push({ title: "Portrait unavailable", description: "Generate or upload a portrait first.", tone: "error" });
+        return;
+      }
+      const base = prepared.draft;
       const section = scope ? characterSections[scope].label : "character";
       generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
+        source: mode === "portrait" ? { authoringRevision: prepared.authoringRevision, imageId: displayedPortraitId! } : null,
         label: mode === "portrait" ? "portrait changes" : mode === "fill" ? `missing ${section} details` : `${section} rewrite` });
     } finally { if (alive.current) { busyRef.current = false; setPreparing(null); setPreparingScope(null); } }
   };
@@ -236,6 +247,8 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         onComplete={(scope) => void generate("fill", scope)}
         completing={busy === "fill" ? scopeBusy : null}
         generationDisabled={busy !== null || !reviewStore.ready || reviewStore.conflict || author.blocked}
+        pendingProposalCount={pendingProposalCount}
+        preparePortraitGeneration={author.prepareAction}
         saving={saving}
         onPortraitAttributes={() => void generate("portrait")}
         derivingPortrait={busy === "portrait"}

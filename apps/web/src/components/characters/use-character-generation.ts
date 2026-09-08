@@ -21,8 +21,13 @@ async function locked<T>(key: string, work: () => T | Promise<T>): Promise<T> {
 const notify = () => window.dispatchEvent(new Event(eventName));
 async function generate(record: CharacterGeneration): Promise<GenerationResult | { error: string }> {
   if (record.operation === "portrait") {
-    const response = await charactersApi.attributesFromPortrait(record.target.id, record.base);
+    if (!record.source) return { error: "Save the character and start portrait completion again so the exact source can be verified." };
+    const response = await charactersApi.attributesFromPortrait(record.target.id, record.source);
     if (!response.ok) return { error: response.error.message };
+    if (response.data.source.authoringRevision !== record.source.authoringRevision
+      || response.data.source.imageId !== record.source.imageId) {
+      return { error: "The portrait completion response did not match the requested saved source. Try again." };
+    }
     const proposed = mergeFillDraft(record.base, response.data.draft);
     const conflicts = new Map(response.data.portrait.conflicts.map((item) => [item.id, item.proposed]));
     proposed.profile.attributes = proposed.profile.attributes.map((row) => conflicts.has(row.id) ? { ...row, value: conflicts.get(row.id) ?? row.value, source: "creation" as const } : row);

@@ -9,11 +9,12 @@ const snapshot = (bio: string, chatModel = "model-a"): CharacterAuthorSnapshot =
 
 describe("saved author recovery", () => {
   it("keeps the saved row and conflict version across the client boundary", () => {
-    const character = { id: "iris", name: "Iris", updatedAt: "2026-09-01T12:00:00.123Z", chatModel: "model-b", profile: { bio: "Saved" } };
+    const character = { id: "iris", name: "Iris", updatedAt: "2026-09-01T12:00:00.123Z", authoringRevision: 7, chatModel: "model-b", profile: { bio: "Saved" } };
     const saved = characterSaveSchema.parse({ character, diagnostics: [] }).character;
     const conflict = characterSaveConflictSchema.parse({ error: { code: "character_conflict", message: "Changed" }, character }).character;
     expect(saved).toEqual(conflict);
     expect(saved.updatedAt).toBe(character.updatedAt);
+    expect(saved.authoringRevision).toBe(7);
     expect(saved.name).toBe(character.name);
     expect(saved.chatModel).toBe(character.chatModel);
   });
