@@ -3,12 +3,8 @@ import { z } from "zod";
 import {
   acceptPortrait,
   clearPortraitAcceptance,
-  getReferenceViewSet,
-  plannedReferenceViewsForCharacter,
-  referenceViewsToRebuild,
 } from "@/server/images";
 import { jsonError, jsonOk, readBody, withAuthorizedResource } from "@/server/api";
-import { queueReferenceViewBuild } from "../../reference-views/shared";
 import { findOwnedCharacter } from "../../owned";
 
 type Params = { id: string };
@@ -37,23 +33,9 @@ const acceptBodySchema = z.object({ imageId: z.string().min(1) });
  * re-reads from the refusal instead of racing a second GET for the state it just
  * lost.
  *
- * Accepting what is already accepted is a 200 that writes nothing and queues
- * nothing: the pack for those bytes already exists or is already being prepared,
- * and the reference views built from them are already the current ones. That is
- * what makes re-accepting free.
- *
- * A REAL accept also queues the reference-view slots that actually need work.
- * The age-gated registry still decides the complete planned set, but the current
- * post-acceptance projection decides which of those slots are missing, failed or
- * stale. This matters when an owner cleared acceptance and later accepts the same
- * portrait again: already-valid reviewed views become current again and are
- * reused rather than charged for and superseded by fresh unreviewed renders.
- *
- * **A refused build never un-accepts.** The pointer is committed before any of
- * this is decided, so a budget denial, a saturated queue or a build already in
- * flight comes back as `views: { queued: false, reason }` on a 200 beside the
- * acceptance the owner just made. The studio says so and offers to build them
- * later; nothing about the character is left half-done.
+ * Acceptance changes identity selection only. Reference-view generation is a
+ * separate, explicit action in the studio because it can render several paid
+ * images. Re-accepting the current portrait remains a free no-op.
  */
 export const POST = withAuthorizedResource<Params, OwnedCharacter>(
   "character",
@@ -81,24 +63,7 @@ export const POST = withAuthorizedResource<Params, OwnedCharacter>(
         409,
       );
     }
-    if (result.status === "unchanged") {
-      return jsonOk({ acceptance: result.acceptance, views: { queued: false, reason: null, planned: 0 } });
-    }
-
-    // The acceptance is already committed. Everything below can only decide
-    // whether the views are built NOW — never whether the portrait was accepted.
-    const planned = await plannedReferenceViewsForCharacter(id, user.id);
-    const set = await getReferenceViewSet(id, user.id);
-    const targets = referenceViewsToRebuild(set, planned);
-    const views = await queueReferenceViewBuild({
-      characterId: id,
-      ownerId: user.id,
-      req,
-      user,
-      targets,
-      planned: planned.length,
-    });
-    return jsonOk({ acceptance: result.acceptance, views });
+    return jsonOk({ acceptance: result.acceptance });
   },
   { limit: "write" },
 );

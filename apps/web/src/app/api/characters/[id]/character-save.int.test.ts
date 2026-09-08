@@ -1,18 +1,20 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { itemDefinitionSchema } from "@/contracts";
 import { characterSaveConflictSchema, characterSaveSchema } from "@/lib/client/api/library";
 import { pseudoEmbed } from "@/server/ai";
 import { characters, db, items, jobs } from "@/server/db";
-import { resetRateLimits } from "@/server/api";
+import { readDailyUsage, resetRateLimits } from "@/server/api";
+import { createImageAsset, saveOwnedImageBuffer } from "@/server/images";
 
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Character save", role: "admin" as const } }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
-import { apiRequest, bindAuthUser, endTestPool, expectApiError, expectJson, probeIntegrationDb, purgeOwnerRows, routeCtx, seedTestUser, withAuthUser, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
+import { apiRequest, bindAuthUser, endTestPool, expectApiError, expectJson, probeIntegrationDb, purgeOwnerRows, routeCtx, seedTestUser, testPngBuffer, withAuthUser, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { PATCH } from "./route";
 import { POST as queueAvatar } from "./avatar/route";
 import { POST as completeFromPortrait } from "./attributes/from-portrait/route";
+import { POST as acceptPortrait } from "./portrait/accept/route";
 
 const ready = await probeIntegrationDb("character-save.int.test", "characters");
 let foreignId = "";
@@ -109,6 +111,54 @@ describe.skipIf(!ready)("character PATCH optimistic recovery", () => {
 });
 
 describe.skipIf(!ready)("revision-bound portrait actions", () => {
+  it("accepts a portrait without silently starting paid reference-view renders", async () => {
+    const row = await subject("Explicit reference build");
+    const portrait = await createImageAsset({
+      ownerId: authState.user.id,
+      kind: "avatar",
+      entityKind: "character",
+      entityId: row.id,
+      prompt: "portrait",
+    });
+    const saved = await saveOwnedImageBuffer(portrait.id, authState.user.id, await testPngBuffer(384, 512));
+    await db().update(characters).set({ avatarImageId: saved?.id ?? portrait.id }).where(eq(characters.id, row.id));
+
+    const accepted = await acceptPortrait(
+      apiRequest(`/api/characters/${row.id}/portrait/accept`, { body: { imageId: saved?.id ?? portrait.id } }),
+      routeCtx({ id: row.id }),
+    );
+    const body = await expectJson<{ acceptance: { acceptedImageId: string } }>(accepted);
+    expect(body.acceptance.acceptedImageId).toBe(saved?.id ?? portrait.id);
+    expect(body).not.toHaveProperty("views");
+    const viewJobs = await db().select({ id: jobs.id }).from(jobs).where(and(
+      eq(jobs.ownerId, authState.user.id),
+      eq(jobs.type, "reference_views"),
+      sql`${jobs.payload} ->> 'characterId' = ${row.id}`,
+    ));
+    expect(viewJobs).toEqual([]);
+  });
+
+  it("refuses a saturated avatar queue before consuming image budget", async () => {
+    const row = await subject("Saturated portrait source");
+    const blockers = await db().insert(jobs).values(Array.from({ length: 4 }, () => ({
+      ownerId: authState.user.id,
+      type: "avatar" as const,
+      status: "running" as const,
+      payload: { blocker: row.id },
+      startedAt: new Date(),
+      heartbeatAt: new Date(),
+    }))).returning({ id: jobs.id });
+    const before = await readDailyUsage(authState.user.id, "provider_image_day");
+    const refused = await queueAvatar(
+      apiRequest(`/api/characters/${row.id}/avatar`, { body: { authoringRevision: row.authoringRevision } }),
+      routeCtx({ id: row.id }),
+    );
+    await expectApiError(refused, 429, "too_many_active_jobs");
+    const after = await readDailyUsage(authState.user.id, "provider_image_day");
+    expect(after.used).toBe(before.used);
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(inArray(jobs.id, blockers.map((job) => job.id)));
+  });
+
   it("refuses a stale avatar source before queueing spend and records an accepted revision on the job", async () => {
     const row = await subject("Portrait source");
     const stale = await queueAvatar(

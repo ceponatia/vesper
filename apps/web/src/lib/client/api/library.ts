@@ -4,7 +4,6 @@ import type { CharacterSheetScope } from "@/lib/character-scopes";
 import { portraitExtractionEvidenceSchema } from "@/lib/portrait-extraction";
 
 import {
-  referenceViewQueueOutcomeSchema,
   type PortraitVariantKind,
   type CharacterPortraitAcceptance,
   characterPortraitAcceptanceSchema,
@@ -89,24 +88,9 @@ export const characterDetailSchema = characterSummarySchema.extend({
 });
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
-/**
- * `{ acceptance, views }` — the body the accept write answers with.
- *
- * `views` reports what the accept did about the character's reference view set,
- * and it is deliberately forgiving: an accept whose views could not be queued is
- * still an accept, so a body that omits or malforms the field degrades to
- * "queued nothing, no reason given" rather than failing a request whose real
- * work succeeded.
- */
+/** `{ acceptance }` — portrait selection never starts paid reference renders. */
 const portraitAcceptanceResponseSchema = z.object({
   acceptance: characterPortraitAcceptanceSchema,
-  views: referenceViewQueueOutcomeSchema.catch({
-    queued: false,
-    reason: null,
-    planned: 0,
-    admitted: 0,
-    targets: [],
-  }),
 });
 
 export type { CharacterPortraitAcceptance };

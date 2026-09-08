@@ -121,8 +121,9 @@ The section registry owns placement, generation scopes and section detail counts
   during autosave first shows the saving phase and then submits one generation action using the
   exact acknowledged authoring revision; a local in-flight guard prevents duplicate submissions.
 - The server reserves the owned row's revision and accepted inputs in a short transaction before
-  budget admission or provider work. No database lock spans a provider call. An avatar job records
-  the revision and immutable character snapshot it reads.
+  job and budget admission or provider work. It claims the per-owner job slot before the image
+  guard can consume daily budget. No database lock spans a provider call. An avatar job records the
+  revision and immutable character snapshot it reads.
 - Portrait completion names both the displayed image id and the saved authoring revision. The
   server binds the run to the portrait's exact content hash and an appearance-input fingerprint,
   refuses a changed portrait or relevant appearance fact before model spend or review, and derives

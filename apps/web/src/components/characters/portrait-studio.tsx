@@ -14,7 +14,6 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { IdentityReferencePanel } from "./identity-reference-panel";
-import { referenceViewRefusalCopy } from "./reference-view-copy";
 import { ReferenceViewsPanel } from "./reference-views-panel";
 import { ImageProfileSelect, pickedProfileId } from "./image-profile-select";
 import { ActionMenu } from "@/components/ui/action-menu";
@@ -279,24 +278,7 @@ export function PortraitStudio({
     const result = await charactersApi.acceptPortrait(characterId, avatarImageId);
     setAcceptingPortrait(false);
     if (result.ok) {
-      // The acceptance ALWAYS stands. `views` only says whether its reference
-      // sheet started building, so a refused build reports as an accept that
-      // carries a caveat, never as a failed accept.
-      const views = result.data.views;
-      toast.push(
-        views.queued
-          ? {
-              title: "Portrait accepted",
-              description: `New images will use this face. Building ${String(views.admitted)} reference views…`,
-              tone: "success",
-            }
-          : views.reason === null
-            ? { title: "Portrait accepted", description: "New images will use this face.", tone: "success" }
-            : {
-                title: "Accepted, but the views were not built",
-                description: `${referenceViewRefusalCopy[views.reason]} Build them later from the reference views panel.`,
-              },
-      );
+      toast.push({ title: "Portrait accepted", description: "New images will use this face.", tone: "success" });
       onAvatarChanged();
       return;
     }

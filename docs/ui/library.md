@@ -88,9 +88,9 @@ compatibility explanations sit beside ineligible entries. The dialog shows how m
 replaced image keeps its bytes, derived from the retention window
 ([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Lifecycle).
 
-Accepting a portrait reports what happened to the views in the accept toast: *Building N reference
-views…*, or *Accepted, but the views were not built* with the reason and an invitation to build them
-later. The acceptance always stands.
+Accepting a portrait changes the character's identity source without starting reference renders.
+The reference-view panel discloses the number of missing views and requires a separate **Build N
+reference views** action before it admits and charges the batch.
 
 **Create a variant** folds the optional pose, outfit, expression, and setting controls.
 The **Portrait history** grid keeps non-canonical avatar attempts and variants visible; failed

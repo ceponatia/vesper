@@ -272,7 +272,7 @@ export function allReferenceViews(): readonly ReferenceView[] {
 // ---------------------------------------------------------------------------
 
 /**
- * The views an accept will actually build for this character — the full sheet,
+ * The views an explicit full-sheet build will create for this character,
  * minus every intimate view when the character's image age band is not a
  * recognized adult one.
  *
@@ -539,10 +539,10 @@ export function projectReferenceViewState(row: ReferenceViewProjectionInput): Re
 }
 
 // ---------------------------------------------------------------------------
-// The accept response's view outcome
+// Reference-view queue outcomes
 // ---------------------------------------------------------------------------
 
-/** Why an accept queued no build. Every one of them still ACCEPTED the portrait. */
+/** Why an explicit reference-view request queued no build. */
 export const referenceViewQueueRefusals = ["budget", "storage", "busy"] as const;
 export const referenceViewQueueRefusalSchema = z.enum(referenceViewQueueRefusals);
 export type ReferenceViewQueueRefusal = z.infer<typeof referenceViewQueueRefusalSchema>;
@@ -555,11 +555,9 @@ export const referenceViewTargetQueueOutcomeSchema = referenceViewSchema.extend(
 export type ReferenceViewTargetQueueOutcome = z.infer<typeof referenceViewTargetQueueOutcomeSchema>;
 
 /**
- * What an accept (or a later build) did about the views.
- *
- * `queued: false` is never an error and never undoes the acceptance — the
- * pointer is already committed by the time this is decided. The studio offers to
- * build them later; the character is accepted either way.
+ * What an explicit build or regeneration request did about the views.
+ * `queued: false` is a recoverable admission outcome rather than a failed
+ * portrait-selection write.
  */
 export const referenceViewQueueOutcomeSchema = z.object({
   queued: z.boolean(),

@@ -12,7 +12,7 @@ Owns the view vocabulary, the build lane, the review lifecycle, and the storage 
 Does not own: the shared render shell and asset rules ([../asset-registry.md](../asset-registry.md)),
 the identity references every view render sends ([../identity-packs.md](../identity-packs.md)), the
 compiled prompt program ([../character-prompts.md](../character-prompts.md)), or portrait acceptance
-itself, which is the trigger.
+itself, which makes the explicit build action available.
 
 ## What a view depicts
 
@@ -75,8 +75,8 @@ digest and the program's own meta.
 `plannedReferenceViews` drops every intimate view unless the character's `identity.apparent_age`
 resolves to a value the image age vocabulary carries — the adult floor, with no exception. It is a
 **gate in the plan**, never a prompt instruction: the view is simply not built, and nothing about
-the character's age reaches a model. The accept route charges the budget from the same helper the
-build job plans from, so the charge and the work can never be two numbers.
+the character's age reaches a model. The explicit build route charges the budget from the same
+helper the job plans from, so the charge and the work can never be two numbers.
 
 Eligibility is live character truth rather than a creation-time decision. If apparent age later
 becomes minor or unresolved, every `bare` slot projects `ineligible` immediately, including an
@@ -89,15 +89,11 @@ approval and opening the bytes.
 
 ## Cost and slot leases
 
-- Accepting a portrait queues the available planned slots and charges the daily image budget for
-  exactly the slots that request newly claims. Reference views are a hidden kind, so the storage
-  leg is skipped; backpressure and the daily provider budget still apply.
-- **A refused build still accepts.** The acceptance pointer is committed before the build is
-  decided, so a budget denial, a saturated queue or a build already in flight comes back as
-  `views: { queued: false, reason }` on a 200 beside the acceptance. The studio says so and offers to
-  build them later.
-- Re-accepting the portrait that is already accepted writes nothing, queues nothing and charges
-  nothing.
+- Accepting a portrait writes the identity pointer only. It starts no reference-view job and spends
+  no image budget. Re-accepting the current portrait remains a no-op.
+- **Build N reference views** is a separate disclosed action. It charges the daily image budget for
+  exactly the slots the request newly claims. Reference views are a hidden kind, so the storage leg
+  is skipped; backpressure and the daily provider budget still apply.
 - **Each slot has one heartbeat-backed lease.** A request may claim every requested slot that has no
   live lease while another job continues on disjoint slots. An overlapping slot converges on the
   current attempt and reports `busy`; partial admission reports one result per requested target.

@@ -121,8 +121,8 @@ export interface QueueReferenceViewBuildInput {
  *    the daily provider budget still apply, because they are about spend and
  *    queue depth rather than disk.
  *
- * A refusal is a VALUE. The caller — the accept route above all — reports it in
- * the response body and leaves everything else exactly as it was.
+ * A refusal is a VALUE. The explicit build or regenerate route reports it in
+ * the response body and leaves the accepted portrait exactly as it was.
  */
 export async function queueReferenceViewBuild(
   input: QueueReferenceViewBuildInput,

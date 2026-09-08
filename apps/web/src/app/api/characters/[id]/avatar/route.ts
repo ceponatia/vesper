@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { generateAvatar } from "@/server/images";
-import { imageRenderRejection, jobCapRejection, jsonError, jsonOk, readBody, reserveCharacterAuthoringAction, startJob, withAuthorizedResource } from "@/server/api";
+import { imageRenderRejection, jobCapRejection, jsonError, jsonOk, readBody, reserveCharacterAuthoringAction, startJobAfterAdmission, withAuthorizedResource } from "@/server/api";
 import { logDiagnostics } from "@/server/log";
 import { findOwnedCharacter } from "../owned";
 
@@ -63,11 +63,10 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
       return jsonError("portrait_changed", "the displayed portrait changed", 409);
     }
 
-    const blocked = await imageRenderRejection(user, req);
-    if (blocked) return blocked;
-
+    // Claim the per-owner job slot before image admission can charge budget.
+    // A saturated account returns without consuming a daily render.
     const source = reservation.source;
-    const job = await startJob({
+    const job = await startJobAfterAdmission({
       type: "avatar",
       ownerId: user.id,
       payload: {
@@ -106,8 +105,11 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
           logDiagnostics("images.avatar", collected.items, { characterId: id });
         }
       },
-    });
-    if (!job.ok) return jobCapRejection(job, user, req);
+    }, async () => imageRenderRejection(user, req));
+    if (!job.ok) {
+      if ("admission" in job) return job.admission;
+      return jobCapRejection(job, user, req);
+    }
     return jsonOk({ jobId: job.jobId, characterId: id }, 202);
   },
   { limit: "image_generate" },

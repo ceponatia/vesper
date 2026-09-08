@@ -10,8 +10,8 @@ import {
 
 /**
  * Build every slot that is not currently a good view of the accepted portrait —
- * the "build them later" an owner reaches for after an accept whose budget was
- * refused, or after changing the portrait.
+ * the explicit paid action an owner reaches for after accepting or changing a
+ * portrait.
  *
  * It renders the slots whose projected state is `missing`, `failed` or `stale`,
  * and deliberately NOT `rejected`: the owner said no to that view, and a bulk
