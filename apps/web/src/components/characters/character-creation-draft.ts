@@ -68,13 +68,17 @@ export function isPristineCharacterDraft(draft: CharacterDraft): boolean {
 /** Commit the original request context only after a successful full Forge. The
  * editable first preview is safe only while the author has not changed its input. */
 export function completeCreationForge(current: CharacterCreationState, started: CharacterCreationState, base: CharacterDraft, proposed: CharacterDraft, proposalId: string): CharacterCreationState {
+  const proposal = { id: proposalId, label: "forged character", base, proposed, undo: false };
+  const hasChanges = proposalChanges(proposal).length > 0;
+  // An empty first response has established no character to preserve. Keep the
+  // original prompt editable so the author can refine it and retry.
+  if (!hasChanges && isPristineCharacterDraft(started.draft) && !started.draft.profile.creationBrief && !started.savedCharacterId) return current;
   const draft = { ...current.draft, profile: { ...current.draft.profile, creationBrief: current.draft.profile.creationBrief || base.profile.creationBrief } };
   const result = { ...proposed, profile: { ...proposed.profile, creationBrief: draft.profile.creationBrief } };
   const initialPreview = isPristineCharacterDraft(started.draft) && !started.review.pending.length && !started.savedCharacterId
     && JSON.stringify(current.draft) === JSON.stringify(started.draft) && current.prompt === started.prompt;
   if (initialPreview) return { ...current, draft: result };
-  const proposal = { id: proposalId, label: "forged character", base, proposed: result, undo: false };
-  return { ...current, draft, review: proposalChanges(proposal).length ? { ...current.review, pending: [...current.review.pending, proposal] } : current.review };
+  return { ...current, draft, review: hasChanges ? { ...current.review, pending: [...current.review.pending, { ...proposal, proposed: result }] } : current.review };
 }
 
 export function savedCreationHref(state: CharacterCreationState): string | null {

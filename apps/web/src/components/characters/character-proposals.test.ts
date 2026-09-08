@@ -176,6 +176,17 @@ describe("original creation brief", () => {
 
 
 describe("successful creation Forge preview", () => {
+  it("keeps a pristine first prompt editable when Forge returns no actual changes", () => {
+    const started = emptyCharacterCreation();
+    started.prompt = "Human woman with auburn hair";
+    const base = withCreationBrief(started.draft, started.prompt);
+    const completed = completeCreationForge(started, started, base, structuredClone(base), "empty-first");
+    expect(completed).toBe(started);
+    expect(completed.draft.profile.creationBrief).toBe("");
+    expect(completed.prompt).toBe(started.prompt);
+    expect(completed.review.pending).toEqual([]);
+  });
+
   it("builds request context without freezing the authored brief before success", () => {
     const started = emptyCharacterCreation();
     started.prompt = "Human woman with auburn hair";

@@ -23,8 +23,8 @@ creation and reference approval belong to [../ui/library.md](../ui/library.md).
 - **Start a new draft** explicitly replaces the active creation draft after confirmation.
 - The original brief is stored in the existing profile JSON as `creationBrief`, with an empty
   default for legacy records. It remains private in public profile projections. A prompt-based
-  draft preserves the original prompt after its first successful full Forge. A failed first request
-  leaves the brief editable. A successful response preserves concurrent edits and stages its
+  draft preserves the original prompt after its first successful full Forge that adds details.
+  A failed or empty first response leaves the brief editable. A successful response preserves concurrent edits and stages its
   suggestions for review instead of replacing them. Before the first AI action on a manual or legacy saved
   character, the editor captures the original authored details if there is no brief. The durable
   brief shares the Forge request's 4,000-character limit. Manual capture reserves space for

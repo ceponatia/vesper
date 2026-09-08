@@ -125,7 +125,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
   };
 
   const clone = async () => {
-    if (cloning) return;
+    if (cloning || author.isBlocked()) return;
     if (!(await save()) || !alive.current) return;
     setCloning(true);
     const result = await charactersApi.clone(characterId);
@@ -177,7 +177,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
           <h1 className="prose-display min-w-0 truncate text-2xl">{detail.data.name || "Untitled character"}</h1>
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={() => router.push(`/chat?new=${characterId}`)}>Chat</Button>
-            <Button variant="primary" busy={cloning} onClick={() => void clone()}>
+            <Button variant="primary" busy={cloning} disabled={author.blocked} onClick={() => void clone()}>
               Duplicate to my library
             </Button>
           </div>
@@ -214,7 +214,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
             disabled={busy !== null || author.blocked || !reviewStore.ready || reviewStore.conflict}
             title="Propose missing details for review. Your existing values stay unchanged."
           >
-            Complete missing details
+            Complete all missing details
           </Button>
           {detail.data ? <PublishToggle kind="character" id={characterId} visibility={detail.data.visibility} /> : null}
           <ActionMenu
@@ -224,7 +224,7 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
                 label: "Duplicate",
                 onSelect: () => void clone(),
                 busy: cloning,
-                disabled: busy !== null,
+                disabled: busy !== null || author.blocked,
               },
               { label: "Delete character", onSelect: () => setConfirmDelete(true), danger: true },
             ]}
@@ -270,7 +270,9 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       <SaveBar
         dirty={dirty}
         saving={saving}
-        onSave={() => void save()}
+        disabled={author.blocked}
+        status={author.blocked ? "Resolve recovered edits to save" : undefined}
+        onSave={() => { if (!author.isBlocked()) void save(); }}
       />
       <Dialog
         open={confirmDelete}
