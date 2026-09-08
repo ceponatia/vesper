@@ -119,6 +119,7 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     const [copy] = await db().select().from(images).where(eq(images.id, result.view.imageId ?? ""));
     if (!copy) throw new Error("restored asset missing");
     expect(await readImageBytes(copy)).toEqual(originalBytes);
+    expect((await fs.stat(absoluteImagePath(copy))).mode & 0o777).toBe(0o600);
     // Only the original attempt ages out. The current candidate owns a different file.
     await db().update(characterReferenceViews).set({ updatedAt: new Date(Date.now() - REFERENCE_VIEW_RETENTION_MS - 60_000) }).where(eq(characterReferenceViews.id, state.first.id));
     await referenceViewSweepPass();

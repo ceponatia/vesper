@@ -773,7 +773,7 @@ export async function restoreReferenceView(input: {
   try {
     const destination = absoluteImagePath(copy);
     await fs.mkdir(path.dirname(destination), { recursive: true });
-    await fs.writeFile(containedAbsoluteImagePath(destination), bytes, { flag: "wx" });
+    await fs.writeFile(containedAbsoluteImagePath(destination), bytes, { flag: "wx", mode: 0o600 });
     const result = await withReferenceViewLock<RestoreReferenceViewResult>(input.characterId, async (tx) => {
       // Recheck ownership and accepted bytes after copying: no stale read authorizes a write.
       const latestSource = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
