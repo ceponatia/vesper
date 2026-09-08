@@ -8,13 +8,17 @@ export function CharacterGenerationStatus({ records, activeId, blocked, unavaila
   records: CharacterGeneration[]; activeId: string | undefined; blocked: boolean; unavailable: boolean;
   onRetry: (record: CharacterGeneration) => void | Promise<boolean>; onDismiss: (record: CharacterGeneration) => void | Promise<boolean>;
 }) {
-  const visible = records.filter((record) => record.status !== "completed");
+  const visible = records.filter((record) => record.status !== "completed" || record.id === activeId);
   return <div className="mb-4 flex flex-col gap-2">
     {unavailable ? <p role="status" className="text-sm text-warning">Saved generation status is temporarily unavailable. Cached status is shown until the server reconnects.</p> : null}
     {visible.map((record) => {
       const sourceChanged = record.errorCode === "authoring_revision_changed" || record.errorCode === "portrait_changed" || record.errorCode === "portrait_source_changed";
       return <section key={record.id} className="rounded-card border border-ink-600 bg-ink-850 p-3">
-      <p role="status" className="text-sm">{record.id === activeId ? `Generating ${record.label}. You can leave this page and return for the result.` : record.status === "completed" ? "Suggestions are ready. Resolve any draft recovery above to review them." : record.status === "failed" ? `${record.persisted ? "Generation failed" : "Generation did not start"}: ${record.error}` : "Generation was interrupted or is still running in another page. Nothing restarts automatically."}</p>
+      <p role="status" className="text-sm">{record.id === activeId
+        ? record.status === "completed"
+          ? `Generated ${record.label}. Vesper is safely applying the result to this draft and will retry if needed.`
+          : `Generating ${record.label}. You can leave this page and return for the result.`
+        : record.status === "completed" ? "Suggestions are ready. Resolve any draft recovery above to review them." : record.status === "failed" ? `${record.persisted ? "Generation failed" : "Generation did not start"}: ${record.error}` : "Generation was interrupted or is still running in another page. Nothing restarts automatically."}</p>
       {record.status === "failed" && record.result?.portrait ? <div className="mt-3 flex items-start gap-3 text-xs text-paper-400">
         <img src={imageUrl(record.result.portrait.source.imageId)} alt="Portrait inspected by the failed run" className="h-20 w-16 rounded-md object-cover" />
         <div>

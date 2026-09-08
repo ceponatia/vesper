@@ -231,6 +231,9 @@ export function PortraitCropUploadDialog({ open, onClose, name, title, descripti
   };
 
   const disp = image ? displaySize(FRAME, image, zoom) : { width: 0, height: 0 };
+  const requestClose = useCallback(() => {
+    if (stage !== "uploading") onClose();
+  }, [onClose, stage]);
 
   const footer =
     stage === "crop" ? (
@@ -243,13 +246,13 @@ export function PortraitCropUploadDialog({ open, onClose, name, title, descripti
         </Button>
       </>
     ) : (
-      <Button variant="ghost" onClick={onClose} disabled={stage === "uploading"}>
+      <Button variant="ghost" onClick={requestClose} disabled={stage === "uploading"}>
         Cancel
       </Button>
     );
 
   return (
-    <Dialog open={open} onClose={onClose} title={title} footer={footer}>
+    <Dialog open={open} onClose={requestClose} title={title} footer={footer}>
       <input
         ref={fileInputRef}
         type="file"

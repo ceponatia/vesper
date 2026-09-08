@@ -103,14 +103,28 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
       store.update(staged ? next : { ...next, review: { ...next.review, handledIds: [...(next.review.handledIds ?? []), record.id] } });
       if (!changes.length) toast.push({ title: "No changes suggested", tone: "success" });
     } else {
+      let projected = record;
+      if (record.proposal.status === "unresolved"
+        && proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length === 0) {
+        const rejected = await actions.decide(
+          { sourceRunId: record.id, proposalRevision: record.proposal.revision },
+          "reject",
+          {},
+          { currentDraft: store.current.current.draft },
+        );
+        if (!rejected) return false;
+        projected = rejected.run;
+      }
       setDiagnostics(record.result.diagnostics);
-      store.update((current) => ({
-        ...current,
-        review: receiveGenerationReview(current.review, record),
-        ...(firstReceipt && record.proposal.status === "accepted" && record.proposal.appliedDraft && isPristineCharacterDraft(current.draft)
-          ? { draft: record.proposal.appliedDraft }
-          : {}),
-      }));
+      store.update((current) => {
+        const nextReview = receiveGenerationReview(current.review, projected);
+        const appliedDraft = firstReceipt && projected.proposal.status === "accepted"
+          && projected.proposal.appliedDraft && isPristineCharacterDraft(current.draft)
+          ? projected.proposal.appliedDraft
+          : null;
+        if (nextReview === current.review && !appliedDraft) return current;
+        return { ...current, review: nextReview, ...(appliedDraft ? { draft: appliedDraft } : {}) };
+      });
     }
     await store.flush();
     return store.isPersisted();
@@ -247,7 +261,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
     <PageContainer>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h1 className="prose-display text-2xl">{draft.name || (mode === "forge" ? "Character forge" : "New character")}</h1>
-        <Button variant="ghost" onClick={() => setConfirmNew(true)} disabled={saving || abandoning}>Start a new draft</Button>
+        <Button variant="ghost" onClick={() => setConfirmNew(true)} disabled={saving || abandoning || generation.settling}>Start a new draft</Button>
       </div>
       <p className="mb-5 text-sm text-paper-400">This draft resumes on this browser for your account. Edit by hand or ask the Forge for suggestions, then save to your library.</p>
       {store.notice ? <p role="status" className="mb-3 text-sm text-warning">{store.notice}</p> : null}
@@ -307,7 +321,7 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         diagnostics={diagnostics.filter((item) => item.severity !== "info")} />
       </fieldset>
       <SaveBar dirty={busy === null && !store.conflict} saving={saving} disabled={!!creationRecovery} status={creationRecovery ? "Resolve recovered edits to save" : undefined} onSave={() => void save()} saveLabel="Save authored character" />
-      <Dialog open={confirmNew} onClose={() => setConfirmNew(false)} title="Start a new character draft?" footer={<><Button disabled={abandoning} onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" busy={abandoning} onClick={() => { void (async () => {
+      <Dialog open={confirmNew} onClose={() => { if (!abandoning) setConfirmNew(false); }} title="Start a new character draft?" footer={<><Button disabled={abandoning} onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" busy={abandoning} disabled={generation.settling} onClick={() => { void (async () => {
         setAbandoning(true);
         const abandoned = await generation.abandon();
         if (abandoned) { setDiagnostics([]); store.reset(); setConfirmNew(false); }

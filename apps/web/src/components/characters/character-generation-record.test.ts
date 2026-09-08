@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterDraft } from "@/lib/client/api";
 import { emptyCharacterReview } from "./character-proposals";
-import { generationCacheKey, matchesGeneration, readGenerationCache, receiveGenerationReview, type CharacterGeneration } from "./character-generation-record";
+import { generationCacheKey, generationProjectionReceipt, generationRecordsForAbandonment, matchesGeneration, needsGenerationProjection, readGenerationCache, receiveGenerationReview, type CharacterGeneration } from "./character-generation-record";
 
 function fixture(overrides: Partial<CharacterGeneration> = {}): CharacterGeneration {
   const base = emptyCharacterDraft();
@@ -49,6 +49,37 @@ describe("server character generation records", () => {
     expect(review.pending).toEqual([]);
     expect(review.undo).toEqual(undo);
     expect(receiveGenerationReview(review, accepted)).toBe(review);
+  });
+
+  it("keeps an already-handled empty proposal referentially stable", () => {
+    const run = fixture({ result: { proposed: emptyCharacterDraft(), diagnostics: [] } });
+    const received = receiveGenerationReview(emptyCharacterReview(), run);
+    expect(received.handledIds).toContain(run.id);
+    expect(receiveGenerationReview(received, run)).toBe(received);
+  });
+
+  it("replaces a captured optimistic request with its durable settlement without touching newer rows", () => {
+    const optimistic = fixture({ id: "optimistic", status: "pending", persisted: false, result: null });
+    const durable = fixture({ id: "durable", status: "pending", result: null });
+    const newer = fixture({ id: "newer", status: "pending", result: null });
+    expect(generationRecordsForAbandonment(
+      [optimistic],
+      [durable, newer],
+      [{ requestId: optimistic.id, run: durable }],
+    )).toEqual([durable]);
+  });
+
+  it("keeps a completed proposal active until its exact revision is projected", () => {
+    const completed = fixture();
+    const receipt = generationProjectionReceipt(completed);
+    expect(needsGenerationProjection(completed, new Set())).toBe(true);
+    expect(needsGenerationProjection(completed, new Set([receipt]))).toBe(false);
+    expect(needsGenerationProjection(
+      fixture({ proposal: { ...completed.proposal, revision: 2 } }),
+      new Set([receipt]),
+    )).toBe(true);
+    expect(needsGenerationProjection(fixture({ status: "pending", result: null }), new Set())).toBe(false);
+    expect(needsGenerationProjection(fixture({ result: null }), new Set())).toBe(false);
   });
 
   it("scopes character rows exactly while allowing a new browser to discover creation runs", () => {

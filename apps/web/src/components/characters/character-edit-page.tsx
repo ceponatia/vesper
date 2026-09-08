@@ -71,19 +71,33 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     return () => { alive.current = false; };
   }, []);
 
-  const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record) => {
+  const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record, actions) => {
     if (reviewStore.isBlocked() || author.isBlocked() || record.ownerId !== ownerId || record.target.id !== characterId || !record.result) return false;
     const firstReceipt = !reviewStore.current.current.pending.some((item) => item.sourceRunId === record.id || item.id === record.id)
       && !reviewStore.current.current.handledIds?.includes(record.id);
+    const changes = proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false });
+    let projected = record;
+    if (record.proposal.status === "unresolved" && changes.length === 0) {
+      const current = await charactersApi.get(characterId);
+      if (!current.ok) return false;
+      const rejected = await actions.decide(
+        { sourceRunId: record.id, proposalRevision: record.proposal.revision },
+        "reject",
+        {},
+        { expectedAuthoringRevision: current.data.authoringRevision },
+      );
+      if (!rejected) return false;
+      projected = rejected.run;
+    }
     setForgeDiagnostics(record.result.diagnostics);
-    reviewStore.update((review) => receiveGenerationReview(review, record));
-    if (firstReceipt && !proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false }).length) {
+    reviewStore.update((review) => receiveGenerationReview(review, projected));
+    if (firstReceipt && changes.length === 0) {
       toast.push({
         title: record.result.portrait?.outcome === "supported_match" ? "Portrait and sheet agree" : "No changes suggested",
         tone: "success",
       });
     }
-    if (record.proposal.status === "accepted" || record.proposal.status === "undone") {
+    if (projected.proposal.status === "accepted" || projected.proposal.status === "undone") {
       await author.refreshServer();
       detail.reload({ silent: true });
     }

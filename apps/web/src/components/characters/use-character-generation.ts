@@ -7,7 +7,10 @@ import {
 } from "@/lib/client/api";
 import {
   generationCacheKey,
+  generationProjectionReceipt,
+  generationRecordsForAbandonment,
   matchesGeneration,
+  needsGenerationProjection,
   readGenerationCache,
   type CharacterGeneration,
   type GenerationInput,
@@ -71,15 +74,40 @@ export function useCharacterGeneration(
 ) {
   const [records, setRecords] = useState<CharacterGeneration[]>([]);
   const [unavailable, setUnavailable] = useState(false);
+  const [projectedReceipts, setProjectedReceipts] = useState<ReadonlySet<string>>(() => new Set());
+  const [projectionRetry, setProjectionRetry] = useState(0);
   const callback = useRef(onComplete);
+  const mounted = useRef(true);
   const processing = useRef(new Set<string>());
   const starting = useRef(false);
+  const abandoning = useRef(false);
   const retryingRoots = useRef(new Set<string>());
+  const settlements = useRef(new Map<string, Promise<CharacterGeneration | null>>());
+  const projectionRetryTimer = useRef<number | null>(null);
   const recordsRef = useRef(records);
+  const projectedReceiptsRef = useRef(projectedReceipts);
   const { kind, id } = target;
   const cacheKey = generationCacheKey(ownerId, { kind, id });
+  const cacheKeyRef = useRef(cacheKey);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   useEffect(() => { callback.current = onComplete; }, [onComplete]);
   useEffect(() => { recordsRef.current = records; }, [records]);
+  useEffect(() => { projectedReceiptsRef.current = projectedReceipts; }, [projectedReceipts]);
+
+  useEffect(() => {
+    const empty = new Set<string>();
+    cacheKeyRef.current = cacheKey;
+    projectedReceiptsRef.current = empty;
+    setProjectedReceipts(empty);
+    processing.current.clear();
+    if (projectionRetryTimer.current !== null) {
+      window.clearTimeout(projectionRetryTimer.current);
+      projectionRetryTimer.current = null;
+    }
+  }, [cacheKey]);
 
   const store = useCallback((next: CharacterGeneration[]) => {
     const scoped = next.filter((record) => matchesGeneration(record, ownerId, { kind, id })).slice(0, 25);
@@ -138,40 +166,77 @@ export function useCharacterGeneration(
     return { run: response.data.run, appliedDraft: response.data.run.proposal.appliedDraft };
   }, [blocked, refresh, replace]);
 
+  const scheduleProjectionRetry = useCallback(() => {
+    if (projectionRetryTimer.current !== null) return;
+    const expectedCacheKey = cacheKey;
+    projectionRetryTimer.current = window.setTimeout(() => {
+      projectionRetryTimer.current = null;
+      if (!mounted.current || cacheKeyRef.current !== expectedCacheKey) return;
+      void refresh().finally(() => {
+        if (mounted.current && cacheKeyRef.current === expectedCacheKey) {
+          setProjectionRetry((value) => value + 1);
+        }
+      });
+    }, POLL_MS);
+  }, [cacheKey, refresh]);
+
   useEffect(() => {
     if (!ready || blocked) return;
     let cancelled = false;
     void Promise.resolve().then(async () => {
       for (const record of recordsRef.current) {
-        const receipt = record.id;
-        if (cancelled || record.status !== "completed" || processing.current.has(receipt)) continue;
-        processing.current.add(receipt);
-        try { await callback.current(record, { decide }); }
+        const receipt = generationProjectionReceipt(record);
+        if (cancelled || abandoning.current || !needsGenerationProjection(record, projectedReceiptsRef.current)
+          || processing.current.has(record.id)) continue;
+        processing.current.add(record.id);
+        let received = false;
+        try { received = await callback.current(record, { decide }); }
         catch { /* The server record remains available for the next safe projection. */ }
-        finally { processing.current.delete(receipt); }
+        finally { processing.current.delete(record.id); }
+        if (received) {
+          const next = new Set(projectedReceiptsRef.current);
+          next.add(receipt);
+          projectedReceiptsRef.current = next;
+          if (mounted.current) setProjectedReceipts(next);
+        } else scheduleProjectionRetry();
+        if (cancelled) return;
       }
     });
     return () => { cancelled = true; };
-  }, [ready, blocked, destination, records, decide]);
+  }, [ready, blocked, destination, records, decide, projectedReceipts, projectionRetry, scheduleProjectionRetry]);
+
+  const hasActiveWork = useCallback((candidateRecords: readonly CharacterGeneration[]) => candidateRecords.some(
+    (record) => record.status === "pending" || needsGenerationProjection(record, projectedReceiptsRef.current),
+  ), []);
 
   const start = async (input: GenerationInput, replacesId?: string): Promise<boolean> => {
-    if (!ready || blocked || starting.current || recordsRef.current.some((record) => record.status === "pending")) return false;
+    if (!ready || blocked || abandoning.current || starting.current || hasActiveWork(recordsRef.current)) return false;
     starting.current = true;
     const requestId = crypto.randomUUID();
     const pending = optimistic(ownerId, { kind, id }, requestId, input);
     replace(pending, replacesId);
-    try {
+    const settlement = (async (): Promise<CharacterGeneration | null> => {
       const response = await characterAuthoringRunsApi.start(requestId, { kind, id }, input);
-      if (response.ok) { replace(response.data.run, requestId); return true; }
+      if (response.ok) {
+        replace(response.data.run, requestId);
+        return response.data.run;
+      }
       replace({ ...pending, status: "failed", error: response.error.message, errorCode: response.error.code, finishedAt: new Date().toISOString() }, requestId);
-      return false;
-    } finally { starting.current = false; }
+      return null;
+    })();
+    settlements.current.set(requestId, settlement);
+    try {
+      return (await settlement) !== null;
+    } finally {
+      settlements.current.delete(requestId);
+      starting.current = false;
+    }
   };
 
   const retry = async (record: CharacterGeneration): Promise<boolean> => {
-    if (blocked || !ready || retryingRoots.current.has(record.rootRunId)
+    if (blocked || !ready || abandoning.current || retryingRoots.current.has(record.rootRunId)
       || !matchesGeneration(record, ownerId, { kind, id })
-      || recordsRef.current.some((item) => item.status === "pending")) return false;
+      || hasActiveWork(recordsRef.current)) return false;
     retryingRoots.current.add(record.rootRunId);
     try {
       const input: GenerationInput = {
@@ -182,14 +247,19 @@ export function useCharacterGeneration(
       const requestId = crypto.randomUUID();
       const pending = optimistic(ownerId, { kind, id }, requestId, input, { retryOf: record.id, rootRunId: record.rootRunId });
       replace(pending);
-      const response = await characterAuthoringRunsApi.retry(record.id, requestId);
-      if (!response.ok) {
-        const withoutPending = recordsRef.current.filter((item) => item.id !== requestId && item.id !== record.id);
-        store([{ ...record, error: response.error.message, errorCode: response.error.code }, ...withoutPending]);
-        return false;
-      }
-      replace(response.data.run, requestId);
-      return true;
+      const settlement = (async (): Promise<CharacterGeneration | null> => {
+        const response = await characterAuthoringRunsApi.retry(record.id, requestId);
+        if (!response.ok) {
+          const withoutPending = recordsRef.current.filter((item) => item.id !== requestId && item.id !== record.id);
+          store([{ ...record, error: response.error.message, errorCode: response.error.code }, ...withoutPending]);
+          return null;
+        }
+        replace(response.data.run, requestId);
+        return response.data.run;
+      })();
+      settlements.current.set(requestId, settlement);
+      try { return (await settlement) !== null; }
+      finally { settlements.current.delete(requestId); }
     } finally { retryingRoots.current.delete(record.rootRunId); }
   };
 
@@ -205,18 +275,32 @@ export function useCharacterGeneration(
   };
 
   const abandon = async (): Promise<boolean> => {
-    const outstanding = recordsRef.current.filter((record) => record.status === "pending"
-      || record.status === "failed" || record.proposal.status === "unresolved");
-    for (const record of outstanding) if (!(await dismiss(record))) return false;
-    return true;
+    if (abandoning.current) return false;
+    abandoning.current = true;
+    const captured = [...recordsRef.current];
+    const inFlight = [...settlements.current.entries()];
+    try {
+      const settled = await Promise.all(inFlight.map(async ([requestId, settlement]) => ({ requestId, run: await settlement })));
+      const outstanding = generationRecordsForAbandonment(captured, recordsRef.current, settled);
+      for (const record of outstanding) if (!(await dismiss(record))) return false;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      abandoning.current = false;
+    }
   };
 
-  const active = records.find((record) => record.status === "pending") ?? null;
+  const active = records.find((record) => record.status === "pending")
+    ?? records.find((record) => needsGenerationProjection(record, projectedReceipts))
+    ?? null;
+  const settling = records.some((record) => needsGenerationProjection(record, projectedReceipts));
   return {
     records,
     active,
+    settling,
     unavailable,
-    isRunning: () => recordsRef.current.some((record) => record.status === "pending"),
+    isRunning: () => hasActiveWork(recordsRef.current),
     hasOutstanding: () => recordsRef.current.some((record) => record.status === "pending" || record.status === "failed" || record.proposal.status === "unresolved"),
     recordsNow: () => recordsRef.current,
     start,
