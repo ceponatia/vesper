@@ -125,3 +125,18 @@ export function referenceViewSelectionActionLabel(count: number): string {
 export function referenceViewRebuildQueuedTitle(count: number): string {
   return count === 1 ? "Rebuilding that view…" : `Rebuilding ${String(count)} reference views…`;
 }
+
+export const referenceViewFeedbackReasonCopy = {
+  wrong_outfit: "Wrong outfit",
+  wrong_angle: "Wrong angle",
+  identity_mismatch: "Identity mismatch",
+  image_defect: "Image defect",
+} as const;
+
+export const referenceViewRestoreUnavailableCopy = {
+  current: "This version is already on the card.",
+  expired: "Outside the retention window. Choose a more recent image or regenerate.",
+  incompatible: "This version does not match the accepted portrait or current reference version.",
+  busy: "Wait for the current build to finish, then refresh.",
+  unavailable: "This image is no longer available to restore.",
+} as const;

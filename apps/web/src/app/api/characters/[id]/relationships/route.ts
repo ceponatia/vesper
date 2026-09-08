@@ -1,10 +1,9 @@
-import type { NextRequest } from "next/server";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { authoredRelationshipRecordSchema } from "@/contracts";
-import { parseOr } from "@/lib/parse";
-import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
-import { characterRelationships, characters, db } from "@/server/db";
+import { jsonError, jsonOk, readBody, withAuthorizedResource } from "@/server/api";
+import { getLibraryRelationships, saveLibraryRelationships } from "@/server/authoring";
+import { findOwnedCharacter } from "../owned";
 
 type Params = { id: string };
 
@@ -12,11 +11,11 @@ type Params = { id: string };
  * Library-level default relationship edges (owner ruling 2026-07-07): the
  * character editor's Relationships tab. Edges are directed FROM this character
  * toward other library characters; conversation creation seeds its matrix from
- * these for every roster pair. PUT is replace-set: the sent list becomes the
- * character's outgoing edges.
+ * these for every roster pair. PUT is a versioned replace-set: the sent list
+ * becomes the character's outgoing edges only if `baseRevision` is current.
  */
-
 const putBodySchema = z.object({
+  baseRevision: z.number().int().nonnegative().max(2_147_483_646),
   edges: z
     .array(
       z.object({
@@ -27,77 +26,37 @@ const putBodySchema = z.object({
     .max(24),
 });
 
-async function ownedCharacter(id: string, ownerId: string): Promise<boolean> {
-  const [row] = await db()
-    .select({ id: characters.id })
-    .from(characters)
-    .where(and(eq(characters.id, id), eq(characters.ownerId, ownerId)))
-    .limit(1);
-  return Boolean(row);
-}
+const ownedCharacter = async (user: { id: string }, params: Params) =>
+  (await findOwnedCharacter(params.id, user.id)) ?? null;
 
-export const GET = withUser<Params>(async (user, _req, ctx) => {
+type OwnedCharacter = NonNullable<Awaited<ReturnType<typeof findOwnedCharacter>>>;
+
+export const GET = withAuthorizedResource<Params, OwnedCharacter>("character", ownedCharacter, async (user, _character, _req, ctx) => {
   const { id } = await ctx.params;
-  if (!(await ownedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
-  const rows = await db()
-    .select({
-      toCharacterId: characterRelationships.toCharacterId,
-      toName: characters.name,
-      record: characterRelationships.record,
-    })
-    .from(characterRelationships)
-    .innerJoin(characters, eq(characters.id, characterRelationships.toCharacterId))
-    .where(eq(characterRelationships.fromCharacterId, id));
-  return jsonOk({
-    edges: rows.map((row) => ({
-      toCharacterId: row.toCharacterId,
-      toName: row.toName,
-      record: parseOr(
-        authoredRelationshipRecordSchema,
-        row.record,
-        authoredRelationshipRecordSchema.parse({}),
-        undefined,
-        "character_relationships.record",
-      ),
-    })),
-  });
+  const result = await getLibraryRelationships(user.id, id);
+  return result ? jsonOk(result) : jsonError("not_found", "character not found", 404);
 });
 
-export const PUT = withUser<Params>(async (user, req: NextRequest, ctx) => {
+export const PUT = withAuthorizedResource<Params, OwnedCharacter>("character", ownedCharacter, async (user, _character, req: NextRequest, ctx) => {
   const { id } = await ctx.params;
-  if (!(await ownedCharacter(id, user.id))) return jsonError("not_found", "character not found", 404);
   const body = await readBody(req, putBodySchema);
   if (!body.ok) return body.response;
-
-  const targetIds = [...new Set(body.value.edges.map((e) => e.toCharacterId))];
-  if (targetIds.some((t) => t === id)) return jsonError("invalid_edge", "a character can't relate to themself", 400);
-  if (targetIds.length !== body.value.edges.length) {
-    return jsonError("invalid_edge", "one edge per target character", 400);
-  }
-  if (targetIds.length) {
-    const owned = await db()
-      .select({ id: characters.id })
-      .from(characters)
-      .where(and(inArray(characters.id, targetIds), eq(characters.ownerId, user.id)));
-    if (owned.length !== targetIds.length) return jsonError("not_found", "target character not found", 404);
-  }
-
-  // Replace-set: drop edges no longer listed, upsert the rest.
-  await db()
-    .delete(characterRelationships)
-    .where(
-      targetIds.length
-        ? and(eq(characterRelationships.fromCharacterId, id), notInArray(characterRelationships.toCharacterId, targetIds))
-        : eq(characterRelationships.fromCharacterId, id),
+  const result = await saveLibraryRelationships(user.id, id, body.value.baseRevision, body.value.edges);
+  if (result.ok) return jsonOk(result.value);
+  if (result.code === "relationship_conflict") {
+    return NextResponse.json(
+      {
+        error: {
+          code: result.code,
+          message: "library relationships changed elsewhere; choose which version to keep",
+        },
+        current: result.current,
+      },
+      { status: 409 },
     );
-  for (const edge of body.value.edges) {
-    await db()
-      .insert(characterRelationships)
-      .values({ fromCharacterId: id, toCharacterId: edge.toCharacterId, record: edge.record, updatedAt: new Date() })
-      .onConflictDoUpdate({
-        target: [characterRelationships.fromCharacterId, characterRelationships.toCharacterId],
-        set: { record: edge.record, updatedAt: new Date() },
-      });
   }
-  return jsonOk({ saved: body.value.edges.length });
+  if (result.code === "invalid_edge") {
+    return jsonError("invalid_edge", "each relationship needs one different target character", 400);
+  }
+  return jsonError("not_found", result.code === "target_not_found" ? "target character not found" : "character not found", 404);
 });

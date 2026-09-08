@@ -1,5 +1,5 @@
 import { jsonError, jsonOk, withAuthorizedResource } from "@/server/api";
-import { referenceViewHistoryEntries, referenceViewRetentionDays } from "@/server/images";
+import { referenceViewHistoryEntries, referenceViewRetentionDays, currentReferenceViewRow } from "@/server/images";
 import { ownedCharacter, parseSlot, type OwnedCharacter, type ReferenceViewSlotParams } from "../../../shared";
 
 /**
@@ -29,7 +29,10 @@ export const GET = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharacte
     const slot = parseSlot(params);
     if (slot === null) return jsonError("not_found", "no such reference view", 404);
 
+    const current = await currentReferenceViewRow(params.id, slot);
     return jsonOk({
+      currentAttemptId: current?.id ?? null,
+      currentRevision: current?.reviewRevision ?? 0,
       entries: await referenceViewHistoryEntries(params.id, user.id, slot),
       retentionDays: referenceViewRetentionDays(),
     });

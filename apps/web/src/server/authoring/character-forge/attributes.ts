@@ -13,6 +13,7 @@ import {
   type DiagnosticSink,
   type RealizedBody,
 } from "@/contracts";
+import { sectionOwnsAttribute } from "@/lib/character-scopes";
 import { fnv1a32 } from "@/lib/hash";
 import { generateChecked } from "@/server/ai";
 import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
@@ -54,6 +55,7 @@ export function characterAttributeDefinitions(context?: CharacterForgeContext): 
   return attributeRegistry.definitions.filter(
     (d) =>
       (d.appliesToEntityKinds ?? ["character"]).includes("character") &&
+      (!context?.scope || sectionOwnsAttribute(context.scope, d.id)) &&
       (!isIntimateAttributeCategory(d.category) || d.renderVisual === true) &&
       (!isFeatureAttributeCategory(d.category) || (realizedBody?.isAttributeApplicable(d) ?? false)),
   );
@@ -286,18 +288,32 @@ function attributesPrompt(context: CharacterForgeContext): string {
 }
 
 export async function forgeAttributesSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
-  const { value } = await generateChecked({
+  const scope = context.scope;
+  const { value, degraded } = await generateChecked({
     ...FORGE_LEG_OPTIONS,
     schema: buildAttributeSectionSchema(context),
     system: ATTRIBUTES_SYSTEM,
     prompt: attributesPrompt(context),
     code: "forge.character.attributes",
     sink: context.sink,
-    fallback: context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
+    fallback: scope || context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
   });
-  const section = value ?? { attributes: [], ranges: [] };
+  if (scope && (degraded || !value)) return {};
+  return groundCharacterAttributeSection(value ?? { attributes: [], ranges: [] }, context);
+}
+
+/** Ground successful output against the body that the scoped edit can actually adopt. */
+export function groundCharacterAttributeSection(section: AttributeSection, context: CharacterForgeContext): CharacterSectionPatch {
+  const scope = context.scope;
+  const authoredRegions = scope ? context.draft?.profile.intimateRegions : undefined;
+  const regionsFor = (attributes: readonly AttributeValue[]) => authoredRegions?.length
+    ? authoredRegions
+    : seedBodyConfigFromAttributes(attributes).intimateRegions;
   const realizedBody = realizedBodyForForgeContext(context);
   const grounded = groundAttributeValues(section.attributes, context.sink, undefined, realizedBody);
+  if (scope === "personality") {
+    return { profile: { attributes: grounded.filter((a) => sectionOwnsAttribute(scope, a.id)) } };
+  }
   const ranges = groundAttributeRanges(section.ranges, context.sink);
   // Species-required defaults first (e.g. elf ears.shape = "pointed") so the
   // core-visual pass treats them as already present, then the core-visual fill.
@@ -310,7 +326,7 @@ export async function forgeAttributesSection(context: CharacterForgeContext): Pr
   // apply is translated to its successor or dropped BEFORE the fill can seed
   // the competing owner beside it — so the draft never stores both sizes.
   const bodyFor = (values: readonly AttributeValue[]) =>
-    realizedBodyForForgeContext(context, seedBodyConfigFromAttributes(values).intimateRegions);
+    realizedBodyForForgeContext(context, regionsFor(values));
   const conformAndFill = (values: readonly AttributeValue[]) => {
     const body = bodyFor(values);
     const conformed = conformAttributesToBody(values, body, context.sink);
@@ -335,8 +351,11 @@ export async function forgeAttributesSection(context: CharacterForgeContext): Pr
   // The stored body-config is the same seed the fills realized against. Intimate
   // attribute values beyond the render-consistency fill stay empty; the human
   // authors them.
-  const { intimateRegions } = seedBodyConfigFromAttributes(attributes);
-  return { profile: { attributes, intimateRegions } };
+  const intimateRegions = regionsFor(attributes);
+  return { profile: {
+    attributes: scope ? attributes.filter((a) => sectionOwnsAttribute(scope, a.id)) : attributes,
+    intimateRegions,
+  } };
 }
 
 /**

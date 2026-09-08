@@ -25,6 +25,10 @@ The owner-scoped definition rows: who the account is, and the reusable entities 
   replayable response JSON. The receipt is written in the same transaction as its character and
   materialized suggestions. Reusing a request id with different content is refused; deleting the
   character cascades its receipt.
+- **`character_relationships` / `character_relationship_versions`** — directed, owner-validated
+  library defaults from one character to another plus one revision row per authored source set.
+  A revision compare-and-swap and the complete edge replacement share one transaction, including
+  an empty set; the version row and every outgoing edge cascade with the source character.
 - **`personas`** — `owner_id`, **`title` — UNIQUE per owner (`personas_owner_title_unique`)**,
   `name`, `profile` JSONB (`PersonaProfile`: bio, voice, intimacy, species/heritage/bodyPlan,
   `intimateRegions`, `bodyFeatures`, `attributes`, `outfits`), `tags` JSONB, `avatar_image_id`,

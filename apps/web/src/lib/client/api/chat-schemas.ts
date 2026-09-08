@@ -519,27 +519,32 @@ export const chatRelationshipsSchema = z.object({
 });
 export type ChatRelationships = z.infer<typeof chatRelationshipsSchema>;
 
+const libraryRelationshipEdgeSchema = z.object({
+  toCharacterId: idSchema,
+  toName: nameSchema,
+  record: z.object({
+    familiarity: z.string().catch("strangers"),
+    regard: z.string().catch("neutral"),
+    kind: textOr(""),
+    history: textOr(""),
+    presented: z
+      .object({
+        lean: z.enum(["masks_warmth", "masks_dislike"]),
+        note: textOr(""),
+      })
+      .optional()
+      .catch(undefined),
+    looming: z.boolean().catch(false),
+  }),
+});
+
 export const libraryRelationshipsSchema = z.object({
-  edges: arrayOf(
-    z.object({
-      toCharacterId: idSchema,
-      toName: nameSchema,
-      record: z.object({
-        familiarity: z.string().catch("strangers"),
-        regard: z.string().catch("neutral"),
-        kind: textOr(""),
-        history: textOr(""),
-        presented: z
-          .object({
-            lean: z.enum(["masks_warmth", "masks_dislike"]),
-            note: textOr(""),
-          })
-          .optional()
-          .catch(undefined),
-        looming: z.boolean().catch(false),
-      }),
-    }),
-  ),
+  revision: z.number().int().nonnegative().max(2_147_483_647),
+  edges: arrayOf(libraryRelationshipEdgeSchema),
+});
+export const libraryRelationshipsConflictSchema = z.object({
+  error: z.object({ code: z.literal("relationship_conflict"), message: z.string() }),
+  current: libraryRelationshipsSchema,
 });
 export type LibraryRelationships = z.infer<typeof libraryRelationshipsSchema>;
 

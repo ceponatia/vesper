@@ -58,7 +58,13 @@ export function useFocusTrap(
       const panel = panelRef.current;
       if (!panel) return;
       const target = resolveTabTarget({
-        focusables: Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)),
+        focusables: Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
+          // Responsive comparisons and collapsed content stay mounted. Invisible
+          // controls must not become the trap's last target and let Tab escape.
+          if (!element.getClientRects().length || element.matches(":disabled") || element.closest("[inert]")) return false;
+          const visibility = window.getComputedStyle(element).visibility;
+          return visibility !== "hidden" && visibility !== "collapse";
+        }),
         active: document.activeElement instanceof HTMLElement ? document.activeElement : null,
         shiftKey: e.shiftKey,
         fallback: panel,

@@ -126,16 +126,40 @@ build job plans from, so the charge and the work can never be two numbers.
 - A rendered view arrives `unreviewed` and **is used by nothing** until the owner approves it: a
   rendered back nobody looked at is a guess, and a guess anchoring every later scene is worse than
   no anchor.
-- Rejecting is terminal for that row — it keeps its bytes and its history, it is sent nowhere, and
-  the way back is a regenerate, which supersedes it with a new attempt.
+- The full-size viewer compares the current reference with the accepted portrait, side by side on
+  desktop and through an image toggle on phone. Previous/Next and arrow keys move between slots;
+  Approve, Reject and Undo stay in the viewer. Status and slot labels stay visible. Polling does not
+  replace the displayed attempt; changed attempts offer Refresh before another verdict.
+- Approve and Reject require the displayed attempt id and integer review revision. The server
+  serializes reference writes on the character row and checks the current attempt, revision,
+  accepted source bytes, generation version and readable asset. A replaced image or newer verdict
+  returns a recoverable conflict. Undo clears the last verdict and review stamp only at that same
+  revision; it makes the current attempt unreviewed again.
+- Rejection optionally records Wrong outfit, Wrong angle, Identity mismatch, Image defect and a
+  correction note of at most 1,000 characters. Feedback is stored on that attempt and shown in the
+  viewer, current card and history. Cancel leaves the verdict unchanged, and a failed request keeps
+  the entered feedback. The note is review provenance; it does not change generation instructions.
 - An **owner upload** is the second way a slot is ever filled, and it produces the same row with
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
   supplying it. It runs no model, charges no render budget, and re-fits the image to the canonical
-  3:4 portrait under the avatar upload's decode guards.
-- **The `verdict` column is written by a review and by an upload, and never cleared.** A review
-  writes `approved` or `rejected`; an upload writes `approved`, because supplying a view is the
-  owner's own review. Nothing else writes it, supersession leaves it alone, and no row's verdict is
-  ever overturned by a later attempt on the same slot.
+  3:4 portrait under the avatar upload's decode guards. Uploads are unavailable during a live build
+  or pending attempt. After processing the bytes, installation rechecks generation activity, the
+  accepted source and the current attempt/revision under the character lock before replacing the
+  slot. A busy or changed result preserves the existing attempt and asks the owner to retry; only
+  the refused upload's unclaimed asset is removed. A build admitted after installation can replace
+  the upload through the ordinary attempt lifecycle.
+- **Verdict and feedback survive supersession.** A review writes `approved` or `rejected`; an
+  upload writes `approved`. Explicit Undo clears the current verdict while retaining feedback for
+  correction and retry. A later attempt never overwrites an earlier attempt's review provenance.
+- History offers **Use this version** for a retained compatible attempt. Restoration checks
+  ownership, slot, current attempt and revision, accepted portrait id and content hash, generation
+  version, available bytes, retention expiry and pending/live generation state. It copies the bytes
+  into an independent asset and creates a new unreviewed current candidate. The original attempt
+  keeps its verdict and feedback; its cleanup cannot delete the restored candidate's file. A failed
+  restoration compensates only its own unused copy. A build admitted after restoration can replace
+  the candidate through the ordinary attempt lifecycle.
+- History explains unavailable, expired, incompatible and busy versions and offers Refresh. Its
+  retention bound is stated alongside the list; attempts without retained ready assets are absent.
 - **What a past attempt reads as is one pure function**, `referenceViewHistoryVerdict`: the stored
   verdict where there is one, otherwise a `rejected` status or a `ready` row's review stamp, and
   `unreviewed` for an attempt nobody ruled on. Rows retired before the column existed have no
@@ -221,17 +245,18 @@ studio's grid displays them.
 
 ## Routes
 
-| Route                                                 | What it does                                                                  |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot, `missing` where no row exists                |
-| `POST /api/characters/:id/reference-views/build`      | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted`          |
-| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — rebuilds the named slots as one batch, rejected ones included |
-| `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                  |
-| `POST …/reference-views/:angle/:wardrobe/upload`      | `{ dataUrl }` ⇒ the settled slot, synchronously                               |
-| `POST …/reference-views/:angle/:wardrobe/review`      | `{ verdict: approve \| reject }` ⇒ the settled slot                           |
-| `GET …/reference-views/:angle/:wardrobe/history`      | `{ entries, retentionDays }` — that slot's past images                        |
+| Route                                                 | What it does                                                                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot, `missing` where no row exists                            |
+| `POST /api/characters/:id/reference-views/build`      | Builds every `missing` / `failed` / `stale` slot; 409 `not_accepted`                      |
+| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — rebuilds the named slots as one batch, rejected ones included             |
+| `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                              |
+| `POST …/reference-views/:angle/:wardrobe/upload`      | `{ dataUrl }` ⇒ the settled slot, synchronously                                           |
+| `POST …/reference-views/:angle/:wardrobe/review`      | `{ attemptId, expectedRevision, verdict, feedback? }` ⇒ settled slot                      |
+| `GET …/reference-views/:angle/:wardrobe/history`      | `{ entries, retentionDays, currentAttemptId, currentRevision }`                           |
+| `POST …/reference-views/:angle/:wardrobe/restore`     | `{ attemptId, expectedCurrentAttemptId, expectedCurrentRevision }` ⇒ unreviewed candidate |
 
-All seven are owner-only and rooted at the character. A slot the registry has no entry for is a 404,
+All routes are owner-only and rooted at the character. A slot the registry has no entry for is a 404,
 and so is a slot the plan withholds — a regeneration naming one is refused whole, before anything is
 charged, rather than silently building the rest.
 

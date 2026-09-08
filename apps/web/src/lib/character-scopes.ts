@@ -1,91 +1,94 @@
 import { z } from "zod";
 import { isPersonalityAttributeId } from "@/contracts";
-import type { FillableDraft } from "./character-fill";
+import { mergeFillDraft, type FillableDraft } from "./character-fill";
 
-/**
- * Per-tab Re-draft scopes (semantics re-ruled 2026-07-12): the five content
- * tabs of the character sheet, each re-draftable from the whole sheet. Unlike
- * the sheet Forge's fill (additive-only), a Re-draft is a FULL re-sync of its
- * tab — the tool for "I changed the other tabs; bring this one in line" — so
- * it may revise player-set values too; the unsaved-draft review is the safety
- * net. Two scope limits stand: the Profile re-draft rewrites ONLY bio /
- * personality / voice (never name, age, aliases, or library tags), and
- * species / heritage / body-plan are untouchable everywhere (their cascade is
- * too destructive for a formatting pass).
- *
- * Scope ids intentionally match the editor's content-tab ids. One deliberate
- * mismatch: `disposition` still owns `preferences` (they ride the profile forge
- * leg with tags + traits) even though the editor shows likes/dislikes on the
- * Personality tab since 2026-07-11 — a Disposition re-draft re-derives them.
- * `disposition` also owns `drives` (desires & secrets) — the editor card and the
- * forge output both live on that tab's scope.
- */
-export const characterSheetScopes = ["profile", "attributes", "personality", "disposition", "outfit"] as const;
+/** The editor, generation request, merge and section summary share this ownership. */
+export const characterSheetScopes = ["profile", "attributes", "personality", "disposition", "outfit", "relationships"] as const;
 export const characterSheetScopeSchema = z.enum(characterSheetScopes);
 export type CharacterSheetScope = z.infer<typeof characterSheetScopeSchema>;
+export const characterEditorTabs = [...characterSheetScopes, "portrait", "chat"] as const;
+export type CharacterEditorTab = (typeof characterEditorTabs)[number];
 
-/**
- * Take a re-drafted scope's fields from `incoming` onto `base`, leaving every
- * other tab untouched. Shared verbatim by the server (authoritative) and the
- * client (re-applied over the response so edits made mid-flight win).
- */
-export function mergeRedraftScope<T extends FillableDraft>(
-  base: T,
-  incoming: FillableDraft,
-  scope: CharacterSheetScope,
-): T {
-  switch (scope) {
-    case "profile":
-      // Prose fields only — name/age/aliases/tags are not this tab's re-sync
-      // surface (rename by hand; age is a fact, not formatting). The voice
-      // micro-exemplars, structured voice anchors, and the intimate disposition
-      // ride this prose scope too — all live on the Profile tab.
-      return {
-        ...base,
-        profile: {
-          ...base.profile,
-          bio: incoming.profile.bio,
-          personality: incoming.profile.personality,
-          voice: incoming.profile.voice,
-          intimacy: incoming.profile.intimacy,
-          microExemplars: incoming.profile.microExemplars,
-          voiceAnchors: incoming.profile.voiceAnchors,
-        },
-      };
-    case "disposition":
-      return {
-        ...base,
-        profile: {
-          ...base.profile,
-          tags: incoming.profile.tags,
-          preferences: incoming.profile.preferences,
-          traits: incoming.profile.traits,
-          drives: incoming.profile.drives,
-        },
-      };
-    case "attributes": {
-      const kept = base.profile.attributes.filter((a) => isPersonalityAttributeId(a.id));
-      const body = incoming.profile.attributes.filter((a) => !isPersonalityAttributeId(a.id));
-      return {
-        ...base,
-        profile: {
-          ...base.profile,
-          attributes: [...body, ...kept],
-          intimateRegions:
-            base.profile.intimateRegions.length > 0 ? base.profile.intimateRegions : incoming.profile.intimateRegions,
-        },
-      };
+type ProfileField = keyof FillableDraft["profile"];
+interface CharacterSectionDefinition {
+  label: string;
+  fields: readonly ProfileField[];
+  legs: readonly ("profile" | "attributes" | "outfit")[];
+  profileOutput: readonly string[];
+  attributes?: "body" | "expression";
+  suggestedItems?: boolean;
+}
+export const characterSections = {
+  profile: {
+    label: "Profile", fields: ["bio", "schedule"], legs: ["profile"], profileOutput: ["bio", "schedule"],
+  },
+  attributes: {
+    label: "Appearance", fields: ["intimateRegions"], legs: ["attributes"], profileOutput: [], attributes: "body",
+  },
+  personality: {
+    label: "Voice & manner", fields: ["voice", "microExemplars", "voiceAnchors"], legs: ["profile", "attributes"],
+    profileOutput: ["voice", "microExemplars", "voiceAnchors"], attributes: "expression",
+  },
+  disposition: {
+    label: "Personality", fields: ["personality", "intimacy", "tags", "preferences", "traits", "drives", "socialCards"],
+    legs: ["profile"], profileOutput: ["personality", "intimacy", "dispositionTags", "preferences", "traits", "drives", "cards"],
+  },
+  outfit: { label: "Outfit", fields: ["outfits"], legs: ["outfit"], profileOutput: [], suggestedItems: true },
+  relationships: {
+    label: "Relationships", fields: ["playerRelationship"], legs: ["profile"], profileOutput: ["playerRelationship"],
+  },
+} as const satisfies Record<CharacterSheetScope, CharacterSectionDefinition>;
+
+export function sectionOwnsAttribute(scope: CharacterSheetScope, id: string): boolean {
+  const section: CharacterSectionDefinition = characterSections[scope];
+  if (!section.attributes) return false;
+  return isPersonalityAttributeId(id) === (section.attributes === "expression");
+}
+
+/** Count authored details rather than claiming an optional section is objectively complete. */
+export function characterSectionDetailCount(draft: FillableDraft, scope: CharacterSheetScope): number {
+  const section: CharacterSectionDefinition = characterSections[scope];
+  const count = (value: unknown): number => {
+    if (typeof value === "string") return value.trim() ? 1 : 0;
+    if (Array.isArray(value)) return value.length;
+    return 0;
+  };
+  const detailCount = section.fields.reduce((total, field) => {
+    if (field === "voiceAnchors") {
+      const v = draft.profile.voiceAnchors;
+      return total + count(v.cadence) + count(v.petPhrases) + count(v.neverSays);
     }
-    case "personality": {
-      const kept = base.profile.attributes.filter((a) => !isPersonalityAttributeId(a.id));
-      const personality = incoming.profile.attributes.filter((a) => isPersonalityAttributeId(a.id));
-      return { ...base, profile: { ...base.profile, attributes: [...kept, ...personality] } };
+    if (field === "playerRelationship") {
+      const r = draft.profile.playerRelationship;
+      return total + Number(r.familiarity !== "strangers" || r.regard !== "neutral" || !!r.kind.trim()
+        || !!r.history.trim() || !!r.note.trim() || !!r.presented || r.looming);
     }
-    case "outfit":
-      return {
-        ...base,
-        suggestedItems: incoming.suggestedItems,
-        profile: { ...base.profile, outfits: incoming.profile.outfits },
-      };
+    if (field === "outfits") return total + draft.profile.outfits.reduce((n, outfit) => n + outfit.items.length, 0);
+    return total + count(draft.profile[field]);
+  }, 0);
+  return detailCount + draft.profile.attributes.filter((a) => sectionOwnsAttribute(scope, a.id)).length
+    + (section.suggestedItems ? draft.suggestedItems.length : 0);
+}
+
+/** Rewrite only the visible section. Identity and the creation brief are never rewritten. */
+export function mergeRedraftScope<T extends FillableDraft>(base: T, incoming: FillableDraft, scope: CharacterSheetScope): T {
+  const section: CharacterSectionDefinition = characterSections[scope];
+  const profile = { ...base.profile };
+  for (const field of section.fields) {
+    // Established anatomy remains a constraint on generation, even for a rewrite.
+    if (field === "intimateRegions" && base.profile.intimateRegions.length > 0) continue;
+    Object.assign(profile, { [field]: incoming.profile[field] });
   }
+  if (section.attributes) {
+    profile.attributes = [
+      ...base.profile.attributes.filter((a) => !sectionOwnsAttribute(scope, a.id)),
+      ...incoming.profile.attributes.filter((a) => sectionOwnsAttribute(scope, a.id)),
+    ];
+  }
+  return { ...base, profile, ...(section.suggestedItems ? { suggestedItems: incoming.suggestedItems } : {}) };
+}
+
+/** Fill obeys the same section boundary, then preserves every authored field/id. */
+export function mergeFillScope<T extends FillableDraft>(base: T, incoming: FillableDraft, scope: CharacterSheetScope): T {
+  return mergeFillDraft(base, mergeRedraftScope(base, incoming, scope));
 }

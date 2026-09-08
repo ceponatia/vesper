@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CharacterProfile, DiagnosticSink, ItemDefinition, SpeciesDefinition } from "@/contracts";
 import type { ClothingCandidateLookup, LibraryLookup } from "../library";
+import type { CharacterSheetScope } from "@/lib/character-scopes";
 import type { CharacterDraft } from "../drafts";
 
 /** Shared low-latency, reasoning-off options for all three structured forge legs. */
@@ -12,6 +13,8 @@ export type CharacterForgeSection = (typeof characterForgeSections)[number];
 
 export interface CharacterForgeContext {
   prompt: string;
+  /** Limit structured output to one visible authoring section. */
+  scope?: CharacterSheetScope;
   userId: string;
   sink?: DiagnosticSink;
   /** Current draft, for single-section regeneration context. */

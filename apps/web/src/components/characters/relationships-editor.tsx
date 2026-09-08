@@ -1,15 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { familiarityBands, regardBands } from "@/contracts";
-import { charactersApi, type AuthoredEdgeRecord } from "@/lib/client/api";
+import { charactersApi, libraryRelationshipsConflictSchema, type AuthoredEdgeRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { EntityPickerDialog } from "@/components/library/entity-picker";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
+import { useSession } from "@/components/auth/auth-client";
+import { useAutosave } from "@/components/hooks/use-autosave";
+import { useCharacterDraftStorage } from "./use-character-draft-storage";
+import { rebaseRelationshipRecovery, relationshipRecoverySchema, relationshipSnapshot as snapshotOf,
+  type EdgeDraft, type RelationshipRecovery } from "./relationships-draft";
 
 /**
  * The character editor's Relationships tab (owner ruling 2026-07-07): the
@@ -17,14 +22,8 @@ import { useToast } from "@/components/ui/toast";
  * characters, stored in `character_relationships` (FK cascade — deleting a
  * character never leaves dangling edges). Creating a conversation seeds its
  * matrix from these for every roster pair; the in-chat matrix overrides on top.
- * The player edge stays the Chat tab's Starting Relationship control.
+ * The player edge lives above this editor in the character draft.
  */
-
-interface EdgeDraft {
-  toCharacterId: string;
-  toName: string;
-  record: AuthoredEdgeRecord;
-}
 
 const blankRecord = (): AuthoredEdgeRecord => ({
   familiarity: "strangers",
@@ -34,35 +33,127 @@ const blankRecord = (): AuthoredEdgeRecord => ({
   looming: false,
 });
 
-export function RelationshipsEditor({ characterId, name }: { characterId: string; name: string }) {
-  const toast = useToast();
+const emptyRecovery = (): RelationshipRecovery => null;
+
+/** Library writes are independent of the character profile's save indicator. */
+export type RelationshipSaveStatus = "saved" | "pending" | "saving" | "blocked" | "error";
+interface RelationshipsEditorProps {
+  characterId: string;
+  name: string;
+  onSaveStatusChange?: (status: RelationshipSaveStatus) => void;
+}
+
+/** Keep this component mounted while the section is hidden so debounce and writes survive tab changes. */
+export function RelationshipsEditor({ characterId, name, onSaveStatusChange }: RelationshipsEditorProps) {
+  const { data: session } = useSession();
   const stored = useAsyncData(() => charactersApi.relationships(characterId), [characterId]);
-  const [drafts, setDrafts] = useState<EdgeDraft[] | null>(null);
+  if (stored.loading || !session?.user.id) return <Skeleton className="h-24 w-full" />;
+  if (stored.error) return <ErrorState error={stored.error} onRetry={() => stored.reload()} />;
+  if (!stored.data) return null;
+  const storageKey = `vesper:character-relationships:${session.user.id}:${characterId}`;
+  return <RelationshipDraftEditor key={storageKey} storageKey={storageKey} characterId={characterId}
+    name={name} initialEdges={stored.data.edges} initialRevision={stored.data.revision}
+    onSaveStatusChange={onSaveStatusChange} />;
+}
+
+function RelationshipDraftEditor({ characterId, name, storageKey, initialEdges, initialRevision, onSaveStatusChange }: {
+  characterId: string;
+  name: string;
+  storageKey: string;
+  initialEdges: EdgeDraft[];
+  initialRevision: number;
+  onSaveStatusChange?: RelationshipsEditorProps["onSaveStatusChange"];
+}) {
+  const storage = useCharacterDraftStorage(storageKey, relationshipRecoverySchema, emptyRecovery);
+  const [savedEdges, setSavedEdges] = useState(initialEdges);
+  const [savedRevision, setSavedRevision] = useState(initialRevision);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => snapshotOf(initialEdges));
+  const acknowledgedRevision = useRef(initialRevision);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  if (stored.loading) return <Skeleton className="h-24 w-full" />;
-  if (stored.error || !stored.data) return null;
-
-  const edges = drafts ?? stored.data.edges.map((e) => ({ toCharacterId: e.toCharacterId, toName: e.toName, record: e.record }));
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const inFlight = useRef<Promise<void> | null>(null);
+  const serverConflict = storage.data !== null && storage.data.baseRevision !== savedRevision;
+  const edges = storage.data?.edges ?? savedEdges;
+  const dirty = storage.data !== null && snapshotOf(edges) !== savedSnapshot;
+  const blocked = storage.conflict || serverConflict;
+  const saveStatus: RelationshipSaveStatus = saving ? "saving" : saveError ? "error" : blocked ? "blocked" : dirty ? "pending" : "saved";
+  useEffect(() => {
+    onSaveStatusChange?.(saveStatus);
+  }, [onSaveStatusChange, saveStatus]);
+  const setDrafts = (next: EdgeDraft[]) => {
+    setSaveError(null);
+    storage.update({
+      baseRevision: storage.current.current?.baseRevision ?? acknowledgedRevision.current,
+      edges: next,
+    });
+  };
   const update = (index: number, patch: Partial<AuthoredEdgeRecord>) => {
-    setDrafts(edges.map((e, i) => (i === index ? { ...e, record: { ...e.record, ...patch } } : e)));
+    setDrafts(edges.map((edge, i) => i === index ? { ...edge, record: { ...edge.record, ...patch } } : edge));
   };
 
-  const save = async () => {
+  const save = (): Promise<void> => {
+    if (inFlight.current) return inFlight.current;
+    const current = storage.current.current;
+    if (!storage.ready || blocked || !current || snapshotOf(current.edges) === savedSnapshot) return Promise.resolve();
+    const previousBaseRevision = current.baseRevision;
+    const snapshot = snapshotOf(current.edges);
     setSaving(true);
-    const result = await charactersApi.saveRelationships(
-      characterId,
-      edges.map((e) => ({ toCharacterId: e.toCharacterId, record: e.record })),
-    );
-    setSaving(false);
-    if (!result.ok) {
-      toast.push({ title: "Couldn't save relationships", description: result.error.message, tone: "error" });
-      return;
-    }
-    toast.push({ title: "Default relationships saved", tone: "success" });
-    stored.reload({ silent: true });
+    const request = (async () => {
+      try {
+        const writeSnapshot = async () => {
+          await storage.flush();
+          if (storage.isBlocked() || storage.current.current?.baseRevision !== previousBaseRevision) return;
+          const result = await charactersApi.saveRelationships(characterId, previousBaseRevision,
+            current.edges.map(({ toCharacterId, record }) => ({ toCharacterId, record })));
+          if (!result.ok) {
+            const conflict = libraryRelationshipsConflictSchema.safeParse(result.error.body);
+            if (result.error.code === "relationship_conflict" && conflict.success) {
+              const currentServer = conflict.data.current;
+              acknowledgedRevision.current = currentServer.revision;
+              setSavedRevision(currentServer.revision);
+              setSavedEdges(currentServer.edges);
+              setSavedSnapshot(snapshotOf(currentServer.edges));
+              setSaveError(null);
+              return;
+            }
+            setSaveError(result.error.message);
+            return;
+          }
+          // Rebase pending continuation on the acknowledged server version without replacing edits.
+          const continuation = rebaseRelationshipRecovery(
+            storage.current.current,
+            previousBaseRevision,
+            result.data.revision,
+            storage.isBlocked(),
+          );
+          if (continuation !== storage.current.current) storage.update(continuation);
+          acknowledgedRevision.current = result.data.revision;
+          setSavedRevision(result.data.revision);
+          setSavedSnapshot(snapshotOf(result.data.edges));
+          setSavedEdges(result.data.edges);
+          setSaveError(null);
+          if (storage.current.current && snapshotOf(storage.current.current.edges) === snapshot) {
+            await storage.clear(storage.revision.current);
+          }
+        };
+        // Serialize replacements across remounted editors and cooperating browser tabs too.
+        if (navigator.locks) await navigator.locks.request(`${storageKey}:save`, writeSnapshot);
+        else await writeSnapshot();
+      } catch {
+        setSaveError("Couldn't save library relationships. Your edits are kept for retry.");
+      } finally {
+        setSaving(false);
+        inFlight.current = null;
+      }
+    })();
+    inFlight.current = request;
+    return request;
   };
+  const autosave = useAutosave({
+    enabled: storage.ready && !blocked && !saveError,
+    dirty, saving, save, signal: storage.data,
+  });
 
   const searchCharacters = async (q: string) => {
     const result = await charactersApi.list({ q, scope: "owned" });
@@ -77,11 +168,40 @@ export function RelationshipsEditor({ characterId, name }: { characterId: string
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" onBlur={autosave.onBlur}>
+      <h3 className="text-base font-medium text-paper-100">Library relationships</h3>
       <p className="text-sm text-paper-400">
-        How {name || "this character"} stands toward other library characters by default — new conversations seed their
-        relationship matrix from these, then override per story. The player edge lives on the Chat tab.
+        How {name || "this character"} stands toward other library characters. Edits autosave and stay available when
+        you switch sections. New conversations use these defaults; existing stories keep their own relationships.
+        Section generation changes only the player relationship above.
       </p>
+      <p role="status" className="text-sm text-paper-400">
+        {saving ? "Saving library relationships…" : saveError ? "Library relationships could not be saved." : dirty ? "Library relationship changes waiting to save" : "Library relationships saved"}
+      </p>
+      {saveError ? <p role="alert" className="text-sm text-danger-300">{saveError}</p> : null}
+      {storage.notice ? <p role="status" className="text-sm text-paper-400">{storage.notice}</p> : null}
+      {serverConflict ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="w-full text-sm text-paper-400">Saved relationships changed in another tab or device. Review the choice; nothing has been overwritten.</p>
+          <p className="w-full text-xs text-paper-500">
+            The saved copy has {savedEdges.length === 0
+              ? "no library relationships"
+              : savedEdges.map((edge) => edge.toName).join(", ")}.
+          </p>
+          <Button size="sm" disabled={saving} onClick={() => storage.update({ baseRevision: savedRevision, edges })}>Keep my recovered edits</Button>
+          <Button size="sm" disabled={saving} onClick={() => storage.reset()}>Use saved relationships</Button>
+        </div>
+      ) : null}
+      {storage.conflict ? (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={saving} onClick={() => storage.resume()}>Use shared browser draft</Button>
+          <Button size="sm" disabled={saving} onClick={() => storage.reset()}>Use saved relationships</Button>
+        </div>
+      ) : null}
+      {storage.recoveries.map((copy) => (
+        <Button key={copy.key} size="sm" disabled={saving} onClick={() => storage.resume(copy.key)}>Recover edits from {copy.label}</Button>
+      ))}
+      <fieldset disabled={!storage.ready || blocked} className="flex min-w-0 flex-col gap-3">
       {edges.map((edge, index) => (
         <div key={edge.toCharacterId} className="flex flex-col gap-2 rounded-md border border-ink-600 bg-ink-850 p-2.5">
           <div className="flex items-center justify-between gap-2">
@@ -166,12 +286,13 @@ export function RelationshipsEditor({ characterId, name }: { characterId: string
         <Button size="sm" onClick={() => setPickerOpen(true)}>
           + Add relationship
         </Button>
-        {drafts ? (
-          <Button size="sm" variant="primary" busy={saving} onClick={() => void save()}>
-            Save relationships
+        {dirty || saveError ? (
+          <Button size="sm" variant="primary" busy={saving} disabled={saving} onClick={() => void save()}>
+            Save library relationships
           </Button>
         ) : null}
       </div>
+      </fieldset>
       <EntityPickerDialog
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
@@ -179,6 +300,7 @@ export function RelationshipsEditor({ characterId, name }: { characterId: string
         search={searchCharacters}
         onPick={(entry) => {
           setPickerOpen(false);
+          if (blocked || !storage.ready) return;
           if (edges.some((e) => e.toCharacterId === entry.id)) return;
           setDrafts([...edges, { toCharacterId: entry.id, toName: entry.name, record: blankRecord() }]);
         }}
