@@ -5,8 +5,9 @@ runs, so this lane works in demo mode and offline.
 
 ## The crop dialog
 
-`components/characters/avatar-upload-dialog.tsx` loads the file client-side and **always**
-offers the 3:4 pan/zoom crop window (pure geometry in `@/lib/images/crop`) — including for an
+`components/characters/avatar-upload-dialog.tsx` owns the shared crop surface used by avatar and
+reference-view uploads. It loads the file client-side and **always** offers the 3:4 pan/zoom crop
+window (pure geometry in `@vesper/image-core`) — including for an
 already-3:4 file, because reframing is wanted even at the right ratio (owner request
 2026-07-29: zoom a knees-up render to waist-up). At zoom 1 a 3:4 image exactly fills the frame,
 so "Use image" untouched is the pass-through.

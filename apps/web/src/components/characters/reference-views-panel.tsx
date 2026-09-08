@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type SetStateAction } from "react";
+import { useState, type SetStateAction } from "react";
 import {
   referenceViewAngles,
   referenceViewWardrobeEntries,
@@ -32,6 +32,8 @@ import {
 } from "./reference-view-review-drafts";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
+import { PortraitCropUploadDialog } from "./avatar-upload-dialog";
+import { settledReferenceViewSelectionKeys } from "./reference-view-selection";
 
 /**
  * The portrait tab's reference view sheet: the accepted portrait seen from the
@@ -123,8 +125,11 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
   // The viewer may close through Escape or its backdrop. Keep unfinished notes
   // at the panel session boundary so reopening the exact attempt restores them.
   const [reviewDrafts, setReviewDrafts] = useState<ReferenceViewFeedbackDrafts>({});
-  const fileInput = useRef<HTMLInputElement | null>(null);
-  const uploadTarget = useRef<{ angle: ReferenceViewAngleId; wardrobe: ReferenceViewWardrobe } | null>(null);
+  const [uploadTarget, setUploadTarget] = useState<{
+    angle: ReferenceViewAngleId;
+    wardrobe: ReferenceViewWardrobe;
+    label: string;
+  } | null>(null);
 
   const set = views.data?.set ?? null;
   // A build is live server-side, or a slot is still holding a pending row. Both
@@ -245,9 +250,9 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
    * this call with one target, so both paths are charged, admitted and run the
    * same way.
    *
-   * The selection survives a refusal. A batch the server would not take (a live
-   * build, a spent budget) is work the owner still wants, and clearing their
-   * ticks would make them reassemble it.
+   * A budget or storage refusal preserves the selection. Queued targets and
+   * targets the server reports as already busy both leave the selection because
+   * they need no second submission.
    */
   const regenerate = async (targets: readonly ReferenceViewSummary[]) => {
     if (targets.length === 0) return;
@@ -273,11 +278,12 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
         .filter((target) => target.state === "queued")
         .map(slotKey),
     );
+    const accepted = settledReferenceViewSelectionKeys(result.data.views.targets);
     unmark(keys.filter((key) => !queued.has(key)));
-    if (queued.size > 0) {
+    if (accepted.size > 0) {
       setSelected((current) => {
         const next = new Set(current);
-        for (const key of queued) next.delete(key);
+        for (const key of accepted) next.delete(key);
         return next;
       });
     }
@@ -288,36 +294,30 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
   const pickUpload = (view: ReferenceViewSummary) => {
     const slot = slotKey(view);
     if (view.state === "pending" || submitted.has(slot) || submitting || busySlot !== null) return;
-    uploadTarget.current = { angle: view.angle, wardrobe: view.wardrobe };
-    fileInput.current?.click();
+    const angle = referenceViewAngles.find((entry) => entry.id === view.angle)?.label ?? view.angle;
+    const wardrobe = referenceViewWardrobeEntries.find((entry) => entry.id === view.wardrobe)?.label ?? view.wardrobe;
+    setUploadTarget({ angle: view.angle, wardrobe: view.wardrobe, label: `${angle}, ${wardrobe}` });
   };
 
-  const onFilePicked = async (file: File | undefined) => {
-    const target = uploadTarget.current;
-    uploadTarget.current = null;
-    if (!file || !target) return;
+  const uploadReference = async (dataUrl: string): Promise<{ ok: true } | { ok: false; message: string }> => {
+    const target = uploadTarget;
+    if (!target) return { ok: false, message: "Choose a reference-view slot again." };
     const current = set?.views.find((view) => slotKey(view) === slotKey(target));
     if (current?.state === "pending" || submitted.has(slotKey(target)) || submitting) {
-      toast.push({ title: "That slot is building", description: "Choose another slot or wait for this one to finish." });
-      return;
+      refetch();
+      return { ok: false, message: "That slot is building. Wait for it to finish, then confirm this image again." };
     }
     const slot = slotKey(target);
     setBusySlot(slot);
-    const dataUrl = await readAsDataUrl(file);
-    if (dataUrl === null) {
-      setBusySlot(null);
-      toast.push({ title: "Could not read that file", tone: "error" });
-      return;
-    }
     const result = await referenceViewsApi.upload(characterId, target.angle, target.wardrobe, dataUrl);
     setBusySlot(null);
     if (!result.ok) {
-      toast.push({ title: "Upload failed", description: result.error.message, tone: "error" });
       refetch();
-      return;
+      return { ok: false, message: result.error.message };
     }
     toast.push({ title: "View replaced", description: "Your own image is now this angle's reference." });
     refetch();
+    return { ok: true };
   };
 
   return (
@@ -464,19 +464,15 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
         </div>
       ))}
 
-      <input
-        ref={fileInput}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/avif"
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          // Cleared before the async work so picking the same file twice in a row
-          // still fires a change event.
-          event.target.value = "";
-          void onFilePicked(file);
-        }}
-      />
+      {uploadTarget ? <PortraitCropUploadDialog
+        open
+        onClose={() => setUploadTarget(null)}
+        name={uploadTarget.label}
+        title={`Upload ${uploadTarget.label} view`}
+        description="Crop or fit the image in the 3:4 frame, then confirm the exact preview that will replace this reference view."
+        confirmLabel="Use this reference view"
+        onUpload={uploadReference}
+      /> : null}
 
       {enlarged ? <ReferenceViewReviewer characterId={characterId} initialView={enlarged} set={set}
         drafts={reviewDrafts}
@@ -493,15 +489,4 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
       )}
     </div>
   );
-}
-
-/** The picked file as a data URL, or null when it could not be read. The server
- * re-fits it to the canonical 3:4 portrait, so no client-side crop is needed. */
-function readAsDataUrl(file: File): Promise<string | null> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(file);
-  });
 }

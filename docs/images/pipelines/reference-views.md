@@ -158,8 +158,10 @@ approval and opening the bytes.
   is review provenance; it does not change generation instructions.
 - An **owner upload** is the second way a slot is ever filled, and it produces the same row with
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
-  supplying it. It runs no model, charges no render budget, and re-fits the image to the canonical
-  3:4 portrait under the avatar upload's decode guards. An upload is unavailable while that slot has
+  supplying it. It runs no model and charges no render budget. Before submission, the shared crop
+  dialog previews the exact 3:4 output, including pan, zoom and fitted backdrop; confirmation sends
+  the normalized 768×1024 JPEG. The server re-fits it under the avatar upload's decode guards as
+  defense in depth. An upload is unavailable while that slot has
   a live lease or pending attempt; work on another slot does not block it. After processing the bytes,
   installation rechecks generation activity, the
   accepted source and the current attempt/revision under the character lock before replacing the
