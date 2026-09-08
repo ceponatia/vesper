@@ -15,6 +15,11 @@ the deployed commit or release before judging it. Do not deploy merely to make a
 review possible; if the target change is absent from Fly, report visual proof as
 unverified. `verify` owns authentication and any authorized live state changes.
 
+Retain characters and all other test-created entities, including generated images
+and supporting records, for owner review under `verify`'s
+[live-test retention rule](../verify/SKILL.md). Do not delete them as cleanup.
+Include their names and review URLs or IDs with the review evidence.
+
 Inspect the relevant states at desktop and phone viewports, including long or
 narrow content when it can change layout. Judge:
 

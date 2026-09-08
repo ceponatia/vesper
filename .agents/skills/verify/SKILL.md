@@ -20,4 +20,6 @@ in this skill.
 
 Reuse the QA account's existing chats unless the scenario truly needs isolated state. Put screenshots, generated images, and other evaluation artifacts in the repository-root `eval-images/` directory. Keep them untracked.
 
+Retain all entities created during live tests for owner review, including characters, conversations, wardrobe items, portraits, reference views, and their supporting records and assets. Keep partial or failed results available too. Do not delete them as cleanup or to restore the account's starting state; deletion requires an explicit owner request. In the handoff, list the test entities by name and review URL or ID, with the scenario and resulting state. Local evidence files supplement the retained application state.
+
 Live mutations stay within the user's authorized scope. Authorization already given for the current task persists; do not ask generically again before each command. Report the deployed commit or release observed, the inputs used, and the concrete UI/API/log evidence behind the verdict.

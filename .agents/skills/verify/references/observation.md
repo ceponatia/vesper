@@ -8,7 +8,7 @@ skill.
 
 Sign in at `https://vesper.fly.dev/sign-in` as `uxtest-main@vesper.local`. Retrieve `DEV_PASSWORD` from the Fly Machine only when needed, never echo it or save it. `/api/dev/impersonate` is disabled in the production build. If the account is unavailable, treat seeding as a separate live mutation and perform it only when authorized.
 
-List the QA account's existing chats before creating one. Prefer editing a suitable existing chat. If isolation requires a new chat, record why and delete it after verification when that cleanup is within the authorized scope.
+List the QA account's existing chats before creating one. Prefer editing a suitable existing chat. If isolation requires a new chat, record why and retain it for owner review. Follow the [live-test retention rule](../SKILL.md) for all created entities and their supporting records and assets; include review URLs or IDs in the handoff.
 
 Use viewports appropriate to the behavior: about 1440 by 900 for desktop, 390 by 844 for phone, and at least 1024 pixels wide for the standing-portrait column. Capture screenshots and downloaded/generated evidence under repository-root `eval-images/`.
 

@@ -75,7 +75,10 @@
 - UI testing runs only against `https://vesper.fly.dev`; `verify` owns QA-account selection and sign-in.
   Never substitute local Postgres plus `pnpm dev` for UI evidence.
 - Put screenshots, rendered evaluations, and all other evaluation/task output in gitignored root
-  `eval-images/`, never in `docs/`. Prefer an existing conversation; remove disposable state created for QA.
+  `eval-images/`, never in `docs/`. Prefer an existing conversation when it fits the scenario.
+- Retain characters, conversations, and other entities created during live QA, including their generated
+  images and supporting records, so owners can review them. Include names and review URLs or IDs in the
+  handoff. Do not delete test-created state as cleanup; deletion requires an explicit owner request.
 
 ## Git and delivery
 

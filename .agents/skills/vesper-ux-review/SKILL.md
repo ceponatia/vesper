@@ -35,6 +35,12 @@ workflow on their own.
 admission and CI evidence. Do not add tests, edit product code, run local
 application gates, or call live/external services as part of this review.
 
+When handing off a hypothesis for live verification, use `verify` and its
+[live-test retention rule](../verify/SKILL.md). Require the handoff to retain
+characters and all other test-created entities, generated images, and supporting
+records for owner review, with names and review URLs or IDs. Do not prescribe
+deleting test-created state as cleanup.
+
 Finish when the substantial flow's common path, meaningful alternatives, and
 recovery cost are clear enough for an owner to accept, reject, or implement each
 recommendation without replaying the analysis.
