@@ -21,10 +21,10 @@
 //      `docs/` that has a numbered section N, or the hit sits inside a doc
 //      citing its own numbered section N.
 //
-// Zero dependencies on purpose: the CI job that runs this checks out the tree
-// and calls `node scripts/check-docs.mjs` without pnpm, setup-node or an
-// install, because job setup is the dominant billed cost of a short CodeBuild
-// gate. Keep it that way — Node built-ins only.
+// Zero dependencies on purpose: the CI docs job checks out the tree, sets up
+// Node, and calls `node scripts/check-docs.mjs` with no pnpm and no install,
+// so a documentation-only PR's run stays short. Keep it that way — Node
+// built-ins only.
 //
 // Usage: node scripts/check-docs.mjs [--root <repo>]
 // Prints one line per finding naming the file and the target, then a summary;

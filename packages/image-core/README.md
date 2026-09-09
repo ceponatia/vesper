@@ -151,5 +151,5 @@ simulation and image worlds.
   test-only ones. `pnpm lint:package-boundaries` fails on anything reachable only
   through the root install.
 - Tests live beside their subject and run without application-global setup.
-- Validation is CI-gated: GitHub Actions on CodeBuild runners is the gate, per
-  the root `CLAUDE.md`. There are no local git hooks and no local gate.
+- Validation is CI-gated: GitHub Actions on GitHub-hosted runners is the gate,
+  per the root `AGENTS.md`. There are no local git hooks and no local gate.

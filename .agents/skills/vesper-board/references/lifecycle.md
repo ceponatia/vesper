@@ -30,8 +30,8 @@ So `gh issue develop` is for a PR that delivers the **whole** issue. If the PR
 delivers only a slice, branch the ordinary way (`git switch -c codex/254-…`) and
 link nothing — an auto-close would erase the remaining owed scope.
 
-**3. Open the PR draft.** Draft PRs run no CI and CodeBuild bills per job-minute,
-so stay draft while iterating.
+**3. Open the PR draft.** Draft PRs run no CI, so stay draft while iterating and
+mark the PR ready when the head is worth a run.
 
 ```bash
 gh pr create --repo ceponatia/vesper --draft --base main \

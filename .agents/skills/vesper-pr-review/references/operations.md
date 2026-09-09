@@ -7,7 +7,7 @@ Read the sections needed for the current PR state.
 `.agents/skills/vesper-pr-review/ci-failure.sh <pr>` selects the CI run attached to the PR's full current
 head SHA and prints failed jobs and step logs. Diagnose from those logs and the
 code. Vesper's owner has prohibited local `pnpm lint`, `pnpm test`, `pnpm
-typecheck`, `scripts/verify.sh`, and every Vitest invocation; CodeBuild is the
+typecheck`, `scripts/verify.sh`, and every Vitest invocation; CI is the
 only gate.
 
 Two failure patterns need repository-specific handling:

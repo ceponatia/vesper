@@ -2,7 +2,7 @@ name: Promote dev → prod
 
 # A one-click button (Actions tab → "Promote dev → prod" → Run workflow) that
 # opens a pull request from `main` (dev) into `prod`. It does NOT merge — you
-# merge it yourself after the promotion PR's required CodeBuild `verify` check
+# merge it yourself after the promotion PR's required `verify` check
 # is green. If a promotion PR is already open it just points you at it instead
 # of creating a duplicate.
 #
@@ -45,4 +45,4 @@ jobs:
 
           gh pr create --repo "$REPO" --base prod --head main \
             --title "Promote dev → prod ($(date -u +%Y-%m-%d))" \
-            --body $'Automated promotion of `main` (dev) into `prod`.\n\nThis prod-bound PR runs the complete CodeBuild CI suite, including engine integration and the production build. Merge only after the required `verify` check is green.'
+            --body $'Automated promotion of `main` (dev) into `prod`.\n\nThis prod-bound PR runs the complete CI suite, including engine integration and the production build. Merge only after the required `verify` check is green.'

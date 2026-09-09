@@ -1,22 +1,14 @@
 name: CI
 
-# Milestone-gated CI on AWS CodeBuild runners (owner decision 2026-08-21).
-# Jobs run on ephemeral CodeBuild hosts via `runs-on: codebuild-vesper-ci-…` —
-# GitHub-native checks UI, AWS per-minute billing, zero idle cost. There is no
-# local pre-push gate; this workflow is the repository verification gate, shared
-# record, and promotion gate.
+# Milestone-gated CI on GitHub-hosted `ubuntu-latest` runners. The repository is
+# public, so runner minutes are free and a run costs nothing to start. There is
+# no local pre-push gate; this workflow is the repository verification gate,
+# shared record, and promotion gate.
 #
-# Compute: every job except `integration` runs on CodeBuild Lambda via the
-# unprivileged `vesper-ci-lambda` runner project (linux-lambda nodejs22;
-# 4GB for classify/verify, 8GB for the heavier gates; hard 15-minute Lambda
-# ceiling). `integration` stays on `vesper-ci`'s privileged EC2 default —
-# it needs Docker, and a privileged project silently ignores Lambda label
-# overrides, which is why two projects exist. Always keep the image token in
-# Lambda labels; the image-omitted form silently falls back to EC2.
-#
-# Draft PRs bill nothing: every job is draft-guarded, so pushes to a draft run
-# zero jobs. Marking a PR ready for review (`gh pr ready`) runs the full
-# applicable suite and produces the aggregate `verify` result; `gh pr ready
+# Draft PRs run nothing: every job is draft-guarded, so pushes to a draft run
+# zero jobs — a draft neither waits on a suite nor adds check noise while the
+# work is still moving. Marking a PR ready for review (`gh pr ready`) runs the
+# full applicable suite and produces the aggregate `verify` result; `gh pr ready
 # --undo` returns to free iteration. Manual dispatch (`gh workflow run CI --ref
 # main`) is the deliberate pre-deploy verification and runs every gate.
 # Documentation-only changes run only the `docs` job — the zero-install
@@ -34,14 +26,15 @@ name: CI
 # or cancelled while its classifier output says it should have run fails the
 # aggregate.
 #
-# Billing shape: CodeBuild bills each workflow job as its own build, so a job's
-# fixed setup (checkout + install) costs as much as its work on short gates.
-# Two consequences are designed for here. The Gate 1 benchmark is a step of the
-# engine job rather than a job of its own — 25s of eval was paying a whole
-# job's setup. And the production build, the slowest gate, runs on PRs only
-# when the build surface itself moves; every other code PR is covered by the
-# `gh workflow run CI --ref main` dispatch that precedes each deploy, which
-# always builds. Lint, static checks, and the pure suite stay unconditional on
+# Job shape: every job repeats its own fixed setup (checkout + install), which
+# on the short gates takes as long as the work itself. Two consequences follow
+# here. The Gate 1 benchmark is a step of the engine job rather than a job
+# of its own — it needs no database, and 25s of eval would otherwise sit behind
+# a second checkout + install. And the production build, the slowest gate, runs
+# on PRs only when the build surface itself moves; every other code PR is
+# covered by the `gh workflow run CI --ref main` dispatch that precedes each
+# deploy, which always builds. That is current policy, and it is what keeps a
+# PR run short. Lint, static checks, and the pure suite stay unconditional on
 # every ready code PR.
 on:
   pull_request:
@@ -69,9 +62,9 @@ jobs:
   changes:
     name: classify changes
     # Draft gate for the whole workflow: every other job `needs` this one, so
-    # skipping it here skips the entire suite for draft PRs at zero cost.
+    # skipping it here skips the entire suite for draft PRs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-4GB
+    runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       docs: ${{ steps.classify.outputs.docs }}
@@ -85,6 +78,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       # Zero-install, like the docs job: the script is plain ESM on Node
       # built-ins and the global fetch. It always exits 0 — a `false` verdict
@@ -198,20 +195,20 @@ jobs:
                 ;;
             esac
 
-            # ---- EC2 `engine integration` -------------------------------
-            # The one job that cannot run on Lambda: it needs Docker Compose
-            # for Postgres/pgvector, so it is the slowest gate and the only one
-            # billed on an EC2 host. It runs exactly `pnpm test:engine` — the
-            # successor-engine simulation stores, the successor chat/admin
-            # routes, and the DB-backed image/identity-pack lifecycle suites —
-            # plus the Gate 1 benchmark step.
+            # ---- `engine integration` -----------------------------------
+            # The one job that needs a database: it brings up Docker Compose
+            # for Postgres/pgvector, which makes it the slowest gate. It runs
+            # exactly `pnpm test:engine` — the successor-engine simulation
+            # stores, the successor chat/admin routes, and the DB-backed
+            # image/identity-pack lifecycle suites — plus the Gate 1 benchmark
+            # step.
             #
             # Shape: a short list of VALIDATED EXCLUSIONS, then BROAD
             # FALLBACKS. That direction is deliberate. A stale glob here fails
             # OPEN — the job simply skips and aggregate `verify` stays green —
-            # so a new server subsystem or route family must trigger EC2 by
-            # default and stop only when someone has checked that no
-            # `test:engine` suite executes it. The dead
+            # so a new server subsystem or route family must start the
+            # integration job by default and stop only when someone has checked
+            # that no `test:engine` suite executes it. The dead
             # `apps/web/src/contracts/simulation/*` glob that sat in the engine
             # list below from PR #106 until #166 is what that failure looks
             # like. Adding a file should never require knowing the shape of the
@@ -221,8 +218,8 @@ jobs:
             # EXECUTES, not what it imports. The import closure is useless as a
             # criterion: 327 of the 334 modules under apps/web/src/contracts
             # are reachable from the suite's module graph, as is every module
-            # of the legacy chat lane. What earns an EC2 start is narrower — a
-            # defect only a real database can catch: persistence and
+            # of the legacy chat lane. What earns an integration run is
+            # narrower — a defect only a real database can catch: persistence and
             # transaction semantics, migration compatibility, concurrency and
             # keyed locking, DB-stored idempotency, branch/fork/replay
             # persistence, the projection stores, successor route→engine
@@ -238,18 +235,19 @@ jobs:
               # through `persistAssistantReply`/`pushReplyTake`
               # (chat-reply-store), `enqueueChatSummary`/`loadChatSummary`
               # (chat-summary) and `readChatEngineAuthority` (chat-authority),
-              # while chat-pipeline orchestrates those shared calls, so the EC2
-              # suite owns the three leaves' writes and their coordinator wiring.
-              # The extracted reply-stream owner retains its coordinator's
-              # selection; its lifecycle assertions run in the unit job.
+              # while chat-pipeline orchestrates those shared calls, so the
+              # integration suite owns the three leaves' writes and their
+              # coordinator wiring. The extracted reply-stream owner retains its
+              # coordinator's selection; its lifecycle assertions run in the
+              # unit job.
               apps/web/src/server/engine/chat-pipeline*|apps/web/src/server/engine/chat-reply-stream*|apps/web/src/server/engine/chat-reply-store*|apps/web/src/server/engine/chat-summary*|apps/web/src/server/engine/chat-authority*)
                 integration=true
                 ;;
               # EXCLUSION 1 — the rest of the legacy character-chat lane.
               # `pnpm test:engine` runs NONE of its 18 integration suites:
-              # those are the manual `pnpm test:int` surface. An EC2 start
-              # proves nothing about them, and their pure tests, typecheck and
-              # lint all run on Lambda.
+              # those are the manual `pnpm test:int` surface. An integration
+              # run proves nothing about them, and their pure tests, typecheck
+              # and lint all run in the other jobs.
               apps/web/src/server/engine/chat-*|apps/web/src/server/engine/prompts/chat-*|apps/web/src/server/engine/prompts/character-chat*)
                 ;;
               # EXCLUSION 2 — server subsystems no `test:engine` suite
@@ -265,7 +263,7 @@ jobs:
               # surface all live under server/, and the suite drives four route
               # families plus the identity-pack, portrait and gallery routes.
               # Narrowing the route side to the covered families was measured
-              # over 100 merged PRs and saved zero EC2 starts, so the broad
+              # over 100 merged PRs and saved zero integration runs, so the broad
               # pattern costs nothing and keeps a new route or subsystem
               # covered by default.
               apps/web/src/server/*|apps/web/src/app/api/*)
@@ -349,15 +347,17 @@ jobs:
     name: documentation checks
     needs: changes
     if: needs.changes.outputs.docs == 'true'
-    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-4GB
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # No pnpm, setup-node or install: `scripts/check-docs.mjs` is plain ESM on
-      # Node built-ins alone, and the Lambda image already carries Node 22.
-      # Job setup is the dominant billed cost of a gate this short, so a
-      # docs-only PR pays for a checkout and a few seconds of Node, nothing
-      # more. Adding a dependency to that script would silently make this job
-      # the most expensive part of every documentation PR.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No pnpm and no install: `scripts/check-docs.mjs` is plain ESM on Node
+      # built-ins alone, so this job is a checkout, a Node setup and a few
+      # seconds of script. Keeping that script dependency-free is what keeps a
+      # docs-only PR fast — adding a dependency to it would silently put a full
+      # install in front of every documentation PR.
       - name: Links, section citations, retired-document references
         run: node scripts/check-docs.mjs
 
@@ -365,7 +365,7 @@ jobs:
     name: lint
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -383,7 +383,7 @@ jobs:
     name: static checks
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -416,7 +416,7 @@ jobs:
     name: unit tests
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -432,7 +432,7 @@ jobs:
     name: engine integration
     needs: changes
     if: needs.changes.outputs.integration == 'true'
-    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -454,7 +454,7 @@ jobs:
         run: docker compose down -v
 
       # Folded in from the former `engine benchmark` job: the eval needs no
-      # database, and 25s of work was paying a second checkout + install. It
+      # database, and 25s of work was waiting on a second checkout + install. It
       # runs after teardown so a benchmark failure cannot leak the container,
       # and stays gated on `engine` — the classifier keeps that a subset of
       # `integration`, so this step is never stranded in a skipped job.
@@ -466,12 +466,12 @@ jobs:
     name: production build
     needs: changes
     # The slowest gate, and the one the pre-deploy dispatch always repeats, so
-    # PRs pay for it only when the build surface moves (manifests, module
+    # PRs run it only when the build surface moves (manifests, module
     # resolution, the Next or Docker build config). `build` is forced true for
     # workflow_dispatch and for prod-bound PRs, so the release-candidate run
     # and every promotion still build.
     if: needs.changes.outputs.build == 'true'
-    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -500,7 +500,7 @@ jobs:
       - unit
       - integration
       - production-build
-    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-4GB
+    runs-on: ubuntu-latest
     steps:
       - name: Require every applicable gate
         env:

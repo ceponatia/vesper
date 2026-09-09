@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Show why CI failed on a PR: the jobs of the run for the PR's head commit and
 # the failed steps' logs, straight from GitHub. Diagnose from these and from
-# reading code — never by running the gates locally (owner ruling: CodeBuild
+# reading code — never by running the gates locally (owner ruling: CI
 # validates; local gate runs have crashed this machine).
 #
 #   ci-failure.sh <pr> [--run <run-id>] [--lines N]
