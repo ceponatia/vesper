@@ -23,6 +23,7 @@ type FoldPrimaryPersonalFieldsInput = Pick<
   "driftedState"
   | "sink"
   | "scenario"
+  | "assistantMessageId"
 >;
 
 export function foldPrimaryPersonalFields(
@@ -40,8 +41,15 @@ export function foldPrimaryPersonalFields(
     : input.driftedState.attributeOverlays;
   // Voice-exemplar ring: the archivist's picked in-voice line joins the ≤5 ring
   // (a "" pick / degraded archivist is a no-op via appendVoiceExemplar). Rolls back with the snapshot.
+  // Carries the assistant message id that produced it (provenance), so an edit/delete of
+  // that message can find and drop the exemplar via `removeVoiceExemplarsForMessage`.
   const voiceExemplars = archivist.value
-    ? appendVoiceExemplar(input.driftedState.voiceExemplars, archivist.value.voiceExemplar, input.scenario.clockMinutes)
+    ? appendVoiceExemplar(
+        input.driftedState.voiceExemplars,
+        archivist.value.voiceExemplar,
+        input.scenario.clockMinutes,
+        input.assistantMessageId,
+      )
     : input.driftedState.voiceExemplars;
   // Open loops are full-list-each-time — but a degraded leg emits an empty
   // list that must NOT wipe the standing loops; keep the prior list on degrade. Keyed on
