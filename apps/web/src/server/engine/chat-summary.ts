@@ -58,6 +58,25 @@ export function afterWatermark(watermark: ChatWatermark): SQL | undefined {
   );
 }
 
+/**
+ * True when a message is at or before the watermark — its wording is already
+ * folded into the running summary, so an edit or delete of it must re-fold
+ * (PURE). The exact complement of {@link afterWatermark}'s tuple test: a
+ * strictly earlier `createdAt`, or the same instant with an id at or below the
+ * watermark id (string order, the complement of that condition's `gt(id)`).
+ *
+ * A null watermark means nothing has been folded, so nothing is covered and the
+ * caller owes no summary work — which is what keeps a repair on a recent
+ * message free of any model call.
+ */
+export function coveredByWatermark(message: { createdAt: Date; id: string }, watermark: ChatWatermark): boolean {
+  if (!watermark) return false;
+  const at = message.createdAt.getTime();
+  const mark = watermark.at.getTime();
+  if (at < mark) return true;
+  return at === mark && message.id <= watermark.id;
+}
+
 /** Load the running summary + watermark for a chat, or null when none exists yet. */
 export async function loadChatSummary(chatId: string): Promise<ChatSummaryState | null> {
   const [row] = await db()

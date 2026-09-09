@@ -1,6 +1,12 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { characterChats, characters, chatParticipants, db } from "@/server/db";
-import { CHAT_LOCK_LABEL_WORLD, chatExchangeLockKey, keyedLockBusy, keyedLockHolderLabel } from "@/server/engine";
+import {
+  CHAT_LOCK_LABEL_REPAIR,
+  CHAT_LOCK_LABEL_WORLD,
+  chatExchangeLockKey,
+  keyedLockBusy,
+  keyedLockHolderLabel,
+} from "@/server/engine";
 import { jsonError } from "@/server/api";
 
 /**
@@ -166,7 +172,14 @@ export function chatBusyResponse(chatId: string): ReturnType<typeof jsonError> |
   // scene" wording read as image generation on the scene strip's model picker,
   // which is how the owner's 2026-08-05 report came in as a phantom
   // "generation in progress".
-  return keyedLockHolderLabel(key) === CHAT_LOCK_LABEL_WORLD
-    ? jsonError("chat_busy", "the world is catching up on this chat; try again in a moment", 409)
-    : jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
+  const label = keyedLockHolderLabel(key);
+  if (label === CHAT_LOCK_LABEL_WORLD) {
+    return jsonError("chat_busy", "the world is catching up on this chat; try again in a moment", 409);
+  }
+  // A transcript edit/delete holds the same key while it rebuilds the summary,
+  // extracted memory and voice ring — a bounded repair, not a generation.
+  if (label === CHAT_LOCK_LABEL_REPAIR) {
+    return jsonError("chat_busy", "this conversation is repairing its memory after an edit; try again in a moment", 409);
+  }
+  return jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
 }

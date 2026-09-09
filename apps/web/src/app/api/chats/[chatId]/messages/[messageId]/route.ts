@@ -5,16 +5,18 @@ import { CHAT_CAPABILITY_UNAVAILABLE_CODE } from "@/contracts";
 import { jsonError, jsonOk, MESSAGE_CONTENT_MAX, readBody, withOwnedChat } from "@/server/api";
 import { characterChatMessages, db } from "@/server/db";
 import {
+  CHAT_LOCK_LABEL_REPAIR,
   CHAT_PERMISSION_SOURCE_MESSAGE_IMMUTABLE,
+  chatExchangeLockKey,
   chatMessageHasNpcPermissionAuthority,
   isSimRoutedAuthority,
   readChatEngineAuthority,
-  reconcileMessageMemory,
-  reextractEditedReply,
+  repairChatContinuityAfterEdit,
+  tryKeyedLock,
 } from "@/server/engine";
 import { deleteOwnedChatUploads } from "@/server/images";
 import { resolveChatPersona } from "@/server/players";
-import { loadOwnedChat } from "../../../owned";
+import { chatBusyResponse, loadOwnedChat } from "../../../owned";
 
 type Params = { chatId: string; messageId: string };
 type OwnedChat = NonNullable<Awaited<ReturnType<typeof loadOwnedChat>>>;
@@ -27,10 +29,21 @@ const ownedChat = (user: { id: string }, params: Params) => loadOwnedChat(params
  * the recovery levers for a "poisoned" transcript: a single refusal persisted into
  * the window primes more refusals on every later turn — snipping or rewriting the
  * offending line restores the conversation without nuking it (the whole-conversation
- * DELETE lives on the parent route). Both also reconcile the memory extracted from
- * an assistant line: delete retracts it; edit retracts and re-extracts from the
- * edited text (fire-and-forget, same resilience as the live fan-out). Ownership
- * resolves through the chat row; a miss is a 404, never a silent no-op.
+ * DELETE lives on the parent route). Ownership resolves through the chat row; a miss
+ * is a 404, never a silent no-op.
+ *
+ * The transcript row is not the only place the old wording lives, so both verbs run
+ * the continuity repair (`repairChatContinuityAfterEdit`) BEFORE answering: the
+ * extracted memory is retracted (and re-extracted on an edit), the rolling summary is
+ * re-folded when the line is at or before its watermark, and any voice exemplar
+ * quoting the line is dropped from the state rows. All of it is awaited — a
+ * fire-and-forget repair lets an immediate next send retrieve the wording the player
+ * just removed — and all of it runs under the chat exchange lock, because the
+ * exchange finalizer rewrites the state row's rings wholesale and would clobber a
+ * concurrent scrub. A chat that is already streaming (or already repairing) answers
+ * 409 `chat_busy` with nothing written. The response carries a `continuity` block
+ * reporting what each step did; a step that failed is reported there rather than
+ * failing the write that already committed.
  */
 
 const editBodySchema = z.object({
@@ -38,6 +51,16 @@ const editBodySchema = z.object({
   // edit must accept any reply the model legitimately produced.
   content: z.string().trim().min(1).max(MESSAGE_CONTENT_MAX),
 });
+
+/**
+ * The refusal when the exchange key could not be taken between the fast-path probe
+ * and the acquire — the same `chat_busy` code and status the probe answers, so a
+ * caller cannot tell (and need not care) which of the two bounced it. Both mean
+ * "another writer owns this chat; nothing was written; try again". Precedent:
+ * `overrideChatBusyResponse` on the permission override.
+ */
+const repairRaceBusyResponse = () =>
+  jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
 
 /** PATCH /api/chats/:chatId/messages/:messageId — overwrite one message's text. */
 export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _owned, req: NextRequest, ctx) => {
@@ -64,28 +87,62 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _o
       409,
     );
   }
+  // Both refusals above are checked before anything is taken or written.
+  const busy = chatBusyResponse(chatId);
+  if (busy) return busy;
 
-  const [updated] = await db()
-    .update(characterChatMessages)
-    .set({ content: body.value.content })
-    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
-    .returning({ id: characterChatMessages.id, role: characterChatMessages.role });
+  const held = tryKeyedLock(
+    chatExchangeLockKey(chatId),
+    async () => {
+      // The wording BEFORE the write: what the summary folded, the scribe filed,
+      // and the voice ring may still quote.
+      const [previous] = await db()
+        .select({ content: characterChatMessages.content })
+        .from(characterChatMessages)
+        .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+        .limit(1);
 
-  if (!updated) return jsonError("not_found", "message not found", 404);
+      const [updated] = await db()
+        .update(characterChatMessages)
+        .set({ content: body.value.content })
+        .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+        .returning({
+          id: characterChatMessages.id,
+          role: characterChatMessages.role,
+          createdAt: characterChatMessages.createdAt,
+        });
+      if (!updated) return null;
 
-  if (updated.role === "assistant") {
-    const player = await resolveChatPersona({ ownerId: user.id, chatId });
-    void reextractEditedReply({
-      chatId,
-      messageId,
-      memoryGroupId: owned.participant.memoryGroupId,
-      characterId: owned.participant.characterId,
-      characterName: owned.character.name,
-      playerName: player.name,
-      content: body.value.content,
-    });
-  }
-  return jsonOk({ id: updated.id });
+      const reextract =
+        updated.role === "assistant"
+          ? {
+              memoryGroupId: owned.participant.memoryGroupId,
+              characterId: owned.participant.characterId,
+              characterName: owned.character.name,
+              playerName: (await resolveChatPersona({ ownerId: user.id, chatId })).name,
+              content: body.value.content,
+            }
+          : null;
+
+      const continuity = await repairChatContinuityAfterEdit({
+        chatId,
+        operation: "edit",
+        message: {
+          id: updated.id,
+          role: updated.role,
+          createdAt: updated.createdAt,
+          previousContent: previous?.content ?? "",
+        },
+        ...(reextract ? { reextract } : {}),
+      });
+      return { id: updated.id, continuity };
+    },
+    CHAT_LOCK_LABEL_REPAIR,
+  );
+  if (held === null) return repairRaceBusyResponse();
+  const result = await held;
+  if (!result) return jsonError("not_found", "message not found", 404);
+  return jsonOk(result);
 });
 
 /** DELETE /api/chats/:chatId/messages/:messageId — remove a single message. */
@@ -107,18 +164,45 @@ export const DELETE = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _
       409,
     );
   }
+  const busy = chatBusyResponse(chatId);
+  if (busy) return busy;
 
-  const [deleted] = await db()
-    .delete(characterChatMessages)
-    .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
-    .returning({ id: characterChatMessages.id, role: characterChatMessages.role });
+  const held = tryKeyedLock(
+    chatExchangeLockKey(chatId),
+    async () => {
+      // The delete's own `returning()` carries everything the repair needs: the
+      // snipped wording, the role, and the timestamp the watermark compares against.
+      const [deleted] = await db()
+        .delete(characterChatMessages)
+        .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
+        .returning({
+          id: characterChatMessages.id,
+          role: characterChatMessages.role,
+          content: characterChatMessages.content,
+          createdAt: characterChatMessages.createdAt,
+        });
+      if (!deleted) return null;
 
-  if (!deleted) return jsonError("not_found", "message not found", 404);
-  // A snipped assistant line takes its extracted memory with it —
-  // fire-and-forget; a failure leaves stale memory, never a failed delete.
-  if (deleted.role === "assistant") void reconcileMessageMemory(messageId);
-  // A snipped user line takes its attached photos with it.
-  // The owner id remains part of the helper predicate even after the chat gate above.
-  if (deleted.role === "user") void deleteOwnedChatUploads(chatId, user.id, [messageId]);
-  return jsonOk({ deleted: true });
+      // A snipped user line takes its attached photos with it.
+      // The owner id remains part of the helper predicate even after the chat gate above.
+      if (deleted.role === "user") void deleteOwnedChatUploads(chatId, user.id, [messageId]);
+
+      const continuity = await repairChatContinuityAfterEdit({
+        chatId,
+        operation: "delete",
+        message: {
+          id: deleted.id,
+          role: deleted.role,
+          createdAt: deleted.createdAt,
+          previousContent: deleted.content,
+        },
+      });
+      return { deleted: true as const, continuity };
+    },
+    CHAT_LOCK_LABEL_REPAIR,
+  );
+  if (held === null) return repairRaceBusyResponse();
+  const result = await held;
+  if (!result) return jsonError("not_found", "message not found", 404);
+  return jsonOk(result);
 });
