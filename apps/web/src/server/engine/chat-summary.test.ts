@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { CHAT_SUMMARY_MAX_CHARS } from "@/contracts/turns/chat-summary";
-import { clampSummary, normalizeChatSummary, planChatFold } from "./chat-summary";
+import { clampSummary, coveredByWatermark, normalizeChatSummary, planChatFold } from "./chat-summary";
 import {
   CHARACTER_CHAT_HISTORY_TURNS,
   CHARACTER_CHAT_SUMMARIZE_AT,
@@ -79,5 +79,29 @@ describe("normalizeChatSummary", () => {
     const out = normalizeChatSummary("prior.", { summary: "  a fresh, integrated recap.  " }, false, sink);
     expect(out).toEqual({ summary: "a fresh, integrated recap.", advance: true });
     expect(sink.items).toHaveLength(0);
+  });
+});
+
+describe("coveredByWatermark", () => {
+  const at = new Date(1_700_000_000_000);
+  const watermark = { at, id: "m-50" };
+
+  it("covers nothing when no fold has happened (a repair then makes no model call)", () => {
+    expect(coveredByWatermark({ createdAt: at, id: "m-50" }, null)).toBe(false);
+    expect(coveredByWatermark({ createdAt: new Date(at.getTime() - 5_000), id: "m-01" }, null)).toBe(false);
+  });
+
+  it("covers a strictly earlier message", () => {
+    expect(coveredByWatermark({ createdAt: new Date(at.getTime() - 1), id: "zzz" }, watermark)).toBe(true);
+  });
+
+  it("breaks a same-instant tie on the id, the complement of afterWatermark's gt(id)", () => {
+    expect(coveredByWatermark({ createdAt: at, id: "m-49" }, watermark)).toBe(true);
+    expect(coveredByWatermark({ createdAt: new Date(at.getTime()), id: "m-50" }, watermark)).toBe(true); // the watermark row itself
+    expect(coveredByWatermark({ createdAt: at, id: "m-51" }, watermark)).toBe(false);
+  });
+
+  it("leaves a later message uncovered whatever its id", () => {
+    expect(coveredByWatermark({ createdAt: new Date(at.getTime() + 1), id: "m-01" }, watermark)).toBe(false);
   });
 });
