@@ -31,7 +31,10 @@ evolution: `source:"narrative"` trait shifts the archivist proposes only at rela
 milestones, clamped one band from the authored value, guarded to `developable` traits —
 resolved on top of the authored traits at prompt build, editable/rollback-safe); the
 `voice_exemplars` ring (≤5 distinctly in-voice lines the
-archivist picks ≤1 of per exchange, rendered as the "How you sound" few-shots past the
+archivist picks ≤1 of per exchange, each entry carrying the `sourceMessageId` of the
+assistant message it was copied from — null on entries written before provenance
+existed — so editing or deleting that message can remove the exemplar it produced;
+rendered as the "How you sound" few-shots past the
 events-only summary horizon; `lastMemoryTrace.characterSlip` is the one-turn
 character-consistency corrective);
 `lastPulseTrace` / `lastMemoryTrace`), the relationship arc (`relationship_history` — a

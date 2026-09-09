@@ -12,8 +12,8 @@ resolves through the chat row (`chats/owned.ts` `loadOwnedChat`) on every route 
   rename/archive/restore, and the hard delete.
 - **`POST /api/chats/:chatId/stop`** — cut the in-flight reply short (the prefix persists
   with `meta.stopped`).
-- **`PATCH/DELETE /api/chats/:chatId/messages/:messageId`** — edit / snip one line; both
-  reconcile the line's extracted memory.
+- **`PATCH/DELETE /api/chats/:chatId/messages/:messageId`** — edit / snip one line, then
+  rebuild every derivative that still carries its old wording (§Continuity repair below).
 - **`PATCH /api/chats/:chatId/messages/:messageId/take`** — make a recorded take the
   displayed reply (display-only).
 - **`GET/POST /api/chat-presets` · `DELETE /api/chat-presets/:id`** — scenario presets;
@@ -34,6 +34,41 @@ plain-text token stream; an archived chat answers 409 `chat_archived`.
 transcript-only PATCH/DELETE routes return 409 `message_has_permission_authority` for those
 rows: editing or snipping prose may not rewrite NPC agency. A state-aware regenerate/rerun
 path performs the explicit permission and contact rollback instead.
+
+### Continuity repair
+
+**An edited or snipped line's wording also lives outside the transcript** — folded into the
+rolling summary, extracted into facts and an episode, and possibly kept as a voice exemplar —
+so both verbs rebuild all three before answering, and await the work: a fire-and-forget repair
+lets the very next send retrieve what the player just removed.
+
+- **Memory** — an assistant line's extraction is retracted; an edit re-files the scribe leg
+  from the new text. Memory is anchored on assistant message ids, so a user line has none.
+- **Summary** — re-folded (`rebuildChatSummary`) whenever the line's `(createdAt, id)` is at
+  or before the summary watermark, for user and assistant lines alike. A line AFTER the
+  watermark is still verbatim in the window and costs no model call. The rebuild resets the
+  row before re-folding, so a degraded fold ends at an empty summary with a null watermark —
+  the whole transcript verbatim again, never the stale recap.
+- **Voice** — every exemplar sourced from the line is dropped from each roster member's live
+  ring and from its "another take" rollback snapshot, so a retake cannot resurrect it. An
+  exemplar recorded before provenance existed is dropped when its line occurs verbatim in the
+  old content.
+
+The repair holds the chat exchange lock, because the exchange finalizer rewrites the state
+row's rings wholesale: both verbs answer 409 `chat_busy`, having written nothing, while a
+reply streams or another repair runs — and a send that arrives mid-repair gets the same code
+naming the repair. The transcript write commits before the derivatives are rebuilt, so a step
+that fails is reported rather than failing the request.
+
+`PATCH` returns `{ id, continuity }` and `DELETE` returns `{ deleted: true, continuity }`:
+
+| Field                   | Values                                                    |
+| ----------------------- | --------------------------------------------------------- |
+| `summary`               | `rebuilt` \| `unaffected` \| `failed`                     |
+| `memory`                | `reextracted` \| `reconciled` \| `unaffected` \| `failed` |
+| `voiceExemplarsRemoved` | exemplars dropped from the live rings                     |
+| `voice`                 | `scrubbed` \| `unaffected` \| `failed`                    |
+| `diagnostics`           | the repair's diagnostic codes                             |
 
 ## Roster and relationships
 
@@ -239,7 +274,10 @@ no callback line) · `chat_vision.describe_failed` (a degraded photo read — th
 sees "a photo you can't quite make out"; a non-degraded later retake retries) ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` ·
-`chat_state.snapshot.missing` · `chat_memory.reconciled` · the `romantic_touch` permission
+`chat_state.snapshot.missing` · `chat_memory.reconciled` · the transcript-edit repair's
+`chat_continuity.summary.rebuilt` / `.summary.failed` / `.memory.failed` / `.voice.scrubbed`
+/ `.voice.failed` (§Continuity repair; the tracker leg's `chat_continuity.*` above is a
+different leg) · the `romantic_touch` permission
 owner's `chat_permission.scene.stale` (a racing scene write refused the whole append —
 nothing committed), `chat_permission.rollback.failed` (**error** — a retake exhausted the
 discarded-take permission prune retries, so the retake is refused before a replacement reply
@@ -248,7 +286,9 @@ payload degrades to a generic stop line rather than silence) and `.stop_guidance
 (more pending stops than the transition budget; the generic line is cut before any named
 pair).
 
-Route errors: `chat_busy` (409), `chat_archived` (409), `message_has_permission_authority`
+Route errors: `chat_busy` (409; a streaming reply, a world catch-up, or a transcript edit
+repairing the conversation's derivatives — the message names which), `chat_archived` (409),
+`message_has_permission_authority`
 (409; a transcript-only edit/delete tried to rewrite an NPC permission source),
 `scene_conflict` (409; the permission override lost a scene CAS — retry),
 `invalid_rerun_target` (400), `rerun_requires_branch` (400; an older line cannot be safely

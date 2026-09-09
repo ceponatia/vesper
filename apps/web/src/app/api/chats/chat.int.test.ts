@@ -982,19 +982,16 @@ describe.runIf(ready)("message delete reconciles provenanced memory", () => {
     const messageId = await insertMessage(chat.id, "assistant", "she admits she's afraid of storms");
     await plantMemory(chat.memoryGroupId, messageId);
 
-    expect((await msgDelete(delMsgReq(chat.id, messageId), msgCtx(chat.id, messageId))).status).toBe(200);
+    const res = await msgDelete(delMsgReq(chat.id, messageId), msgCtx(chat.id, messageId));
+    const body = await expectJson<{ deleted: true; continuity: { memory: string } }>(res, 200);
+    expect(body.continuity.memory).toBe("reconciled");
 
-    // The reconcile is fire-and-forget behind the response — poll, don't sleep blind.
-    const factStatus = await pollUntil(async () => {
-      const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, messageId));
-      return fact?.status === "retracted" ? fact.status : null;
-    });
-    expect(factStatus).toBe("retracted");
-    const episodesGone = await pollUntil(async () => {
-      const remaining = await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, messageId));
-      return remaining.length === 0 ? true : null;
-    });
-    expect(episodesGone).toBe(true);
+    // The reconcile is AWAITED inside the delete (a later send must not be able to
+    // retrieve the snipped line's memory), so the response IS the synchronization
+    // point — assert directly rather than polling behind a fire-and-forget.
+    const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, messageId));
+    expect(fact?.status).toBe("retracted");
+    expect(await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, messageId))).toHaveLength(0);
   });
 });
 

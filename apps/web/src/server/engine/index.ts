@@ -9,6 +9,14 @@ export type { ChatPromptPreview } from "./chat-prompt-preview";
 export { chatVisualStateShadowInput } from "./chat-visual-state-cut";
 export type { ChatVisualStateCut } from "./chat-visual-state-cut";
 export { reextractEditedReply } from "./chat-message-edits";
+export { repairChatContinuityAfterEdit } from "./chat-continuity-repair";
+export type {
+  ChatContinuityMemoryOutcome,
+  ChatContinuityRepair,
+  ChatContinuityRepairInput,
+  ChatContinuitySummaryOutcome,
+  ChatContinuityVoiceOutcome,
+} from "./chat-continuity-repair";
 export { deleteChat } from "./chat-delete";
 export { stopChatReply } from "./chat-reply-stream";
 export {

@@ -97,7 +97,14 @@ import {
 import { reconcileActorWardrobes } from "./chat-garments";
 import { enqueueChatSummary, loadChatSummary, loadVerbatimWindow } from "./chat-summary";
 import { CHARACTER_CHAT_SUMMARIZE_AT, CHAT_TICK_MINUTES, CHAT_RERUN_LOCK_WAIT_MS } from "./constants";
-import { acquireKeyedLockWithin, CHAT_LOCK_LABEL_REPLY, chatExchangeLockKey, tryKeyedLock } from "./keyed-lock";
+import {
+  acquireKeyedLockWithin,
+  CHAT_LOCK_LABEL_REPAIR,
+  CHAT_LOCK_LABEL_REPLY,
+  chatExchangeLockKey,
+  keyedLockHolderLabel,
+  tryKeyedLock,
+} from "./keyed-lock";
 import { chatNotationNote, type CharacterChatPromptInput } from "./prompts/character-chat";
 import { chatAffordanceCuesEnabled, chatContactActionsEnabled, narrationShapeId } from "./prompts/constants";
 import { chatOwnerId, playerPromptSlice, promptStateSlice } from "./chat-prompt-input";
@@ -190,7 +197,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     chatLock = tryKeyedLock(lockKey, () => chatLockGate, CHAT_LOCK_LABEL_REPLY);
   }
   if (chatLock === null) {
-    return { ok: false, code: "chat_busy", message: "a reply is still streaming for this chat; wait for it to finish" };
+    // Name the ACTUAL holder, the way `chatBusyResponse` does for the state
+    // routes: a continuity repair takes this same key while it rebuilds the
+    // summary, memory and voice ring after a transcript edit, and blaming a
+    // streaming reply there sends the player looking for a bubble that is not
+    // coming.
+    const message =
+      keyedLockHolderLabel(lockKey) === CHAT_LOCK_LABEL_REPAIR
+        ? "this conversation is repairing its memory after an edit; try again in a moment"
+        : "a reply is still streaming for this chat; wait for it to finish";
+    return { ok: false, code: "chat_busy", message };
   }
   void chatLock; // resolves via releaseChatLock; never rejects
 

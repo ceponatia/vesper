@@ -46,6 +46,15 @@ export function chatExchangeLockKey(chatId: string): string {
  */
 export const CHAT_LOCK_LABEL_REPLY = "reply";
 export const CHAT_LOCK_LABEL_WORLD = "world_catchup";
+/**
+ * A transcript edit/delete rebuilding the conversation's model-facing
+ * derivatives (summary, extracted memory, voice exemplars). It takes the same
+ * key as a reply because the exchange finalizer rewrites the state row's rings
+ * wholesale from in-memory state: a scrub that interleaved with a streaming
+ * reply would be clobbered, and a reply that began mid-repair would read the
+ * derivatives being repaired.
+ */
+export const CHAT_LOCK_LABEL_REPAIR = "continuity_repair";
 
 /** True while any holder or waiter is active on the key. */
 export function keyedLockBusy(key: string): boolean {

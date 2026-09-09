@@ -50,7 +50,7 @@ the chat lane must never re-fork it.
 ## Where things live
 
 - **Exchange orchestration** — `server/engine/chat-pipeline.ts`; focused preparation, contact, guidance, narrator construction and member settlement live in `server/engine/chat-turn-{prepare,contact,guidance,prompt,settle}.ts`; reply streaming, Stop, and watchdogs live in `server/engine/chat-reply-stream.ts`
-- **Prompt previews and shared cuts** — `server/engine/chat-prompt-preview.ts`, `chat-visual-state-cut.ts`, and `chat-prompt-input.ts`; reply repair and deletion live in `chat-message-edits.ts` and `chat-delete.ts`
+- **Prompt previews and shared cuts** — `server/engine/chat-prompt-preview.ts`, `chat-visual-state-cut.ts`, and `chat-prompt-input.ts`; reply repair and deletion live in `chat-message-edits.ts` and `chat-delete.ts`, and the transcript-edit continuity repair — summary re-fold, memory retract/re-extract, voice-ring scrub — in `chat-continuity-repair.ts`
 - **Reply persistence, rerun cuts and take history** — `server/engine/chat-reply-store.ts`
 - **Model stream** — `server/engine/character-chat.ts`
 - **State types, seeds, time, pulse rules, and readout** — `server/engine/chat-state/{types,seed,time,pulse-rules,readout}.ts`; **state persistence, rollback, edits, and atomic surface settlement** — `server/engine/chat-state/{store,snapshots,edit,surface-transfer}.ts`; **pulse and authorized outfit folds** — `server/engine/chat-state/{pulse-agent,outfit-evidence,outfit-fold}.ts`; **finalization and member settlement** — `server/engine/chat-state/{finalize,ensemble}.ts`, exposed through `server/engine/chat-state.ts`

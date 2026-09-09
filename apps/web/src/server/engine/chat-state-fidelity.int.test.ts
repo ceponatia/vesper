@@ -38,8 +38,8 @@ const richProfile = (): CharacterProfile => ({
 const richState = (): ChatState => ({
   ...seedChatState(richProfile()),
   voiceExemplars: [
-    { line: "Tell me you at least practiced the toast.", atClockMinutes: 30 },
-    { line: "No promises.", atClockMinutes: 60 },
+    { line: "Tell me you at least practiced the toast.", atClockMinutes: 30, sourceMessageId: null },
+    { line: "No promises.", atClockMinutes: 60, sourceMessageId: null },
   ],
   traitOverlays: [{ id: "temperament.warmth", value: 20, source: "narrative", note: "narrative arc" }],
 });
