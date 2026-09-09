@@ -2301,8 +2301,8 @@ describe("voice and evolution blocks", () => {
         regard: 0,
         conditions: [],
         voiceExemplars: [
-          { line: "Prague in spring — of course it is.", atClockMinutes: 30 },
-          { line: "No promises.", atClockMinutes: 60 },
+          { line: "Prague in spring — of course it is.", atClockMinutes: 30, sourceMessageId: null },
+          { line: "No promises.", atClockMinutes: 60, sourceMessageId: null },
         ],
       },
     });
