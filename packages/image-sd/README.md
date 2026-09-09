@@ -142,5 +142,5 @@ transport, prediction execution and response normalization.
 - Tests live beside their subject. Each one opens by naming the invariant it
   protects and the bad implementation it kills; Zod's own behavior is never
   tested, only the rules layered on it.
-- Validation is CI-gated: GitHub Actions on CodeBuild runners is the gate, per
-  the root `CLAUDE.md`. There are no local git hooks and no local gate.
+- Validation is CI-gated: GitHub Actions on GitHub-hosted runners is the gate,
+  per the root `AGENTS.md`. There are no local git hooks and no local gate.

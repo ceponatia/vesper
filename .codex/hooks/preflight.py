@@ -33,7 +33,7 @@ import sys
 ACK_DEPLOY = "VESPER_DEPLOY_DIRTY_OK=1"
 ACK_INDEX = "VESPER_INDEX_OK=1"
 # Local gate runs are an owner ruling (2026-08-22, tightened 2026-08-24):
-# CodeBuild validates; a local lint:package-resolution took the desktop down.
+# CI validates; a local lint:package-resolution took the desktop down.
 # The settings deny list catches the bare families; this catches every
 # `pnpm test:*` / `pnpm lint:*` sub-script, `pnpm run …`, and scripts/verify.sh,
 # which the deny syntax (space-star prefixes only) cannot express.
@@ -189,7 +189,7 @@ def check(command: str, start_cwd: str) -> tuple[str | None, str | None]:
             return (
                 f"[vesper preflight] `{gate}` is a local gate run, and those are off-limits here "
                 "(owner ruling 2026-08-22, tightened 2026-08-24 after a local lint run coincided with the desktop "
-                "crashing). CI on CodeBuild is the gate: push the branch and read the result "
+                "crashing). CI on GitHub-hosted runners is the gate: push the branch and read the result "
                 "(.agents/skills/vesper-pr-review/wait-ci.sh, ci-failure.sh). Diagnose from CI logs and by reading code. "
                 "Only `pnpm lint:docs` is sanctioned locally, for documentation-only changes.",
                 None,

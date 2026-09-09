@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# RETIRED from the workflow (owner decision 2026-08-22). CI on AWS CodeBuild
-# (.github/workflows/ci.yml) is the gate; nothing invokes this script and the
+# RETIRED from the workflow (owner decision 2026-08-22). CI on GitHub-hosted
+# runners (.github/workflows/ci.yml) is the gate; nothing invokes this script and the
 # `pnpm verify` / `pnpm verify:full` aliases are removed. It is kept only as a
 # hand-run curiosity; prefer pushing the PR and letting CI validate.
 #
@@ -21,7 +21,7 @@ usage() {
 usage: bash scripts/verify.sh [target...]
 
 RETIRED helper — this is not a repository gate. The authoritative gate is
-.github/workflows/ci.yml on AWS CodeBuild. For the full pre-deploy gate run:
+.github/workflows/ci.yml on GitHub-hosted runners. For the full pre-deploy gate run:
   gh workflow run CI --ref main
 
 Targets (default: all)

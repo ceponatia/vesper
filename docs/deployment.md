@@ -174,7 +174,7 @@ moves through a **promotion PR**.
    *Run workflow* (opens a `main → prod` PR for you), or locally:
    `gh pr create --base prod --head main`.
 2. **Require the promotion PR's full CI run to pass.** A PR whose base is `prod`
-   forces every CodeBuild gate, engine integration and production build included,
+   forces every CI gate, engine integration and production build included,
    regardless of changed paths. The required aggregate `verify` check is the
    release-candidate gate for the promotion itself.
 3. **Merge** the PR. That's the only way commits reach `prod`.
@@ -188,11 +188,11 @@ checkpoints; neither is a local wrapper.
 
 - Pull request required before merging (0 required approvals — solo repo; GitHub
   won't let you approve your own PR, so requiring one would lock you out).
-- **Required status check: `verify`** — the aggregate result of the
-  CodeBuild-runner CI workflow. A promotion PR (base `prod`) always runs the
-  full suite, engine and build included, so the check is meaningful on exactly
-  the PR it guards. `main` requires the same check, without admin enforcement,
-  so direct documentation pushes still work.
+- **Required status check: `verify`** — the aggregate result of the CI workflow.
+  A promotion PR (base `prod`) always runs the full suite, engine and build
+  included, so the check is meaningful on exactly the PR it guards. `main`
+  requires the same check, without admin enforcement, so direct documentation
+  pushes still work.
 - Force-pushes and branch deletion blocked.
 - **Enforced for admins too** — even the owner merges via a PR. For a
   genuine emergency, toggle protection off in the GitHub UI

@@ -93,7 +93,7 @@ Integration files run without file parallelism because they share a database. Im
 
 ## The verification gate
 
-GitHub Actions runs `.github/workflows/ci.yml` on AWS CodeBuild managed runners. Draft pull requests run no jobs. Ready pull requests run jobs selected from changed paths; a manual dispatch on `main` and every pull request into `prod` force the integration and production-build gates.
+GitHub Actions runs `.github/workflows/ci.yml` on GitHub-hosted `ubuntu-latest` runners. Draft pull requests run no jobs. Ready pull requests run jobs selected from changed paths; a manual dispatch on `main` and every pull request into `prod` force the integration and production-build gates.
 
 | Job                  | Current command and claim                                                           |
 | -------------------- | ----------------------------------------------------------------------------------- |

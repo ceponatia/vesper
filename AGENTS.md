@@ -67,8 +67,8 @@
   code and CI logs. `pnpm lint:docs` is the documentation exception.
 - Dependency-free offline fixtures for skill/helper behavior may run locally if they import no application
   code, start no service, and make no external mutation. They never substitute for application CI.
-- GitHub Actions CI on CodeBuild is the gate. Draft PRs run no gates; ready PRs run applicable jobs. The
-  aggregate `verify` check is required on `main` and `prod`.
+- GitHub Actions CI on GitHub-hosted runners is the gate. Draft PRs run no gates; ready PRs run applicable
+  jobs. The aggregate `verify` check is required on `main` and `prod`.
 - Do not add a CI workflow without an explicit owner decision.
 - Report only what the exact workflow/run selected at the tested head SHA. A green aggregate does not prove
   an unscheduled suite ran; the full `app-int` surface is not currently selected by ordinary CI.
