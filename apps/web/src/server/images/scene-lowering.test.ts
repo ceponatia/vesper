@@ -50,6 +50,7 @@ import {
 } from "./character-prompt-program";
 import { emptySceneRenderPlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import {
+  IMAGE_SCENE_MOOD_REDUNDANT,
   IMAGE_SCENE_STAGING_UNSENT,
   lowerScenePlan,
   sceneLightingBand,
@@ -324,10 +325,14 @@ describe("the compiled scene prompt over a populated plan", () => {
       "Lit by dim lamplight.",
     ]);
 
-    // And NOT the mood: this focal was given a pose and an activity, which is
-    // the visible half of the same moment, so the abstract label is withheld
-    // (#544 D9 — the branches are pinned under "the mood label" below).
-    expect(program.prompt).not.toContain("The mood is");
+    // AND the mood, beside the pose: atmosphere and expression are two claims
+    // about two different things, and neither the setting ("a lamplit study,
+    // rain streaking the tall window") nor the light ("dim lamplight") says
+    // "quiet" or "unhurried". Matched loosely because the SENTENCE is the
+    // dialect's — the 2511 band words it as atmosphere and the prose family as
+    // mood — while the claim reaching the prompt at all is this file's.
+    expect(program.prompt).toMatch(/\b(?:mood|atmosphere) is\b/);
+    expect(program.prompt).toContain("quiet and unhurried");
 
     // The scene's own light, never the release's declared `bright` placeholder.
     expect(program.prompt).not.toContain("Bright, even light.");
@@ -548,36 +553,52 @@ describe("an absent capture decision", () => {
 });
 
 /**
- * THE TWO CLAIMS A DESCRIBED SUBJECT MAKES REDUNDANT (issue #544, D3/D9).
+ * THE TWO CLAIMS ANOTHER SENTENCE CAN MAKE REDUNDANT (issue #544, D3/D9;
+ * #550 for the mood's rule).
  *
  * Both are claims that exist to cover for something the shot did not say, and
- * both were emitted unconditionally beside the thing that said it:
+ * both were emitted unconditionally beside the thing that said it — but they are
+ * made redundant by DIFFERENT text, and conflating the two is what cost the
+ * atmosphere its sentence:
  *
  * - the **possession** clause binds every visible body part to the cast so an
  *   unowned limb noun cannot be composed as the viewer's foreground hand. With
  *   no limb noun anywhere in the action text there is no limb to bind, and the
  *   clause spends a claim asserting ownership of parts nobody mentioned;
- * - the **mood** is an emotional label ("nervous, curious") and a pose is the
- *   visible expression that label was about ("a small smile playing at her
- *   lips"). Handed both, an image model paints the abstraction over the concrete
- *   one — but a location-only shot, and a focal the composer said nothing about,
- *   have nothing else to say how the picture feels, so there the label stays.
+ * - the **mood** is ATMOSPHERE — the air of the place and the moment — and the
+ *   only text that can make it redundant is the place's own. A described pose
+ *   does not: "a small smile playing at her lips" says what her face is doing
+ *   and says nothing about the air of the room, so a shot that dropped the
+ *   atmosphere for it would lose the only sentence saying how the picture feels.
+ *   A lighting phrase that already contains every content word of the mood
+ *   does, and that shot states the light once instead of twice.
  *
  * Lowered directly rather than compiled: `possessionFact` and `moodFact` are
  * this module's, and both branches of each are the whole claim.
  */
-describe("the claims a described subject makes redundant", () => {
+describe("the claims another sentence makes redundant", () => {
   const CAST = [{ subjectId: LANE_PROBE_SUBJECT_ID, name: LANE_PROBE_NAME }];
 
-  /** The disembodied probe shot, with the focal's two action fields stated outright. */
-  const shotWith = (pose: string, activity: string): SceneProgramInputs => {
+  /**
+   * The disembodied probe shot, with the focal's two action fields stated
+   * outright. `over` reaches the PLACE — the probe plan is set in "a lamplit
+   * study" under "soft natural light", which shares no word with the default
+   * mood, so a case that wants redundancy has to write the overlap itself.
+   */
+  const shotWith = (
+    pose: string,
+    activity: string,
+    over: Partial<SceneRenderPlan> = {},
+    sink?: DiagnosticCollector,
+  ): SceneProgramInputs => {
     const base = laneProbeCastScenePlan([laneProbeCastMember()]);
     const focal = base.focal;
     if (focal === null) throw new Error("the probe cast fixture lost its focal");
     return lowerScenePlan({
-      plan: { ...base, others: [], mood: "quiet and unhurried", focal: { ...focal, pose, activity } },
+      plan: { ...base, others: [], mood: "quiet and unhurried", focal: { ...focal, pose, activity }, ...over },
       cast: CAST,
       allowIntimate: false,
+      ...(sink === undefined ? {} : { sink }),
     });
   };
 
@@ -600,15 +621,67 @@ describe("the claims a described subject makes redundant", () => {
     expect(has(shotWith(pose, activity), "scene.possession")).toBe(false);
   });
 
-  it("withholds the mood label where the focal's own pose or activity carries the moment", () => {
-    expect(has(shotWith("a small smile playing at her lips", ""), "scene.mood")).toBe(false);
-    expect(has(shotWith("", "reaching for a cup of coffee"), "scene.mood")).toBe(false);
+  /**
+   * Falsified against the gate this replaced, which withheld the atmosphere
+   * whenever the focal had ANY pose or activity text. That gate was written for
+   * an emotion-label mood; the composer's rule now says mood is atmosphere and
+   * pose is the expression, and under it "standing beside the desk" was deleting
+   * "tense fluorescent stillness" from every described shot.
+   */
+  it.each([
+    ["an expression in the pose", "a small smile playing at her lips", ""],
+    ["an ordinary activity", "", "reaching for a cup of coffee"],
+    ["both fields", "settling into the chair", "watching the rain"],
+  ])("keeps the composer's atmosphere beside %s", (_case, pose, activity) => {
+    expect(has(shotWith(pose, activity), "scene.mood")).toBe(true);
   });
 
-  it("states the mood where nothing else says how the picture feels", () => {
+  /**
+   * The one ground for withholding it: the place's own text already says it, so
+   * the prompt would carry the same claim twice and the model would weight it
+   * twice. Deterministic — lower-case, split on non-letters, function words
+   * dropped — and recorded, because a silently deleted composer field is the
+   * failure this whole branch exists to make visible.
+   */
+  it("withholds an atmosphere the lighting text already states, and records why", () => {
+    const sink = new DiagnosticCollector();
+    const lowered = shotWith(
+      "a small smile playing at her lips",
+      "",
+      { mood: "dark", lighting: "a single candle against the dark" },
+      sink,
+    );
+
+    expect(has(lowered, "scene.mood")).toBe(false);
+    const redundant = sink.items.find((item) => item.code === IMAGE_SCENE_MOOD_REDUNDANT);
+    expect(redundant?.severity).toBe("info");
+    expect(redundant?.context).toMatchObject({ mood: "dark", words: ["dark"] });
+  });
+
+  /**
+   * The setting is the other half of the place, and case and punctuation are
+   * normalized on both sides — otherwise the rule would fire on "Dark" and not
+   * on "dark," and a composer's capitalization would decide what the prompt says.
+   */
+  it("withholds an atmosphere the setting text already states, whatever its case and punctuation", () => {
+    const lowered = shotWith("", "", {
+      mood: "Hushed, Reverent.",
+      setting: "a hushed reverent chapel, candles guttering",
+    });
+
+    expect(has(lowered, "scene.mood")).toBe(false);
+  });
+
+  it("states the atmosphere where the place's own words do not", () => {
     // A focal the composer described in neither field: the roster backfill's
-    // shape, and the state the label is the only answer for.
+    // shape, and the state the phrase is the only answer for.
     expect(has(shotWith("", ""), "scene.mood")).toBe(true);
+
+    // One shared word is not the same statement: only a mood whose every
+    // content word is in the place's text is a restatement of it.
+    expect(has(shotWith("", "", { mood: "quiet late-night warmth", lighting: "quiet lamplight" }), "scene.mood")).toBe(
+      true,
+    );
 
     // And a location-only shot, which has no focal at all.
     const lowered = lowerScenePlan({

@@ -80,12 +80,16 @@ state.
 ## The prompt budget
 
 The row's prompt binding declares `recommendedChars: 1300`, the same advisory
-length its sibling [Qwen Image Edit 2511](qwen-image-edit-2511.md) carries —
-roughly the 200 words this family's published prompt guidance asks for. It pulls
-optional material down, never compresses a mandatory segment, and is reported
-rather than refused when a prompt exceeds it. No hard ceiling is measured for
-this endpoint, so the row carries no `maxChars`. The value is owner-curated data
-on `advancedCapabilities`
+length its sibling [Qwen Image Edit 2511](qwen-image-edit-2511.md) carries — a
+number Vesper sets from the family's broader prompt guidance and tunes against
+graded trials, not one either endpoint prescribes. The ~200-word figure that
+circulates for this family is what this model's own text-to-image
+prompt-rewriting helper aims its rewrites at, which is a different thing from the
+length a compiled Vesper prompt is fitted to. The budget pulls optional material
+down, never compresses a mandatory segment, and is reported rather than refused
+when a prompt exceeds it. No hard ceiling is measured for this endpoint, so the
+row carries no `maxChars`. The value is owner-curated data on
+`advancedCapabilities`
 ([providers/registry.md](../../images/providers/registry.md) §Probe-owned
 columns).
 

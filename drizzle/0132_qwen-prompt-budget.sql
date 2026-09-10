@@ -25,10 +25,13 @@
 -- the probe path, not something a migration can close; it is noted on #544 so
 -- the seam gets an owner.
 --
--- THE NUMBER. 1300 characters ≈ the roughly 200 words the Qwen-Image family's
--- published prompt guidance asks for (issue #544, owner report and GPT review of
--- 2026-09-10; to be re-verified against the Qwen-Image repository's
--- prompt-enhancement helper when the #544 trial is set up). It is written as
+-- THE NUMBER. 1300 characters is a VESPER ADVISORY: set from the Qwen-Image
+-- family's broader published prompt guidance and tuned against graded trials,
+-- not a length either endpoint prescribes. The ~200-word figure that circulates
+-- for this family is what the 2512 text-to-image prompt-rewriting helper aims
+-- its rewrites at; the image-edit guidance asks for direct, specific
+-- instructions and preservation clarity and states no length at all (issue #544,
+-- owner report and GPT review of 2026-09-10). It is written as
 -- `recommendedChars` and NOT as `maxChars`, and the distinction is the whole
 -- point of the two fields: `maxChars` is a provider ceiling whose breach is an
 -- error, and it is the only limit allowed to compress a MANDATORY segment.

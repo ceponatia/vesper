@@ -253,12 +253,16 @@ render lost.
 
 ### The prompt budget
 
-The row's prompt binding declares `recommendedChars: 1300`, roughly the 200 words
-this family's published prompt guidance asks for. It is **advisory**: optional
-material is trimmed toward it, a mandatory segment is never compressed for it,
-and exceeding it is reported rather than refused. Vesper has measured no hard
-ceiling for this endpoint, so the row carries no `maxChars`. The value is
-owner-curated data on `advancedCapabilities`
+The row's prompt binding declares `recommendedChars: 1300`. The number is a
+**Vesper advisory**, set from the Qwen-Image family's broader prompt guidance and
+tuned against graded trials — not a length this endpoint prescribes. The prompt
+guidance for image editing asks for direct, specific instructions and clarity
+about what to preserve, and states no word or character count at all. Advisory
+means what it says: optional material is trimmed toward the number, a mandatory
+segment is never compressed for it, and exceeding it is reported rather than
+refused. Vesper has measured no hard ceiling for this endpoint, so the row
+carries no `maxChars`. The value is owner-curated data on
+`advancedCapabilities`
 ([providers/registry.md](../../images/providers/registry.md) §Probe-owned
 columns).
 

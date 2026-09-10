@@ -125,6 +125,8 @@ what type it is, never how long a prompt the model answers well to — that guid
 prose about a model family. So the binding's two lengths are curated data on the row: `maxChars`,
 a provider ceiling whose breach is an error and the only limit allowed to compress a mandatory
 segment, and `recommendedChars`, the advisory length optional material is trimmed toward.
+`recommendedChars` is Vesper's own number: it is set from the family's broader published prompt
+guidance and tuned against graded trials, and no provider schema states it.
 **A re-probe or a version activation replaces `advancedCapabilities` wholesale and drops them**,
 because `imageModelReprobeFields` protects the two owner-curated columns above and not a member
 inside a probe-owned record; a row whose budget matters is curated again after a re-pin.

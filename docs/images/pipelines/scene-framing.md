@@ -226,6 +226,26 @@ theirs rather than a camera the fiction moved. A staging's own answer wins over 
 orientation's wherever the plan committed the arrangement, **including on a rung whose gates
 withheld the staged sentence**: withholding the words never un-turns the body.
 
+## The atmosphere
+
+**The composer's `mood` is the air of the place and the moment**, never an emotion word for a
+character — "quiet late-night warmth", "tense fluorescent stillness". The character's visible
+feeling is `pose`, the expression a photograph would catch
+([scene-images.md](scene-images.md) §Step 1 — the scene composer).
+
+**A described pose does not displace the atmosphere.** The two are claims about different
+things, so the lowering states `scene.mood` whenever the composer wrote one — beside a pose,
+beside an activity, and on a location-only shot alike.
+
+**It is withheld on one ground: the place's own text already says it.** The setting and the
+lighting phrase are joined, both sides are lower-cased and split on non-letter characters, a
+closed list of function words is dropped from the mood, and a mood whose every remaining word
+appears in the place's words is a restatement — a lighting phrase of "a single candle against
+the dark" beside a mood of "dark". The shot then states the light once and records
+`images.scene_lowering.mood_redundant` with the words it compared. One shared word is not a
+restatement: every content word has to be there. A mood of nothing but function words is kept,
+because "every content word appears" is vacuously true of a phrase that has none.
+
 ## Intimate staging
 
 Intimate acts are staged from a closed catalog (`contracts/images/scene-staging.ts`, 13

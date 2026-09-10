@@ -79,6 +79,9 @@ const SCENE_LOCATION_REF = "location.scene";
 /** A staged arrangement was gated out of the prompt after the plan committed it. */
 export const IMAGE_SCENE_STAGING_UNSENT = "images.scene_lowering.staging_unsent";
 
+/** The composer's atmosphere was withheld because the place's own text states it. */
+export const IMAGE_SCENE_MOOD_REDUNDANT = "images.scene_lowering.mood_redundant";
+
 /** A camera component a lane may state a fact for, or declare itself silent about. */
 type SceneCameraComponent = ImageCameraFact["component"];
 
@@ -208,7 +211,7 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
   const facts: ImageWorldFact[] = [
     captureModeFact(captureMode, focalRef),
     ...possessionFact(captureMode, plan.focal, featured, refByName),
-    ...moodFact(plan.mood, plan.focal),
+    ...moodFact(plan, input.sink),
     ...staging,
     ...viewerFacts(input, captureMode, inFrame, stagedGeometryOwned(input, staging)),
     ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)), captureMode)),
@@ -225,11 +228,6 @@ function source(key: string): ImageSourceRef {
 /** One person's two action fields, as the plan wrote them. */
 function actionText(spec: SceneCharacterSpec): readonly string[] {
   return [(spec.pose ?? "").trim(), (spec.activity ?? "").trim()];
-}
-
-/** Whether the composer said anything at all about what this person is doing. */
-function hasActionText(spec: SceneCharacterSpec): boolean {
-  return actionText(spec).some((text) => text.length > 0);
 }
 
 /** Whether either action field puts a limb in the picture. */
@@ -326,25 +324,101 @@ function possessionFact(
 }
 
 /**
+ * Words a mood shares with any sentence, dropped before the redundancy compare.
+ *
+ * Without them a mood and a setting that merely both contain "the" and "of"
+ * would read as the same statement, and the atmosphere the composer wrote would
+ * vanish from the prompt on a coincidence of grammar. The list is closed and
+ * deliberately short: only words that carry no atmosphere at all.
+ */
+const MOOD_FUNCTION_WORDS: ReadonlySet<string> = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "but",
+  "of",
+  "in",
+  "on",
+  "at",
+  "to",
+  "with",
+  "into",
+  "from",
+  "for",
+  "by",
+  "as",
+  "is",
+  "it",
+  "its",
+  "that",
+  "this",
+  "there",
+  "here",
+  "very",
+  "quite",
+  "rather",
+  "somewhat",
+]);
+
+/**
+ * A phrase as lower-case word tokens, with case and punctuation normalized away.
+ *
+ * Deliberately blunt, in the {@link sceneLightingBand} family: the composer
+ * writes free text and this module needs a comparison a reader can reproduce by
+ * hand. No stemming — "warmth" and "warm" are different words here, and the
+ * failure that costs is a mood stated twice in slightly different words, which
+ * is far cheaper than an atmosphere silently deleted for a near-match.
+ */
+function moodWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 0);
+}
+
+/**
  * How the moment feels — the composer's own phrase, unwrapped.
  *
  * A scene fact rather than a location one because the same bedroom is cheerful
  * in one render and threatening in the next: filing mood against the place would
  * make it a property of the room.
  *
- * Withheld wherever the focal's own action text already carries the moment
- * (issue #544 D9). Mood is an emotional LABEL — "nervous, curious, with a hint
- * of playful tension" — and a pose is the visible expression that label was
- * about: "a small smile playing at her lips". An image model handed both paints
- * the abstraction on top of the concrete one, so the shot with a described
- * subject states the expression alone. A location-only shot, and a plan whose
- * focal was given neither field, still state the mood: there the label is the
- * only thing saying how the picture feels.
+ * STATED WHENEVER THE COMPOSER WROTE ONE. `mood` is atmosphere — the air of the
+ * place and the moment ("quiet late-night warmth", "tense fluorescent
+ * stillness") — and `pose` is the character's visible expression; they are two
+ * different claims about two different things, so a described pose is no reason
+ * to delete the air around it. An ordinary pose ("standing beside the desk")
+ * carries no atmosphere at all, and a shot that dropped the mood for it would
+ * lose the only sentence saying how the picture feels.
+ *
+ * Withheld on ONE ground: the setting or the lighting text already says it. A
+ * mood every one of whose content words appears in that text is a restatement,
+ * and an image model handed the same claim twice weights it twice — a lighting
+ * phrase of "a single candle against the dark" beside a mood of "dark" spends a
+ * whole claim repeating the light. The compare is deterministic and
+ * hand-checkable: both sides lower-cased and split on non-letters, function
+ * words dropped from the mood, and every survivor looked up in the place's own
+ * words.
+ *
+ * A mood of nothing but function words is KEPT, not withheld: "every content
+ * word appears" is vacuously true of a phrase with no content words, and a
+ * vacuous truth is not evidence that the setting already said it.
  */
-function moodFact(mood: string, focal: SceneCharacterSpec | null): readonly ImageWorldFact[] {
-  const value = mood.trim();
+function moodFact(plan: SceneRenderPlan, sink: DiagnosticSink | undefined): readonly ImageWorldFact[] {
+  const value = plan.mood.trim();
   if (value.length === 0) return [];
-  if (focal !== null && hasActionText(focal)) return [];
+  const words = moodWords(value).filter((word) => !MOOD_FUNCTION_WORDS.has(word));
+  const place = new Set(moodWords(`${plan.setting} ${plan.lighting}`));
+  if (words.length > 0 && words.every((word) => place.has(word))) {
+    sink?.push(
+      diag("info", IMAGE_SCENE_MOOD_REDUNDANT, "the setting or lighting text already states this mood", {
+        context: { mood: value, words },
+      }),
+    );
+    return [];
+  }
   return [
     {
       key: "scene.mood",

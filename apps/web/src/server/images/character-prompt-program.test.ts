@@ -17,6 +17,7 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { expectDiagnostic } from "@/test/diagnostics";
 import {
+  attr,
   LANE_PROBE_NAME,
   LANE_PROBE_SECOND_NAME,
   LANE_PROBE_SECOND_SUBJECT_ID,
@@ -24,6 +25,7 @@ import {
   laneProbeAvatarProgram,
   laneProbeCastScenePlan,
   laneProbeCastSubjects,
+  laneProbeProfile,
   laneProbeVariantCut,
   laneProbeWardrobe,
   resolvedImageProfileFixture,
@@ -783,5 +785,229 @@ describe("the lane's subject-naming policy", () => {
 
     expect(labelOf(program, LANE_PROBE_SUBJECT_ID)).toBe(LANE_PROBE_NAME);
     expect(program.prompt).toContain(LANE_PROBE_NAME);
+  });
+});
+
+/**
+ * WHAT THE LANES BESIDE THE SCENE STILL STATE (issue #552).
+ *
+ * The reveal-tier and naming work landed in the scene lane, and the scene lane
+ * is where every assertion about it was written. Three other lanes compile
+ * through this same seam, and each of them is a render OF a person the prompt
+ * has to be able to talk about — so the claims below are the ones a scene-shaped
+ * edit is most likely to take away from them by accident. Each `it` names the
+ * claim it protects; the chat-look lane's own half lives with its mint
+ * (`chat-look.test.ts`), which is the only place that assembles it.
+ */
+describe("the lanes beside the scene", () => {
+  /** The variant lane's program, over the shared probe cut. */
+  const variantProgram = (over: Partial<CharacterPromptProgramInput> = {}): CharacterPromptProgram =>
+    compiled(buildCharacterPromptProgram(programInput(over)));
+
+  /**
+   * PROTECTS: the portrait names its subject and states their apparent age.
+   *
+   * Both are lane-table answers no caller may set — `CHARACTER_LANE_SUBJECT_NAMING
+   * .avatar` is `label` and `CHARACTER_LANE_APPARENT_AGE.avatar` is `state` — and
+   * both were changed for the scene in the same commit. A portrait has no
+   * reference to inherit an age from and no image to be introduced by, so a lane
+   * table edited one row too far leaves a text-to-image render with no age
+   * anchor and nobody named in it.
+   */
+  it("names the avatar lane's subject and states their apparent age on 2512", () => {
+    const program = compiled(laneProbeAvatarProgram({ wardrobe: laneProbeWardrobe() }));
+
+    expect(program.prompt).toContain(`${LANE_PROBE_NAME} appears`);
+    expect(program.prompt).toMatch(/late twenties/);
+  });
+
+  /**
+   * PROTECTS: a variant edit names its subject and carries the change contract.
+   *
+   * The scene rung deliberately carries NO change contract — its description is
+   * the instruction — and offers no display name. A variant is the opposite on
+   * both counts: it is one edit of one named person, and without the delta and
+   * its preserve set the endpoint is handed a description of somebody and no
+   * instruction about what to do to them.
+   */
+  it("names the variant lane's subject and carries the change contract on 2511", () => {
+    const program = variantProgram();
+
+    expect(program.prompt).toContain(LANE_PROBE_NAME);
+    expect(program.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+    expect(program.prompt).toMatch(/\bKeep\b[^.]*\bunchanged from the source\./);
+  });
+
+  /**
+   * PROTECTS: a covered torso states the silhouette and no surface detail.
+   *
+   * `breasts.size` is the one intimate fact an ordinary render may state — the
+   * declared `ordinarySilhouette` exception, because a size reads through
+   * clothing — while `breasts.shape`, `breasts.augmentation` and
+   * `breasts.fullness` are surface facts a sweater hides. The three moved to the
+   * `skin` reveal tier and nothing outside the scene lane exercised them, so
+   * this is the regression a tier revert produces: a clothed portrait describing
+   * a body the picture does not contain.
+   *
+   * The control is the same three facts on a BARE torso through a route that
+   * permits intimate anatomy — they are stateable, authored and reachable, so
+   * the absence above is the coverage rule and not an empty fixture.
+   */
+  describe("breast detail a covered torso cannot show", () => {
+    /** The probe sheet plus the three re-tiered surface facts, in disjoint words. */
+    const SURFACE = laneProbeProfile({
+      attributes: [
+        ...laneProbeProfile().attributes,
+        attr("breasts.shape", "teardrop", "base"),
+        attr("breasts.augmentation", "obviously_augmented", "base"),
+        attr("breasts.fullness", "plump", "base"),
+      ],
+    });
+
+    /** One variant program over the probe sheet, dressed or bare, by route. */
+    const variant = (
+      wardrobe: ReturnType<typeof laneProbeWardrobe>,
+      intimateReveal: boolean,
+    ): CharacterPromptProgram => {
+      const cut = laneProbeVariantCut(wardrobe, SURFACE);
+      return variantProgram({
+        intimateReveal,
+        cuts: [
+          {
+            subjectId: LANE_PROBE_SUBJECT_ID,
+            name: LANE_PROBE_NAME,
+            digest: cut.digest,
+            attributes: cut.resolved,
+            exposure: cut.exposure,
+            hairOcclusion: cut.hairOcclusion,
+            realizedBody: cut.realizedBody,
+          },
+        ],
+      });
+    };
+
+    /** The avatar lane's own program over the same sheet, dressed. */
+    const avatar = (): CharacterPromptProgram =>
+      compiled(laneProbeAvatarProgram({ profile: SURFACE, wardrobe: laneProbeWardrobe() }));
+
+    const SURFACE_WORDS = [/teardrop/i, /augment/i, /plump/i];
+
+    it.each([
+      ["the avatar lane on 2512", avatar],
+      ["the variant lane on 2511", () => variant(laneProbeWardrobe(), false)],
+      ["a variant on a route that permits intimate anatomy", () => variant(laneProbeWardrobe(), true)],
+    ] as const)("states the breast size and no surface detail in %s", (_lane, build) => {
+      const program = build();
+
+      expect(program.prompt).toMatch(/breast size: ample/i);
+      for (const word of SURFACE_WORDS) expect(program.prompt).not.toMatch(word);
+    });
+
+    it("states all three on a bare torso through a permitting route — the control", () => {
+      const program = variant([], true);
+
+      expect(program.prompt).toMatch(/breast size: ample/i);
+      for (const word of SURFACE_WORDS) expect(program.prompt).toMatch(word);
+    });
+  });
+});
+
+/**
+ * THE QWEN PROMPT BUDGET, AT THE SEAM (issue #552).
+ *
+ * `recommendedChars: 1300` is a Vesper advisory the migration writes onto the
+ * two Qwen rows, and the seam is the one place a row's number becomes a fitting
+ * decision (`imagePromptBudgetFromBinding` over
+ * `profile.model.advancedCapabilities.prompt`). The fitter's own two-phase rule
+ * has its owner in `packages/image-core`; what no test anywhere covered is that
+ * this seam passes the row's number through as an ADVISORY — a limit that eats
+ * optional claims and never touches the sentences a variant edit IS.
+ *
+ * The binding is built in the fixture. Nothing here reads a database row: the
+ * number under test is data an operator curates, and a suite that loaded it
+ * would be testing the migration instead of the seam.
+ */
+describe("the prompt budget the seam fits a variant edit to", () => {
+  /** The variant profile with a prompt binding declaring `recommendedChars`, or none at all. */
+  const budgeted = (recommendedChars?: number): ResolvedImageProfile => {
+    const base = programProfile({ slug: QWEN_2511_SLUG });
+    return {
+      ...base,
+      model: {
+        ...base.model,
+        advancedCapabilities: {
+          ...base.model.advancedCapabilities,
+          prompt: { field: "prompt", ...(recommendedChars === undefined ? {} : { recommendedChars }) },
+        },
+      },
+    };
+  };
+
+  const program = (recommendedChars?: number): CharacterPromptProgram =>
+    compiled(buildCharacterPromptProgram(programInput({ profile: budgeted(recommendedChars) })));
+
+  const dropped = (result: CharacterPromptProgram): readonly string[] =>
+    parseImagePromptProgramProvenance(result.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.droppedClaimIds ?? [];
+
+  /** The keys of every required claim the unfitted render actually kept. */
+  const requiredKept = (result: CharacterPromptProgram): string[] =>
+    result.subjects
+      .flatMap((subject) => subject.facts)
+      .filter((fact) => fact.disposition === "required_visual")
+      .map((fact) => fact.key)
+      .filter((key) => result.keptClaimIds.includes(key));
+
+  /**
+   * PROTECTS: a row with no `recommendedChars` fits nothing.
+   *
+   * An absent budget is not a small one — it means "nobody has measured this
+   * endpoint", and every optional claim is emitted in canonical order. A seam
+   * that substituted a default would silently start trimming every render on
+   * every model whose row has never been curated, which is all of them but two.
+   */
+  it("fits nothing when the row's prompt binding declares no recommended length", () => {
+    const none = program();
+    const unreachable = program(100_000);
+    const tight = program(200);
+
+    // An absent advisory and one no prompt can reach are the same render.
+    expect(none.prompt).toBe(unreachable.prompt);
+    expect(dropped(none)).toEqual(dropped(unreachable));
+
+    // Control: the seam DOES pass a number through, so the equality above is not
+    // "the fitter was never wired to this lane".
+    expect(tight.prompt.length).toBeLessThan(none.prompt.length);
+    expect(tight.keptClaimIds.length).toBeLessThan(none.keptClaimIds.length);
+  });
+
+  /**
+   * PROTECTS: an advisory eats optional claims only, and the mandatory floor of
+   * a variant edit survives it whole.
+   *
+   * `recommendedChars` without a `maxChars` may never compress a mandatory
+   * segment — that is the whole reason the two fields are separate — so the
+   * identity lock, the delta and its preserve set stand at any advisory length.
+   * Run at the shipped 1300 and at a length far below the mandatory floor,
+   * because a rule that only holds while the prompt happens to fit is not the
+   * rule.
+   */
+  it.each([1300, 200])("trims only optional claims at a %d-character advisory", (recommendedChars) => {
+    const none = program();
+    const fitted = program(recommendedChars);
+
+    // A squeeze only ever removes: nothing appears that the unfitted render
+    // did not already carry.
+    const carried = new Set(none.keptClaimIds);
+    for (const id of fitted.keptClaimIds) expect(carried.has(id)).toBe(true);
+
+    // Every required claim survives, at either length.
+    const required = requiredKept(none);
+    expect(required.length).toBeGreaterThan(0);
+    for (const key of required) expect(fitted.keptClaimIds).toContain(key);
+
+    // …and so do the three sentences a variant edit IS.
+    expect(fitted.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(fitted.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+    expect(fitted.prompt).toMatch(/\bKeep\b[^.]*\bunchanged from the source\./);
   });
 });
