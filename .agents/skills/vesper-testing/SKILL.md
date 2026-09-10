@@ -39,6 +39,15 @@ Prefer strengthening a nearby test over adding a parallel suite. Prefer table-, 
 
 When unrelated test debt is discovered, add it to the relevant existing GitHub issue only if issue updates are within the current authorized scope. Otherwise report it in the handoff for the owner to route. Never create a repository working document for test debt.
 
+## After a coding task
+
+The `vesper-test-keeper` role (`.codex/agents/vesper-test-keeper.toml`,
+`.claude/agents/vesper-test-keeper.md`) applies these rules to one finished
+change: it brings every test that owns the changed or new code in line with the
+diff, edits tests only, and reports the CI evidence. Its procedure is
+[references/test-keeper.md](references/test-keeper.md); run it before an
+implementation is reported complete.
+
 ## Finish with exact evidence
 
 Name the test file changed, the claim it protects, and the CI job or script that actually selects it. A green aggregate `verify` result means all applicable jobs succeeded; it does not mean every repository suite ran.

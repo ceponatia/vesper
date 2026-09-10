@@ -8,10 +8,14 @@ Choose a focused project role when it materially helps the task:
 | `vesper-ux-reviewer` | Assess substantial flows, defaults, unnecessary steps, and simpler alternatives. |
 | `vesper-ui-reviewer` | Inspect the deployed desktop/mobile UI and record rendered evidence. |
 | `vesper-scenario-reviewer` | Trace meaningful state transitions, failure recovery, and access boundaries. |
+| `vesper-test-keeper` | Bring every test that owns a finished change up to date and report the CI evidence. |
 
 These profiles inherit the selected model. Do not run every role for every change.
 Context, UX, and scenario roles inspect without editing; the UI role may record
-evaluation artifacts. They do not implement fixes or spawn further agents.
+evaluation artifacts; the test keeper edits tests only. They do not implement
+fixes or spawn further agents. Run the test keeper after an implementation slice
+lands and before reporting it complete — it is the one role every coding task
+ends with.
 Check the current spawn tool's available role names. New `.codex/agents` files may
 require a fresh session before they appear. If a role is unavailable, give an
 available agent its profile and matching skill, and report the fallback honestly.

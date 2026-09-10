@@ -27,6 +27,9 @@
 - `vesper-skill-maintenance`: skill discovery, routing, helpers, and hook/runtime compatibility.
 - For substantial delegated work, use `vesper-task-context`. Select `vesper-ux-review`, `vesper-ui-quality`,
   or `vesper-scenario-review` when the change warrants that review; their custom roles live in `.codex/agents/`.
+- After any coding task, run the `vesper-test-keeper` role (`.codex/agents/`, `.claude/agents/`) before
+  reporting the work complete: it brings the tests that own the changed or new code in line with the change
+  under `vesper-testing`'s rules and reports the CI evidence. It edits tests only.
 - GitHub issues and the Vesper Development board own plans, status, sequencing, dependencies, blockers, and
   open questions. Never create plan documents. The repository owns current technical truth.
 - Read `docs/README.md` before editing `docs/`, then the relevant system docs. Durable docs use present-tense
