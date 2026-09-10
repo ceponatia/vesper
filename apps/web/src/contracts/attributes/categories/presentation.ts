@@ -14,7 +14,11 @@ export const presentationGroup = defineAttributeGroup("presentation", [
       "flamboyant", "bohemian", "minimalist", "rugged", "vintage", "edgy",
     ],
     aliases: ["style", "fashion sense", "dress sense"],
-    imageAppearance: { class: "fallback", minimumFraming: "portrait" },
+    imageAppearance: {
+      class: "fallback",
+      minimumFraming: "portrait",
+      phrase: { group: "other", role: "with", fragment: "a {value} personal style" },
+    },
     promptHints: ["Style guides how new outfits are described; the worn items themselves are wardrobe state."],
   },
   {
@@ -27,7 +31,23 @@ export const presentationGroup = defineAttributeGroup("presentation", [
     mutability: "mutable",
     allowedValues: ["unkempt", "careless", "low_maintenance", "neat", "well_groomed", "meticulous", "immaculate"],
     aliases: ["grooming", "well groomed"],
-    imageAppearance: { class: "fallback", minimumFraming: "portrait" },
+    imageAppearance: {
+      class: "fallback",
+      minimumFraming: "portrait",
+      phrase: {
+        group: "other",
+        role: "with",
+        fragmentByValue: {
+          unkempt: "an unkempt look",
+          careless: "a careless look",
+          low_maintenance: "a low-maintenance look",
+          neat: "a neat, groomed look",
+          well_groomed: "a well-groomed look",
+          meticulous: "a meticulously groomed look",
+          immaculate: "an immaculately groomed look",
+        },
+      },
+    },
   },
   {
     id: "presentation.scent_baseline",

@@ -173,9 +173,11 @@ describe("assembleCharacterWorldDigest", () => {
     expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.appearance.hair.color`);
     expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.apparent_age`);
     expect(subject?.facts.some((fact) => fact.concept === "subject.identity")).toBe(true);
-    expect(subject?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
-      "Eye color: blue",
-    );
+    // The registry words eye colour as prose (#547); the label form is gone.
+    expect(subject?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toEqual({
+      text: "blue eyes",
+      phrase: { group: "eyes", role: "adjective", fragment: "blue" },
+    });
   });
 
   it("lets an intimate route replace the ordinary bust silhouette instead of stating it twice", () => {

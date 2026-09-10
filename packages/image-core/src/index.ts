@@ -187,6 +187,26 @@ export type {
   ImageLoraRenderBinding,
   ImageLoraUpdateRequest,
 } from "./loras";
+/**
+ * The appearance-phrase value shape. A deep import rather than a re-export
+ * through `./prompt-program`: the composition vocabulary is a value CONTRACT
+ * between the application's attribute registry and whichever dialect composes,
+ * not another member of the prompt-program barrel's reading order.
+ */
+export {
+  imageAppearanceIndefiniteArticle,
+  imageAppearancePhrase,
+  imageAppearancePhraseGroupNoun,
+  imageAppearancePhraseGroupTakesArticle,
+  imageAppearancePhraseGroups,
+  imageAppearancePhraseRoles,
+} from "./prompt-program/appearance-phrase";
+export type {
+  ImageAppearancePhrase,
+  ImageAppearancePhraseGroup,
+  ImageAppearancePhraseRole,
+  ImageAppearancePhraseValue,
+} from "./prompt-program/appearance-phrase";
 export {
   activeImagePromptBinding,
   buildImageWorldDigest,

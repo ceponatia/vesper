@@ -20,7 +20,11 @@ export const noseGroup = defineAttributeGroup("nose", [
     autoDefaultExcludes: ["crooked"],
     bodyLocationId: "nose",
     aliases: ["nose", "nose shape"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: { group: "face", role: "with", fragment: "a {value} nose" },
+    },
   },
   {
     id: "nose.size",
@@ -34,7 +38,11 @@ export const noseGroup = defineAttributeGroup("nose", [
     allowedValues: ["petite", "small", "medium", "prominent", "large"],
     bodyLocationId: "nose",
     aliases: ["nose size"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: { group: "face", role: "with", fragment: "a {value} nose" },
+    },
   },
   {
     id: "nose.piercings",
@@ -47,6 +55,20 @@ export const noseGroup = defineAttributeGroup("nose", [
     allowedValues: ["none", "nostril", "double_nostril", "high_nostril", "septum", "bridge"],
     bodyLocationId: "nose",
     aliases: ["nose piercing", "septum", "nose ring"],
-    imageAppearance: { class: "fine", maximumFraming: "close_up" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "close_up",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragmentByValue: {
+          nostril: "a nostril piercing",
+          double_nostril: "piercings in both nostrils",
+          high_nostril: "a high nostril piercing",
+          septum: "a septum piercing",
+          bridge: "a bridge piercing",
+        },
+      },
+    },
   },
 ]);

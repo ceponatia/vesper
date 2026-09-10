@@ -1,9 +1,13 @@
-import { imageSubjectPronounSets } from "@vesper/image-core";
+import { imageAppearancePhrase, imageSubjectPronounSets } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
 import { attributeRegistry, type AttributeValue } from "../attributes";
 import { FULLY_COVERED } from "../items/visibility";
 import {
   visualStateKindDefinitions,
+  VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID,
+  VISUAL_STATE_APPEARANCE_ANATOMY_KIND_ID,
+  VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID,
+  VISUAL_STATE_APPEARANCE_LOCATED_FACT_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
@@ -18,6 +22,7 @@ import {
   imageSubjectPronouns,
   IMAGE_CHARACTER_GENDER_ATTRIBUTE_ID,
   IMAGE_CHARACTER_NOT_IMAGE_ELIGIBLE,
+  type CharacterPromptRendering,
   type CharacterPromptSibling,
   type CharacterPromptValueInput,
 } from "./character-adapter";
@@ -60,11 +65,15 @@ function postureSibling(posture: string): CharacterPromptSibling {
   };
 }
 
-function rendered(input: CharacterPromptValueInput): string | null {
+function rendered(input: CharacterPromptValueInput): CharacterPromptRendering | null {
   return imageCharacterPromptValue(input);
 }
 
-function presentation(channel: string, band: string, siblings: readonly CharacterPromptSibling[]): string | null {
+function presentation(
+  channel: string,
+  band: string,
+  siblings: readonly CharacterPromptSibling[],
+): CharacterPromptRendering | null {
   return rendered({
     kindId: VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
     locus: { kind: "garment_part", garmentInstanceId: GARMENT_ID, partId: "hem" },
@@ -73,7 +82,10 @@ function presentation(channel: string, band: string, siblings: readonly Characte
   });
 }
 
-function support(relations: unknown, siblings: readonly CharacterPromptSibling[] = []): string | null {
+function support(
+  relations: unknown,
+  siblings: readonly CharacterPromptSibling[] = [],
+): CharacterPromptRendering | null {
   return rendered({
     kindId: VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
     locus: { kind: "subject", subjectId: SUBJECT_ID },
@@ -119,6 +131,135 @@ describe("the visual-state kind census", () => {
         imageCharacterKindPromptDecisions[definition.id] === IMAGE_CHARACTER_NOT_IMAGE_ELIGIBLE,
     }));
     expect(rows.filter((row) => row.imageEligible === row.markedIneligible)).toEqual([]);
+  });
+});
+
+const APPEARANCE_KINDS = [
+  VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID,
+  VISUAL_STATE_APPEARANCE_LOCATED_FACT_KIND_ID,
+  VISUAL_STATE_APPEARANCE_ANATOMY_KIND_ID,
+] as const;
+
+const SUBJECT_LOCUS = { kind: "subject", subjectId: SUBJECT_ID } as const;
+
+/**
+ * Scalar handling is a per-kind POLICY, not a shape check ahead of the table
+ * (#553).
+ *
+ * `imageCharacterPromptValue` used to pass any string, number or boolean
+ * straight through and consult the decision table only for records. That made
+ * `not_prompt_material` a promise about record values alone: a kind the
+ * registry refuses could still have reached a payload as a string, and this
+ * census — whose whole job is to prove it cannot — could not see the hole.
+ * Today's schemas keep the leak unreachable, so these cases are a lock on the
+ * invariant rather than a regression on an observed bug: they fail against the
+ * old scalar short-circuit, which is what makes them worth their lines.
+ */
+describe("scalar values are judged by their kind", () => {
+  const refusals = Object.entries(imageCharacterKindPromptDecisions)
+    .filter(([, decision]) => typeof decision !== "function")
+    .map(([kindId]) => kindId);
+
+  it("has refusal kinds to test", () => {
+    expect(refusals.length).toBeGreaterThan(0);
+  });
+
+  /** Derived from the table, so a kind marked as a refusal tomorrow is covered today. */
+  it("returns silence from every refusal kind for every value shape", () => {
+    const escaped: string[] = [];
+    for (const kindId of refusals) {
+      for (const value of ["toward", "an observation", 3, true, { channel: "tuck", band: "in" }]) {
+        if (rendered({ kindId, locus: SUBJECT_LOCUS, value }) !== null) {
+          escaped.push(`${kindId}: ${JSON.stringify(value)}`);
+        }
+      }
+    }
+    expect(escaped).toEqual([]);
+  });
+
+  /** The issue's two named examples, spelled out where a reader will find them. */
+  it("suppresses a string at an observation or a facing relation", () => {
+    expect(
+      rendered({
+        kindId: VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID,
+        locus: SUBJECT_LOCUS,
+        value: "hair.strand_adhesion",
+      }),
+    ).toBeNull();
+    expect(
+      rendered({ kindId: VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID, locus: SUBJECT_LOCUS, value: "toward" }),
+    ).toBeNull();
+  });
+
+  /**
+   * The pass-through that must survive: an appearance kind's value is its own
+   * truth fingerprint, and the canonical owners answer it before it arrives.
+   * That resolver output is already prompt-ready.
+   */
+  it("passes a resolver string through at every appearance kind", () => {
+    for (const kindId of APPEARANCE_KINDS) {
+      expect(rendered({ kindId, locus: SUBJECT_LOCUS, value: "a crooked nose" })).toBe("a crooked nose");
+      expect(rendered({ kindId, locus: SUBJECT_LOCUS, value: "   " })).toBeNull();
+    }
+  });
+
+  /** A kind that carries a structured value has nothing to say about a bare word. */
+  it("says nothing for a scalar at a kind whose value is structured", () => {
+    expect(rendered({ kindId: VISUAL_STATE_WARDROBE_GARMENT_KIND_ID, locus: SUBJECT_LOCUS, value: "shirt" })).toBeNull();
+    expect(
+      rendered({ kindId: VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID, locus: SUBJECT_LOCUS, value: "kneeling" }),
+    ).toBeNull();
+  });
+});
+
+/**
+ * The registry's appearance PHRASE, carried to the dialect intact (#547).
+ *
+ * The adapter is the one owner of character appearance wording, and a phrase is
+ * the shape that lets a prose dialect COMPOSE several facts into one sentence
+ * instead of listing them. The record has to survive the renderer table to get
+ * there: before this, a record at `appearance.attribute` hit a renderer that
+ * returned null and the fact was suppressed as unreadable.
+ */
+describe("appearance phrases", () => {
+  const phrase = {
+    text: "dark-brown hair",
+    phrase: { group: "hair", role: "adjective", fragment: "dark-brown" },
+  };
+
+  it("carries a phrase record through the attribute kind unchanged", () => {
+    const value = rendered({
+      kindId: VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID,
+      locus: { kind: "body", locus: { bodyLocationId: "hair" } },
+      value: phrase,
+    });
+    expect(imageAppearancePhrase(value)).toEqual(phrase);
+  });
+
+  /**
+   * Only the attribute kind words prose: a located mark and an anatomy row are
+   * resolved to a self-describing string by their own owners, and a record
+   * there would be a shape nobody authored.
+   */
+  it("declines a phrase record at the located-fact and anatomy kinds", () => {
+    for (const kindId of [VISUAL_STATE_APPEARANCE_LOCATED_FACT_KIND_ID, VISUAL_STATE_APPEARANCE_ANATOMY_KIND_ID]) {
+      expect(rendered({ kindId, locus: SUBJECT_LOCUS, value: phrase })).toBeNull();
+    }
+  });
+
+  /** A record that is not a phrase is not laundered into one. */
+  it("declines a record the phrase contract does not recognize", () => {
+    for (const value of [
+      { text: "dark-brown hair" },
+      { text: "dark-brown hair", phrase: { group: "coiffure", role: "adjective", fragment: "dark-brown" } },
+      { text: "dark-brown hair", phrase: { group: "hair", role: "modifier", fragment: "dark-brown" } },
+      { text: "", phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
+      { phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
+    ]) {
+      expect(
+        rendered({ kindId: VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID, locus: SUBJECT_LOCUS, value }),
+      ).toBeNull();
+    }
   });
 });
 
@@ -235,7 +376,7 @@ describe("garment presentation", () => {
 });
 
 describe("garment names", () => {
-  const garment = (name: string): string | null =>
+  const garment = (name: string): CharacterPromptRendering | null =>
     rendered({
       kindId: VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
       locus: { kind: "item", itemInstanceId: GARMENT_ID },

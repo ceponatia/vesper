@@ -1,8 +1,10 @@
-import type {
-  ImageSubjectDigest,
-  ImageSubjectPronounSet,
-  ImageWorldFact,
-  ImageWorldSuppression,
+import {
+  imageAppearancePhrase,
+  type ImageAppearancePhraseValue,
+  type ImageSubjectDigest,
+  type ImageSubjectPronounSet,
+  type ImageWorldFact,
+  type ImageWorldSuppression,
 } from "@vesper/image-core";
 import { AFFORDANCE_UNIT_ONE } from "../affordances/core";
 import {
@@ -19,6 +21,7 @@ import {
 import {
   attributeRegistry,
   formatAttribute,
+  formatAttributePhrase,
   formatAttributeValue,
   humanizeVocabularyValue,
   isNonVisualAttribute,
@@ -134,19 +137,33 @@ import { revealSurfaces } from "./subject-reveal";
  *    table. A prosthetic additionally tags `morphology.synthetic_surface`.
  * 4. **Prompt-ready values.** Every emitted fact's `value` is readable prompt
  *    material: fingerprint-valued facts are answered by the canonical owners
- *    through {@link characterSemanticValueResolver}, and every STRUCTURED value
- *    goes through its own visual-state kind's renderer
+ *    through {@link characterSemanticValueResolver}, and EVERY value then goes
+ *    through its own visual-state kind's decision
  *    ({@link imageCharacterKindPromptDecisions}) — a garment's
  *    `{ name, locus: { actorId }, definitionId }` becomes its name, a support
  *    relation becomes "standing on the floor", a tuck reading becomes a clause
  *    bound to the garment it belongs to. There is NO structural fallback: the
  *    flattening this replaced sorted a record's keys alphabetically and shipped
  *    "Katelyn Nacon is surface, ground, legs, borne by." and "Katelyn Nacon is
- *    out, tuck." (#544 D1). A value no renderer can word is suppressed with
- *    {@link IMAGE_CHARACTER_VALUE_UNREADABLE} — and, when the fact was required,
- *    reported in `missingRequired` — because a fact nobody can word must never
- *    reach a payload. A census test walks the kind registry, so a new kind
- *    without a decision fails the build rather than inheriting nonsense.
+ *    out, tuck." (#544 D1). Scalars are judged by the kind too (#553), so a kind
+ *    the registry refuses cannot escape as a string. A value no renderer can
+ *    word is suppressed with {@link IMAGE_CHARACTER_VALUE_UNREADABLE} — and,
+ *    when the fact was required, reported in `missingRequired` — because a fact
+ *    nobody can word must never reach a payload. A census test walks the kind
+ *    registry, so a new kind without a decision fails the build rather than
+ *    inheriting nonsense.
+ * 4b. **Appearance attributes are worded by the REGISTRY, as prose.** An
+ *    image-eligible attribute that declares an `imageAppearance.phrase` reaches
+ *    the digest as the record `{ text, phrase: { group, role, fragment } }`
+ *    instead of as "Hair color: dark brown": `text` is the standalone noun
+ *    phrase every dialect words through `describe()`, and `phrase` is the same
+ *    fact taken apart so a prose dialect can compose "healthy dark-brown hair
+ *    worn loose to mid-back" from four claims that each stay individually
+ *    fitted and recorded. Both paths into a subject's appearance facts — the
+ *    visual-state resolver and the registry projection below — emit the same
+ *    record, and an attribute with no declared phrase keeps its label form.
+ *    The wording is the registry's and the grammar is the dialect's; no
+ *    attribute id ever reaches `@vesper/image-core`.
  * 5. **Hair the worn headwear fully hides** is selected truth the render may not
  *    say. Visual state selects hair facts by camera visibility and knows nothing
  *    of the hair-occlusion band the wardrobe seam resolved, so at `full` this
@@ -375,10 +392,24 @@ export interface CharacterWorldSlices {
 /** The two fields the resolver reads; a full `VisualImageFact` always satisfies it. */
 export type CharacterFactRef = Pick<VisualImageFact, "subjectId" | "sourceRef">;
 
+/**
+ * One canonical attribute as prompt material: the registry's PHRASE for this
+ * value when it declares one, and its self-describing `Label: value` form when
+ * it does not.
+ *
+ * A phrase is a record rather than a string because a sentence about a person
+ * joins several of them — "a slim, lightly toned build with slender arms and a
+ * subtle waist" — and a finished noun phrase cannot be taken apart again. Every
+ * dialect reads the record's `text` member and states the fact on its own, so a
+ * dialect that does not compose is unaffected; a composing one asks
+ * `imageAppearancePhrase` for the pieces. The label form is the fallback for an
+ * attribute (or a single enum member) the registry gives no wording, which is
+ * exactly what every attribute shipped before phrases existed.
+ */
 function attributeSemanticValue(
   attributeId: string,
   sources: CharacterSubjectSources,
-): string | undefined {
+): ImageAppearancePhraseValue | string | undefined {
   const def = attributeRegistry.byId(attributeId);
   if (def === undefined) return undefined; // unknown vocabulary — never a raw id in a prompt
   if (def.excludeFromPrompts === true) return undefined;
@@ -391,6 +422,8 @@ function attributeSemanticValue(
   // The age band goes through the owner-ruled image vocabulary, never through the
   // generic label form: `imageApparentAgeValue` is the floor.
   if (attributeId === VISUAL_IMAGE_AGE_ATTRIBUTE_ID) return imageApparentAgeValue(value) ?? undefined;
+  const phrase = formatAttributePhrase(def, value);
+  if (phrase !== null) return phrase;
   const formatted = formatAttribute(def, value);
   return formatted.length > 0 ? formatted : undefined;
 }
@@ -629,8 +662,27 @@ export interface CharacterPromptValueInput {
   readonly siblings?: readonly CharacterPromptSibling[];
 }
 
-type CharacterKindRenderer = (input: CharacterPromptValueInput) => string | null;
+/**
+ * What a renderer may produce: prompt WORDS, or the typed appearance-phrase
+ * record a composing dialect takes apart ({@link ImageAppearancePhraseValue}).
+ * Both are prompt-ready — every dialect words the record through its `text`
+ * member — and `null` beside them is silence.
+ */
+export type CharacterPromptRendering = string | ImageAppearancePhraseValue;
 
+type CharacterKindRenderer = (input: CharacterPromptValueInput) => CharacterPromptRendering | null;
+
+/**
+ * One visual-state kind's decision: a renderer, or a refusal.
+ *
+ * A renderer sees EVERY value shape its kind can carry, scalars included
+ * (#553). Scalar pass-through used to happen ahead of this table, which meant a
+ * kind declared `not_prompt_material` could still reach a prompt as a string —
+ * the census test asserted an invariant the code did not enforce. Now the table
+ * is consulted first for every value, so a refusal is a refusal whatever shape
+ * arrives, and a kind that legitimately receives a resolver-supplied string
+ * says so by having a renderer that passes one through.
+ */
 export type CharacterKindPromptDecision =
   | CharacterKindRenderer
   | typeof IMAGE_CHARACTER_NOT_PROMPT_MATERIAL
@@ -698,12 +750,24 @@ function statesPosture(input: CharacterPromptValueInput): boolean {
 /**
  * The appearance kinds' values ARE their truth fingerprints, and
  * {@link characterSemanticValueResolver} answers them from the canonical owners
- * before anything reaches here — so what arrives is a readable STRING, which
- * short-circuits ahead of every renderer. A structured value at one of these
- * kinds means the compatibility adapter changed shape, and there is nothing
- * honest to say about it.
+ * before anything reaches here — so what arrives is that owner's own
+ * prompt-ready answer, a readable string, and this renderer's whole job is to
+ * let it through (#553: pass-through is a per-kind policy, not a shape check
+ * ahead of the table). Anything else means the compatibility adapter changed
+ * shape, and there is nothing honest to say about it.
  */
-const ownerResolvedValue: CharacterKindRenderer = () => null;
+const ownerResolvedValue: CharacterKindRenderer = (input) =>
+  typeof input.value === "string" && input.value.trim().length > 0 ? input.value : null;
+
+/**
+ * The attribute kind, which additionally carries the registry's PHRASE record
+ * for a value the registry words as prose ({@link attributeSemanticValue}). The
+ * record travels to the dialect intact — a prose dialect composes several of
+ * them into one sentence, and every other family reads its `text` member — so
+ * this is the one appearance kind whose value is not always a string.
+ */
+const ownerResolvedAppearanceValue: CharacterKindRenderer = (input) =>
+  imageAppearancePhrase(input.value) ?? ownerResolvedValue(input);
 
 const wardrobeValue: CharacterKindRenderer = (input) => {
   const parsed = visualStateWardrobeValueSchema.safeParse(input.value);
@@ -1000,7 +1064,7 @@ const supportValue: CharacterKindRenderer = (input) => {
  */
 export const imageCharacterKindPromptDecisions: Readonly<Record<string, CharacterKindPromptDecision>> = {
   // --- identity ------------------------------------------------------------
-  [VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID]: ownerResolvedValue,
+  [VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID]: ownerResolvedAppearanceValue,
   [VISUAL_STATE_APPEARANCE_LOCATED_FACT_KIND_ID]: ownerResolvedValue,
   [VISUAL_STATE_APPEARANCE_ANATOMY_KIND_ID]: ownerResolvedValue,
   [VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID]: speciesFeatureGroupValue,
@@ -1047,28 +1111,38 @@ export const imageCharacterKindPromptDecisions: Readonly<Record<string, Characte
 };
 
 /**
- * One visual-state value as the prompt fragment its kind's renderer words, or
- * `null` for silence — no renderer, an unparseable value, or a reading the
- * renderer deliberately says nothing about (an untucked hem, a support relation
- * a posture already places).
+ * One visual-state value as the prompt fragment its kind's decision words, or
+ * `null` for silence — a refusal kind, an unregistered kind, an unparseable
+ * value, or a reading the renderer deliberately says nothing about (an untucked
+ * hem, a support relation a posture already places).
  *
- * A value that is already a readable scalar is the canonical owner's own answer
- * through {@link characterSemanticValueResolver} and passes through untouched;
- * only STRUCTURED values reach the renderers.
+ * **Every value shape is judged by the kind, scalars included** (#553). The
+ * previous rule passed any string, number or boolean straight through and
+ * consulted the table only for records, so `not_prompt_material` was a promise
+ * about record values alone: a string arriving at `affordance.observation` or
+ * `body_language.facing` would have reached a payload, and the census test that
+ * exists to forbid exactly that could not see it. Today's schemas made the leak
+ * unreachable, which is precisely why the invariant had to move into the code
+ * before a schema change made it reachable again.
+ *
+ * Pass-through did not disappear; it became a policy a kind declares. The
+ * appearance kinds' values are answered from the canonical owners before they
+ * arrive, so their renderers pass a resolver string through (and the attribute
+ * kind additionally carries the registry's phrase record). Every other kind
+ * carries a structured visual-state value, and a scalar at one of them is a
+ * shape its own schema never produced.
  */
-export function imageCharacterPromptValue(input: CharacterPromptValueInput): string | null {
-  const { value } = input;
-  if (typeof value === "string") return value.length > 0 ? value : null;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+export function imageCharacterPromptValue(input: CharacterPromptValueInput): CharacterPromptRendering | null {
   const decision = imageCharacterKindPromptDecisions[input.kindId];
   if (typeof decision !== "function") return null;
   const rendered = decision(input);
-  return rendered === null || rendered.trim().length === 0 ? null : rendered;
+  if (rendered === null) return null;
+  if (typeof rendered !== "string") return rendered;
+  return rendered.trim().length === 0 ? null : rendered;
 }
 
 type PromptReadyValue =
-  | { readonly kind: "keep" }
-  | { readonly kind: "value"; readonly value: string }
+  | { readonly kind: "value"; readonly value: CharacterPromptRendering }
   | { readonly kind: "suppress" };
 
 /** Resolve one emitted fact's value into prompt-ready form, judged by its source fact's kind. */
@@ -1078,9 +1152,6 @@ function promptReadyValue(
   sources: CharacterSubjectSources | undefined,
   siblings: readonly CharacterPromptSibling[],
 ): PromptReadyValue {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return { kind: "keep" }; // already readable — resolver output and plain values pass through
-  }
   const rendered = imageCharacterPromptValue({
     kindId: source.kindId,
     locus: source.locus,
@@ -1373,7 +1444,7 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
         if (fact.disposition === "required_visual") unreadableRequired.push(fact.key);
         continue;
       }
-      facts.push(ready.kind === "value" ? { ...next, value: ready.value } : next);
+      facts.push({ ...next, value: ready.value });
     }
 
     let missingRequired = [...slice.missingRequired, ...unreadableRequired].filter(
@@ -1445,7 +1516,11 @@ export function projectCharacterWorldSlices(input: CharacterWorldSlicesInput): C
       facts.push({
         key,
         concept: "subject.appearance",
-        value: appearance.readableValue,
+        // The registry's prose when it has some, its label form when it does
+        // not — the same choice `attributeSemanticValue` makes on the other
+        // path into this loop, so one attribute reads the same however it got
+        // here.
+        value: appearance.phraseValue ?? appearance.readableValue,
         subjectRef: slice.ref,
         ...(appearance.bodyLocationId === undefined ? {} : { locus: appearance.bodyLocationId }),
         semanticTags: [`appearance:${appearance.class}`, `attribute:${appearance.attributeId}`],

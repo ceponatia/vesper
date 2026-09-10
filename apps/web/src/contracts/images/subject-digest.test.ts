@@ -1,5 +1,6 @@
 import {
   buildImageWorldDigest,
+  imageAppearancePhrase,
   imageConcept,
   imageMorphologyProtectionOf,
   qwenImage2512Dialect,
@@ -459,6 +460,13 @@ describe("camera facts", () => {
 
 const ADULT_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "late_twenties", source: "creation" };
 const MINOR_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "teen", source: "creation" };
+/** The prose the registry words for the fixture's own values (#547). */
+const PLATINUM_HAIR = {
+  text: "platinum hair",
+  phrase: { group: "hair", role: "adjective", fragment: "platinum" },
+};
+const BLUE_EYES = { text: "blue eyes", phrase: { group: "eyes", role: "adjective", fragment: "blue" } };
+
 const REQUIRED_APPEARANCE_VALUES: readonly AttributeValue[] = [
   { id: "identity.gender", value: "female", source: "creation" },
   { id: "skin.tone", value: "light", source: "creation" },
@@ -506,11 +514,11 @@ describe("projectCharacterWorldSlices", () => {
       label: "the subject",
       missingRequired: [],
     });
-    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "hair.color")?.value).toBe(
-      "Hair color: platinum",
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "hair.color")?.value).toEqual(
+      PLATINUM_HAIR,
     );
-    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
-      "Eye color: blue",
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toEqual(
+      BLUE_EYES,
     );
 
     const withoutHair = adapterSlices(digest, {
@@ -529,11 +537,11 @@ describe("projectCharacterWorldSlices", () => {
     const subject = slices.subjects[0];
     const appearance = (subject?.facts ?? []).filter((fact) => fact.concept === "subject.appearance");
     expect(appearance.find((fact) => fact.source.key === "hair.color")).toMatchObject({
-      value: "Hair color: platinum",
+      value: PLATINUM_HAIR,
       disposition: "required_visual",
     });
     expect(appearance.find((fact) => fact.source.key === "eyes.color")).toMatchObject({
-      value: "Eye color: blue",
+      value: BLUE_EYES,
       disposition: "required_visual",
     });
     expect(new Set(appearance.map((fact) => fact.source.key)).size).toBe(appearance.length);
@@ -556,8 +564,8 @@ describe("projectCharacterWorldSlices", () => {
       identityReferenceSubjects: new Set([`subject.${SUBJECT}`]),
     });
     expect(anchored.subjects[0]?.missingRequired).not.toContain(missing);
-    expect(anchored.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
-      "Eye color: blue",
+    expect(anchored.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toEqual(
+      BLUE_EYES,
     );
   });
 
@@ -854,6 +862,77 @@ describe("projectCharacterWorldSlices", () => {
       expect(predicate).not.toMatch(/^the\b/); // no article-led noun phrase after "is"
       expect(predicate).not.toMatch(/\b(?:is|are)\b/); // no second finite verb — one clause, one subject
     }
+  });
+
+  /**
+   * #547: an appearance attribute the registry words as PROSE reaches the
+   * digest as the phrase record, and one it does not keeps its label form.
+   *
+   * Both paths into a subject's appearance facts are exercised at once, because
+   * they are the two ways the same attribute can arrive and they used to be
+   * able to disagree: `nose.shape` comes through the visual-state resolver
+   * (`attributeSemanticValue`), `hair.color` and `hair.length` through the
+   * registry projection this adapter runs itself.
+   *
+   * The record has to survive two seams to be useful — the renderer table, which
+   * previously suppressed any record at `appearance.attribute` as unreadable,
+   * and the dialect, which words a record through its `text` member. So the
+   * second half compiles the real 2512 dialect over the emitted claims: a
+   * dialect that does not compose phrases still gets a sentence, and it is
+   * prose rather than "Mira has hair color: platinum".
+   */
+  it("emits the registry's phrase for a worded attribute and the label form for an unworded one", () => {
+    const digest = characterDigest();
+    const slices = projectCharacterWorldSlices({
+      digest,
+      labels: { [SUBJECT]: "Mira" },
+      sources: { [SUBJECT]: fixtureSources() },
+    });
+    const facts = slices.subjects[0]?.facts ?? [];
+    const valueOf = (key: string): unknown => facts.find((fact) => fact.source.key === key)?.value;
+
+    // The registry projection's own path.
+    expect(imageAppearancePhrase(valueOf("hair.color"))).toEqual(PLATINUM_HAIR);
+    expect(imageAppearancePhrase(valueOf("hair.length"))).toEqual({
+      text: "hair to the shoulders",
+      phrase: { group: "hair", role: "trailer", fragment: "to the shoulders" },
+    });
+    // The visual-state resolver's path, over the fixture's selected nose fact —
+    // found by fact key, because a resolver-answered fact carries the visual
+    // state's own source key rather than the bare attribute id.
+    const nose = facts.find((fact) => fact.key === `${SUBJECT}/nose/shape`);
+    expect(imageAppearancePhrase(nose?.value)).toEqual({
+      text: "a crooked nose",
+      phrase: { group: "face", role: "with", fragment: "a crooked nose" },
+    });
+    // No phrase declared: the self-describing form the registry always had.
+    expect(valueOf("identity.gender")).toBe("Gender: female");
+
+    const world = buildImageWorldDigest({
+      read: { kind: "transactional_projection", token: "read-appearance" },
+      operation: {
+        kind: "generate",
+        task: "portrait",
+        strategy: "text_to_image_description",
+        subjectCount: 1,
+        style: { medium: "photographic", descriptors: [] },
+        literalText: [],
+      },
+      subjects: slices.subjects,
+    }).digest;
+    const claims = selectImagePositiveClaims(world).filter((claim) => claim.concept === "subject.appearance");
+    const compiled = qwenImage2512Dialect.compilePositive({
+      claims,
+      operation: world.operation,
+      references: [],
+      entityLabels: { [`subject.${SUBJECT}`]: "Mira" },
+      budget: {},
+    });
+    expect(compiled.droppedClaimIds).toEqual([]);
+    const sentences = compiled.segments.map((segment) => segment.text);
+    expect(sentences).toContain("Mira has platinum hair.");
+    expect(sentences).toContain("Mira has hair to the shoulders.");
+    expect(sentences).not.toContain("Mira has Hair color: platinum.");
   });
 
   /**

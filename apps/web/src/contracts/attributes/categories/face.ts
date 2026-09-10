@@ -16,7 +16,28 @@ export const faceGroup = defineAttributeGroup("face", [
     ],
     bodyLocationId: "face",
     aliases: ["face shape"],
-    imageAppearance: { class: "core", referenceFreeRequired: true },
+    imageAppearance: {
+      class: "core",
+      referenceFreeRequired: true,
+      phrase: {
+        group: "face",
+        role: "adjective",
+        // Every member is a shape word, and three of them are shape NOUNS: a face
+        // is heart-shaped, not "a heart face".
+        fragmentByValue: {
+          oval: "oval",
+          round: "round",
+          square: "square",
+          heart: "heart-shaped",
+          diamond: "diamond-shaped",
+          oblong: "oblong",
+          triangular: "triangular",
+          angular: "angular",
+          soft_rounded: "softly rounded",
+          chiseled: "chiseled",
+        },
+      },
+    },
   },
   {
     id: "face.freckles",
@@ -29,7 +50,21 @@ export const faceGroup = defineAttributeGroup("face", [
     allowedValues: ["none", "faint", "light_dusting", "scattered", "prominent", "heavy"],
     bodyLocationId: "face",
     aliases: ["freckles", "freckled"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragmentByValue: {
+          faint: "a faint dusting of freckles",
+          light_dusting: "a light dusting of freckles",
+          scattered: "scattered freckles",
+          prominent: "prominent freckles",
+          heavy: "heavy freckling",
+        },
+      },
+    },
   },
   {
     id: "face.expression_default",
@@ -45,7 +80,11 @@ export const faceGroup = defineAttributeGroup("face", [
     ],
     bodyLocationId: "face",
     aliases: ["resting expression", "default expression"],
-    imageAppearance: { class: "fallback", maximumFraming: "waist_up" },
+    imageAppearance: {
+      class: "fallback",
+      maximumFraming: "waist_up",
+      phrase: { group: "face", role: "with", fragment: "a {value} resting expression" },
+    },
     promptHints: ["Treat the default expression as a baseline the scene's mood moves away from, not a mask."],
   },
 ]);

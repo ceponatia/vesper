@@ -45,6 +45,17 @@ export const breastsGroup = defineAttributeGroup("breasts", [
       class: "reinforcement",
       minimumFraming: "portrait",
       ordinarySilhouette: true,
+      phrase: {
+        group: "build",
+        role: "with",
+        fragment: "a {value} bust",
+        // A chest with nothing to call a bust is described as a chest.
+        fragmentByValue: {
+          flat: "a flat chest",
+          nearly_flat: "a nearly flat chest",
+          perky_small: "a small, perky bust",
+        },
+      },
     },
     promptHints: [
       "Describe breasts only as far as wardrobe exposure and the exposure mask allow; one impression, not a checklist.",
