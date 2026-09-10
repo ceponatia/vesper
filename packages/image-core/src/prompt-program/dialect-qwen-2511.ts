@@ -2161,9 +2161,14 @@ function writeSetting(claims: readonly ImagePositiveClaim[], context: EmitContex
   const ranked = [...claims].sort(
     (left, right) => rankOf(SETTING_ORDER, left.concept) - rankOf(SETTING_ORDER, right.concept),
   );
+  // The PLACE is a claim about the location entity, which carries no subject
+  // ref. A `location.contents` claim filed on a subject is scenery beside that
+  // person — a coat over the chair the projection routed to the setting band —
+  // and "The setting: grey wool coat." would put the whole scene inside a coat.
+  // Such a claim keeps its own sentence, whichever sorts first.
   const place =
     context.state.register === "imperative"
-      ? (ranked.find((claim) => PLACE_CONCEPTS.includes(claim.concept)) ?? null)
+      ? (ranked.find((claim) => claim.subjectRef === undefined && PLACE_CONCEPTS.includes(claim.concept)) ?? null)
       : null;
   const voice = context.state.soleVoice;
   const sentences: GroupSentence[] = [];
