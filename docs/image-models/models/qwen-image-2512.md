@@ -77,6 +77,18 @@ The capability backfill (`0119_qwen-capability-backfill.sql`) fills that record,
 so both are live; re-probing the row from the Image Models page reaches the same
 state.
 
+## The prompt budget
+
+The row's prompt binding declares `recommendedChars: 1300`, the same advisory
+length its sibling [Qwen Image Edit 2511](qwen-image-edit-2511.md) carries —
+roughly the 200 words this family's published prompt guidance asks for. It pulls
+optional material down, never compresses a mandatory segment, and is reported
+rather than refused when a prompt exceeds it. No hard ceiling is measured for
+this endpoint, so the row carries no `maxChars`. The value is owner-curated data
+on `advancedCapabilities`
+([providers/registry.md](../../images/providers/registry.md) §Probe-owned
+columns).
+
 ## Negative-prompt ruling
 
 **This endpoint ignores `negative_prompt`, so Vesper does not send one.**

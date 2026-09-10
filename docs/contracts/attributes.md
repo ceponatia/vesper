@@ -121,6 +121,12 @@ forge filling or observer recognition.
 | `omitValues`            | Valid stored enum members that deliberately add no image instruction; every member must occur in `allowedValues`.           |
 | `ordinarySilhouette`    | Allows the one approved intimate shape fact to enter an ordinary character-image description through clothing.              |
 
+**Set `maximumFraming` to the widest band at which the fact still earns its
+words.** A feature whose *shape* reads at portrait distance may say `portrait`;
+a detail only a tight crop resolves — brow density, teeth, skin texture, a small
+piercing — says `close_up`, so it drops out of portrait, waist-up and wider
+shots rather than spending a clause on a few pixels.
+
 The projector still applies `excludeFromPrompts`, nonvisual-kind filtering,
 the ordinary `none` elision and realized-body applicability. It carries the
 attribute source and canonical truth fingerprint as provenance while
@@ -144,6 +150,12 @@ intimate reveal path and its exposure rules.
 | `shape`  | Reads *through* clothing — breast size, waist, hips, leg build, pregnancy — so it is **always** described. |
 | `skin`   | Only when the region is bare or sheer — nipples, leg hair, toenails.                                       |
 | *absent* | Not part of the scene subject's reveal line.                                                               |
+
+`shape` is the silhouette a *clothed* body still has. Breast shape, augmentation
+and fullness are `skin`, not `shape`: a garment flattens surface shape into
+whatever the garment does, so stating one on a covered torso describes a body the
+picture does not contain. `breasts.size` is the one bust fact clothing does not
+hide, and it stays the only `ordinarySilhouette` exception.
 
 Consumed by the scene render.
 

@@ -58,19 +58,33 @@ What ships, clean 3/3, is a composite of four parts across three layers, no one 
 single POV sentence:
 
 - the **capture-mode claim** (`scene.capture_mode`), marked required so no budget squeeze can
-  drop it and leave the other three arguing about a frame nobody described;
-- the **person-count assertion** — "Exactly one person is in frame." — carried by the operation
-  contract's subject count rather than by a scene claim. It counts the **cast**, never the
-  viewer, so an embodied shot takes the `fully in frame` wording instead: the cast are the
-  bodies the frame holds whole, and a limb the frame edge cuts is not one of them. The tag
-  family says the same thing as `solo focus` rather than `solo`. The distinction is the
-  dialect's to spell; that the count excludes the viewer is not;
-- an **abstract possession clause** (`scene.possession`) — "Every visible body part belongs to
-  Kristin." Its value is a list of entity refs the dialect resolves to names, so there is no
-  place in the fact for a limb noun. It is emitted for the **disembodied** first person only:
-  a selfie has the subject's own arm on the lens, an observing camera has no viewer in the
-  room to bind limbs against, and an embodied frame would be handing the viewer's own limbs
-  to an NPC;
+  drop it and leave the other three arguing about a frame nobody described. Its sentence is the
+  dialect's: the Qwen edit dialect names the camera and nobody else on a disembodied shot, since
+  a POV sentence naming a viewer puts a person in the room and then forbids drawing them;
+- the **person-count assertion**, carried by the operation contract's subject count rather than
+  by a scene claim. Where in the instruction it lands is the dialect's too — the Qwen edit
+  dialect closes with it, which is the one place a "nobody else is here" claim can do its job. It
+  counts the **cast**, never the viewer, so an embodied shot takes the `fully in frame` wording
+  instead: the cast are the bodies the frame holds whole, and a limb the frame edge cuts is not
+  one of them. The tag family says the same thing as `solo focus` rather than `solo`. The
+  spelling is the dialect's; that the count excludes the viewer is not;
+- an **abstract possession clause** (`scene.possession`), binding every visible body part to the
+  cast. Its value is a list of entity refs the dialect resolves, so there is no place in the
+  fact for a limb noun. It is lowered for the **disembodied** first person only — a selfie has
+  the subject's own arm on the lens, an observing camera has no viewer in the room to bind limbs
+  against, and an embodied frame would be handing the viewer's own limbs to an NPC — and only
+  where there is a limb to bind: **a featured member's pose or activity text has to name one**,
+  and a location-only shot with no focal states nothing. The clause exists to bind a limb the
+  pose put in the picture, so with no limb named it binds nothing and spends a claim asserting
+  that a person nobody described owns parts nobody mentioned. It reads every featured member
+  rather than the focal alone, because a bystander's "her hand on the doorframe" puts a limb in
+  the picture exactly as the focal's would, and the vocabulary is `bindLimbsToOwner`'s own, so
+  the noun that arms the clause and the noun the binder bound cannot drift apart. The claim is
+  optional rather than required: it is worth nothing without owners the dialect can name, and a
+  naming gap must degrade the sentence rather than fail the render — the ordinary case on a
+  reference-anchored scene, where the seam offers the dialect no display name at all and the
+  dialect's own binding wording is what names the owners
+  ([../character-prompts.md](../character-prompts.md) §Naming a subject per lane);
 - **`bindLimbsToOwner`**, the deterministic backstop ("one hand holding a cup" → "Kristin's
   hand holding a cup"), which stays upstream in the application and is not a claim. It runs on
   the pose and the activity separately, because the composer produces them as two fields.

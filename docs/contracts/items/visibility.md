@@ -65,3 +65,33 @@ Two rules worth knowing:
   retakes, and images share one answer rather than each deriving their own from slightly different
   moments. A location no garment reaches has no entry — bare skin is `exposedRegions`' answer, not
   this read's.
+
+## A worn garment nothing lets through
+
+The visual-state wardrobe projection tags a worn garment `wardrobe.concealed`
+when **every** body location it covers sits under a worn piece on a strictly
+higher layer whose own cover there reads `opaque` in the captured
+effective-coverage read.
+
+- **All of the coverage, not a share.** A bra whose band reaches below a cropped
+  sweater is a visible bra, so the fraction an occlusion edge reports is exactly
+  the wrong thing to threshold — 90% covered is still a garment somebody can see.
+- **Layer is strict.** Equal layers do not stack (two base pieces sit side by
+  side), and an absent layer on either piece takes that piece out of the
+  comparison, which is why a wardrobe nobody layered conceals nothing.
+- **Attaching accessories never conceal.** A necklace over a blouse hides no
+  blouse; jewelry and eyewear attach rather than cover.
+- **Every degraded path leaves the garment stated.** An unknown layer, an
+  unreadable opacity, no captured evidence for the upper piece at that location,
+  and a garment that covers nothing at all are each untagged. A visible garment
+  a prompt omits is a wardrobe error a player cannot miss; a concealed garment a
+  prompt mentions is a wasted clause.
+
+**The tag is the whole interface, and it changes no wardrobe truth.** The garment
+keeps its value, its coverage, its `covers` and `occludes` edges and its
+continuity prior, because a bra under a sweater is still what she is wearing and
+the next turn may take the sweater off. A consumer that describes a PICTURE reads
+the tag and withholds the garment
+([../../images/character-prompts.md](../../images/character-prompts.md) §The
+character projection); a consumer that reasons about state ignores it and reads
+on.

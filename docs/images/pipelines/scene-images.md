@@ -80,6 +80,15 @@ It designates ONE focal character from the pool — or none, since an empty room
 **location-only POV shot**, a legitimate output rather than an error — plus which other roster
 members are in frame.
 
+**Feeling is shown, never labelled.** `pose` carries the focal character's visible expression —
+what a photograph would actually catch: "a small smile playing at her lips", "one brow raised" —
+and it is the only field that states one. `mood` is atmosphere, the air of the place and the
+moment. The lowering enforces the split rather than trusting it: `scene.mood` is withheld
+whenever the focal has pose or activity text, because an image model handed both paints the
+abstract label on top of the concrete expression. A location-only shot, and a plan whose focal
+was given neither field, state the mood — there the label is the only thing saying how the
+picture feels.
+
 The output is clamped server-side by `resolveScenePlan`: a focal name not in the roster is
 replaced (`images.scene_composer.focal_clamped`), invented "others" are dropped
 (`images.scene_composer.absent_character_dropped`), and every character's outfit phrase is

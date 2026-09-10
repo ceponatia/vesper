@@ -72,11 +72,12 @@ adapter's capability list is intended to describe the endpoint completely. A pur
 or other image-only endpoint can legitimately omit the prompt capability rather than
 inheriting one implicitly.
 
-**Binding:** none. The probed prompt binding records where a prompt goes and, when known,
-how long it may be. Older or unprobed rows can lack that derived binding even though the
-provider still accepts a prompt, and treating the missing measurement as proof that the
-model has no prompt would create false refusals. Prompt-length fitting remains
-`@vesper/image-core`'s responsibility.
+**Binding:** none. The row's prompt binding records where a prompt goes — a probed field
+name — and, when a length is curated for it, how long a prompt the model answers well to
+([providers/registry.md](../../images/providers/registry.md) §Probe-owned columns). Older or
+unprobed rows can lack that binding even though the provider still accepts a prompt, and
+treating the missing record as proof that the model has no prompt would create false
+refusals. Prompt-length fitting remains `@vesper/image-core`'s responsibility.
 
 The prompt feature is provider-neutral and performs no rewriting, and no adapter in this
 package prepares prompt text: the Qwen family's numbered-reference wording is a prompt-program
