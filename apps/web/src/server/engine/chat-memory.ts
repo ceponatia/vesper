@@ -529,7 +529,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
 
 /**
  * The memory scribe ALONE, merged into the aggregate `writeChatMemory` consumes. The
- * edited-reply re-extraction (`reextractEditedReply`) re-files an edited exchange's
+ * exchange re-extraction (`reextractExchangeMemory`) re-files a repaired exchange's
  * long-term memory and nothing else — no state row is rewritten, no scene/outfit/loops are
  * folded — so it pays for exactly the one leg whose output it uses. (Before the split it
  * re-ran all thirteen fields and discarded eleven of them.)

@@ -31,6 +31,14 @@ const authState = vi.hoisted(() => ({
 
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
+// The real persona ladder everywhere (it is a plain DB read), wrapped in a spy so
+// ONE case can make the lookup fail and prove the message routes resolve it before
+// they write. Every other call falls straight through to the original.
+vi.mock("@/server/players", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/players")>();
+  return { ...actual, resolveChatPersona: vi.fn(actual.resolveChatPersona) };
+});
+
 import {
   deleteChat,
   loadChatState,
@@ -43,6 +51,7 @@ import {
 } from "@/server/engine";
 import { resetRateLimits } from "@/server/api";
 import { createNarratorPromptTemplate, setChatNarratorPromptSelection } from "@/server/narrator-prompts";
+import { resolveChatPersona } from "@/server/players";
 import { log } from "@/server/log";
 import {
   apiRequest,
@@ -122,10 +131,17 @@ async function createGroupChat(characterIds: string[]): Promise<{ id: string; me
   return expectJson<{ id: string; memoryGroupId: string }>(res, 201);
 }
 
-async function insertMessage(chatId: string, role: "user" | "assistant", content: string): Promise<string> {
+async function insertMessage(
+  chatId: string,
+  role: "user" | "assistant",
+  content: string,
+  // Explicit when the test depends on transcript ORDER: ids are cuid2 (unsortable),
+  // so two rows sharing a created_at would order arbitrarily.
+  createdAt?: Date,
+): Promise<string> {
   const [row] = await db()
     .insert(characterChatMessages)
-    .values({ chatId, role, content })
+    .values({ chatId, role, content, ...(createdAt ? { createdAt } : {}) })
     .returning({ id: characterChatMessages.id });
   if (!row) throw new Error("failed to seed chat message");
   return row.id;
@@ -992,6 +1008,104 @@ describe.runIf(ready)("message delete reconciles provenanced memory", () => {
     const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, messageId));
     expect(fact?.status).toBe("retracted");
     expect(await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, messageId))).toHaveLength(0);
+  });
+});
+
+/** The slice of the repair envelope the memory cases below read. */
+interface MemoryContinuity {
+  memory: string;
+  diagnostics: string[];
+}
+
+/**
+ * A player line answered by a reply whose extraction is already on file — the
+ * shape thread 2 is about: nothing is anchored on the player row, but the reply's
+ * facts and episode were extracted from BOTH halves.
+ */
+async function plantAnsweredExchange(): Promise<{ chatId: string; userId: string; replyId: string }> {
+  const chat = await createChat(ids.character);
+  const userId = await insertMessage(chat.id, "user", "my name is Alice", new Date(1_700_000_100_000));
+  const replyId = await insertMessage(chat.id, "assistant", "nice to meet you, Alice", new Date(1_700_000_101_000));
+  await plantMemory(chat.memoryGroupId, replyId);
+  return { chatId: chat.id, userId, replyId };
+}
+
+/**
+ * The reply's planted extraction is gone AND the envelope says nothing replaced
+ * it: the suite runs in demo mode, so the scribe is skipped
+ * (`chat_archivist.degraded`) and the honest outcome is `degraded`, never
+ * `reextracted`.
+ */
+async function expectRetractedAndDegraded(continuity: MemoryContinuity, replyId: string): Promise<void> {
+  expect(continuity.memory).toBe("degraded");
+  expect(continuity.diagnostics).toContain("chat_archivist.degraded");
+  expect(continuity.diagnostics).toContain("chat_continuity.memory.degraded");
+
+  const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, replyId));
+  expect(fact?.status).toBe("retracted");
+  expect(await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, replyId))).toHaveLength(0);
+}
+
+describe.runIf(ready)("a player line's memory lives on the reply that answered it", () => {
+  it("retracts the following reply's extraction when the player's line is EDITED", async () => {
+    const { chatId, userId, replyId } = await plantAnsweredExchange();
+
+    const res = await msgPatch(patchMsgReq(chatId, userId, { content: "my name is Bob" }), msgCtx(chatId, userId));
+    const body = await expectJson<{ id: string; continuity: MemoryContinuity }>(res, 200);
+
+    // Without this the Alice fact stays active and retrievable behind the Bob line.
+    await expectRetractedAndDegraded(body.continuity, replyId);
+  });
+
+  it("retracts the following reply's extraction when the player's line is DELETED", async () => {
+    const { chatId, userId, replyId } = await plantAnsweredExchange();
+
+    const res = await msgDelete(delMsgReq(chatId, userId), msgCtx(chatId, userId));
+    const body = await expectJson<{ deleted: true; continuity: MemoryContinuity }>(res, 200);
+
+    await expectRetractedAndDegraded(body.continuity, replyId);
+  });
+
+  it("leaves an earlier exchange alone when the edited player line has no reply yet", async () => {
+    const chat = await createChat(ids.character);
+    const earlierReply = await insertMessage(chat.id, "assistant", "an earlier answer", new Date(1_700_000_200_000));
+    await plantMemory(chat.memoryGroupId, earlierReply);
+    const newest = await insertMessage(chat.id, "user", "and one more thing", new Date(1_700_000_201_000));
+
+    const res = await msgPatch(patchMsgReq(chat.id, newest, { content: "and one more thing, actually" }), msgCtx(chat.id, newest));
+    const body = await expectJson<{ id: string; continuity: MemoryContinuity }>(res, 200);
+
+    expect(body.continuity.memory).toBe("unaffected"); // no exchange used this line as either half
+    const [fact] = await db().select({ status: facts.status }).from(facts).where(eq(facts.sourceMessageId, earlierReply));
+    expect(fact?.status).toBe("active");
+    expect(await db().select({ id: episodes.id }).from(episodes).where(eq(episodes.sourceMessageId, earlierReply))).toHaveLength(1);
+  });
+});
+
+describe.runIf(ready)("the message routes resolve the persona BEFORE the transcript write", () => {
+  it("500s with the row unchanged when the persona store is down", async () => {
+    const chat = await createChat(ids.character);
+    const messageId = await insertMessage(chat.id, "assistant", "the line as it stands", new Date(1_700_000_300_000));
+    // The unhandled-handler path log-errors by design; silence it rather than let
+    // an expected failure read as a broken suite.
+    const errorSpy = vi.spyOn(log, "error").mockImplementation(() => undefined);
+    vi.mocked(resolveChatPersona).mockRejectedValueOnce(new Error("persona store down"));
+
+    try {
+      const res = await msgPatch(patchMsgReq(chat.id, messageId, { content: "a rewrite that must not land" }), msgCtx(chat.id, messageId));
+      // withRoute turns a thrown handler error into the 500 `internal` envelope.
+      await expectApiError(res, 500, "internal");
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    // The whole point: nothing committed, so no derivative is left quoting a line
+    // the repair never got to run against.
+    const [row] = await db()
+      .select({ content: characterChatMessages.content })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.id, messageId));
+    expect(row?.content).toBe("the line as it stands");
   });
 });
 

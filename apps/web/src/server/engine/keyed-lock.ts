@@ -39,6 +39,23 @@ export function chatExchangeLockKey(chatId: string): string {
 }
 
 /**
+ * The one spelling of the per-chat SUMMARY key, here for exactly the reason
+ * {@link chatExchangeLockKey} is: a lane that spells the prefix even slightly
+ * differently takes a DIFFERENT lock, serializes against nobody, and looks
+ * completely normal. Every writer of the rolling summary takes it — the detached
+ * `chat_summary` fold job and the full rebuild behind `/summary/rebuild` — and so
+ * does the continuity repair's "is this line covered by the watermark?" decision,
+ * which is only sound when read from a watermark no in-flight fold is still about
+ * to advance.
+ *
+ * Deliberately SEPARATE from the exchange key: a fold is a background model call
+ * and must never make a reply wait on it, nor a reply on a fold.
+ */
+export function chatSummaryLockKey(chatId: string): string {
+  return `chat_summary:${chatId}`;
+}
+
+/**
  * Holder labels for the shared {@link chatExchangeLockKey} — a busy 409 reads the
  * current holder's label (via {@link keyedLockHolderLabel}) to name its cause.
  * Live here (the lock's server home) so both the reply lanes and the app-layer sim

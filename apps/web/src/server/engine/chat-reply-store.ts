@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   chatActionIdSchema,
@@ -310,6 +310,41 @@ export async function messageBefore(
       ),
     )
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * The message immediately after `target`, collision-safe on the `(createdAt, id)`
+ * tuple — the mirror of {@link messageBefore}.
+ *
+ * The comparison is against the TUPLE, never the row, so this still answers for a
+ * target that has already been deleted: continuity repair runs after the write and
+ * still needs the reply that followed the snipped line.
+ */
+export async function messageAfter(
+  chatId: string,
+  target: { id: string; createdAt: Date },
+): Promise<{ id: string; role: "user" | "assistant"; content: string; createdAt: Date } | null> {
+  const [row] = await db()
+    .select({
+      id: characterChatMessages.id,
+      role: characterChatMessages.role,
+      content: characterChatMessages.content,
+      createdAt: characterChatMessages.createdAt,
+    })
+    .from(characterChatMessages)
+    .where(
+      and(
+        eq(characterChatMessages.chatId, chatId),
+        ne(characterChatMessages.id, target.id),
+        or(
+          gt(characterChatMessages.createdAt, target.createdAt),
+          and(eq(characterChatMessages.createdAt, target.createdAt), gt(characterChatMessages.id, target.id)),
+        ),
+      ),
+    )
+    .orderBy(asc(characterChatMessages.createdAt), asc(characterChatMessages.id))
     .limit(1);
   return row ?? null;
 }
