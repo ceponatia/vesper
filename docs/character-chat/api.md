@@ -38,12 +38,20 @@ path performs the explicit permission and contact rollback instead.
 ### Continuity repair
 
 **An edited or snipped line's wording also lives outside the transcript** — folded into the
-rolling summary, extracted into facts and an episode, and possibly kept as a voice exemplar —
-so both verbs rebuild all three before answering, and await the work: a fire-and-forget repair
-lets the very next send retrieve what the player just removed.
+rolling summary, extracted into the facts and episode of the exchange it belonged to, and
+possibly kept as a voice exemplar — so both verbs rebuild all three before answering, and
+await the work: a fire-and-forget repair lets the very next send retrieve what the player just
+removed. Everything the repair reads from another store (the player persona the scribe
+addresses) is resolved before the write, so that lookup failing costs the request rather than
+leaving a committed line with unrepaired derivatives.
 
-- **Memory** — an assistant line's extraction is retracted; an edit re-files the scribe leg
-  from the new text. Memory is anchored on assistant message ids, so a user line has none.
+- **Memory** — repair follows the **exchange**, not the edited row. Memory is stored under an
+  assistant message id, but the extraction behind it read the player's half too, so a player
+  line's wording lives in the exchange anchored on the reply that followed it: editing or
+  deleting one retracts that reply's extraction and re-files it from the current transcript
+  (the new player text, or no player half at all after a delete). A player line no reply has
+  answered yet has no derivative and is `unaffected`. An edited assistant line re-files itself;
+  a deleted one is retracted only, having no anchor left to file under.
 - **Summary** — re-folded whenever the line's `(createdAt, id)` is at or before the summary
   watermark, for user and assistant lines alike. A line AFTER the watermark is still verbatim
   in the window and costs no model call. The coverage decision and the rebuild it triggers run
@@ -64,13 +72,13 @@ that fails is reported rather than failing the request.
 
 `PATCH` returns `{ id, continuity }` and `DELETE` returns `{ deleted: true, continuity }`:
 
-| Field                   | Values                                                    |
-| ----------------------- | --------------------------------------------------------- |
-| `summary`               | `rebuilt` \| `unaffected` \| `failed`                     |
-| `memory`                | `reextracted` \| `reconciled` \| `unaffected` \| `failed` |
-| `voiceExemplarsRemoved` | exemplars dropped from the live rings                     |
-| `voice`                 | `scrubbed` \| `unaffected` \| `failed`                    |
-| `diagnostics`           | the repair's diagnostic codes                             |
+| Field                   | Values                                                                  |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `summary`               | `rebuilt` \| `unaffected` \| `failed`                                   |
+| `memory`                | `reextracted` \| `degraded` \| `reconciled` \| `unaffected` \| `failed` |
+| `voiceExemplarsRemoved` | exemplars dropped from the live rings                                   |
+| `voice`                 | `scrubbed` \| `unaffected` \| `failed`                                  |
+| `diagnostics`           | the repair's diagnostic codes                                           |
 
 ## Roster and relationships
 
@@ -277,9 +285,10 @@ sees "a photo you can't quite make out"; a non-degraded later retake retries) ·
 `chat_state.memory.write_failed` · `chat_state.attribute.unknown` /
 `.inherent_change_rejected` · `chat_summary.fold` / `.degraded` / `.empty` ·
 `chat_state.snapshot.missing` · `chat_memory.reconciled` · the transcript-edit repair's
-`chat_continuity.summary.rebuilt` / `.summary.failed` / `.memory.failed` / `.voice.scrubbed`
-/ `.voice.failed` (§Continuity repair; the tracker leg's `chat_continuity.*` above is a
-different leg) · the `romantic_touch` permission
+`chat_continuity.summary.rebuilt` / `.summary.failed` / `.memory.degraded` (**warn** — the old
+extraction is retracted and the re-file degraded, so nothing replaced it) / `.memory.failed` /
+`.voice.scrubbed` / `.voice.failed` (§Continuity repair; the tracker leg's `chat_continuity.*`
+above is a different leg) · the `romantic_touch` permission
 owner's `chat_permission.scene.stale` (a racing scene write refused the whole append —
 nothing committed), `chat_permission.rollback.failed` (**error** — a retake exhausted the
 discarded-take permission prune retries, so the retake is refused before a replacement reply

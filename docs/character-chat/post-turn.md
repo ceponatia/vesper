@@ -71,9 +71,12 @@ then one guarded state write:
   leg's reads still land. All three down ⇒ the whole-archivist degrade (no memory
   written, nothing folded). Covered by `chat-extraction-legs.int.test.ts`.
 
-  The **edited-reply re-extraction** (`chat-message-edits.ts` `reextractEditedReply`) runs the memory scribe
+  The **exchange re-extraction** (`chat-message-edits.ts` `reextractExchangeMemory`) runs the memory scribe
   ALONE (`runChatMemoryScribe`): that path re-files long-term memory and rewrites no state
-  row, so paying for the other two legs' fields would discard every one of them.
+  row, so paying for the other two legs' fields would discard every one of them. It re-files
+  whichever exchange lost or changed a half — an edited reply from its new text, and an edited
+  or snipped player line through the reply that answered it — always reading both halves back
+  from the current transcript, so the removed wording cannot return through the re-file.
 
   The merged aggregate carries the episode
   summary, `FactDraft[]`, next-turn `memoryQueries` (the scribe also reads the rolling
@@ -128,9 +131,9 @@ then one guarded state write:
   (composer inference) — ids never reach the narrator.
   Its memory write is additionally fenced
   so an infra throw never costs the pulse's state. Every write is **provenance-stamped**
-  (`source_message_id` on facts + episodes): deleting or editing an assistant
-  line retracts/re-extracts its memory (`reconcileMessageMemory` / `reextractEditedReply`),
-  and "another take" rolls it back exactly.
+  (`source_message_id` on facts + episodes): deleting or editing a line retracts/re-extracts
+  the memory of the exchange it belonged to (`reconcileMessageMemory` /
+  `reextractExchangeMemory`), and "another take" rolls it back exactly.
 - The finalizer also appends the **relationship arc** (`appendRelationshipSample` /
   `deriveExchangeMilestones`, `contracts/relationships/history.ts`), persists the
   **scenario** beside the state (the merged scene memory, the clock the pipeline ticked
