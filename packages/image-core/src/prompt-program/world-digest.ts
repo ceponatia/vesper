@@ -202,6 +202,16 @@ export function isRequiredImageWorldFact(fact: ImageWorldFact): boolean {
 }
 
 /**
+ * The pronoun set a subject's sentences may use once the subject has been
+ * introduced — how a prose dialect stops re-naming a person in every clause
+ * (#544). Derived by the application from the character's stated gender and
+ * never guessed by a dialect: a subject with no set is referred to by label or
+ * by the reference that shows them. Items and locations carry none.
+ */
+export const imageSubjectPronounSets = ["she_her", "he_him", "they_them"] as const;
+export type ImageSubjectPronounSet = (typeof imageSubjectPronounSets)[number];
+
+/**
  * One entity's slice of the digest.
  *
  * Subjects, locations and items share one shape rather than getting three
@@ -227,6 +237,8 @@ export interface ImageEntityDigest {
    * the application can make.
    */
   readonly label: string;
+  /** Subjects only: the pronoun set a dialect may use after introducing them ({@link ImageSubjectPronounSet}). */
+  readonly pronouns?: ImageSubjectPronounSet;
   readonly facts: readonly ImageWorldFact[];
   /**
    * The morphology subset — the negative anatomy block's guard input.

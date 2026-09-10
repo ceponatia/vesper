@@ -378,6 +378,9 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     operation: digest.operation,
     references: input.references,
     entityLabels: Object.fromEntries(imageWorldDigestEntities(digest).map((entity) => [entity.ref, entity.label])),
+    entityPronouns: Object.fromEntries(
+      digest.subjects.flatMap((subject) => (subject.pronouns === undefined ? [] : [[subject.ref, subject.pronouns]])),
+    ),
     budget: input.budget,
     sink,
   });

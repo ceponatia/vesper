@@ -11,7 +11,9 @@ import {
 import type { ImageNegativeBlockId, ImageNegativeConstraint, ImageNegativeGuard } from "./negative-constraints";
 import { isMandatoryImagePositiveClaim, type ImagePositiveClaim } from "./positive-claims";
 import type { SceneStagingSurfaceDecision, SceneStagingSurfaceLog } from "./scene-staging-surfaces";
-import type { ImageOperationContract } from "./world-digest";
+import type { ImageOperationContract,
+  ImageSubjectPronounSet,
+} from "./world-digest";
 
 /**
  * The endpoint dialect registry.
@@ -137,6 +139,12 @@ export interface ImageDialectPositiveInput {
    * answered, and cannot start reading facts the claim list did not offer it.
    */
   readonly entityLabels: Readonly<Record<string, string>>;
+  /**
+   * The pronoun set each SUBJECT ref may be referred to by once introduced, keyed
+   * by ref. Absent for a subject the application stated no set for; a dialect
+   * then keeps using the label (or the reference binding) and never guesses.
+   */
+  readonly entityPronouns?: Readonly<Record<string, ImageSubjectPronounSet>>;
   readonly budget: ImagePromptBudget;
   readonly sink?: DiagnosticSink;
 }
