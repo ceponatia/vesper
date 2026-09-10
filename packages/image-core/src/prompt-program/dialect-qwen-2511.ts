@@ -1,5 +1,6 @@
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import { joinImagePromptSegments, type ImagePromptSegment } from "../render-intent/prompt-segments";
+import type { SceneCaptureMode } from "../scene-ir";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -7,6 +8,7 @@ import type {
   ImageFramingBand,
   ImageLightingBand,
 } from "./camera-bands";
+import type { ImageConceptId } from "./concepts";
 import type { ImageStyleMedium } from "./conflict-keys";
 import {
   angleSentence,
@@ -15,30 +17,26 @@ import {
   describe,
   describeChange,
   distanceSentence,
-  faceVisibilityAnchor,
-  faceVisibilitySentence,
-  hairConcealedForSubject,
-  hairConcealedInCast,
   hairConcealmentSentence,
   framingSentence,
   heightSentence,
+  imagePronounWords,
   label,
   lightingSentence,
   listWords,
-  possessionOwners,
-  possessionSentence,
   preservedMeanings,
   mediumSentence,
-  prefixed,
   relationSentence,
+  reportUnwordableClaimValue,
   sentence,
   spatialWord,
   stagingSentence,
-  subjectCountSentence,
+  unwordableImageClaimValue,
   viewerAppearanceSentence,
   viewerGeometrySentence,
   viewerIntimateSentence,
   viewerIsEmbodied,
+  type ImagePronounWords,
 } from "./dialect-qwen-prose";
 import {
   compileDialectClaims,
@@ -51,8 +49,15 @@ import {
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
-import { imageSceneCaptureMode, imageSceneObscuredFace, imageSceneStagingForm } from "./scene-facts";
+import {
+  imageSceneCaptureMode,
+  imageSceneObscuredFace,
+  imageScenePossessionOwners,
+  imageSceneStagingForm,
+  type ImageObscuredFace,
+} from "./scene-facts";
 import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./scene-staging-surfaces";
+import type { ImageSubjectPronounSet } from "./world-digest";
 
 /**
  * `qwen/qwen-image-edit-2511` — the delta-first instruction-edit dialect.
@@ -62,15 +67,11 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  * 1. **It is an EDIT model.** Its `prompt` is "Text instruction on how to edit
  *    the given image" (probed schema, drizzle/0119), its reference input is
  *    required, and it cannot generate from text alone. So the compile is
- *    delta-first, in the research doc's order: the identity lock, the numbered
- *    references and their roles, the one requested change, the limited
- *    preserve set, and any geometry/canvas permission — never a broad
- *    "preserve everything" clause, which is the wording the research blames
- *    for Qwen's squashed-figure geometry failure when it fights a requested
- *    pose or framing change. The lock leading the assignments is this
- *    dialect's own emission order (`compilePositive`): the multi-reference
- *    lock promises "as assigned below", so the assignments must actually be
- *    below it (owner correction 2026-08-29 #4).
+ *    delta-first, in the research doc's order: the subject bound to its numbered
+ *    image, the one requested change, the limited preserve set, and any
+ *    geometry/canvas permission — never a broad "preserve everything" clause,
+ *    which is the wording the research blames for Qwen's squashed-figure
+ *    geometry failure when it fights a requested pose or framing change.
  * 2. **Numbered references are a FAMILY behavior** (owner ruling 2026-08-24):
  *    Qwen Edit's own multi-image guidance asks callers to identify images by
  *    number and assign each an explicit purpose, so this dialect declares
@@ -80,64 +81,74 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  *    are prompt, image, aspect_ratio, seed, go_fast, lora_*, output_*,
  *    disable_safety_checker). Per the owner ruling of 2026-08-29 the dialect
  *    declares `unsupported` and every compiled exclusion drops with a recorded
- *    transport reason. No inline or positive-replacement transport is invented
- *    here: whether affirmative wording can do the field's job is an evidence
- *    question for a fixed trial, exactly as it was for 2512.
+ *    transport reason.
+ *
+ * **The family's guidance is fluent prose, and this dialect writes it (#544).**
+ * Qwen's own prompt guidance for the family asks for connected sentences in the
+ * order subject, appearance, clothing and hair, pose, environment — not a list.
+ * One claim per sentence produced the opposite: a representative scene compiled
+ * 38 sentences that named the same character 28 times, and repetition plus a
+ * display name beside a reference image are both identity cues competing with
+ * the photograph the endpoint was given. So this dialect RENDERS per claim (the
+ * fitter still decides what a budget squeeze keeps, over the same per-claim
+ * segments as before) and then EMITS in groups: the subject is bound to its
+ * image once, referred to by pronoun afterwards, and described in a few grouped
+ * sentences. See {@link groupOf} for the order and {@link SubjectVoice} for the
+ * naming rule.
  *
  * The identity lock (owner ruling 2026-08-29): the compiled `subject.identity`
- * claim is worded here, chosen single vs multi by reference count. This
- * dialect is the ONLY source of the family's lock wording: the render kernel's
- * `@vesper/image-models` quirk that once rewrote the lane-side legacy sentence
- * into these bytes retired with the lane prose (#251), so a prompt reaches the
- * provider exactly as it was compiled and hashed.
+ * claim is worded here and nowhere else — the render kernel's `@vesper/image-models`
+ * quirk that once rewrote a lane-side sentence into frozen bytes retired with
+ * the lane prose (#251), so a prompt reaches the provider exactly as it was
+ * compiled and hashed, and the lock is free to merge into the binding sentence.
  */
 
 const DIALECT_ID = "qwen_2511_delta_edit" as const;
 
 /**
- * The family's identity-lock spellings. Kept no longer than the legacy lock
- * they replaced, so an edit prompt fitted before the lock was chosen stays
- * fitted.
+ * The single-reference binding's PRESERVE half — what the reference image is
+ * authoritative for, and nothing else.
+ *
+ * Hair and body proportions left the lock (#544 F4, owner decision): the
+ * photograph carries the face, the skin tone and the apparent age, and the TEXT
+ * is authoritative for hair, build, wardrobe and pose. The old lock claimed hair
+ * and proportions and was then followed by hair colour, length, arrangement and
+ * musculature stated as bare facts, with nothing to tell a reminder from an
+ * override.
+ *
+ * A CLAUSE rather than a whole sentence, because the sentence is no longer
+ * constant: it names the subject, the image number and — once a pronoun set
+ * reaches the digest — a possessive. What stays fixed, and what a test or a
+ * downstream reader can pin, is the preserve set itself.
  */
-export const QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK =
-  "Image 1 is the identity reference. Preserve the exact face, hair, skin tone, body proportions, and apparent age. Change only what this instruction requests.";
+export const QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK = "face, skin tone and apparent age exactly as shown.";
 
-/** See {@link QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK} — same contract, multi-reference spelling. */
+/**
+ * See {@link QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK} — same contract, the
+ * multi-reference spelling, which binds each person to their OWN numbered image.
+ *
+ * Deliberately NOT a superstring of the single clause. The two spellings are how
+ * a reader tells which binding a render chose, and a single clause contained
+ * inside the multi one would make "this render did not take the multi form"
+ * unassertable.
+ */
 export const QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK =
-  "Use numbered references as assigned below. Preserve each person's exact face, hair, skin tone, build, and apparent age; change only requested details.";
+  "keep each person's face, skin tone and apparent age exactly as their own image shows.";
 
 /**
- * The two locks with "hair" removed — the spellings a render takes when
- * somebody in the cast wears headwear that fully hides their hair
- * (`hairConcealedInCast`). Preserving hair from a reference that shows it is
- * the instruction to paint that hair back over the hijab; every other cue
- * stays as the lock states it. The multi lock is one sentence for the whole
- * cast, so one covered person drops the clause for all — the conservative
- * reading, and the one the per-subject face-visibility sentence refines.
+ * Retained aliases. Hair is no longer in either preserve set, so a cast member
+ * whose headwear hides their hair needs no separate spelling — the lock never
+ * asks for hair back. `subject.hair_concealment` still states the concealment in
+ * its own sentence, which is the claim that actually keeps hair off the render.
+ *
+ * @deprecated Use {@link QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK}; identical bytes.
  */
-export const QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED =
-  "Image 1 is the identity reference. Preserve the exact face, skin tone, body proportions, and apparent age. Change only what this instruction requests.";
-
-/** See {@link QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED} — multi-reference spelling. */
-export const QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED =
-  "Use numbered references as assigned below. Preserve each person's exact face, skin tone, build, and apparent age; change only requested details.";
+export const QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED = QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK;
 
 /**
- * The lock for a reference count, mirroring the kernel quirk's own choice: the
- * quirk rewrites on total reference count, blind to roles, so byte parity
- * requires the same rule. Zero references returns null — there is no image to
- * lock an identity to, and on an endpoint whose whole transport for identity IS
- * the reference, describing a face in prose instead would render a stranger.
+ * @deprecated Use {@link QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK}; identical bytes.
  */
-function identityLock(referenceCount: number, hairConcealed: boolean): string | null {
-  if (referenceCount <= 0) return null;
-  if (hairConcealed) {
-    return referenceCount === 1
-      ? QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED
-      : QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED;
-  }
-  return referenceCount === 1 ? QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK : QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK;
-}
+export const QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED = QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK;
 
 // ---------------------------------------------------------------------------
 // Positive
@@ -153,6 +164,9 @@ function identityLock(referenceCount: number, hairConcealed: boolean): string | 
  * lettering) instead of inheriting the claim ids' alphabetical accident.
  * Fractions above 100 keep every operation claim ahead of a lab `raw.text`
  * claim and leave cross-kind trimming behavior untouched.
+ *
+ * They still order FITTING, which is the half that matters now: emission order
+ * is {@link EMISSION_ORDER}'s, applied after the budget has had its say.
  */
 const DELTA_PRIORITY = {
   reference: 100.5,
@@ -163,35 +177,165 @@ const DELTA_PRIORITY = {
 } as const;
 
 /**
- * The lock's own priority: below the operation band, above every projection
- * claim. It matters only under a hard provider ceiling, where mandatory
- * segments compress weakest-first by whole sentences — the lock is three
- * sentences, and a squeeze should eat descriptive prose long before it
- * shortens the sentence contract the edit path depends on.
+ * The binding sentence's own priority: below the operation band, above every
+ * projection claim. It matters only under a hard provider ceiling, where
+ * mandatory segments compress weakest-first by whole sentences — and the
+ * binding is the one sentence an edit on this endpoint cannot do without.
  */
 const IDENTITY_LOCK_PRIORITY = 99;
 
 /**
- * The lock adaptation's priority: strictly under the lock's, which is what makes
- * a turned-away shot's "do not rotate" sentence FOLLOW the lock it corrects
- * instead of preceding it. Segments are ordered by kind and then by priority
- * descending, so this buys ordering and not adjacency: further subjects' identity
- * claims arrive at the lock's own priority and may land between the two. The
- * guarantee the adaptation actually needs is that it is in the identity band,
- * after the lock, and as unfittable as the lock — all three of which hold.
+ * The binding's adaptation for a face the shot cannot show: strictly under the
+ * binding's priority, so a squeeze reaches it first, and emitted immediately
+ * after it in {@link writeBinding} rather than by relying on the ordering.
  */
 const FACE_VISIBILITY_PRIORITY = 98.9;
+
+// ---------------------------------------------------------------------------
+// Subject voice — how this dialect names a person, and how often (#544 F2)
+// ---------------------------------------------------------------------------
+
+/**
+ * One subject's names: how the binding sentence introduces them, and how every
+ * later sentence refers back.
+ *
+ * The old rule was "never a pronoun", on the sound reasoning that a dialect
+ * guessing a gender would be asserting something the digest never stated. The
+ * digest now states it — `entityPronouns`, derived by the application from the
+ * character's own identity facts — so the rule can become "never GUESS a
+ * pronoun", which is what the repetition defect needed: a representative scene
+ * named one character 28 times, and the display name is, in the
+ * fictional-celebrity workflow, a real person's name sitting beside a reference
+ * photograph as a competing identity cue.
+ *
+ * Three ways to be named, in order:
+ *
+ * - the display LABEL, when the application supplied one;
+ * - the reference BINDING — "the woman in Image 1" — when it did not, which is
+ *   the ordinary scene case, because the scene lane omits labels for
+ *   reference-anchored subjects;
+ * - "the subject", when there is neither.
+ *
+ * `pronouns` is null when the digest stated no set AND when a pronoun would be
+ * AMBIGUOUS: two `she_her` subjects in one cast make "she" unresolvable, so both
+ * keep their introductions. A prompt that binds the wrong body to the wrong
+ * clause is worse than a repetitive one.
+ */
+interface SubjectVoice {
+  /** How the binding sentence names them — the introduction plus their image. */
+  readonly binding: string;
+  /** How a later sentence names them when no pronoun may be used. */
+  readonly introduction: string;
+  /** Null when the digest stated no set, or when the set is shared in this cast. */
+  readonly pronouns: ImagePronounWords | null;
+}
+
+/** The subject pronoun, or the introduction when none may be used. */
+function they(voice: SubjectVoice | null): string {
+  return voice?.pronouns?.subject ?? voice?.introduction ?? "the subject";
+}
+
+/** The possessive determiner: "her", or "Wren's" when no pronoun may be used. */
+function their(voice: SubjectVoice | null): string {
+  const pronouns = voice?.pronouns;
+  if (pronouns !== null && pronouns !== undefined) return pronouns.possessive;
+  return `${voice?.introduction ?? "the subject"}'s`;
+}
+
+/** The object pronoun, or the introduction. */
+function them(voice: SubjectVoice | null): string {
+  return voice?.pronouns?.object ?? voice?.introduction ?? "the subject";
+}
+
+/** The independent possessive: "hers", or "Wren's". */
+function theirs(voice: SubjectVoice | null): string {
+  return voice?.pronouns?.independent ?? `${voice?.introduction ?? "the subject"}'s`;
+}
+
+/**
+ * Verb agreement. `they_them` takes the plural form for a single person, which
+ * is the one place a pronoun set changes anything but a pronoun.
+ */
+function agree(voice: SubjectVoice | null, singular: string, plural: string): string {
+  return voice?.pronouns?.plural === true ? plural : singular;
+}
+
+/** The identity image that shows THIS subject, or null when the payload has none. */
+function identitySlotFor(input: ImageDialectPositiveInput, ref: string | undefined): ImageDialectReference | null {
+  if (ref === undefined) return null;
+  return input.references.find((slot) => slot.role === "identity" && slot.subjectRef === ref) ?? null;
+}
+
+/**
+ * Every subject this compile may name, with the pronoun ambiguity already
+ * resolved.
+ *
+ * Built from the CLAIMS rather than from `entityPronouns` alone: a subject the
+ * program states facts about must be nameable whether or not the application
+ * had a pronoun set for them, and a set for somebody with no claims names
+ * nobody in this prompt.
+ */
+function subjectVoices(input: ImageDialectPositiveInput): Map<string, SubjectVoice> {
+  const refs: string[] = [];
+  for (const claim of input.claims) {
+    if (claim.subjectRef === undefined || !claim.concept.startsWith("subject.")) continue;
+    if (!refs.includes(claim.subjectRef)) refs.push(claim.subjectRef);
+  }
+  for (const slot of input.references) {
+    if (slot.role !== "identity" || slot.subjectRef === undefined) continue;
+    if (!refs.includes(slot.subjectRef)) refs.push(slot.subjectRef);
+  }
+  // A set two subjects share cannot resolve a pronoun back to one of them.
+  const shared = new Set<ImageSubjectPronounSet>();
+  const seen = new Set<ImageSubjectPronounSet>();
+  for (const ref of refs) {
+    const set = input.entityPronouns?.[ref];
+    if (set === undefined) continue;
+    if (seen.has(set)) shared.add(set);
+    seen.add(set);
+  }
+  const voices = new Map<string, SubjectVoice>();
+  for (const ref of refs) {
+    const set = input.entityPronouns?.[ref];
+    const words = set === undefined ? null : imagePronounWords(set);
+    const name = label(input, ref);
+    const slot = identitySlotFor(input, ref);
+    const introduction =
+      name ?? (slot === null ? "the subject" : `the ${words?.noun ?? "person"} in Image ${slot.position}`);
+    voices.set(ref, {
+      introduction,
+      binding: name !== null && slot !== null ? `${name} in Image ${slot.position}` : introduction,
+      pronouns: set !== undefined && !shared.has(set) ? words : null,
+    });
+  }
+  return voices;
+}
+
+// ---------------------------------------------------------------------------
+// Per-compile state
+// ---------------------------------------------------------------------------
 
 /** Per-compile render state. Created fresh in `compilePositive`, never shared. */
 interface RenderState {
   lockEmitted: boolean;
   /**
-   * The claim id whose segment carries the lock bytes — how `compilePositive`
-   * finds the lock again after fitting, structurally rather than by matching
-   * text (the segments carry the claim id as `source`).
+   * The claim id whose segment carries the binding sentence — how the emission
+   * pass finds it again after fitting, structurally rather than by matching text
+   * (the segments carry the claim id as `source`).
    */
   lockClaimId: string | null;
   readonly takenSlots: Set<number>;
+  /**
+   * The send slot each `operation.reference_role` claim resolved to.
+   *
+   * Recorded during rendering because {@link claimSlot} CONSUMES a slot, so the
+   * emission pass cannot ask the same question a second time and get the same
+   * answer.
+   */
+  readonly slots: Map<string, ImageDialectReference>;
+  readonly voices: Map<string, SubjectVoice>;
+  /** The one subject, when there is exactly one — who a camera or count sentence means. */
+  readonly soleVoice: SubjectVoice | null;
 }
 
 /**
@@ -221,13 +365,20 @@ function claimSlot(
 }
 
 /**
- * One numbered assignment, in the family's "identify each image and its
- * purpose" shape. Null for the structural control roles: 2511's probed schema
- * has no structural input, so a mask or depth map could only travel through the
- * content `image` array — where the model would DEPICT it rather than obey it,
- * and a prompt claiming otherwise would assert a transport this endpoint does
- * not have. The null drops the claim, and the operation kind's mandatory floor
- * turns that into a refusal before provider spend.
+ * One numbered assignment for a NON-identity role, in the family's "identify
+ * each image and its purpose" shape.
+ *
+ * Identity slots are absent by design: they are named inside the binding
+ * sentence now ({@link bindingSentence}), because "Image 1 is the identity
+ * reference" followed by "Image 1 shows Katelyn Nacon" was two sentences saying
+ * one thing, and the display name in the second was a competing identity cue.
+ *
+ * Null for the structural control roles: 2511's probed schema has no structural
+ * input, so a mask or depth map could only travel through the content `image`
+ * array — where the model would DEPICT it rather than obey it, and a prompt
+ * claiming otherwise would assert a transport this endpoint does not have. The
+ * null drops the claim, and the operation kind's mandatory floor turns that into
+ * a refusal before provider spend.
  */
 function referenceAssignment(
   role: ImageReferenceRole,
@@ -276,14 +427,204 @@ function referenceAssignment(
   }
 }
 
+// ---------------------------------------------------------------------------
+// The sentences this dialect owns
+// ---------------------------------------------------------------------------
+
+/**
+ * The subject bound to its image and the preserve set, in ONE sentence (F2/F4).
+ *
+ * What this replaced was three: a lock naming a reference, a second sentence
+ * assigning that reference to a named person, and a blanket "change only what
+ * this instruction requests" that the scene rung then never followed with a
+ * change. The preserve set is now the honest one — face, skin tone, apparent age
+ * — because those are what a photograph carries; hair, build, wardrobe and pose
+ * are the text's, and the old lock claiming them left every later hair or build
+ * fact ambiguous between a reminder and an override.
+ *
+ * Null when the payload carries no reference at all: this endpoint's whole
+ * identity transport IS the reference, and describing a face in prose instead
+ * would render a stranger. The null drops a mandatory claim, which refuses the
+ * compile before spend.
+ */
+function bindingSentence(
+  input: ImageDialectPositiveInput,
+  state: RenderState,
+  identityAssignments: readonly ImageDialectReference[],
+): string | null {
+  if (input.references.length === 0) return null;
+  const sole = identityAssignments.length <= 1 && state.voices.size <= 1;
+  const first = identityAssignments[0];
+  if (sole && first !== undefined) {
+    const voice = first.subjectRef === undefined ? null : (state.voices.get(first.subjectRef) ?? null);
+    const named = voice === null ? `the subject in Image ${first.position}` : voice.binding;
+    const qualified = first.description === undefined ? named : `${named}, ${first.description}`;
+    return `Use ${qualified} as the sole subject; keep ${their(voice)} ${QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK}`;
+  }
+  const assignments = [...identityAssignments]
+    .sort((left, right) => left.position - right.position)
+    .map((slot) => {
+      const voice = slot.subjectRef === undefined ? null : (state.voices.get(slot.subjectRef) ?? null);
+      const named = voice?.introduction ?? "the subject";
+      return `Image ${slot.position} shows ${slot.description === undefined ? named : `${named}, ${slot.description}`}`;
+    });
+  const list = assignments.length === 0 ? "" : `: ${assignments.join(", ")}`;
+  return `Use the numbered images as assigned${list}; ${QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK}`;
+}
+
+/**
+ * The binding's adaptation for a shot whose subject's face is turned or hidden.
+ *
+ * The binding and the camera pull against each other, and the binding wins by
+ * default: the cheapest way for a model to prove it preserved a face is to show
+ * that face, so "keep her face exactly as shown" quietly rotates a character the
+ * shot just put back-to-camera. Adapting means naming what to keep when the face
+ * is not the evidence, and saying outright that the turn is not on the table.
+ *
+ * The anchor is per SUBJECT, not per payload — a numbered render can carry
+ * Ilsa's identity image and none of Nyx's, and "from Image 2" would then aim
+ * Nyx's preservation set at a photograph of Ilsa. With no image of this person
+ * in the payload the clause simply drops its "from Image N".
+ */
+function faceVisibilitySentence(
+  visibility: ImageObscuredFace,
+  voice: SubjectVoice | null,
+  slot: ImageDialectReference | null,
+): string {
+  const from = slot === null ? "" : ` from Image ${slot.position}`;
+  const opening =
+    visibility === "partial"
+      ? `${capitalize(their(voice))} face is partly turned from the camera; keep the visible features and skin tone exactly${from}`
+      : `${capitalize(their(voice))} face is not visible in this shot; keep ${their(voice)} build and skin tone exactly${from}`;
+  return `${opening} and do not rotate ${them(voice)} to face the camera.`;
+}
+
+/**
+ * Who is holding the camera, and therefore where the frame is standing.
+ *
+ * The disembodied first person is this dialect's own (#544 F3) and the rest are
+ * the family's. "First-person POV through the viewer's own eyes; the viewer is
+ * never visible in the image" put a PERSON in the room and then forbade drawing
+ * them — a noun the model has to resolve, in a prompt whose composer was
+ * separately writing "her attention fixed on the viewer across the room". The
+ * replacement names the camera and nothing else: there is no viewer to leave out
+ * of the frame, so there is no second body to compose.
+ *
+ * The embodied and selfie forms keep the family's measured wording. They are
+ * different, separately measured cases: an embodied frame really does hold the
+ * camera-holder's own limbs, and the possessive binding is the half that was
+ * proven.
+ */
+function captureSentence(mode: SceneCaptureMode, subject: string | null): string {
+  return mode === "first_person_disembodied"
+    ? "Seen from the camera's own eye-level point of view."
+    : captureModeSentence(mode, subject);
+}
+
+/**
+ * The person count, as the sentence that CLOSES the instruction (#544 F3/D10).
+ *
+ * It sat third in the compiled prompt, thirty sentences before the end, which is
+ * the one place a "nobody else is here" assertion cannot do its job. Stated last
+ * it is the reader's final instruction, and the added clause is the positive
+ * form of the failure it exists to prevent: an empty foreground rather than the
+ * phantom second body a POV frame invites.
+ *
+ * `embodied` is a property of the SHOT rather than of the count, so it arrives
+ * as a parameter — `operation.subject_count` has no idea whose eyes the frame is
+ * through. The word "fully" is the retired prose builder's and is kept: on an
+ * embodied frame the cast are the bodies the frame holds whole, and the
+ * camera-holder's cropped forearm is not one of them.
+ */
+function closingSentence(count: number, embodied: boolean, voice: SubjectVoice | null): string {
+  if (!Number.isFinite(count) || count <= 0) return "No people are present anywhere in the frame.";
+  if (count === 1) {
+    // No voice means no cast member this prompt can point at — an item render,
+    // or a subject the projection never named. The impersonal form still makes
+    // the assertion; it simply has nobody to make it about.
+    if (voice === null) {
+      return embodied
+        ? "Exactly one person is fully in frame."
+        : "Exactly one person is in the picture and nobody else; the foreground is clear.";
+    }
+    const who = capitalize(they(voice));
+    const is = agree(voice, "is", "are");
+    return embodied
+      ? `${who} ${is} the only person fully in frame.`
+      : `${who} ${is} the only person in the picture; the foreground is clear.`;
+  }
+  return embodied
+    ? `Exactly ${count} people are fully in frame.`
+    : `Exactly ${count} people are in the picture and nobody else; the foreground is clear.`;
+}
+
+/**
+ * "Every visible body part is hers." — the total-possession binding.
+ *
+ * **Deliberately ABSTRACT, and it must stay that way.** The first draft of this
+ * clause enumerated the limbs and the A/B run painted a phantom viewer hand
+ * anyway: a limb noun summons a limb even when it is possessively bound. The
+ * abstraction is the half doing the work. What changes here is only WHO it binds
+ * to — a pronoun set makes the independent possessive available, which is the
+ * shortest form of the same binding.
+ *
+ * No owner this prompt can name means no clause at all: silence beats a
+ * possession sentence that binds nothing.
+ */
+function possessionSentence(
+  input: ImageDialectPositiveInput,
+  state: RenderState,
+  value: unknown,
+): string | null {
+  const refs = imageScenePossessionOwners(value);
+  const only = refs.length === 1 ? refs[0] : undefined;
+  const sole = only === undefined ? null : (state.voices.get(only) ?? null);
+  if (sole !== null && sole.pronouns !== null) return `Every visible body part is ${theirs(sole)}.`;
+  const owners: string[] = [];
+  for (const ref of refs) {
+    const named = state.voices.get(ref)?.introduction ?? label(input, ref);
+    if (named !== null && !owners.includes(named)) owners.push(named);
+  }
+  if (owners.length === 0) return null;
+  return `Every visible body part belongs to ${listWords(owners, "or")}.`;
+}
+
+/**
+ * A registry label/value descriptor, folded into a list mid-sentence.
+ *
+ * Only the leading character, and only when the word is sentence-cased rather
+ * than an acronym or a proper noun in caps: these are registry labels ("Hair
+ * color: dark brown"), and their capital is a rendering convention rather than
+ * part of the value.
+ */
+function lowerLead(text: string): string {
+  const first = text[0];
+  const second = text[1];
+  if (first === undefined || first !== first.toUpperCase()) return text;
+  if (second !== undefined && second === second.toUpperCase() && second !== second.toLowerCase()) return text;
+  return `${first.toLowerCase()}${text.slice(1)}`;
+}
+
+/** Whether a fact describes hair — the locus a projection files hair facts under. */
+function isHairLocus(claim: ImagePositiveClaim): boolean {
+  return typeof claim.locus === "string" && /^hair(?:$|[\s._-])/iu.test(claim.locus);
+}
+
+// ---------------------------------------------------------------------------
+// Rendering — one claim, one segment, exactly as before fitting
+// ---------------------------------------------------------------------------
+
 /**
  * How this endpoint says one claim.
  *
  * An exhaustive switch over the concept registry, so a new concept is a COMPILE
- * ERROR here rather than a claim that quietly never reaches a prompt. Most
- * descriptive concepts share the family's clause grammar with the 2512 dialect
- * (`./dialect-qwen-prose`); the operation band and `subject.identity` are where
- * an instruction editor genuinely differs from a describe-everything generator.
+ * ERROR here rather than a claim that quietly never reaches a prompt.
+ *
+ * Still one segment per claim, deliberately: the fitter decides what a budget
+ * squeeze keeps over exactly the units it always did, and the grouped emission
+ * ({@link groupedSegments}) runs afterwards over the survivors. A claim whose
+ * group rewrites it — a wardrobe list, a build sentence, a pose — renders here
+ * anyway, because its length is what the budget is spent on.
  */
 function renderClaim(
   claim: ImagePositiveClaim,
@@ -299,9 +640,22 @@ function renderClaim(
   });
   /** A sentence a helper may decline to write — null in, null out, never an empty segment. */
   const sayOrNull = (text: string | null): ImagePromptSegment | null => (text === null ? null : say(text));
+  // A record no renderer understands words NOTHING (#544 D1). Declining it here
+  // rather than interpolating a blank is what makes the drop visible: `"<subject>
+  // is "` is not an empty segment, so a mutilated clause would have travelled in
+  // place of the flattened structure this replaced. The shared compile step
+  // records the claim as dropped, and a mandatory one refuses before spend.
+  if (unwordableImageClaimValue(claim.value)) {
+    reportUnwordableClaimValue(claim, input.sink);
+    return null;
+  }
   const value = describe(claim.value);
   const subject = label(input, claim.subjectRef);
   const object = label(input, claim.objectRef);
+  const voice = claim.subjectRef === undefined ? null : (state.voices.get(claim.subjectRef) ?? null);
+  /** "<She> <verb> …" — the ordinary subject-scoped clause. */
+  const of = (singular: string, plural: string, predicate: string): string =>
+    `${capitalize(they(voice))} ${agree(voice, singular, plural)} ${predicate}.`;
 
   switch (claim.concept) {
     // --- Operation: the delta, in the research doc's order --------------------
@@ -311,8 +665,7 @@ function renderClaim(
     case "operation.preserve": {
       // The LIMITED preserve set, named fact by fact. Deliberately no
       // "everything else stays" preamble: a blanket preserve fighting the
-      // requested change is the documented squashed-figure failure, and the
-      // lock already says "change only what this instruction requests".
+      // requested change is the documented squashed-figure failure.
       //
       // Named by what each fact IS, never by its key: the contract identifies
       // the preserved facts structurally and this is where that becomes
@@ -331,7 +684,7 @@ function renderClaim(
         DELTA_PRIORITY.geometry,
       );
     case "operation.subject_count":
-      return say(subjectCountSentence(Number(claim.value), viewerIsEmbodied(input)));
+      return say(closingSentence(Number(claim.value), viewerIsEmbodied(input), state.soleVoice));
     case "operation.literal_text":
       // Quoted and letter-exact — the family's text rendering is an advertised
       // strength, and quoting is how its model cards ask for exact lettering.
@@ -344,6 +697,7 @@ function renderClaim(
     case "operation.reference_role": {
       const slot = claimSlot(input, state, claim.value as ImageReferenceRole, claim.subjectRef);
       if (slot === null) return null;
+      state.slots.set(claim.id, slot);
       const assignment = referenceAssignment(slot.role, slot.position, subject, slot.description);
       return assignment === null ? null : say(assignment, DELTA_PRIORITY.reference);
     }
@@ -353,24 +707,23 @@ function renderClaim(
       return say(`The mood is ${value}.`);
     case "scene.capture_mode": {
       const mode = imageSceneCaptureMode(claim.value);
-      return mode === null ? null : say(captureModeSentence(mode, subject));
+      return mode === null ? null : say(captureSentence(mode, subject));
     }
     case "scene.possession":
-      return sayOrNull(possessionSentence(possessionOwners(input, claim.value)));
+      return sayOrNull(possessionSentence(input, state, claim.value));
     case "scene.staging": {
       const form = imageSceneStagingForm(claim.value);
       if (form === null) return null;
       // ADOPTS the registry's wording, and this is the endpoint with the strongest
       // claim on it: the intimate scene route renders on 2511, and the templates
-      // were tuned against exactly those renders on the Qwen edit family — one of
-      // them is written to sit nine characters under the edit lane's own ceiling.
-      // The measured residue is model behavior rather than scene meaning, so no
-      // typed semantics could regenerate it and a rival sentence here would throw
-      // away the only evidence there is.
-      //
-      // The budget it was tuned against is gone: a program budgets from the model
-      // binding rather than from the legacy 1500-character clamp, so a
-      // re-measurement is owed whether the wording is adopted or replaced.
+      // were tuned against exactly those renders on the Qwen edit family. The
+      // measured residue is model behavior rather than scene meaning, so no typed
+      // semantics could regenerate it and a rival sentence here would throw away
+      // the only evidence there is — which is also why the arrangement keeps the
+      // subject's NAME while the rest of the prompt moves to pronouns: a template
+      // substitutes `{name}` wherever its own sentence needs it, including
+      // mid-clause and in possessives, and a pronoun there would read as a
+      // different person or as broken English.
       return sayOrNull(stagingSentence(surfaces.adopt(claim.id, form), subject));
     }
 
@@ -385,69 +738,68 @@ function renderClaim(
     // --- Subject --------------------------------------------------------------
     case "subject.identity": {
       // The identity travels in the reference, so the identity claim compiles to
-      // the lock — the exact bytes the kernel quirk writes today (owner ruling
-      // 2026-08-29), emitted once however many subjects the render carries.
-      // Bypasses `sentence()` so nothing can renormalize a character of it.
-      const lock = identityLock(input.references.length, hairConcealedInCast(input));
-      if (lock === null) return null;
+      // the binding sentence — emitted once however many subjects the render
+      // carries, and merged with the identity slots' own assignments.
       if (!state.lockEmitted) {
+        // Every reference claim has already resolved its slot: `operation.*`
+        // claims sit in the `operation` segment kind and this one in `identity`,
+        // and the canonical claim order runs kinds in that sequence.
+        const identitySlots = [...state.slots.values()].filter((slot) => slot.role === "identity");
+        const binding = bindingSentence(input, state, identitySlots);
+        if (binding === null) return null;
         state.lockEmitted = true;
         state.lockClaimId = claim.id;
-        return { kind: claim.segmentKind, text: lock, mandatory: true, priority: IDENTITY_LOCK_PRIORITY };
+        return say(binding, IDENTITY_LOCK_PRIORITY);
       }
-      // Further subjects: the multi lock already covers "each person", so their
-      // identity claims anchor the NAME the numbered assignments bind.
-      return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`, IDENTITY_LOCK_PRIORITY);
+      // Further subjects: the multi binding already covers "each person", so
+      // their identity claims carry whatever the projection stated about them.
+      return say(
+        voice === null ? `${capitalize(value)}.` : `${capitalize(they(voice))}: ${value}.`,
+        IDENTITY_LOCK_PRIORITY,
+      );
     }
     case "subject.face_visibility": {
-      // The lock's adaptation: same segment kind, strictly under the lock's
-      // priority, so it follows the lock it corrects and never precedes it. It
-      // never touches the lock's bytes. The anchor is per SUBJECT, not per
-      // payload — a numbered render can carry Ilsa's identity image and none of
-      // Nyx's, and "from the reference" would then aim Nyx's preservation set at
-      // a picture of Ilsa.
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
       return say(
-        faceVisibilitySentence(
-          visibility,
-          subject,
-          faceVisibilityAnchor(input, claim),
-          hairConcealedForSubject(input, claim.subjectRef),
-        ),
+        faceVisibilitySentence(visibility, voice, identitySlotFor(input, claim.subjectRef)),
         FACE_VISIBILITY_PRIORITY,
       );
     }
     case "subject.apparent_age":
       // Text-authoritative by owner ruling: age text must correct an
       // age-ambiguous reference rather than inherit drift from it.
-      return say(prefixed(subject, `appears ${value}`));
+      return say(of("appears", "appear", value));
     case "subject.morphology":
-      return say(prefixed(subject, `has ${value}`));
+      return say(of("has", "have", value));
     case "subject.absence":
-      return say(prefixed(subject, `has ${value}, shown plainly and anatomically correctly`));
+      return say(of("has", "have", `${value}, shown plainly and anatomically correctly`));
     case "subject.appearance":
     case "subject.intimate_anatomy":
-      return say(prefixed(subject, `has ${value}`));
+      return say(of("has", "have", value));
     case "subject.pose":
-      return say(prefixed(subject, `is ${value}`));
+      return say(of("is", "are", value));
     case "subject.activity":
       // Same clause shape as a pose. The pose/activity split is a distinction in
       // the world rather than in English — different composer fields, different
       // provenance — and a dialect that invented a lexical difference would be
       // asserting something the value does not carry.
-      return say(prefixed(subject, `is ${value}`));
+      return say(of("is", "are", value));
     case "subject.expression":
-      return say(prefixed(subject, `wears a ${value} expression`));
+      return say(of("wears", "wear", `a ${value} expression`));
     case "subject.body_language":
     case "subject.current_state":
-      return say(prefixed(subject, `is ${value}`));
+      return say(of("is", "are", value));
     case "subject.wardrobe":
-      return say(prefixed(subject, `wears ${value}`));
+      return say(of("wears", "wear", value));
     case "subject.hair_concealment":
+      // Name-bound across all three prose families, so the meaning cannot drift
+      // between endpoints. It is also the sentence that keeps hair off a render
+      // whose reference shows it, and this dialect's binding no longer preserves
+      // hair at all — so nothing here has to be adapted for a covered head.
       return say(hairConcealmentSentence(subject));
     case "subject.exposure":
-      return say(prefixed(subject, `is ${value}`));
+      return say(of("is", "are", value));
 
     // --- Camera ---------------------------------------------------------------
     case "camera.framing":
@@ -455,7 +807,10 @@ function renderClaim(
     case "camera.distance":
       return say(distanceSentence(claim.value as ImageDistanceBand));
     case "camera.angle":
-      return say(angleSentence(claim.value as ImageAngleBand, subject));
+      // A camera fact carries no subject ref, so the person it is about is the
+      // one this render has. With a cast, the band is stated without a pronoun
+      // it could not resolve.
+      return say(angleSentence(claim.value as ImageAngleBand, state.soleVoice === null ? null : they(state.soleVoice)));
     case "camera.height":
       return say(heightSentence(claim.value as ImageCameraHeightBand));
     case "camera.motion":
@@ -551,12 +906,497 @@ function renderClaim(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Grouped emission (#544 F10) — what the provider actually reads
+// ---------------------------------------------------------------------------
+
+/**
+ * The bands this dialect emits in, in order.
+ *
+ * Reading order for an EDIT instruction: who the subject is and which image
+ * carries them, what is being changed, what they look like, what they are
+ * wearing, what they are doing, where the camera is, where they are, how it
+ * should be rendered, and — last, where a "nobody else" assertion can do its job
+ * — how many people the picture holds.
+ */
+const EMISSION_ORDER = [
+  "binding",
+  "change",
+  "build",
+  "wardrobe",
+  "exposure",
+  "pose",
+  "capture",
+  "setting",
+  "mood",
+  "style",
+  "close",
+] as const;
+type EmissionGroup = (typeof EMISSION_ORDER)[number];
+
+/**
+ * Which band a concept is said in.
+ *
+ * Exhaustive over the concept registry for the same reason `renderClaim` is: a
+ * new concept must be PLACED deliberately rather than landing wherever its
+ * segment kind happened to sort it. The two are different questions — a kind
+ * says what a piece of prompt text is, a band says which sentence of this
+ * endpoint's instruction it belongs to — which is why an item's identity is
+ * `identity` by kind and setting by band.
+ */
+function groupOf(concept: ImageConceptId): EmissionGroup {
+  switch (concept) {
+    case "operation.reference_role":
+    case "subject.identity":
+    case "subject.face_visibility":
+      return "binding";
+    case "operation.change":
+    case "operation.preserve":
+    case "operation.geometry":
+    case "operation.literal_text":
+    case "raw.text":
+      return "change";
+    case "subject.apparent_age":
+    case "subject.morphology":
+    case "subject.absence":
+    case "subject.appearance":
+      return "build";
+    case "subject.wardrobe":
+    case "subject.current_state":
+    case "subject.hair_concealment":
+    case "relation.wears":
+      return "wardrobe";
+    case "subject.exposure":
+    case "subject.intimate_anatomy":
+      return "exposure";
+    case "subject.pose":
+    case "subject.activity":
+    case "subject.expression":
+    case "subject.body_language":
+    case "scene.possession":
+    case "scene.staging":
+    case "relation.holds":
+    case "relation.contact":
+    case "relation.acts_on":
+      return "pose";
+    case "scene.capture_mode":
+    case "camera.framing":
+    case "camera.distance":
+    case "camera.angle":
+    case "camera.height":
+    case "camera.motion":
+    case "viewer.body_geometry":
+    case "viewer.appearance":
+    case "viewer.intimate_anatomy":
+      return "capture";
+    case "camera.lighting":
+    case "relation.contains":
+    case "relation.attached_to":
+    case "relation.located_at":
+    case "relation.placement":
+    case "item.identity":
+    case "item.form":
+    case "item.material":
+    case "item.color":
+    case "item.part":
+    case "item.marking":
+    case "item.condition":
+    case "item.contents":
+    case "item.configuration":
+    case "item.presentation":
+    case "location.identity":
+    case "location.kind":
+    case "location.geometry":
+    case "location.presentation":
+    case "location.contents":
+    case "location.signage":
+    case "location.lighting":
+    case "location.occupancy":
+      return "setting";
+    case "scene.mood":
+    case "location.weather":
+    case "location.time":
+    case "location.condition":
+    case "location.atmosphere":
+      return "mood";
+    case "style.medium":
+    case "style.descriptor":
+    case "style.quality":
+      return "style";
+    case "operation.subject_count":
+      return "close";
+  }
+}
+
+/** One emitted sentence and the claims it speaks for. */
+interface GroupSentence {
+  readonly text: string;
+  readonly claims: readonly ImagePositiveClaim[];
+}
+
+/**
+ * What every band writer may read: the per-compile state (voices, resolved
+ * slots, which claim carries the binding) and each surviving claim's own
+ * rendered sentence. Deliberately not the whole dialect input — a writer that
+ * could reach the claim list again could emit a claim the budget removed.
+ */
+interface EmitContext {
+  readonly state: RenderState;
+  /** The fitted segment each surviving claim rendered, by claim id. */
+  readonly rendered: ReadonlyMap<string, ImagePromptSegment>;
+}
+
+/** One claim as the sentence it already rendered — fitting's own text, compression included. */
+function asRendered(context: EmitContext, claim: ImagePositiveClaim): GroupSentence | null {
+  const segment = context.rendered.get(claim.id);
+  return segment === undefined ? null : { text: segment.text, claims: [claim] };
+}
+
+/** Claims of one concept, in the order the program stated them. */
+function withConcept(claims: readonly ImagePositiveClaim[], ...concepts: ImageConceptId[]): ImagePositiveClaim[] {
+  return claims.filter((claim) => concepts.includes(claim.concept));
+}
+
+/** The claim values of one concept, as list entries. */
+function valuesOf(claims: readonly ImagePositiveClaim[]): string[] {
+  return claims.map((claim) => lowerLead(describe(claim.value))).filter((entry) => entry.length > 0);
+}
+
+/** The subjects a band speaks about, in first-stated order — an ensemble keeps its people apart. */
+function bySubject(claims: readonly ImagePositiveClaim[]): { ref: string | undefined; claims: ImagePositiveClaim[] }[] {
+  const groups: { ref: string | undefined; claims: ImagePositiveClaim[] }[] = [];
+  for (const claim of claims) {
+    const found = groups.find((group) => group.ref === claim.subjectRef);
+    if (found === undefined) groups.push({ ref: claim.subjectRef, claims: [claim] });
+    else found.claims.push(claim);
+  }
+  return groups;
+}
+
+/** The voice for a band's subject group. */
+function voiceOf(context: EmitContext, ref: string | undefined): SubjectVoice | null {
+  return ref === undefined ? null : (context.state.voices.get(ref) ?? null);
+}
+
+/** "<She> <verb> a, b and c." — the shape every merged subject band takes. */
+function subjectClause(voice: SubjectVoice | null, singular: string, plural: string, parts: readonly string[]): string {
+  return sentence(`${capitalize(they(voice))} ${agree(voice, singular, plural)} ${listWords(parts)}.`);
+}
+
+/**
+ * The binding band: one sentence naming the subject and their image, the
+ * adaptation for a face the shot cannot show, and the non-identity slots.
+ *
+ * The identity slots' own assignment claims are ABSORBED — the binding sentence
+ * is where they are stated — and they still carry their own segment through
+ * fitting, so a slot the payload lost still refuses the compile.
+ */
+function writeBinding(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
+  const sentences: GroupSentence[] = [];
+  const references = withConcept(claims, "operation.reference_role");
+  const identityRefs = references.filter((claim) => context.state.slots.get(claim.id)?.role === "identity");
+  const lock = claims.find((claim) => claim.id === context.state.lockClaimId);
+  const bound = lock === undefined ? null : asRendered(context, lock);
+  if (lock !== undefined && bound !== null) {
+    sentences.push({ text: bound.text, claims: [lock, ...identityRefs] });
+  } else {
+    // No binding sentence — an identity claim this program never stated. The
+    // slots then speak for themselves rather than going unmentioned.
+    for (const claim of identityRefs) {
+      const rendered = asRendered(context, claim);
+      if (rendered !== null) sentences.push(rendered);
+    }
+  }
+  for (const claim of withConcept(claims, "subject.face_visibility")) {
+    const rendered = asRendered(context, claim);
+    if (rendered !== null) sentences.push(rendered);
+  }
+  for (const claim of withConcept(claims, "subject.identity")) {
+    if (claim.id === context.state.lockClaimId) continue;
+    const rendered = asRendered(context, claim);
+    if (rendered !== null) sentences.push(rendered);
+  }
+  for (const claim of references) {
+    if (identityRefs.includes(claim)) continue;
+    const rendered = asRendered(context, claim);
+    if (rendered !== null) sentences.push(rendered);
+  }
+  return sentences;
+}
+
+/** The build band: the age anchor, one build sentence, one hair sentence. */
+function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
+  const sentences: GroupSentence[] = [];
+  for (const group of bySubject(claims)) {
+    const voice = voiceOf(context, group.ref);
+    for (const claim of withConcept(group.claims, "subject.apparent_age")) {
+      const rendered = asRendered(context, claim);
+      if (rendered !== null) sentences.push(rendered);
+    }
+    const described = withConcept(group.claims, "subject.morphology", "subject.appearance");
+    const build = described.filter((claim) => !isHairLocus(claim));
+    const hair = described.filter((claim) => isHairLocus(claim));
+    for (const set of [build, hair]) {
+      const parts = valuesOf(set);
+      if (parts.length > 0) sentences.push({ text: subjectClause(voice, "has", "have", parts), claims: set });
+    }
+    // An absence keeps its own sentence: the "shown plainly and anatomically
+    // correctly" half is an instruction about how to draw it, not another
+    // feature to list beside a waist and an arm.
+    for (const claim of withConcept(group.claims, "subject.absence")) {
+      const rendered = asRendered(context, claim);
+      if (rendered !== null) sentences.push(rendered);
+    }
+  }
+  return sentences;
+}
+
+/**
+ * The wardrobe band: every garment in ONE sentence, in the order the projection
+ * stated them, with a garment-scoped presentation folded into the garment it
+ * describes rather than stated as a second fact about the same cloth.
+ */
+function writeWardrobe(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
+  const sentences: GroupSentence[] = [];
+  for (const group of bySubject(claims)) {
+    const voice = voiceOf(context, group.ref);
+    const garments = withConcept(group.claims, "subject.wardrobe");
+    const states = withConcept(group.claims, "subject.current_state");
+    const folded = new Set<ImagePositiveClaim>();
+    const worn = garments.map((garment) => {
+      const presentation = states.find(
+        (state) => state.locus !== undefined && state.locus === garment.locus && !folded.has(state),
+      );
+      const text = lowerLead(describe(garment.value));
+      if (presentation === undefined) return text;
+      folded.add(presentation);
+      return `${text} (${lowerLead(describe(presentation.value))})`;
+    });
+    const wornParts = worn.filter((entry) => entry.length > 0);
+    if (wornParts.length > 0) {
+      sentences.push({
+        text: subjectClause(voice, "wears", "wear", wornParts),
+        claims: [...garments, ...states.filter((state) => folded.has(state))],
+      });
+    }
+    const loose = states.filter((state) => !folded.has(state));
+    const looseParts = valuesOf(loose);
+    if (looseParts.length > 0) sentences.push({ text: subjectClause(voice, "is", "are", looseParts), claims: loose });
+    for (const claim of withConcept(group.claims, "subject.hair_concealment", "relation.wears")) {
+      const rendered = asRendered(context, claim);
+      if (rendered !== null) sentences.push(rendered);
+    }
+  }
+  return sentences;
+}
+
+/** The exposure band: what is bare, and the anatomy that is then visible. */
+function writeExposure(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
+  const sentences: GroupSentence[] = [];
+  for (const group of bySubject(claims)) {
+    const voice = voiceOf(context, group.ref);
+    const exposure = withConcept(group.claims, "subject.exposure");
+    const anatomy = withConcept(group.claims, "subject.intimate_anatomy");
+    const bare = valuesOf(exposure);
+    if (bare.length > 0) sentences.push({ text: subjectClause(voice, "is", "are", bare), claims: exposure });
+    const shown = valuesOf(anatomy);
+    if (shown.length > 0) sentences.push({ text: subjectClause(voice, "has", "have", shown), claims: anatomy });
+  }
+  return sentences;
+}
+
+/**
+ * The pose band: posture, pose, action and expression in ONE sentence.
+ *
+ * The posture fact is dropped when the composer's own pose or action text
+ * already contains it: a cut states "standing" as a fact and the composer writes
+ * "standing at the craft services table", and a prompt saying both has told the
+ * model to compose the same body twice.
+ */
+function writePose(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
+  const sentences: GroupSentence[] = [];
+  for (const claim of withConcept(claims, "scene.possession", "scene.staging")) {
+    const rendered = asRendered(context, claim);
+    if (rendered !== null) sentences.push(rendered);
+  }
+  for (const group of bySubject(claims)) {
+    const voice = voiceOf(context, group.ref);
+    const posture = withConcept(group.claims, "subject.body_language");
+    const acting = withConcept(group.claims, "subject.pose", "subject.activity");
+    const expressions = withConcept(group.claims, "subject.expression");
+    const actingParts = valuesOf(acting);
+    const spoken = actingParts.join(" ").toLowerCase();
+    const kept = posture.filter((claim) => {
+      const word = lowerLead(describe(claim.value));
+      return word.length > 0 && !spoken.includes(word.toLowerCase());
+    });
+    const parts = [...valuesOf(kept), ...actingParts];
+    const worn = valuesOf(expressions).map((entry) => `a ${entry} expression`);
+    if (parts.length > 0) {
+      const tail = worn.length === 0 ? "" : `, with ${listWords(worn)}`;
+      sentences.push({
+        text: sentence(`${capitalize(they(voice))} ${agree(voice, "is", "are")} ${listWords(parts)}${tail}.`),
+        // Every posture claim, skipped ones included: a posture the composer's
+        // own text already contains is ABSORBED by this sentence, not lost, and
+        // recording it anywhere else would say the render dropped it.
+        claims: [...posture, ...acting, ...expressions],
+      });
+    } else if (worn.length > 0) {
+      sentences.push({ text: subjectClause(voice, "wears", "wear", worn), claims: expressions });
+    }
+  }
+  for (const claim of withConcept(claims, "relation.holds", "relation.contact", "relation.acts_on")) {
+    const rendered = asRendered(context, claim);
+    if (rendered !== null) sentences.push(rendered);
+  }
+  return sentences;
+}
+
+/** A band that emits its claims one sentence each, in a stated concept order. */
+function writeOrdered(order: readonly ImageConceptId[]) {
+  return (claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] => {
+    const ranked = [...claims].sort((left, right) => rankOf(order, left.concept) - rankOf(order, right.concept));
+    const sentences: GroupSentence[] = [];
+    for (const claim of ranked) {
+      const rendered = asRendered(context, claim);
+      if (rendered !== null) sentences.push(rendered);
+    }
+    return sentences;
+  };
+}
+
+/** A concept's place in a band's own order; anything unlisted keeps the program's order, last. */
+function rankOf(order: readonly ImageConceptId[], concept: ImageConceptId): number {
+  const found = order.indexOf(concept);
+  return found === -1 ? order.length : found;
+}
+
+/** Every band's writer. Bands not listed here emit their claims in program order. */
+const BAND_WRITERS: Readonly<Record<EmissionGroup, (claims: readonly ImagePositiveClaim[], context: EmitContext) => GroupSentence[]>> = {
+  binding: writeBinding,
+  // The delta reads change, then what the change may not touch, then the
+  // canvas permission, then any lettering the render must spell.
+  change: writeOrdered([
+    "operation.change",
+    "operation.preserve",
+    "operation.geometry",
+    "operation.literal_text",
+    "raw.text",
+  ]),
+  build: writeBuild,
+  wardrobe: writeWardrobe,
+  exposure: writeExposure,
+  pose: writePose,
+  // Where the camera stands, then what its own frame holds.
+  capture: writeOrdered([
+    "scene.capture_mode",
+    "camera.framing",
+    "camera.distance",
+    "camera.angle",
+    "camera.height",
+    "camera.motion",
+    "viewer.body_geometry",
+    "viewer.appearance",
+    "viewer.intimate_anatomy",
+  ]),
+  // The place, then what is in it, then the light on it — lighting last, because
+  // it is a fact about everything the two sentences before it just described.
+  setting: writeOrdered([
+    "location.identity",
+    "location.kind",
+    "location.geometry",
+    "location.presentation",
+    "location.contents",
+    "location.occupancy",
+    "location.signage",
+    "item.identity",
+    "item.form",
+    "item.material",
+    "item.color",
+    "item.part",
+    "item.marking",
+    "item.condition",
+    "item.contents",
+    "item.configuration",
+    "item.presentation",
+    "relation.located_at",
+    "relation.placement",
+    "relation.contains",
+    "relation.attached_to",
+    "location.lighting",
+    "camera.lighting",
+  ]),
+  mood: writeOrdered(["scene.mood"]),
+  style: writeOrdered(["style.medium", "style.descriptor", "style.quality"]),
+  close: writeOrdered(["operation.subject_count"]),
+};
+
+/**
+ * The surviving claims as grouped prose (#544 F10).
+ *
+ * Runs AFTER fitting, over the claims whose segments survived it, so what a
+ * budget squeeze keeps or drops is decided over the same per-claim units as
+ * before and grouping only changes how the survivors are said. A band that
+ * merges claims rebuilds its sentence from their values; every other band reuses
+ * the text its claims already rendered, which is what keeps a segment the hard
+ * ceiling COMPRESSED from being silently restored to full length.
+ *
+ * Each emitted sentence becomes one segment carrying the claims it absorbed, so
+ * `joinImagePromptSegments(segments)` is still exactly the compiled text and
+ * `source` still names the semantic units behind every sentence a provider
+ * receives. Kind, mandatory and priority are inherited from the absorbed
+ * segments — the strongest claim wins, because a sentence containing a mandatory
+ * clause is mandatory.
+ */
+function groupedSegments(
+  input: ImageDialectPositiveInput,
+  state: RenderState,
+  fitted: readonly ImagePromptSegment[],
+): ImagePromptSegment[] {
+  const rendered = new Map<string, ImagePromptSegment>();
+  for (const segment of fitted) {
+    if (segment.source !== undefined) rendered.set(segment.source, segment);
+  }
+  const kept = input.claims.filter((claim) => rendered.has(claim.id));
+  const context: EmitContext = { state, rendered };
+  const segments: ImagePromptSegment[] = [];
+  for (const band of EMISSION_ORDER) {
+    const claims = kept.filter((claim) => groupOf(claim.concept) === band);
+    if (claims.length === 0) continue;
+    for (const written of BAND_WRITERS[band](claims, context)) {
+      const parts = written.claims.flatMap((claim) => {
+        const part = rendered.get(claim.id);
+        return part === undefined ? [] : [part];
+      });
+      const first = parts[0];
+      if (first === undefined || written.text.trim().length === 0) continue;
+      segments.push({
+        kind: first.kind,
+        text: written.text,
+        mandatory: parts.some((part) => part.mandatory),
+        priority: Math.max(...parts.map((part) => part.priority)),
+        source: written.claims.map((claim) => claim.id).join("+"),
+      });
+    }
+  }
+  return segments;
+}
+
 function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositivePrompt {
-  // Fresh state per compile — the lock-once and slot-consumption rules are
+  // Fresh state per compile — the emit-once and slot-consumption rules are
   // per-render facts, and state leaking across compiles would make the second
   // compile of one digest differ from the first, which the determinism
   // guarantee forbids.
-  const state: RenderState = { lockEmitted: false, lockClaimId: null, takenSlots: new Set<number>() };
+  const voices = subjectVoices(input);
+  const soleVoice = voices.size === 1 ? ([...voices.values()][0] ?? null) : null;
+  const state: RenderState = {
+    lockEmitted: false,
+    lockClaimId: null,
+    takenSlots: new Set<number>(),
+    slots: new Map<string, ImageDialectReference>(),
+    voices,
+    soleVoice,
+  };
   const surfaces = createSceneStagingSurfaceLog();
   const compiled = compileDialectClaims({
     claims: input.claims,
@@ -566,22 +1406,9 @@ function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositiv
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
 
-  // This dialect's OWN emission order (the canonical segment order permits a
-  // dialect reorder): the identity lock leads the compiled prompt, ahead of
-  // the numbered `Image N` assignments the canonical operation-first order
-  // would otherwise put in front of it. The multi-reference lock says "Use
-  // numbered references as assigned below", and under the canonical order that
-  // "below" was false in the compiled output (owner correction 2026-08-29 #4)
-  // — the lock BYTES are frozen for kernel-quirk parity, so the order moves
-  // instead. The requested change, the preserve set and the geometry
-  // permission keep their delta-first order after the assignments; nothing
-  // else moves. Reordering happens AFTER fitting, so what a budget squeeze
-  // keeps or trims is unchanged by this.
-  if (state.lockClaimId === null) return compiled;
-  const lockIndex = compiled.segments.findIndex((segment) => segment.source === state.lockClaimId);
-  const lock = compiled.segments[lockIndex];
-  if (lock === undefined || lockIndex <= 0) return compiled;
-  const segments = [lock, ...compiled.segments.slice(0, lockIndex), ...compiled.segments.slice(lockIndex + 1)];
+  // The grouped emission. Everything before this point — what was rendered, what
+  // the budget kept, what was recorded as dropped — is unchanged by it.
+  const segments = groupedSegments(input, state, compiled.segments);
   return { ...compiled, segments, text: joinImagePromptSegments(segments) };
 }
 

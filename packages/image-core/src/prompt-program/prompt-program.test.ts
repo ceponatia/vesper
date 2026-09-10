@@ -72,11 +72,14 @@ import {
  *    a contradicted required exclusion, a refusal rather than a generic prompt.
  * 3. **The digest cannot carry what a projection may not send.** A `restricted`
  *    or `nonvisual` field arriving as a fact is dropped, not downgraded.
- * 4. **The 2511 delta-edit dialect honors its cutover contract.** The identity
- *    lock is the exact bytes the render kernel's quirk writes (owner ruling
- *    2026-08-29), references are numbered from the final send order, an
- *    identity claim with nothing to reference refuses, and every exclusion
- *    drops with the endpoint's own recorded reason.
+ * 4. **The 2511 delta-edit dialect honors its cutover contract.** The subject is
+ *    bound to its numbered image ONCE and referred to by pronoun after, the
+ *    preserve set is what a photograph carries, references are numbered from the
+ *    final send order, an identity claim with nothing to reference refuses, and
+ *    every exclusion drops with the endpoint's own recorded reason. Its wording
+ *    is asserted structurally rather than as a snapshot (#544): what this layer
+ *    owns is the SHAPE of the instruction, and a byte pin would fail on every
+ *    wording change while proving nothing about it.
  * 5. **Dropped claims and staging wording form ONE accounting system.** A render
  *    may not report that it sent an arrangement's measured wording and that the
  *    claim carrying it never reached the prompt.
@@ -908,19 +911,25 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     });
 
   /**
-   * The byte contract of the cutover (owner ruling 2026-08-29): the compiled
-   * identity claim IS the sentence the render kernel's quirk writes today, so a
-   * shadow compile can be checked byte-for-byte against the shipping edit path.
-   * The exact-literal `toContain` is the assertion — a paraphrase that "means
-   * the same" is precisely the defect it kills, and emitted-once is what keeps
-   * a two-fixture prompt from carrying the sentence twice.
+   * THE BINDING SENTENCE (#544 F2/F4).
    *
-   * Compiled twice because the renderer keeps per-compile state (the lock
-   * emits once, send slots are consumed): state leaking across compiles would
-   * make the second compile of one digest differ from the first, which breaks
-   * the layer's determinism guarantee.
+   * The subject is bound to their numbered image ONCE, with the preserve set a
+   * photograph can actually carry: face, skin tone, apparent age. Hair and body
+   * proportions left it because the TEXT is authoritative for them — the old
+   * lock claimed both and was then followed by four hair facts and a build
+   * stated as bare truths, with nothing to tell a reminder from an override —
+   * and the separate "Image 1 shows <name>." assignment merged into it, because
+   * two sentences saying one thing is how the display name got into the payload
+   * beside the reference it competes with.
+   *
+   * Structural rather than byte-pinned, per the testing rules: what matters is
+   * that the subject is introduced once, that the preserve set is the reference's
+   * own, and that the delta still follows. Compiled twice because the renderer
+   * keeps per-compile state (the binding emits once, send slots are consumed):
+   * state leaking across compiles would make the second compile of one digest
+   * differ from the first, which breaks the layer's determinism guarantee.
    */
-  it("emits the single-reference identity lock byte-exactly, once, and delta-first", () => {
+  it("binds the subject to its image once, then states the delta", () => {
     const digest = editWorld();
     const first = compile2511(digest);
     const second = compile2511(digest);
@@ -929,36 +938,37 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     expect(second.compiled.program.fingerprint).toBe(first.compiled.program.fingerprint);
 
     const text = first.compiled.positiveText;
+    expect(text.startsWith("Use Wren in Image 1 as the sole subject; keep Wren's ")).toBe(true);
     expect(text).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
-    expect(text.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK)).toBe(
-      text.lastIndexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
-    );
     expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    // One introduction, not two: the numbered assignment lives inside the
+    // binding sentence rather than repeating the name beside it.
+    expect(text.indexOf("Image 1")).toBe(text.lastIndexOf("Image 1"));
+    expect(text).not.toContain("Image 1 shows Wren.");
+    // The reference carries the face and nothing the text owns.
+    expect(text).not.toMatch(/keep[^.]*\bhair\b/i);
+    expect(text).not.toMatch(/keep[^.]*body proportions/i);
+    // The blanket clauses are absent: "preserve everything" fighting a requested
+    // change is the documented squashed-figure failure, and "change only what
+    // this instruction requests" promised a delta the scene rung never supplies.
+    expect(text.toLowerCase()).not.toContain("everything else");
+    expect(text.toLowerCase()).not.toContain("change only what");
 
-    // The research doc's delta-first order: the numbered assignment, then the
-    // one requested change, then the LIMITED preserve set. The blanket wording
-    // is asserted absent because it is the documented squashed-figure failure:
-    // "preserve everything" fighting a requested pose change.
-    const assignment = text.indexOf("Image 1 shows Wren.");
+    // The delta-first order survives the regrouping: the binding, then the one
+    // requested change, then the LIMITED preserve set.
     const change = text.indexOf("Make exactly this change: raise her left hand to shoulder height.");
     const preserve = text.indexOf("Keep the exposure and the identity unchanged from the source.");
-    expect(assignment).toBeGreaterThanOrEqual(0);
-    expect(change).toBeGreaterThan(assignment);
+    expect(change).toBeGreaterThan(0);
     expect(preserve).toBeGreaterThan(change);
-    expect(text.toLowerCase()).not.toContain("everything else");
 
     // An exposure fragment composes as a subject-scoped sentence, not as a bare
     // fragment dropped into the payload.
     expect(text).toContain("Wren is bare from the waist up.");
+    // The person count CLOSES the instruction (D10): it used to sit third, which
+    // is the one place a "nobody else is here" assertion cannot do its job.
+    expect(text.endsWith("Wren is the only person in the picture; the foreground is clear.")).toBe(true);
   });
 
-  /**
-   * Falsified against a compiler that numbered references from array index or
-   * from the digest's own order: the slots below arrive scrambled, and each
-   * sentence must carry the slot's SEND position. Also pins the multi lock —
-   * chosen by reference count, exactly as the kernel quirk chooses — emitted
-   * once for the whole render.
-   */
   /**
    * A preserve entry names a fact STRUCTURALLY, and the wording happens in the
    * dialect. The defect this kills shipped: the renderer printed the entries
@@ -998,8 +1008,32 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     expect(sink.items.some((entry) => entry.code === "image_prompt_program.preserve_unworded")).toBe(true);
   });
 
-  it("chooses the multi-reference lock and numbers references by send order", () => {
+  /**
+   * The non-identity slots keep a short assignment sentence of their own, and
+   * every one of them is numbered from the slot's SEND position.
+   *
+   * Falsified against a compiler that numbered references from array index or
+   * from the digest's own order: the slots below arrive scrambled. The binding
+   * still takes its single-subject form, because the cast has one person and one
+   * identity image — which is what "the sole subject" asserts, not how many
+   * images the payload carries.
+   */
+  it("numbers every other role from its send position, after the binding", () => {
     const digest = editWorld({
+      // The canvas permission rides here so the whole delta tail is ordered in
+      // one case: the change, the limited preserve set, then the geometry.
+      operation: operation({
+        kind: "edit",
+        task: "variant",
+        strategy: "instruction_edit",
+        change: {
+          concept: "subject.pose",
+          value: "raise her left hand to shoulder height",
+          replacements: [],
+          preserve: ["s1.identity", "s1.exposure"],
+          geometry: "canvas_may_expand",
+        },
+      }),
       location: {
         ...entity("location", "l1", [
           fact({ key: "l1.identity", concept: "location.identity", value: "a narrow tea shop", disposition: "required_visual" }),
@@ -1024,107 +1058,82 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
     const text = result.compiled.positiveText;
 
-    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
-    expect(text.indexOf(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK)).toBe(
-      text.lastIndexOf(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK),
-    );
-    expect(text).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
-
-    expect(text).toContain("Image 1 shows Wren.");
+    expect(text.startsWith("Use Wren in Image 1 as the sole subject;")).toBe(true);
     expect(text).toContain("Image 2 shows the place, the tea shop.");
     expect(text).toContain("Image 3 is the style reference; take only its rendering style.");
+    // The other slots follow the binding, and the delta follows them.
+    const location = text.indexOf("Image 2 shows the place");
+    const style = text.indexOf("Image 3 is the style reference");
+    const change = text.indexOf("Make exactly this change:");
+    const preserve = text.indexOf("Keep the exposure and the identity unchanged from the source.");
+    const geometry = text.indexOf(
+      "You may extend the canvas and paint in the newly required space rather than compressing the subject to fit.",
+    );
+    expect(location).toBeGreaterThan(0);
+    expect(style).toBeGreaterThan(location);
+    expect(change).toBeGreaterThan(style);
+    expect(preserve).toBeGreaterThan(change);
+    expect(geometry).toBeGreaterThan(preserve);
   });
 
   /**
-   * The lock's sentence contract, held in the COMPILED output (owner
-   * correction 2026-08-29 #4): the multi lock promises "Use numbered
-   * references as assigned below", and the canonical operation-first segment
-   * order emitted the `Image N` assignments AHEAD of the identity-kind lock —
-   * so "below" was false in the very prompt that said it. The lock bytes are
-   * frozen for kernel-quirk parity, so the dialect's own emission order moved
-   * instead: lock first, then the assignments, then the delta-first tail the
-   * research doc names — the one change, the limited preserve set, the
-   * geometry permission. Falsified against the canonical order (assignments
-   * lead) and against a reorder that scrambled the operation band while moving
-   * the lock.
+   * A cast of two takes the multi-reference binding: each person is introduced
+   * by their OWN image number, in one sentence, and the preserve set is stated
+   * once for everybody.
+   *
+   * Also the reason reference claims carry their index in their id
+   * (`positive-claims.ts`): two `identity` references used to compile two claims
+   * with one id, so the second overwrote the first wherever a claim id is the
+   * handle — including the slot a dialect resolved, which is what this sentence
+   * is built from.
    */
-  it("emits the identity lock before the numbered assignments, delta order intact", () => {
+  it("introduces each person by their own image when the cast has two", () => {
     const digest = editWorld({
-      operation: operation({
-        kind: "edit",
-        task: "variant",
-        strategy: "instruction_edit",
-        change: {
-          concept: "subject.pose",
-          value: "raise her left hand to shoulder height",
-          replacements: [],
-          // Fact KEYS, which is what a preserve entry is: the set identifies the
-        // facts structurally and the dialect renders what each one names. Bare
-        // words used to render as themselves, which is exactly how a character
-        // id reached provider prose.
-        preserve: ["s1.identity", "s1.exposure"],
-          geometry: "canvas_may_expand",
+      operation: { ...editOperation(), subjectCount: 2 },
+      subjects: [
+        wren(),
+        {
+          ...entity("subject", "s2", [
+            fact({
+              key: "s2.identity",
+              concept: "subject.identity",
+              value: "Nyx, a tall archivist",
+              subjectRef: "s2",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+          ]),
+          label: "Nyx",
         },
-      }),
-      location: {
-        ...entity("location", "l1", [
-          fact({ key: "l1.identity", concept: "location.identity", value: "a narrow tea shop", disposition: "required_visual" }),
-        ]),
-        label: "the tea shop",
-      },
+      ],
       references: [
         { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
-        { role: "location", subjectRef: "l1", required: false, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
       ],
     });
     const result = compile2511(digest, {
       references: [
+        { position: 2, role: "identity", subjectRef: "s2" },
         { position: 1, role: "identity", subjectRef: "s1" },
-        { position: 2, role: "location", subjectRef: "l1" },
       ],
     });
     if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
     const text = result.compiled.positiveText;
 
-    // "as assigned below" is now TRUE: the lock opens the prompt, and every
-    // numbered assignment sits after it.
-    expect(text.startsWith(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK)).toBe(true);
-    const lockIndex = text.indexOf(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
-    const firstAssignment = text.indexOf("Image ");
-    expect(firstAssignment).toBeGreaterThan(lockIndex);
-
-    // The delta-first properties survive the move: assignments, then the one
-    // change, then the preserve set, then the geometry permission.
-    const secondAssignment = text.indexOf("Image 2 shows the place, the tea shop.");
-    const change = text.indexOf("Make exactly this change: raise her left hand to shoulder height.");
-    const preserve = text.indexOf("Keep the exposure and the identity unchanged from the source.");
-    const geometry = text.indexOf(
-      "You may extend the canvas and paint in the newly required space rather than compressing the subject to fit.",
-    );
-    expect(secondAssignment).toBeGreaterThan(firstAssignment);
-    expect(change).toBeGreaterThan(secondAssignment);
-    expect(preserve).toBeGreaterThan(change);
-    expect(geometry).toBeGreaterThan(preserve);
-
-    // The single-reference lock opens its prompt the same way; its own first
-    // sentence IS an assignment ("Image 1 is the identity reference."), so the
-    // pin is that the lane's other numbered sentence follows it.
-    const single = compile2511(editWorld());
-    if (!single.ok) throw new Error(`unexpected refusal: ${single.refusal.code}`);
-    expect(single.compiled.positiveText.startsWith(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK)).toBe(true);
-    expect(single.compiled.positiveText.indexOf("Image 1 shows Wren.")).toBeGreaterThan(
-      single.compiled.positiveText.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
-    );
+    expect(text.startsWith("Use the numbered images as assigned: Image 1 shows Wren, Image 2 shows Nyx; ")).toBe(true);
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(text).toContain("Exactly 2 people are in the picture and nobody else; the foreground is clear.");
   });
 
   /**
    * The fail-closed half of the identity contract. On this endpoint the
    * reference IS the identity transport, so an identity claim with nothing to
-   * lock to must refuse — compiling prose that describes a face instead would
-   * have the endpoint repaint a stranger, which is the failure the lock exists
-   * to prevent. The second case is the send-order rule biting: a reference the
-   * planner trimmed out of the payload may not be described, and the digest's
-   * intent alone cannot resurrect it.
+   * bind to must refuse — compiling prose that describes a face instead would
+   * have the endpoint repaint a stranger, which is the failure the binding
+   * exists to prevent. The second case is the send-order rule biting: a
+   * reference the planner trimmed out of the payload may not be described, and
+   * the digest's intent alone cannot resurrect it.
    */
   it.each([
     {
@@ -1139,6 +1148,175 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     const result = run();
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.refusal.code).toBe("image_prompt_program.mandatory_claim_dropped");
+  });
+
+  /**
+   * THE SCENE THIS ISSUE WAS FILED OVER (#544).
+   *
+   * A single-subject, first-person, clothed chat scene compiled 38 sentences
+   * that named one character 28 times, described an invisible "viewer" as a
+   * participant, and put the single-person assertion third. Every property below
+   * is one of those defects, asserted structurally rather than as a snapshot:
+   * a snapshot would fail on any wording change and prove nothing about the
+   * shape, which is what this issue is about.
+   *
+   * The subject carries a pronoun set and NO display label, which is the
+   * ordinary scene case (the lane omits labels for reference-anchored subjects),
+   * and three garments rather than five: withholding the two an opaque outer
+   * layer conceals is the application's own step, and what this fixture proves
+   * is that whatever arrives is stated in ONE sentence.
+   */
+  describe("a first-person chat scene", () => {
+    const sceneWorld = (): ImageWorldDigest =>
+      world({
+        operation: operation({
+          kind: "edit",
+          task: "scene",
+          strategy: "instruction_edit",
+          subjectCount: 1,
+        }),
+        scene: [
+          fact({
+            key: "scene.capture_mode",
+            concept: "scene.capture_mode",
+            value: "first_person_disembodied",
+            disposition: "required_visual",
+          }),
+          fact({ key: "scene.mood", concept: "scene.mood", value: "nervous, curious, with a hint of playful tension" }),
+        ],
+        subjects: [
+          {
+            ...entity("subject", "s1", [
+              fact({
+                key: "s1.identity",
+                concept: "subject.identity",
+                value: "the person shown in the reference image",
+                subjectRef: "s1",
+                disposition: "required_visual",
+                priority: 1,
+              }),
+              fact({ key: "s1.build.arms", concept: "subject.morphology", value: "Arm build: slender", subjectRef: "s1", locus: "arms" }),
+              fact({ key: "s1.build.weight", concept: "subject.morphology", value: "Weight presentation: slim", subjectRef: "s1", locus: "torso" }),
+              fact({ key: "s1.hair.arrangement", concept: "subject.appearance", value: "Hair arrangement: loose", subjectRef: "s1", locus: "hair" }),
+              fact({ key: "s1.hair.color", concept: "subject.appearance", value: "Hair color: dark brown", subjectRef: "s1", locus: "hair" }),
+              fact({ key: "s1.hair.length", concept: "subject.appearance", value: "Hair length: mid back", subjectRef: "s1", locus: "hair" }),
+              fact({ key: "s1.wear.jeans", concept: "subject.wardrobe", value: "dark-wash skinny jeans", subjectRef: "s1", locus: "legs", disposition: "required_visual" }),
+              fact({ key: "s1.wear.loafers", concept: "subject.wardrobe", value: "brown leather loafers", subjectRef: "s1", locus: "feet", disposition: "required_visual" }),
+              fact({ key: "s1.wear.sweater", concept: "subject.wardrobe", value: "a pastel-pink crewneck sweater", subjectRef: "s1", locus: "torso", disposition: "required_visual" }),
+              fact({ key: "s1.wear.sweater.state", concept: "subject.current_state", value: "worn untucked", subjectRef: "s1", locus: "torso" }),
+              fact({ key: "s1.posture", concept: "subject.body_language", value: "standing", subjectRef: "s1" }),
+              fact({
+                key: "s1.pose",
+                concept: "subject.pose",
+                value: "standing at the refreshments table, angled slightly toward the camera",
+                subjectRef: "s1",
+                priority: 0.9,
+              }),
+              fact({
+                key: "s1.activity",
+                concept: "subject.activity",
+                value: "reaching for a cup of coffee",
+                subjectRef: "s1",
+                priority: 0.8,
+              }),
+              fact({ key: "s1.expression", concept: "subject.expression", value: "small, hesitant but playful", subjectRef: "s1" }),
+            ]),
+            // The lane omits the display name for a reference-anchored subject.
+            label: "",
+            pronouns: "she_her",
+          },
+        ],
+        location: {
+          ...entity("location", "l1", [
+            fact({
+              key: "l1.contents",
+              concept: "location.contents",
+              value: "a warm lounge with a comfortable couch, a low wooden table and bookshelves along one wall",
+              disposition: "required_visual",
+            }),
+            fact({ key: "l1.lighting", concept: "location.lighting", value: "soft natural light from a tall window" }),
+          ]),
+          label: "the lounge",
+        },
+        camera: [{ component: "framing", band: "waist_up", source: cameraSource }],
+        references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
+      });
+
+    const compiledScene = (): string => {
+      const result = compile2511(sceneWorld());
+      if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+      return result.compiled.positiveText;
+    };
+
+    it("introduces the subject once and refers to her by pronoun after", () => {
+      const text = compiledScene();
+      expect(text.startsWith("Use the woman in Image 1 as the sole subject; keep her ")).toBe(true);
+      // ONCE. The binding phrase is the introduction, and nothing re-introduces her.
+      expect(text.indexOf("the woman in Image 1")).toBe(text.lastIndexOf("the woman in Image 1"));
+      expect(text.match(/\bShe\b/gu)?.length ?? 0).toBeGreaterThan(2);
+      // The digest's own identity value is what the binding replaces; it must not
+      // travel beside it as a second, weaker description of the same person.
+      expect(text).not.toContain("the person shown in the reference image");
+    });
+
+    it("never uses `viewer` as a noun on a disembodied shot", () => {
+      const text = compiledScene();
+      expect(text).toContain("Seen from the camera's own eye-level point of view.");
+      expect(text.toLowerCase()).not.toContain("viewer");
+    });
+
+    it("states the wardrobe in one sentence, with the presentation folded in", () => {
+      const text = compiledScene();
+      const wardrobe = text.match(/[^.]*\bwears\b[^.]*\./gu) ?? [];
+      expect(wardrobe).toHaveLength(1);
+      for (const garment of ["dark-wash skinny jeans", "brown leather loafers", "a pastel-pink crewneck sweater"]) {
+        expect(wardrobe[0]).toContain(garment);
+      }
+      expect(wardrobe[0]).toContain("worn untucked");
+    });
+
+    it("says the posture once, in the pose sentence the composer already wrote", () => {
+      const text = compiledScene();
+      // "standing" is a cut fact AND the first word of the composer's pose. Two
+      // sentences saying it is two bodies to compose.
+      expect(text.match(/\bstanding\b/gu)).toHaveLength(1);
+      expect(text).toContain("with a small, hesitant but playful expression");
+    });
+
+    it("emits the bands in reading order and closes on the single-person assertion", () => {
+      const text = compiledScene();
+      const at = (needle: string): number => {
+        const found = text.indexOf(needle);
+        expect(found).toBeGreaterThanOrEqual(0);
+        return found;
+      };
+      const order = [
+        at("Use the woman in Image 1"),
+        at("She has arm build"),
+        at("She has hair"),
+        at("She wears "),
+        at("She is standing at the refreshments table"),
+        at("Seen from the camera's own"),
+        at("Waist-up framing."),
+        at("A warm lounge with"),
+        at("Lit by soft natural light"),
+        at("The mood is nervous"),
+        at("Rendered as a photograph"),
+      ];
+      expect(order).toEqual([...order].sort((left, right) => left - right));
+      expect(text.endsWith("She is the only person in the picture; the foreground is clear.")).toBe(true);
+    });
+
+    /**
+     * The family's own guidance asks for roughly 200 words. The measured
+     * baseline was 2021 characters of one-fact sentences; this is the shape
+     * check that keeps a future claim from being added back as its own sentence
+     * per fact. It is not a budget — the endpoint declares none — so the bound is
+     * generous on purpose.
+     */
+    it("compiles under the family's advisory length", () => {
+      expect(compiledScene().length).toBeLessThan(1300);
+    });
   });
 
   /**
@@ -1163,6 +1341,82 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     // Still recorded in provenance, so an operator can see what this render
     // WOULD have excluded on an endpoint with a channel for it.
     expect(result.compiled.promptProgramProvenance.negativeOutcomes.length).toBe(result.compiled.transports.length);
+  });
+});
+
+/**
+ * A CLAIM VALUE NO RENDERER UNDERSTANDS (#544 D1).
+ *
+ * Every prose family shared one last-resort fallback: a record with no
+ * `label`/`text`/`value`/`name` member was flattened to its own leaf values
+ * joined, on the reasoning that saying something true beat emitting
+ * `[object Object]`. It shipped structure as language. A body-language support
+ * state reached a production payload as "Katelyn Nacon is surface, ground, legs,
+ * borne by" — true of the data, and an instruction no model can follow.
+ *
+ * The fix is fail-closed: such a value words nothing, the claim is recorded as
+ * declined with a diagnostic, and on a mandatory kind the compile refuses before
+ * provider spend. The missing renderer is the defect; flattening is how it
+ * stayed invisible.
+ *
+ * Asserted per family rather than on the helper, because the helper returning
+ * `""` is not enough on its own — `"<subject> is "` is not an empty segment, so
+ * a family that interpolated the blank would travel a mutilated clause instead
+ * of declining.
+ */
+describe("a claim value no dialect can word", () => {
+  /** The exact shape from the owner's report: a support relation with no prompt renderer. */
+  const SUPPORT = {
+    relations: [{ role: "borne_by", anchor: { kind: "surface", surfaceKind: "ground" }, loadZones: ["legs"] }],
+  };
+
+  const unreadableWorld = (concept: "subject.body_language" | "subject.wardrobe"): ImageWorldDigest =>
+    world({
+      subjects: [
+        entity("subject", "nyx", [
+          fact({
+            key: "nyx.identity",
+            concept: "subject.identity",
+            value: "a woman with dark hair",
+            subjectRef: "nyx",
+            disposition: "required_visual",
+            priority: 1,
+          }),
+          fact({ key: "nyx.unreadable", concept, value: SUPPORT, subjectRef: "nyx" }),
+        ]),
+      ],
+    });
+
+  it.each(["qwen_2511_delta_edit", "qwen_2512_description", "seedream_45_prose", "pony_compel_tags"] as const)(
+    "%s declines it rather than flattening its structure",
+    (dialectId) => {
+      const dialect = imagePromptDialect(dialectId);
+      if (dialect === null) throw new Error(`${dialectId} is not registered`);
+      const sink = new DiagnosticCollector();
+      const compiled = dialect.compilePositive({
+        claims: selectImagePositiveClaims(unreadableWorld("subject.body_language")),
+        operation: operation(),
+        references: [{ position: 1, role: "identity", subjectRef: "nyx" }],
+        entityLabels: { nyx: "Nyx" },
+        budget: {},
+        sink,
+      });
+      expect(compiled.text.toLowerCase()).not.toContain("borne");
+      expect(compiled.text.toLowerCase()).not.toContain("ground");
+      expect(compiled.droppedClaimIds).toContain("nyx.unreadable");
+      expect(sink.items.some((entry) => entry.code === "image_prompt_program.value_unreadable")).toBe(true);
+    },
+  );
+
+  /**
+   * The fail-closed half. `wardrobe` is unfittable BY KIND, so the same value on
+   * a garment fact is a claim the render may not lose — and a refusal before
+   * spend is the honest outcome for a kind whose renderer nobody wrote.
+   */
+  it("refuses the render when the unreadable value sits on a mandatory kind", () => {
+    const result = compileImagePromptProgram(compileInput(unreadableWorld("subject.wardrobe")));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.refusal.code).toBe("image_prompt_program.mandatory_claim_dropped");
   });
 });
 
