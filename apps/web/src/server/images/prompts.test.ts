@@ -36,9 +36,11 @@ import {
   bindLimbsToOwner,
   emptySceneRenderPlan,
   heuristicFocalName,
+  mentionsLimb,
   resolveScenePlan,
   scrubBlush,
   scrubPlayerFromAction,
+  viewerGazeToCamera,
 } from "./prompts-scene-plan";
 
 
@@ -116,10 +118,10 @@ describe("buildSceneComposerPrompt", () => {
   it("teaches the solo-pose translation and the pose/activity redundancy rule (owner report 2026-07-10)", () => {
     // Player-anchored beats must be translated, not just the player left undescribed.
     expect(SCENE_COMPOSER_SYSTEM).toContain("must describe that character ALONE");
-    expect(SCENE_COMPOSER_SYSTEM).toContain('become "toward the viewer"');
+    expect(SCENE_COMPOSER_SYSTEM).toContain('become "toward the camera"');
     expect(SCENE_COMPOSER_SYSTEM).toContain("keep the expression and energy, lose the contact");
     // The worked example (the reported gallery beat) shows the translation shape.
-    expect(SCENE_COMPOSER_SYSTEM).toContain('pose "glancing back toward the viewer, mid-laugh"');
+    expect(SCENE_COMPOSER_SYSTEM).toContain('pose "glancing back toward the camera, mid-laugh"');
     // Pose and activity carry distinct beats — no smile in one and laugh in the other.
     expect(SCENE_COMPOSER_SYSTEM).toContain("must not repeat each other's beats");
   });
@@ -195,10 +197,15 @@ describe("the composer's camera and staging rules (scene-composition slices 1–
     expect(SCENE_COMPOSER_SYSTEM).toContain("the quote must be that glance itself, not the behind-position");
   });
 
-  it("makes the gaze translation orientation-aware in both rule sets", () => {
+  it("makes the gaze translation orientation-aware in both rule sets, and aims it at the camera", () => {
+    // The target is the LENS, on both lanes (#544 D3): the viewer is the one
+    // thing the picture may not contain, so naming them as the thing she looks
+    // at hands the model a second person to place across the room. The embodied
+    // lane keeps "the viewer" for CONTACT alone, which is asserted below.
     for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
-      expect(system).toContain('become "toward the viewer"');
-      expect(system).toContain('"glancing back over her shoulder toward the viewer" instead');
+      expect(system).toContain('become "toward the camera"');
+      expect(system).toContain('"glancing back over her shoulder toward the camera" instead');
+      expect(system).not.toContain('become "toward the viewer"');
     }
   });
 
@@ -403,9 +410,11 @@ describe("resolveScenePlan", () => {
     );
     // Trailing periods stripped before the "; " join — no "smile.; Leading" stitches.
     expect(plan.focal?.action).not.toContain(".;");
-    // "beside the player" / "leading the player" clauses drop; the gaze rewrites to the viewer.
+    // "beside the player" / "leading the player" clauses drop; the gaze rewrites
+    // to the CAMERA, because this shot holds no viewer to look at (#544 F3).
     expect(plan.focal?.action).not.toMatch(/\bplayer\b/i);
-    expect(plan.focal?.action).toContain("head turned slightly toward the viewer with a bright");
+    expect(plan.focal?.action).not.toMatch(/\bviewer\b/i);
+    expect(plan.focal?.action).toContain("head turned slightly toward the camera with a bright");
     expect(plan.focal?.action).toContain("heels clicking on the pale stone floor");
     expect(plan.focal?.action).not.toContain("Walking beside");
   });
@@ -417,8 +426,8 @@ describe("scrubPlayerFromAction (deterministic backstop)", () => {
     expect(scrubPlayerFromAction(clean)).toBe(clean);
   });
 
-  it("rewrites gaze toward the player to the viewer, drops contact/proximity clauses", () => {
-    expect(scrubPlayerFromAction("glancing at the player, mid-laugh")).toBe("glancing at the viewer, mid-laugh");
+  it("rewrites gaze toward the player to the camera, drops contact/proximity clauses", () => {
+    expect(scrubPlayerFromAction("glancing at the player, mid-laugh")).toBe("glancing at the camera, mid-laugh");
     expect(scrubPlayerFromAction("Walking beside the player, heels clicking on the stone floor")).toBe(
       "heels clicking on the stone floor",
     );
@@ -672,6 +681,39 @@ describe("sceneComposerSystem lane scope (slice 3)", () => {
       expect(system).toContain("NEVER describe skin colour");
     }
   });
+
+  /**
+   * Expression belongs to pose, mood is atmosphere (#544 D9/F9).
+   *
+   * The reported prompt carried both halves of one beat: the composer's own
+   * "a small smile playing at her lips" and, five sentences later, "The mood is
+   * nervous, curious, with a hint of playful tension." — the emotional label the
+   * smile already showed. The lowering withholds the label where a pose or
+   * activity carries the moment (`scene-lowering.ts`), and this is the rule that
+   * stops the composer writing the label in the first place.
+   */
+  it("tells both lanes that pose shows the expression and mood is atmosphere alone", () => {
+    for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
+      expect(system).toContain("Feeling is SHOWN, never labelled");
+      expect(system).toContain("pose carries the character's visible expression");
+      expect(system).toContain("mood is ATMOSPHERE only");
+      expect(system).toContain("never name in mood a feeling pose has already shown");
+    }
+  });
+
+  /**
+   * The one place "the viewer" survives: CONTACT with a part the shot actually
+   * holds. Gaze moved to the camera on both lanes (#544 F3) and contact did not,
+   * because an embodied frame really does contain the viewer's own hands and the
+   * possessive wording is what stops them reading as a third person's.
+   */
+  it("keeps the viewer as a contact noun on the embodied lane, and as nothing else", () => {
+    const embodied = sceneComposerSystem(true);
+    expect(embodied).toContain("her hand closing over the viewer's forearm");
+    expect(embodied).toContain('eyes and head go to "the camera" or "the lens"');
+    // The disembodied lane has no viewer to touch, and says so.
+    expect(SCENE_COMPOSER_SYSTEM).toContain('Do not name "the viewer" either');
+  });
 });
 
 describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
@@ -684,6 +726,18 @@ describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
     );
   });
 
+  /**
+   * The gaze target follows embodiment (#544 F3). An embodied shot has the
+   * viewer's own body in frame and "the viewer" is the measured contact wording;
+   * a disembodied one has nobody there, so the same beat aims at the lens.
+   */
+  it("aims the gaze at the viewer only where the viewer has a body", () => {
+    expect(scrubPlayerFromAction("head turned toward the player", { embodied: true })).toBe(
+      "head turned toward the viewer",
+    );
+    expect(scrubPlayerFromAction("head turned toward the player")).toBe("head turned toward the camera");
+  });
+
   it("still drops the clause when the viewer has no body in frame", () => {
     expect(scrubPlayerFromAction("her hand closing over the player's forearm")).toBe("");
     expect(scrubPlayerFromAction("leaning into the player, laughing")).toBe("laughing");
@@ -693,5 +747,118 @@ describe("scrubPlayerFromAction when the viewer has a body (slice 3)", () => {
     const clean = "seated by the window, flipping a page";
     expect(scrubPlayerFromAction(clean, { embodied: true })).toBe(clean);
     expect(scrubPlayerFromAction(clean)).toBe(clean);
+  });
+});
+
+/**
+ * THE CAMERA BACKSTOP (issue #544 D3/F3).
+ *
+ * A shot with no viewer part in frame asserts, in the same prompt, that the
+ * viewer is never visible — and the reported prompt then said "her attention
+ * fixed on the viewer across the room" and "as she catches the viewer's eye".
+ * That is a person standing in the room the picture is forbidden to contain, and
+ * the model resolves the contradiction by painting them.
+ *
+ * The composer is ruled against it; this is the deterministic half, in the same
+ * belt-and-braces shape as `scrubBlush` and `bindLimbsToOwner`. Aim the gaze at
+ * the thing that IS there and drop whole any clause naming a viewer the rewrite
+ * could not aim.
+ */
+describe("viewerGazeToCamera (deterministic backstop)", () => {
+  it("returns clean text unchanged (identity — no rejoin churn on the common case)", () => {
+    const clean = "seated by the window, one leg crossed; flipping a page";
+    expect(viewerGazeToCamera(clean)).toBe(clean);
+  });
+
+  it("aims every gaze preposition at the lens", () => {
+    expect(viewerGazeToCamera("her attention fixed on the viewer across the room")).toBe(
+      "her attention fixed on the camera across the room",
+    );
+    expect(viewerGazeToCamera("turned slightly toward the viewer")).toBe("turned slightly toward the camera");
+    expect(viewerGazeToCamera("looking directly into the viewer")).toBe("looking directly into the lens");
+  });
+
+  it("rewrites the possessive spelling of the same beat", () => {
+    expect(viewerGazeToCamera("as she catches the viewer's eye")).toBe("as she catches the camera");
+  });
+
+  it("drops whole any clause naming a viewer the rewrite could not aim", () => {
+    expect(viewerGazeToCamera("the viewer stands across the room, a small smile at her lips")).toBe(
+      "a small smile at her lips",
+    );
+  });
+
+  it("is idempotent — text already aimed at the camera passes through", () => {
+    const aimed = "turned slightly toward the camera, a small smile at her lips";
+    expect(viewerGazeToCamera(aimed)).toBe(aimed);
+    expect(viewerGazeToCamera(viewerGazeToCamera("turned slightly toward the viewer"))).toBe(
+      "turned slightly toward the camera",
+    );
+  });
+});
+
+/**
+ * The plan is where the backstop is spent, and embodiment is what decides
+ * whether it runs: with the viewer's own body in frame, "the viewer's own
+ * forearm" is the measured contact wording and rewriting it would un-say the
+ * geometry the arrangement is built on.
+ */
+describe("the resolved plan's viewer wording", () => {
+  const present: ScenePresentCharacter = { name: "Mira", wornVisible: [] };
+  const narration = ["Mira leans in; her cheek comes to rest against your palm, and she holds your eye."];
+  const ctx = (over: Partial<SceneComposerContext> = {}): SceneComposerContext => ({
+    present: [present],
+    recentNarration: narration,
+    ...over,
+  });
+  const spec = (pose: string) => ({ ...emptySceneSpec(), focalCharacter: "Mira", pose });
+
+  it("names no viewer anywhere in a disembodied plan's action text", () => {
+    const plan = resolveScenePlan(
+      spec("her attention fixed on the viewer across the room, as she catches the viewer's eye"),
+      ctx(),
+    );
+    expect(plan.focal?.action).not.toMatch(/\bviewer\b/i);
+    expect(plan.focal?.action).toContain("the camera");
+  });
+
+  it("keeps the viewer's own body in an embodied plan", () => {
+    const plan = resolveScenePlan(
+      {
+        ...spec("her hand closing over the viewer's forearm"),
+        viewerBody: ["hands"],
+        viewerBodyEvidence: [{ part: "hands", quote: "her cheek comes to rest against your palm" }],
+      },
+      ctx({ embodiedViewer: true }),
+    );
+    expect(plan.viewerBody).toEqual(["hands"]);
+    expect(plan.focal?.action).toContain("the viewer's forearm");
+  });
+});
+
+/**
+ * The limb vocabulary is read by two backstops that must not drift: the binder
+ * rewrites a bare limb to a possessive one, and the scene lowering arms the
+ * total-possession clause only where a limb is actually named (#544 F3). Wider
+ * than the binder's own pattern by design — the binder runs first, so by the
+ * time anything downstream reads the text every bare limb is already possessive.
+ */
+describe("mentionsLimb", () => {
+  it.each([
+    "Mira's hand raising the cup",
+    "both of Mira's hands wrapped around the mug",
+    "one foot tucked under her",
+    "her knee drawn up",
+  ])("finds the limb in %j", (text) => {
+    expect(mentionsLimb(text)).toBe(true);
+  });
+
+  it.each([
+    "settling into the chair",
+    "keeping the tray at an arm's length",
+    "leaning on a hand-carved rail",
+    "a small smile playing at her lips",
+  ])("finds none in %j", (text) => {
+    expect(mentionsLimb(text)).toBe(false);
   });
 });
