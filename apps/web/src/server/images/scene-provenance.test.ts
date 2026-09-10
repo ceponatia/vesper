@@ -435,8 +435,12 @@ describe("renderResolvedScene intimate reveal", () => {
     // scene lane states no display name for a reference-anchored subject (#544
     // F2), and only the focal could have produced "puffy" or "ample" just as
     // only the bystander could have produced "inverted".
-    expect(prompt).toContain("nipples: puffy."); // torso bare → skin stated
-    expect(prompt).toContain("breast size: ample."); // shape reads through regardless
+    // One subject's exposed anatomy is stated in ONE sentence (#544 F10), so the
+    // pin is the values inside that sentence rather than a sentence-final period
+    // only the last of them can carry.
+    const anatomy = prompt.match(/[^.]*\bbreast size\b[^.]*\./u)?.[0] ?? "";
+    expect(anatomy).toContain("nipples: puffy"); // torso bare → skin stated
+    expect(anatomy).toContain("breast size: ample"); // shape reads through regardless
     expect(prompt).not.toContain("inverted"); // Ilsa's torso is covered → her skin is withheld
   });
 
@@ -484,7 +488,7 @@ describe("renderResolvedScene intimate reveal", () => {
     // The reserved row carries the PRIMARY (multi) rung's prompt: moderated.
     expect(pipelineCalls[0]?.asset.prompt as string).not.toContain("nipples");
     // The correction carries the WINNING (single-anchor) rung's: permitting.
-    expect(updateCalls[0]?.prompt as string).toContain("nipples: puffy.");
+    expect(updateCalls[0]?.prompt as string).toContain("nipples: puffy");
   });
 });
 

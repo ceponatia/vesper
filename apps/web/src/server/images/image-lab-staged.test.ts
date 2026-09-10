@@ -246,14 +246,43 @@ function benchProgram(entry: SceneStaging, scene: ImageLabStaging = { ...SCENE, 
 const EVERY_STAGING = sceneStagingList.map((entry) => [entry.id, entry] as const);
 
 /**
- * What a scene-lane prompt calls a subject whose identity image it carries.
+ * How a scene-lane prompt names a subject whose identity image it carries, in
+ * each of the three places a staging template can ask for one.
  *
  * The bench compiles through `lane: "scene"` — that is the parity pin's whole
  * point — so it inherits the scene lane's naming policy: no display name for a
- * reference-anchored subject, the dialect introducing them by their image
- * instead (issue #544 F2).
+ * reference-anchored subject, the dialect introducing them by their image once
+ * and referring back by the pronoun their `identity.gender` implies (issue #544
+ * F2). The probe subject is `female` and is the only person in the render, so
+ * the set is available and unambiguous.
  */
-const ANCHORED_SUBJECT = "the subject";
+const ANCHORED_INTRODUCTION = "the woman in Image 1";
+const ANCHORED_OBJECT = "her";
+const ANCHORED_POSSESSIVE = "her";
+
+/** `{name}` and the possessive `'s` a template may write immediately after it. */
+const STAGING_PLACEHOLDER = /\{name\}('s)?/gu;
+
+/**
+ * The template with its placeholders bound the way the scene lane's dialect
+ * binds them: the first occurrence introduces, every later one refers back.
+ *
+ * Spelled out here rather than imported because the binding rule is the
+ * DIALECT's and this file is not its owner — what this suite asserts is that the
+ * registry's own words reach the prompt untouched around whatever the
+ * placeholders became, which is the claim the A/B probe refused to render
+ * without.
+ */
+function boundTemplate(template: string): string {
+  let seen = 0;
+  const bound = template.replace(STAGING_PLACEHOLDER, (_match, possessive: string | undefined) => {
+    const first = seen === 0;
+    seen += 1;
+    if (first) return possessive === undefined ? ANCHORED_INTRODUCTION : `${ANCHORED_INTRODUCTION}'s`;
+    return possessive === undefined ? ANCHORED_OBJECT : ANCHORED_POSSESSIVE;
+  });
+  return `${bound.charAt(0).toUpperCase()}${bound.slice(1)}`;
+}
 
 describe("the staged scene program", () => {
   it.each(EVERY_STAGING)(
@@ -265,19 +294,29 @@ describe("the staged scene program", () => {
 
   it.each(EVERY_STAGING)("states the %s template verbatim, with {name} bound to the subject", (_id, entry) => {
     // The registry owns every explicit word: nothing between it and the prompt
-    // may reword a template, so the check is for the entry's own text with
-    // `{name}` bound — the same assertion the A/B probe refused to render
+    // may reword a template, so the check is for the entry's own text with its
+    // placeholders bound — the same assertion the A/B probe refused to render
     // without. Riding as a required claim, it also has to survive the budget,
     // and this is what says it did.
     //
-    // Bound to the reference binding rather than to a display name: the bench
-    // compiles on the scene lane, and the scene lane offers the dialect no name
-    // for a subject the payload carries an identity image of
+    // Bound to the reference binding and then to pronouns rather than to a
+    // display name: the bench compiles on the scene lane, which offers the
+    // dialect no name for a subject the payload carries an identity image of
     // (`CHARACTER_LANE_SUBJECT_NAMING.scene`, issue #544 F2). Every template
     // opens with the placeholder, so the dialect's own leading capital is
     // applied here too.
-    const bound = entry.template.replaceAll("{name}", ANCHORED_SUBJECT);
-    expect(benchProgram(entry).prompt).toContain(`${bound.charAt(0).toUpperCase()}${bound.slice(1)}`);
+    const prompt = benchProgram(entry).prompt;
+
+    expect(prompt).toContain(boundTemplate(entry.template));
+    // Nothing is left unbound, and the projection's placeholder for an unnamed
+    // subject never stands in for a name in an arrangement's own sentence — the
+    // possessive is the shape that made the defect unmistakable ("the subject's
+    // back against the viewer's chest"), and it is the one a camera sentence
+    // about "the subject" cannot produce.
+    expect(prompt).not.toContain("{name}");
+    expect(prompt).not.toMatch(/the subject's/iu);
+    // A possessive pronoun substituted into `{name}'s` would compile "her's".
+    expect(prompt).not.toContain("her's");
   });
 
   /**

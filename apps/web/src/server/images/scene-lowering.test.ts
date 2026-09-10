@@ -255,21 +255,27 @@ function compileScene(
 }
 
 /**
- * How a scene prompt refers to a cast member the payload carries an identity
+ * How a scene prompt refers to each cast member the payload carries an identity
  * image of.
  *
  * The scene lane offers the dialect no display NAME for a reference-anchored
  * subject (`CHARACTER_LANE_SUBJECT_NAMING.scene`, issue #544 F2): on the
  * fictional-celebrity workflow the name is a real person's, standing in the same
- * prompt as a photograph of somebody else. The dialect introduces them by their
- * image instead, and this is what an unnamed subject reads as until it does.
+ * prompt as a photograph of somebody else. So the dialect introduces them by
+ * their own image ONCE and refers back by the pronoun their `identity.gender`
+ * implies — the probe focal is `female` and the bystander
+ * `androgynous_born_male`, two different sets, so neither pronoun is ambiguous
+ * and both are available.
  *
- * Held as a constant, in both cases, because these are the DIALECT's words and
- * this file is not their owner — when the introduction changes, every assertion
- * below follows it from one place.
+ * Held as constants because these are the DIALECT's words and this file is not
+ * their owner — when the introduction or the pronoun rule changes, every
+ * assertion below follows it from one place.
  */
-const ANCHORED = "the subject";
-const ANCHORED_LEADING = "The subject";
+const FOCAL_INTRO = "the woman in Image 1";
+const FOCAL_INTRO_LEADING = "The woman in Image 1";
+const FOCAL_SUBJECT = "She";
+const FOCAL_POSSESSIVE = "her";
+const FOCAL_POSSESSIVE_LEADING = "Her";
 
 /** Every camera sentence the scene dialect can write, whatever the band. */
 const CAMERA_SENTENCES = [
@@ -301,13 +307,16 @@ describe("the compiled scene prompt over a populated plan", () => {
       // EMBODIED and must not assert the viewer's absence.
       "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame, though the viewer's own body may be cropped into the frame.",
       // The registry's measured wording, adopted verbatim with `{name}` bound —
-      // to the reference binding rather than to a display name (`ANCHORED`).
-      `${ANCHORED_LEADING} lying face down along the bed with ${ANCHORED}'s back to the camera and ${ANCHORED}'s head turned to the side against the pillow, the viewer's own hands resting on ${ANCHORED}'s shoulders.`,
-      // Pose and activity as two claims — the split the plan used to destroy.
-      `${ANCHORED_LEADING} is lying still along the bed.`,
-      `${ANCHORED_LEADING} is listening to the rain.`,
-      // The bystander's action, which is not the focal's.
-      `${ANCHORED_LEADING} is shelving books by the door.`,
+      // the first occurrence to the reference binding (this lane offers no
+      // display name), every later one to a pronoun.
+      `${FOCAL_INTRO_LEADING} lying face down along the bed with ${FOCAL_POSSESSIVE} back to the camera and ${FOCAL_POSSESSIVE} head turned to the side against the pillow, the viewer's own hands resting on ${FOCAL_POSSESSIVE} shoulders.`,
+      // Pose and activity as two CLAIMS, said in one sentence: the split the
+      // plan used to destroy survives in the digest, and the dialect groups a
+      // subject's band into one statement about one body (#544 F10).
+      `${FOCAL_SUBJECT} is lying still along the bed and listening to the rain.`,
+      // The bystander's action, which is not the focal's — and in the bystander's
+      // own set, which is `they_them` and takes the plural verb.
+      "They are shelving books by the door.",
       // Camera height — the component the visibility model has no read for.
       "The camera sits above the eye line, angled down.",
       // The setting and its light, as the composer wrote them.
@@ -335,11 +344,13 @@ describe("the compiled scene prompt over a populated plan", () => {
     expect(program.prompt).not.toContain("the viewer is never visible in the image");
     expect(program.prompt).not.toContain("Every visible body part belongs to");
 
-    // Canonical segment order: the frame is stated before the bodies standing in
-    // it, and the place and its light follow both.
+    // Canonical BAND order (#544 F10): what the bodies are doing, then where the
+    // camera stands, then the place they are in, then the light on it — the
+    // reading order an edit instruction takes, decided by the dialect's emission
+    // bands rather than by the segment kinds a claim happens to carry.
     expectOrder(program.prompt, [
+      `${FOCAL_INTRO_LEADING} lying face down along the bed`,
       "First-person POV through the viewer's own eyes",
-      `${ANCHORED_LEADING} lying face down along the bed`,
       "A lamplit study, rain streaking the tall window.",
       "Lit by dim lamplight.",
     ]);
@@ -484,9 +495,11 @@ describe("an absent capture decision", () => {
     expect(plan.captureMode).toBe("first_person_disembodied");
 
     const { program } = compileScene(plan);
-    expect(program.prompt).toContain(
-      "First-person POV through the viewer's own eyes; the viewer is never visible in the image.",
-    );
+    // The disembodied form is THIS dialect's own (#544 F3): it names the camera
+    // and nothing else, because "the viewer is never visible" put a person in the
+    // room and then forbade drawing them.
+    expect(program.prompt).toContain("Seen from the camera's own eye-level point of view.");
+    expect(program.prompt.toLowerCase()).not.toContain("viewer");
     expect(program.prompt).not.toContain("The shot is taken by an observing camera, from outside the scene.");
   });
 
@@ -526,7 +539,10 @@ describe("an absent capture decision", () => {
     // wording — `fully in frame` is the embodied variant and must not leak back
     // onto the shot that never needed it.
     expect(lowered.scene.filter((fact) => fact.concept.startsWith("viewer."))).toEqual([]);
-    expect(program.prompt).toContain("Exactly 2 people are in frame.");
+    // The count CLOSES the instruction on this endpoint, and its unembodied form
+    // carries the positive statement of the failure it prevents: an empty
+    // foreground rather than a phantom second body (#544 F3/D10).
+    expect(program.prompt).toContain("Exactly 2 people are in the picture and nobody else; the foreground is clear.");
     expect(program.prompt).not.toContain("fully in frame");
   });
 });
@@ -655,7 +671,7 @@ describe("a staging that places the viewer", () => {
 
     // The arrangement is still stated — embodiment withdraws the possession
     // clause, never the staging it was contradicting.
-    expect(program.prompt).toContain(`the viewer's own hands resting on ${ANCHORED}'s shoulders.`);
+    expect(program.prompt).toContain(`the viewer's own hands resting on ${FOCAL_POSSESSIVE} shoulders.`);
   });
 });
 
@@ -726,7 +742,7 @@ describe("a staging the rung may not state", () => {
  * lock's own priority and may legitimately fall between them.
  */
 describe("a shot that cannot show the subject's face", () => {
-  const NO_ROTATION = `do not rotate ${ANCHORED} to face the camera.`;
+  const NO_ROTATION = `do not rotate ${FOCAL_POSSESSIVE} to face the camera.`;
 
   /** The populated plan with its arrangement removed, so the CAMERA decides the answer. */
   const shot = (orientation: SceneSubjectOrientationId): SceneRenderPlan =>
@@ -736,22 +752,33 @@ describe("a shot that cannot show the subject's face", () => {
       camera: { ...DEFAULT_SCENE_CAMERA, orientation },
     });
 
-  /** The measured sentences, for a subject whose OWN identity image is in the payload. */
-  const PARTIAL_FROM_REFERENCE =
-    `${ANCHORED}'s face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone exactly from the reference — do not rotate ${ANCHORED} to face the camera.`;
-  const AWAY_FROM_REFERENCE =
-    `${ANCHORED}'s face is not visible in this shot; preserve the hair color and style, build and skin tone exactly from the reference — do not rotate ${ANCHORED} to face the camera.`;
+  /**
+   * The adaptation for a subject whose OWN identity image is in the payload.
+   *
+   * Said in this subject's voice and anchored to THEIR image number, because the
+   * anchor is per subject rather than per payload: "from the reference" on a
+   * numbered render says nothing about which photograph, and on an ensemble it
+   * can point at somebody else's. Hair is absent from both preserve lists — the
+   * binding no longer claims it either (#544 F4), and the TEXT owns it.
+   */
+  const PARTIAL_FROM_IMAGE =
+    `${FOCAL_POSSESSIVE_LEADING} face is partly turned from the camera; keep the visible features and skin tone exactly from Image 1 and do not rotate ${FOCAL_POSSESSIVE} to face the camera.`;
+  const AWAY_FROM_IMAGE =
+    `${FOCAL_POSSESSIVE_LEADING} face is not visible in this shot; keep ${FOCAL_POSSESSIVE} build and skin tone exactly from Image 1 and do not rotate ${FOCAL_POSSESSIVE} to face the camera.`;
 
   it.each([
-    ["profile", PARTIAL_FROM_REFERENCE],
-    ["away", AWAY_FROM_REFERENCE],
-  ] as const)("adapts the lock on a %s shot without touching the lock's bytes", (orientation, adaptation) => {
+    ["profile", PARTIAL_FROM_IMAGE],
+    ["away", AWAY_FROM_IMAGE],
+  ] as const)("adapts the binding on a %s shot without touching its bytes", (orientation, adaptation) => {
     const { program } = compileScene(shot(orientation));
     expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
     expect(program.prompt).toContain(adaptation);
-    // A separate sentence, and the lock still reads exactly as the boundary
-    // matches it — the adaptation follows it rather than being spliced into it.
+    // A separate sentence, and the binding's preserve clause still reads exactly
+    // as the boundary matches it — the adaptation follows it rather than being
+    // spliced into it.
     expectOrder(program.prompt, [QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK, adaptation]);
+    // No hair on either list, at any band.
+    expect(program.prompt).not.toMatch(/\bkeep\b[^.]*\bhair\b/i);
   });
 
   it("states no adaptation on a front-facing shot", () => {
@@ -798,7 +825,7 @@ describe("a shot that cannot show the subject's face", () => {
    * the one thing that can still tell them apart.
    */
   const AWAY_UNANCHORED =
-    `${LANE_PROBE_NAME}'s face is not visible in this shot; preserve the hair color and style, build and skin tone exactly — do not rotate ${LANE_PROBE_NAME} to face the camera.`;
+    `${LANE_PROBE_NAME}'s face is not visible in this shot; keep ${LANE_PROBE_NAME}'s build and skin tone exactly and do not rotate ${LANE_PROBE_NAME} to face the camera.`;
 
   /**
    * Whose photograph the preservation set points at.
@@ -816,17 +843,19 @@ describe("a shot that cannot show the subject's face", () => {
   it("anchors the preservation set to nothing when only another subject is referenced", () => {
     const { program } = compileScene(shot("away"), false, undefined, (subjectId) => subjectId !== LANE_PROBE_SUBJECT_ID);
 
-    // The render still locks an identity — Ilsa's — so this is not a
+    // The render still binds an identity — Ilsa's — so this is not a
     // reference-free prompt; it is a prompt with a reference of the wrong person
-    // for this claim.
-    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    // for this claim. The binding takes its MULTI form because the cast has two
+    // people, whatever the payload's reference count: the form follows the cast
+    // and the identity slots, and "the sole subject" would be a lie about who is
+    // in the picture.
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
     expect(program.prompt).toContain(AWAY_UNANCHORED);
-    expect(program.prompt).not.toContain("build and skin tone exactly from the reference");
+    // Nothing points this claim at a photograph — not "the reference", and not a
+    // number, because there is no image of this person to number.
+    expect(program.prompt).not.toMatch(/keep Nyx's build and skin tone exactly from/u);
   });
-
-  /** The away sentence for a subject whose headwear fully hides their hair: hair leaves the preserve list, nothing else moves. */
-  const AWAY_HAIR_CONCEALED =
-    `${ANCHORED}'s face is not visible in this shot; preserve the build and skin tone exactly from the reference — do not rotate ${ANCHORED} to face the camera.`;
 
   /** The probe cast with the focal's resolved hair-occlusion band overridden. */
   const castAt = (band: "partial" | "full"): LaneProbeCastSubject[] => {
@@ -835,29 +864,38 @@ describe("a shot that cannot show the subject's face", () => {
   };
 
   /**
-   * Covered hair on a reference-anchored, turned-away shot (issue #312). The
-   * lock and the adaptation both tell the model what to keep from the
-   * reference, and at `full` "hair" may not be on either list: a hijab-wearing
-   * character rendered from a bare-headed reference would otherwise have the
-   * reference's hair painted back over the hijab. The turn stays off the
-   * table byte for byte — dropping the clause was the cheap wrong fix — and
-   * `partial` keeps the measured wording untouched, because some hair still
-   * shows and the reference remains authoritative for it.
+   * Covered hair on a reference-anchored, turned-away shot (issue #312), after
+   * the preserve set became the one a photograph actually carries (#544 F4).
+   *
+   * Neither sentence names hair at any band now — the binding keeps the face,
+   * the skin tone and the apparent age, and the adaptation keeps the build and
+   * the skin tone — so the two exported binding names are the same bytes and the
+   * two adaptations are one sentence. That is asserted rather than assumed,
+   * because a row still reading them as two wordings would pin a distinction the
+   * endpoint no longer makes. What is left to prove is the property the whole
+   * pair exists for: a hijab-wearing character rendered from a bare-headed
+   * reference is never told to take hair from it, and the turn stays off the
+   * table byte for byte at both bands.
    */
-  it.each([
-    ["full", QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED, AWAY_HAIR_CONCEALED],
-    ["partial", QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK, AWAY_FROM_REFERENCE],
-  ] as const)("at `%s` hair occlusion, a turned-away shot preserves the right set from the reference", (band, lock, adaptation) => {
-    const { program } = compileScene(shot("away"), false, undefined, () => true, castAt(band));
-    expect(program.prompt).toContain(lock);
-    expect(program.prompt).toContain(adaptation);
-    expect(program.prompt).toContain(NO_ROTATION);
-    expectOrder(program.prompt, [lock, adaptation]);
-    if (band === "full") {
-      expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+  it.each([["full"], ["partial"]] as const)(
+    "at `%s` hair occlusion, a turned-away shot never asks for the reference's hair",
+    (band) => {
+      expect(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED).toBe(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+      const { program } = compileScene(shot("away"), false, undefined, () => true, castAt(band));
+
+      expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+      expect(program.prompt).toContain(AWAY_FROM_IMAGE);
+      expect(program.prompt).toContain(NO_ROTATION);
+      expectOrder(program.prompt, [QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK, AWAY_FROM_IMAGE]);
+      expect(program.prompt).not.toMatch(/\bkeep\b[^.]*\bhair\b/i);
       expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
-    }
-  });
+      // Only the covered band states the concealment, and that sentence is the
+      // one that keeps the reference's hair off a covered head.
+      expect(program.prompt.includes(`${FOCAL_POSSESSIVE_LEADING} hair is fully covered by the headwear; no hair is visible.`)).toBe(
+        band === "full",
+      );
+    },
+  );
 });
 
 /**
@@ -924,7 +962,7 @@ describe("the viewer's own body in an embodied frame", () => {
     // The staging owns the GEOMETRY, never whose body this is — the facts cover
     // every part in frame, staged or not.
     expect(program.prompt).toContain("The viewer's own body: ");
-    expect(program.prompt).toContain(`the viewer's own hands resting on ${ANCHORED}'s shoulders.`);
+    expect(program.prompt).toContain(`the viewer's own hands resting on ${FOCAL_POSSESSIVE} shoulders.`);
   });
 
   it("words only the parts the staging left over", () => {

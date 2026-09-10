@@ -1160,11 +1160,25 @@ describe("the Qwen 2511 delta-edit dialect", () => {
    * a snapshot would fail on any wording change and prove nothing about the
    * shape, which is what this issue is about.
    *
-   * The subject carries a pronoun set and NO display label, which is the
-   * ordinary scene case (the lane omits labels for reference-anchored subjects),
-   * and three garments rather than five: withholding the two an opaque outer
-   * layer conceals is the application's own step, and what this fixture proves
-   * is that whatever arrives is stated in ONE sentence.
+   * The fixture carries the SHAPES the production adapter and lowering actually
+   * emit, because every seam this suite protects is a disagreement between them
+   * and the dialect:
+   *
+   * - no display label and a pronoun set, which is the ordinary scene case (the
+   *   lane omits labels for reference-anchored subjects);
+   * - three garments rather than five — withholding the two an opaque outer
+   *   layer conceals is the application's own step, and what this proves is that
+   *   whatever arrives is stated in ONE sentence;
+   * - garment- and hair-scoped current-state values as `with …` CLAUSE
+   *   fragments naming their own garment or part, which is what the adapter's
+   *   renderers produce, at the loci the visual-state projection files them
+   *   under — a garment reading at its `garment_part` key, never at the
+   *   garment's own `item` key;
+   * - one current-state value that is a PREDICATE rather than a clause ("damp at
+   *   the hair"), because the same kind produces both shapes;
+   * - the composer's pose filed under `subject.body_language`, the same concept
+   *   as the cut's committed posture, because that is what the scene lowering
+   *   does (`actionFacts`) and it is what makes the duplicate posture possible.
    */
   describe("a first-person chat scene", () => {
     const sceneWorld = (): ImageWorldDigest =>
@@ -1197,17 +1211,31 @@ describe("the Qwen 2511 delta-edit dialect", () => {
               }),
               fact({ key: "s1.build.arms", concept: "subject.morphology", value: "Arm build: slender", subjectRef: "s1", locus: "arms" }),
               fact({ key: "s1.build.weight", concept: "subject.morphology", value: "Weight presentation: slim", subjectRef: "s1", locus: "torso" }),
-              fact({ key: "s1.hair.arrangement", concept: "subject.appearance", value: "Hair arrangement: loose", subjectRef: "s1", locus: "hair" }),
+              // No `Hair arrangement:` attribute beside the hairstyle below: the
+              // adapter suppresses the sheet's arrangement wherever a committed
+              // hairstyle states it (`appearanceReplacementReason`).
               fact({ key: "s1.hair.color", concept: "subject.appearance", value: "Hair color: dark brown", subjectRef: "s1", locus: "hair" }),
               fact({ key: "s1.hair.length", concept: "subject.appearance", value: "Hair length: mid back", subjectRef: "s1", locus: "hair" }),
-              fact({ key: "s1.wear.jeans", concept: "subject.wardrobe", value: "dark-wash skinny jeans", subjectRef: "s1", locus: "legs", disposition: "required_visual" }),
-              fact({ key: "s1.wear.loafers", concept: "subject.wardrobe", value: "brown leather loafers", subjectRef: "s1", locus: "feet", disposition: "required_visual" }),
-              fact({ key: "s1.wear.sweater", concept: "subject.wardrobe", value: "a pastel-pink crewneck sweater", subjectRef: "s1", locus: "torso", disposition: "required_visual" }),
-              fact({ key: "s1.wear.sweater.state", concept: "subject.current_state", value: "worn untucked", subjectRef: "s1", locus: "torso" }),
-              fact({ key: "s1.posture", concept: "subject.body_language", value: "standing", subjectRef: "s1" }),
+              fact({ key: "s1.wear.jeans", concept: "subject.wardrobe", value: "dark-wash skinny jeans", subjectRef: "s1", locus: "item:g-jeans", disposition: "required_visual" }),
+              fact({ key: "s1.wear.loafers", concept: "subject.wardrobe", value: "brown leather loafers", subjectRef: "s1", locus: "item:g-loafers", disposition: "required_visual" }),
+              fact({ key: "s1.wear.sweater", concept: "subject.wardrobe", value: "a pastel-pink crewneck sweater", subjectRef: "s1", locus: "item:g-sweater", disposition: "required_visual" }),
+              // The garment reading's locus is the PART's, never the garment's:
+              // the two never match in production, which is why matching them
+              // was the wrong way to join the clause to the sentence.
+              fact({ key: "s1.wear.sweater.tuck", concept: "subject.current_state", value: "with the sweater tucked in", subjectRef: "s1", locus: "garment_part:g-sweater:hem" }),
+              fact({ key: "s1.hair.style", concept: "subject.current_state", value: "with the hair worn loose", subjectRef: "s1", locus: "hair" }),
+              fact({ key: "s1.hair.wetness", concept: "subject.current_state", value: "damp at the hair", subjectRef: "s1", locus: "hair" }),
+              fact({
+                key: "s1.posture",
+                concept: "subject.body_language",
+                value: "standing",
+                subjectRef: "s1",
+                disposition: "required_visual",
+                priority: 1,
+              }),
               fact({
                 key: "s1.pose",
-                concept: "subject.pose",
+                concept: "subject.body_language",
                 value: "standing at the refreshments table, angled slightly toward the camera",
                 subjectRef: "s1",
                 priority: 0.9,
@@ -1254,6 +1282,9 @@ describe("the Qwen 2511 delta-edit dialect", () => {
       // ONCE. The binding phrase is the introduction, and nothing re-introduces her.
       expect(text.indexOf("the woman in Image 1")).toBe(text.lastIndexOf("the woman in Image 1"));
       expect(text.match(/\bShe\b/gu)?.length ?? 0).toBeGreaterThan(2);
+      // The projection's placeholder for an unnamed subject is not a name: a
+      // prompt that says "she" everywhere else may not say "the subject" here.
+      expect(text.toLowerCase()).not.toContain("the subject");
       // The digest's own identity value is what the binding replaces; it must not
       // travel beside it as a second, weaker description of the same person.
       expect(text).not.toContain("the person shown in the reference image");
@@ -1265,19 +1296,43 @@ describe("the Qwen 2511 delta-edit dialect", () => {
       expect(text.toLowerCase()).not.toContain("viewer");
     });
 
-    it("states the wardrobe in one sentence, with the presentation folded in", () => {
+    /**
+     * The `with …` rule (#544 F1/F6). The adapter names the garment inside its
+     * own fragment, so the clause TRAILS the sentence it qualifies; wrapped in
+     * the subject frame instead it compiled "She is with the sweater tucked in",
+     * which is the sentence this asserts nothing anywhere produces.
+     */
+    it("states the wardrobe in one sentence, with each garment reading trailing it", () => {
       const text = compiledScene();
       const wardrobe = text.match(/[^.]*\bwears\b[^.]*\./gu) ?? [];
       expect(wardrobe).toHaveLength(1);
       for (const garment of ["dark-wash skinny jeans", "brown leather loafers", "a pastel-pink crewneck sweater"]) {
         expect(wardrobe[0]).toContain(garment);
       }
-      expect(wardrobe[0]).toContain("worn untucked");
+      expect(wardrobe[0]).toContain("with the sweater tucked in");
+      expect(text).not.toMatch(/\b(?:is|are)\s+with\b/iu);
+    });
+
+    /**
+     * A hair reading belongs to the head the build band just described, and a
+     * PREDICATE reading is not a trailing clause at all — the same visual-state
+     * kind produces both, so the shape of the value is what decides.
+     */
+    it("trails a hair reading on the hair sentence and keeps a predicate reading in its own", () => {
+      const text = compiledScene();
+      const hair = text.match(/[^.]*\bhair color\b[^.]*\./gu) ?? [];
+      expect(hair).toHaveLength(1);
+      expect(hair[0]).toContain("with the hair worn loose");
+      expect(hair[0]).toContain("hair length: mid back");
+      // The wardrobe sentence is not the hair reading's host.
+      expect(text).not.toMatch(/wears[^.]*with the hair worn loose/u);
+      expect(text).toContain("She is damp at the hair.");
     });
 
     it("says the posture once, in the pose sentence the composer already wrote", () => {
       const text = compiledScene();
-      // "standing" is a cut fact AND the first word of the composer's pose. Two
+      // "standing" is a committed cut fact AND the first word of the composer's
+      // pose, and the lowering files both under `subject.body_language`. Two
       // sentences saying it is two bodies to compose.
       expect(text.match(/\bstanding\b/gu)).toHaveLength(1);
       expect(text).toContain("with a small, hesitant but playful expression");
@@ -1293,7 +1348,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
       const order = [
         at("Use the woman in Image 1"),
         at("She has arm build"),
-        at("She has hair"),
+        at("She has hair color"),
         at("She wears "),
         at("She is standing at the refreshments table"),
         at("Seen from the camera's own"),
@@ -1316,6 +1371,151 @@ describe("the Qwen 2511 delta-edit dialect", () => {
      */
     it("compiles under the family's advisory length", () => {
       expect(compiledScene().length).toBeLessThan(1300);
+    });
+  });
+
+  /**
+   * TWO LABEL-LESS SUBJECTS — the multi binding's own circularity (#544).
+   *
+   * A label-less subject's introduction IS "the woman in Image 1", so an
+   * assignment list built from introductions wrote "Image 1 shows the woman in
+   * Image 1": a sentence that defines each image by itself and tells the model
+   * nothing about who is in it. The assignment takes the INDEFINITE noun the
+   * pronoun set implies, and the definite introduction is what every later
+   * sentence uses.
+   */
+  it("assigns each label-less subject an indefinite noun rather than their own image", () => {
+    const unnamed = (ref: string, pronouns: "she_her" | "he_him") => ({
+      ...entity("subject", ref, [
+        fact({
+          key: `${ref}.identity`,
+          concept: "subject.identity",
+          value: "the same person shown in the reference image",
+          subjectRef: ref,
+          disposition: "required_visual",
+          priority: 1,
+        }),
+        fact({ key: `${ref}.build`, concept: "subject.morphology", value: "Frame: slight", subjectRef: ref }),
+      ]),
+      // The scene lane's own shape: no display name for a subject the payload
+      // carries an identity image of.
+      label: "",
+      pronouns,
+    });
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 2 }),
+      subjects: [unnamed("s1", "she_her"), unnamed("s2", "he_him")],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1" },
+        { position: 2, role: "identity", subjectRef: "s2" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text.startsWith("Use the numbered images as assigned: Image 1 shows a woman, Image 2 shows a man; ")).toBe(
+      true,
+    );
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    // Nothing defines an image by pointing back at it…
+    expect(text).not.toContain("Image 1 shows the woman in Image 1");
+    expect(text).not.toContain("Image 2 shows the man in Image 2");
+    // …and the placeholder for an unnamed subject never stands in for a name.
+    expect(text.toLowerCase()).not.toContain("the subject");
+  });
+
+  /**
+   * A STAGED ARRANGEMENT AND A COVERED HEAD, on the subject the scene lane
+   * declines to name (#544 F2).
+   *
+   * Both sentences used to be bound to the display LABEL, which on this lane is
+   * the projection's neutral placeholder — so an intimate arrangement compiled
+   * "The subject standing with the subject's back against the viewer's chest"
+   * and the concealment compiled "The subject's hair is fully covered", in a
+   * prompt whose every other sentence says "she". The template's own words are
+   * untouched; only what `{name}` binds to changes.
+   */
+  describe("a label-less subject's staged arrangement and covered head", () => {
+    const TEMPLATE =
+      "{name} standing with {name}'s back against the viewer's chest, the viewer's own arms closed around {name} from behind";
+    const stagingForms = createSceneStagingSurfaceForms(
+      Object.fromEntries(
+        sceneStagingIds.map((id): [SceneStagingId, SceneStagingSurfaceFormEntry] => [
+          id,
+          { text: TEMPLATE, revision: 1, digest: id.length.toString(16).padStart(64, "0") },
+        ]),
+      ) as SceneStagingSurfaceFormTable,
+    );
+
+    const stagedText = (): string => {
+      const digest = editWorld({
+        operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 1 }),
+        scene: [
+          fact({
+            key: "scene.staging",
+            concept: "scene.staging",
+            value: stagingForms.formFor("held_from_behind"),
+            subjectRef: "s1",
+            disposition: "required_visual",
+            priority: 1,
+          }),
+        ],
+        subjects: [
+          {
+            ...entity("subject", "s1", [
+              fact({
+                key: "s1.identity",
+                concept: "subject.identity",
+                value: "the same person shown in the reference image",
+                subjectRef: "s1",
+                disposition: "required_visual",
+                priority: 1,
+              }),
+              fact({
+                key: "s1.hair_concealment",
+                concept: "subject.hair_concealment",
+                value: "hair fully covered by the headwear; no hair visible",
+                subjectRef: "s1",
+                disposition: "required_visual",
+                priority: 0.99,
+              }),
+            ]),
+            label: "",
+            pronouns: "she_her",
+          },
+        ],
+      });
+      const result = compile2511(digest);
+      if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+      return result.compiled.positiveText;
+    };
+
+    it("binds the template's first placeholder to the introduction and the rest to pronouns", () => {
+      const text = stagedText();
+
+      expect(text).toContain(
+        "The woman in Image 1 standing with her back against the viewer's chest, the viewer's own arms closed around her from behind.",
+      );
+      // The registry's own words survive the binding untouched.
+      expect(text).toContain("the viewer's own arms closed around");
+      expect(text).not.toContain("{name}");
+      expect(text).not.toContain("her's");
+    });
+
+    it("words the concealment through the same voice", () => {
+      const text = stagedText();
+
+      expect(text).toContain("Her hair is fully covered by the headwear; no hair is visible.");
+      // The neutral placeholder is never a name, in either sentence.
+      expect(text.toLowerCase()).not.toContain("the subject");
+      // The fact's own descriptor stays out of the payload; the dialect owns the sentence.
+      expect(text).not.toContain("no hair visible");
     });
   });
 

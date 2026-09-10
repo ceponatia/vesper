@@ -373,7 +373,11 @@ describe("compiling a bound lane", () => {
     );
     expect(trimmed.numberedReferences.map((entry) => entry.role)).toEqual(["identity"]);
     expect(trimmed.sentReferences).toHaveLength(1);
-    expect(trimmed.prompt).toContain(`Image 1 shows ${LANE_PROBE_NAME}.`);
+    // One identity image and one cast member is the dialect's SOLE binding, and
+    // that is where an identity slot's number now lives (#544 F2): "Image 1
+    // shows Nyx." beside "Use Nyx in Image 1 …" was two sentences saying one
+    // thing. What this owns is the NUMBER, not the sentence carrying it.
+    expect(trimmed.prompt).toContain(`Use ${LANE_PROBE_NAME} in Image 1 as the sole subject;`);
     expect(trimmed.prompt).not.toContain("Image 2");
   });
 
@@ -547,7 +551,10 @@ describe("what a variant render actually sends", () => {
     // The lock preserves a likeness; the age anchor beside it is the lane's
     // own text-authoritative claim (`CHARACTER_LANE_APPARENT_AGE.variant`), and
     // a reference-edit that lost it would preserve the model's over-estimate.
-    expect(result.prompt).toContain(`${LANE_PROBE_NAME} appears in the late twenties.`);
+    // Said in the subject's own pronoun: the binding above introduced her by
+    // name and every later sentence refers back to it (#544 F2).
+    expect(result.prompt).toContain("She appears in the late twenties.");
+    expect(result.prompt).not.toContain(`${LANE_PROBE_NAME} appears`);
   });
 
   /**
@@ -596,7 +603,13 @@ describe("what a variant render actually sends", () => {
  */
 describe("hair the headwear fully hides", () => {
   const HIJAB = { name: "hijab", coverage: ["hair", "ears"], layer: 2, opacity: "opaque" } as const;
+  /** The avatar lane's sentence: 2512, no identity reference, so the subject is named. */
   const CONCEALED = `${LANE_PROBE_NAME}'s hair is fully covered by the headwear; no hair is visible.`;
+  /**
+   * The variant lane's: 2511 with the subject's own identity image, so the
+   * binding introduces her once and this refers back by pronoun (#544 F2).
+   */
+  const VARIANT_CONCEALED = "Her hair is fully covered by the headwear; no hair is visible.";
 
   it.each([
     ["full", true],
@@ -618,17 +631,29 @@ describe("hair the headwear fully hides", () => {
 
   /**
    * A reference-anchored render must not ask the model to restore hair the
-   * headwear hides (issue #312). The lock is the family's own bytes, so the
-   * band reaches it through the compiled claim set rather than a second
-   * channel: at `full` the lock drops "hair" and keeps every other cue, at
-   * `partial` the measured lock ships untouched. Falsified against the lock
-   * that named hair on every render — a hijab-wearing edit from a bare-headed
-   * reference then preserved the reference's hair over the hijab.
+   * headwear hides (issue #312) — now because the binding never claims hair.
+   *
+   * The 2511 preserve set is the honest one after #544 F4: the photograph
+   * carries the face, the skin tone and the apparent age, and the TEXT is
+   * authoritative for hair, build, wardrobe and pose. So there is no longer a
+   * hair-concealed SPELLING of the binding to switch to — the two exported names
+   * are the same bytes, asserted here because a test reading them as two
+   * wordings would be pinning a distinction the endpoint no longer makes — and
+   * one binding ships at either band. What keeps the reference's hair off a
+   * covered head is the concealment sentence, stated at `full` and nowhere else.
+   *
+   * The concealment is worded through the subject's own voice: this lane names
+   * her once in the binding and refers back by pronoun, so a name here would be
+   * the repetition F2 removed. Falsified against the lock that named hair on
+   * every render — a hijab-wearing edit from a bare-headed reference then
+   * preserved the reference's hair over the hijab — and against the cheap fix of
+   * deleting the concealment sentence.
    */
   it.each([
-    ["full", QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED, QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK],
-    ["partial", QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK, QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED],
-  ] as const)("locks a `%s` cut to its reference without the hair it cannot show", (band, lock, other) => {
+    ["full", true],
+    ["partial", false],
+  ] as const)("locks a `%s` cut to its reference and never asks for the hair back", (band, concealed) => {
+    expect(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED).toBe(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
     const cut = laneProbeVariantCut([...laneProbeWardrobe(), { ...HIJAB, hairOcclusion: band }]);
     expect(cut.hairOcclusion).toBe(band);
     const program = compiled(
@@ -648,9 +673,11 @@ describe("hair the headwear fully hides", () => {
         }),
       ),
     );
-    expect(program.prompt).toContain(lock);
-    expect(program.prompt).not.toContain(other);
-    if (band === "full") expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
+    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    // Nothing anywhere in the instruction asks for hair to be kept from the image.
+    expect(program.prompt).not.toMatch(/\bkeep\b[^.]*\bhair\b/i);
+    expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
+    expect(program.prompt.includes(VARIANT_CONCEALED)).toBe(concealed);
   });
 });
 

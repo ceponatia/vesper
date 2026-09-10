@@ -584,6 +584,61 @@ export function stagingSentence(template: string, subject: string | null): strin
   return bound.length === 0 ? null : capitalize(bound);
 }
 
+/**
+ * The same placeholder, matched together with the possessive `'s` a template
+ * writes immediately after it — the shape {@link stagingSentenceForVoice} needs
+ * and {@link STAGING_SUBJECT_PLACEHOLDER} cannot express: substituting a
+ * possessive pronoun for `{name}` inside `{name}'s` would compile "her's".
+ */
+const STAGING_SUBJECT_REFERENCE = /\{name\}('s)?/gu;
+
+/**
+ * One adopted staging template, bound to a subject the dialect INTRODUCES once
+ * and refers to by pronoun afterwards (#544 F2).
+ *
+ * {@link stagingSentence} binds every occurrence to one string, which is right
+ * for a family that re-names its subject in every clause and wrong for one that
+ * does not: on the scene lane the subject has no display label, so that binding
+ * compiles "The subject standing with the subject's back against the viewer's
+ * chest" — the arrangement's own sentence saying "the subject" four times in a
+ * prompt whose every other sentence says "she".
+ *
+ * So the FIRST occurrence is the introduction — the arrangement is usually the
+ * first sentence about the body, and a pronoun opening it would refer back to
+ * nothing — and every later one is a pronoun:
+ *
+ * - `{name}'s` takes the possessive determiner ("her back", "his hips");
+ * - a later bare `{name}` takes the OBJECT pronoun. Every later bare occurrence
+ *   in the staging catalog follows a preposition ("closed around {name} from
+ *   behind"), which is object position, and the subject pronoun there would
+ *   compile "closed around she". The first occurrence, the one place a subject
+ *   pronoun would be right, is the introduction instead.
+ *
+ * `pronouns` null — no set, or a set another cast member shares — keeps the
+ * introduction throughout, which is exactly {@link stagingSentence}'s behavior
+ * with the introduction in place of the label.
+ *
+ * A template that binds to nothing at all yields null rather than an empty
+ * sentence, for the same reason {@link stagingSentence} does: the arrangement is
+ * the whole content of the claim.
+ */
+export function stagingSentenceForVoice(
+  template: string,
+  introduction: string,
+  pronouns: ImagePronounWords | null,
+): string | null {
+  let seen = 0;
+  const bound = template
+    .replace(STAGING_SUBJECT_REFERENCE, (_match: string, possessive: string | undefined): string => {
+      const first = seen === 0;
+      seen += 1;
+      if (first || pronouns === null) return possessive === undefined ? introduction : `${introduction}'s`;
+      return possessive === undefined ? pronouns.object : pronouns.possessive;
+    })
+    .trim();
+  return bound.length === 0 ? null : capitalize(bound);
+}
+
 export function lightingSentence(band: ImageLightingBand): string {
   switch (band) {
     case "bright":
