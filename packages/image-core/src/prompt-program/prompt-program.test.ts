@@ -2461,8 +2461,10 @@ describe("a claim value no dialect can word", () => {
         sink,
       });
       // The flattened leaves, as WORDS: "foreground" in the closing sentence is
-      // not the surface kind this record carries.
-      expect(compiled.text.toLowerCase()).not.toMatch(/\bborne\b|\bground\b|\bload\b|\bsurface\b/u);
+      // not the surface kind this record carries, and "natural surface detail"
+      // in the style sentence is not its anchor kind — only the run the old
+      // fallback produced ("surface, ground") and the leaves nothing else says.
+      expect(compiled.text.toLowerCase()).not.toMatch(/\bborne\b|\bground\b|surface, ground/u);
       // And nobody is called text-described: the one subject is the only one
       // there is, and no image anchored anybody else.
       expect(compiled.text.toLowerCase()).not.toContain("has no reference image");
