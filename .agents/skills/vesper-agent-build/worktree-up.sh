@@ -6,8 +6,9 @@
 #
 # Default: `gh issue develop` registers codex/<issue>-<slug> as a linked branch
 # (a PR from it is a closing reference for the issue) and checks it out at
-# .codex/worktrees/issue-<issue>. Use --slice when the branch will deliver
-# only part of the issue: a plain local branch, no link, and the PR body says
+# the main checkout's .codex/worktrees/issue-<issue>, wherever the helper runs
+# from. Use --slice when the branch will deliver only part of the issue:
+# a plain local branch, no link, and the PR body says
 # `Part of #N`. If the branch already exists (a corrections round after the
 # worktree was removed) the worktree is re-created at its tip. A legacy
 # agent/<issue>-<slug> branch is resumed when it already exists; it is not renamed.
@@ -32,9 +33,16 @@ while [ $# -gt 0 ]; do
     *) echo "unknown flag $1" >&2; exit 1 ;;
   esac
 done
+# A relative --dir is resolved from the invoking cwd by the `cd "$DIR"` and
+# `git -C "$DIR"` calls below, but `git -C "$ROOT" worktree add` would resolve
+# it from the main checkout; pin it to one absolute path so both agree.
+[ -z "$DIR" ] || [[ "$DIR" = /* ]] || DIR="$PWD/$DIR"
 [[ "$ISSUE" =~ ^[0-9]+$ ]] || { echo "issue must be a number" >&2; exit 1; }
 
-ROOT=$(git rev-parse --show-toplevel)
+# A session worktree is not the repository root, so --show-toplevel would nest
+# the new worktree inside it; `git worktree list` names the main checkout first.
+ROOT=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p') || ROOT=""
+ROOT="${ROOT:-$(git rev-parse --show-toplevel)}"
 BRANCH="codex/$ISSUE-$SLUG"
 LEGACY_BRANCH="agent/$ISSUE-$SLUG"
 DIR="${DIR:-$ROOT/.codex/worktrees/issue-$ISSUE}"
@@ -57,7 +65,12 @@ else
 fi
 
 if [ "$INSTALL" = 1 ]; then
-  store=$(sed -n 's/^storeDir: //p' "$ROOT/node_modules/.modules.yaml" | sed 's#/v[0-9]*$##')
+  # A fresh clone has no node_modules to read the store from; fall through to the
+  # default rather than aborting after the worktree already exists.
+  store=""
+  if [ -f "$ROOT/node_modules/.modules.yaml" ]; then
+    store=$(sed -n 's/^storeDir: //p' "$ROOT/node_modules/.modules.yaml" | sed 's#/v[0-9]*$##') || store=""
+  fi
   store="${store:-$HOME/.local/share/pnpm/store}"
   (cd "$DIR" && pnpm install --offline --frozen-lockfile --store-dir "$store" >/dev/null) \
     && echo "node_modules linked offline from $store" \

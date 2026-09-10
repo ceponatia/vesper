@@ -54,7 +54,8 @@ unless the recorded evidence proves it occurred before those edits.
 - Use `vesper-task-context` when a substantial slice needs focused source discovery
   or a fresh context handoff. The parent owns any optional context/evidence record.
 - For ordinary issue implementation, read [worktrees and integration](references/integration.md).
-  Helpers are beside this file; run them from the repository root:
+  Helpers are beside this file and run from any checkout; the worktree lands
+  under the main checkout's `.codex/worktrees/`:
 
   ```bash
   .agents/skills/vesper-agent-build/worktree-up.sh 284 gallery-cascade
