@@ -534,8 +534,21 @@ function readableLeaves(value: unknown): string[] {
  * name gives the model nothing to place the piece with). `locus` and
  * `definitionId` are provenance and are dropped entirely.
  */
+/**
+ * A garment name the forge stored in Title Case ("Brown Leather Loafers"), as
+ * the common noun it is mid-sentence. Only a name whose EVERY word is a
+ * capitalised lower-case word is touched: "Thin gold hoop" is already prose,
+ * "T-Shirt" and "Levi's 501 Jeans" carry casing that means something, and the
+ * dialect lower-cases nothing but a leading capital (#544).
+ */
+const TITLE_CASED_NAME = /^[A-Z][a-z'’]*(?:\s+[A-Z][a-z'’]*)*$/u;
+
+function sentenceCaseGarmentName(name: string): string {
+  return TITLE_CASED_NAME.test(name) ? name.toLowerCase() : name;
+}
+
 function garmentPromptValue(value: VisualStateWardrobeValue): string {
-  const name = value.name.trim();
+  const name = sentenceCaseGarmentName(value.name.trim());
   if (value.subtypeId === undefined) return name;
   const subtype = humanizeVocabularyValue(value.subtypeId);
   return name.toLowerCase().includes(subtype.toLowerCase()) ? name : `${subtype}: ${name}`;

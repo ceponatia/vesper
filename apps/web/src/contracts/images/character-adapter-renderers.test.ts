@@ -234,6 +234,23 @@ describe("garment presentation", () => {
   });
 });
 
+describe("garment names", () => {
+  const garment = (name: string): string | null =>
+    rendered({
+      kindId: VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
+      locus: { kind: "item", itemInstanceId: GARMENT_ID },
+      value: { name, locus: { kind: "worn", actorId: "c:1" } },
+    });
+
+  it("sentence-cases a title-cased name and leaves meaningful casing alone", () => {
+    expect(garment("Brown Leather Loafers")).toBe("brown leather loafers");
+    expect(garment("Pastel Pink Crewneck Sweater")).toBe("pastel pink crewneck sweater");
+    expect(garment("Thin gold hoop")).toBe("Thin gold hoop");
+    expect(garment("T-Shirt")).toBe("T-Shirt");
+    expect(garment("Levi's 501 Jeans")).toBe("Levi's 501 Jeans");
+  });
+});
+
 describe("presentation and current state", () => {
   it("words a hairstyle as an arrangement of the hair, never a bare vocabulary token", () => {
     expect(

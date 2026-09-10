@@ -1124,6 +1124,9 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
     expect(text).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
     expect(text).toContain("Exactly 2 people are in the picture and nobody else; the foreground is clear.");
+    // The second person's identity claim is absorbed by the binding that already
+    // introduced them, never a stray "They: the same person shown …" sentence.
+    expect(text).not.toContain(": the same person shown");
   });
 
   /**
@@ -1181,7 +1184,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
    *   does (`actionFacts`) and it is what makes the duplicate posture possible.
    */
   describe("a first-person chat scene", () => {
-    const sceneWorld = (): ImageWorldDigest =>
+    const sceneWorld = (opts: { pronouns?: boolean } = {}): ImageWorldDigest =>
       world({
         operation: operation({
           kind: "edit",
@@ -1211,6 +1214,9 @@ describe("the Qwen 2511 delta-edit dialect", () => {
               }),
               fact({ key: "s1.build.arms", concept: "subject.morphology", value: "Arm build: slender", subjectRef: "s1", locus: "arms" }),
               fact({ key: "s1.build.weight", concept: "subject.morphology", value: "Weight presentation: slim", subjectRef: "s1", locus: "torso" }),
+              // The gender attribute projects like any other sheet value; beside a
+              // usable pronoun it is what "She" already says.
+              fact({ key: "s1.gender", concept: "subject.appearance", value: "Gender: female", subjectRef: "s1", semanticTags: ["appearance:core", "attribute:identity.gender"] }),
               // No `Hair arrangement:` attribute beside the hairstyle below: the
               // adapter suppresses the sheet's arrangement wherever a committed
               // hairstyle states it (`appearanceReplacementReason`).
@@ -1251,7 +1257,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
             ]),
             // The lane omits the display name for a reference-anchored subject.
             label: "",
-            pronouns: "she_her",
+            ...(opts.pronouns === false ? {} : { pronouns: "she_her" as const }),
           },
         ],
         location: {
@@ -1288,6 +1294,13 @@ describe("the Qwen 2511 delta-edit dialect", () => {
       // The digest's own identity value is what the binding replaces; it must not
       // travel beside it as a second, weaker description of the same person.
       expect(text).not.toContain("the person shown in the reference image");
+    });
+
+    it("lets the pronoun carry the gender, and states it only where no pronoun can", () => {
+      expect(compiledScene().toLowerCase()).not.toContain("gender: female");
+      const result = compile2511(sceneWorld({ pronouns: false }));
+      if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+      expect(result.compiled.positiveText.toLowerCase()).toContain("gender: female");
     });
 
     it("never uses `viewer` as a noun on a disembodied shot", () => {

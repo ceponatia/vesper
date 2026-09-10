@@ -667,6 +667,14 @@ function lowerLead(text: string): string {
 }
 
 /**
+ * The semantic tag the character adapter puts on the appearance fact projected
+ * from the character's stated gender — the same attribute the pronoun set is
+ * derived from. A tag rather than a concept: the concept is `subject.appearance`
+ * like every other sheet value, and only the tag says which one this is.
+ */
+const GENDER_ATTRIBUTE_TAG = "attribute:identity.gender";
+
+/**
  * Whether a fact describes hair — the locus a projection files hair facts under.
  *
  * Both spellings a projection can produce. The character adapter files a
@@ -1256,8 +1264,16 @@ function writeBinding(claims: readonly ImagePositiveClaim[], context: EmitContex
   const identityRefs = references.filter((claim) => context.state.slots.get(claim.id)?.role === "identity");
   const lock = claims.find((claim) => claim.id === context.state.lockClaimId);
   const bound = lock === undefined ? null : asRendered(context, lock);
+  // Every other subject's identity claim is ABSORBED as well: the multi
+  // binding already introduces each person by their own image, and "They: the
+  // same person shown in the reference image." beside it would be a second,
+  // worse sentence about a payload of two images. The claim still rendered its
+  // own segment for fitting; only its text is discarded here.
+  const furtherIdentity = withConcept(claims, "subject.identity").filter(
+    (claim) => claim.id !== context.state.lockClaimId,
+  );
   if (lock !== undefined && bound !== null) {
-    sentences.push({ text: bound.text, claims: [lock, ...identityRefs] });
+    sentences.push({ text: bound.text, claims: [lock, ...identityRefs, ...furtherIdentity] });
   } else {
     // No binding sentence — an identity claim this program never stated. The
     // slots then speak for themselves rather than going unmentioned.
@@ -1270,10 +1286,11 @@ function writeBinding(claims: readonly ImagePositiveClaim[], context: EmitContex
     const rendered = asRendered(context, claim);
     if (rendered !== null) sentences.push(rendered);
   }
-  for (const claim of withConcept(claims, "subject.identity")) {
-    if (claim.id === context.state.lockClaimId) continue;
-    const rendered = asRendered(context, claim);
-    if (rendered !== null) sentences.push(rendered);
+  if (lock === undefined || bound === null) {
+    for (const claim of furtherIdentity) {
+      const rendered = asRendered(context, claim);
+      if (rendered !== null) sentences.push(rendered);
+    }
   }
   for (const claim of references) {
     if (identityRefs.includes(claim)) continue;
@@ -1305,7 +1322,14 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
     const build = described.filter((claim) => !isHairLocus(claim));
     const hair = described.filter((claim) => isHairLocus(claim));
     const worn = withConcept(group.claims, "subject.current_state");
-    const buildParts = valuesOf(build);
+    // A stated gender is what the pronoun set already says, so beside a usable
+    // pronoun it is a fact the sentence has spent on "She" — absorbed into the
+    // build sentence rather than listed as "gender: female" inside it. It is
+    // kept whenever no pronoun carries it: a shared set, or none stated at all.
+    const carriedByPronoun = (claim: ImagePositiveClaim): boolean =>
+      voice !== null && voice.pronouns !== null && claim.semanticTags.includes(GENDER_ATTRIBUTE_TAG);
+    const spoken = build.filter((claim) => !carriedByPronoun(claim));
+    const buildParts = valuesOf(spoken.length > 0 ? spoken : build);
     if (buildParts.length > 0) {
       sentences.push({ text: subjectClause(voice, "has", "have", buildParts), claims: build });
     }
