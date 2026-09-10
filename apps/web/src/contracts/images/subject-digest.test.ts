@@ -20,6 +20,7 @@ import {
   visualStateGarmentFixture,
   visualStateNonHumanBody,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
   VISUAL_STATE_FIXTURE_ACTOR,
   type VisualStateFeature,
 } from "../visual-state";
@@ -33,6 +34,8 @@ import {
   IMAGE_CHARACTER_ATTRIBUTE_OWNER,
   IMAGE_CHARACTER_COVERAGE_OWNER,
   IMAGE_CHARACTER_COVERAGE_UNRESOLVED,
+  IMAGE_CHARACTER_VALUE_UNREADABLE,
+  IMAGE_CHARACTER_WARDROBE_CONCEALED,
   type CharacterSubjectSources,
 } from "./character-adapter";
 import {
@@ -40,6 +43,7 @@ import {
   projectSubjectDigests,
   projectCameraFacts,
   standaloneCharacterReadToken,
+  IMAGE_SUBJECT_PROJECTION_OWNER,
   IMAGE_SUBJECT_VALUE_UNRESOLVED,
 } from "./subject-digest";
 import {
@@ -605,7 +609,9 @@ describe("projectCharacterWorldSlices", () => {
     const sourceKeys = (subject?.facts ?? []).map((fact) => fact.source.key);
     expect(sourceKeys).not.toContain("hair.arrangement");
     expect(sourceKeys).not.toContain("hair.style");
-    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("loose");
+    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe(
+      "with the hair worn loose",
+    );
   });
 
   it("lets an emitted live grooming fact replace the sheet grooming fallback", () => {
@@ -991,7 +997,7 @@ describe("projectCharacterWorldSlices", () => {
     expect(byKey.get(`${SUBJECT}/item:g_ring/wardrobe.item`)?.value).toBe("nose ring: Thin gold hoop");
     expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
     expect(byKey.get(`${SUBJECT}/subject:${SUBJECT}/body_language.posture`)?.value).toBe("kneeling");
-    expect(byKey.get(`${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("loose");
+    expect(byKey.get(`${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("with the hair worn loose");
     expect(byKey.get(`${SUBJECT}/wings/species.feature_group`)?.value).toBe("wings");
 
     const prose = (subject?.facts ?? []).map((fact) => String(fact.value)).join(" ");
@@ -1061,6 +1067,168 @@ describe("hair the headwear fully hides", () => {
     const facts = adapterSlices(digest, { hairOcclusion: band }).subjects[0]?.facts ?? [];
     expect(facts.some((fact) => fact.key === HAIRSTYLE_KEY)).toBe(true);
     expect(facts.some((fact) => fact.concept === "subject.hair_concealment")).toBe(false);
+  });
+});
+
+/**
+ * What the adapter refuses to say, and what it now says instead (#544).
+ *
+ * Three defects the compiled Qwen scene prompt shipped on 2026-09-10, each
+ * traced to this module: a support relation flattened into "Katelyn Nacon is
+ * surface, ground, legs, borne by." (D1), a bra and panties stated under an
+ * opaque sweater (D6), and the subject re-named in every sentence because no
+ * dialect may guess a pronoun (D2). The wording of one structured value is
+ * `character-adapter-renderers.test.ts`'s claim; these cases prove the
+ * PROJECTION applies it — the fact leaves, the suppression is recorded with its
+ * own reason, and the mandatory floor is not moved by a designed silence.
+ */
+describe("what a scene prompt may say about a subject (#544)", () => {
+  const WORN_GARMENT_KEY = `${SUBJECT}/item:g_worn/wardrobe.garment`;
+  const SUPPORT_KEY = `${SUBJECT}/subject:${SUBJECT}/body_language.support`;
+
+  /** The exact value from the owner's 2026-09-10 report: weight on the ground. */
+  function supportFeature(): VisualStateFeature {
+    return visualStateFeatureFixture({
+      subjectId: SUBJECT,
+      kindId: VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+      layer: "body_language",
+      stability: "instantaneous",
+      aspect: "body_language.support",
+      locus: { kind: "subject", subjectId: SUBJECT },
+      sourceRef: { kind: "scene_relation", relationId: "rel_support" },
+      value: {
+        relations: [
+          {
+            role: "borne_by",
+            anchor: { kind: "surface", supportId: "sup_ground", surfaceKind: "ground" },
+            loadZones: ["legs"],
+          },
+        ],
+      },
+    });
+  }
+
+  function digestOf(features: readonly VisualStateFeature[]): VisualImageDigest {
+    return buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([...features]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "full_figure" } }),
+    });
+  }
+
+  /**
+   * D1, at the projection. With no posture fact the support relation states
+   * where the weight rests in words somebody can draw; the flattened leaves
+   * never appear in any emitted value.
+   */
+  it("words a support anchor and never ships its flattened relation record", () => {
+    const digest = digestOf([supportFeature(), ageAnchorFeature()]);
+    expect([...digest.mandatoryFacts, ...digest.optionalFacts].map((fact) => fact.kindId)).toContain(
+      VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+    );
+    const subject = adapterSlices(digest).subjects[0];
+    expect(subject?.facts.find((fact) => fact.key === SUPPORT_KEY)?.value).toBe("standing on the floor");
+    const prose = (subject?.facts ?? []).map((fact) => String(fact.value)).join(" ");
+    expect(prose).not.toContain("borne by");
+    expect(prose).not.toContain("surface, ground");
+  });
+
+  /**
+   * The same relation beside a posture says nothing at all: posture already
+   * places the body, and the two claims together are the duplication D10
+   * records. A designed silence still leaves a provenance record.
+   */
+  it("withholds a support relation a posture already places", () => {
+    const digest = characterDigest([supportFeature(), ageAnchorFeature()]);
+    expect([...digest.mandatoryFacts, ...digest.optionalFacts].map((fact) => fact.kindId)).toContain(
+      VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+    );
+    const slices = adapterSlices(digest);
+    expect(slices.subjects[0]?.facts.some((fact) => fact.key === SUPPORT_KEY)).toBe(false);
+    expect(slices.suppressions).toContainEqual({
+      key: SUPPORT_KEY,
+      owner: IMAGE_SUBJECT_PROJECTION_OWNER,
+      reason: IMAGE_CHARACTER_VALUE_UNREADABLE,
+    });
+  });
+
+  /**
+   * D6: a worn garment the wardrobe projection tags as fully concealed leaves
+   * the prompt as a DESIGNED suppression. The tag is that projection's own read
+   * of its occlusion edges (the tag literal is the contract between the two
+   * slices), the exposure claims over the same coverage readout are untouched,
+   * and the key never reaches `missingRequired` — a designed silence may not
+   * refuse a rung.
+   */
+  it("withholds a concealed garment while leaving coverage and the mandatory floor alone", () => {
+    const concealed = garmentFeatures().map((feature) =>
+      feature.key === WORN_GARMENT_KEY
+        ? { ...feature, semanticTags: [...feature.semanticTags, "wardrobe.concealed"] }
+        : feature,
+    );
+    const digest = digestOf([...concealed, ageAnchorFeature()]);
+    const slices = projectCharacterWorldSlices({
+      digest,
+      sources: {
+        [SUBJECT]: fixtureSources({
+          exposure: { torso: "covered", pelvis: "covered", legs: "bare", feet: "covered" },
+        }),
+      },
+    });
+    const subject = slices.subjects[0];
+
+    expect(subject?.facts.some((fact) => fact.key === WORN_GARMENT_KEY)).toBe(false);
+    expect(slices.suppressions).toContainEqual({
+      key: WORN_GARMENT_KEY,
+      owner: IMAGE_SUBJECT_PROJECTION_OWNER,
+      reason: IMAGE_CHARACTER_WARDROBE_CONCEALED,
+    });
+    expect(subject?.missingRequired).not.toContain(WORN_GARMENT_KEY);
+    // Coverage is untouched truth: the bare legs are still stated.
+    expect(subject?.facts.filter((fact) => fact.concept === "subject.exposure").map((fact) => fact.key)).toEqual([
+      `subject.${SUBJECT}.exposure.legs`,
+    ]);
+
+    // Untagged, the same garment is stated exactly as before.
+    const stated = adapterSlices(digestOf([...garmentFeatures(), ageAnchorFeature()])).subjects[0];
+    expect(stated?.facts.find((fact) => fact.key === WORN_GARMENT_KEY)?.value).toBe("top");
+  });
+
+  /**
+   * The other side of "no structural fallback": a MANDATORY fact whose value no
+   * renderer can word is reported, not quietly dropped and not flattened, so a
+   * lane compiled with `refuseOnMissingRequired` refuses before provider spend.
+   */
+  it("reports a mandatory wardrobe fact no renderer can word", () => {
+    const broken = garmentFeatures().map((feature) =>
+      feature.key === WORN_GARMENT_KEY ? { ...feature, value: {} } : feature,
+    );
+    const slices = adapterSlices(digestOf([...broken, ageAnchorFeature()]));
+    expect(slices.subjects[0]?.facts.some((fact) => fact.key === WORN_GARMENT_KEY)).toBe(false);
+    expect(slices.suppressions).toContainEqual({
+      key: WORN_GARMENT_KEY,
+      owner: IMAGE_SUBJECT_PROJECTION_OWNER,
+      reason: IMAGE_CHARACTER_VALUE_UNREADABLE,
+    });
+    expect(slices.subjects[0]?.missingRequired).toContain(WORN_GARMENT_KEY);
+  });
+
+  /**
+   * D2: the slice carries the pronoun set its `identity.gender` implies, so a
+   * prose dialect can introduce the subject once instead of writing a real
+   * person's name into 28 sentences beside their own identity reference. No
+   * gender, no field — a dialect then names them or points at the reference,
+   * and never guesses.
+   */
+  it("carries the pronoun set the subject's gender implies, and none without one", () => {
+    const digest = characterDigest([ageAnchorFeature()]);
+    expect(adapterSlices(digest).subjects[0]?.pronouns).toBe("she_her");
+
+    const genderless = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([...crookedNoseAttributes(), ADULT_AGE_VALUE]).filter(
+        (attribute) => attribute.id !== "identity.gender",
+      ),
+    }).subjects[0];
+    expect(genderless?.pronouns).toBeUndefined();
   });
 });
 
