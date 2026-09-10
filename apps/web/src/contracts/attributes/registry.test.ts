@@ -4,8 +4,8 @@ import { attributeCategories } from "./category-ids";
 import { attributeGroups } from "./categories";
 import { materializeRegistryDefaults, registryDefaultSourceId } from "./index";
 import { buildRegistry } from "./registry";
-import { attributeDefinitionSchema, defineAttributeGroup } from "./types";
-import { bodyLocationRegistry } from "../body/locations";
+import { attributeDefinitionSchema, defineAttributeGroup, imageAppearanceMinimumFramings } from "./types";
+import { bodyLocationRegistry, isIntimateAttributeCategory } from "../body/locations";
 
 const registry = buildRegistry(attributeGroups);
 
@@ -153,6 +153,77 @@ describe("attribute registry invariants", () => {
       },
     ]);
     expect(() => buildRegistry([group])).toThrow(/fewer than 2/);
+  });
+});
+
+/**
+ * The image render policy this registry carries as DATA — the two tables a
+ * scene prompt is compiled from, asserted by derivation rather than by copying
+ * the values out of the category files.
+ *
+ * Both censuses fail on an ADDITION, which is the point: the policy is a
+ * per-attribute field any category edit can set, and neither of these rules is
+ * visible from the file the edit lands in.
+ */
+describe("image render policy (#544)", () => {
+  /**
+   * `imageReveal: "shape"` means STATED THROUGH CLOTHING (`revealSurfaces`), so
+   * on an intimate attribute it is a claim about a body a dressed picture does
+   * not show. Breast SIZE is the one silhouette a sweater still carries, and it
+   * is the same single exception `imageAppearance.ordinarySilhouette` names —
+   * `defineAttributeGroup` enforces that pairing, and this census is the other
+   * half: nothing else in an intimate category may take the through-clothing
+   * tier. Shape, augmentation and fullness are `"skin"` (#544 F5): surface
+   * facts, stated only when the torso reads bare or sheer.
+   *
+   * Non-intimate `"shape"` values (build.pregnancy, hips, waist, legs, buttocks)
+   * are unaffected — they are ordinary silhouette and were never gated on
+   * exposure.
+   */
+  it("states no intimate silhouette through clothing beyond breast size", () => {
+    const throughClothing = registry.definitions
+      .filter((def) => isIntimateAttributeCategory(def.category) && def.imageReveal === "shape")
+      .map((def) => def.id);
+    expect(throughClothing).toEqual(["breasts.size"]);
+
+    const size = registry.byId("breasts.size");
+    expect(size?.imageAppearance?.ordinarySilhouette).toBe(true);
+    for (const id of ["breasts.shape", "breasts.augmentation", "breasts.fullness"]) {
+      expect(registry.byId(id)?.imageReveal, id).toBe("skin");
+      expect(registry.byId(id)?.imageAppearance?.ordinarySilhouette, id).toBeUndefined();
+    }
+  });
+
+  /**
+   * Fine facial detail may not be admitted by a waist-up or wider frame (#544
+   * D7/F7). `maximumFraming` is the WIDEST band an `imageAppearance` fact still
+   * contributes at — the adapter admits a fact when the shot's band sits
+   * inclusively between `minimumFraming` and `maximumFraming`, and the band
+   * order runs tight-to-wide. `portrait` is therefore the loosest any of these
+   * four may be, and `close_up` is what it takes to leave a portrait too.
+   * `minimumFraming` is the opposite knob — it is what keeps categorical height
+   * out of a close-up — and raising it here would drop these facts from the
+   * close shots that are the only ones which can show them.
+   *
+   * NOTE: this gate only runs when the digest carries a framing camera fact at
+   * all; a lane that states none bypasses it entirely. That bypass is the
+   * adapter's and the scene lowering's to close, not the registry's.
+   */
+  it("keeps fine facial detail out of a medium shot", () => {
+    const widest = (id: string) => registry.byId(id)?.imageAppearance?.maximumFraming;
+    expect(widest("teeth.condition")).toBe("close_up");
+    expect(widest("brows.thickness")).toBe("close_up");
+    expect(widest("ears.piercings")).toBe("portrait");
+    expect(widest("skin.texture")).toBe("portrait");
+
+    const waistUpAndWider = imageAppearanceMinimumFramings.slice(
+      imageAppearanceMinimumFramings.indexOf("waist_up"),
+    );
+    for (const id of ["teeth.condition", "brows.thickness", "ears.piercings", "skin.texture"]) {
+      const band = registry.byId(id)?.imageAppearance?.maximumFraming;
+      expect(band, id).toBeDefined();
+      expect(waistUpAndWider, id).not.toContain(band);
+    }
   });
 });
 

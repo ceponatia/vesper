@@ -27,6 +27,11 @@ export const browsGroup = defineAttributeGroup("brows", [
     allowedValues: ["sparse", "thin", "medium", "full", "thick", "bushy"],
     bodyLocationId: "face",
     aliases: ["brow thickness", "bushy brows"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    // Tighter than brow SHAPE on purpose (#544 D7): an arch reads at portrait
+    // distance, brow density does not — at anything wider it is a word the
+    // model spends on a few pixels. `maximumFraming` is the widest band an
+    // `imageAppearance` fact still contributes at, so `close_up` is what drops
+    // it from portrait, waist-up and wider shots.
+    imageAppearance: { class: "reinforcement", maximumFraming: "close_up" },
   },
 ]);
