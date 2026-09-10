@@ -127,17 +127,30 @@ export interface ImagePronounWords {
   readonly independent: string;
   readonly noun: string;
   readonly plural: boolean;
+  /**
+   * Whether the set STATES the subject's build, so a dialect may let it stand in
+   * for the gender fact the digest projected.
+   *
+   * `they_them` does not, and the difference is not cosmetic: the application
+   * supplies it for `androgynous_born_female`, `androgynous_born_male` and the
+   * nonbinary values alike, whose gender attribute still carries the underlying
+   * build distinction. "They" conveys neither variant, so a dialect that treated
+   * it as carrying the whole gender claim would delete the only thing in the
+   * prompt that said which body to draw — and on this family the reference no
+   * longer preserves build either.
+   */
+  readonly carriesGender: boolean;
 }
 
 /** One pronoun set's words. Total over the set vocabulary; no set means no pronoun. */
 export function imagePronounWords(set: ImageSubjectPronounSet): ImagePronounWords {
   switch (set) {
     case "she_her":
-      return { subject: "she", object: "her", possessive: "her", independent: "hers", noun: "woman", plural: false };
+      return { subject: "she", object: "her", possessive: "her", independent: "hers", noun: "woman", plural: false, carriesGender: true };
     case "he_him":
-      return { subject: "he", object: "him", possessive: "his", independent: "his", noun: "man", plural: false };
+      return { subject: "he", object: "him", possessive: "his", independent: "his", noun: "man", plural: false, carriesGender: true };
     case "they_them":
-      return { subject: "they", object: "them", possessive: "their", independent: "theirs", noun: "person", plural: true };
+      return { subject: "they", object: "them", possessive: "their", independent: "theirs", noun: "person", plural: true, carriesGender: false };
   }
 }
 

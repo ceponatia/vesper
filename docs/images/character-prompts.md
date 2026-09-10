@@ -352,7 +352,15 @@ adapter — never a lane, never a route — applies the one image consequence:
   none of it is visible. It is `required_visual` and filed in the `wardrobe`
   segment kind, beside the garment that causes it and unfittable by kind, so no
   budget squeeze can drop the statement while the authored hair stays withheld
-  ([prompt-programs.md](prompt-programs.md) §Concepts). Each dialect words it in
+  ([prompt-programs.md](prompt-programs.md) §Concepts). It is the one required
+  fact an edit's **derived preserve set never names**
+  ([§Identity on a reference-anchored render](#identity-on-a-reference-anchored-render)):
+  a preserve entry says a fact of the SOURCE survives the change, and the
+  concealment is a fact about this render's own wardrobe, so "keep the hair
+  concealment unchanged from the source" asks to carry over a concealment a
+  bare-headed anchor does not have — and reads, on an instruction editor, as
+  "keep the hair" beside the sentence that just said none is visible. The claim's
+  own sentence is the instruction. Each dialect words it in
   its own register with the same meaning — the prose families
   "`<Name>`'s hair is fully covered by the headwear; no hair is visible.", the
   tag family "`<Name>` hair fully covered by headwear, no visible hair". The Qwen
@@ -424,7 +432,12 @@ slot for the same character
 ([pipelines/reference-views.md](pipelines/reference-views.md)), so a form counted
 over slots called one woman two people and asked the prompt to keep "each
 person's" face. Three forms follow, and so do three preserve clauses — one
-person in one image, one person in several, and several people. The exported
+person in one image, one person in several, and several people. A cast member the
+payload carries no image of is bound to nothing and gets a sentence of their own
+saying they have no reference and are described below, so the single-reference
+rung's bystander is never covered by a promise about "their own image"; the
+anchored person is then told what they are in the picture rather than that they
+are its sole subject. The exported
 `QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`,
 `QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK` and
 `QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` are those sentences' preserve clauses

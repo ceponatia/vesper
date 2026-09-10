@@ -2015,6 +2015,370 @@ describe("the Qwen 2511 delta-edit dialect", () => {
   });
 
   /**
+   * A CAST THE PAYLOAD HAS ONE IMAGE OF (PR #545 review, P1).
+   *
+   * The scene ladder's single-reference rung is exactly this: one identity slot,
+   * two voices. Chosen over the identity GROUPS alone it fell to the
+   * several-people binding, which promises to keep "each person's face … as
+   * their own image shows" — said about a bystander with no image at all. That
+   * is a false identity contract, and it is the wording that invites the one
+   * reference to bleed into the person it was never taken of.
+   *
+   * The bound person is bound and told what she is in this picture; everybody
+   * else is said, in as many words, to have no reference and to be described
+   * below. Falsified against the several-people form (no "each person", and the
+   * multi clause absent) and against the sole-subject form, which would claim
+   * the whole picture for one of two people.
+   */
+  it("binds only the anchored person when a cast member has no image of their own", () => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 2 }),
+      subjects: [
+        viewedSubject("s1", "she_her"),
+        // The bystander keeps their display NAME: the lane withholds one only
+        // from a subject the payload actually shows, so this is the production
+        // shape rather than a convenient fixture.
+        { ...viewedSubject("s2", "he_him"), label: "Nyx" },
+      ],
+      references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
+    });
+    const result = compile2511(digest, { references: [{ position: 1, role: "identity", subjectRef: "s1" }] });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(
+      text.startsWith(
+        "Create a new scene using the woman in Image 1 as one of the two people in the picture. " +
+          "Keep her face, skin tone and apparent age exactly as shown. " +
+          "Nyx has no reference image and is described below.",
+      ),
+    ).toBe(true);
+    // The preserve clause is the SINGLE one — the honest promise about the one
+    // photograph this payload carries — and neither other spelling is present.
+    expect(text).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK);
+    expect(text.toLowerCase()).not.toContain("each person");
+    // Nor does one of two people become the sole subject.
+    expect(text.toLowerCase()).not.toContain("sole subject");
+    // The count still closes the instruction, and it still says two.
+    expect(text.endsWith("Exactly 2 people are in the picture and nobody else; the foreground is clear.")).toBe(true);
+  });
+
+  /**
+   * The same rule with SEVERAL anchored people: the per-person clause list is
+   * exactly what it was, and the text-described member gets the same sentence.
+   *
+   * The multi binding's "their own image" is already scoped to the people who
+   * have one; what was missing is anything saying who does not, which is why the
+   * fix adds a sentence rather than rewording the lock.
+   */
+  it("keeps the per-person list and names the text-described member beside it", () => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 3 }),
+      subjects: [
+        viewedSubject("s1", "she_her"),
+        viewedSubject("s2", "he_him"),
+        { ...viewedSubject("s3", "he_him"), label: "Nyx" },
+      ],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1" },
+        { position: 2, role: "identity", subjectRef: "s2" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(
+      text.startsWith(
+        "Create a new scene using the numbered images as assigned: Image 1 shows a woman, Image 2 shows a man; " +
+          "keep each person's face, skin tone and apparent age exactly as their own image shows. " +
+          "Nyx has no reference image and is described below.",
+      ),
+    ).toBe(true);
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    // Two photographs, two assignments — the third person is named once, in the
+    // sentence that says the payload holds nothing of them.
+    expect(text.match(/has no reference image/gu)).toHaveLength(1);
+    expect(text).toContain("Exactly 3 people are in the picture and nobody else; the foreground is clear.");
+  });
+
+  /**
+   * FITTING WHAT THE PROVIDER READS (PR #545 review, P2).
+   *
+   * The fitter measures the per-claim segments and this dialect then replaces
+   * them with grouped prose, which is far shorter — one sentence naming a body
+   * where the segments named it once per attribute. Against the row's
+   * 1300-character advisory that cost real detail: a render whose expanded form
+   * ran past 1300 and whose grouped form fits comfortably lost optional
+   * appearance claims to a length the provider's prompt never came near.
+   *
+   * The fixture is the shape with the widest gap between the two forms and the
+   * one #544 was filed over: a subject with no pronoun set, so every per-claim
+   * sentence re-states the whole introduction ("The person in Image 1 has …")
+   * that the grouped sentence says once. Both premises are asserted from the
+   * fixture's own data, so a fixture that stopped straddling the advisory fails
+   * loudly instead of passing vacuously.
+   */
+  describe("the advisory length the grouped prose is fitted to", () => {
+    /** The number the seeded Qwen rows carry (drizzle/0132). */
+    const ADVISORY = 1300;
+
+    /** A detailed sheet: enough stated attributes to straddle the advisory. */
+    const DETAILS = Array.from(
+      { length: 32 },
+      (_, index) => `Detail ${String(index).padStart(2, "0")}: stated`,
+    );
+
+    /** The subject the digest states no pronoun set for — the introduction stands in every clause. */
+    const detailedSubject = () => ({
+      ...entity("subject", "s1", [
+        fact({
+          key: "s1.identity",
+          concept: "subject.identity",
+          value: "the same person shown in the reference image",
+          subjectRef: "s1",
+          disposition: "required_visual",
+          priority: 1,
+        }),
+        ...DETAILS.map((value, index) =>
+          fact({
+            key: `s1.detail.${String(index).padStart(2, "0")}`,
+            concept: "subject.appearance",
+            value,
+            subjectRef: "s1",
+            // Descending, so "the weakest optional claim" is decided by the
+            // primary key rather than by a tie-break a reader has to trace.
+            priority: 0.9 - index / 1000,
+          }),
+        ),
+      ]),
+      label: "",
+    });
+
+    const compileAt = (recommendedCharacters: number | undefined, sink?: DiagnosticCollector) => {
+      const digest = editWorld({
+        operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 1 }),
+        subjects: [detailedSubject()],
+        references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
+      });
+      const result = compile2511(digest, {
+        budget: recommendedCharacters === undefined ? {} : { recommendedCharacters },
+        ...(sink === undefined ? {} : { sink }),
+      });
+      if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+      return result.compiled;
+    };
+
+    it("drops nothing when the grouped prose fits, however long the per-claim form is", () => {
+      const whole = compileAt(undefined);
+      // The per-claim form is the sentence `renderClaim` writes for each of
+      // these facts, joined — the length the fitter used to measure.
+      const expanded = DETAILS.reduce(
+        (total, value) => total + `The person in Image 1 has ${value}. `.length,
+        0,
+      );
+      expect(expanded).toBeGreaterThan(ADVISORY);
+      expect(whole.positiveText.length).toBeLessThan(ADVISORY);
+
+      const fitted = compileAt(ADVISORY);
+
+      expect(fitted.positiveText).toBe(whole.positiveText);
+      expect(fitted.droppedClaimIds).toEqual(whole.droppedClaimIds);
+      // Every attribute is still in the one sentence they share.
+      for (const value of DETAILS) expect(fitted.positiveText).toContain(value.toLowerCase());
+    });
+
+    it("drops the weakest optional claim first when the grouped prose does not fit", () => {
+      const whole = compileAt(undefined);
+      const sink = new DiagnosticCollector();
+      const fitted = compileAt(whole.positiveText.length - 1, sink);
+
+      expect(fitted.positiveText.length).toBeLessThan(whole.positiveText.length);
+      // One claim went, and it is the one the fitter's own rule names: the
+      // lowest-priority optional segment, which is the last stated attribute.
+      const gone = fitted.droppedClaimIds.filter((id) => !whole.droppedClaimIds.includes(id));
+      expect(gone).toEqual(["s1.detail.31"]);
+      expect(fitted.positiveText).not.toContain("detail 31: stated");
+      expect(fitted.positiveText).toContain("detail 30: stated");
+      // …and the render says so, under the code every trim carries.
+      expect(sink.items.some((entry) => entry.code === "image_prompt.segments_trimmed")).toBe(true);
+    });
+
+    /**
+     * The loop reads only its input and its own accumulated set, and every pass
+     * starts from fresh state — the determinism guarantee the whole layer rests
+     * on, and the one a search loop is most likely to break.
+     */
+    it("compiles one digest to one prompt however much it had to give up", () => {
+      const first = compileAt(400);
+      const second = compileAt(400);
+
+      expect(second.positiveText).toBe(first.positiveText);
+      expect(second.droppedClaimIds).toEqual(first.droppedClaimIds);
+      expect(second.program.fingerprint).toBe(first.program.fingerprint);
+    });
+  });
+
+  /**
+   * NEUTRAL PRONOUNS AND THE NATAL BUILD (PR #545 review, P2).
+   *
+   * The application supplies `they_them` for `androgynous_born_female`,
+   * `androgynous_born_male` and every nonbinary value, and the gender attribute
+   * beside it still carries the build distinction those values name. "They"
+   * conveys neither, and this family's reference no longer preserves build — so
+   * absorbing the fact into the pronoun deletes the only thing in the prompt
+   * that said which body to draw. A gendered set really does say it, and there
+   * the absorption is what removes "gender: female" from a prompt that says
+   * "She" in every other sentence.
+   */
+  it.each([
+    ["they_them", true],
+    ["she_her", false],
+  ] as const)("states the gender fact beside a %s subject: %s", (pronouns, stated) => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 1 }),
+      subjects: [
+        {
+          ...entity("subject", "s1", [
+            fact({
+              key: "s1.identity",
+              concept: "subject.identity",
+              value: "the same person shown in the reference image",
+              subjectRef: "s1",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+            fact({ key: "s1.build", concept: "subject.morphology", value: "Frame: slight", subjectRef: "s1" }),
+            fact({
+              key: "s1.gender",
+              concept: "subject.appearance",
+              value: "Gender: androgynous, born female",
+              subjectRef: "s1",
+              semanticTags: ["attribute:identity.gender"],
+            }),
+          ]),
+          label: "",
+          pronouns,
+        },
+      ],
+      references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
+    });
+    const result = compile2511(digest, { references: [{ position: 1, role: "identity", subjectRef: "s1" }] });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+
+    expect(result.compiled.positiveText.includes("androgynous, born female")).toBe(stated);
+    // The build fact is stated either way — lower-led into the description, as
+    // every unphrased sheet value is — so the question is only whether the
+    // gender rides beside it.
+    expect(result.compiled.positiveText).toContain("frame: slight");
+  });
+
+  /**
+   * SINGULAR THEY TAKES THE PLURAL VERB (PR #545 review, P2).
+   *
+   * The subject clauses already agree; the relation cases passed singular verbs
+   * to a subject end that may now be "They", so a nonbinary subject holding a cup
+   * compiled "They holds the cup." Falsified against exactly that spelling.
+   */
+  it("conjugates a relation verb for a singular-they subject", () => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 1 }),
+      subjects: [
+        {
+          ...entity("subject", "s1", [
+            fact({
+              key: "s1.identity",
+              concept: "subject.identity",
+              value: "the same person shown in the reference image",
+              subjectRef: "s1",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+          ]),
+          label: "",
+          pronouns: "they_them" as const,
+        },
+      ],
+      items: [{ ...entity("item", "i1", []), label: "a chipped enamel cup" }],
+      relations: [
+        { kind: "holds", subjectRef: "s1", objectRef: "i1", required: false, source: referenceSource },
+      ],
+      references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
+    });
+    const result = compile2511(digest, { references: [{ position: 1, role: "identity", subjectRef: "s1" }] });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+
+    expect(result.compiled.positiveText).toContain("They hold a chipped enamel cup.");
+    expect(result.compiled.positiveText).not.toContain("They holds");
+  });
+
+  /**
+   * THE POSTURE DEDUPE MATCHES WORDS (PR #545 review, P2).
+   *
+   * A committed posture is dropped when another phrase in the same band already
+   * says it, and the test for "already says it" was substring containment — so
+   * "sitting" was read out of "babysitting a child", the required posture was
+   * removed, and the sentence that never said it was credited with carrying it.
+   * The render then lost a posture and reported it as kept, which no assertion
+   * about the claim accounting could see.
+   */
+  it("keeps a posture whose letters merely occur inside another phrase", () => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 1 }),
+      subjects: [
+        {
+          ...entity("subject", "s1", [
+            fact({
+              key: "s1.identity",
+              concept: "subject.identity",
+              value: "the same person shown in the reference image",
+              subjectRef: "s1",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+            fact({
+              key: "s1.posture",
+              concept: "subject.body_language",
+              value: "sitting",
+              subjectRef: "s1",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+            fact({
+              key: "s1.activity",
+              concept: "subject.activity",
+              value: "babysitting a child",
+              subjectRef: "s1",
+              priority: 0.8,
+            }),
+          ]),
+          label: "",
+          pronouns: "she_her" as const,
+        },
+      ],
+      references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
+    });
+    const result = compile2511(digest, { references: [{ position: 1, role: "identity", subjectRef: "s1" }] });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text).toContain("Show her sitting.");
+    expect(text).toContain("Show her babysitting a child.");
+    // Said once, as a word: the fix is not "stop deduplicating", and the scene
+    // fixture above still proves a posture the composer's own phrase genuinely
+    // states is absorbed rather than composed twice.
+    expect(text.match(/\bsitting\b/gu)).toHaveLength(1);
+  });
+
+  /**
    * The degradation record (owner ruling 2026-08-29): no negative input exists
    * on the probed 0119 schema, so every exclusion drops with THIS endpoint's
    * reason — distinct from 2512's `endpoint_ignores_negative_field` (a field

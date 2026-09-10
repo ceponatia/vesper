@@ -1,5 +1,12 @@
+import type { DiagnosticSink } from "@vesper/contracts";
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
-import { joinImagePromptSegments, type ImagePromptSegment } from "../render-intent/prompt-segments";
+import {
+  joinImagePromptSegments,
+  reportImagePromptEmissionTrim,
+  weakestOptionalImagePromptSegment,
+  type ImagePromptBudget,
+  type ImagePromptSegment,
+} from "../render-intent/prompt-segments";
 import type { SceneCaptureMode } from "../scene-ir";
 import {
   imageAppearanceIndefiniteArticle,
@@ -594,6 +601,16 @@ function referenceAssignment(
  * shows a woman … keep each person's face" — two people, said twice, in the one
  * sentence whose job is to say there is one.
  *
+ * A cast member the payload carries NO image of gets a sentence of their own,
+ * and the anchored person's clause stops claiming the whole picture. The scene
+ * ladder's single-reference rung is exactly this shape — one identity image, two
+ * voices — and it used to fall to the several-people form, which promises to
+ * keep "each person's face … as their own image shows" about somebody with no
+ * image at all: a false identity contract, and the invitation for the one
+ * reference to bleed into the person it was never taken of. So the bound person
+ * is bound, the rest are said to be described in text, and the count that closes
+ * the prompt still says how many people the picture holds.
+ *
  * Null when the payload carries no reference at all: this endpoint's whole
  * identity transport IS the reference, and describing a face in prose instead
  * would render a stranger. The null drops a mandatory claim, which refuses the
@@ -606,40 +623,28 @@ function bindingSentence(
 ): string | null {
   if (input.references.length === 0) return null;
   const groups = identityGroups(identityAssignments);
+  const described = textDescribedVoices(state, groups);
   // ONE person, however many images of them the payload carries. Counted over
   // the people rather than over the slots (#546): a subject sent with an anchor
   // and a reference view is one woman in two photographs, and the several-person
   // binding said "each person" about her.
-  const sole = groups.length <= 1 && state.voices.size <= 1;
+  const sole = groups.length <= 1 && state.voices.size <= 1 && described.length === 0;
   const first = groups[0];
   const open = state.register === "imperative" ? "Create a new scene using" : "Use";
-  if (sole && first !== undefined) {
-    const voice = first.subjectRef === undefined ? null : (state.voices.get(first.subjectRef) ?? null);
-    const primary = first.slots[0];
+  // One anchored person — alone in the picture, or beside cast members the
+  // payload carries no image of. The two differ in ONE phrase: what the bound
+  // person is in this picture. Everything else about the clause is the same
+  // sentence, because binding one person to one photograph is the same act
+  // whether or not somebody else is standing next to them.
+  if (first !== undefined && groups.length === 1 && (sole || described.length > 0)) {
+    const role = sole
+      ? "as the sole subject"
+      : `as one of the ${countWord(peopleInPicture(input, state))} people in the picture`;
+    const bound = boundGroupSentence(state, first, open, role);
     // Unreachable: a group exists because a slot made it. Answered rather than
     // thrown, because a compile has nothing to gain from an exception here.
-    if (primary === undefined) return null;
-    if (first.slots.length === 1) {
-      const named = voice === null ? `the subject in Image ${primary.position}` : voice.binding;
-      const qualified = primary.description === undefined ? named : `${named}, ${primary.description}`;
-      const keep = `keep ${their(voice)} ${QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK}`;
-      return state.register === "imperative"
-        ? `${open} ${qualified} as the sole subject. ${capitalize(keep)}`
-        : `${open} ${qualified} as the sole subject; ${keep}`;
-    }
-    // SEVERAL images of one person. The images are named as a set, then each is
-    // given its own purpose — the primary is the identity reference and every
-    // other one is whatever the lane said it is — and the preserve set asks for
-    // consistency ACROSS them, which is the only thing that can be true of two
-    // photographs at once.
-    const named = voice === null ? UNNAMED_SUBJECT_LABEL : (voice.name ?? `the ${voice.noun}`);
-    const images = `Images ${listWords(first.slots.map((slot) => String(slot.position)))}`;
-    const shown = voice?.name === null || voice === null ? `${named} shown in ${images}` : `${named}, shown in ${images},`;
-    const purposes = [
-      `Image ${primary.position} is ${their(voice)} primary identity reference`,
-      ...first.slots.slice(1).map((slot) => `Image ${slot.position} ${viewClause(slot, voice)}`),
-    ];
-    return `${open} ${shown} as the sole subject. ${purposes.join("; ")}. Keep ${their(voice)} ${QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK}`;
+    if (bound === null) return null;
+    return [bound, ...described.map(unanchoredSentence)].join(" ");
   }
   // The INDEFINITE naming, never the introduction (#544). A label-less subject's
   // introduction is "the woman in Image 1", so introducing them here compiled
@@ -671,7 +676,117 @@ function bindingSentence(
   // the comma list it always compiled.
   const separator = groups.some((group) => group.slots.length > 1) ? "; " : ", ";
   const list = assignments.length === 0 ? "" : `: ${assignments.join(separator)}`;
-  return `${open} the numbered images as assigned${list}; ${QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK}`;
+  const assigned = `${open} the numbered images as assigned${list}; ${QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK}`;
+  // The preserve set above is scoped by its own wording — "their own image" is
+  // said of the people who have one — and the sentences after it say who does
+  // not, so nothing in the paragraph promises an image the payload never carried.
+  return [assigned, ...described.map(unanchoredSentence)].join(" ");
+}
+
+/**
+ * ONE anchored person's clause: bound to their image, with the preserve set a
+ * photograph of them can carry.
+ *
+ * `role` is what this person IS in the picture — the sole subject, or one of
+ * several people — and it is the only thing that separates a single-subject
+ * render from the anchored half of a mixed cast. Passed in rather than derived
+ * because only the caller knows about the other voices.
+ *
+ * Null when the group somehow holds no slot, which cannot happen: a group exists
+ * because a slot made it. Answered rather than thrown, per docs/resilience.md.
+ */
+function boundGroupSentence(
+  state: RenderState,
+  group: IdentityGroup,
+  open: string,
+  role: string,
+): string | null {
+  const voice = group.subjectRef === undefined ? null : (state.voices.get(group.subjectRef) ?? null);
+  const primary = group.slots[0];
+  if (primary === undefined) return null;
+  if (group.slots.length === 1) {
+    const named = voice === null ? `the subject in Image ${primary.position}` : voice.binding;
+    const qualified = primary.description === undefined ? named : `${named}, ${primary.description}`;
+    const keep = `keep ${their(voice)} ${QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK}`;
+    return state.register === "imperative"
+      ? `${open} ${qualified} ${role}. ${capitalize(keep)}`
+      : `${open} ${qualified} ${role}; ${keep}`;
+  }
+  // SEVERAL images of one person. The images are named as a set, then each is
+  // given its own purpose — the primary is the identity reference and every
+  // other one is whatever the lane said it is — and the preserve set asks for
+  // consistency ACROSS them, which is the only thing that can be true of two
+  // photographs at once.
+  const named = voice === null ? UNNAMED_SUBJECT_LABEL : (voice.name ?? `the ${voice.noun}`);
+  const images = `Images ${listWords(group.slots.map((slot) => String(slot.position)))}`;
+  const shown = voice?.name === null || voice === null ? `${named} shown in ${images}` : `${named}, shown in ${images},`;
+  const purposes = [
+    `Image ${primary.position} is ${their(voice)} primary identity reference`,
+    ...group.slots.slice(1).map((slot) => `Image ${slot.position} ${viewClause(slot, voice)}`),
+  ];
+  return `${open} ${shown} ${role}. ${purposes.join("; ")}. Keep ${their(voice)} ${QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK}`;
+}
+
+/**
+ * The cast members no identity slot shows — the people this prompt describes in
+ * words and binds to nothing.
+ *
+ * Empty whenever any identity slot is UNATTRIBUTED. Such a slot shows somebody
+ * and this compile cannot say who, so "X has no reference image" beside it might
+ * be a lie about the very person the photograph holds; saying nothing is the
+ * honest answer, and it keeps the binding this dialect compiled before the
+ * unattributed case existed.
+ */
+function textDescribedVoices(state: RenderState, groups: readonly IdentityGroup[]): SubjectVoice[] {
+  if (groups.some((group) => group.subjectRef === undefined)) return [];
+  const anchored = new Set(groups.map((group) => group.subjectRef));
+  const described: SubjectVoice[] = [];
+  for (const [ref, voice] of state.voices) {
+    if (!anchored.has(ref)) described.push(voice);
+  }
+  return described;
+}
+
+/**
+ * One cast member the payload carries no image of, said plainly.
+ *
+ * The name is what tells them apart, and the naming seam guarantees one: a lane
+ * withholds a display name only for a subject the payload actually shows
+ * (`CHARACTER_LANE_SUBJECT_NAMING`), so an unanchored member keeps theirs. The
+ * nameless fallback is for a digest that arrived without either, where "the
+ * other person" is still true and still tells the model where to look for them.
+ */
+function unanchoredSentence(voice: SubjectVoice): string {
+  return `${voice.name ?? "The other person"} has no reference image and is described below.`;
+}
+
+/**
+ * How many people this instruction says the picture holds — the number the
+ * closing sentence states, so the binding cannot contradict it.
+ *
+ * The operation's own count leads, and the voices are the floor: a digest whose
+ * contract undercounts its own cast would otherwise compile "one of the one
+ * people in the picture".
+ */
+function peopleInPicture(input: ImageDialectPositiveInput, state: RenderState): number {
+  const stated = input.operation.subjectCount;
+  return Number.isFinite(stated) && stated > state.voices.size ? stated : state.voices.size;
+}
+
+/**
+ * A small count as a word — what a sentence takes, where the closing count
+ * sentence takes a numeral ("Exactly 3 people are in the picture").
+ *
+ * Deliberately different: the close is an ASSERTION about a quantity and reads
+ * as one, while "one of the three people in the picture" is a phrase inside a
+ * sentence about a person. Beyond the list a numeral is the honest fallback; a
+ * cast that large is not a case this endpoint renders.
+ */
+const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"] as const;
+
+function countWord(count: number): string {
+  if (!Number.isInteger(count) || count < 0) return String(count);
+  return COUNT_WORDS[count] ?? String(count);
 }
 
 /** One person's identity images, primary first — the unit a binding form is chosen over. */
@@ -946,6 +1061,19 @@ function trailingClause(parts: readonly string[]): string {
   return parts.length === 0 ? "" : `, ${listWords(parts)}`;
 }
 
+/**
+ * A phrase as a WORD-BOUNDED pattern — "is this phrase actually said here",
+ * rather than "do these letters occur".
+ *
+ * The escape covers exactly the regex syntax characters, and no more: under the
+ * `u` flag an escape of an ordinary character (`\-`) is a syntax error, so the
+ * usual belt-and-braces escape list would turn a hyphenated posture into a
+ * thrown `SyntaxError` on schema-legal input.
+ */
+function wordPattern(phrase: string): RegExp {
+  return new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "iu");
+}
+
 // ---------------------------------------------------------------------------
 // Rendering — one claim, one segment, exactly as before fitting
 // ---------------------------------------------------------------------------
@@ -1197,22 +1325,29 @@ function renderClaim(
     // pronoun, or by the introduction where no pronoun may be used. `end` falls
     // back to the label for the ends that are not people: an item, a garment, a
     // place, none of which has a voice.
+    //
+    // The verb AGREES with that end for the same reason every subject clause
+    // does: `they_them` takes the plural form for a single person, so a verb
+    // stated in the singular compiled "They holds the cup" and "They is in
+    // contact with …" for exactly the subjects whose pronoun set this dialect
+    // now knows. A non-person end has no voice and `agree` gives it the
+    // singular, which is what an item, a garment or a place takes.
     case "relation.wears":
-      return relationSentence(say, end, "wears", object);
+      return relationSentence(say, end, agree(voice, "wears", "wear"), object);
     case "relation.holds":
-      return relationSentence(say, end, "holds", object);
+      return relationSentence(say, end, agree(voice, "holds", "hold"), object);
     case "relation.contains":
-      return relationSentence(say, end, "contains", object);
+      return relationSentence(say, end, agree(voice, "contains", "contain"), object);
     case "relation.attached_to":
-      return relationSentence(say, end, "is attached to", object);
+      return relationSentence(say, end, agree(voice, "is attached to", "are attached to"), object);
     case "relation.located_at":
-      return relationSentence(say, end, "is at", object);
+      return relationSentence(say, end, agree(voice, "is at", "are at"), object);
     case "relation.placement":
-      return relationSentence(say, end, `is ${spatialWord(value)}`, object);
+      return relationSentence(say, end, `${agree(voice, "is", "are")} ${spatialWord(value)}`, object);
     case "relation.contact":
-      return relationSentence(say, end, "is in contact with", object);
+      return relationSentence(say, end, agree(voice, "is in contact with", "are in contact with"), object);
     case "relation.acts_on":
-      return relationSentence(say, end, "acts on", object);
+      return relationSentence(say, end, agree(voice, "acts on", "act on"), object);
 
     // --- Item -----------------------------------------------------------------
     case "item.identity":
@@ -1755,12 +1890,17 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
     // only the clause its owner wrote.
     const composed = worn.filter((claim) => imageAppearancePhrase(claim.value) !== null);
     const trailed = worn.filter((claim) => imageAppearancePhrase(claim.value) === null);
-    // A stated gender is what the pronoun set already says, so beside a usable
-    // pronoun it is a fact the sentence has spent on "She" — absorbed into the
-    // build sentence rather than listed as "gender: female" inside it. It is
-    // kept whenever no pronoun carries it: a shared set, or none stated at all.
+    // A stated gender is what a GENDERED pronoun set already says, so beside one
+    // it is a fact the sentence has spent on "She" — absorbed into the build
+    // sentence rather than listed as "gender: female" inside it. It is kept
+    // whenever no pronoun carries it: a shared set, none stated at all, or
+    // `they_them`, which the application supplies for every androgynous and
+    // nonbinary value while the gender attribute keeps the natal build
+    // distinction those values still carry ({@link ImagePronounWords.carriesGender}).
+    // "They" conveys neither variant, and this family's reference no longer
+    // preserves build, so absorbing it would leave nothing saying which body.
     const carriedByPronoun = (claim: ImagePositiveClaim): boolean =>
-      voice !== null && voice.pronouns !== null && claim.semanticTags.includes(GENDER_ATTRIBUTE_TAG);
+      voice?.pronouns?.carriesGender === true && claim.semanticTags.includes(GENDER_ATTRIBUTE_TAG);
     const spoken = described.filter((claim) => !carriedByPronoun(claim));
     const body = composeAppearance([...(spoken.length > 0 ? spoken : described), ...composed]);
     const wornParts = valuesOf(trailed);
@@ -1916,7 +2056,14 @@ function writePose(claims: readonly ImagePositiveClaim[], context: EmitContext):
     const spoken = [...valuesOf(posture), ...posingParts, ...actingParts].map((entry) => entry.toLowerCase());
     const kept = posture.filter((claim) => {
       const word = lowerLead(describe(claim.value)).toLowerCase();
-      return word.length > 0 && !spoken.some((entry) => entry !== word && entry.includes(word));
+      if (word.length === 0) return false;
+      // WORD boundaries, not letters. A substring test read "sitting" out of
+      // "babysitting a child" and "standing" out of "understanding the
+      // assignment", dropped the required posture as already expressed, and
+      // attributed it to a sentence that never said it — so the render lost the
+      // posture and reported it as carried.
+      const stated = wordPattern(word);
+      return !spoken.some((entry) => entry !== word && stated.test(entry));
     });
     const poseParts = [...valuesOf(kept), ...posingParts];
     const worn = valuesOf(expressions).map((entry) => `a ${entry} expression`);
@@ -2108,7 +2255,7 @@ const BAND_WRITERS: Readonly<Record<EmissionGroup, (claims: readonly ImagePositi
  * clause is mandatory.
  */
 function groupedSegments(
-  input: ImageDialectPositiveInput,
+  claims: readonly ImagePositiveClaim[],
   state: RenderState,
   fitted: readonly ImagePromptSegment[],
 ): ImagePromptSegment[] {
@@ -2116,13 +2263,13 @@ function groupedSegments(
   for (const segment of fitted) {
     if (segment.source !== undefined) rendered.set(segment.source, segment);
   }
-  const kept = input.claims.filter((claim) => rendered.has(claim.id));
+  const kept = claims.filter((claim) => rendered.has(claim.id));
   const context: EmitContext = { state, rendered };
   const segments: ImagePromptSegment[] = [];
   for (const band of EMISSION_ORDER) {
-    const claims = kept.filter((claim) => groupOfClaim(claim) === band);
-    if (claims.length === 0) continue;
-    for (const written of BAND_WRITERS[band](claims, context)) {
+    const banded = kept.filter((claim) => groupOfClaim(claim) === band);
+    if (banded.length === 0) continue;
+    for (const written of BAND_WRITERS[band](banded, context)) {
       const parts = written.claims.flatMap((claim) => {
         const part = rendered.get(claim.id);
         return part === undefined ? [] : [part];
@@ -2141,11 +2288,35 @@ function groupedSegments(
   return segments;
 }
 
-function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositivePrompt {
-  // Fresh state per compile — the emit-once and slot-consumption rules are
-  // per-render facts, and state leaking across compiles would make the second
-  // compile of one digest differ from the first, which the determinism
-  // guarantee forbids.
+/** One whole compile of this dialect: render, fit, and emit as grouped prose. */
+interface EmissionPass {
+  readonly compiled: ImageCompiledPositivePrompt;
+  /** The grouped sentences — what the provider receives. */
+  readonly segments: ImagePromptSegment[];
+  readonly text: string;
+}
+
+/**
+ * Render every claim this pass still affords, fit the per-claim segments to
+ * `budget`, and emit the survivors as grouped prose.
+ *
+ * State is created HERE and never escapes: the emit-once and slot-consumption
+ * rules are per-render facts, and state leaking across passes would make the
+ * second pass over one claim list differ from the first — which is the same
+ * determinism guarantee that forbids it leaking across compiles.
+ *
+ * A claim id in `surrendered` renders NOTHING, which is how the advisory loop
+ * spends one: the shared compile step records an unrendered claim as dropped,
+ * with the claim id every other drop carries, so a squeeze is visible in
+ * `droppedClaimIds` exactly as the fitter's own removals are. Only optional
+ * claims are ever named, so the mandatory floor is untouched.
+ */
+function emissionPass(
+  input: ImageDialectPositiveInput,
+  surrendered: ReadonlySet<string>,
+  budget: ImagePromptBudget,
+  sink: DiagnosticSink | undefined,
+): EmissionPass {
   const voices = subjectVoices(input);
   const soleVoice = voices.size === 1 ? ([...voices.values()][0] ?? null) : null;
   const state: RenderState = {
@@ -2160,16 +2331,75 @@ function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositiv
   const surfaces = createSceneStagingSurfaceLog();
   const compiled = compileDialectClaims({
     claims: input.claims,
-    render: (claim) => renderClaim(claim, input, state, surfaces),
+    render: (claim) => (surrendered.has(claim.id) ? null : renderClaim(claim, input, state, surfaces)),
     surfaces,
-    budget: input.budget,
-    ...(input.sink === undefined ? {} : { sink: input.sink }),
+    budget,
+    ...(sink === undefined ? {} : { sink }),
   });
+  const segments = groupedSegments(input.claims, state, compiled.segments);
+  return { compiled, segments, text: joinImagePromptSegments(segments) };
+}
 
-  // The grouped emission. Everything before this point — what was rendered, what
-  // the budget kept, what was recorded as dropped — is unchanged by it.
-  const segments = groupedSegments(input, state, compiled.segments);
-  return { ...compiled, segments, text: joinImagePromptSegments(segments) };
+/**
+ * Compile, fitting the prose this dialect ACTUALLY EMITS rather than the
+ * per-claim form it renders on the way there.
+ *
+ * The two lengths are far apart, and always in the same direction: a dozen
+ * one-fact sentences ("She has hair color: dark brown." "She has hair length:
+ * mid back.") become one clause list inside one sentence, and the scene fixture
+ * loses roughly a third of its characters to the regrouping. Fitting the
+ * expanded form against the row's 1300-character advisory therefore trimmed
+ * optional appearance and setting claims out of prompts that fit comfortably
+ * once grouped — a real loss of detail, paid for a length the provider never saw.
+ *
+ * So the advisory is measured where it means something. A pass with NO budget
+ * gives the grouped text; if it fits, nothing is dropped at all. If it does not,
+ * the weakest optional claim is surrendered — by
+ * {@link weakestOptionalImagePromptSegment}, the fitter's own rule, so a squeeze
+ * chooses the same victim it always would — and the prose is regrouped, until it
+ * fits or no optional claim is left. Each surrender is recorded as a dropped
+ * claim and reported once.
+ *
+ * The HARD ceiling keeps the existing path. It is a provider error rather than a
+ * quality hint, it is the only limit that may compress a mandatory segment, and
+ * that compression is defined over the per-claim segments — so the final pass
+ * hands the fitter the ceiling and nothing else, after the advisory loop has
+ * already decided what optional material there is to spend. No Qwen row declares
+ * one today.
+ *
+ * Deterministic: the loop reads only the input and its own accumulated set, and
+ * every pass starts from fresh state, so two compiles of one digest agree.
+ */
+function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositivePrompt {
+  const advisory = input.budget.recommendedCharacters;
+  const surrendered = new Set<string>();
+  const spent: ImagePromptSegment[] = [];
+  if (advisory !== undefined) {
+    // Bounded by construction: every round adds one claim id to a set it never
+    // removes from, and stops as soon as no optional segment is left to name.
+    // The diagnostics of a trial pass are discarded — an operator wants the
+    // events of the compile that shipped, not one per attempt — so the sink is
+    // withheld until the final pass below.
+    for (;;) {
+      const trial = emissionPass(input, surrendered, {}, undefined);
+      if (trial.text.length <= advisory) break;
+      const weakest = weakestOptionalImagePromptSegment(trial.compiled.segments);
+      if (weakest === null) break;
+      const claimId = weakest.source;
+      if (claimId === undefined || surrendered.has(claimId)) break;
+      surrendered.add(claimId);
+      spent.push(weakest);
+    }
+  }
+  const ceiling = input.budget.maxCharacters;
+  const emitted = emissionPass(
+    input,
+    surrendered,
+    ceiling === undefined ? {} : { maxCharacters: ceiling },
+    input.sink,
+  );
+  reportImagePromptEmissionTrim(spent, emitted.text.length, input.budget, input.sink);
+  return { ...emitted.compiled, segments: emitted.segments, text: emitted.text };
 }
 
 // ---------------------------------------------------------------------------

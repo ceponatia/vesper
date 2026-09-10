@@ -780,6 +780,20 @@ describe("the lane's subject-naming policy", () => {
     expect(labelOf(program, LANE_PROBE_SECOND_SUBJECT_ID)).not.toBe(LANE_PROBE_SECOND_NAME);
     expect(program.prompt).toContain(LANE_PROBE_NAME);
     expect(program.prompt).not.toContain(LANE_PROBE_SECOND_NAME);
+
+    // …and the binding says so at the boundary the model reads (PR #545 review):
+    // the one photograph binds the one person it shows, and the cast member with
+    // no image of their own is named as having none. The several-people form
+    // would promise to keep "each person's face … as their own image shows"
+    // about somebody the payload carries nothing of; the sole-subject form would
+    // claim the whole picture for one of two people. The dialect owns both
+    // wordings and pins them
+    // (`packages/image-core/src/prompt-program/prompt-program.test.ts`); what
+    // this owns is that the production seam hands it this cast.
+    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).toContain(`${LANE_PROBE_NAME} has no reference image and is described below.`);
+    expect(program.prompt.toLowerCase()).not.toContain("sole subject");
   });
 
   it("names the subject on every other lane, reference and all", () => {

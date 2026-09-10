@@ -173,6 +173,31 @@ keep each person's face, skin tone and apparent age exactly as their own image
 shows.
 ```
 
+**A cast member the payload carries no image of is said to have none.** The scene
+ladder's single-reference rung sends one identity image for a cast of two
+([character-prompts.md](../../images/character-prompts.md) §Naming a subject per
+lane), and a form chosen over the identity groups alone fell to the
+several-people sentence — which promises to keep "each person's face … as their
+own image shows" about somebody with no image at all. That is a false identity
+contract, and the wording that invites the one reference to bleed into the person
+it was never taken of. So the bound person keeps the binding a photograph can
+support, is told what they are in this picture rather than that they are its sole
+subject, and every unanchored voice gets a sentence of its own:
+
+```text
+Use the woman in Image 1 as one of the two people in the picture; keep her face,
+skin tone and apparent age exactly as shown. Nyx has no reference image and is
+described below.
+```
+
+Several anchored people beside a text-described one keep the assignment list
+above and add the same sentence for each unanchored voice: the multi preserve
+clause is already scoped by its own "their own image", and what was missing is
+anything saying who has none. The name is what tells an unanchored member apart
+and the naming policy guarantees one; a member who somehow arrived without a name
+is "The other person". The person count still closes the instruction and still
+says how many people the picture holds.
+
 A person's **primary** image is their first identity slot in send order. It is
 the number the introduction cites ("the woman in Image 1") and the number the
 face-visibility clause anchors to; every other slot of theirs is a support image.
@@ -228,7 +253,8 @@ withheld in three cases, each a pronoun that would not resolve: the digest state
 no set; two subjects in this cast share one; or no sentence in this prompt
 introduces the subject, which is a cast member the payload carries no identity
 image for. A withheld pronoun leaves the introduction standing in every clause.
-`they_them` takes plural verb agreement for a single person.
+`they_them` takes plural verb agreement for a single person, in the relation
+clauses as well as the subject ones ("They hold a chipped enamel cup").
 
 ### Grouped emission
 
@@ -286,13 +312,21 @@ What the bands merge:
   sentence.
 - A posture another phrase in the same sentence already **contains** is dropped,
   so a committed "standing" beside a composed "standing at the craft services
-  table" is not composed twice. Containment can only ever drop the shorter of two
-  phrases, and two equal phrases are each other's equal rather than each other's
+  table" is not composed twice. Containment is matched on WORD boundaries: a
+  letter test read "sitting" out of "babysitting a child" and "standing" out of
+  "understanding the assignment", dropping the required posture and crediting a
+  sentence that never said it. It can only ever drop the shorter of two phrases,
+  and two equal phrases are each other's equal rather than each other's
   container.
 - A further subject's identity claim is **absorbed** by the multi binding, which
   has already introduced each person by their own image.
-- A stated gender is absorbed when a usable pronoun already carries it, and kept
-  whenever none does.
+- A stated gender is absorbed when a GENDERED pronoun already carries it, and
+  kept whenever none does — a shared set, no set at all, or `they_them`. The
+  application supplies `they_them` for every androgynous and nonbinary value
+  while the gender attribute keeps the natal build distinction those values
+  carry, and "they" conveys neither variant; absorbing it would leave nothing
+  saying which body to draw in a prompt whose reference no longer preserves
+  build.
 
 An absorbed claim is attributed to the sentence that carries it, never recorded
 as dropped: a clause folded into another claim's sentence is not a claim the
@@ -379,11 +413,29 @@ guidance for image editing asks for direct, specific instructions and clarity
 about what to preserve, and states no word or character count at all. Advisory
 means what it says: optional material is trimmed toward the number, a mandatory
 segment is never compressed for it, and exceeding it is reported rather than
-refused. Vesper has measured no hard ceiling for this endpoint, so the row
-carries no `maxChars`. The value is owner-curated data on
-`advancedCapabilities`
+refused. The value is owner-curated data on `advancedCapabilities`
 ([providers/registry.md](../../images/providers/registry.md) §Probe-owned
 columns).
+
+**The number is measured against the GROUPED prose, never the per-claim form.**
+This dialect renders one segment per claim and then rewrites the survivors as
+grouped sentences, which are far shorter — one sentence naming a body where the
+segments named it once per attribute. Fitting the expanded form therefore trimmed
+optional appearance and setting claims out of prompts that fit comfortably once
+grouped, paying real detail for a length the provider never saw. So the compile
+groups first with no budget at all; if the emitted text fits, nothing is dropped.
+If it does not, the weakest optional claim is surrendered — the same
+lowest-priority-then-latest rule the shared fitter uses, so a squeeze picks the
+same victim either way — and the prose is regrouped, until it fits or no optional
+claim is left. Each surrender is recorded in `droppedClaimIds` with the claim id
+every other drop carries, and reported under `image_prompt.segments_trimmed`. Two
+compiles of one digest still agree: every pass starts from fresh render state.
+
+A hard ceiling is a different limit and keeps the shared fitter's own path. It is
+a provider error rather than a quality hint, it is the only limit that may
+compress a mandatory segment, and that compression is defined over the per-claim
+segments. Vesper has measured no hard ceiling for this endpoint, so the row
+carries no `maxChars`.
 
 ## Seeded profiles
 
