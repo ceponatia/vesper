@@ -41,10 +41,11 @@ const ownedChat = (user: { id: string }, params: Params) => loadOwnedChat(params
  * reply that answered it. All of it is awaited — a fire-and-forget repair lets an
  * immediate next send retrieve the wording the player just removed — and all of it
  * runs under the chat exchange lock, because the exchange finalizer rewrites the
- * state row's rings wholesale and would clobber a concurrent scrub. A chat that is already streaming (or already repairing) answers
- * 409 `chat_busy` with nothing written. The response carries a `continuity` block
- * reporting what each step did; a step that failed is reported there rather than
- * failing the write that already committed.
+ * state row's rings wholesale and would clobber a concurrent scrub. A chat that is
+ * already streaming (or already repairing) answers 409 `chat_busy` with nothing
+ * written. The response carries a `continuity` block reporting what each step did;
+ * a step that failed is reported there rather than failing the write that already
+ * committed.
  *
  * Everything the repair needs from OTHER stores — the player persona the scribe
  * addresses — is resolved before the lock is taken and before the row is written, so

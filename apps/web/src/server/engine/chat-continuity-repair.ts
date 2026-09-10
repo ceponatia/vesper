@@ -17,17 +17,18 @@ import { removeVoiceExemplarsForMessage, voiceExemplarsSchema, type VoiceExempla
  * against the exchange it belongs to, and the archivist may have kept it as a
  * voice exemplar on the state row. Rewriting or snipping the row alone leaves
  * those derivatives quoting the old text back into the next prompt, which is
- * exactly the poisoned context the edit was meant to remove. This module rebuilds all three, in one
- * pass, while the caller holds the chat exchange lock.
+ * exactly the poisoned context the edit was meant to remove. This module
+ * rebuilds all three, in one pass, while the caller holds the chat exchange lock.
  *
  * Independent legs (docs/resilience.md §4): each step is wrapped, one failure is
  * recorded as an error diagnostic and the others still run. Nothing here throws
  * back at the route — the transcript write is already committed by the time this
  * runs, so a failed derivative is reported in the response envelope rather than
- * hidden behind a 500. Summary repair never restores stale prose: it reuses
- * `rebuildChatSummary`, whose reset-then-refold leaves an empty summary and a
- * null watermark when the first fold degrades, which is the honest degraded
- * state (the verbatim window then carries the whole transcript).
+ * hidden behind a 500. Summary repair never restores stale prose: it goes through
+ * `repairChatSummaryForMessage`, which decides coverage and re-folds under the
+ * summary lock, and whose reset-then-refold leaves an empty summary and a null
+ * watermark when the first fold degrades, which is the honest degraded state
+ * (the verbatim window then carries the whole transcript).
  */
 
 /** Whether the rolling summary had to be re-folded for this message. */
