@@ -116,6 +116,10 @@ export const buildGroup = defineAttributeGroup("build", [
         group: "build",
         role: "adjective",
         fragment: "{value}",
+        // Order 1, ahead of the frame's and the weight's 0: muscle is the
+        // adjective nearest the noun, so the build reads "a slim, lightly toned
+        // build" rather than the claim order's "a lightly toned, slim build".
+        order: 1,
         // "a powerfully built build" says the noun twice; "a defined build" is the
         // one member whose bare word reads as vague rather than as muscle.
         fragmentByValue: { defined: "well-defined", powerfully_built: "powerful" },

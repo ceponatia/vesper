@@ -1426,9 +1426,11 @@ describe("the Qwen 2511 delta-edit dialect", () => {
               // The registry's PHRASE records, exactly as `formatAttributePhrase`
               // renders them for `arms.build`, `build.musculature` and
               // `build.weight_presentation` (#547): the standalone noun phrase
-              // every family reads, plus the piece a composing dialect joins. The
-              // claim order is the projection's own — alphabetical by attribute
-              // id — which is why the musculature adjective precedes the weight's.
+              // every family reads, plus the piece a composing dialect joins and
+              // the position the registry gave it. The claim order is the
+              // projection's own — alphabetical by attribute id — so the
+              // musculature arrives before the weight and its `order: 1` is what
+              // puts it back against the noun.
               fact({
                 key: "s1.build.arms",
                 concept: "subject.morphology",
@@ -1441,7 +1443,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
                 concept: "subject.morphology",
                 value: {
                   text: "a lightly toned build",
-                  phrase: { group: "build", role: "adjective", fragment: "lightly toned" },
+                  phrase: { group: "build", role: "adjective", fragment: "lightly toned", order: 1 },
                 },
                 subjectRef: "s1",
                 locus: "torso",
@@ -1462,14 +1464,20 @@ describe("the Qwen 2511 delta-edit dialect", () => {
               fact({
                 key: "s1.hair.color",
                 concept: "subject.appearance",
-                value: { text: "dark-brown hair", phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
+                value: {
+                  text: "dark-brown hair",
+                  phrase: { group: "hair", role: "adjective", fragment: "dark-brown", order: 1 },
+                },
                 subjectRef: "s1",
                 locus: "hair",
               }),
               fact({
                 key: "s1.hair.length",
                 concept: "subject.appearance",
-                value: { text: "hair to mid-back", phrase: { group: "hair", role: "trailer", fragment: "to mid-back" } },
+                value: {
+                  text: "hair to mid-back",
+                  phrase: { group: "hair", role: "trailer", fragment: "to mid-back", order: 1 },
+                },
                 subjectRef: "s1",
                 locus: "hair",
               }),
@@ -1480,7 +1488,21 @@ describe("the Qwen 2511 delta-edit dialect", () => {
               // the two never match in production, which is why matching them
               // was the wrong way to join the clause to the sentence.
               fact({ key: "s1.wear.sweater.tuck", concept: "subject.current_state", value: "with the sweater tucked in", subjectRef: "s1", locus: "garment_part:g-sweater:hem" }),
-              fact({ key: "s1.hair.style", concept: "subject.current_state", value: "with the hair worn loose", subjectRef: "s1", locus: "hair" }),
+              // A committed hairstyle is a `subject.current_state` fact the
+              // adapter also words as a hair TRAILER (`order: 0`, ahead of the
+              // length's 1), so it composes into the head the description just
+              // wrote instead of trailing the finished sentence. `text` keeps the
+              // `with …` shape every non-composing family words it through.
+              fact({
+                key: "s1.hair.style",
+                concept: "subject.current_state",
+                value: {
+                  text: "with the hair worn loose",
+                  phrase: { group: "hair", role: "trailer", fragment: "worn loose", order: 0 },
+                },
+                subjectRef: "s1",
+                locus: "hair",
+              }),
               fact({ key: "s1.hair.wetness", concept: "subject.current_state", value: "damp at the hair", subjectRef: "s1", locus: "hair" }),
               fact({
                 key: "s1.posture",
@@ -1553,8 +1575,8 @@ describe("the Qwen 2511 delta-edit dialect", () => {
         register: "imperative" as const,
         opening: "Create a new scene using the woman in Image 1 as the sole subject. Keep her face",
         pronoun: /\bher\b/gu,
-        build: "Give her a lightly toned, slim build",
-        hair: "dark-brown hair to mid-back",
+        build: "Give her a slim, lightly toned build",
+        hair: "dark-brown hair worn loose to mid-back",
         garments: "Dress her in dark-wash skinny jeans",
         // A predicate state is an ASSERTION in both registers: the wetness is a
         // condition of the person, not an edit to perform on her.
@@ -1570,8 +1592,8 @@ describe("the Qwen 2511 delta-edit dialect", () => {
         register: "descriptive" as const,
         opening: "Use the woman in Image 1 as the sole subject; keep her face",
         pronoun: /\bShe\b/gu,
-        build: "She has a lightly toned, slim build",
-        hair: "dark-brown hair to mid-back",
+        build: "She has a slim, lightly toned build",
+        hair: "dark-brown hair worn loose to mid-back",
         garments: "She wears dark-wash skinny jeans",
         damp: "She is damp at the hair.",
         pose: "She is standing at the refreshments table",
@@ -1609,8 +1631,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
       expect(compiledScene()).toBe(
         "Create a new scene using the woman in Image 1 as the sole subject. " +
           "Keep her face, skin tone and apparent age exactly as shown. " +
-          "Give her a lightly toned, slim build with slender arms, and dark-brown hair to mid-back, " +
-          "with the hair worn loose. " +
+          "Give her a slim, lightly toned build with slender arms, and dark-brown hair worn loose to mid-back. " +
           "Dress her in dark-wash skinny jeans, brown leather loafers and a pastel-pink crewneck sweater, " +
           "with the sweater tucked in. " +
           "She is damp at the hair. " +
@@ -1636,8 +1657,7 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     it("compiles the same fixture as this descriptive prompt", () => {
       expect(compiledScene("descriptive")).toBe(
         "Use the woman in Image 1 as the sole subject; keep her face, skin tone and apparent age exactly as shown. " +
-          "She has a lightly toned, slim build with slender arms, and dark-brown hair to mid-back, " +
-          "with the hair worn loose. " +
+          "She has a slim, lightly toned build with slender arms, and dark-brown hair worn loose to mid-back. " +
           "She wears dark-wash skinny jeans, brown leather loafers and a pastel-pink crewneck sweater, " +
           "with the sweater tucked in. " +
           "She is damp at the hair. " +
@@ -1721,41 +1741,56 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     /**
      * THE COMPOSED DESCRIPTION (#547).
      *
-     * Five phrased facts across two feature groups, in one sentence, and not one
+     * Six phrased facts across two feature groups, in one sentence, and not one
      * of them stated in the self-describing form the registry stores it in. "She
      * has musculature: lightly toned, weight presentation: slim, arm build:
      * slender" was a registry listing wearing a sentence's shape; the same facts
-     * arrive here already taken apart — group, role, fragment — and the dialect
-     * writes the grammar. The negative half is the load-bearing one: a
-     * `label: value` spelling anywhere in the prompt means a phrase stopped
-     * rendering and the fallback quietly took over, which no reading of the
-     * positive assertions would catch.
+     * arrive here already taken apart — group, role, fragment, and the position
+     * the fragment takes among its group's pieces — and the dialect writes the
+     * grammar. The negative half is the load-bearing one: a `label: value`
+     * spelling anywhere in the prompt means a phrase stopped rendering and the
+     * fallback quietly took over, which no reading of the positive assertions
+     * would catch.
+     *
+     * The ORDER is the other half. The claims arrive alphabetically by attribute
+     * id, so a dialect that stated them in claim order wrote "a lightly toned,
+     * slim build" and "dark-brown hair to mid-back, with the hair worn loose" —
+     * every fact present, every one in the wrong place. Each assertion below
+     * fails on that spelling.
      */
     it.each(registers)("composes the appearance facts into one description ($register)", (entry) => {
       const text = compiledScene(entry.register);
       const described = text.match(/[^.]*\bbuild\b[^.]*\./gu) ?? [];
       expect(described).toHaveLength(1);
       expect(described[0]).toContain(entry.build);
-      // The build's adjectives are COORDINATE and comma-joined; its `with`
-      // phrase hangs off the noun; the hair's trailer follows its own noun.
-      expect(described[0]).toContain("a lightly toned, slim build with slender arms");
-      expect(described[0]).toContain("dark-brown hair to mid-back");
+      // The build's adjectives are COORDINATE and comma-joined, weight before
+      // muscle because muscle is the one the registry seats against the noun;
+      // its `with` phrase hangs off that noun; the hair's trailers follow their
+      // own noun, arrangement before length.
+      expect(described[0]).toContain("a slim, lightly toned build with slender arms");
+      expect(described[0]).toContain("dark-brown hair worn loose to mid-back");
       expect(text).not.toMatch(/\b(?:arm build|weight presentation|musculature|hair color|hair length)\s*:/iu);
     });
 
     /**
-     * A hair reading belongs to the description the build band just wrote, and a
+     * A hair reading belongs to the head the description just wrote, and a
      * PREDICATE reading is not a trailing clause at all — the same visual-state
      * kind produces both, so the shape of the value is what decides.
+     *
+     * A committed hairstyle is the first case that is phrased as well as
+     * re-filed (#547): it replaces the sheet's own `hair.arrangement` upstream,
+     * so it composes where that trailer would have sat rather than trailing the
+     * finished sentence. The `with the hair …` spelling the value still carries
+     * in `text` is what the re-filing keys on, and it must not reach the prompt.
      */
-    it.each(registers)("trails a hair reading on the description, not the garments ($register)", (entry) => {
+    it.each(registers)("composes a hair reading into the description, not the garments ($register)", (entry) => {
       const text = compiledScene(entry.register);
       const hair = text.match(/[^.]*\bdark-brown hair\b[^.]*\./gu) ?? [];
       expect(hair).toHaveLength(1);
       expect(hair[0]).toContain(entry.hair);
-      expect(hair[0]).toContain("with the hair worn loose");
+      expect(text).not.toContain("with the hair worn loose");
       // The wardrobe sentence is not the hair reading's host.
-      expect(text).not.toMatch(/skinny jeans[^.]*with the hair worn loose/u);
+      expect(text).not.toMatch(/skinny jeans[^.]*worn loose/u);
       // A predicate state is an assertion in EITHER register: "Show her damp at
       // the hair" would order the model to wet her, where the fact says she is.
       expect(text).toContain(entry.damp);

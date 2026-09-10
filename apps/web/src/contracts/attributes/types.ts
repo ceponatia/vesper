@@ -124,6 +124,24 @@ export const imageAppearancePhraseSchema = z.object({
    * `{fragment}` as well as `{value}` / `{compound}`.
    */
   standalone: z.string().min(1).optional(),
+  /**
+   * Where this fragment sits among its group's pieces of the same role,
+   * ascending; 0 without one, and equal orders keep claim order.
+   *
+   * English orders a noun's modifiers, and the claim order a dialect receives is
+   * the projection's — alphabetical by attribute id — which puts colour before
+   * condition ("dark-brown healthy hair") and muscle before weight ("a lightly
+   * toned, slim build"). Both read backwards, and the fix belongs beside the
+   * words rather than in the dialect: the position is a property of what the
+   * fragment SAYS, and only the registry knows that.
+   *
+   * Pieces are laid out ascending, so a higher number means the opposite thing
+   * on either side of the noun: an `adjective` precedes it, so higher sits
+   * closer (`hair.color` is 1 and lands against "hair"), and a `trailer` follows
+   * it, so lower does (`hair.arrangement` is 0 and precedes `hair.length`'s 1,
+   * giving "hair worn loose to mid-back").
+   */
+  order: z.number().int().optional(),
 });
 
 export type ImageAppearancePhraseMetadata = z.infer<typeof imageAppearancePhraseSchema>;

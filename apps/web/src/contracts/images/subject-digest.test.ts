@@ -460,12 +460,16 @@ describe("camera facts", () => {
 
 const ADULT_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "late_twenties", source: "creation" };
 const MINOR_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "teen", source: "creation" };
-/** The prose the registry words for the fixture's own values (#547). */
+/**
+ * The prose the registry words for the fixture's own values (#547), positions
+ * included: a colour is the adjective English seats against its noun, so both
+ * declare `order: 1`.
+ */
 const PLATINUM_HAIR = {
   text: "platinum hair",
-  phrase: { group: "hair", role: "adjective", fragment: "platinum" },
+  phrase: { group: "hair", role: "adjective", fragment: "platinum", order: 1 },
 };
-const BLUE_EYES = { text: "blue eyes", phrase: { group: "eyes", role: "adjective", fragment: "blue" } };
+const BLUE_EYES = { text: "blue eyes", phrase: { group: "eyes", role: "adjective", fragment: "blue", order: 1 } };
 
 const REQUIRED_APPEARANCE_VALUES: readonly AttributeValue[] = [
   { id: "identity.gender", value: "female", source: "creation" },
@@ -617,9 +621,12 @@ describe("projectCharacterWorldSlices", () => {
     const sourceKeys = (subject?.facts ?? []).map((fact) => fact.source.key);
     expect(sourceKeys).not.toContain("hair.arrangement");
     expect(sourceKeys).not.toContain("hair.style");
-    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe(
-      "with the hair worn loose",
-    );
+    // The replacement is worded as the hair TRAILER it replaces, so it composes
+    // where the sheet's own arrangement would have (#547).
+    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toEqual({
+      text: "with the hair worn loose",
+      phrase: { group: "hair", role: "trailer", fragment: "worn loose", order: 0 },
+    });
   });
 
   it("lets an emitted live grooming fact replace the sheet grooming fallback", () => {
@@ -895,7 +902,8 @@ describe("projectCharacterWorldSlices", () => {
     expect(imageAppearancePhrase(valueOf("hair.color"))).toEqual(PLATINUM_HAIR);
     expect(imageAppearancePhrase(valueOf("hair.length"))).toEqual({
       text: "hair to the shoulders",
-      phrase: { group: "hair", role: "trailer", fragment: "to the shoulders" },
+      // A length trails the arrangement, so it declares the higher position.
+      phrase: { group: "hair", role: "trailer", fragment: "to the shoulders", order: 1 },
     });
     // The visual-state resolver's path, over the fixture's selected nose fact —
     // found by fact key, because a resolver-answered fact carries the visual
@@ -1076,7 +1084,10 @@ describe("projectCharacterWorldSlices", () => {
     expect(byKey.get(`${SUBJECT}/item:g_ring/wardrobe.item`)?.value).toBe("nose ring: Thin gold hoop");
     expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
     expect(byKey.get(`${SUBJECT}/subject:${SUBJECT}/body_language.posture`)?.value).toBe("kneeling");
-    expect(byKey.get(`${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("with the hair worn loose");
+    expect(byKey.get(`${SUBJECT}/hair/presentation.hairstyle`)?.value).toEqual({
+      text: "with the hair worn loose",
+      phrase: { group: "hair", role: "trailer", fragment: "worn loose", order: 0 },
+    });
     expect(byKey.get(`${SUBJECT}/wings/species.feature_group`)?.value).toBe("wings");
 
     const prose = (subject?.facts ?? []).map((fact) => String(fact.value)).join(" ");

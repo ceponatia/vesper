@@ -28,7 +28,9 @@ export const skinGroup = defineAttributeGroup("skin", [
     imageAppearance: {
       class: "core",
       referenceFreeRequired: true,
-      phrase: { group: "skin", role: "adjective", fragment: "{compound}" },
+      // Order 1: the tone is the colour adjective, and it belongs against the
+      // noun — "smooth olive skin", never "olive smooth skin".
+      phrase: { group: "skin", role: "adjective", fragment: "{compound}", order: 1 },
     },
     coreVisual: true,
     defaultValue: "light",

@@ -151,6 +151,7 @@ a noun phrase, and a prose dialect can compose several into a single clause.
 | `fragment`        | The fragment template applied to every value with no entry of its own.                                           |
 | `fragmentByValue` | Per-enum-member fragment templates; a listed member overrides `fragment`.                                        |
 | `standalone`      | The standalone noun phrase, overriding the form derived from the role.                                           |
+| `order`           | Where the fragment sits among its group's pieces of the same role; an integer, 0 without one.                    |
 
 The group and role vocabulary is `@vesper/image-core`'s
 (`prompt-program/appearance-phrase.ts`); the registry owns the words and the
@@ -168,6 +169,19 @@ a consumer states on its own. The standalone is derived from the role —
 "\<group noun\> {fragment}" — with the article the group noun needs, and
 `standalone` overrides it. `other` has no group noun, so an `adjective` or
 `trailer` phrase there must declare `standalone`.
+
+`order` is how the registry states the order English puts the words in. Facts
+reach a dialect in the projection's order — alphabetical by attribute id — which
+would put a colour before a condition ("dark-brown healthy hair") and muscle
+before weight ("a lightly toned, slim build"); both read backwards, and the
+position is a property of the words rather than of the claim that carried them.
+Within a group a composing dialect lays each role's pieces out ascending by
+`order`, ties keeping claim order, so a higher number means the opposite thing on
+either side of the noun: an `adjective` precedes it, so higher sits closer, and a
+`trailer` follows it, so lower does. `hair.color`, `eyes.color`, `skin.tone` and
+`build.musculature` declare 1 as the adjective nearest their noun, and
+`hair.length` declares 1 so an arrangement trailer precedes it ("hair worn loose
+to mid-back"). Everything else declares none and reads in claim order.
 
 At least one of `fragment` / `fragmentByValue` is required, and
 `fragmentByValue` keys must be `allowedValues` members of an enum or enum_list —

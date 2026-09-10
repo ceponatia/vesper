@@ -176,7 +176,7 @@ describe("assembleCharacterWorldDigest", () => {
     // The registry words eye colour as prose (#547); the label form is gone.
     expect(subject?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toEqual({
       text: "blue eyes",
-      phrase: { group: "eyes", role: "adjective", fragment: "blue" },
+      phrase: { group: "eyes", role: "adjective", fragment: "blue", order: 1 },
     });
   });
 

@@ -217,7 +217,10 @@ export function formatAttributePhrase(
       ? derivedStandalone(phrase, fragment)
       : renderPhraseTemplate(def, phrase.standalone, value, fragment);
   if (text === null || text.length === 0) return null;
-  return { text, phrase: { group: phrase.group, role: phrase.role, fragment } };
+  // The declared position travels with the pieces; an attribute that declares
+  // none carries no member, which is the same statement as the default.
+  const ordered = phrase.order === undefined ? {} : { order: phrase.order };
+  return { text, phrase: { group: phrase.group, role: phrase.role, fragment, ...ordered } };
 }
 
 /** Self-describing `Label: value` form (scene appearance summaries, digest fact values). */

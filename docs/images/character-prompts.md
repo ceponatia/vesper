@@ -152,17 +152,25 @@ registry's policy before the adapter sees it:
 
 An image-eligible attribute that declares an `imageAppearance.phrase`
 ([../contracts/attributes.md](../contracts/attributes.md) §Appearance phrases)
-reaches the world digest as the record `{ text, phrase: { group, role,
-fragment } }` rather than as "Hair color: dark brown". `text` is the standalone
+reaches the world digest as the record `{ text, phrase: { group, role, fragment,
+order } }` rather than as "Hair color: dark brown". `text` is the standalone
 noun phrase ("dark-brown hair"), which every dialect words through the value
-member it already reads; `phrase` is the same fact taken apart, so a prose
-dialect composes one clause per feature group from several claims that each keep
-their own segment, fitting and provenance. An attribute with no declared phrase
-carries the label form. Both paths into a subject's appearance facts — the
-visual-state resolver for a selected fact and the registry projection this
-adapter runs — emit the same record, so one attribute reads the same however it
-arrived. The registry owns the wording and the dialect owns the grammar: no
-attribute id reaches `@vesper/image-core`.
+member it already reads; `phrase` is the same fact taken apart — down to where
+the fragment sits among its group's pieces — so a prose dialect composes one
+clause per feature group from several claims that each keep their own segment,
+fitting and provenance. An attribute with no declared phrase carries the label
+form. Both paths into a subject's appearance facts — the visual-state resolver
+for a selected fact and the registry projection this adapter runs — emit the same
+record, so one attribute reads the same however it arrived. The registry owns the
+wording and the dialect owns the grammar: no attribute id reaches
+`@vesper/image-core`.
+
+A committed hairstyle carries a phrase too. It replaces the sheet's own
+`hair.arrangement` and `hair.style`, so the adapter words it as the hair trailer
+it replaced — `{ text: "with the hair worn loose", phrase: { group: "hair", role:
+"trailer", fragment: "worn loose", order: 0 } }` — and a composing dialect states
+it where the sheet's arrangement would have sat, ahead of the length. The `text`
+member keeps the `with …` clause shape every other dialect words it through.
 
 The adapter then applies render-specific policy once for every lane. A fact's
 inclusive minimum-to-maximum framing range and body location decide whether the

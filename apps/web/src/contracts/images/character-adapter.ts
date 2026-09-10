@@ -154,16 +154,18 @@ import { revealSurfaces } from "./subject-reveal";
  *    inheriting nonsense.
  * 4b. **Appearance attributes are worded by the REGISTRY, as prose.** An
  *    image-eligible attribute that declares an `imageAppearance.phrase` reaches
- *    the digest as the record `{ text, phrase: { group, role, fragment } }`
+ *    the digest as the record `{ text, phrase: { group, role, fragment, order } }`
  *    instead of as "Hair color: dark brown": `text` is the standalone noun
  *    phrase every dialect words through `describe()`, and `phrase` is the same
- *    fact taken apart so a prose dialect can compose "healthy dark-brown hair
- *    worn loose to mid-back" from four claims that each stay individually
- *    fitted and recorded. Both paths into a subject's appearance facts — the
- *    visual-state resolver and the registry projection below — emit the same
- *    record, and an attribute with no declared phrase keeps its label form.
- *    The wording is the registry's and the grammar is the dialect's; no
- *    attribute id ever reaches `@vesper/image-core`.
+ *    fact taken apart — down to where the fragment sits among its group's
+ *    pieces — so a prose dialect can compose "healthy dark-brown hair worn
+ *    loose to mid-back" from four claims that each stay individually fitted and
+ *    recorded. Both paths into a subject's appearance facts — the visual-state
+ *    resolver and the registry projection below — emit the same record, and an
+ *    attribute with no declared phrase keeps its label form. A committed
+ *    hairstyle travels the same way, as the hair trailer it replaces
+ *    ({@link hairstyleValue}). The wording is the registry's and the grammar is
+ *    the dialect's; no attribute id ever reaches `@vesper/image-core`.
  * 5. **Hair the worn headwear fully hides** is selected truth the render may not
  *    say. Visual state selects hair facts by camera visibility and knows nothing
  *    of the hair-occlusion band the wardrobe seam resolved, so at `full` this
@@ -791,14 +793,33 @@ const HAIR_ARRANGEMENT_PHRASES = {
   wrapped: "wrapped",
 } as const;
 
+/**
+ * A committed hairstyle, worded as a PIECE of the hair description (#547).
+ *
+ * The sheet's own `hair.arrangement` is a hair trailer, and a live hairstyle
+ * replaces it (`appearanceReplacementReason`) — so wording the replacement as a
+ * bare clause left the composed description with no arrangement in it and the
+ * arrangement trailing the whole sentence: "dark-brown hair to mid-back, with
+ * the hair worn loose". Sending the same fact as the trailer it replaced lets it
+ * sit where the sheet's would have, and the head reads "dark-brown hair worn
+ * loose to mid-back".
+ *
+ * `text` still says "with the hair …", deliberately. Every non-composing family
+ * words the record through `text`, and this dialect's own re-filing of a
+ * hairstyle into the build band keys on that `with …` shape; changing it would
+ * move the fact into the garment sentence.
+ *
+ * Order 0 puts it ahead of `hair.length`'s 1 — a trailer follows its noun, so
+ * the lower number lands first.
+ */
 const hairstyleValue: CharacterKindRenderer = (input) => {
   const parsed = visualStateHairstyleValueSchema.safeParse(input.value);
   if (!parsed.success) return null;
-  const phrase = HAIR_ARRANGEMENT_PHRASES[parsed.data.arrangement];
+  const arrangement = HAIR_ARRANGEMENT_PHRASES[parsed.data.arrangement];
   const disturbance = parsed.data.disturbance;
-  return disturbance === undefined
-    ? `with the hair ${phrase}`
-    : `with the hair ${phrase} and ${humanizeVocabularyValue(disturbance)}`;
+  const fragment =
+    disturbance === undefined ? arrangement : `${arrangement} and ${humanizeVocabularyValue(disturbance)}`;
+  return { text: `with the hair ${fragment}`, phrase: { group: "hair", role: "trailer", fragment, order: 0 } };
 };
 
 const MAKEUP_PHRASES = {

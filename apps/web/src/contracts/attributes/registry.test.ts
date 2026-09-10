@@ -440,6 +440,37 @@ describe("image appearance phrases", () => {
   });
 
   /**
+   * The declared POSITION — where a fragment sits among its group's pieces of
+   * the same role (#547) — as a census, for the same reason the label-form set
+   * below is one. Two mistakes it catches: an order that is not a whole number
+   * is not a position, and the phrase contract drops it, so a fractional one
+   * would silently take the default and read as claim order; and an order
+   * declared anywhere but where English actually orders the words is a
+   * preference nobody has, which is why the reviewed set is pinned rather than
+   * spot-checked. Everything unlisted is 0 and reads in claim order.
+   */
+  it("declares a whole-number order only where English orders the words", () => {
+    const declared: Record<string, number> = {};
+    for (const def of phrased) {
+      const order = def.imageAppearance?.phrase?.order;
+      if (order === undefined) continue;
+      expect(Number.isInteger(order), def.id).toBe(true);
+      declared[def.id] = order;
+    }
+    expect(declared).toEqual({
+      // An adjective precedes its noun, so the higher position sits closer to
+      // it: "healthy dark-brown hair", "a slim, lightly toned build".
+      "build.musculature": 1,
+      "eyes.color": 1,
+      "hair.color": 1,
+      "skin.tone": 1,
+      // A trailer follows its noun, so the higher position sits further from it:
+      // the arrangement's 0 lands first, giving "hair worn loose to mid-back".
+      "hair.length": 1,
+    });
+  });
+
+  /**
    * The build-stopping half: every value of every phrased attribute renders, or
    * is one of the two states that legitimately produce no phrase — an elided
    * value ("none"), or a member a partial `fragmentByValue` deliberately leaves
@@ -515,22 +546,33 @@ describe("image appearance phrases", () => {
 
   /** The worked example the issue names, end to end through the registry. */
   it("words the #544 fixture's hair and build facts as prose", () => {
-    const phraseOf = (id: string, value: string): { text: string; fragment: string } => {
+    const phraseOf = (id: string, value: string): { text: string; fragment: string; order?: number } => {
       const rendered = formatAttributePhrase(definitionOf(id), value);
       if (rendered === null) throw new Error(`${id} words no phrase for ${value}`);
-      return { text: rendered.text, fragment: rendered.phrase.fragment };
+      return { text: rendered.text, fragment: rendered.phrase.fragment, order: rendered.phrase.order };
     };
-    expect(phraseOf("hair.color", "dark_brown")).toEqual({ text: "dark-brown hair", fragment: "dark-brown" });
-    expect(phraseOf("hair.length", "mid_back")).toEqual({ text: "hair to mid-back", fragment: "to mid-back" });
+    // The position reaches the record with the pieces, or the attribute declares
+    // none and the dialect reads the fragment in claim order.
+    expect(phraseOf("hair.color", "dark_brown")).toEqual({
+      text: "dark-brown hair",
+      fragment: "dark-brown",
+      order: 1,
+    });
+    expect(phraseOf("hair.length", "mid_back")).toEqual({
+      text: "hair to mid-back",
+      fragment: "to mid-back",
+      order: 1,
+    });
     expect(phraseOf("hair.condition", "healthy")).toEqual({ text: "healthy hair", fragment: "healthy" });
     expect(phraseOf("build.weight_presentation", "slim")).toEqual({ text: "a slim build", fragment: "slim" });
     expect(phraseOf("build.musculature", "lightly_toned")).toEqual({
       text: "a lightly toned build",
       fragment: "lightly toned",
+      order: 1,
     });
     expect(phraseOf("arms.build", "slender")).toEqual({ text: "slender arms", fragment: "slender arms" });
     expect(phraseOf("waist.definition", "subtle")).toEqual({ text: "a subtle waist", fragment: "a subtle waist" });
-    expect(phraseOf("eyes.color", "hazel")).toEqual({ text: "hazel eyes", fragment: "hazel" });
+    expect(phraseOf("eyes.color", "hazel")).toEqual({ text: "hazel eyes", fragment: "hazel", order: 1 });
   });
 
   /**

@@ -68,7 +68,10 @@ export const hairGroup = defineAttributeGroup("hair", [
       class: "core",
       referenceFreeRequired: true,
       // "dark-brown hair" — a two-word colour in front of its noun hyphenates.
-      phrase: { group: "hair", role: "adjective", fragment: "{compound}" },
+      // Order 1: colour is the adjective English puts closest to the noun, so
+      // "healthy dark-brown hair" rather than the claim order's "dark-brown
+      // healthy hair".
+      phrase: { group: "hair", role: "adjective", fragment: "{compound}", order: 1 },
     },
     coreVisual: true,
     defaultValue: "brown",
@@ -100,6 +103,10 @@ export const hairGroup = defineAttributeGroup("hair", [
       phrase: {
         group: "hair",
         role: "trailer",
+        // Order 1, behind the arrangement's 0: a trailer follows the noun, so
+        // the lower number lands first and the head reads "hair worn loose to
+        // mid-back" rather than "hair to mid-back worn loose".
+        order: 1,
         // The vocabulary runs from a shaved scalp to hair at the feet, so no single
         // template words it: "hair to shaved" is not English. Each member states
         // where the length ends, or how the hair was cut when there is no length

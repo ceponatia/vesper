@@ -52,6 +52,25 @@ export interface ImageAppearancePhrase {
   readonly role: ImageAppearancePhraseRole;
   /** The composition piece — "dark-brown", "slender arms", "worn loose". */
   readonly fragment: string;
+  /**
+   * Where this piece sits among its group's pieces of the same role, ascending.
+   * Absent means 0, and equal orders keep the order the claims arrived in.
+   *
+   * English orders a noun's modifiers and claim order cannot: facts reach a
+   * dialect in the projection's order — alphabetical by attribute id — which
+   * puts a hair colour before a hair condition ("dark-brown healthy hair") and a
+   * musculature before a weight ("a lightly toned, slim build"). Both read
+   * backwards, and neither is a fact about the claim: it is a fact about the
+   * WORDS, which is why the position is declared beside them rather than
+   * inferred here.
+   *
+   * Pieces are laid out ascending, so what a higher number means follows from
+   * which side of the noun the role sits on. An `adjective` precedes the noun,
+   * so a higher order sits CLOSER to it ("dark-brown" at 1 lands against
+   * "hair"); a `trailer` follows it, so a lower order does ("worn loose" at 0
+   * lands before "to mid-back").
+   */
+  readonly order?: number;
 }
 
 /**
@@ -147,5 +166,10 @@ export function imageAppearancePhrase(value: unknown): ImageAppearancePhraseValu
   const fragment = parts["fragment"];
   if (!isPhraseGroup(group) || !isPhraseRole(role)) return null;
   if (typeof fragment !== "string" || fragment.trim().length === 0) return null;
-  return { text: text.trim(), phrase: { group, role, fragment: fragment.trim() } };
+  // An order that is not a whole number is not a position, and the default is
+  // one: the phrase travels without an order rather than carrying a value the
+  // sort could only read as noise.
+  const order = parts["order"];
+  const ordered = typeof order === "number" && Number.isInteger(order) ? { order } : {};
+  return { text: text.trim(), phrase: { group, role, fragment: fragment.trim(), ...ordered } };
 }

@@ -249,11 +249,16 @@ What the bands merge:
   ([character-prompts.md](../../images/character-prompts.md) §Registry-backed
   image appearance) — and this dialect writes the grammar: one clause per group
   in the order build, hair, face, skin, eyes, each clause the group's adjectives
-  before its noun, its trailers after, and its `with`-phrases hung off it. Build
-  and face adjectives are COORDINATE and take commas ("a slim, lightly toned
-  build"); hair, skin and eye adjectives are CUMULATIVE and stack unpunctuated
-  ("healthy dark-brown hair"), where a comma would read as two different heads of
-  hair. The clauses are listed with a serial comma wherever a bare "and" would be
+  before its noun, its trailers after, and its `with`-phrases hung off it. Within
+  a clause the pieces sort ascending by the registry's declared `order`, ties
+  keeping claim order, because the claims arrive alphabetically by attribute id
+  and English does not: colour sits against its noun ("healthy dark-brown hair"),
+  muscle against its own ("a slim, lightly toned build"), and a hair arrangement
+  precedes a hair length ("hair worn loose to mid-back"). Build and face
+  adjectives are COORDINATE and take commas ("a slim, lightly toned build"); hair,
+  skin and eye adjectives are CUMULATIVE and stack unpunctuated ("healthy
+  dark-brown hair"), where a comma would read as two different heads of hair. The
+  clauses are listed with a serial comma wherever a bare "and" would be
   read as part of the clause before it — which is whenever a clause carries a
   conjunction of its own: "She has a slim, lightly toned build with slender arms
   and a subtle waist, and healthy dark-brown hair worn loose to mid-back." A
@@ -269,9 +274,16 @@ What the bands merge:
   write, and two short grammatical sentences beat one malformed one. One sentence
   per band is not a goal.
 - A value the character projection wrote as a `with …` fragment ("with the
-  sweater tucked in", "with the hair worn loose") **trails** the sentence it
-  qualifies — the garment list, or the description the build band wrote — and
-  earns a sentence of its own only when that host was suppressed or trimmed.
+  sweater tucked in", "with a bindi") **trails** the sentence it qualifies — the
+  garment list, or the description the build band wrote — and earns a sentence of
+  its own only when that host was suppressed or trimmed.
+- A current-state value that also carries a **phrase** composes instead of
+  trailing. A committed hairstyle is the case: it replaces the sheet's own
+  `hair.arrangement` upstream and is worded as the same hair trailer, so it sits
+  where that trailer would have — "dark-brown hair worn loose to mid-back", not
+  "dark-brown hair to mid-back, with the hair worn loose". Its `text` keeps the
+  `with …` shape, which is what files it in this band rather than in the garment
+  sentence.
 - A posture another phrase in the same sentence already **contains** is dropped,
   so a committed "standing" beside a composed "standing at the craft services
   table" is not composed twice. Containment can only ever drop the shorter of two

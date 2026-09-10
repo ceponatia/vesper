@@ -54,7 +54,11 @@ describe("image appearance attribute projection", () => {
 
     expect(phraseOf("hair.color")).toMatchObject({
       readableValue: "Hair color: dark brown",
-      phraseValue: { text: "dark-brown hair", phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
+      phraseValue: {
+        text: "dark-brown hair",
+        // The position travels with the pieces: a colour seats against its noun.
+        phrase: { group: "hair", role: "adjective", fragment: "dark-brown", order: 1 },
+      },
     });
     expect(phraseOf("waist.definition")).toMatchObject({
       readableValue: "Waist: subtle",

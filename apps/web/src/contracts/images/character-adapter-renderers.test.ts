@@ -224,7 +224,10 @@ describe("scalar values are judged by their kind", () => {
 describe("appearance phrases", () => {
   const phrase = {
     text: "dark-brown hair",
-    phrase: { group: "hair", role: "adjective", fragment: "dark-brown" },
+    // `order` rides the record like the rest of the pieces (#547): the registry
+    // seats a colour against its noun, and an adapter that dropped the position
+    // would hand the dialect the right words in the projection's order.
+    phrase: { group: "hair", role: "adjective", fragment: "dark-brown", order: 1 },
   };
 
   it("carries a phrase record through the attribute kind unchanged", () => {
@@ -251,14 +254,34 @@ describe("appearance phrases", () => {
   it("declines a record the phrase contract does not recognize", () => {
     for (const value of [
       { text: "dark-brown hair" },
-      { text: "dark-brown hair", phrase: { group: "coiffure", role: "adjective", fragment: "dark-brown" } },
-      { text: "dark-brown hair", phrase: { group: "hair", role: "modifier", fragment: "dark-brown" } },
-      { text: "", phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
-      { phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
+      { text: "dark-brown hair", phrase: { group: "coiffure", role: "adjective", fragment: "dark-brown", order: 1 } },
+      { text: "dark-brown hair", phrase: { group: "hair", role: "modifier", fragment: "dark-brown", order: 1 } },
+      { text: "", phrase: { group: "hair", role: "adjective", fragment: "dark-brown", order: 1 } },
+      { phrase: { group: "hair", role: "adjective", fragment: "dark-brown", order: 1 } },
     ]) {
       expect(
         rendered({ kindId: VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID, locus: SUBJECT_LOCUS, value }),
       ).toBeNull();
+    }
+  });
+
+  /**
+   * An unusable `order` is not a broken phrase. The position has a default, so a
+   * value that cannot express one travels without it and the words still reach
+   * the prompt — refusing the whole record would trade a mis-ordered adjective
+   * for a missing fact.
+   */
+  it("drops an order that is not a whole number and keeps the phrase", () => {
+    for (const order of [1.5, "1", null, Number.NaN]) {
+      const value = {
+        text: "dark-brown hair",
+        phrase: { group: "hair", role: "adjective", fragment: "dark-brown", order },
+      };
+      expect(
+        imageAppearancePhrase(
+          rendered({ kindId: VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID, locus: SUBJECT_LOCUS, value }),
+        ),
+      ).toEqual({ text: "dark-brown hair", phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } });
     }
   });
 });
@@ -393,6 +416,14 @@ describe("garment names", () => {
 });
 
 describe("presentation and current state", () => {
+  /**
+   * A committed hairstyle is a hair TRAILER, not just a clause (#547): it
+   * replaces the sheet's own `hair.arrangement` trailer, so it has to compose
+   * where that one would have — "dark-brown hair worn loose to mid-back", ahead
+   * of the length's `order: 1`. `text` keeps the `with the hair …` shape every
+   * non-composing family words it through, and that the 2511 dialect's re-filing
+   * of a hairstyle into the build band keys on.
+   */
   it("words a hairstyle as an arrangement of the hair, never a bare vocabulary token", () => {
     expect(
       rendered({
@@ -400,14 +431,20 @@ describe("presentation and current state", () => {
         locus: { kind: "body", locus: { bodyLocationId: "hair" } },
         value: { arrangement: "ponytail" },
       }),
-    ).toBe("with the hair in a ponytail");
+    ).toEqual({
+      text: "with the hair in a ponytail",
+      phrase: { group: "hair", role: "trailer", fragment: "in a ponytail", order: 0 },
+    });
     expect(
       rendered({
         kindId: VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID,
         locus: { kind: "body", locus: { bodyLocationId: "hair" } },
         value: { arrangement: "loose", disturbance: "tousled" },
       }),
-    ).toBe("with the hair worn loose and tousled");
+    ).toEqual({
+      text: "with the hair worn loose and tousled",
+      phrase: { group: "hair", role: "trailer", fragment: "worn loose and tousled", order: 0 },
+    });
   });
 
   /** The band comes from the value, the part from the fact's own locus. */

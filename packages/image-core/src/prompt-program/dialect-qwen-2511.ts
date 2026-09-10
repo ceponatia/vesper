@@ -941,7 +941,7 @@ function isTrailingClause(claim: ImagePositiveClaim): boolean {
   return /^with\s/iu.test(describe(claim.value).trim());
 }
 
-/** "… , with the sweater tucked in and with the hair worn loose" — the tail a band appends. */
+/** "… , with the sweater tucked in and with a bindi" — the tail a band appends. */
 function trailingClause(parts: readonly string[]): string {
   return parts.length === 0 ? "" : `, ${listWords(parts)}`;
 }
@@ -1584,11 +1584,31 @@ const APPEARANCE_CLAUSE_ORDER = [
   "eyes",
 ] as const satisfies readonly ImageAppearancePhraseGroup[];
 
-/** One group's fragments, kept apart by the role each plays in its clause. */
+/** One fragment, and where the registry placed it among its group's pieces. */
+interface AppearancePiece {
+  readonly fragment: string;
+  readonly order: number;
+}
+
+/** One group's pieces, kept apart by the role each plays in its clause. */
 interface AppearanceGroupPieces {
-  readonly adjectives: string[];
-  readonly withs: string[];
-  readonly trailers: string[];
+  readonly adjectives: AppearancePiece[];
+  readonly withs: AppearancePiece[];
+  readonly trailers: AppearancePiece[];
+}
+
+/**
+ * One role's fragments in the order the clause states them.
+ *
+ * Ascending by the position the registry declared, ties keeping the order the
+ * claims arrived in — `Array.prototype.sort` is stable, so an undeclared
+ * position falls back to the projection's own order rather than to an arbitrary
+ * one. The positions are the registry's because they are a property of the
+ * WORDS: "healthy dark-brown hair" and "a slim, lightly toned build" are the
+ * English orders, and nothing about a claim says so.
+ */
+function orderedFragments(pieces: readonly AppearancePiece[]): string[] {
+  return [...pieces].sort((left, right) => left.order - right.order).map((piece) => piece.fragment);
 }
 
 /**
@@ -1605,18 +1625,26 @@ interface AppearanceGroupPieces {
  * A group with `with`-phrases and no noun-bearing piece states them alone: "a
  * build with slender arms" says nothing the arms did not, and the article would
  * be asserting a build nobody described.
+ *
+ * Within each role the pieces are the registry's own order
+ * ({@link orderedFragments}), not the claim order: English puts a colour against
+ * its noun and a length after an arrangement, and the projection's alphabetical
+ * claim order knows neither.
  */
 function appearanceClause(group: ImageAppearancePhraseGroup, pieces: AppearanceGroupPieces): string {
   const noun = imageAppearancePhraseGroupNoun(group);
   if (noun === null) return "";
-  if (pieces.adjectives.length === 0 && pieces.trailers.length === 0) return listWords(pieces.withs);
+  const adjectives = orderedFragments(pieces.adjectives);
+  const trailers = orderedFragments(pieces.trailers);
+  const withs = orderedFragments(pieces.withs);
+  if (adjectives.length === 0 && trailers.length === 0) return listWords(withs);
   const join = group === "build" || group === "face" ? ", " : " ";
-  const stem = pieces.adjectives.length === 0 ? noun : `${pieces.adjectives.join(join)} ${noun}`;
+  const stem = adjectives.length === 0 ? noun : `${adjectives.join(join)} ${noun}`;
   const headed = imageAppearancePhraseGroupTakesArticle(group)
     ? `${imageAppearanceIndefiniteArticle(stem)} ${stem}`
     : stem;
-  const body = [headed, ...pieces.trailers].join(" ");
-  return pieces.withs.length === 0 ? body : `${body} with ${listWords(pieces.withs)}`;
+  const body = [headed, ...trailers].join(" ");
+  return withs.length === 0 ? body : `${body} with ${listWords(withs)}`;
 }
 
 /**
@@ -1644,9 +1672,10 @@ function appearanceList(parts: readonly string[]): string {
  * The registry hands each fact over already taken apart — which feature group it
  * belongs to, what grammatical role its piece plays, and the piece itself
  * ({@link imageAppearancePhrase}) — and this is the grammar half: bucket by
- * group in claim order, write each group's clause, and list the clauses. No
- * attribute id is read and no wording is invented; a fragment that reaches a
- * prompt was authored beside the values it words.
+ * group and role, order each bucket by the position the registry declared, write
+ * each group's clause, and list the clauses. No attribute id is read and no
+ * wording is invented; a fragment that reaches a prompt was authored beside the
+ * values it words.
  *
  * A claim whose value carries NO phrase keeps exactly what it compiled before:
  * its own descriptor, lower-led into the list ("gender: female"). That is the
@@ -1668,9 +1697,12 @@ function composeAppearance(claims: readonly ImagePositiveClaim[]): string {
     }
     const group = phrased.phrase.group;
     const pieces = buckets.get(group) ?? { adjectives: [], withs: [], trailers: [] };
-    if (phrased.phrase.role === "adjective") pieces.adjectives.push(phrased.phrase.fragment);
-    else if (phrased.phrase.role === "with") pieces.withs.push(phrased.phrase.fragment);
-    else pieces.trailers.push(phrased.phrase.fragment);
+    // An undeclared position is 0, which is what keeps claim order the answer
+    // wherever the registry expressed no preference.
+    const piece: AppearancePiece = { fragment: phrased.phrase.fragment, order: phrased.phrase.order ?? 0 };
+    if (phrased.phrase.role === "adjective") pieces.adjectives.push(piece);
+    else if (phrased.phrase.role === "with") pieces.withs.push(piece);
+    else pieces.trailers.push(piece);
     buckets.set(group, pieces);
   }
   const clauses = APPEARANCE_CLAUSE_ORDER.map((group) => {
@@ -1686,19 +1718,26 @@ function composeAppearance(claims: readonly ImagePositiveClaim[]): string {
  *
  * One sentence rather than a build sentence and a hair sentence, because the
  * registry's phrases compose (#547): "She has a slim, lightly toned build with
- * slender arms and a subtle waist, and healthy dark-brown hair to mid-back" is
- * one description of one person, where the two sentences it replaced were two
- * registry listings in a sentence's shape. The group ORDER is
+ * slender arms and a subtle waist, and healthy dark-brown hair worn loose to
+ * mid-back" is one description of one person, where the two sentences it
+ * replaced were two registry listings in a sentence's shape. The group ORDER is
  * {@link APPEARANCE_CLAUSE_ORDER}'s, and the LOCUS is no longer consulted at
  * all: which clause a fact belongs in is the registry's own declaration, where
  * splitting the band by body location could only ever separate hair from
  * everything else.
  *
  * A hairstyle is a `subject.current_state` fact, which the wardrobe band owns by
- * concept; `groupOfClaim` re-files the `with …` shape of it here because "…
- * dark-brown hair to mid-back, with the hair worn loose" is one statement about
- * one head, and the garment sentence is the wrong host for it. Anything the
- * re-filing did not send here is not a hair fragment.
+ * concept; `groupOfClaim` re-files the `with …` shape of it here because it is a
+ * statement about the head this sentence just described, and the garment
+ * sentence is the wrong host for it. Anything the re-filing did not send here is
+ * not a hair fragment.
+ *
+ * A re-filed state that carries a PHRASE joins the description as a piece of it
+ * rather than trailing the finished sentence: a committed hairstyle replaces the
+ * sheet's own hair trailer upstream, so it belongs exactly where that trailer
+ * would have sat — "dark-brown hair worn loose to mid-back", not "dark-brown
+ * hair to mid-back, with the hair worn loose". A state with no phrase is a
+ * fragment nobody took apart, and it keeps the trailing clause it always had.
  */
 function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
   const sentences: GroupSentence[] = [];
@@ -1711,6 +1750,11 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
     }
     const described = withConcept(group.claims, "subject.morphology", "subject.appearance");
     const worn = withConcept(group.claims, "subject.current_state");
+    // Told apart by the VALUE, like every other shape question this dialect
+    // asks: a phrased state has pieces to compose with, an unphrased one has
+    // only the clause its owner wrote.
+    const composed = worn.filter((claim) => imageAppearancePhrase(claim.value) !== null);
+    const trailed = worn.filter((claim) => imageAppearancePhrase(claim.value) === null);
     // A stated gender is what the pronoun set already says, so beside a usable
     // pronoun it is a fact the sentence has spent on "She" — absorbed into the
     // build sentence rather than listed as "gender: female" inside it. It is
@@ -1718,8 +1762,8 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
     const carriedByPronoun = (claim: ImagePositiveClaim): boolean =>
       voice !== null && voice.pronouns !== null && claim.semanticTags.includes(GENDER_ATTRIBUTE_TAG);
     const spoken = described.filter((claim) => !carriedByPronoun(claim));
-    const body = composeAppearance(spoken.length > 0 ? spoken : described);
-    const wornParts = valuesOf(worn);
+    const body = composeAppearance([...(spoken.length > 0 ? spoken : described), ...composed]);
+    const wornParts = valuesOf(trailed);
     if (body.length > 0) {
       sentences.push({
         // Every claim the sentence absorbed is attributed to it — the gender the
@@ -1730,7 +1774,7 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
         claims: [...described, ...worn],
       });
     } else if (wornParts.length > 0) {
-      sentences.push({ text: bandSentence(register, voice, "seen", listWords(wornParts)), claims: worn });
+      sentences.push({ text: bandSentence(register, voice, "seen", listWords(wornParts)), claims: trailed });
     }
     // An absence keeps its own sentence: the "shown plainly and anatomically
     // correctly" half is an instruction about how to draw it, not another

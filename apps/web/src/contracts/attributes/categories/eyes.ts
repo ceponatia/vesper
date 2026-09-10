@@ -21,7 +21,10 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     imageAppearance: {
       class: "core",
       referenceFreeRequired: true,
-      phrase: { group: "eyes", role: "adjective", fragment: "{compound}" },
+      // Order 1 for the same reason `hair.color` takes it: the colour is the
+      // adjective that sits against the noun, beside the shape's and the glow's
+      // 0 — "almond-shaped hazel eyes", never "hazel almond-shaped eyes".
+      phrase: { group: "eyes", role: "adjective", fragment: "{compound}", order: 1 },
     },
     coreVisual: true,
     defaultValue: "brown",
