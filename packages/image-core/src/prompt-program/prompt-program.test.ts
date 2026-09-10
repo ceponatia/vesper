@@ -2460,8 +2460,12 @@ describe("a claim value no dialect can word", () => {
         budget: {},
         sink,
       });
-      expect(compiled.text.toLowerCase()).not.toContain("borne");
-      expect(compiled.text.toLowerCase()).not.toContain("ground");
+      // The flattened leaves, as WORDS: "foreground" in the closing sentence is
+      // not the surface kind this record carries.
+      expect(compiled.text.toLowerCase()).not.toMatch(/\bborne\b|\bground\b|\bload\b|\bsurface\b/u);
+      // And nobody is called text-described: the one subject is the only one
+      // there is, and no image anchored anybody else.
+      expect(compiled.text.toLowerCase()).not.toContain("has no reference image");
       expect(compiled.droppedClaimIds).toContain("nyx.unreadable");
       expect(sink.items.some((entry) => entry.code === "image_prompt_program.value_unreadable")).toBe(true);
     },

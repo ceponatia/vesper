@@ -738,7 +738,12 @@ function boundGroupSentence(
  * unattributed case existed.
  */
 function textDescribedVoices(state: RenderState, groups: readonly IdentityGroup[]): SubjectVoice[] {
-  if (groups.some((group) => group.subjectRef === undefined)) return [];
+  // "Described below, with no image" is a statement relative to somebody who
+  // HAS one. With no identity group at all nobody is anchored, and a digest
+  // whose references never resolved to a slot is not a cast of text-described
+  // people — it is a payload this dialect cannot bind, and the binding says so
+  // on its own.
+  if (groups.length === 0 || groups.some((group) => group.subjectRef === undefined)) return [];
   const anchored = new Set(groups.map((group) => group.subjectRef));
   const described: SubjectVoice[] = [];
   for (const [ref, voice] of state.voices) {
