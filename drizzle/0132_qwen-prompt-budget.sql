@@ -107,3 +107,107 @@ WHERE split_part("slug", ':', 1) = 'qwen/qwen-image-2512'
   )
   AND jsonb_typeof("advanced_capabilities") = 'object'
   AND "advanced_capabilities"->'prompt'->'recommendedChars' IS NULL;
+--> statement-breakpoint
+-- Seedream admin Image Generator activation (owner request 2026-09-10).
+--
+-- These two built-in rows are ALREADY Replicate models; 0098 retired the old
+-- Venice path and seeded `bytedance/seedream-4.5` and
+-- `bytedance/seedream-5-lite`. What the later capability work never backfilled
+-- was `probed_version_id`, so controlled benches such as the Image Generator
+-- correctly show "no pinned version" and refuse to spend against a floating
+-- provider revision.
+--
+-- Both version ids below are the exact Replicate versions recorded by the model
+-- pages from the 2026-08-05 probes. Their schemas still expose the documented
+-- prompt + 1-14 `image_input` reference workflow. The capability record is
+-- backfilled only when the old seeded row still has the inert `{}` value; an
+-- administrator's non-empty capability record is preserved. The pin itself is
+-- written only to the exact seeded id+slug while it is still null, so a later
+-- manual re-pin is never overwritten.
+--
+-- Seedream 4.5. Besides making the row selectable, the backfill exposes its
+-- actual size/custom-dimension controls to the capability-driven Generator.
+UPDATE "image_models"
+SET
+  "probed_version_id" = '9fe3b8282dcb9d9063b05e33210a1432801f7c5a6641db944baefcec4886761a',
+  "advanced_capabilities" = CASE
+    WHEN "advanced_capabilities" = '{}'::jsonb THEN '{
+      "controls": {
+        "outputCount": {"field":"max_images","type":"integer","minimum":1,"maximum":15},
+        "sequentialMode": {"field":"sequential_image_generation","type":"enum","enumValues":["disabled","auto"]},
+        "customWidth": {"field":"width","type":"integer","minimum":1024,"maximum":4096},
+        "customHeight": {"field":"height","type":"integer","minimum":1024,"maximum":4096},
+        "resolutionTier": {"field":"size","type":"enum","enumValues":["2K","4K","custom"]}
+      },
+      "additionalImageInputs": [],
+      "output": {"arity":"single","supportsMultiple":false},
+      "knownInputFields": [
+        "aspect_ratio",
+        "disable_safety_checker",
+        "height",
+        "image_input",
+        "max_images",
+        "prompt",
+        "sequential_image_generation",
+        "size",
+        "width"
+      ],
+      "providerInputs": [
+        {"field":"aspect_ratio","type":"enum","required":false,"default":"match_input_image","enumValues":["match_input_image","1:1","4:3","3:4","4:5","5:4","16:9","9:16","3:2","2:3","21:9","9:21"],"reserved":true},
+        {"field":"disable_safety_checker","type":"boolean","required":false,"default":false,"reserved":true},
+        {"field":"height","type":"integer","required":false,"default":2048,"minimum":1024,"maximum":4096,"reserved":true},
+        {"field":"image_input","type":"uri","required":false,"default":[],"reserved":true},
+        {"field":"max_images","type":"integer","required":false,"default":1,"minimum":1,"maximum":15,"reserved":true},
+        {"field":"prompt","type":"string","required":true,"reserved":true},
+        {"field":"sequential_image_generation","type":"enum","required":false,"default":"disabled","enumValues":["disabled","auto"],"reserved":true},
+        {"field":"size","type":"enum","required":false,"default":"2K","enumValues":["2K","4K","custom"],"reserved":true},
+        {"field":"width","type":"integer","required":false,"default":2048,"minimum":1024,"maximum":4096,"reserved":true}
+      ]
+    }'::jsonb
+    ELSE "advanced_capabilities"
+  END,
+  "updated_at" = now()
+WHERE "id" = 'imgmdlseedream45aaaaaaaa'
+  AND "slug" = 'bytedance/seedream-4.5'
+  AND "probed_version_id" IS NULL;
+--> statement-breakpoint
+-- Seedream 5 Lite. Its schema has no safety-checker switch and no custom size;
+-- the only raw provider field not owned by the normalized render plumbing is
+-- `output_format`, so the Generator may expose PNG/JPEG through Advanced.
+UPDATE "image_models"
+SET
+  "probed_version_id" = 'eeb2857d94c49a5bcbc9d6c6057416e1d3b1a2735a16e08e4def9bf7ee22ec71',
+  "advanced_capabilities" = CASE
+    WHEN "advanced_capabilities" = '{}'::jsonb THEN '{
+      "controls": {
+        "outputCount": {"field":"max_images","type":"integer","minimum":1,"maximum":15},
+        "sequentialMode": {"field":"sequential_image_generation","type":"enum","enumValues":["disabled","auto"]},
+        "resolutionTier": {"field":"size","type":"enum","enumValues":["2K","3K"]}
+      },
+      "additionalImageInputs": [],
+      "output": {"arity":"single","supportsMultiple":false},
+      "knownInputFields": [
+        "aspect_ratio",
+        "image_input",
+        "max_images",
+        "output_format",
+        "prompt",
+        "sequential_image_generation",
+        "size"
+      ],
+      "providerInputs": [
+        {"field":"aspect_ratio","type":"enum","required":false,"default":"match_input_image","enumValues":["match_input_image","1:1","4:3","3:4","16:9","9:16","3:2","2:3","21:9"],"reserved":true},
+        {"field":"image_input","type":"uri","required":false,"default":[],"reserved":true},
+        {"field":"max_images","type":"integer","required":false,"default":1,"minimum":1,"maximum":15,"reserved":true},
+        {"field":"output_format","type":"enum","required":false,"default":"png","enumValues":["png","jpeg"],"reserved":false},
+        {"field":"prompt","type":"string","required":true,"reserved":true},
+        {"field":"sequential_image_generation","type":"enum","required":false,"default":"disabled","enumValues":["disabled","auto"],"reserved":true},
+        {"field":"size","type":"enum","required":false,"default":"2K","enumValues":["2K","3K"],"reserved":true}
+      ]
+    }'::jsonb
+    ELSE "advanced_capabilities"
+  END,
+  "updated_at" = now()
+WHERE "id" = 'imgmdlseedream5liteaaaaa'
+  AND "slug" = 'bytedance/seedream-5-lite'
+  AND "probed_version_id" IS NULL;
