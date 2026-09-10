@@ -175,7 +175,7 @@ async function transcript(chatId: string) {
 /** The `continuity` block both message routes return. */
 interface Continuity {
   summary: "rebuilt" | "unaffected" | "failed";
-  memory: "reextracted" | "reconciled" | "unaffected" | "failed";
+  memory: "reextracted" | "degraded" | "reconciled" | "unaffected" | "failed";
   voiceExemplarsRemoved: number;
   voice: "scrubbed" | "unaffected" | "failed";
   diagnostics: string[];
@@ -225,8 +225,10 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
     const body = await expectJson<{ id: string; continuity: Continuity }>(res, 200);
 
     expect(body.continuity.summary).toBe("rebuilt");
-    expect(body.continuity.memory).toBe("unaffected"); // memory is anchored on assistant ids
-    expect(body.continuity.voice).toBe("unaffected");
+    // The player line's own memory repair is the sibling suite's subject; here it
+    // is only evidence that summary repair did not become the memory leg's gate.
+    expect(body.continuity.memory).toBe("degraded"); // msg-3 answered it; demo mode skips the re-file
+    expect(body.continuity.voice).toBe("unaffected"); // the ring quotes the character, not the player
     expect((await loadChatSummary(ids.chat))?.summary).toBe("REBUILT RECAP");
   });
 
