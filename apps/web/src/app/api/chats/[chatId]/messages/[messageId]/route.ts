@@ -34,16 +34,23 @@ const ownedChat = (user: { id: string }, params: Params) => loadOwnedChat(params
  *
  * The transcript row is not the only place the old wording lives, so both verbs run
  * the continuity repair (`repairChatContinuityAfterEdit`) BEFORE answering: the
- * extracted memory is retracted (and re-extracted on an edit), the rolling summary is
- * re-folded when the line is at or before its watermark, and any voice exemplar
- * quoting the line is dropped from the state rows. All of it is awaited — a
- * fire-and-forget repair lets an immediate next send retrieve the wording the player
- * just removed — and all of it runs under the chat exchange lock, because the
+ * exchange the line belonged to has its extracted memory retracted and re-filed from
+ * the current transcript, the rolling summary is re-folded when the line is at or
+ * before its watermark, and any voice exemplar quoting the line is dropped from the
+ * state rows. A player line counts here too — its wording reached memory through the
+ * reply that answered it. All of it is awaited — a fire-and-forget repair lets an
+ * immediate next send retrieve the wording the player just removed — and all of it
+ * runs under the chat exchange lock, because the
  * exchange finalizer rewrites the state row's rings wholesale and would clobber a
  * concurrent scrub. A chat that is already streaming (or already repairing) answers
  * 409 `chat_busy` with nothing written. The response carries a `continuity` block
  * reporting what each step did; a step that failed is reported there rather than
  * failing the write that already committed.
+ *
+ * Everything the repair needs from OTHER stores — the player persona the scribe
+ * addresses — is resolved before the lock is taken and before the row is written, so
+ * a persona-store failure answers with the transcript and its derivatives still
+ * consistent instead of 500-ing over a committed write no leg ever repaired.
  */
 
 const editBodySchema = z.object({
@@ -61,6 +68,25 @@ const editBodySchema = z.object({
  */
 const repairRaceBusyResponse = () =>
   jsonError("chat_busy", "a reply is still streaming for this chat; wait for it to finish", 409);
+
+/**
+ * What the continuity repair's memory leg needs, for BOTH roles: a player line's
+ * wording reached memory through the reply that answered it, so an edited or
+ * snipped user row re-files that reply just as an edited assistant row re-files
+ * itself.
+ *
+ * The primary participant's group and character — the pre-existing 1-on-1 shape of
+ * the memory anchor, unchanged here.
+ */
+async function repairMemoryContext(ownerId: string, chatId: string, owned: OwnedChat) {
+  const player = await resolveChatPersona({ ownerId, chatId });
+  return {
+    memoryGroupId: owned.participant.memoryGroupId,
+    characterId: owned.participant.characterId,
+    characterName: owned.character.name,
+    playerName: player.name,
+  };
+}
 
 /** PATCH /api/chats/:chatId/messages/:messageId — overwrite one message's text. */
 export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _owned, req: NextRequest, ctx) => {
@@ -88,6 +114,12 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _o
     );
   }
   // Both refusals above are checked before anything is taken or written.
+
+  // Resolved HERE — outside the lock and ahead of the write — because this read hits
+  // its own store: a failure after the update commits would 500 past the repair and
+  // leave the summary, the memory and the voice ring quoting the old wording.
+  const memory = await repairMemoryContext(user.id, chatId, owned);
+
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
 
@@ -113,17 +145,6 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _o
         });
       if (!updated) return null;
 
-      const reextract =
-        updated.role === "assistant"
-          ? {
-              memoryGroupId: owned.participant.memoryGroupId,
-              characterId: owned.participant.characterId,
-              characterName: owned.character.name,
-              playerName: (await resolveChatPersona({ ownerId: user.id, chatId })).name,
-              content: body.value.content,
-            }
-          : null;
-
       const continuity = await repairChatContinuityAfterEdit({
         chatId,
         operation: "edit",
@@ -132,8 +153,9 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _o
           role: updated.role,
           createdAt: updated.createdAt,
           previousContent: previous?.content ?? "",
+          content: body.value.content,
         },
-        ...(reextract ? { reextract } : {}),
+        memory,
       });
       return { id: updated.id, continuity };
     },
@@ -164,6 +186,9 @@ export const DELETE = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _
       409,
     );
   }
+  // Resolved before the lock and the delete, for the reason PATCH states above.
+  const memory = await repairMemoryContext(user.id, chatId, owned);
+
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
 
@@ -195,7 +220,9 @@ export const DELETE = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _
           role: deleted.role,
           createdAt: deleted.createdAt,
           previousContent: deleted.content,
+          content: null,
         },
+        memory,
       });
       return { deleted: true as const, continuity };
     },

@@ -8,7 +8,7 @@ export { previewChatAffordances, previewChatPhysicalGuidance, previewChatPrompt,
 export type { ChatPromptPreview } from "./chat-prompt-preview";
 export { chatVisualStateShadowInput } from "./chat-visual-state-cut";
 export type { ChatVisualStateCut } from "./chat-visual-state-cut";
-export { reextractEditedReply } from "./chat-message-edits";
+export { reextractExchangeMemory } from "./chat-message-edits";
 export { repairChatContinuityAfterEdit } from "./chat-continuity-repair";
 export type {
   ChatContinuityMemoryOutcome,
