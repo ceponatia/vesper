@@ -204,14 +204,51 @@ describe("realizeBody — the chest fields vs the breast fields follow configure
     expect(femaleWithout.isAttributeApplicable(breastSize)).toBe(false);
   });
 
-  it("every supersededByIntimateRegions entry names a real region group", () => {
-    // A typo here would silently never fire — the attribute would stay
-    // applicable alongside the region's own owner.
+  it("every superseded-by and requires region entry names a real region group", () => {
+    // A typo in either field would silently misfire: a superseded-by attribute
+    // would stay applicable alongside the region's own owner, and a requires
+    // attribute would drop off EVERY body because no config can satisfy it.
     for (const d of attributeRegistry.definitions) {
-      for (const group of d.supersededByIntimateRegions ?? []) {
+      for (const group of [...(d.supersededByIntimateRegions ?? []), ...(d.requiresIntimateRegions ?? [])]) {
         expect((INTIMATE_REGION_GROUPS as readonly string[]).includes(group), `${d.id} → ${group}`).toBe(true);
       }
     }
+  });
+});
+
+describe("realizeBody — requiresIntimateRegions gates build.pregnancy on a vulva", () => {
+  // The invariant: an attribute listing `requiresIntimateRegions` applies only
+  // to a body whose body-config carries at least one of those region groups —
+  // the exact mirror of `supersededByIntimateRegions`. Kills an implementation
+  // that keys the row off the gender label (a male body given a vulva would
+  // never see it, a female seed with the region removed would keep it) and one
+  // that treats `requires` as `superseded` (the row would appear on every body
+  // EXCEPT the one anatomy it belongs to).
+  const pregnancy = def("build.pregnancy");
+  const seededFor = (gender: string) =>
+    seedBodyConfigFromAttributes([{ id: "identity.gender", value: gender, source: "creation" }]).intimateRegions;
+
+  it("applies to a body carrying the vulva region", () => {
+    expect(realizeBody({ intimateRegions: ["vulva"] }).isAttributeApplicable(pregnancy)).toBe(true);
+    // The default female seed carries vulva + breasts.
+    expect(realizeBody({ intimateRegions: seededFor("female") }).isAttributeApplicable(pregnancy)).toBe(true);
+  });
+
+  it("follows the anatomy, not the gender label", () => {
+    // A male-seeded character given a vulva in the editor gets the row…
+    const maleWithVulva = realizeBody({ intimateRegions: [...seededFor("male"), "vulva"] });
+    expect(maleWithVulva.isAttributeApplicable(pregnancy)).toBe(true);
+    // …and a female-seeded character with the region switched off loses it.
+    expect(realizeBody({ intimateRegions: ["breasts"] }).isAttributeApplicable(pregnancy)).toBe(false);
+  });
+
+  it("does not apply to a body without the region", () => {
+    expect(realizeBody({}).isAttributeApplicable(pregnancy)).toBe(false);
+    expect(realizeBody({ intimateRegions: [] }).isAttributeApplicable(pregnancy)).toBe(false);
+    expect(realizeBody({ intimateRegions: seededFor("male") }).isAttributeApplicable(pregnancy)).toBe(false);
+    // An unknown group is filtered out of the body-config before the check, so a
+    // plausible-looking junk entry can never satisfy the requirement (degraded-safe).
+    expect(realizeBody({ intimateRegions: ["womb"] }).isAttributeApplicable(pregnancy)).toBe(false);
   });
 });
 

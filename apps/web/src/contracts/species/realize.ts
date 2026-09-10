@@ -155,6 +155,14 @@ export function realizeBody(input: RealizeBodyInput): RealizedBody {
     // switched on, so exactly one owner of the fact applies to any body. Keyed
     // on the body-config, never the gender label.
     if (def.supersededByIntimateRegions?.some((group) => intimateRegions.has(group))) return false;
+    // The mirror rule: an attribute that only exists on a body carrying one of
+    // the listed regions (pregnancy needs a vulva) drops out until that region
+    // is switched on. `intimateRegions` is already filtered through
+    // `isIntimateRegionGroup`, so a junk group in the body-config can never
+    // satisfy the requirement. Anatomy decides, never the gender label.
+    if (def.requiresIntimateRegions && !def.requiresIntimateRegions.some((group) => intimateRegions.has(group))) {
+      return false;
+    }
     if (isFeatureAttributeCategory(def.category) && !bodyFeatures.has(def.category)) return false;
     // An attribute bound to a body location that isn't realized is dropped.
     if (def.bodyLocationId && !locationIds.has(def.bodyLocationId)) return false;
