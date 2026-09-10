@@ -22,6 +22,8 @@ printf '\n' >>"$FAKE_LOG"
 
 location=""
 if [ "${1:-}" = -C ]; then location=$2; shift 2; fi
+# git resolves a relative worktree path from -C, not from the caller's cwd.
+resolve() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "${location:-$PWD}" "$1" ;; esac; }
 case "${1:-}" in
   rev-parse)
     if [ "${2:-}" = --show-toplevel ]; then echo "$FAKE_ROOT"
@@ -49,12 +51,12 @@ case "${1:-}" in
       add)
         shift
         if [ "${1:-}" = -b ]; then shift 2; fi
-        mkdir -p "$1"
+        mkdir -p "$(resolve "$1")"
         ;;
       remove)
         shift
         [ "${1:-}" = --force ] && shift
-        rmdir "$1"
+        rmdir "$(resolve "$1")"
         ;;
       prune) ;;
     esac
@@ -81,6 +83,7 @@ EOF
 cat >"$BIN/pnpm" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'pnpm-cwd %s\n' "$PWD" >>"$FAKE_LOG"
 printf 'pnpm' >>"$FAKE_LOG"
 printf ' %q' "$@" >>"$FAKE_LOG"
 printf '\n' >>"$FAKE_LOG"
@@ -143,6 +146,21 @@ grep -Fq "worktree: $SESSION/.codex/worktrees/issue-42" <<<"$output" \
   || fail "worktree-up did not fall back to --show-toplevel"
 echo 'ok  worktree-up falls back to --show-toplevel when the list is empty'
 
+# A relative --dir belongs to the invoking worktree; every later call
+# (`cd "$DIR"`, `git -C "$DIR"`) reads it from there, so the main-checkout
+# `worktree add` must be handed the same absolute path.
+rm -rf "$MAIN/.codex" "$SESSION/.codex" "$SESSION/relative-agent" "$MAIN/relative-agent"
+: >"$LOG"
+output=$(run_up 42 feature --slice --dir relative-agent)
+grep -Fq "git -C $MAIN worktree add -b codex/42-feature $SESSION/relative-agent origin/main" "$LOG" \
+  || fail "worktree-up did not make the relative --dir absolute for the main-checkout git call"
+! grep -Fq "$MAIN/relative-agent" "$LOG" || fail "worktree-up created the relative --dir under the main checkout"
+[ -d "$SESSION/relative-agent" ] || fail "worktree-up did not create the worktree in the invoking worktree"
+grep -Fq "pnpm-cwd $SESSION/relative-agent" "$LOG" || fail "worktree-up installed outside the new worktree"
+grep -Fq "worktree: $SESSION/relative-agent" <<<"$output" || fail "worktree-up did not summarize the absolute --dir"
+grep -Fq "branch:   codex/42-feature @ abc1234" <<<"$output" || fail "worktree-up did not read the new worktree's HEAD"
+echo 'ok  worktree-up pins a relative --dir to the invoking worktree'
+
 # Removal by issue number resolves under the main checkout too.
 rm -rf "$SESSION/.codex"
 mkdir -p "$MAIN/.codex/worktrees/issue-42"
@@ -159,5 +177,17 @@ output=$(run_down 42)
 grep -Fq "git -C $MAIN/.claude/worktrees/agent-42 status --porcelain" "$LOG" || fail "worktree-down skipped the dirty check"
 grep -Fq "removed $MAIN/.claude/worktrees/agent-42" <<<"$output" || fail "worktree-down did not find the legacy worktree"
 echo 'ok  worktree-down still finds a legacy .claude/worktrees/agent-<issue>'
+
+# An explicit relative target (a sibling of the invoking worktree) must reach
+# the main-checkout `worktree remove` as the same directory the checks saw.
+rm -rf "$MAIN/.claude" "$SESSION/relative-agent"
+mkdir -p "$TMP/sibling"
+: >"$LOG"
+output=$(run_down ../sibling)
+grep -Fq "git -C $MAIN worktree remove $TMP/sibling" "$LOG" \
+  || fail "worktree-down did not canonicalize the relative target for the main-checkout git call"
+grep -Fq "removed $TMP/sibling" <<<"$output" || fail "worktree-down did not report the absolute path"
+[ ! -d "$TMP/sibling" ] || fail "worktree-down left the sibling worktree in place"
+echo 'ok  worktree-down canonicalizes a relative cleanup target'
 
 echo "worktree path fixtures passed"

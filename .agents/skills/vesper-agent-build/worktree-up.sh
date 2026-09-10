@@ -33,6 +33,10 @@ while [ $# -gt 0 ]; do
     *) echo "unknown flag $1" >&2; exit 1 ;;
   esac
 done
+# A relative --dir is resolved from the invoking cwd by the `cd "$DIR"` and
+# `git -C "$DIR"` calls below, but `git -C "$ROOT" worktree add` would resolve
+# it from the main checkout; pin it to one absolute path so both agree.
+[ -z "$DIR" ] || [[ "$DIR" = /* ]] || DIR="$PWD/$DIR"
 [[ "$ISSUE" =~ ^[0-9]+$ ]] || { echo "issue must be a number" >&2; exit 1; }
 
 # A session worktree is not the repository root, so --show-toplevel would nest

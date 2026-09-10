@@ -24,6 +24,10 @@ if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
   if [ ! -d "$DIR" ] && [ -d "$LEGACY_DIR" ]; then DIR="$LEGACY_DIR"; fi
 else
   DIR="$TARGET"
+  # The checks below resolve a relative target from the invoking cwd, but
+  # `git -C "$ROOT" worktree remove` resolves it from the main checkout; make
+  # them name the same directory.
+  if [ -d "$DIR" ]; then DIR=$(cd "$DIR" && pwd); fi
 fi
 [ -d "$DIR" ] || { echo "no worktree at $DIR" >&2; exit 1; }
 
