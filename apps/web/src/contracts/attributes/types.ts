@@ -101,6 +101,15 @@ export const attributeDefinitionSchema = z.object({
    * Group ids are validated against INTIMATE_REGION_GROUPS by a contracts test.
    */
   supersededByIntimateRegions: z.array(z.string().min(1)).readonly().optional(),
+  /**
+   * Intimate region groups at least ONE of which must be switched on in the
+   * character's body-config for this attribute to apply — the mirror of
+   * `supersededByIntimateRegions`. `build.pregnancy` lists `vulva`: a body
+   * without one never shows the row and never carries the fact. Anatomy, not
+   * the gender label, decides. Group ids are validated against
+   * INTIMATE_REGION_GROUPS by a contracts test.
+   */
+  requiresIntimateRegions: z.array(z.string().min(1)).readonly().optional(),
   appliesToEntityKinds: z.array(attributeEntityKindSchema).readonly().optional(),
   aliases: z.array(z.string().min(1)).readonly().optional(),
   promptHints: z.array(z.string().min(1)).readonly().optional(),

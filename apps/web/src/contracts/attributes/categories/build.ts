@@ -1,9 +1,14 @@
 import { defineAttributeGroup } from "../types";
 
+// Four independent silhouette dimensions: frame is bone, musculature is muscle,
+// weight is adiposity, pregnancy is gestation. None may be encoded through another —
+// a slim, firm body can be heavily pregnant.
+//
 // Narrator-gloss authoring batch — DRAFTS AWAITING
 // OWNER REVIEW. Each gloss stays strictly in its own dimension per the orthogonality
 // rule: frame speaks bone gauge (never height/weight), musculature speaks muscle only,
-// weight speaks adiposity only. Sparse — self-evident members (average) stay bare.
+// weight speaks adiposity only, pregnancy speaks gestation only. Sparse — self-evident
+// members (average) stay bare.
 
 export const buildGroup = defineAttributeGroup("build", [
   {
@@ -119,6 +124,42 @@ export const buildGroup = defineAttributeGroup("build", [
       plump: "rounded and full, softness carried everywhere",
       heavy: "carries real weight — full and substantial",
       very_heavy: "large-bodied; the weight is the first impression",
+    },
+  },
+  {
+    // Gestation, the fourth silhouette dimension — never folded into weight or
+    // softness. Values are visible stages, not trimesters: an early pregnancy
+    // that does not show is a story fact for the bio, not an appearance fact.
+    // No coreVisual/renderVisual/defaultValue: unset means nothing is invented,
+    // and "none" is elided from every prompt by the standard none rule.
+    // `requiresIntimateRegions` gates the row on the vulva region, so anatomy —
+    // not the gender label — decides whether the fact exists at all.
+    // The image-projection opt-in follows the owner ruling that pregnancy joins
+    // the Core description class and a waist-up portrait states it;
+    // `referenceFreeRequired` is deliberately absent, since pregnancy is unset
+    // on most characters and requiring it would leave every reference-free
+    // render incomplete.
+    id: "build.pregnancy",
+    label: "Pregnancy",
+    kind: "biological",
+    category: "build",
+    valueType: "enum",
+    description: "Visible stage of pregnancy, independent of frame, weight, or softness.",
+    mutability: "mutable",
+    allowedValues: ["none", "barely_showing", "showing", "heavily_pregnant", "full_term"],
+    bodyLocationId: "waist",
+    requiresIntimateRegions: ["vulva"],
+    aliases: ["pregnant", "pregnancy", "expecting", "with child", "baby bump"],
+    imageAppearance: { class: "core", minimumFraming: "waist_up" },
+    imageReveal: "shape",
+    promptHints: [
+      "Pregnancy is its own silhouette; a slim, firm body can be heavily pregnant. Never fold it into weight or softness.",
+    ],
+    narratorGuidance: {
+      barely_showing: "a small early bump, easy to miss under clothing",
+      showing: "an unmistakable rounded belly, mid-pregnancy",
+      heavily_pregnant: "a large, heavy belly, late pregnancy",
+      full_term: "at term, the belly at its largest and carrying low",
     },
   },
 ]);

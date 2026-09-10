@@ -158,6 +158,19 @@ stated through clothing on an ordinary route. Other breast attributes remain on
 the intimate reveal path and retain their exposure rules, so an ordinary prompt
 never gains nipple or other surface detail from this exception.
 
+### Pregnancy silhouette
+
+`build.pregnancy` is a `core`-class registry-backed value gated by
+`requiresIntimateRegions: ["vulva"]` ([../contracts/body.md](../contracts/body.md)
+§The realized body): a realized body without a `vulva` region never carries the
+fact, whatever the character's gender label. Its `imageReveal: "shape"` states
+the stage through clothing at `waist_up` framing and wider, unconditionally —
+the same read every `"shape"`-tagged value gets, never gated on coverage or
+exposure. It carries no `referenceFreeRequired`: an unset value never refuses a
+reference-free render, and `none` is elided from every prompt by the standard
+elision rule, so an ordinary character states nothing about pregnancy until a
+stage is recorded.
+
 The adapter is the ONE owner of character appearance wording.
 `scripts/image-appearance-prose.test.ts` fails the build if a production module
 under `server/images` turns an attribute into words (`formatAttribute`,

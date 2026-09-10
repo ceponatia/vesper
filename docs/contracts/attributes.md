@@ -24,6 +24,8 @@ type AttributeDefinition = {
   bodyLocationId?: string;
   appliesToBodyPlans?: readonly string[];
   excludesBodyPlans?: readonly string[];
+  supersededByIntimateRegions?: readonly string[];
+  requiresIntimateRegions?: readonly string[];
   appliesToEntityKinds?: readonly ("character" | "item" | "location")[];
   aliases?: readonly string[];
   promptHints?: readonly string[];
@@ -64,6 +66,7 @@ type AttributeDefinition = {
 - **`appliesToBodyPlans`** — Body plans this attribute applies to (default: all).
 - **`excludesBodyPlans`** — Body plans this attribute is excluded from.
 - **`supersededByIntimateRegions`** — Intimate region groups whose presence makes this attribute **inapplicable**: when any listed group is on in the body-config, the region's own attributes own the fact and `realizeBody(...).isAttributeApplicable` drops this one. Today `chest.size` (chest build) and `chest.hair` list `breasts` — see [body.md](body.md) §The realized body. Every entry must be a real region group (contracts test).
+- **`requiresIntimateRegions`** — Intimate region groups at least one of which must be on in the body-config for this attribute to **apply**: the mirror of `supersededByIntimateRegions`, checked beside it in `realizeBody(...).isAttributeApplicable`. Today `build.pregnancy` lists `vulva` — see [body.md](body.md) §The realized body. Every entry must be a real region group (contracts test).
 - **`appliesToEntityKinds`** — `character`, `item`, or `location` (default: character only).
 - **`aliases`** — Words that resolve to this attribute when mentioned in text — e.g. "ginger" → `hair.color`.
 - **`promptHints`** — Phrasing guidance for the prompt builders.
@@ -136,11 +139,11 @@ intimate reveal path and its exposure rules.
 
 `imageReveal` controls whether an attribute appears in a full-body image ([../images/pipelines/scene-subjects.md](../images/pipelines/scene-subjects.md)):
 
-| Value    | When it's described                                                                             |
-| -------- | ----------------------------------------------------------------------------------------------- |
-| `shape`  | Reads *through* clothing — breast size, waist, hips, leg build — so it is **always** described. |
-| `skin`   | Only when the region is bare or sheer — nipples, leg hair, toenails.                            |
-| *absent* | Not part of the scene subject's reveal line.                                                    |
+| Value    | When it's described                                                                                        |
+| -------- | ---------------------------------------------------------------------------------------------------------- |
+| `shape`  | Reads *through* clothing — breast size, waist, hips, leg build, pregnancy — so it is **always** described. |
+| `skin`   | Only when the region is bare or sheer — nipples, leg hair, toenails.                                       |
+| *absent* | Not part of the scene subject's reveal line.                                                               |
 
 Consumed by the scene render.
 
@@ -176,7 +179,7 @@ The starter set is roughly 120 attributes across all categories (the table below
 | Category group           | Attributes                                                                                                                                                                                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | identity                 | gender, natal_sex, apparent_age, heritage                                                                                                                                                                                                                         |
-| build                    | height, frame, musculature, weight_presentation                                                                                                                                                                                                                   |
+| build                    | height, frame, musculature, weight_presentation, pregnancy                                                                                                                                                                                                        |
 | skin                     | tone, undertone, texture, markings                                                                                                                                                                                                                                |
 | hair                     | color, length, texture, density, strand_thickness, condition, arrangement, style                                                                                                                                                                                  |
 | eyes                     | color, shape, pupil, luminosity                                                                                                                                                                                                                                   |
@@ -203,6 +206,7 @@ A few notes on this vocabulary:
 - **Supernatural / non-human palettes are first-class.** `skin.tone`, `eyes.color`, and `hair.color` carry unnatural options (ashen / grey / blue skin, gold / red / solid-black / glowing eyes, fae hair), and `eyes.pupil` (vertical-slit, goat) reads non-human. All of these are flagged `autoDefaultExcludes`, so a human is never *auto*-assigned one — the forge or editor may still pick them, and a species rule can require them.
 - **Synthetic sensory values are registry members with species fences.** Constructed-body scent, taste, texture, sensitivity, and voice values live in `attributes/shared-values.ts` and are spread only into the relevant enums. `organicHumanoidSensoryRules` disallows those members for Human and every existing biological humanoid (including Organic Android); Synthetic Android inherits the expanded lists. This keeps stored values globally parseable while the realized body gives each editor/forge only its valid vocabulary.
 - **Piercings are attributes; the jewelry is wardrobe.** `ears.piercings`, `nose.piercings`, and `lips.piercings` describe the piercing *holes* (permanent/presentation body detail); the removable pieces worn in them are clothing items with a jewelry subtype ([items/README.md](items/README.md) §Clothing subtypes). Prompts mention both when present.
+- **`build.pregnancy` is its own silhouette dimension.** It stages visible gestational shape and is gated on the `vulva` region via `requiresIntimateRegions`; it is never encoded through `weight_presentation` or any other build dimension.
 
 ## Values with provenance
 
