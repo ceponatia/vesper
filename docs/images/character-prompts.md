@@ -108,7 +108,10 @@ and states what translation alone cannot:
   can draw the right underlying build and says nothing about what to call
   somebody. An absent, non-string or unrecognized value yields no set at all, and
   a dialect then names the subject another way rather than guessing
-  ([prompt-programs.md](prompt-programs.md) §The world digest).
+  ([prompt-programs.md](prompt-programs.md) §The world digest). Recognition is
+  membership in the registry's own `allowedValues`, never a family prefix:
+  attribute values are arbitrary strings, and a malformed one that merely starts
+  like a member ("nonbinary_bogus") is degraded data rather than an identity.
 - **A garment opaque outer layers fully conceal is withheld** as the designed
   suppression `character.wardrobe.concealed`: a bra under a sweater is wardrobe
   truth and nothing a render can show. The judgment is the wardrobe projection's,

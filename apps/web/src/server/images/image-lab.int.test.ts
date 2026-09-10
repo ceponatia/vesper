@@ -624,6 +624,38 @@ function stagedEntry(): SceneStaging {
   return entry;
 }
 
+/**
+ * How the SCENE lane names a subject whose identity image the payload carries.
+ *
+ * This kind compiles through `lane: "scene"`, which offers the dialect no
+ * display name for a reference-anchored subject: the dialect introduces them
+ * once by the image that shows them and refers back by the pronoun their
+ * `identity.gender` implies (`CHARACTER_LANE_SUBJECT_NAMING.scene`, #544 F2).
+ * The probe subject is `female` and the only person in the render, so the set is
+ * available and unambiguous, and every template opens with the placeholder — so
+ * the dialect's own leading capital is applied here too.
+ *
+ * Spelled out rather than imported because the binding rule is the DIALECT's and
+ * this suite is not its owner; it is the same shape `image-lab-staged.test.ts`
+ * pins for every staging in the catalog. What THIS case owns is that the
+ * registry's own words survive the LANE unmodified around whatever the
+ * placeholders became.
+ */
+const ANCHORED_INTRODUCTION = "the woman in Image 1";
+const ANCHORED_PRONOUN = "her";
+const STAGING_PLACEHOLDER = /\{name\}('s)?/gu;
+
+function voiceBoundTemplate(template: string): string {
+  let seen = 0;
+  const bound = template.replace(STAGING_PLACEHOLDER, (_match, possessive: string | undefined) => {
+    const first = seen === 0;
+    seen += 1;
+    if (first) return possessive === undefined ? ANCHORED_INTRODUCTION : `${ANCHORED_INTRODUCTION}'s`;
+    return ANCHORED_PRONOUN;
+  });
+  return `${bound.charAt(0).toUpperCase()}${bound.slice(1)}`;
+}
+
 interface StagedSceneOptions {
   staging?: Partial<ImageLabStaging>;
   modelSlug?: string;
@@ -1845,9 +1877,12 @@ describe.skipIf(!ready)("image lab staged scenes", () => {
 
     // The registry owns every explicit word, so the assertion is its own template
     // verbatim — not a paraphrase this suite could quietly keep passing after the
-    // lane started rewording one.
-    const template = stagedEntry().template.replaceAll("{name}", STAGED_SUBJECT);
-    expect(experiment?.finalPrompt).toContain(template);
+    // lane started rewording one. Bound to the reference binding and then to the
+    // subject's pronoun rather than to the display name, because that is the
+    // voice the scene lane speaks in ({@link voiceBoundTemplate}).
+    expect(experiment?.finalPrompt).toContain(voiceBoundTemplate(stagedEntry().template));
+    // Nothing reaches the provider unbound.
+    expect(experiment?.finalPrompt).not.toContain("{name}");
     // And it arrives as the compiled program alone: the recipe's instruction
     // strategy passes the program through untouched, so the recipe never
     // prefixes a second numbering over the slot the program already numbers.

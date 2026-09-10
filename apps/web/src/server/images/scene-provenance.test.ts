@@ -457,7 +457,15 @@ describe("renderResolvedScene intimate reveal", () => {
     );
     const prompt = pipelineCalls[0]?.asset.prompt as string;
     expect(prompt).not.toContain("nipples");
-    expect(prompt).not.toContain("breast size");
+    // The SILHOUETTE is not what a forbidding rung withholds. `breasts.size`
+    // reads through clothing (`imageReveal: "shape"`, `ordinarySilhouette`), so
+    // it is the ORDINARY appearance route's claim and is stated on every rung;
+    // the reveal above only replaces it with the same phrase where the route
+    // permits (#547). What the permission decides is the SKIN, which is the
+    // assertion above it. Pinned by phrase rather than by the retired
+    // `breast size:` label form, which asserted a spelling this lane no longer
+    // writes anywhere — true of any prompt, and therefore of none.
+    expect(prompt).toMatch(/\bample bust\b/u);
     // Coverage is the wardrobe's truth, not intimate detail: stated on every rung.
     expect(prompt).toContain("bare at the torso");
   });

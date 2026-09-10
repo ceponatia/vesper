@@ -312,16 +312,27 @@ export const IMAGE_CHARACTER_GENDER_ATTRIBUTE_ID = "identity.gender";
  * sets; every androgynous or nonbinary presentation takes `they_them`, whichever
  * natal variant it carries — the `…_born_…` split exists so image generation can
  * render the right underlying BUILD, and it says nothing about what to call
- * somebody. An absent value, a non-string, or a member outside those families
- * yields NO set at all, and a subject with no set is referred to by label or by
- * the reference that shows them. Silence is the safe direction: a wrong pronoun
- * is a wrong person.
+ * somebody. An absent value, a non-string, a value the registry does not allow,
+ * or a member outside those families yields NO set at all, and a subject with no
+ * set is referred to by label or by the reference that shows them. Silence is
+ * the safe direction: a wrong pronoun is a wrong person.
  */
 export function imageSubjectPronouns(
   sources: CharacterSubjectSources | undefined,
 ): ImageSubjectPronounSet | undefined {
   const value = sources?.attributes?.find((entry) => entry.id === IMAGE_CHARACTER_GENDER_ATTRIBUTE_ID)?.value;
   if (typeof value !== "string") return undefined;
+  // MEMBERSHIP FIRST, and against the registry itself. `attributeValueSchema`
+  // accepts arbitrary strings, so a persisted value need not be one the
+  // vocabulary has ever offered — and read by the family prefixes alone,
+  // `nonbinary_bogus` answered `they_them`, asserting an identity nobody
+  // authored over data that is simply broken. Derived from the canonical
+  // definition rather than a second list, the same shape
+  // {@link isWithheldImageAgeBand} takes, so the registry stays the one owner of
+  // this vocabulary and a seventh member it grows still maps through the
+  // families below.
+  const allowed = attributeRegistry.byId(IMAGE_CHARACTER_GENDER_ATTRIBUTE_ID)?.allowedValues;
+  if (allowed === undefined || !allowed.includes(value)) return undefined;
   if (value === "female") return "she_her";
   if (value === "male") return "he_him";
   if (value.startsWith("androgynous_") || value.startsWith("nonbinary_")) return "they_them";

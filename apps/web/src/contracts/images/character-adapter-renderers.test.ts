@@ -525,4 +525,21 @@ describe("subject pronouns", () => {
     expect(imageSubjectPronouns({ exposure: FULLY_COVERED })).toBeUndefined();
     expect(pronounsFor("agender")).toBeUndefined();
   });
+
+  /**
+   * DEGRADED DATA IS NOT AN IDENTITY (PR #545 review).
+   *
+   * `attributeValueSchema` accepts arbitrary strings, so a stored gender need
+   * not be a member the registry ever offered. Read by family PREFIX alone, this
+   * helper answered `they_them` for `nonbinary_bogus` — a pronoun set asserted
+   * over data nobody authored, in a helper whose whole contract is that an
+   * unknown gender yields nothing. Membership is the registry's exact list.
+   */
+  it.each(["nonbinary_bogus", "androgynous_", "androgynous_born_alien", "Female", "MALE", "female ", ""])(
+    "yields no set for the malformed value %j",
+    (gender) => {
+      expect(attributeRegistry.byId(IMAGE_CHARACTER_GENDER_ATTRIBUTE_ID)?.allowedValues).not.toContain(gender);
+      expect(pronounsFor(gender)).toBeUndefined();
+    },
+  );
 });

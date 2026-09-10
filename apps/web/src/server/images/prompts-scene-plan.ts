@@ -108,6 +108,76 @@ export function emptySceneRenderPlan(): SceneRenderPlan {
 export const normalizeName = (name: string): string => name.trim().toLowerCase();
 
 /**
+ * THE GAZE VOCABULARY, stated once.
+ *
+ * Both viewer backstops below rewrite a player/viewer reference to the camera
+ * only where the phrase is a LOOK or a body ORIENTATION. Left open, the
+ * prepositions they read also carry physical contact, and a slip would then
+ * survive the rewrite as an interaction with the CAMERA — "leaning on the
+ * camera", "holding a cup out to the camera", "throwing a pillow at the camera"
+ * — which puts a touchable object where a lane that forbids a camera in frame
+ * says nothing is. A clause this vocabulary does not recognize is dropped whole
+ * instead, the same safe direction every other backstop here takes.
+ *
+ * `facing` and `toward`/`towards` need no lead word: the preposition IS the
+ * orientation. Every other preposition needs one of these gaze words in front of
+ * it, with up to two hedging words ("directly", "slightly", "fixed") between.
+ */
+const GAZE_LEAD = [
+  "look(?:s|ed|ing)?",
+  "glanc(?:e|es|ed|ing)",
+  "gaz(?:e|es|ed|ing)",
+  "star(?:e|es|ed|ing)",
+  "peer(?:s|ed|ing)?",
+  "peek(?:s|ed|ing)?",
+  "watch(?:es|ed|ing)?",
+  "smil(?:e|es|ed|ing)",
+  "grin(?:s|ned|ning)?",
+  "smirk(?:s|ed|ing)?",
+  "wink(?:s|ed|ing)?",
+  "nod(?:s|ded|ding)?",
+  "frown(?:s|ed|ing)?",
+  "turn(?:s|ed|ing)?",
+  "fac(?:e|es|ed|ing)",
+  "angled",
+  "aimed",
+  "directed",
+  "pointed",
+  "fixed",
+  "eyes?",
+  "gaze",
+  "glance",
+  "stare",
+  "attention",
+  "focus",
+  "head",
+  "chin",
+].join("|");
+
+/** Up to two hedging words between the gaze word and its preposition. */
+const GAZE_HEDGE = "(?:\\s+\\w+){0,2}";
+
+/** Orientation prepositions that carry the gaze themselves — no lead word needed. */
+const ORIENTATION_PREPOSITION = "facing|towards?";
+
+/** A gaze aimed AT something: any of the contact-shaped prepositions, behind a gaze word. */
+const GAZE_AT = `(?:${GAZE_LEAD})${GAZE_HEDGE}\\s+(?:at|onto|on|to)`;
+
+/** The one gaze preposition whose natural object is the lens itself. */
+const GAZE_INTO = `(?:${GAZE_LEAD})${GAZE_HEDGE}\\s+into`;
+
+/**
+ * A gaze at the PLAYER. Deliberately narrower than {@link GAZE_AT} on the
+ * preposition — `at` alone is the form the composer writes — and the clause drop
+ * takes everything else, so widening it here would rewrite beats this backstop
+ * has always dropped.
+ */
+const PLAYER_GAZE = new RegExp(
+  `\\b((?:${GAZE_LEAD})${GAZE_HEDGE}\\s+at|${ORIENTATION_PREPOSITION})\\s+the\\s+player\\b(?!['’]s)`,
+  "gi",
+);
+
+/**
  * Deterministic backstop for player references in composer pose/activity/action text
  * (owner report 2026-07-10): the composer is instructed to translate player-directed
  * beats into solo equivalents, but a slip hands the render an unpaintable instruction
@@ -130,10 +200,7 @@ export function scrubPlayerFromAction(action: string, opts: { embodied?: boolean
   // Possessives ("at the player's side") are proximity, not gaze — they fall through
   // to the clause drop.
   const gazeTarget = opts.embodied ? "the viewer" : "the camera";
-  const rewritten = action.replace(
-    /\b(facing|toward|towards|at)\s+the\s+player\b(?!['’]s)/gi,
-    `$1 ${gazeTarget}`,
-  );
+  const rewritten = action.replace(PLAYER_GAZE, `$1 ${gazeTarget}`);
   if (opts.embodied) {
     // With the viewer's body in frame (scene-pov-embodiment slice 3), contact is paintable
     // — so a clause naming the player is REWRITTEN to the viewer rather than dropped. The
@@ -186,10 +253,43 @@ export function scrubBlush(text: string): string {
  * the other would either leave a named limb unbound or ship a possession
  * sentence with nothing to possess.
  */
-const LIMB_SINGULAR = ["hand", "arm", "leg", "foot", "finger", "thumb", "palm", "wrist", "knee", "elbow"] as const;
+const LIMB_SINGULAR = [
+  "hand",
+  "arm",
+  "forearm",
+  "leg",
+  "foot",
+  "finger",
+  "thumb",
+  "palm",
+  "wrist",
+  "knee",
+  "elbow",
+] as const;
 
-/** The plural forms "both …" takes. A subset of the singulars by design — nothing says "both palms". */
-const LIMB_PLURAL = ["hands", "arms", "legs", "feet", "knees", "elbows"] as const;
+/**
+ * The plural of every singular, irregulars included.
+ *
+ * Complete rather than the "both …" shortlist it started as (PR #545 review):
+ * {@link mentionsLimb} reads this list too, and a plural limb noun summons a
+ * limb exactly as a singular one does — "fingers on the railing" put a hand in
+ * the picture that neither the binder nor the possession clause could see. That
+ * "both palms" is an odd thing to write costs nothing; a limb the shot names and
+ * the backstops cannot is the failure this vocabulary exists to prevent.
+ */
+const LIMB_PLURAL = [
+  "hands",
+  "arms",
+  "forearms",
+  "legs",
+  "feet",
+  "fingers",
+  "thumbs",
+  "palms",
+  "wrists",
+  "knees",
+  "elbows",
+] as const;
 
 /**
  * Every limb noun either backstop knows, plurals first so the alternation is
@@ -249,11 +349,23 @@ export function bindLimbsToOwner(text: string, owner: string): string {
  */
 const VIEWER_NOUN = /\bviewer\b/i;
 
-/** "…into the viewer" — the one gaze preposition whose natural object is the lens. */
-const VIEWER_GAZE_LENS = /\binto\s+the\s+viewer\b(?!['’]s)/gi;
+/** "looking into the viewer" — the one gaze preposition whose natural object is the lens. */
+const VIEWER_GAZE_LENS = new RegExp(`\\b(${GAZE_INTO})\\s+the\\s+viewer\\b(?!['’]s)`, "gi");
 
-/** Every other gaze/orientation preposition pointed at the viewer. */
-const VIEWER_GAZE_CAMERA = /\b(facing|toward|towards|at|on|onto|to)\s+the\s+viewer\b(?!['’]s)/gi;
+/**
+ * Every other gaze/orientation preposition pointed at the viewer.
+ *
+ * Gated on {@link GAZE_LEAD} rather than open on the preposition (PR #545
+ * review): `at`, `on`, `onto` and `to` carry contact as readily as gaze, so an
+ * open pattern rewrote "leaning on the viewer", "holding a cup out to the
+ * viewer" and "throwing a pillow at the viewer" into physical interactions with
+ * the CAMERA — a body across the lens, in the one lane whose whole framing says
+ * nothing is there. Those clauses now reach the drop below instead.
+ */
+const VIEWER_GAZE_CAMERA = new RegExp(
+  `\\b(${GAZE_AT}|${ORIENTATION_PREPOSITION})\\s+the\\s+viewer\\b(?!['’]s)`,
+  "gi",
+);
 
 /** "the viewer's eye", "the viewer's gaze" — the possessive spelling of the same beat. */
 const VIEWER_GAZE_POSSESSIVE = /\bthe\s+viewer['’]s\s+(?:eye|eyes|gaze|attention|direction|way)\b/gi;
@@ -272,6 +384,12 @@ const VIEWER_GAZE_POSSESSIVE = /\bthe\s+viewer['’]s\s+(?:eye|eyes|gaze|attenti
  * camera, or the lens for "into" — and drop whole any clause still naming a
  * viewer the rewrite could not aim.
  *
+ * The rewrite is for a LOOK, never a touch ({@link GAZE_LEAD}). "Leaning on the
+ * viewer" and "throwing a pillow at the viewer" name the viewer just as surely,
+ * and aiming those at the camera would state a physical interaction with the one
+ * thing this lane insists is not in the frame — so they fall to the clause drop,
+ * where every other unaimable viewer reference already goes.
+ *
  * Never run on an embodied shot. There the viewer's own body is in frame, "the
  * viewer's own forearm" is the measured contact wording, and rewriting it would
  * un-say the geometry the arrangement is built on.
@@ -280,7 +398,7 @@ export function viewerGazeToCamera(text: string): string {
   if (!VIEWER_NOUN.test(text)) return text;
   const rewritten = text
     .replace(VIEWER_GAZE_POSSESSIVE, "the camera")
-    .replace(VIEWER_GAZE_LENS, "into the lens")
+    .replace(VIEWER_GAZE_LENS, "$1 the lens")
     .replace(VIEWER_GAZE_CAMERA, "$1 the camera");
   if (!VIEWER_NOUN.test(rewritten)) return rewritten;
   return rewritten
