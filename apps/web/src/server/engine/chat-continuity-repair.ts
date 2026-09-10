@@ -5,7 +5,7 @@ import { characterChatState, db } from "../db";
 import { log } from "../log";
 import { reconcileMessageMemory } from "./chat-memory";
 import { reextractEditedReply } from "./chat-message-edits";
-import { coveredByWatermark, loadChatSummary, rebuildChatSummary } from "./chat-summary";
+import { repairChatSummaryForMessage } from "./chat-summary";
 import { removeVoiceExemplarsForMessage, voiceExemplarsSchema, type VoiceExemplar } from "./chat-voice";
 
 /**
@@ -123,9 +123,10 @@ export async function repairChatContinuityAfterEdit(input: ChatContinuityRepairI
 
   let summary: ChatContinuitySummaryOutcome = "unaffected";
   try {
-    const state = await loadChatSummary(chatId);
-    if (coveredByWatermark(message, state?.watermark ?? null)) {
-      const { folds } = await rebuildChatSummary(chatId);
+    // Coverage is decided and acted on under the summary lock, so a fold that is
+    // mid-model-call settles before the decision reads its watermark.
+    const { rebuilt, folds } = await repairChatSummaryForMessage(chatId, message);
+    if (rebuilt) {
       summary = "rebuilt";
       sink.push(
         diag("info", "chat_continuity.summary.rebuilt", `re-folded the rolling summary in ${folds} fold(s)`, {

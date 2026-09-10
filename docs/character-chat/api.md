@@ -44,10 +44,12 @@ lets the very next send retrieve what the player just removed.
 
 - **Memory** — an assistant line's extraction is retracted; an edit re-files the scribe leg
   from the new text. Memory is anchored on assistant message ids, so a user line has none.
-- **Summary** — re-folded (`rebuildChatSummary`) whenever the line's `(createdAt, id)` is at
-  or before the summary watermark, for user and assistant lines alike. A line AFTER the
-  watermark is still verbatim in the window and costs no model call. The rebuild resets the
-  row before re-folding, so a degraded fold ends at an empty summary with a null watermark —
+- **Summary** — re-folded whenever the line's `(createdAt, id)` is at or before the summary
+  watermark, for user and assistant lines alike. A line AFTER the watermark is still verbatim
+  in the window and costs no model call. The coverage decision and the rebuild it triggers run
+  under the per-chat summary lock, so a fold already in flight settles first and the decision
+  reads its advanced watermark rather than the one it is about to replace. The rebuild resets
+  the row before re-folding, so a degraded fold ends at an empty summary with a null watermark —
   the whole transcript verbatim again, never the stale recap.
 - **Voice** — every exemplar sourced from the line is dropped from each roster member's live
   ring and from its "another take" rollback snapshot, so a retake cannot resurrect it. An

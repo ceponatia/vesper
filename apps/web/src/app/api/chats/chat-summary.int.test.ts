@@ -23,12 +23,14 @@ import { generateChecked } from "@/server/ai";
 import { resetRateLimits } from "@/server/api";
 import {
   chatExchangeLockKey,
+  chatSummaryLockKey,
   enqueueChatSummary,
   loadChatSummary,
   loadVerbatimWindow,
   planChatFold,
   processChatSummary,
   tryKeyedLock,
+  withKeyedLock,
 } from "@/server/engine";
 import {
   apiRequest,
@@ -238,6 +240,56 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
     expect(body.continuity.summary).toBe("unaffected");
     expect(generateChecked).not.toHaveBeenCalled();
     expect((await loadChatSummary(ids.chat))?.summary).toContain("msg-3"); // untouched
+  });
+
+  it("waits for an in-flight fold before deciding coverage, so a chunk folded mid-edit is re-folded", async () => {
+    // Nothing folded yet: read on its own, the watermark is null and EVERY line
+    // looks verbatim — which is exactly what a fold in flight is about to change.
+    await seed(ids.chat, 80);
+    const rows = await db()
+      .select({ id: characterChatMessages.id, createdAt: characterChatMessages.createdAt })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.chatId, ids.chat))
+      .orderBy(asc(characterChatMessages.createdAt), asc(characterChatMessages.id));
+    const covered = rows[3]!; // inside the 50-message chunk a first fold takes
+    const chunkEnd = rows[49]!; // that chunk's last row — the watermark the fold will publish
+
+    // The detached fold: it has read its (pre-edit) chunk and is awaiting the model,
+    // holding the summary lock the whole time.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const held = withKeyedLock(chatSummaryLockKey(ids.chat), () => gate);
+
+    const pending = msgPatch(patchMsgReq(ids.chat, covered.id, "msg-3 rewritten"), msgCtx(ids.chat, covered.id));
+    // The repair may NOT answer while that fold is unsettled: its coverage decision
+    // has to queue on the summary lock. Deciding here reads the not-yet-advanced
+    // watermark and answers "unaffected" for a line the fold is about to summarize.
+    const answeredMidFold = await Promise.race([
+      pending.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 400)),
+    ]);
+    expect(answeredMidFold).toBe(false);
+
+    // The fold's model call returns and it persists its PRE-edit chunk, advancing
+    // the watermark past the line that was just rewritten.
+    await db().insert(characterChatSummaries).values({
+      chatId: ids.chat,
+      summary: "RECAP: msg-3 mattered",
+      watermarkAt: chunkEnd.createdAt,
+      watermarkId: chunkEnd.id,
+      coveredExchanges: 25,
+    });
+    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
+    release();
+    await held;
+
+    const body = await expectJson<{ id: string; continuity: Continuity }>(await pending, 200);
+    expect(body.continuity.summary).toBe("rebuilt");
+    expect(body.continuity.diagnostics).toContain("chat_continuity.summary.rebuilt");
+    expect(generateChecked).toHaveBeenCalled(); // the rebuild's own fold
+    const after = await loadChatSummary(ids.chat);
+    expect(after?.summary).toBe("REBUILT RECAP");
+    expect(after?.summary).not.toContain("msg-3"); // the fold's stale chunk did not outlive the edit
   });
 
   it("re-folds when a covered line is deleted", async () => {

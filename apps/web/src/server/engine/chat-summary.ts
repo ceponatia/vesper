@@ -14,7 +14,7 @@ import { characterChatMessages, characterChatSummaries, characters, chatParticip
 import type { ChatTurn } from "./character-chat";
 import { CHARACTER_CHAT_HISTORY_TURNS, CHARACTER_CHAT_SUMMARIZE_AT, CHARACTER_CHAT_VERBATIM_KEEP } from "./constants";
 import { enqueueJob, registerJobHandler } from "./jobs";
-import { withKeyedLock } from "./keyed-lock";
+import { chatSummaryLockKey, withKeyedLock } from "./keyed-lock";
 import { buildChatSummaryFoldPrompt, CHAT_SUMMARY_SYSTEM } from "./prompts/chat-summary";
 
 /**
@@ -316,32 +316,71 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
 const REBUILD_MAX_FOLDS = 50;
 
 /**
+ * The rebuild itself, with {@link chatSummaryLockKey} ALREADY HELD. Resets the summary
+ * row (empty summary, null watermark ⇒ every message is unsummarized again), then folds
+ * repeatedly until the tail is below the trigger. A degraded/empty fold stalls the
+ * watermark, which ends the loop honestly (partial rebuild + diagnostics) instead of
+ * spinning on a failing model.
+ *
+ * Module-private and lock-free so the two entry points below can each own their acquire:
+ * `withKeyedLock` queues FIFO rather than reentering, so a nested second acquire of the
+ * same key would deadlock on itself.
+ */
+async function rebuildChatSummaryHeld(chatId: string): Promise<{ summary: string; folds: number }> {
+  await db()
+    .insert(characterChatSummaries)
+    .values({ chatId, summary: "", watermarkAt: null, watermarkId: null, coveredExchanges: 0 })
+    .onConflictDoUpdate({
+      target: [characterChatSummaries.chatId],
+      set: { summary: "", watermarkAt: null, watermarkId: null, coveredExchanges: 0, updatedAt: new Date() },
+    });
+  let folds = 0;
+  for (; folds < REBUILD_MAX_FOLDS; folds++) {
+    const before = await loadChatSummary(chatId);
+    await processChatSummary({ chatId });
+    const after = await loadChatSummary(chatId);
+    if ((after?.watermark?.id ?? null) === (before?.watermark?.id ?? null)) break; // below trigger or degraded
+  }
+  const final = await loadChatSummary(chatId);
+  return { summary: final?.summary ?? "", folds };
+}
+
+/**
  * Re-fold the running summary from the FULL transcript (the recovery lever for
- * folded-then-deleted lines). Under the same per-chat
- * keyed lock as the fold job: resets the summary row (empty summary, null watermark ⇒
- * every message is unsummarized again), then folds repeatedly until the tail is below
- * the trigger. A degraded/empty fold stalls the watermark, which ends the loop honestly
- * (partial rebuild + diagnostics) instead of spinning on a failing model. Returns the
- * final summary text and the fold count.
+ * folded-then-deleted lines), under the same per-chat keyed lock as the fold job.
+ * Returns the final summary text and the fold count.
  */
 export async function rebuildChatSummary(chatId: string): Promise<{ summary: string; folds: number }> {
-  return withKeyedLock(`chat_summary:${chatId}`, async () => {
-    await db()
-      .insert(characterChatSummaries)
-      .values({ chatId, summary: "", watermarkAt: null, watermarkId: null, coveredExchanges: 0 })
-      .onConflictDoUpdate({
-        target: [characterChatSummaries.chatId],
-        set: { summary: "", watermarkAt: null, watermarkId: null, coveredExchanges: 0, updatedAt: new Date() },
-      });
-    let folds = 0;
-    for (; folds < REBUILD_MAX_FOLDS; folds++) {
-      const before = await loadChatSummary(chatId);
-      await processChatSummary({ chatId });
-      const after = await loadChatSummary(chatId);
-      if ((after?.watermark?.id ?? null) === (before?.watermark?.id ?? null)) break; // below trigger or degraded
-    }
-    const final = await loadChatSummary(chatId);
-    return { summary: final?.summary ?? "", folds };
+  return withKeyedLock(chatSummaryLockKey(chatId), () => rebuildChatSummaryHeld(chatId));
+}
+
+/**
+ * The summary leg of the continuity repair: re-fold the running summary IF this
+ * edited/deleted message was already folded into it, and report which.
+ *
+ * The coverage decision and the rebuild happen under ONE hold of the summary lock,
+ * and that is the whole point of this function existing rather than the caller
+ * composing `loadChatSummary` + `coveredByWatermark` + `rebuildChatSummary` itself.
+ * A detached fold that has already read its chunk and is awaiting its model call
+ * still holds this key; deciding coverage outside it reads the pre-fold watermark,
+ * answers "not covered" for a line that fold is about to summarize, and lets the
+ * fold write the old wording back in after the request has answered. Queued behind
+ * that fold instead, the decision reads its advanced watermark. A fold that has not
+ * yet acquired the key is harmless the other way round: it re-reads the transcript,
+ * already rewritten, once it does.
+ *
+ * Not covered ⇒ `{ rebuilt: false, folds: 0 }` and no model call — the line is still
+ * verbatim in the window, so there is nothing stale to unwind.
+ */
+export async function repairChatSummaryForMessage(
+  chatId: string,
+  message: { id: string; createdAt: Date },
+): Promise<{ rebuilt: boolean; folds: number }> {
+  return withKeyedLock(chatSummaryLockKey(chatId), async () => {
+    const state = await loadChatSummary(chatId);
+    if (!coveredByWatermark(message, state?.watermark ?? null)) return { rebuilt: false, folds: 0 };
+    const { folds } = await rebuildChatSummaryHeld(chatId);
+    return { rebuilt: true, folds };
   });
 }
 
@@ -359,5 +398,5 @@ registerJobHandler("chat_summary", async (job) => {
   // check-then-insert, so two near-simultaneous exchanges can both enqueue.
   // Under the lock the second fold re-reads the advanced watermark and no-ops
   // below the trigger instead of paying a duplicate LLM call.
-  await withKeyedLock(`chat_summary:${payload.chatId}`, () => processChatSummary(payload, job.id));
+  await withKeyedLock(chatSummaryLockKey(payload.chatId), () => processChatSummary(payload, job.id));
 });
