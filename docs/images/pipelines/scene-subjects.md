@@ -247,6 +247,15 @@ decided per rung and a phrase written for an embodied plan would otherwise name 
 a frame asserting the viewer is absent; it is idempotent, so the ordinary case compiles
 unchanged.
 
+**Only a gaze is re-aimed; a touch is dropped.** Both backstops read one closed vocabulary of
+gaze and orientation words, because the prepositions they match — `at`, `on`, `onto`, `to`,
+`into` — carry contact as readily as looking. Re-aimed rather than dropped, "leaning on the
+viewer" or "throwing a pillow at the viewer" would become a physical interaction with the
+CAMERA: a solid body exactly where the capture-mode sentence swears nothing is. `facing` and
+`toward`/`towards` need no lead word, since the preposition is itself the orientation;
+everything else needs a gaze word in front of it, and a clause the vocabulary cannot aim falls
+to the clause drop with every other viewer reference.
+
 **Pose and activity stay two fields all the way down.** How a body is HELD and what it is
 DOING are different beats and they lower to different concepts, so every scrub — the player
 scrub, the blush scrub, and the `bindLimbsToOwner` backstop — runs on each field on its own,

@@ -453,19 +453,36 @@ describe("production chat cuts are narrowed to the scene cast", () => {
       bystander.member.characterId,
     ]);
     // The participant map still retains the cast side of the committed scene:
-    // the NPC's specific facing-toward-player relation survives even though the
-    // player is no longer a subject in this digest.
+    // the NPC's specific facing-toward-player relation survives the narrowing
+    // even though the player is no longer a subject in this digest. Its toward
+    // end is carried as the PARTICIPANT id rather than a subject id, which is
+    // the honest answer once that participant has no subject here.
+    //
+    // Read off the realized DIGEST rather than the compiled program, because
+    // those are two different decisions and only the first is this case's.
+    // `body_language.facing` is not prompt material (#544 F1): which way a body
+    // is turned relative to the shot is the camera's own read and the staging's
+    // geometry, and a subject id is a handle no renderer can place — so the
+    // adapter suppresses it on the way to the prompt, and asserting there would
+    // be asserting that policy instead of the narrowing.
     const facingLocus = visualStateLocusKey({
       kind: "relation",
       relationId: `facing:${VISUAL_STATE_SCENE_NPC}:${VISUAL_STATE_SCENE_PLAYER}`,
     });
-    const facing = program.subjects[0]?.facts.find((fact) =>
-      fact.key.includes(`/${facingLocus}/body_language.facing`),
+    const focalDigest = realized.visuals[0]?.digest;
+    const facing = [...(focalDigest?.subjects[0]?.required ?? []), ...(focalDigest?.subjects[0]?.optional ?? [])].find(
+      (fact) => fact.key.includes(`/${facingLocus}/body_language.facing`),
     );
     expect(facing).toMatchObject({
-      concept: "subject.body_language",
-      value: "toward",
+      kindId: "body_language.facing",
+      value: { facing: "toward", towardSubjectId: String(VISUAL_STATE_SCENE_PLAYER) },
     });
+    // And it stops there: no facing claim is compiled for anybody.
+    expect(
+      program.subjects.some((compiled) =>
+        compiled.facts.some((fact) => fact.key.includes(`/${facingLocus}/body_language.facing`)),
+      ),
+    ).toBe(false);
     const coatFactsBySubject = program.subjects.map(
       (compiled) =>
         compiled.facts.filter((fact) => fact.concept === "location.contents" && fact.value === "grey wool coat")
@@ -623,6 +640,11 @@ describe("the claims another sentence makes redundant", () => {
     ["a possessive limb the binder already bound", `${LANE_PROBE_NAME}'s hand around the cup`, ""],
     ["a plural limb", "both of her hands around the cup", ""],
     ["a limb in the activity rather than the pose", "seated by the window", "one foot tucked under her"],
+    // The words the vocabulary was missing (PR #545 review). A forearm and an
+    // ordinary plural put a limb in the picture exactly as a hand does, and
+    // arming the clause is what stops it being composed as the viewer's own.
+    ["a forearm", `${LANE_PROBE_NAME}'s forearm along the rail`, ""],
+    ["an ordinary plural", "fingers curled around the railing", ""],
   ])("binds every visible body part when the action text names %s", (_case, pose, activity) => {
     expect(has(shotWith(pose, activity), "scene.possession")).toBe(true);
   });

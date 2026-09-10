@@ -440,6 +440,20 @@ describe("scrubPlayerFromAction (deterministic backstop)", () => {
       "one hand resting on his arm",
     );
   });
+
+  /**
+   * `at` is a contact preposition as often as a gaze one, and this backstop
+   * shares the gaze vocabulary with `viewerGazeToCamera` for exactly that reason
+   * (PR #545 review): rewritten rather than dropped, "throwing a pillow at the
+   * player" becomes a pillow thrown at the CAMERA — a solid target in the frame
+   * this lane says holds nobody.
+   */
+  it("drops a physical beat aimed at the player instead of aiming it at the camera", () => {
+    expect(scrubPlayerFromAction("throwing a pillow at the player")).toBe("");
+    expect(scrubPlayerFromAction("pushing the cup at the player, still smiling")).toBe("still smiling");
+    // And the gaze it shares the preposition with is untouched.
+    expect(scrubPlayerFromAction("smiling at the player")).toBe("smiling at the camera");
+  });
 });
 
 describe("scrubBlush (deterministic backstop)", () => {
@@ -641,6 +655,20 @@ describe("bindLimbsToOwner (phantom-limb fix, 2026-07-29)", () => {
     expect(bindLimbsToOwner("a lamp in one corner", "Mira")).toBe("a lamp in one corner");
   });
 
+  /**
+   * The vocabulary has to be COMPLETE before the possession clause is gated on it
+   * (PR #545 review). A forearm was in neither list, so "a forearm resting on the
+   * table" was left unowned AND stopped arming the clause that would have owned
+   * it — the phantom-limb defence off on exactly the shot that named a limb.
+   */
+  it("binds a forearm and the ordinary plurals the shortlist left out", () => {
+    expect(bindLimbsToOwner("a forearm resting on the table", "Mira")).toBe("Mira's forearm resting on the table");
+    expect(bindLimbsToOwner("both forearms braced on the rail", "Mira")).toBe(
+      "both of Mira's forearms braced on the rail",
+    );
+    expect(bindLimbsToOwner("both palms flat on the desk", "Mira")).toBe("both of Mira's palms flat on the desk");
+  });
+
   it("runs on composer pose text through resolveScenePlan", () => {
     const composed = resolveScenePlan(
       { ...emptySceneSpec(), focalCharacter: "Mira", pose: "sitting sideways, one hand holding a cup" },
@@ -788,12 +816,58 @@ describe("viewerGazeToCamera (deterministic backstop)", () => {
     );
   });
 
+  /**
+   * THE REWRITE IS FOR A LOOK, NEVER A TOUCH (PR #545 review).
+   *
+   * `at`, `on`, `onto` and `to` carry contact as readily as gaze, and an open
+   * pattern aimed every one of them at the lens: "leaning on the camera",
+   * "holding a cup out to the camera", "throwing a pillow at the camera". That
+   * is worse than the slip it was fixing — it puts a solid, touchable body
+   * exactly where the capture-mode sentence swears nothing is, which is the one
+   * thing the disembodied lane exists to prevent. A clause the gaze vocabulary
+   * cannot aim is dropped whole, like every other viewer reference it cannot.
+   */
+  it.each([
+    "leaning on the viewer",
+    "holding a cup out to the viewer",
+    "throwing a pillow at the viewer",
+    "settling onto the viewer",
+  ])("drops the physical interaction in %j rather than aiming it at the camera", (text) => {
+    const scrubbed = viewerGazeToCamera(text);
+    expect(scrubbed).toBe("");
+    expect(scrubbed).not.toContain("camera");
+    expect(scrubbed).not.toContain("lens");
+  });
+
+  it("keeps the other beats when only one clause touches the viewer", () => {
+    expect(viewerGazeToCamera("leaning on the viewer, a book open in her lap")).toBe("a book open in her lap");
+  });
+
+  /**
+   * The other half of the same rule: a real gaze still reaches the camera on
+   * whichever preposition it took, so narrowing the pattern did not quietly turn
+   * the backstop into a clause shredder.
+   */
+  it("still aims an actual gaze at the camera, whatever preposition it takes", () => {
+    expect(viewerGazeToCamera("smiling at the viewer")).toBe("smiling at the camera");
+    expect(viewerGazeToCamera("her eyes on the viewer")).toBe("her eyes on the camera");
+    expect(viewerGazeToCamera("winking at the viewer, mid-laugh")).toBe("winking at the camera, mid-laugh");
+    expect(viewerGazeToCamera("nodding to the viewer")).toBe("nodding to the camera");
+    expect(viewerGazeToCamera("facing the viewer")).toBe("facing the camera");
+  });
+
   it("is idempotent — text already aimed at the camera passes through", () => {
     const aimed = "turned slightly toward the camera, a small smile at her lips";
     expect(viewerGazeToCamera(aimed)).toBe(aimed);
     expect(viewerGazeToCamera(viewerGazeToCamera("turned slightly toward the viewer"))).toBe(
       "turned slightly toward the camera",
     );
+    expect(viewerGazeToCamera(viewerGazeToCamera("smiling at the viewer"))).toBe("smiling at the camera");
+    expect(viewerGazeToCamera(viewerGazeToCamera("looking directly into the viewer"))).toBe(
+      "looking directly into the lens",
+    );
+    // A dropped clause stays dropped rather than becoming an empty rejoin.
+    expect(viewerGazeToCamera(viewerGazeToCamera("leaning on the viewer"))).toBe("");
   });
 });
 
@@ -849,6 +923,12 @@ describe("mentionsLimb", () => {
     "both of Mira's hands wrapped around the mug",
     "one foot tucked under her",
     "her knee drawn up",
+    // The words the shortlist missed: a forearm, and the plurals of limbs it
+    // only ever listed in the singular (PR #545 review).
+    "Mira's forearm resting on the table",
+    "fingers curled around the railing",
+    "her wrists crossed in her lap",
+    "both palms flat on the desk",
   ])("finds the limb in %j", (text) => {
     expect(mentionsLimb(text)).toBe(true);
   });
