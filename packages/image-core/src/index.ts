@@ -280,10 +280,14 @@ export {
   // The 2511 identity-lock byte contract with `@vesper/image-models` — public so
   // the app's program suite (character-prompt-program.test.ts) can pin the
   // exact bytes.
+  QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
+  // The register a dialect may be asked to speak in — wording, never a
+  // different job (`qwen-image-edit-2511.md` §The register).
+  imagePromptRegisters,
   imagePromptProgramProvenanceSchema,
   imageWorldStateProvenanceSchema,
 } from "./prompt-program";
@@ -342,6 +346,7 @@ export type {
   ImagePromptProgramProvenance,
   ImagePromptProgramRefusal,
   ImagePromptProgramRefusalCode,
+  ImagePromptRegister,
   ImageReferenceFact,
   ImageSourceRef,
   ImageSourceRevision,

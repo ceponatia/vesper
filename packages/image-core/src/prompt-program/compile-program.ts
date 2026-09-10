@@ -14,6 +14,7 @@ import {
   type ImageDialectReference,
   type ImageNegativeTransportOutcome,
   type ImagePromptDialectDefinition,
+  type ImagePromptRegister,
 } from "./dialects";
 import {
   imageNegativeGuardOf,
@@ -141,6 +142,17 @@ export interface CompileImagePromptProgramInput {
    * payload that does not exist.
    */
   readonly references: readonly ImageDialectReference[];
+  /**
+   * The register the compiled prompt speaks in, or absent to take the dialect's
+   * own default for the task (#549).
+   *
+   * Deliberately NOT part of the program fingerprint: the register is wording,
+   * and the fingerprint identifies the request rather than the sentences it
+   * compiled to — the same reason the prompt text itself is hashed separately.
+   * Two registers of one digest are the same picture asked for twice, which is
+   * exactly what a fixed A/B trial needs them to be.
+   */
+  readonly register?: ImagePromptRegister;
   /** The endpoint's probed prompt budget. Empty means no measured limit. */
   readonly budget: ImagePromptBudget;
   /** The negative field's own budget, when the endpoint declares one. */
@@ -381,6 +393,7 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     entityPronouns: Object.fromEntries(
       digest.subjects.flatMap((subject) => (subject.pronouns === undefined ? [] : [[subject.ref, subject.pronouns]])),
     ),
+    ...(input.register === undefined ? {} : { register: input.register }),
     budget: input.budget,
     sink,
   });
