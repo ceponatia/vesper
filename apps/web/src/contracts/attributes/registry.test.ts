@@ -4,7 +4,16 @@ import { attributeCategories } from "./category-ids";
 import { attributeGroups } from "./categories";
 import { materializeRegistryDefaults, registryDefaultSourceId } from "./index";
 import { buildRegistry } from "./registry";
-import { attributeDefinitionSchema, defineAttributeGroup, imageAppearanceMinimumFramings } from "./types";
+import {
+  attributeDefinitionSchema,
+  defineAttributeGroup,
+  imageAppearanceMinimumFramings,
+  imageAppearancePhraseGroupNoun,
+  imageAppearancePhraseGroups,
+  imageAppearancePhraseRoles,
+  type AttributeDefinition,
+} from "./types";
+import { formatAttributePhrase, formatAttributeValue } from "./value";
 import { bodyLocationRegistry, isIntimateAttributeCategory } from "../body/locations";
 
 const registry = buildRegistry(attributeGroups);
@@ -383,6 +392,178 @@ describe("parseValue", () => {
     const result = registry.parseValue("hair.glitter", "sparkly");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues[0]).toMatch(/unknown attribute id/);
+  });
+});
+
+/**
+ * The registry's image-appearance PHRASES (#547).
+ *
+ * An image-eligible attribute reaches a prompt either as prose ("dark-brown
+ * hair") or as its self-describing label form ("Hair color: dark brown"), and
+ * which one is a per-attribute registry decision. Two things can go wrong
+ * silently, and neither shows up in any other suite:
+ *
+ * 1. A template that does not render — a typo'd `{valu}`, a per-value key that
+ *    is not an allowed member, a fragment that renders empty — ships either a
+ *    placeholder to an image provider or a fact that quietly falls back to the
+ *    label form it was written to replace.
+ * 2. A new image-eligible attribute nobody decided about inherits the label
+ *    form by default, which is how "She has musculature: lightly toned" got
+ *    into a scene prompt in the first place (#544).
+ *
+ * Both are derived from the registry rather than from a copied list, so adding
+ * an attribute or an enum member fails here instead of in a render.
+ */
+describe("image appearance phrases", () => {
+  const phrased = registry.definitions.filter((def) => def.imageAppearance?.phrase !== undefined);
+
+  const definitionOf = (id: string): AttributeDefinition => {
+    const def = registry.byId(id);
+    if (def === undefined) throw new Error(`missing fixture attribute ${id}`);
+    return def;
+  };
+  const textOf = (id: string, value: string): string | undefined =>
+    formatAttributePhrase(definitionOf(id), value)?.text;
+
+  it("declares phrases on a real share of the image-eligible set", () => {
+    expect(phrased.length).toBeGreaterThan(20);
+  });
+
+  /** The vocabulary is `@vesper/image-core`'s; a group or role outside it has no grammar. */
+  it("uses only the engine's group and role vocabulary", () => {
+    for (const def of phrased) {
+      const phrase = def.imageAppearance?.phrase;
+      if (phrase === undefined) continue;
+      expect([...imageAppearancePhraseGroups], def.id).toContain(phrase.group);
+      expect([...imageAppearancePhraseRoles], def.id).toContain(phrase.role);
+    }
+  });
+
+  /**
+   * The build-stopping half: every value of every phrased attribute renders, or
+   * is one of the two states that legitimately produce no phrase — an elided
+   * value ("none"), or a member a partial `fragmentByValue` deliberately leaves
+   * on the label form. Anything else is a template that does not work.
+   */
+  it("renders every allowed value with no placeholder and no empty fragment", () => {
+    const unrendered: string[] = [];
+    for (const def of phrased) {
+      const phrase = def.imageAppearance?.phrase;
+      if (phrase === undefined) continue;
+      for (const value of def.allowedValues ?? []) {
+        const rendered = formatAttributePhrase(def, value);
+        if (rendered === null) {
+          const elided = formatAttributeValue(def, value).length === 0;
+          const noTemplate = phrase.fragment === undefined && phrase.fragmentByValue?.[value] === undefined;
+          if (!elided && !noTemplate) unrendered.push(`${def.id}.${value}`);
+          continue;
+        }
+        for (const part of [rendered.text, rendered.phrase.fragment]) {
+          expect(part, `${def.id}.${value}`).not.toMatch(/\{(?:value|compound|fragment)\}/);
+          expect(part.trim(), `${def.id}.${value}`).not.toBe("");
+        }
+        expect(rendered.phrase.group, `${def.id}.${value}`).toBe(phrase.group);
+        expect(rendered.phrase.role, `${def.id}.${value}`).toBe(phrase.role);
+      }
+    }
+    expect(unrendered).toEqual([]);
+  });
+
+  /**
+   * The standalone form is what a non-composing dialect says on its own, so it
+   * has to name the thing it is about: an adjective or trailer states its group
+   * noun ("dark-brown hair", "hair to mid-back"), and a `with` phrase is already
+   * a whole noun phrase.
+   */
+  it("names the group noun in every derived adjective and trailer standalone", () => {
+    for (const def of phrased) {
+      const phrase = def.imageAppearance?.phrase;
+      if (phrase === undefined || phrase.standalone !== undefined) continue;
+      const noun = imageAppearancePhraseGroupNoun(phrase.group);
+      if (phrase.role === "with" || noun === null) continue;
+      for (const value of def.allowedValues ?? []) {
+        const rendered = formatAttributePhrase(def, value);
+        if (rendered === null) continue;
+        expect(rendered.text, `${def.id}.${value}`).toContain(noun);
+        expect(rendered.text, `${def.id}.${value}`).toContain(rendered.phrase.fragment);
+      }
+    }
+  });
+
+  /**
+   * The other direction, and the reason this is a census: an image-eligible
+   * attribute with NO phrase keeps the label form, which is a deliberate choice
+   * for a handful of attributes and a mistake for anything else. Free text
+   * cannot be templated (`hair.style`, `identity.heritage`); the two scalp-hair
+   * bulk axes share the words "fine" and "thick" and would read as each other's
+   * dimension; and `identity.gender` is absorbed by the subject's pronoun where
+   * one exists, so wording it is the pronoun policy's decision, not this one.
+   */
+  it("keeps the label form only for the reviewed set", () => {
+    const unphrased = registry.definitions
+      .filter((def) => def.imageAppearance !== undefined && def.imageAppearance.phrase === undefined)
+      .map((def) => def.id)
+      .sort();
+    expect(unphrased).toEqual([
+      "hair.density",
+      "hair.strand_thickness",
+      "hair.style",
+      "identity.gender",
+      "identity.heritage",
+    ]);
+  });
+
+  /** The worked example the issue names, end to end through the registry. */
+  it("words the #544 fixture's hair and build facts as prose", () => {
+    const phraseOf = (id: string, value: string): { text: string; fragment: string } => {
+      const rendered = formatAttributePhrase(definitionOf(id), value);
+      if (rendered === null) throw new Error(`${id} words no phrase for ${value}`);
+      return { text: rendered.text, fragment: rendered.phrase.fragment };
+    };
+    expect(phraseOf("hair.color", "dark_brown")).toEqual({ text: "dark-brown hair", fragment: "dark-brown" });
+    expect(phraseOf("hair.length", "mid_back")).toEqual({ text: "hair to mid-back", fragment: "to mid-back" });
+    expect(phraseOf("hair.condition", "healthy")).toEqual({ text: "healthy hair", fragment: "healthy" });
+    expect(phraseOf("build.weight_presentation", "slim")).toEqual({ text: "a slim build", fragment: "slim" });
+    expect(phraseOf("build.musculature", "lightly_toned")).toEqual({
+      text: "a lightly toned build",
+      fragment: "lightly toned",
+    });
+    expect(phraseOf("arms.build", "slender")).toEqual({ text: "slender arms", fragment: "slender arms" });
+    expect(phraseOf("waist.definition", "subtle")).toEqual({ text: "a subtle waist", fragment: "a subtle waist" });
+    expect(phraseOf("eyes.color", "hazel")).toEqual({ text: "hazel eyes", fragment: "hazel" });
+  });
+
+  /**
+   * Two rules that only show up on a value the template did not anticipate: the
+   * article agrees with the word it introduces, and a compound modifier
+   * hyphenates where a running-words fragment would not.
+   */
+  it("agrees the article it writes and hyphenates a compound modifier", () => {
+    expect(textOf("breasts.size", "ample")).toBe("an ample bust");
+    expect(textOf("breasts.size", "modest")).toBe("a modest bust");
+    expect(textOf("face.shape", "oval")).toBe("an oval face");
+    expect(textOf("face.shape", "heart")).toBe("a heart-shaped face");
+    expect(textOf("skin.tone", "light_olive")).toBe("light-olive skin");
+  });
+
+  /**
+   * "none" elides before anything is worded, so a deliberate absence never
+   * plants the noun it is absent of — the same rule `formatAttributeValue`
+   * applies, reached through the phrase path.
+   */
+  it("words no phrase for an elided value", () => {
+    expect(formatAttributePhrase(definitionOf("build.pregnancy"), "none")).toBeNull();
+    expect(textOf("build.pregnancy", "showing")).toBe("a visibly pregnant belly");
+  });
+
+  /**
+   * A member a partial map leaves out keeps the label form rather than being
+   * forced through a template that does not word it: `hair.arrangement: other`
+   * means "read the styling text", and there is no phrase for that.
+   */
+  it("leaves a member with no template on the label form", () => {
+    expect(formatAttributePhrase(definitionOf("hair.arrangement"), "other")).toBeNull();
+    expect(textOf("hair.arrangement", "bun")).toBe("hair in a bun");
   });
 });
 

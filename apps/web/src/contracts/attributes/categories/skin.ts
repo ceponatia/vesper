@@ -25,7 +25,11 @@ export const skinGroup = defineAttributeGroup("skin", [
       "pale_green", "sage_green", "crimson", "dusky_violet", "ghostly_white",
     ],
     aliases: ["skin tone", "skin color", "complexion"],
-    imageAppearance: { class: "core", referenceFreeRequired: true },
+    imageAppearance: {
+      class: "core",
+      referenceFreeRequired: true,
+      phrase: { group: "skin", role: "adjective", fragment: "{compound}" },
+    },
     coreVisual: true,
     defaultValue: "light",
   },
@@ -39,7 +43,11 @@ export const skinGroup = defineAttributeGroup("skin", [
     mutability: "inherent",
     allowedValues: ["cool", "neutral", "warm", "rosy", "golden", "olive"],
     aliases: ["undertone"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: { group: "skin", role: "with", fragment: "{value} undertones" },
+    },
   },
   {
     id: "skin.texture",
@@ -52,7 +60,17 @@ export const skinGroup = defineAttributeGroup("skin", [
     allowedValues: ["smooth", "soft", "dewy", "dry", "rough", "weathered", "leathery", ...SYNTHETIC_SKIN_TEXTURES],
     autoDefaultExcludes: [...SYNTHETIC_SKIN_TEXTURES],
     aliases: ["skin texture"],
-    imageAppearance: { class: "fine", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "skin",
+        role: "adjective",
+        fragment: "{compound}",
+        // A polymer is a material, not a hyphenated modifier of one.
+        fragmentByValue: { supple_polymer: "supple polymer" },
+      },
+    },
     // Narrator-gloss authoring batch — DRAFTS AWAITING
     // OWNER REVIEW. Texture = surface feel only, never tone/color. Sparse: smooth/soft/dry stay bare.
     narratorGuidance: {

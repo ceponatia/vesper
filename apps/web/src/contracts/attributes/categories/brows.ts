@@ -13,7 +13,16 @@ export const browsGroup = defineAttributeGroup("brows", [
     allowedValues: ["straight", "softly_arched", "arched", "high_arch", "angled", "rounded", "flat"],
     bodyLocationId: "face",
     aliases: ["eyebrows", "brow shape"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragment: "{value} brows",
+        fragmentByValue: { high_arch: "high-arched brows" },
+      },
+    },
   },
   {
     id: "brows.thickness",
@@ -32,6 +41,15 @@ export const browsGroup = defineAttributeGroup("brows", [
     // model spends on a few pixels. `maximumFraming` is the widest band an
     // `imageAppearance` fact still contributes at, so `close_up` is what drops
     // it from portrait, waist-up and wider shots.
-    imageAppearance: { class: "reinforcement", maximumFraming: "close_up" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "close_up",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragment: "{value} brows",
+        fragmentByValue: { medium: "moderately thick brows" },
+      },
+    },
   },
 ]);

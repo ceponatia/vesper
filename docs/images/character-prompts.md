@@ -71,10 +71,10 @@ and states what translation alone cannot:
   missing-part exclusions off the negative channel's table; a prosthetic
   additionally tags `morphology.synthetic_surface`.
 - **Every emitted value is prompt-ready, and a per-kind renderer decides how.**
-  A structured value goes through the renderer its own visual-state kind
-  declares (`imageCharacterKindPromptDecisions`): a garment record becomes its
-  name, a support relation becomes "standing on the floor", a tuck reading
-  becomes a clause bound to the garment it belongs to. There is **no structural
+  Every value goes through the renderer its own visual-state kind declares
+  (`imageCharacterKindPromptDecisions`): a garment record becomes its name, a
+  support relation becomes "standing on the floor", a tuck reading becomes a
+  clause bound to the garment it belongs to. There is **no structural
   fallback** — an unregistered kind, a value that fails its own schema and a
   reading a renderer deliberately says nothing about all resolve to silence plus
   the record `character.value_unreadable`, and a required one additionally lands
@@ -84,6 +84,14 @@ and states what translation alone cannot:
   are decisions rather than gaps. A census test walks the kind registry, so a
   kind added without a decision fails the build instead of reaching a payload as
   flattened structure.
+- **Scalar pass-through is a per-kind policy, not an exemption.** A string,
+  number or boolean is judged by the same table as a record, so a kind that
+  declares either refusal is silent for every value shape. The three appearance
+  kinds are the pass-through: their values are answered from the canonical
+  owners before they reach the table, so their renderers let that resolver
+  output through, and the attribute kind additionally carries the registry's
+  phrase record. Every other kind carries a structured visual-state value, and a
+  scalar at one of them is a shape its own schema never produced.
 - **A rendered value is a clause fragment, in one of two shapes.** Every dialect
   wraps a subject claim with a fixed verb, so the value completes that wrapper
   and is never a sentence, an id or a bare vocabulary token. A whole-subject
@@ -138,9 +146,23 @@ registry's policy before the adapter sees it:
   longer permits them;
 - `none` follows the registry's prompt-elision rule, and metadata may omit other
   valid storage values that add no useful image instruction;
-- `formatAttribute` supplies the readable label and value. The source attribute
-  id and canonical truth fingerprint remain provenance and never become prompt
-  prose.
+- `formatAttribute` supplies the readable label and value, and
+  `formatAttributePhrase` the prose form beside it. The source attribute id and
+  canonical truth fingerprint remain provenance and never become prompt prose.
+
+An image-eligible attribute that declares an `imageAppearance.phrase`
+([../contracts/attributes.md](../contracts/attributes.md) §Appearance phrases)
+reaches the world digest as the record `{ text, phrase: { group, role,
+fragment } }` rather than as "Hair color: dark brown". `text` is the standalone
+noun phrase ("dark-brown hair"), which every dialect words through the value
+member it already reads; `phrase` is the same fact taken apart, so a prose
+dialect composes one clause per feature group from several claims that each keep
+their own segment, fitting and provenance. An attribute with no declared phrase
+carries the label form. Both paths into a subject's appearance facts — the
+visual-state resolver for a selected fact and the registry projection this
+adapter runs — emit the same record, so one attribute reads the same however it
+arrived. The registry owns the wording and the dialect owns the grammar: no
+attribute id reaches `@vesper/image-core`.
 
 The adapter then applies render-specific policy once for every lane. A fact's
 inclusive minimum-to-maximum framing range and body location decide whether the

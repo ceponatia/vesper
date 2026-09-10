@@ -23,7 +23,25 @@ export const teethGroup = defineAttributeGroup("teeth", [
     autoDefaultExcludes: ["sharp_canines", "sharp_incisors", "fanged", "all_pointed", "serrated"],
     bodyLocationId: "face",
     aliases: ["teeth", "fangs", "canines"],
-    imageAppearance: { class: "fine", maximumFraming: "close_up" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "close_up",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragmentByValue: {
+          even: "even teeth",
+          slightly_crooked: "slightly crooked teeth",
+          gapped: "gapped teeth",
+          prominent_canines: "prominent canines",
+          sharp_canines: "sharp canines",
+          sharp_incisors: "sharp incisors",
+          fanged: "fangs",
+          all_pointed: "pointed teeth throughout",
+          serrated: "serrated teeth",
+        },
+      },
+    },
     promptHints: ["Sharp canines / fangs read vampiric, demonic, or predatory — surface them on a smile, a hiss, or up close."],
   },
   {
@@ -37,6 +55,15 @@ export const teethGroup = defineAttributeGroup("teeth", [
     allowedValues: ["pristine", "white", "neat", "yellowed", "stained", "chipped", "gold_capped"],
     bodyLocationId: "face",
     aliases: ["teeth condition"],
-    imageAppearance: { class: "fine", maximumFraming: "close_up" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "close_up",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragment: "{value} teeth",
+        fragmentByValue: { gold_capped: "gold-capped teeth" },
+      },
+    },
   },
 ]);

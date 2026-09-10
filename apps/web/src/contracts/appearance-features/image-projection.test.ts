@@ -36,6 +36,37 @@ describe("image appearance attribute projection", () => {
     expect(musculature).toMatchObject({ class: "core", referenceFreeRequired: false });
   });
 
+  /**
+   * The prose form travels BESIDE the label form, not instead of it (#547): the
+   * character adapter prefers the phrase and every consumer that is listing
+   * facts rather than writing a sentence still has `readableValue`. The pieces
+   * matter as much as the text — a dialect composes "healthy dark-brown hair
+   * worn loose to mid-back" out of fragments, and a projection that shipped only
+   * the finished noun phrase would have taken that apart again.
+   */
+  it("renders the registry's phrase beside the label form", () => {
+    const projected = project([
+      { id: "hair.color", value: "dark_brown", source: "manual" },
+      { id: "waist.definition", value: "subtle", source: "manual" },
+      { id: "identity.heritage", value: "Igbo", source: "manual" },
+    ]);
+    const phraseOf = (id: string) => projected.find((fact) => fact.attributeId === id);
+
+    expect(phraseOf("hair.color")).toMatchObject({
+      readableValue: "Hair color: dark brown",
+      phraseValue: { text: "dark-brown hair", phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
+    });
+    expect(phraseOf("waist.definition")).toMatchObject({
+      readableValue: "Waist: subtle",
+      phraseValue: { text: "a subtle waist", phrase: { group: "build", role: "with", fragment: "a subtle waist" } },
+    });
+    // Free text has no template to word it: the label form stays the answer.
+    expect(phraseOf("identity.heritage")).toMatchObject({
+      readableValue: "Heritage: Igbo",
+      phraseValue: null,
+    });
+  });
+
   it("derives reference-free completeness from metadata rather than forge flags", () => {
     const required = attributeRegistry.definitions
       .filter((definition) => definition.imageAppearance?.referenceFreeRequired)

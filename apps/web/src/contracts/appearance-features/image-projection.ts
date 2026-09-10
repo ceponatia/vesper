@@ -1,6 +1,7 @@
 import {
   attributeRegistry,
   formatAttribute,
+  formatAttributePhrase,
   isNonVisualAttribute,
   promptValueWithNoneElided,
   type AttributeDefinition,
@@ -8,6 +9,7 @@ import {
   type ImageAppearanceClass,
   type ImageAppearanceMetadata,
   type ImageAppearanceMinimumFraming,
+  type ImageAppearancePhraseValue,
 } from "../attributes";
 import type { AppearanceSourceRef } from "./projection";
 import { appearanceCanonicalFingerprint } from "./projection";
@@ -21,7 +23,8 @@ export interface ImageAppearanceAttributeProjectionInput {
 
 /**
  * One prompt-ready semantic attribute fact. `truthFingerprint` and
- * `sourceRef` are provenance; only `readableValue` may become prompt text.
+ * `sourceRef` are provenance; only `readableValue` and `phraseValue` may become
+ * prompt text.
  */
 export interface ProjectedImageAppearanceAttribute {
   readonly attributeId: string;
@@ -29,7 +32,20 @@ export interface ProjectedImageAppearanceAttribute {
   readonly bodyLocationId: string | undefined;
   readonly sourceRef: AppearanceSourceRef;
   readonly truthFingerprint: string;
+  /** The self-describing `Label: value` form — always present. */
   readonly readableValue: string;
+  /**
+   * The same fact as PROSE, when the registry declares a phrase for this value:
+   * the standalone noun phrase a dialect states on its own ("dark-brown hair")
+   * plus the group/role/fragment a composing dialect joins into one sentence.
+   *
+   * `null` where the registry has no wording — an attribute with no natural
+   * phrase, or one member of an enum that has none — and the caller then uses
+   * `readableValue`. Both are offered rather than one replacing the other: the
+   * label form is still the honest answer for a consumer that is listing facts
+   * rather than writing a sentence.
+   */
+  readonly phraseValue: ImageAppearancePhraseValue | null;
   readonly class: ImageAppearanceClass;
   readonly referenceFreeRequired: boolean;
   readonly minimumFraming: ImageAppearanceMinimumFraming;
@@ -85,6 +101,7 @@ export function projectImageAppearanceAttributes(
       sourceRef: { kind: "attribute", attributeId: definition.id },
       truthFingerprint: appearanceCanonicalFingerprint(attribute.value),
       readableValue,
+      phraseValue: formatAttributePhrase(definition, promptValue),
       class: definition.imageAppearance.class,
       referenceFreeRequired: definition.imageAppearance.referenceFreeRequired ?? false,
       minimumFraming: definition.imageAppearance.minimumFraming ?? "close_up",

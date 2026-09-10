@@ -13,7 +13,16 @@ export const lipsGroup = defineAttributeGroup("lips", [
     allowedValues: ["thin", "slight", "medium", "full", "very_full", "plush"],
     bodyLocationId: "lips",
     aliases: ["lips", "lip fullness"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragment: "{value} lips",
+        fragmentByValue: { slight: "slightly full lips", medium: "moderately full lips" },
+      },
+    },
   },
   {
     id: "lips.shape",
@@ -30,7 +39,24 @@ export const lipsGroup = defineAttributeGroup("lips", [
     ],
     bodyLocationId: "lips",
     aliases: ["lip shape"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragmentByValue: {
+          cupids_bow: "a cupid's-bow mouth",
+          bow_shaped: "bow-shaped lips",
+          wide: "a wide mouth",
+          narrow: "a narrow mouth",
+          round: "round lips",
+          heavy_bottom: "a full lower lip",
+          downturned: "downturned lips",
+          upturned: "upturned lips",
+        },
+      },
+    },
   },
   {
     id: "lips.piercings",
@@ -43,6 +69,21 @@ export const lipsGroup = defineAttributeGroup("lips", [
     allowedValues: ["none", "labret", "vertical_labret", "medusa", "single_side", "snake_bites", "spider_bites"],
     bodyLocationId: "lips",
     aliases: ["lip piercing", "labret", "snake bites"],
-    imageAppearance: { class: "fine", maximumFraming: "close_up" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "close_up",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragmentByValue: {
+          labret: "a labret piercing",
+          vertical_labret: "a vertical labret piercing",
+          medusa: "a medusa piercing",
+          single_side: "a single lip piercing to one side",
+          snake_bites: "snake-bite lip piercings",
+          spider_bites: "spider-bite lip piercings",
+        },
+      },
+    },
   },
 ]);

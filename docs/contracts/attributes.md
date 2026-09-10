@@ -120,6 +120,7 @@ forge filling or observer recognition.
 | `maximumFraming`        | Widest eligible band; facts render only inside the inclusive minimum-to-maximum range.                                      |
 | `omitValues`            | Valid stored enum members that deliberately add no image instruction; every member must occur in `allowedValues`.           |
 | `ordinarySilhouette`    | Allows the one approved intimate shape fact to enter an ordinary character-image description through clothing.              |
+| `phrase`                | How the value reads as prose instead of as a label (see **Appearance phrases** below).                                      |
 
 **Set `maximumFraming` to the widest band at which the fact still earns its
 words.** A feature whose *shape* reads at portrait distance may say `portrait`;
@@ -130,9 +131,52 @@ shots rather than spending a clause on a few pixels.
 The projector still applies `excludeFromPrompts`, nonvisual-kind filtering,
 the ordinary `none` elision and realized-body applicability. It carries the
 attribute source and canonical truth fingerprint as provenance while
-`formatAttribute` supplies the provider-readable value. A valid subject-bound
+`formatAttribute` supplies the label form and `formatAttributePhrase` the prose
+form beside it. A valid subject-bound
 identity reference satisfies stable reference-free completeness for that
 subject, but available values remain text reinforcement.
+
+### Appearance phrases
+
+`imageAppearance.phrase` says how an attribute's value reads as prose. Without
+one the attribute reaches an image prompt in its `Label: value` form, and a
+sentence built from several of them reads as a registry listing ("She has
+musculature: lightly toned and weight presentation: slim"). With one it reads as
+a noun phrase, and a prose dialect can compose several into a single clause.
+
+| Member            | Meaning                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `group`           | The feature clause the fragment belongs to: `build`, `hair`, `face`, `skin`, `eyes`, or `other`.                  |
+| `role`            | What the fragment does there: `adjective`, `with` (a whole noun phrase), or `trailer`.                            |
+| `fragment`        | The fragment template applied to every value with no entry of its own.                                           |
+| `fragmentByValue` | Per-enum-member fragment templates; a listed member overrides `fragment`.                                        |
+| `standalone`      | The standalone noun phrase, overriding the form derived from the role.                                           |
+
+The group and role vocabulary is `@vesper/image-core`'s
+(`prompt-program/appearance-phrase.ts`); the registry owns the words and the
+engine owns the grammar, so no attribute id reaches a dialect.
+
+A template interpolates the resolved value two ways: `{value}` is the humanized
+value `formatAttributeValue` renders (`mid_back` → "mid back"), and `{compound}`
+is the same value hyphenated (`mid_back` → "mid-back") for a modifier standing in
+front of its noun. An indefinite article the template writes agrees with what
+follows it, so `"a {value} bust"` renders "an ample bust".
+
+`formatAttributePhrase` returns both the fragment and the standalone noun phrase
+a consumer states on its own. The standalone is derived from the role —
+`adjective` → "{fragment} \<group noun\>", `with` → "{fragment}", `trailer` →
+"\<group noun\> {fragment}" — with the article the group noun needs, and
+`standalone` overrides it. `other` has no group noun, so an `adjective` or
+`trailer` phrase there must declare `standalone`.
+
+At least one of `fragment` / `fragmentByValue` is required, and
+`fragmentByValue` keys must be `allowedValues` members of an enum or enum_list —
+both enforced at group-definition time. A value with neither a template nor an
+entry keeps the label form, which is the honest answer for a member with no
+natural phrase (`hair.arrangement: "other"` means "read the styling text"). So
+does an attribute that declares no phrase at all: free text cannot be templated,
+and `identity.gender` is worded by the image lane's pronoun policy rather than
+here.
 
 `ordinarySilhouette` is valid only on `breasts.size` together with
 `imageReveal: "shape"`; group-definition validation rejects it anywhere else.
