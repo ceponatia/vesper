@@ -48,9 +48,12 @@ const ownedChat = (user: { id: string }, params: Params) => loadOwnedChat(params
  * committed.
  *
  * Everything the repair needs from OTHER stores — the player persona the scribe
- * addresses — is resolved before the lock is taken and before the row is written, so
- * a persona-store failure answers with the transcript and its derivatives still
- * consistent instead of 500-ing over a committed write no leg ever repaired.
+ * addresses — is resolved under the exchange lock and before the row is written. Under
+ * the lock because the chat's persona pick is a state edit that only probes this lock:
+ * read before the acquire, a pick landing in between would re-file the exchange under
+ * the previous player's name, whereas once the lock is held that edit is refused. Before
+ * the write so a persona-store failure answers with the transcript and its derivatives
+ * still consistent instead of 500-ing over a committed write no leg ever repaired.
  */
 
 const editBodySchema = z.object({
@@ -114,18 +117,19 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _o
     );
   }
   // Both refusals above are checked before anything is taken or written.
-
-  // Resolved HERE — outside the lock and ahead of the write — because this read hits
-  // its own store: a failure after the update commits would 500 past the repair and
-  // leave the summary, the memory and the voice ring quoting the old wording.
-  const memory = await repairMemoryContext(user.id, chatId, owned);
-
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
 
   const held = tryKeyedLock(
     chatExchangeLockKey(chatId),
     async () => {
+      // Resolved INSIDE the lock and ahead of the write (see the module comment):
+      // inside, so a persona pick cannot land between the read and the acquire; ahead
+      // of the write, because this read hits its own store and a failure after the
+      // update commits would 500 past the repair and leave the summary, the memory
+      // and the voice ring quoting the old wording.
+      const memory = await repairMemoryContext(user.id, chatId, owned);
+
       // The wording BEFORE the write: what the summary folded, the scribe filed,
       // and the voice ring may still quote.
       const [previous] = await db()
@@ -186,15 +190,15 @@ export const DELETE = withOwnedChat<Params, OwnedChat>(ownedChat, async (user, _
       409,
     );
   }
-  // Resolved before the lock and the delete, for the reason PATCH states above.
-  const memory = await repairMemoryContext(user.id, chatId, owned);
-
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
 
   const held = tryKeyedLock(
     chatExchangeLockKey(chatId),
     async () => {
+      // Inside the lock and before the delete, for the reasons PATCH states above.
+      const memory = await repairMemoryContext(user.id, chatId, owned);
+
       // The delete's own `returning()` carries everything the repair needs: the
       // snipped wording, the role, and the timestamp the watermark compares against.
       const [deleted] = await db()

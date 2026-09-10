@@ -42,8 +42,9 @@ rolling summary, extracted into the facts and episode of the exchange it belonge
 possibly kept as a voice exemplar — so both verbs rebuild all three before answering, and
 await the work: a fire-and-forget repair lets the very next send retrieve what the player just
 removed. Everything the repair reads from another store (the player persona the scribe
-addresses) is resolved before the write, so that lookup failing costs the request rather than
-leaving a committed line with unrepaired derivatives.
+addresses) is resolved under the exchange lock and before the write, so a persona pick landing
+mid-request is refused as `chat_busy` rather than read half-way, and that lookup failing costs
+the request rather than leaving a committed line with unrepaired derivatives.
 
 - **Memory** — repair follows the **exchange**, not the edited row. Memory is stored under an
   assistant message id, but the extraction behind it read the player's half too, so a player
