@@ -14,7 +14,10 @@ for a in "$@"; do
   case "$a" in --delete-branch) DELETE=1 ;; --force) FORCE=1 ;; *) echo "unknown flag $a" >&2; exit 1 ;; esac
 done
 
-ROOT=$(git rev-parse --show-toplevel)
+# A session worktree is not the repository root, so a by-number lookup must use
+# the main checkout; `git worktree list` names it first.
+ROOT=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p') || ROOT=""
+ROOT="${ROOT:-$(git rev-parse --show-toplevel)}"
 if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
   DIR="$ROOT/.codex/worktrees/issue-$TARGET"
   LEGACY_DIR="$ROOT/.claude/worktrees/agent-$TARGET"
