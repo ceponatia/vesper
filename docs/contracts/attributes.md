@@ -139,11 +139,11 @@ intimate reveal path and its exposure rules.
 
 `imageReveal` controls whether an attribute appears in a full-body image ([../images/pipelines/scene-subjects.md](../images/pipelines/scene-subjects.md)):
 
-| Value    | When it's described                                                                             |
-| -------- | ----------------------------------------------------------------------------------------------- |
-| `shape`  | Reads *through* clothing — breast size, waist, hips, leg build — so it is **always** described. |
-| `skin`   | Only when the region is bare or sheer — nipples, leg hair, toenails.                            |
-| *absent* | Not part of the scene subject's reveal line.                                                    |
+| Value    | When it's described                                                                                        |
+| -------- | ---------------------------------------------------------------------------------------------------------- |
+| `shape`  | Reads *through* clothing — breast size, waist, hips, leg build, pregnancy — so it is **always** described. |
+| `skin`   | Only when the region is bare or sheer — nipples, leg hair, toenails.                                       |
+| *absent* | Not part of the scene subject's reveal line.                                                               |
 
 Consumed by the scene render.
 
