@@ -124,6 +124,27 @@ export interface ImageDialectReference {
   readonly description?: string;
 }
 
+/**
+ * How a dialect ADDRESSES the model: as a description of the picture to make,
+ * or as an instruction to carry out (#549).
+ *
+ * A WORDING axis and never a new operation member. The job is the same job in
+ * either register — the same claims, the same references, the same program
+ * fingerprint — and what moves is whether "She wears a pastel-pink crewneck
+ * sweater." or "Dress her in a pastel-pink crewneck sweater." reaches an
+ * endpoint whose `prompt` field is documented as an edit instruction rather
+ * than a scene description. Which of the two such an endpoint actually obeys is
+ * an evidence question, so both stay compilable from one digest on one seed and
+ * a fixed trial decides.
+ *
+ * Only the Qwen Edit 2511 dialect reads it today. A dialect with one register
+ * ignores it, which is why there is no per-dialect declaration to keep in sync:
+ * an unread option changes nothing, and a dialect that grows a second register
+ * starts reading it in the same commit that gives it one.
+ */
+export const imagePromptRegisters = ["descriptive", "imperative"] as const;
+export type ImagePromptRegister = (typeof imagePromptRegisters)[number];
+
 /** Everything a positive compile may read. Notably NOT the world digest. */
 export interface ImageDialectPositiveInput {
   readonly claims: readonly ImagePositiveClaim[];
@@ -145,6 +166,16 @@ export interface ImageDialectPositiveInput {
    * then keeps using the label (or the reference binding) and never guesses.
    */
   readonly entityPronouns?: Readonly<Record<string, ImageSubjectPronounSet>>;
+  /**
+   * The register this compile asks for, or absent to take the dialect's own
+   * default for the task.
+   *
+   * Absent is the ordinary case and the honest one: which register an endpoint
+   * reads best is the dialect's knowledge, not a lane's, so a caller states
+   * this only when it is deliberately compiling the other spelling — a fixed
+   * A/B trial on one seed set.
+   */
+  readonly register?: ImagePromptRegister;
   readonly budget: ImagePromptBudget;
   readonly sink?: DiagnosticSink;
 }

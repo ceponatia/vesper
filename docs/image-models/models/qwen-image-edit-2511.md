@@ -134,19 +134,38 @@ is authoritative for hair, build, wardrobe and pose.** That split is what the
 binding sentence states, and it is why the prompt may describe a haircut or an
 outfit the photograph does not show without contradicting itself.
 
-**One sentence binds the subject to its image and states the preserve set.** The
-lock, the identity slot's own `Image N` assignment and the subject's name are one
-statement, not three: a display name repeated beside a numbered photograph is a
-second identity cue competing with the picture the endpoint was given, and a
+**The binding names the cast and states the preserve set in one place.** The
+lock, each identity slot's own `Image N` assignment and the subject's name are
+one statement, not three: a display name repeated beside a numbered photograph is
+a second identity cue competing with the picture the endpoint was given, and a
 blanket "change only what this instruction requests" is a preserve clause with no
-change to bound. With one identity reference:
+change to bound.
+
+**The form is chosen over the PEOPLE the identity slots show, never over the
+slots.** A payload may carry several images of one person — a reference sheet's
+view enters the send list as a second identity slot for the same character
+([reference-views.md](../../images/pipelines/reference-views.md)) — and a form
+counted over slots calls that two people. Three forms follow.
+
+One person, one image:
 
 ```text
 Use the woman in Image 1 as the sole subject; keep her face, skin tone and
 apparent age exactly as shown.
 ```
 
-With several:
+One person, several images — the images named as a set, each given its own
+purpose, and a preserve set asking for consistency ACROSS them, because "exactly
+as shown" cannot be said of two photographs at once:
+
+```text
+Use the woman shown in Images 1 and 2 as the sole subject. Image 1 is her primary
+identity reference; Image 2 is seen from behind, the same person. Keep her face,
+skin tone and apparent age consistent with these references.
+```
+
+Several people — one clause per person, listing that person's own images, and the
+preserve set stated once for everybody:
 
 ```text
 Use the numbered images as assigned: Image 1 shows a woman, Image 2 shows a man;
@@ -154,11 +173,22 @@ keep each person's face, skin tone and apparent age exactly as their own image
 shows.
 ```
 
-The exported `QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK` and
+A person's **primary** image is their first identity slot in send order. It is
+the number the introduction cites ("the woman in Image 1") and the number the
+face-visibility clause anchors to; every other slot of theirs is a support image.
+What a support image IS comes from the lane's own `description` and is quoted
+verbatim, because the vocabulary that rendered the image is the only thing that
+can describe it honestly; a slot with no description is named as another
+reference image of the same person. Where a person's clause carries such a
+description, the assignment list rises from commas to semicolons, since its
+entries then carry commas of their own.
+
+The exported `QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`,
+`QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK` and
 `QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` are the **preserve clauses** of those
-sentences rather than whole sentences: the rest names the subject, the image
-number and a possessive, none of which is constant. Neither clause contains the
-other, so a reader can assert which binding a render chose. The
+three sentences rather than whole sentences: the rest names the subject, the
+image numbers and a possessive, none of which is constant. No clause contains
+another, so a reader can assert which binding a render chose. The
 `…_HAIR_CONCEALED` names are byte-identical deprecated aliases — hair is in
 neither preserve set, so a covered head needs no separate spelling.
 
@@ -209,8 +239,11 @@ What the bands merge:
 
 - **build** states the age anchor, then one sentence for the body, then one for
   the hair; **wardrobe** puts every garment in one sentence in the order the
-  projection stated them; **pose** puts posture, pose, activity and expression in
-  one.
+  projection stated them; **pose** takes one or two sentences — the pose with the
+  expression folded into it, and the activity in its own — because two composer
+  phrases joined under one subject frame with "and" produce a sentence no reader
+  would write, and two short grammatical sentences beat one malformed one. One
+  sentence per band is not a goal.
 - A value the character projection wrote as a `with …` fragment ("with the
   sweater tucked in", "with the hair worn loose") **trails** the sentence it
   qualifies — the garment list, or the hair sentence — and earns a sentence of
@@ -250,6 +283,52 @@ render lost.
   to the camera. Its "from Image N" anchor is per subject, never per payload.
 - **Hair concealment.** "Her hair is fully covered by the headwear; no hair is
   visible." — the claim that keeps hair off a render whose reference shows it.
+- **Atmosphere.** The scene's mood band reads "The atmosphere is …", never "The
+  mood is …", which is what every other family says: beside a subject the prompt
+  has just described, "mood" reads as that person's mood, while the claim is the
+  room's — the label a model spends on light, colour and distance rather than on
+  a face.
+
+### The register
+
+The dialect addresses the model in one of two **registers**, which is a wording
+axis and never a different job: the same claims, the same references and the same
+program fingerprint compile either way, and only the sentences move. A caller may
+name one on the compile input; absent one, the task decides.
+
+- **Imperative** is the default on the `scene` task. The scene rung carries no
+  change contract — the description IS the instruction — and this endpoint's
+  `prompt` is an edit instruction rather than a scene description, so a
+  description of a woman in a lounge handed to an edit model beside a photograph
+  of her can be read as a reminder about the picture it was given.
+- **Descriptive** is the default everywhere else, because every other task states
+  its own change contract and a second imperative voice would compete with it.
+
+Band by band, imperative beside descriptive:
+
+| Band | Imperative | Descriptive |
+| --- | --- | --- |
+| binding | `Create a new scene using …` | `Use …` |
+| build | `Give her …` | `She has …` |
+| wardrobe | `Dress her in …` | `She wears …` |
+| pose | `Show her …` | `She is …` |
+| setting | `Place her in …` | `A warm lounge with …` |
+| lighting | `Light the scene with …` | `Lit by …` |
+| mood | `Keep the atmosphere …` | `The atmosphere is …` |
+| style | `Render it as a photograph…` | `Rendered as a photograph…` |
+
+Four things stay assertions in both registers, and each for its own reason. The
+**close** is the picture's own person count. The **capture** and camera sentences
+state where the frame stands rather than what to do. A **staged arrangement** and
+the **possession** clause carry measured wording that a rewrite would throw away.
+The **face-visibility** and **hair-concealment** sentences are already
+instructions about what to preserve.
+
+The imperative binds to the subject's OBJECT pronoun ("Dress her in …") and falls
+back to the introduction wherever no pronoun may be used, exactly as the
+descriptive frame does. A setting phrase that does not open with an article, or a
+render with no single subject to place, is labelled instead: "The setting: a
+lamplit study, rain streaking the tall window."
 
 ### The prompt budget
 

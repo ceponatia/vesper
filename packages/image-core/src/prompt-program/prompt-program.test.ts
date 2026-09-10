@@ -27,6 +27,7 @@ import {
   compileDialectClaims,
   selectImageNegativeConstraints,
   selectImagePositiveClaims,
+  QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   type CompileImagePromptProgramInput,
@@ -888,6 +889,42 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     label: "Wren",
   });
 
+  /**
+   * A cast member the scene lane offers NO display name for — the ordinary
+   * scene shape, and the one a reference sheet is sent beside (#546).
+   */
+  const viewedSubject = (ref: string, pronouns: "she_her" | "he_him") => ({
+    ...entity("subject", ref, [
+      fact({
+        key: `${ref}.identity`,
+        concept: "subject.identity",
+        value: "the same person shown in the reference image",
+        subjectRef: ref,
+        disposition: "required_visual",
+        priority: 1,
+      }),
+    ]),
+    label: "",
+    pronouns,
+  });
+
+  /**
+   * The same, with the composer's two phrases about one body: the POSE, filed
+   * under `subject.body_language` exactly as the scene lowering files it, and
+   * the ACTIVITY under its own concept (#548).
+   */
+  const actingSubject = (ref: string, pronouns: "she_her" | "he_him", pose: string, activity: string) => {
+    const subject = viewedSubject(ref, pronouns);
+    return {
+      ...subject,
+      facts: [
+        ...subject.facts,
+        fact({ key: `${ref}.pose`, concept: "subject.body_language", value: pose, subjectRef: ref, priority: 0.9 }),
+        fact({ key: `${ref}.activity`, concept: "subject.activity", value: activity, subjectRef: ref, priority: 0.8 }),
+      ],
+    };
+  };
+
   const editWorld = (input: Partial<ImageWorldDigestInput> = {}): ImageWorldDigest =>
     world({
       operation: editOperation(),
@@ -1130,6 +1167,174 @@ describe("the Qwen 2511 delta-edit dialect", () => {
   });
 
   /**
+   * ONE PERSON, SEVERAL IMAGES (#546) — the shape the reference-view lane
+   * produces, and the one the several-person binding got wrong.
+   *
+   * A matching reference view enters the send list as a SECOND `identity`
+   * reference for the same character, carrying the angle registry's own clause
+   * (`apps/web` `scene.ts`, `reference-views.ts`). Grouped by slot rather than
+   * by person, that compiled "Image 1 shows a woman, Image 2 shows a woman …
+   * keep each person's face" — the duplicate-person cue this rebuild exists to
+   * remove, produced by the one lane that sends a sheet.
+   *
+   * Falsified against a binding that counts photographs: the assertions below
+   * are that no second indefinite noun and no "each person" survive, which is
+   * exactly what a slot-counting form emits.
+   */
+  it("binds two images of one person as one subject shown in both", () => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 1 }),
+      subjects: [viewedSubject("s1", "she_her")],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        // The view rides as OPTIONAL, behind the anchor, exactly as the lane offers it.
+        { role: "identity", subjectRef: "s1", required: false, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1" },
+        { position: 2, role: "identity", subjectRef: "s1", description: "seen from behind, the same person" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(
+      text.startsWith(
+        "Create a new scene using the woman shown in Images 1 and 2 as the sole subject. " +
+          "Image 1 is her primary identity reference; Image 2 is seen from behind, the same person. " +
+          "Keep her face, skin tone and apparent age consistent with these references.",
+      ),
+    ).toBe(true);
+    // The preserve clause is the grouped one, and neither other spelling is
+    // present — which is how a reader tells which binding this render chose.
+    expect(text).toContain(QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    // The two defects, named: no cast wording, and no second person.
+    expect(text.toLowerCase()).not.toContain("each person");
+    expect(text.match(/\ba woman\b/gu)).toBeNull();
+    // The lane's clause is quoted verbatim and nothing invents an angle beside it.
+    expect(text.indexOf("seen from behind, the same person")).toBe(
+      text.lastIndexOf("seen from behind, the same person"),
+    );
+    // Still one person in the picture, said last.
+    expect(text.endsWith("She is the only person in the picture; the foreground is clear.")).toBe(true);
+  });
+
+  /**
+   * TWO PEOPLE WITH A SHEET EACH (#546): one clause per PERSON, listing that
+   * person's own images, and the preserve set stated once for everybody.
+   *
+   * The list rises from commas to semicolons because each clause now carries
+   * commas of its own — the lane's description is a comma'd phrase — and a
+   * comma-joined list of comma'd clauses reads as one longer list of images.
+   */
+  it("gives each person their own images when a cast of two carries views", () => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 2 }),
+      subjects: [viewedSubject("s1", "she_her"), viewedSubject("s2", "he_him")],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s1", required: false, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: false, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      // The lane's own send order: every anchor, then the views that support them.
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1" },
+        { position: 2, role: "identity", subjectRef: "s2" },
+        { position: 3, role: "identity", subjectRef: "s1", description: "seen from behind, the same person" },
+        { position: 4, role: "identity", subjectRef: "s2", description: "seen in profile, the same person" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(
+      text.startsWith(
+        "Create a new scene using the numbered images as assigned: " +
+          "Images 1 and 3 show a woman, with Image 1 her primary identity reference " +
+          "and Image 3 seen from behind, the same person; " +
+          "Images 2 and 4 show a man, with Image 2 his primary identity reference " +
+          "and Image 4 seen in profile, the same person; " +
+          "keep each person's face, skin tone and apparent age exactly as their own image shows.",
+      ),
+    ).toBe(true);
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK);
+    // Two people, named once each — four photographs are not four bodies.
+    expect(text.match(/\ba woman\b/gu)).toHaveLength(1);
+    expect(text.match(/\ba man\b/gu)).toHaveLength(1);
+    expect(text).toContain("Exactly 2 people are in the picture and nobody else; the foreground is clear.");
+  });
+
+  /**
+   * THE VARIANT EDIT'S WHOLE PROMPT (#548), as a literal.
+   *
+   * Short enough to read in one breath, and every one of this dialect's
+   * contracts is visible in it: the binding, the change contract the scene rung
+   * does not have, the LIMITED preserve set, the subject-scoped exposure clause,
+   * the medium, and the person count last. The variant task keeps the
+   * DESCRIPTIVE register — its instruction is the change contract, and a second
+   * imperative voice would compete with it (#549).
+   */
+  it("pins the variant edit's compiled prompt, change contract and descriptive voice intact", () => {
+    const result = compile2511(editWorld());
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+
+    expect(result.compiled.positiveText).toBe(
+      "Use Wren in Image 1 as the sole subject; keep Wren's face, skin tone and apparent age exactly as shown. " +
+        "Make exactly this change: raise her left hand to shoulder height. " +
+        "Keep the exposure and the identity unchanged from the source. " +
+        "Wren is bare from the waist up. " +
+        "Rendered as a photograph, with real optics and natural surface detail. " +
+        "Wren is the only person in the picture; the foreground is clear.",
+    );
+  });
+
+  /**
+   * THE POSE/ACTIVITY SPLIT ON AN ENSEMBLE (#548).
+   *
+   * Two composer phrases about one body take two sentences, and each person's
+   * pair is bound to their own pronoun — which is the half a single fused
+   * sentence per subject cannot get wrong quietly: "She is leaning against the
+   * counter and pouring a second cup" is at least about one woman, while the
+   * same fusion across a cast puts a man's page-turn in her sentence.
+   */
+  it("gives every subject a pose sentence and an activity sentence of their own", () => {
+    const digest = editWorld({
+      operation: operation({ kind: "edit", task: "scene", strategy: "instruction_edit", subjectCount: 2 }),
+      subjects: [
+        actingSubject("s1", "she_her", "leaning against the counter", "pouring a second cup"),
+        actingSubject("s2", "he_him", "sitting at the far end of the bench", "turning a page"),
+      ],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1" },
+        { position: 2, role: "identity", subjectRef: "s2" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text).toContain("Show her leaning against the counter. Show her pouring a second cup.");
+    expect(text).toContain("Show him sitting at the far end of the bench. Show him turning a page.");
+    // Nothing is fused: neither person's activity rides the other's pose, and
+    // neither rides their own.
+    expect(text).not.toContain(" and pouring");
+    expect(text).not.toContain(" and turning");
+  });
+
+  /**
    * The fail-closed half of the identity contract. On this endpoint the
    * reference IS the identity transport, so an identity claim with nothing to
    * bind to must refuse — compiling prose that describes a face instead would
@@ -1276,21 +1481,159 @@ describe("the Qwen 2511 delta-edit dialect", () => {
         references: [{ role: "identity", subjectRef: "s1", required: true, source: referenceSource }],
       });
 
-    const compiledScene = (): string => {
-      const result = compile2511(sceneWorld());
+    const compiledScene = (register?: "descriptive" | "imperative"): string => {
+      const result = compile2511(sceneWorld(), register === undefined ? {} : { register });
       if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
       return result.compiled.positiveText;
     };
 
-    it("introduces the subject once and refers to her by pronoun after", () => {
-      const text = compiledScene();
-      expect(text.startsWith("Use the woman in Image 1 as the sole subject; keep her ")).toBe(true);
+    /**
+     * The two REGISTERS this fixture compiles in (#549), and the needle each
+     * band takes in either one.
+     *
+     * The imperative is the scene task's default: the endpoint's `prompt` is
+     * documented as an edit instruction, and a description of a woman in a
+     * lounge handed to an edit model beside a photograph of her can be read as a
+     * reminder about the picture it was given. The descriptive register stays
+     * compilable so a fixed trial can A/B the two on one seed set, which is the
+     * only thing that can settle which one this endpoint obeys.
+     *
+     * Every structural property below is register-INDEPENDENT — one
+     * introduction, one wardrobe sentence, one posture, the band order — so each
+     * is asserted in both, over the frame that register writes.
+     */
+    const registers = [
+      {
+        register: "imperative" as const,
+        opening: "Create a new scene using the woman in Image 1 as the sole subject. Keep her face",
+        pronoun: /\bher\b/gu,
+        build: "Give her arm build",
+        hair: "Give her hair color",
+        garments: "Dress her in dark-wash skinny jeans",
+        damp: "Show her damp at the hair.",
+        pose: "Show her standing at the refreshments table",
+        activity: "Show her reaching for a cup of coffee.",
+        setting: "Place her in a warm lounge with",
+        lighting: "Light the scene with soft natural light",
+        mood: "Keep the atmosphere nervous",
+        style: "Render it as a photograph",
+      },
+      {
+        register: "descriptive" as const,
+        opening: "Use the woman in Image 1 as the sole subject; keep her face",
+        pronoun: /\bShe\b/gu,
+        build: "She has arm build",
+        hair: "She has hair color",
+        garments: "She wears dark-wash skinny jeans",
+        damp: "She is damp at the hair.",
+        pose: "She is standing at the refreshments table",
+        activity: "She is reaching for a cup of coffee.",
+        setting: "A warm lounge with",
+        lighting: "Lit by soft natural light",
+        mood: "The atmosphere is nervous",
+        style: "Rendered as a photograph",
+      },
+    ];
+
+    /**
+     * THE GOLDEN PROMPT (#548).
+     *
+     * A literal, deliberately, and the only place in this suite that pins one.
+     * Every structural assertion around it was true of the malformed sentence
+     * this issue was filed over — "She is standing at the craft services table,
+     * turned slightly toward the camera … and reaching for a cup of coffee, her
+     * attention on the camera across the room." had one introduction, one
+     * wardrobe sentence, one posture and the right band order — because no
+     * structural property can see that a sentence is ungrammatical. A reader
+     * can, and this is what a reader reads.
+     *
+     * Scoped to this fixture. Other cases stay structural, per the testing
+     * rules: a byte pin on a case whose wording is not the contract fails on
+     * every improvement and proves nothing about the shape.
+     *
+     * Two spellings still move it legitimately: the appearance phrases are still
+     * the registry's `label: value` form ("hair color: dark brown") until the
+     * prose slice replaces them, and the wardrobe order is fact-key order rather
+     * than layer order. Both are known follow-ups, and both change this literal
+     * when they land.
+     */
+    it("compiles the fixture as this imperative prompt, sentence by grammatical sentence", () => {
+      expect(compiledScene()).toBe(
+        "Create a new scene using the woman in Image 1 as the sole subject. " +
+          "Keep her face, skin tone and apparent age exactly as shown. " +
+          "Give her arm build: slender and weight presentation: slim. " +
+          "Give her hair color: dark brown and hair length: mid back, with the hair worn loose. " +
+          "Dress her in dark-wash skinny jeans, brown leather loafers and a pastel-pink crewneck sweater, " +
+          "with the sweater tucked in. " +
+          "Show her damp at the hair. " +
+          "Show her standing at the refreshments table, angled slightly toward the camera, " +
+          "with a small, hesitant but playful expression. " +
+          "Show her reaching for a cup of coffee. " +
+          "Seen from the camera's own eye-level point of view. " +
+          "Waist-up framing. " +
+          "Place her in a warm lounge with a comfortable couch, a low wooden table and bookshelves along one wall. " +
+          "Light the scene with soft natural light from a tall window. " +
+          "Keep the atmosphere nervous, curious, with a hint of playful tension. " +
+          "Render it as a photograph, with real optics and natural surface detail. " +
+          "She is the only person in the picture; the foreground is clear.",
+      );
+    });
+
+    /**
+     * The same digest in the other register — the A/B the trial runs, byte for
+     * byte. Nothing but the wording moves: same claims, same references, same
+     * program fingerprint (asserted below), which is what makes the two
+     * comparable on one seed.
+     */
+    it("compiles the same fixture as this descriptive prompt", () => {
+      expect(compiledScene("descriptive")).toBe(
+        "Use the woman in Image 1 as the sole subject; keep her face, skin tone and apparent age exactly as shown. " +
+          "She has arm build: slender and weight presentation: slim. " +
+          "She has hair color: dark brown and hair length: mid back, with the hair worn loose. " +
+          "She wears dark-wash skinny jeans, brown leather loafers and a pastel-pink crewneck sweater, " +
+          "with the sweater tucked in. " +
+          "She is damp at the hair. " +
+          "She is standing at the refreshments table, angled slightly toward the camera, " +
+          "with a small, hesitant but playful expression. " +
+          "She is reaching for a cup of coffee. " +
+          "Seen from the camera's own eye-level point of view. " +
+          "Waist-up framing. " +
+          "A warm lounge with a comfortable couch, a low wooden table and bookshelves along one wall. " +
+          "Lit by soft natural light from a tall window. " +
+          "The atmosphere is nervous, curious, with a hint of playful tension. " +
+          "Rendered as a photograph, with real optics and natural surface detail. " +
+          "She is the only person in the picture; the foreground is clear.",
+      );
+    });
+
+    /**
+     * The register is WORDING, never a different request. Two registers of one
+     * digest ask for the same picture, so they share a program fingerprint and
+     * differ only in the prompt the endpoint reads — which is the property that
+     * lets a fixed-seed trial attribute a difference in the output to the words.
+     */
+    it("changes only the words: one digest, one fingerprint, two prompts", () => {
+      const imperative = compile2511(sceneWorld(), { register: "imperative" });
+      const descriptive = compile2511(sceneWorld(), { register: "descriptive" });
+      if (!imperative.ok || !descriptive.ok) throw new Error("unexpected refusal");
+
+      expect(imperative.compiled.program.fingerprint).toBe(descriptive.compiled.program.fingerprint);
+      expect(imperative.compiled.positiveText).not.toBe(descriptive.compiled.positiveText);
+      expect(imperative.compiled.droppedClaimIds).toEqual(descriptive.compiled.droppedClaimIds);
+    });
+
+    it.each(registers)("introduces the subject once and refers back by pronoun ($register)", (entry) => {
+      const text = compiledScene(entry.register);
+      expect(text.startsWith(entry.opening)).toBe(true);
       // ONCE. The binding phrase is the introduction, and nothing re-introduces her.
       expect(text.indexOf("the woman in Image 1")).toBe(text.lastIndexOf("the woman in Image 1"));
-      expect(text.match(/\bShe\b/gu)?.length ?? 0).toBeGreaterThan(2);
+      expect(text.match(entry.pronoun)?.length ?? 0).toBeGreaterThan(2);
       // The projection's placeholder for an unnamed subject is not a name: a
       // prompt that says "she" everywhere else may not say "the subject" here.
-      expect(text.toLowerCase()).not.toContain("the subject");
+      // The binding's own "as the sole subject" is the phrase that says there is
+      // one person, not a name for her, so it is removed before the check rather
+      // than narrowing the check around it.
+      expect(text.replace("as the sole subject", "").toLowerCase()).not.toContain("the subject");
       // The digest's own identity value is what the binding replaces; it must not
       // travel beside it as a second, weaker description of the same person.
       expect(text).not.toContain("the person shown in the reference image");
@@ -1303,8 +1646,8 @@ describe("the Qwen 2511 delta-edit dialect", () => {
       expect(result.compiled.positiveText.toLowerCase()).toContain("gender: female");
     });
 
-    it("never uses `viewer` as a noun on a disembodied shot", () => {
-      const text = compiledScene();
+    it.each(registers)("never uses `viewer` as a noun on a disembodied shot ($register)", (entry) => {
+      const text = compiledScene(entry.register);
       expect(text).toContain("Seen from the camera's own eye-level point of view.");
       expect(text.toLowerCase()).not.toContain("viewer");
     });
@@ -1315,10 +1658,11 @@ describe("the Qwen 2511 delta-edit dialect", () => {
      * the subject frame instead it compiled "She is with the sweater tucked in",
      * which is the sentence this asserts nothing anywhere produces.
      */
-    it("states the wardrobe in one sentence, with each garment reading trailing it", () => {
-      const text = compiledScene();
-      const wardrobe = text.match(/[^.]*\bwears\b[^.]*\./gu) ?? [];
+    it.each(registers)("states the wardrobe in one sentence, each garment reading trailing it ($register)", (entry) => {
+      const text = compiledScene(entry.register);
+      const wardrobe = text.match(/[^.]*skinny jeans[^.]*\./gu) ?? [];
       expect(wardrobe).toHaveLength(1);
+      expect(wardrobe[0]).toContain(entry.garments);
       for (const garment of ["dark-wash skinny jeans", "brown leather loafers", "a pastel-pink crewneck sweater"]) {
         expect(wardrobe[0]).toContain(garment);
       }
@@ -1331,19 +1675,20 @@ describe("the Qwen 2511 delta-edit dialect", () => {
      * PREDICATE reading is not a trailing clause at all — the same visual-state
      * kind produces both, so the shape of the value is what decides.
      */
-    it("trails a hair reading on the hair sentence and keeps a predicate reading in its own", () => {
-      const text = compiledScene();
+    it.each(registers)("trails a hair reading on the hair sentence, not the garments ($register)", (entry) => {
+      const text = compiledScene(entry.register);
       const hair = text.match(/[^.]*\bhair color\b[^.]*\./gu) ?? [];
       expect(hair).toHaveLength(1);
+      expect(hair[0]).toContain(entry.hair);
       expect(hair[0]).toContain("with the hair worn loose");
       expect(hair[0]).toContain("hair length: mid back");
       // The wardrobe sentence is not the hair reading's host.
-      expect(text).not.toMatch(/wears[^.]*with the hair worn loose/u);
-      expect(text).toContain("She is damp at the hair.");
+      expect(text).not.toMatch(/skinny jeans[^.]*with the hair worn loose/u);
+      expect(text).toContain(entry.damp);
     });
 
-    it("says the posture once, in the pose sentence the composer already wrote", () => {
-      const text = compiledScene();
+    it.each(registers)("says the posture once, in the pose sentence the composer wrote ($register)", (entry) => {
+      const text = compiledScene(entry.register);
       // "standing" is a committed cut fact AND the first word of the composer's
       // pose, and the lowering files both under `subject.body_language`. Two
       // sentences saying it is two bodies to compose.
@@ -1351,25 +1696,48 @@ describe("the Qwen 2511 delta-edit dialect", () => {
       expect(text).toContain("with a small, hesitant but playful expression");
     });
 
-    it("emits the bands in reading order and closes on the single-person assertion", () => {
-      const text = compiledScene();
+    /**
+     * THE FUSION THIS ISSUE WAS FILED OVER (#548).
+     *
+     * The pose and the activity are two composer phrases about one body, and
+     * joining them under one subject frame with "and" produced a sentence no
+     * English reader would write. They are two sentences now, and the expression
+     * rides the first of them rather than becoming a third.
+     */
+    it.each(registers)("gives the pose and the activity a sentence each ($register)", (entry) => {
+      const text = compiledScene(entry.register);
+      const pose = text.match(/[^.]*refreshments table[^.]*\./gu) ?? [];
+
+      expect(pose).toHaveLength(1);
+      expect(pose[0]?.trim()).toBe(
+        `${entry.pose}, angled slightly toward the camera, with a small, hesitant but playful expression.`,
+      );
+      expect(text).toContain(entry.activity);
+      // No composer phrase is fused onto another with "and".
+      expect(text).not.toContain(" and reaching");
+      expect(pose[0]).not.toContain("reaching");
+    });
+
+    it.each(registers)("emits the bands in reading order and closes on the count ($register)", (entry) => {
+      const text = compiledScene(entry.register);
       const at = (needle: string): number => {
         const found = text.indexOf(needle);
         expect(found).toBeGreaterThanOrEqual(0);
         return found;
       };
       const order = [
-        at("Use the woman in Image 1"),
-        at("She has arm build"),
-        at("She has hair color"),
-        at("She wears "),
-        at("She is standing at the refreshments table"),
+        at("the woman in Image 1"),
+        at(entry.build),
+        at(entry.hair),
+        at(entry.garments),
+        at(entry.pose),
+        at(entry.activity),
         at("Seen from the camera's own"),
         at("Waist-up framing."),
-        at("A warm lounge with"),
-        at("Lit by soft natural light"),
-        at("The mood is nervous"),
-        at("Rendered as a photograph"),
+        at(entry.setting),
+        at(entry.lighting),
+        at(entry.mood),
+        at(entry.style),
       ];
       expect(order).toEqual([...order].sort((left, right) => left - right));
       expect(text.endsWith("She is the only person in the picture; the foreground is clear.")).toBe(true);
@@ -1380,10 +1748,11 @@ describe("the Qwen 2511 delta-edit dialect", () => {
      * baseline was 2021 characters of one-fact sentences; this is the shape
      * check that keeps a future claim from being added back as its own sentence
      * per fact. It is not a budget — the endpoint declares none — so the bound is
-     * generous on purpose.
+     * generous on purpose, and it holds in both registers because the imperative
+     * spends a few words the descriptive does not.
      */
-    it("compiles under the family's advisory length", () => {
-      expect(compiledScene().length).toBeLessThan(1300);
+    it.each(registers)("compiles under the family's advisory length ($register)", (entry) => {
+      expect(compiledScene(entry.register).length).toBeLessThan(1300);
     });
   });
 
@@ -1432,9 +1801,12 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
     const text = result.compiled.positiveText;
 
-    expect(text.startsWith("Use the numbered images as assigned: Image 1 shows a woman, Image 2 shows a man; ")).toBe(
-      true,
-    );
+    // A scene, so the opening is the imperative register's (#549); the
+    // assignment list and the preserve clause after it are the register's
+    // business no more than the image numbers are.
+    expect(
+      text.startsWith("Create a new scene using the numbered images as assigned: Image 1 shows a woman, Image 2 shows a man; "),
+    ).toBe(true);
     expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
     // Nothing defines an image by pointing back at it…
     expect(text).not.toContain("Image 1 shows the woman in Image 1");

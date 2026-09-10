@@ -46,6 +46,7 @@ import {
   type ImageDialectPositiveInput,
   type ImageDialectReference,
   type ImagePromptDialectDefinition,
+  type ImagePromptRegister,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
 import {
@@ -133,6 +134,22 @@ export const QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK = "face, skin tone and app
  */
 export const QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK =
   "keep each person's face, skin tone and apparent age exactly as their own image shows.";
+
+/**
+ * See {@link QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK} — same contract, the
+ * spelling for ONE person shown in SEVERAL images (#546).
+ *
+ * "exactly as shown" cannot be said of two photographs: they show the same
+ * woman from different angles, and asking for exactness against both is asking
+ * for a contradiction the model resolves by picking one. Consistency across the
+ * set is the honest instruction, and it is what a reference sheet is for.
+ *
+ * Contained in neither other clause and containing neither, for the same reason
+ * they do not contain each other: which binding a render chose has to stay
+ * assertable from the text.
+ */
+export const QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK =
+  "face, skin tone and apparent age consistent with these references.";
 
 /**
  * Retained aliases. Hair is no longer in either preserve set, so a cast member
@@ -243,6 +260,27 @@ interface SubjectVoice {
    */
   readonly indefinite: string;
   /**
+   * The display name the projection supplied, or null where it supplied none —
+   * the ordinary scene case, since the lane omits labels for reference-anchored
+   * subjects.
+   *
+   * Carried beside the four rendered spellings because a sentence sometimes has
+   * to know WHICH of them it is holding: "Use the woman shown in Images 1 and 2"
+   * takes no comma and "Use Wren, shown in Images 1 and 2," takes two, and only
+   * the presence of a name tells them apart ({@link bindingSentence}).
+   */
+  readonly name: string | null;
+  /**
+   * The bare noun the pronoun set implies — "woman", "man", "person" — with no
+   * article and no image number.
+   *
+   * The one naming a grouped binding needs and none of the others give: the
+   * definite "the woman" for the sentence that introduces one person shown in
+   * several images, and "the same woman" for a view slot the lane described in
+   * no words of its own.
+   */
+  readonly noun: string;
+  /**
    * Null when the digest stated no set, when the set is shared in this cast, or
    * when no sentence in this prompt introduces them (see {@link subjectVoices}).
    */
@@ -304,10 +342,25 @@ function agree(voice: SubjectVoice | null, singular: string, plural: string): st
   return voice?.pronouns?.plural === true ? plural : singular;
 }
 
-/** The identity image that shows THIS subject, or null when the payload has none. */
+/**
+ * The PRIMARY identity image of this subject — their first identity slot in
+ * SEND order — or null when the payload carries none (#546).
+ *
+ * Send order rather than array order, because a lane may hand the compile its
+ * slots in any order (the reference plan is a set of numbered positions, not a
+ * list) and the number this returns is the one every later sentence cites: the
+ * introduction "the woman in Image 1", and the face-visibility anchor's "from
+ * Image N". A reference sheet's second view of one person is a support image,
+ * never the picture the prompt points at for a face.
+ */
 function identitySlotFor(input: ImageDialectPositiveInput, ref: string | undefined): ImageDialectReference | null {
   if (ref === undefined) return null;
-  return input.references.find((slot) => slot.role === "identity" && slot.subjectRef === ref) ?? null;
+  let primary: ImageDialectReference | null = null;
+  for (const slot of input.references) {
+    if (slot.role !== "identity" || slot.subjectRef !== ref) continue;
+    if (primary === null || slot.position < primary.position) primary = slot;
+  }
+  return primary;
 }
 
 /**
@@ -350,6 +403,8 @@ function subjectVoices(input: ImageDialectPositiveInput): Map<string, SubjectVoi
       introduction,
       indefinite: name ?? (slot === null ? UNNAMED_SUBJECT_LABEL : `${/^[aeiou]/iu.test(noun) ? "an" : "a"} ${noun}`),
       binding: name !== null && slot !== null ? `${name} in Image ${slot.position}` : introduction,
+      name,
+      noun,
       // A pronoun needs an INTRODUCTION to refer back to, and on this endpoint
       // the introduction is the binding sentence — which introduces exactly the
       // subjects an identity image in the payload shows. A cast member with no
@@ -387,6 +442,29 @@ interface RenderState {
   readonly voices: Map<string, SubjectVoice>;
   /** The one subject, when there is exactly one — who a camera or count sentence means. */
   readonly soleVoice: SubjectVoice | null;
+  /** Descriptive or imperative — resolved once per compile by {@link registerFor}. */
+  readonly register: ImagePromptRegister;
+}
+
+/**
+ * The register this compile speaks in: what the caller asked for, or the task's
+ * own default (#549).
+ *
+ * IMPERATIVE on the scene task, because a scene rung carries no change contract
+ * — the description IS the instruction — and this endpoint's `prompt` field is
+ * documented as "an edit instruction, not merely a scene description". A
+ * description of a woman in a lounge, handed to an edit model beside a
+ * photograph of her, can be read as a reminder about the picture it was given
+ * rather than as the picture to make.
+ *
+ * DESCRIPTIVE everywhere else, because every other task on this endpoint states
+ * its own change contract ("Make exactly this change: …"), and a prompt whose
+ * instruction is already explicit does not need a second imperative voice
+ * competing with it: the rest of that prompt is the unchanged context the change
+ * happens to.
+ */
+function registerFor(input: ImageDialectPositiveInput): ImagePromptRegister {
+  return input.register ?? (input.operation.task === "scene" ? "imperative" : "descriptive");
 }
 
 /**
@@ -483,15 +561,31 @@ function referenceAssignment(
 // ---------------------------------------------------------------------------
 
 /**
- * The subject bound to its image and the preserve set, in ONE sentence (F2/F4).
+ * The cast bound to their images and the preserve set (F2/F4, #546).
  *
- * What this replaced was three: a lock naming a reference, a second sentence
- * assigning that reference to a named person, and a blanket "change only what
- * this instruction requests" that the scene rung then never followed with a
- * change. The preserve set is now the honest one — face, skin tone, apparent age
- * — because those are what a photograph carries; hair, build, wardrobe and pose
- * are the text's, and the old lock claiming them left every later hair or build
- * fact ambiguous between a reminder and an override.
+ * What this replaced was three sentences: a lock naming a reference, a second
+ * sentence assigning that reference to a named person, and a blanket "change
+ * only what this instruction requests" that the scene rung then never followed
+ * with a change. The preserve set is now the honest one — face, skin tone,
+ * apparent age — because those are what a photograph carries; hair, build,
+ * wardrobe and pose are the text's, and the old lock claiming them left every
+ * later hair or build fact ambiguous between a reminder and an override.
+ *
+ * Three forms, chosen over the PEOPLE the identity slots show rather than over
+ * the slots themselves:
+ *
+ * - one person, one image — one sentence, "Use the woman in Image 1 as the sole
+ *   subject; keep her …";
+ * - one person, several images — the images named as a set, each given its own
+ *   purpose, and a preserve set asking for consistency across them;
+ * - several people — the assignment list, one clause per person, and the
+ *   preserve set stated once for everybody.
+ *
+ * The middle form is why the grouping exists (#546). A reference view enters the
+ * send list as a second `identity` slot for the same character, so a woman sent
+ * with her anchor and her back view compiled "Image 1 shows a woman, Image 2
+ * shows a woman … keep each person's face" — two people, said twice, in the one
+ * sentence whose job is to say there is one.
  *
  * Null when the payload carries no reference at all: this endpoint's whole
  * identity transport IS the reference, and describing a face in prose instead
@@ -504,13 +598,41 @@ function bindingSentence(
   identityAssignments: readonly ImageDialectReference[],
 ): string | null {
   if (input.references.length === 0) return null;
-  const sole = identityAssignments.length <= 1 && state.voices.size <= 1;
-  const first = identityAssignments[0];
+  const groups = identityGroups(identityAssignments);
+  // ONE person, however many images of them the payload carries. Counted over
+  // the people rather than over the slots (#546): a subject sent with an anchor
+  // and a reference view is one woman in two photographs, and the several-person
+  // binding said "each person" about her.
+  const sole = groups.length <= 1 && state.voices.size <= 1;
+  const first = groups[0];
+  const open = state.register === "imperative" ? "Create a new scene using" : "Use";
   if (sole && first !== undefined) {
     const voice = first.subjectRef === undefined ? null : (state.voices.get(first.subjectRef) ?? null);
-    const named = voice === null ? `the subject in Image ${first.position}` : voice.binding;
-    const qualified = first.description === undefined ? named : `${named}, ${first.description}`;
-    return `Use ${qualified} as the sole subject; keep ${their(voice)} ${QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK}`;
+    const primary = first.slots[0];
+    // Unreachable: a group exists because a slot made it. Answered rather than
+    // thrown, because a compile has nothing to gain from an exception here.
+    if (primary === undefined) return null;
+    if (first.slots.length === 1) {
+      const named = voice === null ? `the subject in Image ${primary.position}` : voice.binding;
+      const qualified = primary.description === undefined ? named : `${named}, ${primary.description}`;
+      const keep = `keep ${their(voice)} ${QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK}`;
+      return state.register === "imperative"
+        ? `${open} ${qualified} as the sole subject. ${capitalize(keep)}`
+        : `${open} ${qualified} as the sole subject; ${keep}`;
+    }
+    // SEVERAL images of one person. The images are named as a set, then each is
+    // given its own purpose — the primary is the identity reference and every
+    // other one is whatever the lane said it is — and the preserve set asks for
+    // consistency ACROSS them, which is the only thing that can be true of two
+    // photographs at once.
+    const named = voice === null ? UNNAMED_SUBJECT_LABEL : (voice.name ?? `the ${voice.noun}`);
+    const images = `Images ${listWords(first.slots.map((slot) => String(slot.position)))}`;
+    const shown = voice?.name === null || voice === null ? `${named} shown in ${images}` : `${named}, shown in ${images},`;
+    const purposes = [
+      `Image ${primary.position} is ${their(voice)} primary identity reference`,
+      ...first.slots.slice(1).map((slot) => `Image ${slot.position} is ${viewPurpose(slot, voice)}`),
+    ];
+    return `${open} ${shown} as the sole subject. ${purposes.join("; ")}. Keep ${their(voice)} ${QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK}`;
   }
   // The INDEFINITE naming, never the introduction (#544). A label-less subject's
   // introduction is "the woman in Image 1", so introducing them here compiled
@@ -519,15 +641,69 @@ function bindingSentence(
   // picture holds; every later sentence still says "the woman in Image 1", which
   // is unambiguous even where two cast members share a pronoun set — that is
   // precisely the case where pronouns are withheld and the introductions stand.
-  const assignments = [...identityAssignments]
-    .sort((left, right) => left.position - right.position)
-    .map((slot) => {
-      const voice = slot.subjectRef === undefined ? null : (state.voices.get(slot.subjectRef) ?? null);
-      const named = voice?.indefinite ?? "the subject";
-      return `Image ${slot.position} shows ${slot.description === undefined ? named : `${named}, ${slot.description}`}`;
-    });
-  const list = assignments.length === 0 ? "" : `: ${assignments.join(", ")}`;
-  return `Use the numbered images as assigned${list}; ${QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK}`;
+  const assignments = groups.flatMap((group) => {
+    const voice = group.subjectRef === undefined ? null : (state.voices.get(group.subjectRef) ?? null);
+    const named = voice?.indefinite ?? "the subject";
+    const primary = group.slots[0];
+    if (primary === undefined) return [];
+    if (group.slots.length === 1) {
+      return [`Image ${primary.position} shows ${primary.description === undefined ? named : `${named}, ${primary.description}`}`];
+    }
+    // One clause per PERSON, listing that person's own images (#546). The
+    // absolute "with …" rather than a second finite verb, because the clause
+    // already carries the lane's own comma'd description and a comma splice
+    // beside it would read as a further assignment.
+    const purposes = [
+      `Image ${primary.position} ${their(voice)} primary identity reference`,
+      ...group.slots.slice(1).map((slot) => `Image ${slot.position} ${viewPurpose(slot, voice)}`),
+    ];
+    return [`Images ${listWords(group.slots.map((slot) => String(slot.position)))} show ${named}, with ${listWords(purposes)}`];
+  });
+  // A list whose entries carry commas of their own rises to semicolons, and the
+  // one-image-each case — every ensemble before reference views existed — keeps
+  // the comma list it always compiled.
+  const separator = groups.some((group) => group.slots.length > 1) ? "; " : ", ";
+  const list = assignments.length === 0 ? "" : `: ${assignments.join(separator)}`;
+  return `${open} the numbered images as assigned${list}; ${QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK}`;
+}
+
+/** One person's identity images, primary first — the unit a binding form is chosen over. */
+interface IdentityGroup {
+  readonly subjectRef: string | undefined;
+  readonly slots: ImageDialectReference[];
+}
+
+/**
+ * The identity slots grouped by the person they show, in send order (#546).
+ *
+ * An UNATTRIBUTED slot is its own group and never merges with another: two
+ * identity images nobody assigned to a subject are not evidence that one person
+ * is in both, and the whole point of the grouping is that the prompt stops
+ * counting photographs as people.
+ */
+function identityGroups(slots: readonly ImageDialectReference[]): IdentityGroup[] {
+  const groups: IdentityGroup[] = [];
+  for (const slot of [...slots].sort((left, right) => left.position - right.position)) {
+    const found =
+      slot.subjectRef === undefined ? undefined : groups.find((group) => group.subjectRef === slot.subjectRef);
+    if (found === undefined) groups.push({ subjectRef: slot.subjectRef, slots: [slot] });
+    else found.slots.push(slot);
+  }
+  return groups;
+}
+
+/**
+ * What a NON-primary identity image is, in the lane's own words.
+ *
+ * The lane's `description` is the only text a view carries and is quoted
+ * verbatim: the vocabulary that rendered the image is the only thing that can
+ * describe it honestly, and a dialect inventing a clause from a role would be
+ * guessing at an angle. With no description there is still something true to
+ * say — that this is another picture of the same person — which is the whole
+ * ambiguity a second identity image creates.
+ */
+function viewPurpose(slot: ImageDialectReference, voice: SubjectVoice | null): string {
+  return slot.description ?? `another reference image of the same ${voice?.noun ?? "person"}`;
 }
 
 /**
@@ -651,6 +827,36 @@ function possessionSentence(
 }
 
 /**
+ * The rendering medium as an INSTRUCTION (#549).
+ *
+ * Stated rather than transformed, for the same reason {@link BAND_FRAMES} states
+ * both spellings: "Rendered as a photograph" and "Render it as a photograph" are
+ * one fact said to two readers, and a rule that turned one into the other would
+ * be a grammar engine nobody asked for. The shared `mediumSentence` keeps the
+ * measured descriptive wording for every other family.
+ *
+ * `unspecified` words nothing, which the claim selector already guarantees never
+ * happens — the claim is only built for a known medium. Answering it honestly
+ * keeps the switch total.
+ */
+function imperativeMediumSentence(medium: ImageStyleMedium): string {
+  switch (medium) {
+    case "photographic":
+      return "Render it as a photograph, with real optics and natural surface detail.";
+    case "illustration":
+      return "Render it as an illustration.";
+    case "anime":
+      return "Render it in an anime style.";
+    case "painting":
+      return "Render it as a painting, with visible brushwork.";
+    case "render_3d":
+      return "Render it as a 3D render.";
+    case "unspecified":
+      return "";
+  }
+}
+
+/**
  * A registry label/value descriptor, folded into a list mid-sentence.
  *
  * Only the leading character, and only when the word is sentence-cased rather
@@ -710,19 +916,6 @@ function isTrailingClause(claim: ImagePositiveClaim): boolean {
 /** "… , with the sweater tucked in and with the hair worn loose" — the tail a band appends. */
 function trailingClause(parts: readonly string[]): string {
   return parts.length === 0 ? "" : `, ${listWords(parts)}`;
-}
-
-/**
- * "She is seen with the sweater tucked in." — the trailing clauses' own sentence.
- *
- * Written only when the band has nothing for them to trail: the garments were
- * suppressed, or the budget removed them, and a fragment with no host would
- * otherwise be lost. "Seen" rather than a bare "is" because the fragments name
- * cloth and hair rather than states of the person, and "She is with the sweater
- * tucked in" is the sentence this rule exists to stop compiling.
- */
-function seenWithClause(voice: SubjectVoice | null, parts: readonly string[]): string {
-  return sentence(`${capitalize(they(voice))} ${agree(voice, "is", "are")} seen ${listWords(parts)}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -829,7 +1022,13 @@ function renderClaim(
 
     // --- Scene ----------------------------------------------------------------
     case "scene.mood":
-      return say(`The mood is ${value}.`);
+      // ATMOSPHERE rather than mood (#550). "Mood" reads as a person's mood
+      // beside a subject the prompt has just described, and this claim is the
+      // room's: the composer's own label for how the scene FEELS, which a model
+      // spends on light, colour and distance rather than on a face.
+      return say(
+        state.register === "imperative" ? `Keep the atmosphere ${value}.` : `The atmosphere is ${value}.`,
+      );
     case "scene.capture_mode": {
       const mode = imageSceneCaptureMode(claim.value);
       // Only the selfie form names anybody, and it names the person whose arm the
@@ -1027,7 +1226,7 @@ function renderClaim(
     case "location.signage":
       return say(`A sign reads "${value}", rendered exactly and legibly.`);
     case "location.lighting":
-      return say(`Lit by ${value}.`);
+      return say(state.register === "imperative" ? `Light the scene with ${value}.` : `Lit by ${value}.`);
     case "location.weather":
       return say(`The weather is ${value}.`);
     case "location.time":
@@ -1041,7 +1240,11 @@ function renderClaim(
 
     // --- Style ----------------------------------------------------------------
     case "style.medium":
-      return say(mediumSentence(claim.value as ImageStyleMedium));
+      return say(
+        state.register === "imperative"
+          ? imperativeMediumSentence(claim.value as ImageStyleMedium)
+          : mediumSentence(claim.value as ImageStyleMedium),
+      );
     case "style.descriptor":
     case "style.quality":
       return say(`${capitalize(value)}.`);
@@ -1245,9 +1448,42 @@ function voiceOf(context: EmitContext, ref: string | undefined): SubjectVoice | 
   return ref === undefined ? null : (context.state.voices.get(ref) ?? null);
 }
 
-/** "<She> <verb> a, b and c." — the shape every merged subject band takes. */
-function subjectClause(voice: SubjectVoice | null, singular: string, plural: string, parts: readonly string[]): string {
-  return sentence(`${capitalize(they(voice))} ${agree(voice, singular, plural)} ${listWords(parts)}.`);
+/**
+ * The two spellings of one merged band's frame (#549).
+ *
+ * A band is not a verb: "wears" and "Dress … in" are the same band said to two
+ * different readers, and the expression band takes "wears" in the descriptive
+ * voice and "Give" in the imperative one — nothing derivable from the other
+ * half. So the pairs are stated, once, rather than transformed.
+ *
+ * The imperative binds to the OBJECT pronoun ("Dress her in …"), which is what
+ * an instruction about a person takes, and falls back to the introduction where
+ * no pronoun may be used, exactly as the descriptive frame does.
+ */
+const BAND_FRAMES = {
+  /** What the body is: "She has a slim build." / "Give her a slim build." */
+  build: { singular: "has", plural: "have", imperative: "Give", preposition: "" },
+  /** The garment list: "She wears …" / "Dress her in …" */
+  garments: { singular: "wears", plural: "wear", imperative: "Dress", preposition: "in " },
+  /** A state or an action: "She is …" / "Show her …" */
+  state: { singular: "is", plural: "are", imperative: "Show", preposition: "" },
+  /** A homeless trailing clause: "She is seen with …" / "Show her with …" */
+  seen: { singular: "is seen", plural: "are seen", imperative: "Show", preposition: "" },
+  /** The face: "She wears a wary expression." / "Give her a wary expression." */
+  expression: { singular: "wears", plural: "wear", imperative: "Give", preposition: "" },
+} as const;
+type BandFrame = keyof typeof BAND_FRAMES;
+
+/** "<She> <verb> a, b and c." / "<Verb> her a, b and c." — one merged band's sentence. */
+function bandSentence(
+  register: ImagePromptRegister,
+  voice: SubjectVoice | null,
+  frame: BandFrame,
+  body: string,
+): string {
+  const form = BAND_FRAMES[frame];
+  if (register === "imperative") return sentence(`${form.imperative} ${them(voice)} ${form.preposition}${body}.`);
+  return sentence(`${capitalize(they(voice))} ${agree(voice, form.singular, form.plural)} ${body}.`);
 }
 
 /**
@@ -1312,6 +1548,7 @@ function writeBinding(claims: readonly ImagePositiveClaim[], context: EmitContex
  */
 function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
   const sentences: GroupSentence[] = [];
+  const register = context.state.register;
   for (const group of bySubject(claims)) {
     const voice = voiceOf(context, group.ref);
     for (const claim of withConcept(group.claims, "subject.apparent_age")) {
@@ -1331,19 +1568,17 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
     const spoken = build.filter((claim) => !carriedByPronoun(claim));
     const buildParts = valuesOf(spoken.length > 0 ? spoken : build);
     if (buildParts.length > 0) {
-      sentences.push({ text: subjectClause(voice, "has", "have", buildParts), claims: build });
+      sentences.push({ text: bandSentence(register, voice, "build", listWords(buildParts)), claims: build });
     }
     const hairParts = valuesOf(hair);
     const wornParts = valuesOf(worn);
     if (hairParts.length > 0) {
       sentences.push({
-        text: sentence(
-          `${capitalize(they(voice))} ${agree(voice, "has", "have")} ${listWords(hairParts)}${trailingClause(wornParts)}.`,
-        ),
+        text: bandSentence(register, voice, "build", `${listWords(hairParts)}${trailingClause(wornParts)}`),
         claims: [...hair, ...worn],
       });
     } else if (wornParts.length > 0) {
-      sentences.push({ text: seenWithClause(voice, wornParts), claims: worn });
+      sentences.push({ text: bandSentence(register, voice, "seen", listWords(wornParts)), claims: worn });
     }
     // An absence keeps its own sentence: the "shown plainly and anatomically
     // correctly" half is an instruction about how to draw it, not another
@@ -1376,6 +1611,7 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
  */
 function writeWardrobe(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
   const sentences: GroupSentence[] = [];
+  const register = context.state.register;
   for (const group of bySubject(claims)) {
     const voice = voiceOf(context, group.ref);
     const garments = withConcept(group.claims, "subject.wardrobe");
@@ -1386,19 +1622,19 @@ function writeWardrobe(claims: readonly ImagePositiveClaim[], context: EmitConte
     const trailingParts = valuesOf(trailing);
     if (wornParts.length > 0) {
       sentences.push({
-        text: sentence(
-          `${capitalize(they(voice))} ${agree(voice, "wears", "wear")} ${listWords(wornParts)}${trailingClause(trailingParts)}.`,
-        ),
+        text: bandSentence(register, voice, "garments", `${listWords(wornParts)}${trailingClause(trailingParts)}`),
         // The absorbed readings are attributed to the sentence that carries
         // them: a clause folded into another claim's sentence is not a dropped
         // claim, and recording it anywhere else would say the render lost it.
         claims: [...garments, ...trailing],
       });
     } else if (trailingParts.length > 0) {
-      sentences.push({ text: seenWithClause(voice, trailingParts), claims: trailing });
+      sentences.push({ text: bandSentence(register, voice, "seen", listWords(trailingParts)), claims: trailing });
     }
     const plainParts = valuesOf(plain);
-    if (plainParts.length > 0) sentences.push({ text: subjectClause(voice, "is", "are", plainParts), claims: plain });
+    if (plainParts.length > 0) {
+      sentences.push({ text: bandSentence(register, voice, "state", listWords(plainParts)), claims: plain });
+    }
     for (const claim of withConcept(group.claims, "subject.hair_concealment", "relation.wears")) {
       const rendered = asRendered(context, claim);
       if (rendered !== null) sentences.push(rendered);
@@ -1410,38 +1646,58 @@ function writeWardrobe(claims: readonly ImagePositiveClaim[], context: EmitConte
 /** The exposure band: what is bare, and the anatomy that is then visible. */
 function writeExposure(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
   const sentences: GroupSentence[] = [];
+  const register = context.state.register;
   for (const group of bySubject(claims)) {
     const voice = voiceOf(context, group.ref);
     const exposure = withConcept(group.claims, "subject.exposure");
     const anatomy = withConcept(group.claims, "subject.intimate_anatomy");
     const bare = valuesOf(exposure);
-    if (bare.length > 0) sentences.push({ text: subjectClause(voice, "is", "are", bare), claims: exposure });
+    if (bare.length > 0) {
+      sentences.push({ text: bandSentence(register, voice, "state", listWords(bare)), claims: exposure });
+    }
     const shown = valuesOf(anatomy);
-    if (shown.length > 0) sentences.push({ text: subjectClause(voice, "has", "have", shown), claims: anatomy });
+    if (shown.length > 0) {
+      sentences.push({ text: bandSentence(register, voice, "build", listWords(shown)), claims: anatomy });
+    }
   }
   return sentences;
 }
 
 /**
- * The pose band: posture, pose, action and expression in ONE sentence.
+ * The pose band: UP TO TWO grammatical sentences — the pose, and the activity
+ * (#548).
  *
- * A posture fact is dropped when another phrase in the same sentence already
- * CONTAINS it: a cut states "standing" as a committed fact and the composer
- * writes "standing at the craft services table", and a prompt saying both has
- * told the model to compose the same body twice (#544 D10).
+ * One sentence per band is not a goal and never was; two short grammatical
+ * sentences beat one malformed one. Joined under a single "She is …" frame, two
+ * composer phrases fused into "She is standing at the craft services table,
+ * turned slightly toward the camera, a small smile playing at her lips as she
+ * looks into the lens and reaching for a cup of coffee, her attention on the
+ * camera across the room." — a sentence no structural assertion could see was
+ * broken, because every property it was asked about was true of it. The POSE is
+ * where the body is, the ACTIVITY is what it is doing, and English gives each
+ * its own subject.
  *
- * Compared against every other phrase in the band rather than against the
- * composer's action text alone, because the scene lowering files the composer's
- * POSE under `subject.body_language` too — the same concept as the cut's posture
- * (`apps/web` `scene-lowering.ts` `actionFacts`) — so a rule that only looked at
- * `subject.pose`/`subject.activity` never saw the phrase that actually repeats
- * it. Containment is the whole test, and it can only ever drop the SHORTER of
- * two phrases: the composer's sentence is not contained in a one-word posture,
- * and two identical values are each other's equal rather than each other's
- * container, so neither is lost.
+ * The expression folds into whichever sentence comes first: it qualifies the
+ * face, not the verb, and a sentence of its own is a third statement about one
+ * moment. It keeps that sentence only when there is no pose and no activity to
+ * ride.
+ *
+ * A posture fact is dropped when another phrase in the BAND already CONTAINS it:
+ * a cut states "standing" as a committed fact and the composer writes "standing
+ * at the craft services table", and a prompt saying both has told the model to
+ * compose the same body twice (#544 D10). Compared against every other phrase in
+ * the band rather than against the composer's action text alone, because the
+ * scene lowering files the composer's POSE under `subject.body_language` too —
+ * the same concept as the cut's posture (`apps/web` `scene-lowering.ts`
+ * `actionFacts`) — so a rule that only looked at `subject.pose`/`subject.activity`
+ * never saw the phrase that actually repeats it. Containment is the whole test,
+ * and it can only ever drop the SHORTER of two phrases: the composer's sentence
+ * is not contained in a one-word posture, and two identical values are each
+ * other's equal rather than each other's container, so neither is lost.
  */
 function writePose(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
   const sentences: GroupSentence[] = [];
+  const register = context.state.register;
   for (const claim of withConcept(claims, "scene.possession", "scene.staging")) {
     const rendered = asRendered(context, claim);
     if (rendered !== null) sentences.push(rendered);
@@ -1449,30 +1705,129 @@ function writePose(claims: readonly ImagePositiveClaim[], context: EmitContext):
   for (const group of bySubject(claims)) {
     const voice = voiceOf(context, group.ref);
     const posture = withConcept(group.claims, "subject.body_language");
-    const acting = withConcept(group.claims, "subject.pose", "subject.activity");
+    const posing = withConcept(group.claims, "subject.pose");
+    const acting = withConcept(group.claims, "subject.activity");
     const expressions = withConcept(group.claims, "subject.expression");
+    const posingParts = valuesOf(posing);
     const actingParts = valuesOf(acting);
-    const spoken = [...valuesOf(posture), ...actingParts].map((entry) => entry.toLowerCase());
+    const spoken = [...valuesOf(posture), ...posingParts, ...actingParts].map((entry) => entry.toLowerCase());
     const kept = posture.filter((claim) => {
       const word = lowerLead(describe(claim.value)).toLowerCase();
       return word.length > 0 && !spoken.some((entry) => entry !== word && entry.includes(word));
     });
-    const parts = [...valuesOf(kept), ...actingParts];
+    const poseParts = [...valuesOf(kept), ...posingParts];
     const worn = valuesOf(expressions).map((entry) => `a ${entry} expression`);
-    if (parts.length > 0) {
-      const tail = worn.length === 0 ? "" : `, with ${listWords(worn)}`;
+    const tail = worn.length === 0 ? "" : `, with ${listWords(worn)}`;
+    // The pose leads where there is one; with nothing but an activity, the
+    // activity is the first sentence and carries the expression instead.
+    const leading = poseParts.length > 0 ? poseParts : actingParts;
+    if (leading.length > 0) {
       sentences.push({
-        text: sentence(`${capitalize(they(voice))} ${agree(voice, "is", "are")} ${listWords(parts)}${tail}.`),
+        text: bandSentence(register, voice, "state", `${listWords(leading)}${tail}`),
         // Every posture claim, skipped ones included: a posture the composer's
         // own text already contains is ABSORBED by this sentence, not lost, and
-        // recording it anywhere else would say the render dropped it.
-        claims: [...posture, ...acting, ...expressions],
+        // recording it anywhere else would say the render dropped it. The
+        // activity claims belong to whichever sentence actually spoke them, so
+        // each claim is attributed exactly once.
+        claims: poseParts.length > 0 ? [...posture, ...posing, ...expressions] : [...posture, ...acting, ...expressions],
       });
     } else if (worn.length > 0) {
-      sentences.push({ text: subjectClause(voice, "wears", "wear", worn), claims: expressions });
+      sentences.push({ text: bandSentence(register, voice, "expression", listWords(worn)), claims: expressions });
+    }
+    if (poseParts.length > 0 && actingParts.length > 0) {
+      sentences.push({ text: bandSentence(register, voice, "state", listWords(actingParts)), claims: acting });
     }
   }
   for (const claim of withConcept(claims, "relation.holds", "relation.contact", "relation.acts_on")) {
+    const rendered = asRendered(context, claim);
+    if (rendered !== null) sentences.push(rendered);
+  }
+  return sentences;
+}
+
+/**
+ * The setting band's own order: the place, then what is in it, then the light on
+ * it — lighting last, because it is a fact about everything the sentences before
+ * it just described.
+ */
+const SETTING_ORDER: readonly ImageConceptId[] = [
+  "location.identity",
+  "location.kind",
+  "location.geometry",
+  "location.presentation",
+  "location.contents",
+  "location.occupancy",
+  "location.signage",
+  "item.identity",
+  "item.form",
+  "item.material",
+  "item.color",
+  "item.part",
+  "item.marking",
+  "item.condition",
+  "item.contents",
+  "item.configuration",
+  "item.presentation",
+  "relation.located_at",
+  "relation.placement",
+  "relation.contains",
+  "relation.attached_to",
+  "location.lighting",
+  "camera.lighting",
+];
+
+/**
+ * The concepts a "Place her in …" sentence may be built from: the ones that name
+ * the PLACE itself.
+ *
+ * An item on the table and a sign on the wall are in the setting band and are
+ * not somewhere a person is put, so they keep their own sentences; so does the
+ * occupancy, which describes who else the room holds.
+ */
+const PLACE_CONCEPTS: readonly ImageConceptId[] = [
+  "location.identity",
+  "location.kind",
+  "location.geometry",
+  "location.contents",
+];
+
+/** Whether a setting phrase opens with an article, which is what "Place her in …" needs. */
+const OPENS_WITH_ARTICLE = /^(?:an?|the)\s/iu;
+
+/**
+ * The setting band: the place, and then everything standing in it (#549).
+ *
+ * In the imperative register the FIRST place sentence becomes the instruction
+ * that puts the subject there — "Place her in a warm lounge …" — and every later
+ * one keeps its descriptive form, because two "Place her in …" sentences would
+ * put one person in two rooms. Where the phrase does not open with an article,
+ * or where there is no sole subject to place, the band labels the setting
+ * instead: "The setting: a lamplit study, rain streaking the tall window."
+ *
+ * The descriptive register emits exactly what each claim rendered, as it always
+ * did.
+ */
+function writeSetting(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
+  const ranked = [...claims].sort(
+    (left, right) => rankOf(SETTING_ORDER, left.concept) - rankOf(SETTING_ORDER, right.concept),
+  );
+  const place =
+    context.state.register === "imperative"
+      ? (ranked.find((claim) => PLACE_CONCEPTS.includes(claim.concept)) ?? null)
+      : null;
+  const voice = context.state.soleVoice;
+  const sentences: GroupSentence[] = [];
+  for (const claim of ranked) {
+    if (claim === place) {
+      const text = lowerLead(describe(claim.value).trim());
+      sentences.push({
+        text: sentence(
+          voice !== null && OPENS_WITH_ARTICLE.test(text) ? `Place ${them(voice)} in ${text}.` : `The setting: ${text}.`,
+        ),
+        claims: [claim],
+      });
+      continue;
+    }
     const rendered = asRendered(context, claim);
     if (rendered !== null) sentences.push(rendered);
   }
@@ -1526,33 +1881,7 @@ const BAND_WRITERS: Readonly<Record<EmissionGroup, (claims: readonly ImagePositi
     "viewer.appearance",
     "viewer.intimate_anatomy",
   ]),
-  // The place, then what is in it, then the light on it — lighting last, because
-  // it is a fact about everything the two sentences before it just described.
-  setting: writeOrdered([
-    "location.identity",
-    "location.kind",
-    "location.geometry",
-    "location.presentation",
-    "location.contents",
-    "location.occupancy",
-    "location.signage",
-    "item.identity",
-    "item.form",
-    "item.material",
-    "item.color",
-    "item.part",
-    "item.marking",
-    "item.condition",
-    "item.contents",
-    "item.configuration",
-    "item.presentation",
-    "relation.located_at",
-    "relation.placement",
-    "relation.contains",
-    "relation.attached_to",
-    "location.lighting",
-    "camera.lighting",
-  ]),
+  setting: writeSetting,
   mood: writeOrdered(["scene.mood"]),
   style: writeOrdered(["style.medium", "style.descriptor", "style.quality"]),
   close: writeOrdered(["operation.subject_count"]),
@@ -1623,6 +1952,7 @@ function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositiv
     slots: new Map<string, ImageDialectReference>(),
     voices,
     soleVoice,
+    register: registerFor(input),
   };
   const surfaces = createSceneStagingSurfaceLog();
   const compiled = compileDialectClaims({

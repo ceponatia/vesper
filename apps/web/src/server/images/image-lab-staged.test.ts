@@ -357,12 +357,18 @@ describe("the staged scene program", () => {
   it("derives the light from the stated time of day, and prefers an admin's own phrase", () => {
     const entry = staging("held_from_behind");
 
-    expect(benchProgram(entry, { id: entry.id, timeOfDay: "dusk" }).prompt).toContain("Lit by warm dusk light.");
+    // The bench compiles on the scene task, whose register is imperative
+    // (#549): the light is an instruction to carry out rather than a fact about
+    // the input image. The PHRASE is the lowering's either way, which is what
+    // this owns.
+    expect(benchProgram(entry, { id: entry.id, timeOfDay: "dusk" }).prompt).toContain(
+      "Light the scene with warm dusk light.",
+    );
     expect(benchProgram(entry, { id: entry.id, timeOfDay: "dusk", lighting: "one bare bulb overhead" }).prompt).toContain(
-      "Lit by one bare bulb overhead.",
+      "Light the scene with one bare bulb overhead.",
     );
     // Nothing stated at all is the neutral phrase, not an unlit scene.
-    expect(benchProgram(entry, { id: entry.id }).prompt).toContain("Lit by soft natural light.");
+    expect(benchProgram(entry, { id: entry.id }).prompt).toContain("Light the scene with soft natural light.");
   });
 });
 
