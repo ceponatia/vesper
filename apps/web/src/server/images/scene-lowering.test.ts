@@ -957,12 +957,15 @@ describe("a shot that cannot show the subject's face", () => {
 
     // The render still binds an identity — Ilsa's — so this is not a
     // reference-free prompt; it is a prompt with a reference of the wrong person
-    // for this claim. The binding takes its MULTI form because the cast has two
-    // people, whatever the payload's reference count: the form follows the cast
-    // and the identity slots, and "the sole subject" would be a lie about who is
-    // in the picture.
-    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
-    expect(program.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    // for this claim. The binding anchors ONLY the person the image shows and
+    // says the other has no reference image: the single preserve clause, never
+    // the multi form's "each person's … own image", which would promise the
+    // model a photograph of somebody it must draw from text — and never "the
+    // sole subject", which would be a lie about who is in the picture.
+    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain("sole subject");
+    expect(program.prompt).toContain(`${LANE_PROBE_NAME} has no reference image and is described below.`);
     expect(program.prompt).toContain(AWAY_UNANCHORED);
     // Nothing points this claim at a photograph — not "the reference", and not a
     // number, because there is no image of this person to number.
