@@ -1,4 +1,4 @@
-import { diag } from "@vesper/contracts";
+import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
 import type { SceneCaptureMode, SceneViewerBodyPartId } from "../scene-ir";
 import type {
@@ -14,10 +14,12 @@ import type { ImagePositiveClaim } from "./positive-claims";
 import {
   imageSceneCaptureMode,
   imageScenePossessionOwners,
+  imageSceneStagingForm,
   imageViewerBodyParts,
   imageViewerDescriptors,
   type ImageObscuredFace,
 } from "./scene-facts";
+import type { ImageSubjectPronounSet } from "./world-digest";
 
 /**
  * Wording helpers shared by the Qwen-family dialects — and, for the
@@ -41,10 +43,22 @@ import {
  * A claim's value as prose.
  *
  * Values arrive from projections in three honest shapes — a string, a list of
- * strings, or a small record with a `label`/`text`/`value` member — and this
- * flattens all three. A record with none of those is rendered as its own values
- * joined, which is a last resort that at least says something true rather than
- * emitting `[object Object]` into a payload.
+ * strings, or a small record with a `label`/`text`/`value`/`name` member — and
+ * this flattens all three. **A record with none of them words NOTHING.**
+ *
+ * The structural fallback this replaced joined such a record's own leaf values,
+ * on the reasoning that saying something true beat emitting `[object Object]`.
+ * It shipped structure as language instead: a body-language support state
+ * `{ relations: [{ role: "borne_by", anchor: { kind: "surface", surfaceKind:
+ * "ground" }, loadZones: ["legs"] }] }` reached a provider as "surface, ground,
+ * legs, borne by", and a garment presentation `{ channel: "tuck", band: "out" }`
+ * as "out, tuck" — each true of the data and nonsense as instruction.
+ *
+ * The empty string is what every dialect already reads as "no wording": the
+ * claim is recorded as declined, and a MANDATORY one refuses the compile before
+ * provider spend. That is the fail-closed direction for a kind whose value no
+ * renderer understands — the missing renderer is the defect, and a prompt full
+ * of flattened records is how it stayed invisible.
  */
 export function describe(value: unknown): string {
   if (typeof value === "string") return value.trim();
@@ -56,9 +70,75 @@ export function describe(value: unknown): string {
       const member = record[key];
       if (typeof member === "string" && member.trim().length > 0) return member.trim();
     }
-    return listWords(Object.values(record).map(describe).filter((entry) => entry.length > 0));
+    return "";
   }
   return "";
+}
+
+/** A claim whose value had no prompt wording, dropped rather than flattened. */
+export const IMAGE_PROMPT_VALUE_UNREADABLE = "image_prompt_program.value_unreadable";
+
+/**
+ * Whether a claim value is a RECORD no dialect can word ({@link describe}).
+ *
+ * Asked at the top of each family's `renderClaim`, because a blank value does
+ * not blank a sentence on its own: `"<subject> is "` still renders, and the
+ * claim would then travel as a mutilated clause instead of being recorded as
+ * declined. Declining it is what turns a visual-state kind with no prompt
+ * renderer into a visible refusal rather than into prose nobody can act on.
+ *
+ * Records a NARROWING READER owns are not unwordable — they are simply not
+ * `describe`'s to word. `scene.staging` is the one such value today: its form
+ * carries the registry's measured wording behind `imageSceneStagingForm`, and
+ * asking it structurally rather than keeping a list of exempt concepts is what
+ * keeps this from drifting as concepts are added. A future typed record with no
+ * reader of its own declines and reports, which is the safe direction.
+ */
+export function unwordableImageClaimValue(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (imageSceneStagingForm(value) !== null) return false;
+  return describe(value).length === 0;
+}
+
+/** Report one declined value, so a projection shipping an unrenderable kind is visible. */
+export function reportUnwordableClaimValue(claim: ImagePositiveClaim, sink?: DiagnosticSink): void {
+  sink?.push(
+    diag("warn", IMAGE_PROMPT_VALUE_UNREADABLE, "a claim value had no prompt wording and was dropped", {
+      path: "image_prompt_program",
+      context: { claim: claim.id, concept: claim.concept },
+    }),
+  );
+}
+
+/**
+ * The words one pronoun set contributes to a sentence.
+ *
+ * Plumbing rather than wording: WHICH sentences may use a pronoun, and where, is
+ * each dialect's decision (#544 F2). `plural` is verb agreement and nothing else
+ * — `they_them` takes "are"/"have"/"wear" for a single person — and `noun` is the
+ * word a reference binding uses when no display label names the subject ("the
+ * woman in Image 1").
+ */
+export interface ImagePronounWords {
+  readonly subject: string;
+  readonly object: string;
+  readonly possessive: string;
+  /** The independent possessive: "hers", "his", "theirs". */
+  readonly independent: string;
+  readonly noun: string;
+  readonly plural: boolean;
+}
+
+/** One pronoun set's words. Total over the set vocabulary; no set means no pronoun. */
+export function imagePronounWords(set: ImageSubjectPronounSet): ImagePronounWords {
+  switch (set) {
+    case "she_her":
+      return { subject: "she", object: "her", possessive: "her", independent: "hers", noun: "woman", plural: false };
+    case "he_him":
+      return { subject: "he", object: "him", possessive: "his", independent: "his", noun: "man", plural: false };
+    case "they_them":
+      return { subject: "they", object: "them", possessive: "their", independent: "theirs", noun: "person", plural: true };
+  }
 }
 
 /** The change contract's value, which carries the concept alongside the value. */
