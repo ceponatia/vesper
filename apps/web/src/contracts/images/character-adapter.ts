@@ -72,6 +72,7 @@ import {
   VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID,
   VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
   VISUAL_STATE_WARDROBE_ITEM_KIND_ID,
+  VISUAL_STATE_WARDROBE_CONCEALED_TAG,
   type VisualFramingBand,
   type VisualStateLocusRef,
   type VisualStateWardrobeValue,
@@ -625,13 +626,10 @@ export type CharacterKindPromptDecision =
 /**
  * The semantic tag the visual-state wardrobe projection stamps on a WORN garment
  * that opaque outer layers fully conceal (#544 F6, `visual-state/wardrobe.ts`).
- *
- * A LITERAL on purpose and temporarily: the producing slice exports a constant
- * for it, and the integrator swaps this for that export. Read off the SOURCE
- * visual fact's tags, never off the world fact — the world fact is this
- * adapter's own product.
+ * Read off the SOURCE visual fact's tags, never off the world fact — the world
+ * fact is this adapter's own product.
  */
-const WARDROBE_CONCEALED_TAG = "wardrobe.concealed";
+const WARDROBE_CONCEALED_TAG = VISUAL_STATE_WARDROBE_CONCEALED_TAG;
 
 /** The garment instance a part- or item-scoped fact belongs to. */
 function garmentInstanceOf(locus: VisualStateLocusRef): string | null {
