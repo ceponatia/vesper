@@ -286,9 +286,9 @@ function captureModeFact(mode: SceneCaptureMode, focalRef: string | undefined): 
  * ({@link mentionsLimb}), so the noun that arms this clause and the noun the
  * binder possessively bound cannot drift apart.
  *
- * Read off the FOCAL alone. The focal is the body the frame is built around and
- * the one whose action text the composer writes at length; a bystander's single
- * phrase is the far end of the same shot.
+ * Read off EVERY featured member, not the focal alone: a bystander's "her hand
+ * on the doorframe" puts a limb in the picture exactly as the focal's would,
+ * and the phantom-limb defence is about the limb, not about who owns it.
  *
  * Optional rather than required, unlike the capture mode: the clause is worth
  * nothing without names, the names come from labels this module cannot see, and
@@ -306,7 +306,7 @@ function possessionFact(
   refByName: ReadonlyMap<string, string>,
 ): readonly ImageWorldFact[] {
   if (mode !== "first_person_disembodied") return [];
-  if (focal === null || !namesALimb(focal)) return [];
+  if (focal === null || !featured.some(namesALimb)) return [];
   const owners = featured
     .filter((spec) => spec.name.trim().length > 0)
     .map((spec) => refByName.get(normalizeName(spec.name)))
