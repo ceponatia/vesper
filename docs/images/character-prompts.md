@@ -406,18 +406,27 @@ cannot support. A subject whose projection already states identity keeps its own
 facts and gains nothing, so a describe-the-face lane cannot lock twice.
 
 **The lock wording belongs to the dialect, never to the digest.** The digest
-states what is true; each endpoint decides how it says so, and each picks its
-spelling by reference count — zero references lock nothing, because there is no
-image to lock an identity to. The prose family emits its provider-neutral
-sentence. The Qwen edit dialect merges the lock into the one sentence that binds
-the subject to its numbered image, so its exported
-`QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK` /
-`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` are that sentence's preserve clauses
-rather than whole sentences
+states what is true and each endpoint decides how it says so; zero references
+lock nothing, because there is no image to lock an identity to. The prose family
+emits its provider-neutral sentence. The Qwen edit dialect merges the lock into
+the one sentence that binds the subject to its numbered image, and chooses that
+sentence's form by **the number of PEOPLE the identity slots show, never the
+number of slots**: a reference view enters the send list as a second identity
+slot for the same character
+([pipelines/reference-views.md](pipelines/reference-views.md)), so a form counted
+over slots called one woman two people and asked the prompt to keep "each
+person's" face. Three forms follow, and so do three preserve clauses — one
+person in one image, one person in several, and several people. The exported
+`QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`,
+`QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK` and
+`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` are those sentences' preserve clauses
+rather than whole sentences, and no clause contains another, so a reader can
+assert which binding a render chose
 ([../image-models/models/qwen-image-edit-2511.md](../image-models/models/qwen-image-edit-2511.md)
-§Numbered-reference instruction policy). No adapter in `@vesper/image-models`
-touches prompt text, so a prompt reaches the provider exactly as it was compiled
-and hashed.
+§Numbered-reference instruction policy). Several images of one person cannot be
+asked for "exactly as shown", so the grouped clause asks for consistency ACROSS
+them. No adapter in `@vesper/image-models` touches prompt text, so a prompt
+reaches the provider exactly as it was compiled and hashed.
 
 **What a lock preserves is that dialect's own set.** The prose family's measured
 sentence names face, hair colour and style, skin tone, body proportions and
@@ -438,8 +447,8 @@ is one lock for the whole cast, so one covered person drops the clause for
 everyone — a lock that kept "hair" would tell the model to paint that person's
 reference hair back over the hijab, and the uncovered rest of the cast still
 carry their hair in their references. The Qwen edit dialect needs no variant,
-because hair is in neither of its preserve clauses; its `…_HAIR_CONCEALED` names
-are byte-identical deprecated aliases. At `none` and `partial` every measured
+because hair is in none of its three preserve clauses; its `…_HAIR_CONCEALED`
+names are byte-identical deprecated aliases. At `none` and `partial` every measured
 lock ships untouched.
 
 **A face the shot cannot show adapts the lock, in a sentence of its own and

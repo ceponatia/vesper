@@ -160,8 +160,8 @@ as shown" cannot be said of two photographs at once:
 
 ```text
 Use the woman shown in Images 1 and 2 as the sole subject. Image 1 is her primary
-identity reference; Image 2 is seen from behind, the same person. Keep her face,
-skin tone and apparent age consistent with these references.
+identity reference; Image 2 shows her seen from behind, the same person. Keep her
+face, skin tone and apparent age consistent with these references.
 ```
 
 Several people — one clause per person, listing that person's own images, and the
@@ -178,8 +178,13 @@ the number the introduction cites ("the woman in Image 1") and the number the
 face-visibility clause anchors to; every other slot of theirs is a support image.
 What a support image IS comes from the lane's own `description` and is quoted
 verbatim, because the vocabulary that rendered the image is the only thing that
-can describe it honestly; a slot with no description is named as another
-reference image of the same person. Where a person's clause carries such a
+can describe it honestly. The clause names the PERSON the image shows — "Image 2
+shows her seen from behind, the same person", with the description following the
+subject's object pronoun, or the introduction wherever no pronoun may be used.
+"Image 2 is seen from behind" would make the photograph the thing seen from
+behind, which is a sentence about the picture rather than about the woman in it.
+A slot with no description keeps "is": it is named as another reference image of
+the same person, which is a fact about the picture. Where a person's clause carries such a
 description, the assignment list rises from commas to semicolons, since its
 entries then carry commas of their own.
 
@@ -237,17 +242,36 @@ receives.
 
 What the bands merge:
 
-- **build** states the age anchor, then one sentence for the body, then one for
-  the hair; **wardrobe** puts every garment in one sentence in the order the
-  projection stated them; **pose** takes one or two sentences — the pose with the
-  expression folded into it, and the activity in its own — because two composer
-  phrases joined under one subject frame with "and" produce a sentence no reader
-  would write, and two short grammatical sentences beat one malformed one. One
-  sentence per band is not a goal.
+- **build** states the age anchor, then ONE sentence describing the person,
+  composed from the registry's appearance phrases. Each attribute arrives already
+  taken apart — the feature group it belongs to, the grammatical role its piece
+  plays there, and the piece itself
+  ([character-prompts.md](../../images/character-prompts.md) §Registry-backed
+  image appearance) — and this dialect writes the grammar: one clause per group
+  in the order build, hair, face, skin, eyes, each clause the group's adjectives
+  before its noun, its trailers after, and its `with`-phrases hung off it. Build
+  and face adjectives are COORDINATE and take commas ("a slim, lightly toned
+  build"); hair, skin and eye adjectives are CUMULATIVE and stack unpunctuated
+  ("healthy dark-brown hair"), where a comma would read as two different heads of
+  hair. The clauses are listed with a serial comma wherever a bare "and" would be
+  read as part of the clause before it — which is whenever a clause carries a
+  conjunction of its own: "She has a slim, lightly toned build with slender arms
+  and a subtle waist, and healthy dark-brown hair worn loose to mid-back." A
+  group with `with`-phrases and nothing to attach them to states them alone,
+  because "a build with slender arms" says nothing the arms did not. An attribute
+  the registry gives no phrase keeps its `Label: value` form and is listed in the
+  same sentence, and a phrase in the `other` group — a stature, a personal style
+  — stands as its own noun phrase, having no group noun to join.
+- **wardrobe** puts every garment in one sentence in the order the projection
+  stated them; **pose** takes one or two sentences — the pose with the expression
+  folded into it, and the activity in its own — because two composer phrases
+  joined under one subject frame with "and" produce a sentence no reader would
+  write, and two short grammatical sentences beat one malformed one. One sentence
+  per band is not a goal.
 - A value the character projection wrote as a `with …` fragment ("with the
   sweater tucked in", "with the hair worn loose") **trails** the sentence it
-  qualifies — the garment list, or the hair sentence — and earns a sentence of
-  its own only when that host was suppressed or trimmed.
+  qualifies — the garment list, or the description the build band wrote — and
+  earns a sentence of its own only when that host was suppressed or trimmed.
 - A posture another phrase in the same sentence already **contains** is dropped,
   so a committed "standing" beside a composed "standing at the craft services
   table" is not composed twice. Containment can only ever drop the shorter of two
@@ -306,23 +330,27 @@ name one on the compile input; absent one, the task decides.
 
 Band by band, imperative beside descriptive:
 
-| Band | Imperative | Descriptive |
-| --- | --- | --- |
-| binding | `Create a new scene using …` | `Use …` |
-| build | `Give her …` | `She has …` |
-| wardrobe | `Dress her in …` | `She wears …` |
-| pose | `Show her …` | `She is …` |
-| setting | `Place her in …` | `A warm lounge with …` |
-| lighting | `Light the scene with …` | `Lit by …` |
-| mood | `Keep the atmosphere …` | `The atmosphere is …` |
-| style | `Render it as a photograph…` | `Rendered as a photograph…` |
+| Band     | Imperative                   | Descriptive                 |
+| -------- | ---------------------------- | --------------------------- |
+| binding  | `Create a new scene using …` | `Use …`                     |
+| build    | `Give her …`                 | `She has …`                 |
+| wardrobe | `Dress her in …`             | `She wears …`               |
+| pose     | `Show her …`                 | `She is …`                  |
+| setting  | `Place her in …`             | `A warm lounge with …`      |
+| lighting | `Light the scene with …`     | `Lit by …`                  |
+| mood     | `Keep the atmosphere …`      | `The atmosphere is …`       |
+| style    | `Render it as a photograph…` | `Rendered as a photograph…` |
 
-Four things stay assertions in both registers, and each for its own reason. The
+Five things stay assertions in both registers, and each for its own reason. The
 **close** is the picture's own person count. The **capture** and camera sentences
 state where the frame stands rather than what to do. A **staged arrangement** and
 the **possession** clause carry measured wording that a rewrite would throw away.
 The **face-visibility** and **hair-concealment** sentences are already
-instructions about what to preserve.
+instructions about what to preserve. And a **predicate current-state** reading —
+one the projection did not write as a `with …` clause, such as "damp at the hair"
+— is a condition of the person the render is of rather than a change to make to
+her, so it reads "She is damp at the hair." in either register and never "Show
+her damp at the hair.", which would order the model to wet her.
 
 The imperative binds to the subject's OBJECT pronoun ("Dress her in …") and falls
 back to the introduction wherever no pronoun may be used, exactly as the

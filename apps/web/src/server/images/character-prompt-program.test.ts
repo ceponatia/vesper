@@ -506,8 +506,11 @@ describe("what a variant render actually sends", () => {
   it("reinforces the shared canonical platinum hair and blue eyes beside the identity reference", () => {
     const result = program();
 
-    expect(result.prompt).toMatch(/hair color: platinum/i);
-    expect(result.prompt).toMatch(/eye color: blue/i);
+    // The registry's PROSE, not its label form (#547): an image-eligible
+    // attribute that declares a phrase reaches every dialect as the noun
+    // phrase it was authored as.
+    expect(result.prompt).toMatch(/platinum hair/i);
+    expect(result.prompt).toMatch(/blue eyes/i);
   });
 
   /**
@@ -899,14 +902,14 @@ describe("the lanes beside the scene", () => {
     ] as const)("states the breast size and no surface detail in %s", (_lane, build) => {
       const program = build();
 
-      expect(program.prompt).toMatch(/breast size: ample/i);
+      expect(program.prompt).toMatch(/an ample bust/i);
       for (const word of SURFACE_WORDS) expect(program.prompt).not.toMatch(word);
     });
 
     it("states all three on a bare torso through a permitting route — the control", () => {
       const program = variant([], true);
 
-      expect(program.prompt).toMatch(/breast size: ample/i);
+      expect(program.prompt).toMatch(/an ample bust/i);
       for (const word of SURFACE_WORDS) expect(program.prompt).toMatch(word);
     });
   });

@@ -438,9 +438,11 @@ describe("renderResolvedScene intimate reveal", () => {
     // One subject's exposed anatomy is stated in ONE sentence (#544 F10), so the
     // pin is the values inside that sentence rather than a sentence-final period
     // only the last of them can carry.
-    const anatomy = prompt.match(/[^.]*\bbreast size\b[^.]*\./u)?.[0] ?? "";
+    const anatomy = prompt.match(/[^.]*\bample bust\b[^.]*\./u)?.[0] ?? "";
     expect(anatomy).toContain("nipples: puffy"); // torso bare → skin stated
-    expect(anatomy).toContain("breast size: ample"); // shape reads through regardless
+    // The registry words `breasts.size` as prose and gives the nipple vocabulary
+    // no phrase, so one sentence carries both spellings (#547).
+    expect(anatomy).toContain("an ample bust"); // shape reads through regardless
     expect(prompt).not.toContain("inverted"); // Ilsa's torso is covered → her skin is withheld
   });
 

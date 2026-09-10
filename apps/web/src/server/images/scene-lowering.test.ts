@@ -311,28 +311,39 @@ describe("the compiled scene prompt over a populated plan", () => {
       // the first occurrence to the reference binding (this lane offers no
       // display name), every later one to a pronoun.
       `${FOCAL_INTRO_LEADING} lying face down along the bed with ${FOCAL_POSSESSIVE} back to the camera and ${FOCAL_POSSESSIVE} head turned to the side against the pillow, the viewer's own hands resting on ${FOCAL_POSSESSIVE} shoulders.`,
-      // Pose and activity as two CLAIMS, said in one sentence: the split the
-      // plan used to destroy survives in the digest, and the dialect groups a
-      // subject's band into one statement about one body (#544 F10).
-      `${FOCAL_SUBJECT} is lying still along the bed and listening to the rain.`,
-      // The bystander's action, which is not the focal's — and in the bystander's
-      // own set, which is `they_them` and takes the plural verb.
-      "They are shelving books by the door.",
+      // Pose and activity as two CLAIMS and two SENTENCES (#548): the split the
+      // plan used to destroy survives in the digest, and joining two composer
+      // phrases under one subject frame is what produced the malformed sentence
+      // #544 was filed over. In the scene task's IMPERATIVE register (#549),
+      // which is what this endpoint reads its prompt as.
+      "Show her lying still along the bed.",
+      "Show her listening to the rain.",
+      // The bystander's action, which is not the focal's — and bound to the
+      // bystander's own object pronoun, which is `they_them`.
+      "Show them shelving books by the door.",
       // Camera height — the component the visibility model has no read for.
       "The camera sits above the eye line, angled down.",
-      // The setting and its light, as the composer wrote them.
-      "A lamplit study, rain streaking the tall window.",
-      "Lit by dim lamplight.",
+      // The setting and its light, as the composer wrote them. TWO people are in
+      // the picture, so there is no sole subject to place and the setting is
+      // LABELLED rather than compiled into "Place her in …" — one imperative
+      // cannot put two people in one room (#549).
+      "The setting: a lamplit study, rain streaking the tall window.",
+      "Light the scene with dim lamplight.",
     ]);
+
+    // The register is the dialect's, not this file's: the same claims in the
+    // descriptive spelling are what a fixed A/B compiles, and the scene task
+    // does not take that spelling by default.
+    expect(program.prompt).not.toContain(`${FOCAL_SUBJECT} is lying still`);
 
     // AND the mood, beside the pose: atmosphere and expression are two claims
     // about two different things, and neither the setting ("a lamplit study,
     // rain streaking the tall window") nor the light ("dim lamplight") says
-    // "quiet" or "unhurried". Matched loosely because the SENTENCE is the
-    // dialect's — the 2511 band words it as atmosphere and the prose family as
-    // mood — while the claim reaching the prompt at all is this file's.
-    expect(program.prompt).toMatch(/\b(?:mood|atmosphere) is\b/);
-    expect(program.prompt).toContain("quiet and unhurried");
+    // "quiet" or "unhurried". Matched across the wordings because the SENTENCE
+    // is the dialect's — the prose family says "The mood is …", the 2511 band
+    // words it as atmosphere and states it as an instruction in the imperative
+    // register — while the claim reaching the prompt at all is this file's.
+    expect(program.prompt).toMatch(/(?:The (?:mood|atmosphere) is|Keep the atmosphere) quiet and unhurried\./u);
 
     // The scene's own light, never the release's declared `bright` placeholder.
     expect(program.prompt).not.toContain("Bright, even light.");
@@ -356,8 +367,8 @@ describe("the compiled scene prompt over a populated plan", () => {
     expectOrder(program.prompt, [
       `${FOCAL_INTRO_LEADING} lying face down along the bed`,
       "First-person POV through the viewer's own eyes",
-      "A lamplit study, rain streaking the tall window.",
-      "Lit by dim lamplight.",
+      "The setting: a lamplit study, rain streaking the tall window.",
+      "Light the scene with dim lamplight.",
     ]);
   });
 });
@@ -367,8 +378,11 @@ describe("the shared appearance owners in a scene", () => {
     const plan = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
     const { program } = compileScene(plan);
 
-    expect(program.prompt).toMatch(/hair color: platinum/i);
-    expect(program.prompt).toMatch(/eye color: blue/i);
+    // The registry's PROSE, not its label form (#547): an image-eligible
+    // attribute that declares a phrase reaches every dialect as the noun
+    // phrase it was authored as.
+    expect(program.prompt).toMatch(/platinum hair/i);
+    expect(program.prompt).toMatch(/blue eyes/i);
   });
 });
 
@@ -721,7 +735,10 @@ describe("a scene that says it is dark", () => {
   it("never lets a dark scene keep the declared bright placeholder", () => {
     const { program } = compileScene(populatedScenePlan({ lighting: "a dark room" }));
     expect(program.prompt).not.toContain("Bright, even light.");
-    expect(program.prompt).toContain("Lit by a dark room.");
+    // The composer's own phrase, worded as the scene's light by whichever
+    // register the dialect is speaking in — the claim reaching the prompt is
+    // this file's, the frame around it is the dialect's (#549).
+    expect(program.prompt).toMatch(/(?:Lit by|Light the scene with) a dark room\./u);
   });
 });
 

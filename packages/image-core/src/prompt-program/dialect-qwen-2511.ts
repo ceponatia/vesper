@@ -1,6 +1,13 @@
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import { joinImagePromptSegments, type ImagePromptSegment } from "../render-intent/prompt-segments";
 import type { SceneCaptureMode } from "../scene-ir";
+import {
+  imageAppearanceIndefiniteArticle,
+  imageAppearancePhrase,
+  imageAppearancePhraseGroupNoun,
+  imageAppearancePhraseGroupTakesArticle,
+  type ImageAppearancePhraseGroup,
+} from "./appearance-phrase";
 import type {
   ImageAngleBand,
   ImageCameraHeightBand,
@@ -630,7 +637,7 @@ function bindingSentence(
     const shown = voice?.name === null || voice === null ? `${named} shown in ${images}` : `${named}, shown in ${images},`;
     const purposes = [
       `Image ${primary.position} is ${their(voice)} primary identity reference`,
-      ...first.slots.slice(1).map((slot) => `Image ${slot.position} is ${viewPurpose(slot, voice)}`),
+      ...first.slots.slice(1).map((slot) => `Image ${slot.position} ${viewClause(slot, voice)}`),
     ];
     return `${open} ${shown} as the sole subject. ${purposes.join("; ")}. Keep ${their(voice)} ${QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK}`;
   }
@@ -704,6 +711,27 @@ function identityGroups(slots: readonly ImageDialectReference[]): IdentityGroup[
  */
 function viewPurpose(slot: ImageDialectReference, voice: SubjectVoice | null): string {
   return slot.description ?? `another reference image of the same ${voice?.noun ?? "person"}`;
+}
+
+/**
+ * The same purpose as a FINITE clause about the image — what the grouped
+ * binding's assignment list says.
+ *
+ * "Image 2 is seen from behind, the same person." makes the IMAGE the thing
+ * seen from behind, which is a sentence about a photograph rather than about
+ * the woman in it; the model is being told where to look for her back, and the
+ * clause has to name her. So the image SHOWS her, and the lane's own
+ * description follows verbatim — the vocabulary that rendered the view is still
+ * the only thing that can describe it honestly, and nothing here paraphrases it.
+ *
+ * With no description the subject drops back out of the clause: the fallback
+ * says the image is another reference of the same person, which is a fact about
+ * the picture and takes "is".
+ */
+function viewClause(slot: ImageDialectReference, voice: SubjectVoice | null): string {
+  return slot.description === undefined
+    ? `is ${viewPurpose(slot, voice)}`
+    : `shows ${them(voice)} ${slot.description}`;
 }
 
 /**
@@ -1537,14 +1565,140 @@ function writeBinding(claims: readonly ImagePositiveClaim[], context: EmitContex
 }
 
 /**
- * The build band: the age anchor, one build sentence, one hair sentence — and
- * the hair's own trailing clauses, riding the hair sentence.
+ * The order one sentence about a body states its features in (#547).
+ *
+ * Whole-figure first, then the head from the outside in — the order a person is
+ * taken in, and the order the issue's acceptance sentence is written in. Stated
+ * rather than derived from claim order, because claim order is the projection's
+ * (alphabetical by attribute id, then priority) and would put an eye colour
+ * before a build for no reason a reader could see.
+ *
+ * `other` is deliberately absent: it has no group noun, so its members have no
+ * shared clause to join and are listed standalone ({@link composeAppearance}).
+ */
+const APPEARANCE_CLAUSE_ORDER = [
+  "build",
+  "hair",
+  "face",
+  "skin",
+  "eyes",
+] as const satisfies readonly ImageAppearancePhraseGroup[];
+
+/** One group's fragments, kept apart by the role each plays in its clause. */
+interface AppearanceGroupPieces {
+  readonly adjectives: string[];
+  readonly withs: string[];
+  readonly trailers: string[];
+}
+
+/**
+ * One feature group as a clause: `[article ]<adjectives> <noun> <trailers> with
+ * <with-phrases>`.
+ *
+ * The adjective join is the group's, and it is grammar rather than taste. A
+ * build's adjectives are COORDINATE — "slim" and "lightly toned" each modify the
+ * build independently, and English separates those with commas ("a slim, lightly
+ * toned build"). Hair, skin and eye adjectives are CUMULATIVE: each modifies the
+ * phrase to its right, so they stack unpunctuated ("healthy dark-brown hair"),
+ * and a comma there would read as a list of two different heads of hair.
+ *
+ * A group with `with`-phrases and no noun-bearing piece states them alone: "a
+ * build with slender arms" says nothing the arms did not, and the article would
+ * be asserting a build nobody described.
+ */
+function appearanceClause(group: ImageAppearancePhraseGroup, pieces: AppearanceGroupPieces): string {
+  const noun = imageAppearancePhraseGroupNoun(group);
+  if (noun === null) return "";
+  if (pieces.adjectives.length === 0 && pieces.trailers.length === 0) return listWords(pieces.withs);
+  const join = group === "build" || group === "face" ? ", " : " ";
+  const stem = pieces.adjectives.length === 0 ? noun : `${pieces.adjectives.join(join)} ${noun}`;
+  const headed = imageAppearancePhraseGroupTakesArticle(group)
+    ? `${imageAppearanceIndefiniteArticle(stem)} ${stem}`
+    : stem;
+  const body = [headed, ...pieces.trailers].join(" ");
+  return pieces.withs.length === 0 ? body : `${body} with ${listWords(pieces.withs)}`;
+}
+
+/**
+ * The clause list — an Oxford comma wherever a bare "and" would be read as part
+ * of the clause before it.
+ *
+ * A clause may carry conjunctions of its own ("a slim build with slender arms
+ * and a subtle waist"), and joining two of those with nothing but "and" hands
+ * the reader "slender arms and dark-brown hair" as one list of things the build
+ * has. The serial comma is what closes the first clause before the next one
+ * opens. Two clauses that contain no conjunction take the ordinary "and",
+ * because a comma there would be punctuation with nothing to disambiguate.
+ */
+function appearanceList(parts: readonly string[]): string {
+  const clean = parts.filter((part) => part.length > 0);
+  if (clean.length <= 1) return clean[0] ?? "";
+  const conjoined = clean.some((part) => /\s(?:and|with)\s/u.test(part));
+  if (clean.length === 2 && !conjoined) return `${clean[0]} and ${clean[1]}`;
+  return `${clean.slice(0, -1).join(", ")}, and ${clean[clean.length - 1]}`;
+}
+
+/**
+ * Several appearance claims as ONE description of a person (#547).
+ *
+ * The registry hands each fact over already taken apart — which feature group it
+ * belongs to, what grammatical role its piece plays, and the piece itself
+ * ({@link imageAppearancePhrase}) — and this is the grammar half: bucket by
+ * group in claim order, write each group's clause, and list the clauses. No
+ * attribute id is read and no wording is invented; a fragment that reaches a
+ * prompt was authored beside the values it words.
+ *
+ * A claim whose value carries NO phrase keeps exactly what it compiled before:
+ * its own descriptor, lower-led into the list ("gender: female"). That is the
+ * honest answer for an attribute the registry gives no prose form, and it is
+ * also what every non-registry projection sends, so the fallback is the ordinary
+ * path rather than an error case.
+ */
+function composeAppearance(claims: readonly ImagePositiveClaim[]): string {
+  const buckets = new Map<ImageAppearancePhraseGroup, AppearanceGroupPieces>();
+  const standalone: string[] = [];
+  for (const claim of claims) {
+    const phrased = imageAppearancePhrase(claim.value);
+    // `other` names a fact no group noun covers — a stature, a personal style —
+    // so it is stated as the noun phrase the registry wrote for it.
+    if (phrased === null || phrased.phrase.group === "other") {
+      const text = lowerLead(describe(claim.value));
+      if (text.length > 0) standalone.push(text);
+      continue;
+    }
+    const group = phrased.phrase.group;
+    const pieces = buckets.get(group) ?? { adjectives: [], withs: [], trailers: [] };
+    if (phrased.phrase.role === "adjective") pieces.adjectives.push(phrased.phrase.fragment);
+    else if (phrased.phrase.role === "with") pieces.withs.push(phrased.phrase.fragment);
+    else pieces.trailers.push(phrased.phrase.fragment);
+    buckets.set(group, pieces);
+  }
+  const clauses = APPEARANCE_CLAUSE_ORDER.map((group) => {
+    const pieces = buckets.get(group);
+    return pieces === undefined ? "" : appearanceClause(group, pieces);
+  });
+  return appearanceList([...clauses, ...standalone]);
+}
+
+/**
+ * The build band: the age anchor, ONE sentence describing the person — and the
+ * hair's own trailing clauses, riding it.
+ *
+ * One sentence rather than a build sentence and a hair sentence, because the
+ * registry's phrases compose (#547): "She has a slim, lightly toned build with
+ * slender arms and a subtle waist, and healthy dark-brown hair to mid-back" is
+ * one description of one person, where the two sentences it replaced were two
+ * registry listings in a sentence's shape. The group ORDER is
+ * {@link APPEARANCE_CLAUSE_ORDER}'s, and the LOCUS is no longer consulted at
+ * all: which clause a fact belongs in is the registry's own declaration, where
+ * splitting the band by body location could only ever separate hair from
+ * everything else.
  *
  * A hairstyle is a `subject.current_state` fact, which the wardrobe band owns by
- * concept; `groupOfClaim` re-files the `with …` shape of it here because "She has
- * hair color: dark brown and hair length: mid back, with the hair worn loose" is
- * one statement about one head, and the garment sentence is the wrong host for
- * it. Anything the re-filing did not send here is not a hair fragment.
+ * concept; `groupOfClaim` re-files the `with …` shape of it here because "…
+ * dark-brown hair to mid-back, with the hair worn loose" is one statement about
+ * one head, and the garment sentence is the wrong host for it. Anything the
+ * re-filing did not send here is not a hair fragment.
  */
 function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext): GroupSentence[] {
   const sentences: GroupSentence[] = [];
@@ -1556,8 +1710,6 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
       if (rendered !== null) sentences.push(rendered);
     }
     const described = withConcept(group.claims, "subject.morphology", "subject.appearance");
-    const build = described.filter((claim) => !isHairLocus(claim));
-    const hair = described.filter((claim) => isHairLocus(claim));
     const worn = withConcept(group.claims, "subject.current_state");
     // A stated gender is what the pronoun set already says, so beside a usable
     // pronoun it is a fact the sentence has spent on "She" — absorbed into the
@@ -1565,17 +1717,17 @@ function writeBuild(claims: readonly ImagePositiveClaim[], context: EmitContext)
     // kept whenever no pronoun carries it: a shared set, or none stated at all.
     const carriedByPronoun = (claim: ImagePositiveClaim): boolean =>
       voice !== null && voice.pronouns !== null && claim.semanticTags.includes(GENDER_ATTRIBUTE_TAG);
-    const spoken = build.filter((claim) => !carriedByPronoun(claim));
-    const buildParts = valuesOf(spoken.length > 0 ? spoken : build);
-    if (buildParts.length > 0) {
-      sentences.push({ text: bandSentence(register, voice, "build", listWords(buildParts)), claims: build });
-    }
-    const hairParts = valuesOf(hair);
+    const spoken = described.filter((claim) => !carriedByPronoun(claim));
+    const body = composeAppearance(spoken.length > 0 ? spoken : described);
     const wornParts = valuesOf(worn);
-    if (hairParts.length > 0) {
+    if (body.length > 0) {
       sentences.push({
-        text: bandSentence(register, voice, "build", `${listWords(hairParts)}${trailingClause(wornParts)}`),
-        claims: [...hair, ...worn],
+        // Every claim the sentence absorbed is attributed to it — the gender the
+        // pronoun carried and the hairstyle clause included. A claim folded into
+        // another's sentence is not a dropped claim, and recording it anywhere
+        // else would say the render lost it.
+        text: bandSentence(register, voice, "build", `${body}${trailingClause(wornParts)}`),
+        claims: [...described, ...worn],
       });
     } else if (wornParts.length > 0) {
       sentences.push({ text: bandSentence(register, voice, "seen", listWords(wornParts)), claims: worn });
@@ -1633,7 +1785,14 @@ function writeWardrobe(claims: readonly ImagePositiveClaim[], context: EmitConte
     }
     const plainParts = valuesOf(plain);
     if (plainParts.length > 0) {
-      sentences.push({ text: bandSentence(register, voice, "state", listWords(plainParts)), claims: plain });
+      // A predicate reading is an ASSERTION in either register. "Show her damp
+      // at the hair" instructs the model to make her wet; "She is damp at the
+      // hair" tells it she already is, which is what the state fact says — the
+      // wetness is a condition of the person the render is of, not an edit to
+      // perform on her. The imperative register exists because this endpoint
+      // reads its prompt as an edit instruction, and stating a condition it
+      // must honour is not the same as commanding a change.
+      sentences.push({ text: bandSentence("descriptive", voice, "state", listWords(plainParts)), claims: plain });
     }
     for (const claim of withConcept(group.claims, "subject.hair_concealment", "relation.wears")) {
       const rendered = asRendered(context, claim);

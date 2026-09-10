@@ -221,8 +221,11 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
   it("reinforces the shared canonical platinum hair and blue eyes in a chat look", () => {
     const program = compile(laneProbeShadowInput());
 
-    expect(program.prompt).toMatch(/hair color: platinum/i);
-    expect(program.prompt).toMatch(/eye color: blue/i);
+    // The registry's PROSE, not its label form (#547): an image-eligible
+    // attribute that declares a phrase reaches every dialect as the noun
+    // phrase it was authored as.
+    expect(program.prompt).toMatch(/platinum hair/i);
+    expect(program.prompt).toMatch(/blue eyes/i);
   });
 
   it("two cuts that differ only in a current-layer fact compile the same prompt", () => {
@@ -378,7 +381,7 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
       ),
     );
 
-    expect(program.prompt).toMatch(/breast size: ample/i);
+    expect(program.prompt).toMatch(/an ample bust/i);
     for (const word of [/teardrop/i, /augment/i, /plump/i]) expect(program.prompt).not.toMatch(word);
   });
 });

@@ -370,6 +370,27 @@ describe("the staged scene program", () => {
     // Nothing stated at all is the neutral phrase, not an unlit scene.
     expect(benchProgram(entry, { id: entry.id }).prompt).toContain("Light the scene with soft natural light.");
   });
+
+  /**
+   * The bench's own A/B knob (#549), and the only argument this seam takes from
+   * the experiment rather than from the chat lane.
+   *
+   * Which register an edit endpoint actually obeys is an evidence question, and
+   * the two registers of one digest are the same picture asked for twice — same
+   * claims, same references, same program fingerprint — so two rows differing in
+   * nothing but this word are a fair comparison on one seed. A row that names
+   * none benches the SHIPPED prompt: the default is the dialect's, so an unnamed
+   * register must not compile a third spelling nobody renders.
+   */
+  it("compiles the register the row named, and the shipped default when it names none", () => {
+    const entry = staging("held_from_behind");
+    const imperative = benchProgram(entry, { id: entry.id, register: "imperative" }).prompt;
+    const descriptive = benchProgram(entry, { id: entry.id, register: "descriptive" }).prompt;
+
+    expect(imperative).toContain("Light the scene with soft natural light.");
+    expect(descriptive).toContain("Lit by soft natural light.");
+    expect(benchProgram(entry, { id: entry.id }).prompt).toBe(imperative);
+  });
 });
 
 /** Registry lookup that fails loudly — a test naming an entry the catalog dropped is broken, not skippable. */

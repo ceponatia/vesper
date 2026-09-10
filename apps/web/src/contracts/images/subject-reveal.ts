@@ -1,6 +1,12 @@
 import type { ImageWorldFact } from "@vesper/image-core";
 import { AFFORDANCE_UNIT_ONE } from "../affordances/core";
-import { attributeRegistry, formatAttribute, type AttributeDefinition, type AttributeValue } from "../attributes";
+import {
+  attributeRegistry,
+  formatAttribute,
+  formatAttributePhrase,
+  type AttributeDefinition,
+  type AttributeValue,
+} from "../attributes";
 import { isIntimateAttributeCategory } from "../body/locations";
 import type { RegionExposure } from "../items/visibility";
 import type { RealizedBody } from "../species";
@@ -125,8 +131,16 @@ export interface SubjectIntimateRevealInput {
  * A projection a ROUTE runs, never the selection: the caller decides per rung
  * whether its route permits intimate anatomy at all and calls this only when it
  * does. Nothing here re-decides coverage — the readout is the wardrobe's answer,
- * taken as given. The value is the same `Label: value` form the prose reveal
- * wrote, lower-cased into a clause, so the two paths state one fact one way.
+ * taken as given.
+ *
+ * The value is whatever the ORDINARY appearance route would have said about the
+ * same attribute: the registry's phrase record where it declares one ("a modest
+ * bust"), and its `Label: value` form lower-cased into a clause where it does
+ * not. The two must agree because they are alternatives for one fact — a
+ * permitting route REPLACES the cut's own `breasts.size` fact with the reveal's
+ * (`character-digest.ts`), so a reveal that still said "breast size: modest"
+ * would make an uncensored rung read as the registry listing the censored one
+ * had already stopped being.
  */
 export function subjectIntimateRevealFacts(input: SubjectIntimateRevealInput): ImageWorldFact[] {
   const ref = `subject.${input.subjectId}`;
@@ -137,12 +151,13 @@ export function subjectIntimateRevealFacts(input: SubjectIntimateRevealInput): I
     if (!isIntimateAttributeCategory(def.category)) continue;
     if (!input.realizedBody.isAttributeApplicable(def)) continue;
     if (!revealSurfaces(def, input.exposure, true)) continue;
+    const phrase = formatAttributePhrase(def, value.value);
     const formatted = formatAttribute(def, value.value);
-    if (formatted.length === 0) continue;
+    if (phrase === null && formatted.length === 0) continue;
     facts.push({
       key: `${ref}.reveal.${def.id}`,
       concept: IMAGE_SUBJECT_INTIMATE_ANATOMY_CONCEPT,
-      value: formatted.charAt(0).toLowerCase() + formatted.slice(1),
+      value: phrase ?? `${formatted.charAt(0).toLowerCase()}${formatted.slice(1)}`,
       subjectRef: ref,
       ...(def.bodyLocationId === undefined ? {} : { locus: def.bodyLocationId }),
       semanticTags: [`reveal:${def.imageReveal ?? "exposure"}`],

@@ -1203,7 +1203,9 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     expect(
       text.startsWith(
         "Create a new scene using the woman shown in Images 1 and 2 as the sole subject. " +
-          "Image 1 is her primary identity reference; Image 2 is seen from behind, the same person. " +
+          // The IMAGE is not the thing seen from behind — she is, and the clause
+          // has to name her for the model to know where to look for her back.
+          "Image 1 is her primary identity reference; Image 2 shows her seen from behind, the same person. " +
           "Keep her face, skin tone and apparent age consistent with these references.",
       ),
     ).toBe(true);
@@ -1384,6 +1386,10 @@ describe("the Qwen 2511 delta-edit dialect", () => {
    *   garment's own `item` key;
    * - one current-state value that is a PREDICATE rather than a clause ("damp at
    *   the hair"), because the same kind produces both shapes;
+   * - appearance values as the registry's PHRASE RECORDS (#547) — the standalone
+   *   noun phrase beside the group/role/fragment a composing dialect joins — and
+   *   one that carries NO phrase (`identity.gender`), because an attribute with
+   *   no natural prose form keeps its label and both shapes reach one sentence;
    * - the composer's pose filed under `subject.body_language`, the same concept
    *   as the cut's committed posture, because that is what the scene lowering
    *   does (`actionFacts`) and it is what makes the duplicate posture possible.
@@ -1417,16 +1423,56 @@ describe("the Qwen 2511 delta-edit dialect", () => {
                 disposition: "required_visual",
                 priority: 1,
               }),
-              fact({ key: "s1.build.arms", concept: "subject.morphology", value: "Arm build: slender", subjectRef: "s1", locus: "arms" }),
-              fact({ key: "s1.build.weight", concept: "subject.morphology", value: "Weight presentation: slim", subjectRef: "s1", locus: "torso" }),
+              // The registry's PHRASE records, exactly as `formatAttributePhrase`
+              // renders them for `arms.build`, `build.musculature` and
+              // `build.weight_presentation` (#547): the standalone noun phrase
+              // every family reads, plus the piece a composing dialect joins. The
+              // claim order is the projection's own — alphabetical by attribute
+              // id — which is why the musculature adjective precedes the weight's.
+              fact({
+                key: "s1.build.arms",
+                concept: "subject.morphology",
+                value: { text: "slender arms", phrase: { group: "build", role: "with", fragment: "slender arms" } },
+                subjectRef: "s1",
+                locus: "arms",
+              }),
+              fact({
+                key: "s1.build.muscle",
+                concept: "subject.morphology",
+                value: {
+                  text: "a lightly toned build",
+                  phrase: { group: "build", role: "adjective", fragment: "lightly toned" },
+                },
+                subjectRef: "s1",
+                locus: "torso",
+              }),
+              fact({
+                key: "s1.build.weight",
+                concept: "subject.morphology",
+                value: { text: "a slim build", phrase: { group: "build", role: "adjective", fragment: "slim" } },
+                subjectRef: "s1",
+                locus: "torso",
+              }),
               // The gender attribute projects like any other sheet value; beside a
               // usable pronoun it is what "She" already says.
               fact({ key: "s1.gender", concept: "subject.appearance", value: "Gender: female", subjectRef: "s1", semanticTags: ["appearance:core", "attribute:identity.gender"] }),
               // No `Hair arrangement:` attribute beside the hairstyle below: the
               // adapter suppresses the sheet's arrangement wherever a committed
               // hairstyle states it (`appearanceReplacementReason`).
-              fact({ key: "s1.hair.color", concept: "subject.appearance", value: "Hair color: dark brown", subjectRef: "s1", locus: "hair" }),
-              fact({ key: "s1.hair.length", concept: "subject.appearance", value: "Hair length: mid back", subjectRef: "s1", locus: "hair" }),
+              fact({
+                key: "s1.hair.color",
+                concept: "subject.appearance",
+                value: { text: "dark-brown hair", phrase: { group: "hair", role: "adjective", fragment: "dark-brown" } },
+                subjectRef: "s1",
+                locus: "hair",
+              }),
+              fact({
+                key: "s1.hair.length",
+                concept: "subject.appearance",
+                value: { text: "hair to mid-back", phrase: { group: "hair", role: "trailer", fragment: "to mid-back" } },
+                subjectRef: "s1",
+                locus: "hair",
+              }),
               fact({ key: "s1.wear.jeans", concept: "subject.wardrobe", value: "dark-wash skinny jeans", subjectRef: "s1", locus: "item:g-jeans", disposition: "required_visual" }),
               fact({ key: "s1.wear.loafers", concept: "subject.wardrobe", value: "brown leather loafers", subjectRef: "s1", locus: "item:g-loafers", disposition: "required_visual" }),
               fact({ key: "s1.wear.sweater", concept: "subject.wardrobe", value: "a pastel-pink crewneck sweater", subjectRef: "s1", locus: "item:g-sweater", disposition: "required_visual" }),
@@ -1507,10 +1553,12 @@ describe("the Qwen 2511 delta-edit dialect", () => {
         register: "imperative" as const,
         opening: "Create a new scene using the woman in Image 1 as the sole subject. Keep her face",
         pronoun: /\bher\b/gu,
-        build: "Give her arm build",
-        hair: "Give her hair color",
+        build: "Give her a lightly toned, slim build",
+        hair: "dark-brown hair to mid-back",
         garments: "Dress her in dark-wash skinny jeans",
-        damp: "Show her damp at the hair.",
+        // A predicate state is an ASSERTION in both registers: the wetness is a
+        // condition of the person, not an edit to perform on her.
+        damp: "She is damp at the hair.",
         pose: "Show her standing at the refreshments table",
         activity: "Show her reaching for a cup of coffee.",
         setting: "Place her in a warm lounge with",
@@ -1522,8 +1570,8 @@ describe("the Qwen 2511 delta-edit dialect", () => {
         register: "descriptive" as const,
         opening: "Use the woman in Image 1 as the sole subject; keep her face",
         pronoun: /\bShe\b/gu,
-        build: "She has arm build",
-        hair: "She has hair color",
+        build: "She has a lightly toned, slim build",
+        hair: "dark-brown hair to mid-back",
         garments: "She wears dark-wash skinny jeans",
         damp: "She is damp at the hair.",
         pose: "She is standing at the refreshments table",
@@ -1551,21 +1599,21 @@ describe("the Qwen 2511 delta-edit dialect", () => {
      * rules: a byte pin on a case whose wording is not the contract fails on
      * every improvement and proves nothing about the shape.
      *
-     * Two spellings still move it legitimately: the appearance phrases are still
-     * the registry's `label: value` form ("hair color: dark brown") until the
-     * prose slice replaces them, and the wardrobe order is fact-key order rather
-     * than layer order. Both are known follow-ups, and both change this literal
-     * when they land.
+     * One spelling still moves it legitimately: the wardrobe order is fact-key
+     * order rather than layer order, a known follow-up that changes this literal
+     * when it lands. The appearance half no longer does — the registry's phrases
+     * compose here (#547), and the sentence reads as the description of a person
+     * it was always meant to be.
      */
     it("compiles the fixture as this imperative prompt, sentence by grammatical sentence", () => {
       expect(compiledScene()).toBe(
         "Create a new scene using the woman in Image 1 as the sole subject. " +
           "Keep her face, skin tone and apparent age exactly as shown. " +
-          "Give her arm build: slender and weight presentation: slim. " +
-          "Give her hair color: dark brown and hair length: mid back, with the hair worn loose. " +
+          "Give her a lightly toned, slim build with slender arms, and dark-brown hair to mid-back, " +
+          "with the hair worn loose. " +
           "Dress her in dark-wash skinny jeans, brown leather loafers and a pastel-pink crewneck sweater, " +
           "with the sweater tucked in. " +
-          "Show her damp at the hair. " +
+          "She is damp at the hair. " +
           "Show her standing at the refreshments table, angled slightly toward the camera, " +
           "with a small, hesitant but playful expression. " +
           "Show her reaching for a cup of coffee. " +
@@ -1588,8 +1636,8 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     it("compiles the same fixture as this descriptive prompt", () => {
       expect(compiledScene("descriptive")).toBe(
         "Use the woman in Image 1 as the sole subject; keep her face, skin tone and apparent age exactly as shown. " +
-          "She has arm build: slender and weight presentation: slim. " +
-          "She has hair color: dark brown and hair length: mid back, with the hair worn loose. " +
+          "She has a lightly toned, slim build with slender arms, and dark-brown hair to mid-back, " +
+          "with the hair worn loose. " +
           "She wears dark-wash skinny jeans, brown leather loafers and a pastel-pink crewneck sweater, " +
           "with the sweater tucked in. " +
           "She is damp at the hair. " +
@@ -1671,20 +1719,47 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     });
 
     /**
-     * A hair reading belongs to the head the build band just described, and a
+     * THE COMPOSED DESCRIPTION (#547).
+     *
+     * Five phrased facts across two feature groups, in one sentence, and not one
+     * of them stated in the self-describing form the registry stores it in. "She
+     * has musculature: lightly toned, weight presentation: slim, arm build:
+     * slender" was a registry listing wearing a sentence's shape; the same facts
+     * arrive here already taken apart — group, role, fragment — and the dialect
+     * writes the grammar. The negative half is the load-bearing one: a
+     * `label: value` spelling anywhere in the prompt means a phrase stopped
+     * rendering and the fallback quietly took over, which no reading of the
+     * positive assertions would catch.
+     */
+    it.each(registers)("composes the appearance facts into one description ($register)", (entry) => {
+      const text = compiledScene(entry.register);
+      const described = text.match(/[^.]*\bbuild\b[^.]*\./gu) ?? [];
+      expect(described).toHaveLength(1);
+      expect(described[0]).toContain(entry.build);
+      // The build's adjectives are COORDINATE and comma-joined; its `with`
+      // phrase hangs off the noun; the hair's trailer follows its own noun.
+      expect(described[0]).toContain("a lightly toned, slim build with slender arms");
+      expect(described[0]).toContain("dark-brown hair to mid-back");
+      expect(text).not.toMatch(/\b(?:arm build|weight presentation|musculature|hair color|hair length)\s*:/iu);
+    });
+
+    /**
+     * A hair reading belongs to the description the build band just wrote, and a
      * PREDICATE reading is not a trailing clause at all — the same visual-state
      * kind produces both, so the shape of the value is what decides.
      */
-    it.each(registers)("trails a hair reading on the hair sentence, not the garments ($register)", (entry) => {
+    it.each(registers)("trails a hair reading on the description, not the garments ($register)", (entry) => {
       const text = compiledScene(entry.register);
-      const hair = text.match(/[^.]*\bhair color\b[^.]*\./gu) ?? [];
+      const hair = text.match(/[^.]*\bdark-brown hair\b[^.]*\./gu) ?? [];
       expect(hair).toHaveLength(1);
       expect(hair[0]).toContain(entry.hair);
       expect(hair[0]).toContain("with the hair worn loose");
-      expect(hair[0]).toContain("hair length: mid back");
       // The wardrobe sentence is not the hair reading's host.
       expect(text).not.toMatch(/skinny jeans[^.]*with the hair worn loose/u);
+      // A predicate state is an assertion in EITHER register: "Show her damp at
+      // the hair" would order the model to wet her, where the fact says she is.
       expect(text).toContain(entry.damp);
+      expect(text).not.toContain("Show her damp");
     });
 
     it.each(registers)("says the posture once, in the pose sentence the composer wrote ($register)", (entry) => {

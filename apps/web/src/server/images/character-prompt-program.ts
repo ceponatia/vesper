@@ -14,6 +14,7 @@ import {
   type ImageDialectReference,
   type ImageOperationContract,
   type ImagePromptProfileBinding,
+  type ImagePromptRegister,
   type ImagePromptStrategy,
   type ImageLocationDigest,
   type ImageReferenceFact,
@@ -283,6 +284,19 @@ export interface CharacterPromptProgramInput {
    * this per render, compiles the cut alone.
    */
   readonly intimateReveal?: boolean;
+  /**
+   * The REGISTER the compiled prompt speaks in — a description of the picture to
+   * make, or an instruction to carry out (#549).
+   *
+   * Absent is the ordinary case and the honest one: which register an endpoint
+   * reads best is the dialect's knowledge rather than a lane's, and every
+   * production lane leaves this alone so its prompts move with the dialect's
+   * own default. A caller states it only when it is deliberately compiling the
+   * other spelling — the Image Lab's fixed A/B, where the two registers of one
+   * digest are the same picture asked for twice and the difference in the
+   * output is attributable to the words.
+   */
+  readonly register?: ImagePromptRegister;
   readonly read: CharacterWorldReadInput;
   /**
    * The references the lane would hand `renderImageIntent`, in the lane's own
@@ -706,6 +720,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     positivePack,
     negativePack,
     references: dialectReferences(subjectOf, describe, planned.primary),
+    ...(input.register === undefined ? {} : { register: input.register }),
     budget: imagePromptBudgetFromBinding(profile.model.advancedCapabilities.prompt),
     // The probed negative binding is the only honest source for whether this
     // version has a field at all. An empty `advancedCapabilities` means nobody
