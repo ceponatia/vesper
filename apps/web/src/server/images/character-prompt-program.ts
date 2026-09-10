@@ -127,6 +127,49 @@ export const CHARACTER_LANE_APPARENT_AGE: Readonly<Record<CharacterPromptLane, C
 };
 
 /**
+ * How a lane's compiled prompt REFERS to a subject the payload also carries a
+ * required identity reference for.
+ *
+ * - `label` — the person's display name is offered to the dialect, which uses
+ *   it wherever a sentence names somebody.
+ * - `reference_binding` — no name is offered at all, and the dialect introduces
+ *   the subject by the image that shows them.
+ */
+export type CharacterPromptSubjectNaming = "label" | "reference_binding";
+
+/**
+ * The naming policy per lane — the second thing this table settles once and no
+ * caller may set, beside {@link CHARACTER_LANE_APPARENT_AGE}.
+ *
+ * Every lane but the scene names its subject. A portrait, a variant and a look
+ * mint are renders OF a person the prompt has to be able to talk about, and on
+ * an edit the name beside the reference costs nothing: those lanes send one
+ * face and the prompt's sentences are all about it.
+ *
+ * A scene states none (issue #544 F2). Its cast arrive bound to identity
+ * references, and on the fictional-celebrity workflow the display name is a real
+ * person's name standing beside a photograph of somebody else — a competing
+ * identity cue in the same prompt as the reference it contradicts, repeated once
+ * per claim. So the reference-anchored subjects of a scene are introduced by
+ * their image instead, which is what the payload actually supports; the dialect
+ * owns that wording.
+ *
+ * The policy applies ONLY to a subject some required identity reference in the
+ * planned send list actually shows — the same predicate the digest's own
+ * identity anchor is synthesized under (`identityAnchoredSubjects`,
+ * `contracts/images/character-digest.ts`). A cast member with no reference of
+ * their own — the single-reference rung's bystander, the bare-prompt rung's
+ * whole cast — has no image to be introduced by, so they keep their name and the
+ * prompt can still tell them apart.
+ */
+export const CHARACTER_LANE_SUBJECT_NAMING: Readonly<Record<CharacterPromptLane, CharacterPromptSubjectNaming>> = {
+  avatar: "label",
+  variant: "label",
+  chat_look: "label",
+  scene: "reference_binding",
+};
+
+/**
  * One subject's realized cut, in the vocabulary every lane already exposes
  * (`StandaloneSubjectCut`, `ChatLookCut`, `SceneSubjectVisualSlice`).
  */
@@ -405,6 +448,26 @@ function referenceFacts(
   });
 }
 
+/**
+ * The subject refs some REQUIRED identity reference in the send list shows.
+ *
+ * The identical predicate `identityAnchoredSubjects` synthesizes the digest's
+ * own identity anchor under (`contracts/images/character-digest.ts`), applied
+ * here over the very facts that function will be handed — so the subject this
+ * seam declines to name is exactly the subject the digest binds to an image, and
+ * the two cannot answer differently. Spelled out rather than imported because
+ * the contracts module keeps it private; the facts are the shared truth.
+ */
+function referenceAnchoredSubjects(references: readonly ImageReferenceFact[]): ReadonlySet<string> {
+  return new Set(
+    references.flatMap((reference) =>
+      reference.role === "identity" && reference.required && reference.subjectRef !== undefined
+        ? [reference.subjectRef]
+        : [],
+    ),
+  );
+}
+
 /** The dialect's slots, over the PRIMARY field's images in send order. */
 function dialectReferences(
   subjectOf: (reference: ImageRenderReference) => string | undefined,
@@ -427,16 +490,26 @@ function dialectReferences(
  * The cast's cuts as the assembly's inputs, minus the operation and references.
  *
  * One merged digest, one `sources` entry per person and one label per person
- * who has a name. The merge is what turns N committed cuts into the single
- * multi-subject digest `assembleCharacterWorldDigest` takes; everything else
- * here is a keyed fold, so a cast of one produces byte-identically what the
- * single-cut spelling produced before this function took a list.
+ * who has a name AND whose lane names them. The merge is what turns N committed
+ * cuts into the single multi-subject digest `assembleCharacterWorldDigest`
+ * takes; everything else here is a keyed fold, so a cast of one produces
+ * byte-identically what the single-cut spelling produced before this function
+ * took a list.
+ *
+ * `naming` and `anchored` are the label seam (#544 F2): under
+ * `reference_binding` a subject the payload carries a required identity
+ * reference for is offered no label, so the dialect introduces them by their
+ * image rather than by a name competing with it. Nothing else here changes —
+ * `cut.name` is untouched and every diagnostic, refusal and provenance reader
+ * downstream still takes the name from the cut.
  */
 function castAssembly(
   cuts: readonly CharacterPromptSubjectCut[],
   read: CharacterWorldReadInput,
   world: Pick<CharacterWorldDigestAssemblyInput, "scene" | "location" | "camera">,
   intimateReveal: boolean,
+  naming: CharacterPromptSubjectNaming,
+  anchored: ReadonlySet<string>,
 ): Omit<CharacterWorldDigestAssemblyInput, "operation" | "references"> | VisualImageCastMergeRefusal {
   const merged = mergeVisualImageCastDigests(cuts.map((cut) => cut.digest));
   if (!merged.ok) return merged.refusal;
@@ -448,7 +521,8 @@ function castAssembly(
   // both and the assembly re-decides nothing it is handed.
   const subjectFacts: Record<string, readonly ImageWorldFact[]> = {};
   for (const cut of cuts) {
-    if (cut.name !== undefined) labels[cut.subjectId] = cut.name;
+    const boundToReference = naming === "reference_binding" && anchored.has(`subject.${cut.subjectId}`);
+    if (cut.name !== undefined && !boundToReference) labels[cut.subjectId] = cut.name;
     sources[cut.subjectId] = {
       attributes: cut.attributes,
       exposure: cut.exposure,
@@ -573,6 +647,10 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   }
 
   // --- 3. Assemble the world digest over the lane's own cast ----------------
+  // The reference facts are derived BEFORE the cast, because whether a subject is
+  // named depends on whether the payload carries an image of them — a question
+  // only the planned send list can answer.
+  const references = referenceFacts(lane, subjectOf, sentReferences);
   const cast = castAssembly(
     input.cuts,
     input.read,
@@ -582,6 +660,8 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
       ...(input.camera === undefined ? {} : { camera: input.camera }),
     },
     input.intimateReveal === true,
+    CHARACTER_LANE_SUBJECT_NAMING[lane],
+    referenceAnchoredSubjects(references),
   );
   if ("code" in cast) {
     sink?.push(
@@ -605,7 +685,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     ...cast,
     // The lane's own age policy, decided by the table above and never by input.
     apparentAge: CHARACTER_LANE_APPARENT_AGE[lane],
-    references: referenceFacts(lane, subjectOf, sentReferences),
+    references,
   };
   const preview = assembleCharacterWorldDigest({ ...assembly, operation: characterPortraitImageOperation() });
   const subjects = preview.input.subjects ?? [];

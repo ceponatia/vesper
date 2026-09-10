@@ -14,7 +14,13 @@ import { sceneStagingSurfaceForms } from "@/contracts/images/scene-staging";
 import { resolveViewerParts, type ViewerBodyPart, type ViewerBodyPartId } from "@/contracts/images/viewer-body";
 import { viewerBodyFacts } from "@/contracts/images/viewer-digest";
 import type { RealizedBody } from "@/contracts/species";
-import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./prompts-scene-plan";
+import {
+  mentionsLimb,
+  normalizeName,
+  viewerGazeToCamera,
+  type SceneCharacterSpec,
+  type SceneRenderPlan,
+} from "./prompts-scene-plan";
 
 /**
  * THE LOWERING: a resolved `SceneRenderPlan` → the typed inputs a prompt program
@@ -201,11 +207,11 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
 
   const facts: ImageWorldFact[] = [
     captureModeFact(captureMode, focalRef),
-    ...possessionFact(captureMode, featured, refByName),
-    ...moodFact(plan.mood),
+    ...possessionFact(captureMode, plan.focal, featured, refByName),
+    ...moodFact(plan.mood, plan.focal),
     ...staging,
     ...viewerFacts(input, captureMode, inFrame, stagedGeometryOwned(input, staging)),
-    ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)))),
+    ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)), captureMode)),
     ...faceVisibilityFact(plan, focalRef),
   ];
 
@@ -214,6 +220,21 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
 
 function source(key: string): ImageSourceRef {
   return { owner: IMAGE_SCENE_PLAN_OWNER, key };
+}
+
+/** One person's two action fields, as the plan wrote them. */
+function actionText(spec: SceneCharacterSpec): readonly string[] {
+  return [(spec.pose ?? "").trim(), (spec.activity ?? "").trim()];
+}
+
+/** Whether the composer said anything at all about what this person is doing. */
+function hasActionText(spec: SceneCharacterSpec): boolean {
+  return actionText(spec).some((text) => text.length > 0);
+}
+
+/** Whether either action field puts a limb in the picture. */
+function namesALimb(spec: SceneCharacterSpec): boolean {
+  return actionText(spec).some((text) => mentionsLimb(text));
 }
 
 /**
@@ -256,16 +277,36 @@ function captureModeFact(mode: SceneCaptureMode, focalRef: string | undefined): 
  * observing camera has no viewer in the room, so the clause would be binding
  * limbs against a frame that never risked an unowned one.
  *
+ * And only where there is a limb to bind (issue #544 F3). The clause answers the
+ * pose text: a phrase that puts a hand, an arm or a knee in the picture is what
+ * risks the model composing that limb as the viewer's foreground, and where the
+ * focal's pose and activity name none, the sentence binds nothing and spends a
+ * whole claim asserting that a person nobody described owns parts nobody
+ * mentioned. The limb vocabulary is the plan resolver's own
+ * ({@link mentionsLimb}), so the noun that arms this clause and the noun the
+ * binder possessively bound cannot drift apart.
+ *
+ * Read off the FOCAL alone. The focal is the body the frame is built around and
+ * the one whose action text the composer writes at length; a bystander's single
+ * phrase is the far end of the same shot.
+ *
  * Optional rather than required, unlike the capture mode: the clause is worth
  * nothing without names, the names come from labels this module cannot see, and
- * a label gap must degrade the sentence rather than fail the render.
+ * a label gap must degrade the sentence rather than fail the render. That
+ * degradation is now the ORDINARY case on a reference-anchored scene, where the
+ * seam offers the dialect no display name at all
+ * (`CHARACTER_LANE_SUBJECT_NAMING.scene`) and the dialect's own binding wording
+ * is what has to name the owners; the claim is still emitted, because what a
+ * dialect makes of it is the dialect's to decide.
  */
 function possessionFact(
   mode: SceneCaptureMode,
+  focal: SceneCharacterSpec | null,
   featured: readonly SceneCharacterSpec[],
   refByName: ReadonlyMap<string, string>,
 ): readonly ImageWorldFact[] {
   if (mode !== "first_person_disembodied") return [];
+  if (focal === null || !namesALimb(focal)) return [];
   const owners = featured
     .filter((spec) => spec.name.trim().length > 0)
     .map((spec) => refByName.get(normalizeName(spec.name)))
@@ -290,10 +331,20 @@ function possessionFact(
  * A scene fact rather than a location one because the same bedroom is cheerful
  * in one render and threatening in the next: filing mood against the place would
  * make it a property of the room.
+ *
+ * Withheld wherever the focal's own action text already carries the moment
+ * (issue #544 D9). Mood is an emotional LABEL — "nervous, curious, with a hint
+ * of playful tension" — and a pose is the visible expression that label was
+ * about: "a small smile playing at her lips". An image model handed both paints
+ * the abstraction on top of the concrete one, so the shot with a described
+ * subject states the expression alone. A location-only shot, and a plan whose
+ * focal was given neither field, still state the mood: there the label is the
+ * only thing saying how the picture feels.
  */
-function moodFact(mood: string): readonly ImageWorldFact[] {
+function moodFact(mood: string, focal: SceneCharacterSpec | null): readonly ImageWorldFact[] {
   const value = mood.trim();
   if (value.length === 0) return [];
+  if (focal !== null && hasActionText(focal)) return [];
   return [
     {
       key: "scene.mood",
@@ -522,15 +573,28 @@ function stagedPartsInFrame(input: SceneLoweringInput): boolean {
  * is identical either way — claims are ordered by the CONCEPT's channel, not by
  * the list a fact travelled in — so the choice buys honest provenance and costs
  * the prompt nothing.
+ *
+ * The camera rewrite is spent here a second time, against the mode THIS RUNG
+ * resolved (#544 F3). The plan resolver already ran it, but it ran against the
+ * plan's embodiment, and embodiment is decided per rung: coverage and the
+ * intimate route can take every viewer part out of frame on the moderated
+ * fallback, and a phrase written for the embodied plan would then name a viewer
+ * beside a frame asserting the viewer is never visible. Idempotent on text the
+ * plan already rewrote, so the ordinary case compiles unchanged.
  */
-function actionFacts(spec: SceneCharacterSpec, subjectRef: string | undefined): readonly ImageWorldFact[] {
+function actionFacts(
+  spec: SceneCharacterSpec,
+  subjectRef: string | undefined,
+  mode: SceneCaptureMode,
+): readonly ImageWorldFact[] {
   if (subjectRef === undefined) return [];
   const parts: readonly [string | undefined, ImageWorldFact["concept"], string][] = [
     [spec.pose, "subject.body_language", "pose"],
     [spec.activity, "subject.activity", "activity"],
   ];
   return parts.flatMap(([value, concept, member]) => {
-    const text = (value ?? "").trim();
+    const stated = (value ?? "").trim();
+    const text = mode === "first_person_disembodied" ? viewerGazeToCamera(stated).trim() : stated;
     if (text.length === 0) return [];
     return [
       {

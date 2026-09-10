@@ -112,17 +112,28 @@ export const normalizeName = (name: string): string => name.trim().toLowerCase()
  * (owner report 2026-07-10): the composer is instructed to translate player-directed
  * beats into solo equivalents, but a slip hands the render an unpaintable instruction
  * ("walking beside the player, a hand on his arm") that fights the POV rule. Gaze-type
- * references rewrite to the viewer ("head turned toward the player" → "toward the
- * viewer" — exactly right for a POV shot); any clause still naming the player is
+ * references rewrite to whatever is actually on that side of the lens ("head turned
+ * toward the player" → "toward the camera"); any clause still naming the player is
  * dropped whole. Pronoun references ("his arm") are deliberately NOT scrubbed — in a
  * multi-character scene a pronoun may be another character; that case belongs to the
  * composer rule, not a regex.
+ *
+ * The gaze TARGET follows embodiment (#544 D3). On a disembodied shot nobody stands
+ * where the player would be, so a gaze bound to "the viewer" narrates an observer the
+ * image is required not to contain, and the honest target is the lens itself. An
+ * embodied shot keeps "the viewer", because there the viewer's own body IS in frame
+ * and the same word carries the contact wording the render geometry is built on.
  */
 export function scrubPlayerFromAction(action: string, opts: { embodied?: boolean } = {}): string {
   if (!/\bplayer\b/i.test(action)) return action;
-  // Gaze/orientation toward the player = toward the camera. Possessives ("at the
-  // player's side") are proximity, not gaze — they fall through to the clause drop.
-  const rewritten = action.replace(/\b(facing|toward|towards|at)\s+the\s+player\b(?!['’]s)/gi, "$1 the viewer");
+  // Gaze/orientation toward the player = toward whatever the frame holds there.
+  // Possessives ("at the player's side") are proximity, not gaze — they fall through
+  // to the clause drop.
+  const gazeTarget = opts.embodied ? "the viewer" : "the camera";
+  const rewritten = action.replace(
+    /\b(facing|toward|towards|at)\s+the\s+player\b(?!['’]s)/gi,
+    `$1 ${gazeTarget}`,
+  );
   if (opts.embodied) {
     // With the viewer's body in frame (scene-pov-embodiment slice 3), contact is paintable
     // — so a clause naming the player is REWRITTEN to the viewer rather than dropped. The
@@ -164,9 +175,51 @@ export function scrubBlush(text: string): string {
     .join(", ");
 }
 
-// The trailing lookahead skips possessive idioms ("an arm's length") and compounds ("a hand-carved rail").
-const BARE_LIMB = /\b(?:a|an|one)\s+(hand|arm|leg|foot|finger|thumb|palm|wrist|knee|elbow)\b(?!['’-])/gi;
-const BOTH_LIMBS = /\bboth\s+(hands|arms|legs|feet|knees|elbows)\b/gi;
+/**
+ * THE LIMB VOCABULARY, stated once.
+ *
+ * Two consumers read it and they must not drift apart: {@link bindLimbsToOwner}
+ * rewrites a bare limb noun to a possessive one, and the scene lowering emits
+ * the total-possession clause only for a shot whose action text actually names a
+ * limb ({@link mentionsLimb}, issue #544 F3). The clause exists to bind a limb
+ * the pose put in the picture; a vocabulary that said "hand" on one side and not
+ * the other would either leave a named limb unbound or ship a possession
+ * sentence with nothing to possess.
+ */
+const LIMB_SINGULAR = ["hand", "arm", "leg", "foot", "finger", "thumb", "palm", "wrist", "knee", "elbow"] as const;
+
+/** The plural forms "both …" takes. A subset of the singulars by design — nothing says "both palms". */
+const LIMB_PLURAL = ["hands", "arms", "legs", "feet", "knees", "elbows"] as const;
+
+/**
+ * Every limb noun either backstop knows, plurals first so the alternation is
+ * read longest-form-first rather than relying on backtracking.
+ */
+const LIMB_NOUNS: readonly string[] = [...LIMB_PLURAL, ...LIMB_SINGULAR];
+
+/** The trailing lookahead skips possessive idioms ("an arm's length") and compounds ("a hand-carved rail"). */
+const NOT_IDIOM = "(?!['’-])";
+
+const BARE_LIMB = new RegExp(`\\b(?:a|an|one)\\s+(${LIMB_SINGULAR.join("|")})\\b${NOT_IDIOM}`, "gi");
+const BOTH_LIMBS = new RegExp(`\\bboth\\s+(${LIMB_PLURAL.join("|")})\\b`, "gi");
+
+/**
+ * Whether this text names a limb at all — bare, possessive or plural.
+ *
+ * Wider than {@link BARE_LIMB} on purpose, and it has to be: the binder runs
+ * FIRST, so by the time anything downstream reads the text every bare limb has
+ * already become "Mira's hand". Asking the narrow pattern here would answer "no
+ * limb in this shot" for exactly the shots the possession clause was measured
+ * on. A possessive limb is still a limb noun, and the measured failure is that a
+ * limb noun summons a limb whether or not it is bound.
+ *
+ * Built fresh per call rather than kept as a module-level `g` regex: a global
+ * regex carries `lastIndex` between `test` calls and would answer differently on
+ * alternate invocations for the same string.
+ */
+export function mentionsLimb(text: string): boolean {
+  return new RegExp(`\\b(?:${LIMB_NOUNS.join("|")})\\b${NOT_IDIOM}`, "i").test(text);
+}
 
 /**
  * Possessively bind bare limb references to their owner: "one hand holding a cup" →
@@ -186,6 +239,55 @@ export function bindLimbsToOwner(text: string, owner: string): string {
   return text
     .replace(BARE_LIMB, (_m, limb: string) => `${possessive} ${limb.toLowerCase()}`)
     .replace(BOTH_LIMBS, (_m, limbs: string) => `both of ${possessive} ${limbs.toLowerCase()}`);
+}
+
+/**
+ * A viewer noun, in any of the forms composer prose reaches for.
+ *
+ * Non-global on purpose: a `g` regex keeps `lastIndex` between `test` calls and
+ * would answer differently on alternate invocations for the same string.
+ */
+const VIEWER_NOUN = /\bviewer\b/i;
+
+/** "…into the viewer" — the one gaze preposition whose natural object is the lens. */
+const VIEWER_GAZE_LENS = /\binto\s+the\s+viewer\b(?!['’]s)/gi;
+
+/** Every other gaze/orientation preposition pointed at the viewer. */
+const VIEWER_GAZE_CAMERA = /\b(facing|toward|towards|at|on|onto|to)\s+the\s+viewer\b(?!['’]s)/gi;
+
+/** "the viewer's eye", "the viewer's gaze" — the possessive spelling of the same beat. */
+const VIEWER_GAZE_POSSESSIVE = /\bthe\s+viewer['’]s\s+(?:eye|eyes|gaze|attention|direction|way)\b/gi;
+
+/**
+ * The disembodied shot's camera-relative rewrite — the deterministic backstop
+ * behind the composer's own camera wording (#544 D3/F3).
+ *
+ * A shot with no viewer part in frame asserts, in the same prompt, that the
+ * viewer is never visible. Any pose or activity phrase that then names the
+ * viewer describes a person standing across the room whom the picture is
+ * forbidden to contain, and the model resolves that contradiction by painting
+ * them. The composer is ruled against it and this is what catches the slip, in
+ * the same belt-and-braces shape as {@link scrubBlush} and
+ * {@link bindLimbsToOwner}: rewrite the gaze to the thing that IS there — the
+ * camera, or the lens for "into" — and drop whole any clause still naming a
+ * viewer the rewrite could not aim.
+ *
+ * Never run on an embodied shot. There the viewer's own body is in frame, "the
+ * viewer's own forearm" is the measured contact wording, and rewriting it would
+ * un-say the geometry the arrangement is built on.
+ */
+export function viewerGazeToCamera(text: string): string {
+  if (!VIEWER_NOUN.test(text)) return text;
+  const rewritten = text
+    .replace(VIEWER_GAZE_POSSESSIVE, "the camera")
+    .replace(VIEWER_GAZE_LENS, "into the lens")
+    .replace(VIEWER_GAZE_CAMERA, "$1 the camera");
+  if (!VIEWER_NOUN.test(rewritten)) return rewritten;
+  return rewritten
+    .split(/[;,]/)
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0 && !VIEWER_NOUN.test(clause))
+    .join(", ");
 }
 
 /**
@@ -679,13 +781,21 @@ function normalizeEvidence(text: string): string {
 }
 
 /**
- * The three scrubs, run over ONE field.
+ * The four scrubs, run over ONE field.
  *
  * The player scrub covers the composer's text and the posture/activity fallback
  * alike (session state can carry player-referencing activity phrases too); the
- * blush scrub strips skin-colour words out of whatever survived; and the limb
+ * blush scrub strips skin-colour words out of whatever survived; the limb
  * binder then possessively binds any bare "a hand"/"one foot" to this character
- * so the image model cannot compose it as the viewer's foreground limb.
+ * so the image model cannot compose it as the viewer's foreground limb; and on a
+ * shot with no viewer in it the camera rewrite takes the last pass, so no phrase
+ * the plan carries names a person the frame asserts is absent.
+ *
+ * The camera rewrite runs LAST and only when disembodied. Last because it is a
+ * backstop over whatever the earlier three left standing — including the player
+ * scrub's own output, which now writes the camera itself — and disembodied-only
+ * because an embodied shot's "the viewer's own hands" is the wording its
+ * geometry was measured with.
  *
  * Per field rather than over the joined phrase, now that pose and activity lower
  * to two concepts. `bindLimbsToOwner` is the load-bearing one: it is the fourth
@@ -695,7 +805,8 @@ function normalizeEvidence(text: string): string {
 function scrubActionField(text: string, owner: string, embodied: boolean): string {
   const trimmed = text.trim().replace(/\.+$/, "");
   if (trimmed.length === 0) return "";
-  return bindLimbsToOwner(scrubBlush(scrubPlayerFromAction(trimmed, { embodied })), owner);
+  const bound = bindLimbsToOwner(scrubBlush(scrubPlayerFromAction(trimmed, { embodied })), owner);
+  return embodied ? bound : viewerGazeToCamera(bound);
 }
 
 function characterSpec(

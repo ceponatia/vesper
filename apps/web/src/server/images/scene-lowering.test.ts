@@ -34,6 +34,7 @@ import {
   expectOrder,
   expectSections,
   LANE_PROBE_NAME,
+  LANE_PROBE_SECOND_SUBJECT_ID,
   LANE_PROBE_SUBJECT_ID,
   laneProbeCastMember,
   laneProbeCastScenePlan,
@@ -47,7 +48,7 @@ import {
   type CharacterPromptProgram,
   type CharacterPromptReference,
 } from "./character-prompt-program";
-import type { SceneRenderPlan } from "./prompts-scene-plan";
+import { emptySceneRenderPlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import {
   IMAGE_SCENE_STAGING_UNSENT,
   lowerScenePlan,
@@ -253,6 +254,23 @@ function compileScene(
   return { program: result, lowered };
 }
 
+/**
+ * How a scene prompt refers to a cast member the payload carries an identity
+ * image of.
+ *
+ * The scene lane offers the dialect no display NAME for a reference-anchored
+ * subject (`CHARACTER_LANE_SUBJECT_NAMING.scene`, issue #544 F2): on the
+ * fictional-celebrity workflow the name is a real person's, standing in the same
+ * prompt as a photograph of somebody else. The dialect introduces them by their
+ * image instead, and this is what an unnamed subject reads as until it does.
+ *
+ * Held as a constant, in both cases, because these are the DIALECT's words and
+ * this file is not their owner — when the introduction changes, every assertion
+ * below follows it from one place.
+ */
+const ANCHORED = "the subject";
+const ANCHORED_LEADING = "The subject";
+
 /** Every camera sentence the scene dialect can write, whatever the band. */
 const CAMERA_SENTENCES = [
   "Tight close-up framing.",
@@ -274,28 +292,33 @@ const CAMERA_SENTENCES = [
 // ---------------------------------------------------------------------------
 
 describe("the compiled scene prompt over a populated plan", () => {
-  it("states the setting, the light, the mood, the capture mode, the staging and each person's action", () => {
+  it("states the setting, the light, the capture mode, the staging and each person's action", () => {
     const { program } = compileScene(populatedScenePlan());
 
     expectSections(program.prompt, [
       // Whose eyes this is, and whose body may be in the frame. The arrangement
-      // below places the viewer's own hands on Nyx, so this shot is EMBODIED and
-      // must not assert the viewer's absence.
+      // below places the viewer's own hands on the focal, so this shot is
+      // EMBODIED and must not assert the viewer's absence.
       "First-person POV through the viewer's own eyes; the viewer's face and head are never in frame, though the viewer's own body may be cropped into the frame.",
-      // The registry's measured wording, adopted verbatim with `{name}` bound.
-      "Nyx lying face down along the bed with Nyx's back to the camera and Nyx's head turned to the side against the pillow, the viewer's own hands resting on Nyx's shoulders.",
+      // The registry's measured wording, adopted verbatim with `{name}` bound —
+      // to the reference binding rather than to a display name (`ANCHORED`).
+      `${ANCHORED_LEADING} lying face down along the bed with ${ANCHORED}'s back to the camera and ${ANCHORED}'s head turned to the side against the pillow, the viewer's own hands resting on ${ANCHORED}'s shoulders.`,
       // Pose and activity as two claims — the split the plan used to destroy.
-      "Nyx is lying still along the bed.",
-      "Nyx is listening to the rain.",
+      `${ANCHORED_LEADING} is lying still along the bed.`,
+      `${ANCHORED_LEADING} is listening to the rain.`,
       // The bystander's action, which is not the focal's.
-      "Ilsa is shelving books by the door.",
+      `${ANCHORED_LEADING} is shelving books by the door.`,
       // Camera height — the component the visibility model has no read for.
       "The camera sits above the eye line, angled down.",
       // The setting and its light, as the composer wrote them.
       "A lamplit study, rain streaking the tall window.",
       "Lit by dim lamplight.",
-      "The mood is quiet and unhurried.",
     ]);
+
+    // And NOT the mood: this focal was given a pose and an activity, which is
+    // the visible half of the same moment, so the abstract label is withheld
+    // (#544 D9 — the branches are pinned under "the mood label" below).
+    expect(program.prompt).not.toContain("The mood is");
 
     // The scene's own light, never the release's declared `bright` placeholder.
     expect(program.prompt).not.toContain("Bright, even light.");
@@ -313,13 +336,12 @@ describe("the compiled scene prompt over a populated plan", () => {
     expect(program.prompt).not.toContain("Every visible body part belongs to");
 
     // Canonical segment order: the frame is stated before the bodies standing in
-    // it, and the place and its mood follow both.
+    // it, and the place and its light follow both.
     expectOrder(program.prompt, [
       "First-person POV through the viewer's own eyes",
-      "Nyx lying face down along the bed",
+      `${ANCHORED_LEADING} lying face down along the bed`,
       "A lamplit study, rain streaking the tall window.",
       "Lit by dim lamplight.",
-      "The mood is quiet and unhurried.",
     ]);
   });
 });
@@ -472,18 +494,32 @@ describe("an absent capture decision", () => {
    * The measured composite, intact on the shot it was measured on.
    *
    * A frame with no viewer part in it is the disembodied case, and there the
-   * possession clause is doing its job: nothing else in the prompt owns a limb,
-   * so binding every visible one to the cast is what stops a phantom viewer hand
-   * appearing. Dropping it here would be over-applying the embodied fix.
+   * possession clause is doing its job: the pose text names a limb, nothing else
+   * in the prompt owns it, and binding every visible one to the cast is what
+   * stops a phantom viewer hand appearing. Dropping it here would be
+   * over-applying the embodied fix.
+   *
+   * The pose is the one thing this fixture states over the shared plan: the
+   * clause is armed by a limb noun in the focal's own action text (#544 F3), and
+   * a probe plan that mentioned no limb would be asserting the WITHHELD branch
+   * under a title about keeping the clause.
+   *
+   * Asserted over the lowered facts rather than the prompt. The sentence needs
+   * names to bind its owners to and the scene lane offers the dialect none for a
+   * reference-anchored cast, so the emitted claim — which is what this owns —
+   * outlives whatever the dialect currently makes of it.
    */
   it("keeps the cast possession binding when no viewer part is in frame", () => {
-    const plan = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
+    const base = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
+    const focal = base.focal;
+    if (focal === null) throw new Error("the probe cast fixture lost its focal");
+    const plan = { ...base, focal: { ...focal, pose: `${LANE_PROBE_NAME}'s hand around the cup` } };
     expect(plan.viewerBody).toEqual([]);
     expect(plan.staging).toBeUndefined();
 
     const { program, lowered } = compileScene(plan, false, VIEWER);
-    expect(lowered.scene.some((fact) => fact.concept === "scene.possession")).toBe(true);
-    expect(program.prompt).toContain("Every visible body part belongs to Nyx or Ilsa.");
+    const possession = lowered.scene.find((fact) => fact.concept === "scene.possession");
+    expect(possession?.value).toEqual([`subject.${LANE_PROBE_SUBJECT_ID}`, `subject.${LANE_PROBE_SECOND_SUBJECT_ID}`]);
 
     // And nothing about the viewer's own body, even with a persona supplied:
     // the composite is the measured one, unchanged. The count keeps its plain
@@ -492,6 +528,79 @@ describe("an absent capture decision", () => {
     expect(lowered.scene.filter((fact) => fact.concept.startsWith("viewer."))).toEqual([]);
     expect(program.prompt).toContain("Exactly 2 people are in frame.");
     expect(program.prompt).not.toContain("fully in frame");
+  });
+});
+
+/**
+ * THE TWO CLAIMS A DESCRIBED SUBJECT MAKES REDUNDANT (issue #544, D3/D9).
+ *
+ * Both are claims that exist to cover for something the shot did not say, and
+ * both were emitted unconditionally beside the thing that said it:
+ *
+ * - the **possession** clause binds every visible body part to the cast so an
+ *   unowned limb noun cannot be composed as the viewer's foreground hand. With
+ *   no limb noun anywhere in the action text there is no limb to bind, and the
+ *   clause spends a claim asserting ownership of parts nobody mentioned;
+ * - the **mood** is an emotional label ("nervous, curious") and a pose is the
+ *   visible expression that label was about ("a small smile playing at her
+ *   lips"). Handed both, an image model paints the abstraction over the concrete
+ *   one — but a location-only shot, and a focal the composer said nothing about,
+ *   have nothing else to say how the picture feels, so there the label stays.
+ *
+ * Lowered directly rather than compiled: `possessionFact` and `moodFact` are
+ * this module's, and both branches of each are the whole claim.
+ */
+describe("the claims a described subject makes redundant", () => {
+  const CAST = [{ subjectId: LANE_PROBE_SUBJECT_ID, name: LANE_PROBE_NAME }];
+
+  /** The disembodied probe shot, with the focal's two action fields stated outright. */
+  const shotWith = (pose: string, activity: string): SceneProgramInputs => {
+    const base = laneProbeCastScenePlan([laneProbeCastMember()]);
+    const focal = base.focal;
+    if (focal === null) throw new Error("the probe cast fixture lost its focal");
+    return lowerScenePlan({
+      plan: { ...base, others: [], mood: "quiet and unhurried", focal: { ...focal, pose, activity } },
+      cast: CAST,
+      allowIntimate: false,
+    });
+  };
+
+  const has = (lowered: SceneProgramInputs, concept: string): boolean =>
+    lowered.scene.some((fact) => fact.concept === concept);
+
+  it.each([
+    ["a possessive limb the binder already bound", `${LANE_PROBE_NAME}'s hand around the cup`, ""],
+    ["a plural limb", "both of her hands around the cup", ""],
+    ["a limb in the activity rather than the pose", "seated by the window", "one foot tucked under her"],
+  ])("binds every visible body part when the action text names %s", (_case, pose, activity) => {
+    expect(has(shotWith(pose, activity), "scene.possession")).toBe(true);
+  });
+
+  it.each([
+    ["no limb at all", "settling into the chair", "watching the rain"],
+    ["a possessive idiom rather than a limb", "keeping the tray at arm's length", ""],
+    ["a compound rather than a limb", "leaning on a hand-carved rail", ""],
+  ])("binds nothing when the action text names %s", (_case, pose, activity) => {
+    expect(has(shotWith(pose, activity), "scene.possession")).toBe(false);
+  });
+
+  it("withholds the mood label where the focal's own pose or activity carries the moment", () => {
+    expect(has(shotWith("a small smile playing at her lips", ""), "scene.mood")).toBe(false);
+    expect(has(shotWith("", "reaching for a cup of coffee"), "scene.mood")).toBe(false);
+  });
+
+  it("states the mood where nothing else says how the picture feels", () => {
+    // A focal the composer described in neither field: the roster backfill's
+    // shape, and the state the label is the only answer for.
+    expect(has(shotWith("", ""), "scene.mood")).toBe(true);
+
+    // And a location-only shot, which has no focal at all.
+    const lowered = lowerScenePlan({
+      plan: { ...emptySceneRenderPlan(), mood: "quiet and unhurried" },
+      cast: [],
+      allowIntimate: false,
+    });
+    expect(lowered.scene.find((fact) => fact.concept === "scene.mood")?.value).toBe("quiet and unhurried");
   });
 });
 
@@ -529,7 +638,13 @@ describe("a scene that says it is dark", () => {
 
 describe("a staging that places the viewer", () => {
   it("makes the shot embodied and withdraws the cast-only possession clause", () => {
-    const plan = populatedScenePlan();
+    const base = populatedScenePlan();
+    const focal = base.focal;
+    if (focal === null) throw new Error("the probe cast fixture lost its focal");
+    // A limb in the pose, so EMBODIMENT is the only thing that can withdraw the
+    // clause here: the shot otherwise arms it (#544 F3), and a fixture that
+    // named no limb would pass this case for the wrong reason.
+    const plan = { ...base, focal: { ...focal, pose: `${LANE_PROBE_NAME}'s hand flat on the sheet` } };
     expect(plan.staging?.viewerParts.length).toBeGreaterThan(0);
 
     const { program, lowered } = compileScene(plan);
@@ -540,7 +655,7 @@ describe("a staging that places the viewer", () => {
 
     // The arrangement is still stated — embodiment withdraws the possession
     // clause, never the staging it was contradicting.
-    expect(program.prompt).toContain("the viewer's own hands resting on Nyx's shoulders.");
+    expect(program.prompt).toContain(`the viewer's own hands resting on ${ANCHORED}'s shoulders.`);
   });
 });
 
@@ -611,7 +726,7 @@ describe("a staging the rung may not state", () => {
  * lock's own priority and may legitimately fall between them.
  */
 describe("a shot that cannot show the subject's face", () => {
-  const NO_ROTATION = "do not rotate Nyx to face the camera.";
+  const NO_ROTATION = `do not rotate ${ANCHORED} to face the camera.`;
 
   /** The populated plan with its arrangement removed, so the CAMERA decides the answer. */
   const shot = (orientation: SceneSubjectOrientationId): SceneRenderPlan =>
@@ -623,9 +738,9 @@ describe("a shot that cannot show the subject's face", () => {
 
   /** The measured sentences, for a subject whose OWN identity image is in the payload. */
   const PARTIAL_FROM_REFERENCE =
-    "Nyx's face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+    `${ANCHORED}'s face is partly turned from the camera; preserve the visible features, hair color and style, build and skin tone exactly from the reference — do not rotate ${ANCHORED} to face the camera.`;
   const AWAY_FROM_REFERENCE =
-    "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+    `${ANCHORED}'s face is not visible in this shot; preserve the hair color and style, build and skin tone exactly from the reference — do not rotate ${ANCHORED} to face the camera.`;
 
   it.each([
     ["profile", PARTIAL_FROM_REFERENCE],
@@ -672,9 +787,18 @@ describe("a shot that cannot show the subject's face", () => {
     expect(lowered.scene.find((fact) => fact.concept === "subject.face_visibility")?.value).toBe("hidden");
   });
 
-  /** The same shot for a subject with no identity image of their OWN in the payload. */
+  /**
+   * The same shot for a subject with no identity image of their OWN in the payload.
+   *
+   * Their display NAME survives here, and that is the second half of the naming
+   * policy rather than an oversight (#544 F2): the scene lane withholds a name
+   * only from a subject some required identity reference actually shows, because
+   * only they can be introduced by an image instead. A cast member with no
+   * reference of their own has nothing to be introduced by, so the prompt keeps
+   * the one thing that can still tell them apart.
+   */
   const AWAY_UNANCHORED =
-    "Nyx's face is not visible in this shot; preserve the hair color and style, build and skin tone exactly — do not rotate Nyx to face the camera.";
+    `${LANE_PROBE_NAME}'s face is not visible in this shot; preserve the hair color and style, build and skin tone exactly — do not rotate ${LANE_PROBE_NAME} to face the camera.`;
 
   /**
    * Whose photograph the preservation set points at.
@@ -702,7 +826,7 @@ describe("a shot that cannot show the subject's face", () => {
 
   /** The away sentence for a subject whose headwear fully hides their hair: hair leaves the preserve list, nothing else moves. */
   const AWAY_HAIR_CONCEALED =
-    "Nyx's face is not visible in this shot; preserve the build and skin tone exactly from the reference — do not rotate Nyx to face the camera.";
+    `${ANCHORED}'s face is not visible in this shot; preserve the build and skin tone exactly from the reference — do not rotate ${ANCHORED} to face the camera.`;
 
   /** The probe cast with the focal's resolved hair-occlusion band overridden. */
   const castAt = (band: "partial" | "full"): LaneProbeCastSubject[] => {
@@ -779,7 +903,7 @@ describe("the viewer's own body in an embodied frame", () => {
     // The viewer is in the picture but never in the cast: the count still names
     // the two people who have cuts, and no clause hands their limbs an owner.
     expect(program.prompt).toContain("Exactly 2 people are fully in frame.");
-    expect(program.prompt).not.toContain("Every visible body part belongs to");
+    expect(lowered.scene.some((fact) => fact.concept === "scene.possession")).toBe(false);
 
     // Geometry before the body facts: the model has to know the limbs are the
     // viewer's and cropped before it is told what they look like.
@@ -800,7 +924,7 @@ describe("the viewer's own body in an embodied frame", () => {
     // The staging owns the GEOMETRY, never whose body this is — the facts cover
     // every part in frame, staged or not.
     expect(program.prompt).toContain("The viewer's own body: ");
-    expect(program.prompt).toContain("the viewer's own hands resting on Nyx's shoulders.");
+    expect(program.prompt).toContain(`the viewer's own hands resting on ${ANCHORED}'s shoulders.`);
   });
 
   it("words only the parts the staging left over", () => {

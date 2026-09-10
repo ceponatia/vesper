@@ -14,11 +14,16 @@ import {
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { expectDiagnostic } from "@/test/diagnostics";
 import {
   LANE_PROBE_NAME,
+  LANE_PROBE_SECOND_NAME,
+  LANE_PROBE_SECOND_SUBJECT_ID,
   LANE_PROBE_SUBJECT_ID,
   laneProbeAvatarProgram,
+  laneProbeCastScenePlan,
+  laneProbeCastSubjects,
   laneProbeVariantCut,
   laneProbeWardrobe,
   resolvedImageProfileFixture,
@@ -36,6 +41,7 @@ import {
   type CharacterPromptProgramResult,
 } from "./character-prompt-program";
 import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./packs-qwen-2511";
+import { applySceneCastVisual } from "./scene-subject-visual";
 
 /**
  * THE PRODUCTION HALF of the character prompt-program seam
@@ -86,6 +92,8 @@ import { qwenImageEdit2511NegativePack, qwenImageEdit2511PositivePack } from "./
 
 const QWEN_2511_SLUG = "qwen/qwen-image-edit-2511";
 const VARIANT_KEY = "variant-standard";
+/** The seeded scene profile key this endpoint carries a bound row for (`packs-qwen-2511.ts`). */
+const SCENE_KEY = "scene-standard";
 const QWEN_2511_VARIANT_BINDING = "binding-qwen-2511-variant-v1";
 /**
  * A `:version` pin as a registry row stores one — every community checkpoint's
@@ -643,5 +651,110 @@ describe("hair the headwear fully hides", () => {
     expect(program.prompt).toContain(lock);
     expect(program.prompt).not.toContain(other);
     if (band === "full") expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
+  });
+});
+
+/**
+ * WHO THE PROMPT NAMES (issue #544 F2) — the seam's second lane policy, beside
+ * the apparent-age one and settable by no caller.
+ *
+ * The display name reaches a compiled prompt through exactly one field: the
+ * label this module folds out of each cut. On a lane sending an identity
+ * reference of that person, the name is a SECOND identity cue in the same
+ * prompt as the photograph — and on the fictional-celebrity workflow it is a
+ * real person's name standing beside a picture of somebody else, restated once
+ * per claim. The scene lane therefore offers no label for a subject the payload
+ * actually carries an image of, and the dialect introduces them by that image.
+ *
+ * Three things this pins, none of which any other gate sees:
+ *
+ * 1. **The anchored subject is unnamed on a scene.** Falsified against the
+ *    unconditional `labels[cut.subjectId] = cut.name` this replaced.
+ * 2. **The unanchored one is not.** The policy keys on whether a REQUIRED
+ *    identity reference in the planned send list shows this person — the same
+ *    predicate the digest's own identity anchor is synthesized under — never on
+ *    whether the payload has references at all. The scene ladder's
+ *    single-reference rung sends one surviving identity image for a cast of two,
+ *    and a cast member with no image of their own has nothing to be introduced
+ *    by; blanking their name too would leave the prompt unable to tell the two
+ *    people apart.
+ * 3. **No other lane moves.** The variant lane sends the same shape of
+ *    reference for the same person and keeps the name.
+ */
+describe("the lane's subject-naming policy", () => {
+  /** The bound scene endpoint, so a scene program compiles rather than answering `unbound`. */
+  const sceneProfile = (): ResolvedImageProfile =>
+    resolvedImageProfileFixture({ slug: QWEN_2511_SLUG, task: "scene", key: SCENE_KEY });
+
+  /**
+   * A two-person scene through the production seams, with `referenced` deciding
+   * which cast members get an identity image of their own — the scene ladder's
+   * single-reference rung, where the answer differs per person.
+   */
+  function sceneProgram(referenced: (subjectId: string) => boolean): CharacterPromptProgram {
+    const members = laneProbeCastSubjects();
+    const plan = laneProbeCastScenePlan(members.map((subject) => subject.member));
+    const built = applySceneCastVisual({ plan, members });
+    expect(built.refusal).toBeNull();
+    return compiled(
+      buildCharacterPromptProgram({
+        lane: "scene",
+        task: "scene",
+        profile: sceneProfile(),
+        bindingProfileKey: SCENE_KEY,
+        bindingStrategy: "instruction_edit",
+        cuts: built.visuals.map((slice) => ({
+          subjectId: slice.subjectId,
+          name: slice.name,
+          digest: slice.digest,
+          attributes: slice.attributes,
+          exposure: slice.exposure,
+          hairOcclusion: slice.hairOcclusion,
+          realizedBody: slice.realizedBody,
+        })),
+        read: { kind: "committed_cut", token: built.visuals[0]?.cutId ?? "" },
+        references: built.visuals
+          .filter((slice) => referenced(slice.subjectId))
+          .map((slice): CharacterPromptReference => ({
+            reference: { role: "identity", buffer: Buffer.from(slice.subjectId), name: slice.name },
+            subjectId: slice.subjectId,
+          })),
+        operation: () => characterSceneImageOperation({ subjectCount: built.visuals.length, kind: "edit" }),
+        refuseOnMissingRequired: true,
+      }),
+    );
+  }
+
+  const labelOf = (program: CharacterPromptProgram, subjectId: string): string | undefined =>
+    program.subjects.find((subject) => subject.entityId === subjectId)?.label;
+
+  it("offers no display name for a scene subject the payload carries an identity image of", () => {
+    const program = sceneProgram(() => true);
+
+    expect(labelOf(program, LANE_PROBE_SUBJECT_ID)).not.toBe(LANE_PROBE_NAME);
+    expect(labelOf(program, LANE_PROBE_SECOND_SUBJECT_ID)).not.toBe(LANE_PROBE_SECOND_NAME);
+    // The whole point, at the boundary the model reads: neither name is in the
+    // text sent beside their photographs.
+    expect(program.prompt).not.toContain(LANE_PROBE_NAME);
+    expect(program.prompt).not.toContain(LANE_PROBE_SECOND_NAME);
+  });
+
+  it("keeps the display name of a scene subject no identity reference shows", () => {
+    // Only the bystander is referenced — the single-reference rung's shape, and
+    // the one where the two cast members must be answered differently.
+    const program = sceneProgram((subjectId) => subjectId !== LANE_PROBE_SUBJECT_ID);
+
+    expect(labelOf(program, LANE_PROBE_SUBJECT_ID)).toBe(LANE_PROBE_NAME);
+    expect(labelOf(program, LANE_PROBE_SECOND_SUBJECT_ID)).not.toBe(LANE_PROBE_SECOND_NAME);
+    expect(program.prompt).toContain(LANE_PROBE_NAME);
+    expect(program.prompt).not.toContain(LANE_PROBE_SECOND_NAME);
+  });
+
+  it("names the subject on every other lane, reference and all", () => {
+    // The same person, the same identity reference, the variant lane's own call.
+    const program = compiled(buildCharacterPromptProgram(programInput()));
+
+    expect(labelOf(program, LANE_PROBE_SUBJECT_ID)).toBe(LANE_PROBE_NAME);
+    expect(program.prompt).toContain(LANE_PROBE_NAME);
   });
 });

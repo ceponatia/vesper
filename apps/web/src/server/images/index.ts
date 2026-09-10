@@ -322,12 +322,14 @@ export {
   bindLimbsToOwner,
   emptySceneRenderPlan,
   heuristicFocalName,
+  mentionsLimb,
   normalizeName,
   resolveScenePlan,
   type SceneCharacterSpec,
   type SceneRenderPlan,
   scrubBlush,
   scrubPlayerFromAction,
+  viewerGazeToCamera,
 } from "./prompts-scene-plan";
 export { applySceneCastVisual, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 export {

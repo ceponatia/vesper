@@ -245,6 +245,16 @@ function benchProgram(entry: SceneStaging, scene: ImageLabStaging = { ...SCENE, 
 
 const EVERY_STAGING = sceneStagingList.map((entry) => [entry.id, entry] as const);
 
+/**
+ * What a scene-lane prompt calls a subject whose identity image it carries.
+ *
+ * The bench compiles through `lane: "scene"` — that is the parity pin's whole
+ * point — so it inherits the scene lane's naming policy: no display name for a
+ * reference-anchored subject, the dialect introducing them by their image
+ * instead (issue #544 F2).
+ */
+const ANCHORED_SUBJECT = "the subject";
+
 describe("the staged scene program", () => {
   it.each(EVERY_STAGING)(
     "compiles %s byte-identically to the chat lane's single-reference rung for the same staging",
@@ -259,7 +269,15 @@ describe("the staged scene program", () => {
     // `{name}` bound — the same assertion the A/B probe refused to render
     // without. Riding as a required claim, it also has to survive the budget,
     // and this is what says it did.
-    expect(benchProgram(entry).prompt).toContain(entry.template.replaceAll("{name}", SUBJECT));
+    //
+    // Bound to the reference binding rather than to a display name: the bench
+    // compiles on the scene lane, and the scene lane offers the dialect no name
+    // for a subject the payload carries an identity image of
+    // (`CHARACTER_LANE_SUBJECT_NAMING.scene`, issue #544 F2). Every template
+    // opens with the placeholder, so the dialect's own leading capital is
+    // applied here too.
+    const bound = entry.template.replaceAll("{name}", ANCHORED_SUBJECT);
+    expect(benchProgram(entry).prompt).toContain(`${bound.charAt(0).toUpperCase()}${bound.slice(1)}`);
   });
 
   /**
