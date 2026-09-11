@@ -4,7 +4,7 @@ Vesper uses Vitest 4 with one root-owned application configuration and package-o
 
 ## Ownership
 
-This page owns test-project wiring, layer boundaries, shared utility locations, integration contracts, and what each CI job selects. The `vesper-testing` skill owns whether a test should be added and which layer should carry a claim. Live UI and API verification belongs to the `verify` skill.
+This page owns test-project wiring, layer boundaries, shared utility locations, integration contracts, and what each CI job selects. The `vesper-testing` skill owns whether a test should be added and which layer should carry a claim; the `vesper-test-keeper` role (`.codex/agents/`, `.claude/agents/`) applies it to a finished change, updating the owning tests and reporting what CI selected. Live UI and API verification belongs to the `verify` skill.
 
 ## Execution policy
 

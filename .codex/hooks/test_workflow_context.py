@@ -57,6 +57,11 @@ class HookTests(unittest.TestCase):
         self.assertIn("vesper-ui-quality/SKILL.md", text)
         self.assertNotIn("vesper-scenario-review/SKILL.md", text)
 
+    def test_test_keeper_role_points_at_vesper_testing_skill(self):
+        output = self.invoke("SubagentStart", agent_type="vesper-test-keeper")
+        text = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("vesper-testing/SKILL.md", text)
+
     def test_no_record_leaves_ordinary_conversation_quiet(self):
         self.assertEqual(self.invoke(), {})
         self.assertFalse(self.path.parent.exists())
