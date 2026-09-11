@@ -80,6 +80,15 @@ It designates ONE focal character from the pool — or none, since an empty room
 **location-only POV shot**, a legitimate output rather than an error — plus which other roster
 members are in frame.
 
+**Feeling is shown, never labelled.** `pose` carries the focal character's visible expression —
+what a photograph would actually catch: "a small smile playing at her lips", "one brow raised" —
+and it is the only field that states one. `mood` is atmosphere, the air of the place and the
+moment — "quiet late-night warmth", "tense fluorescent stillness" — and never an emotion word
+for the character. They are claims about different things, so a described pose does not displace
+the air around it: the lowering states the atmosphere beside a pose and on a location-only shot
+alike, and withholds it only where the setting or lighting text already says the same thing
+([scene-framing.md](scene-framing.md) §The atmosphere).
+
 The output is clamped server-side by `resolveScenePlan`: a focal name not in the roster is
 replaced (`images.scene_composer.focal_clamped`), invented "others" are dropped
 (`images.scene_composer.absent_character_dropped`), and every character's outfit phrase is

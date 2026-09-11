@@ -8,7 +8,7 @@ import {
 } from "../affordances/core";
 import { diag, type DiagnosticSink } from "../diagnostics";
 import { VISUAL_STATE_KIND_UNKNOWN } from "./diagnostics";
-import type { EffectiveCoverageRead } from "../items/effective-coverage-read";
+import { effectiveCoverageBandOf, type EffectiveCoverageRead } from "../items/effective-coverage-read";
 import type { GarmentBlueprint } from "../items/garment-blueprint";
 import { garmentEffectiveCoverage } from "../items/garment-effective-coverage";
 import type { GarmentInstanceState, GarmentLocus } from "../items/garment-instance";
@@ -75,6 +75,27 @@ const ATTACHING_CATEGORY_IDS: ReadonlySet<string> = new Set(["jewelry", "eyewear
 
 /** Denominator floor for the occlusion overlap ratio — one covered location. */
 const OVERLAP_DENOMINATOR_FLOOR = 1;
+
+/**
+ * The tag a worn garment carries when nothing it covers can be seen: every
+ * location it reaches is covered by a worn piece on a strictly higher layer
+ * whose own cover there reads OPAQUE.
+ *
+ * It is a claim about visibility, not about the wardrobe: the garment stays in
+ * the snapshot with its full value, its coverage, its `covers` edges and its
+ * `mandatoryForContinuity` prior, because a bra under a sweater is still what
+ * she is wearing and the next turn may take the sweater off. The tag is the
+ * whole interface — a consumer that describes a PICTURE (the image character
+ * adapter) withholds the tagged garment's wardrobe fact; a consumer that
+ * reasons about state ignores the tag and reads on.
+ *
+ * Conservative in one direction only. An unknown layer on either piece, an
+ * unknown opacity, a location the upper piece does not reach — each leaves the
+ * garment UNTAGGED and therefore stated. A visible garment the prompt omits is
+ * the wardrobe error a player cannot miss; a concealed garment the prompt
+ * mentions is a wasted clause.
+ */
+export const VISUAL_STATE_WARDROBE_CONCEALED_TAG = "wardrobe.concealed";
 
 export interface VisualStateGarmentInput {
   readonly instance: GarmentInstanceState;
@@ -342,6 +363,84 @@ function occlusionEdges(garment: ResolvedGarment, all: readonly ResolvedGarment[
     .map((edge) => ({ kind: "occludes", targetKey: edge.targetKey, degree: edge.degree }));
 }
 
+/**
+ * Whether THIS garment's own cover over one location reads opaque, from the
+ * captured effective-coverage read — and `undefined` when the capture cannot
+ * say.
+ *
+ * Deliberately NOT `coverDegree`. That function answers a different question
+ * ("how strongly does this cover conceal the body under it?") and degrades to
+ * FULL, because a `covers` edge that invented exposure would uncover a body.
+ * Concealment degrades the other way: a garment is hidden only on POSITIVE
+ * evidence that the piece over it stops light, so every degraded path here
+ * returns `undefined` and leaves the garment stated.
+ *
+ * The band comes from the shared ladder (`effectiveCoverageBandOf`) rather than
+ * a threshold of this module's own, so "opaque" means here exactly what it
+ * means in the wardrobe's own read and in narration.
+ */
+function opaqueOver(
+  garment: ResolvedGarment,
+  locationId: string,
+  captured: EffectiveCoverageRead | undefined,
+): boolean | undefined {
+  const entry = captured?.entries.find((row) => row.locationId === locationId);
+  if (entry === undefined) return undefined;
+  const rows = entry.evidence.filter((row) => row.garmentId === garment.input.instance.id);
+  if (rows.length === 0) return undefined;
+  return effectiveCoverageBandOf(Math.max(...rows.map((row) => row.effectiveOpacity))) === "opaque";
+}
+
+/**
+ * Whether one worn piece is completely hidden by the pieces over it —
+ * {@link VISUAL_STATE_WARDROBE_CONCEALED_TAG}'s rule, in full.
+ *
+ * ALL of the lower piece's effective coverage must be answered, one location at
+ * a time. A share is not enough: a bra whose band reaches below a cropped
+ * sweater is a visible bra, and the fraction `overlapDegree` reports is exactly
+ * the wrong thing to threshold — 90% covered is still a garment somebody can
+ * see. `occlusionEdges` beside this one keeps reporting that share, because a
+ * degree is what the composition model wants; concealment is a boolean.
+ *
+ * Layer is strict: equal layers do not stack (two base pieces sit side by side),
+ * and an absent layer on either piece takes that piece out of the comparison —
+ * the same conservative rule `occlusionEdges` already applies, and the reason a
+ * wardrobe nobody layered conceals nothing.
+ *
+ * Attaching accessories (jewelry, eyewear) never conceal: a necklace over a
+ * blouse hides no blouse, and this module already says so by giving them an
+ * `attached_to` edge instead of a `covers` one.
+ *
+ * A garment that covers NOTHING — a ring, a template-minted accessory with no
+ * authored coverage, a piece whose presentation has uncovered every part — is
+ * not concealed. It is simply not the kind of thing this rule can hide, and
+ * vacuous truth over an empty set would tag every one of them.
+ */
+function isConcealedGarment(
+  garment: ResolvedGarment,
+  all: readonly ResolvedGarment[],
+  captured: EffectiveCoverageRead | undefined,
+): boolean {
+  const layer = garment.input.layer;
+  if (layer === undefined || !garment.isWorn || garment.covered.size === 0) return false;
+  const over = all.filter((other) => {
+    if (other.key === garment.key) return false;
+    if (other.subjectId !== garment.subjectId) return false;
+    if (!other.isWorn) return false;
+    if (other.categoryId !== undefined && ATTACHING_CATEGORY_IDS.has(other.categoryId)) return false;
+    const otherLayer = other.input.layer;
+    return otherLayer !== undefined && otherLayer > layer;
+  });
+  if (over.length === 0) return false;
+  for (const locationId of garment.covered) {
+    const hidden = over.some(
+      (other) => other.covered.has(locationId) && opaqueOver(other, locationId, captured) === true,
+    );
+    if (!hidden) return false;
+  }
+  return true;
+}
+
 function wardrobeEvidence(garment: ResolvedGarment): AffordanceEvidence[] {
   const evidence = [
     affordanceEvidence("adapter", "visual_state.wardrobe", garment.input.instance.locus.kind),
@@ -383,10 +482,11 @@ function wardrobePriors(garment: ResolvedGarment, base: VisualStateAttentionPrio
   return garment.onBody ? { ...base, mandatoryForContinuity: true } : base;
 }
 
-function wardrobeTags(garment: ResolvedGarment): string[] {
+function wardrobeTags(garment: ResolvedGarment, concealed: boolean): string[] {
   const tags: string[] = [garment.input.instance.locus.kind];
   if (garment.categoryId !== undefined) tags.push(garment.categoryId);
   if (garment.input.subtypeId !== undefined) tags.push(garment.input.subtypeId);
+  if (concealed) tags.push(VISUAL_STATE_WARDROBE_CONCEALED_TAG);
   return tags;
 }
 
@@ -433,6 +533,12 @@ function wardrobeChangedAt(garment: ResolvedGarment): number | undefined {
  * the wardrobe vocabulary distinguishes a hairpiece from a hat (there is no
  * `wig` subtype), so `replaces_visible_surface` still has no owner anywhere,
  * and the plan's answer to a missing owner is silence.
+ *
+ * A piece nothing over it lets through additionally carries
+ * {@link VISUAL_STATE_WARDROBE_CONCEALED_TAG}. That is a semantic tag and
+ * nothing more: the feature, its value, its coverage, its edges and its
+ * continuity prior are all unchanged, and a consumer that does not read the tag
+ * behaves exactly as it did.
  */
 export function projectWardrobeFeatures(
   input: VisualStateWardrobeProjectionInput,
@@ -474,7 +580,7 @@ export function projectWardrobeFeatures(
       // its say — a name the schema trims must not fingerprint differently from
       // the identical name that arrived already trimmed.
       truthFingerprint: "pending",
-      semanticTags: wardrobeTags(garment),
+      semanticTags: wardrobeTags(garment, isConcealedGarment(garment, resolved, captured)),
       stability: kind.stability,
       relationships: [...surfaceEdges, ...occlusionEdges(garment, resolved)],
       priors: wardrobePriors(garment, kind.priors),

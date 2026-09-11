@@ -22,7 +22,7 @@ import type {
 } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
-import { replicateClient } from "../ai";
+import { imageModelSentShape, replicateClient } from "../ai";
 import { prepareModelPrompt } from "./model-adapters";
 import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
 
@@ -251,7 +251,7 @@ export interface RenderShapeOutcome {
   /** The provider input the shape was written to, or null when none was written. */
   field: string | null;
   /** The value written to that field, or null when the payload carried no shape. */
-  value: string | null;
+  value: unknown;
   /** The ratio the request expected back, or null when nothing could say. */
   expectedAspect: number | null;
   /** The ratio the result was cropped to, or null when no crop was performed. */
@@ -359,6 +359,11 @@ export async function renderWithModel(
     },
     sink,
   );
+  const sentShape = imageModelSentShape({
+    model,
+    aspect: typeof aspectValue === "string" ? aspectValue : null,
+    ...(input.controlInput ? { controlInput: input.controlInput } : {}),
+  });
   // Spread rather than assigned, so a run the provider never got a prediction id
   // (or never echoed a version, or never reached the transport's send) for
   // reports no field at all instead of an explicit undefined. The count is
@@ -366,8 +371,8 @@ export async function renderWithModel(
   // count, absence means the transport never said.
   const shape = (cropTarget: number | null): RenderShapeOutcome => ({
     mode: targetRatio === null ? "provider_default" : "target_ratio",
-    field: typeof aspectValue === "string" ? aspectField : null,
-    value: typeof aspectValue === "string" ? aspectValue : null,
+    field: sentShape.field,
+    value: sentShape.value,
     expectedAspect: dimensions.expectedAspect,
     cropTarget,
   });

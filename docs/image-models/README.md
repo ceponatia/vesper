@@ -39,9 +39,10 @@ The registry keys adapters by the model's **base slug**, so a reproducibility pi
 | [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | none — the family's prompt wording is an `@vesper/image-core` dialect    |
 | [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait           | `prompt`, `aspectRatio`, `seed`, `guidance`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle`               | no edit dialect; no execution hint                                       |
 
-One absence is deliberate:
+Two absences are deliberate:
 
 - **Qwen Image 2512 does not compose `negativePrompt`.** The endpoint declares a negative-prompt field, but Vesper's measured behavior shows that it does not steer output. The package therefore does not advertise the field as a behavioral capability merely because the schema contains it.
+- **`qwen/qwen-image-2` has no adapter at all.** Replicate's unified Qwen Image 2 endpoint is a registered row, but the package has no family-specific behavior to encode for it, so `adapterForImageModel("qwen/qwen-image-2")` returns `null` and the generic path runs it. The registry keys on the exact base slug, so the shared `qwen/qwen-image-` prefix hands it nothing from the two adapters above; its schema, controls and reviewed ratings are owned by [its model page](models/qwen-image-2.md).
 
 The edit adapter composes `lora`. Composing it states that the endpoint family can load a custom LoRA; the probed model record remains authoritative for whether the version Vesper actually runs exposes the provider bindings. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
 

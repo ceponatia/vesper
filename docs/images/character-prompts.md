@@ -19,8 +19,8 @@ reference list it must send.
 
 - **Owns:** the character projection into world facts, the cast, reference
   planning and slot numbering, the reference-anchored identity anchor, the
-  per-lane apparent-age policy, and the refusals the seam adds to the layer's
-  own.
+  per-lane apparent-age and subject-naming policies, and the refusals the seam
+  adds to the layer's own.
 - **Does not own:** the compile itself, dialects, packs and bindings
   ([prompt-programs.md](prompt-programs.md)); how a cast's per-person cuts are
   produced and folded ([pipelines/scene-subjects.md](pipelines/scene-subjects.md));
@@ -70,9 +70,56 @@ and states what translation alone cannot:
   same `morphology` segment kind, a different protection — which takes the
   missing-part exclusions off the negative channel's table; a prosthetic
   additionally tags `morphology.synthetic_surface`.
-- **Every emitted value is prompt-ready.** Record-shaped values resolve to their
-  readable members with ids stripped; a record with nothing readable left is
-  suppressed rather than flattened into a payload.
+- **Every emitted value is prompt-ready, and a per-kind renderer decides how.**
+  Every value goes through the renderer its own visual-state kind declares
+  (`imageCharacterKindPromptDecisions`): a garment record becomes its name, a
+  support relation becomes "standing on the floor", a tuck reading becomes a
+  clause bound to the garment it belongs to. There is **no structural
+  fallback** — an unregistered kind, a value that fails its own schema and a
+  reading a renderer deliberately says nothing about all resolve to silence plus
+  the record `character.value_unreadable`, and a required one additionally lands
+  in `missingRequired`. A kind may instead declare `not_prompt_material` (its
+  value is real and is nothing an image prompt can say) or `not_image_eligible`
+  (the visual-state registry does not admit it to image selection at all), which
+  are decisions rather than gaps. A census test walks the kind registry, so a
+  kind added without a decision fails the build instead of reaching a payload as
+  flattened structure.
+- **Scalar pass-through is a per-kind policy, not an exemption.** A string,
+  number or boolean is judged by the same table as a record, so a kind that
+  declares either refusal is silent for every value shape. The three appearance
+  kinds are the pass-through: their values are answered from the canonical
+  owners before they reach the table, so their renderers let that resolver
+  output through, and the attribute kind additionally carries the registry's
+  phrase record. Every other kind carries a structured visual-state value, and a
+  scalar at one of them is a shape its own schema never produced.
+- **A rendered value is a clause fragment, in one of two shapes.** Every dialect
+  wraps a subject claim with a fixed verb, so the value completes that wrapper
+  and is never a sentence, an id or a bare vocabulary token. A whole-subject
+  state is a bare participle or adjective ("standing", "blindfolded"); a
+  part-scoped state is a `with …` clause naming the garment or body part it is
+  about ("with the sweater tucked in"), because the state belongs to the cloth
+  rather than to the person and an unbound one describes the wrong thing. A
+  garment name the forge stored in Title Case is sentence-cased for mid-sentence
+  use, and only when every word of it is an ordinary capitalised word — "T-Shirt"
+  and "Levi's 501 Jeans" carry casing that means something.
+- **Pronouns come from `identity.gender`.** `female` yields `she_her`, `male`
+  yields `he_him`, and every androgynous or nonbinary presentation yields
+  `they_them` whichever natal variant it carries — that split exists so a render
+  can draw the right underlying build and says nothing about what to call
+  somebody. An absent, non-string or unrecognized value yields no set at all, and
+  a dialect then names the subject another way rather than guessing
+  ([prompt-programs.md](prompt-programs.md) §The world digest). Recognition is
+  membership in the registry's own `allowedValues`, never a family prefix:
+  attribute values are arbitrary strings, and a malformed one that merely starts
+  like a member ("nonbinary_bogus") is degraded data rather than an identity.
+- **A garment opaque outer layers fully conceal is withheld** as the designed
+  suppression `character.wardrobe.concealed`: a bra under a sweater is wardrobe
+  truth and nothing a render can show. The judgment is the wardrobe projection's,
+  carried as a semantic tag on the source fact
+  ([../contracts/items/visibility.md](../contracts/items/visibility.md) §A worn
+  garment nothing lets through). The exposure claims this adapter states over the
+  same coverage readout are untouched, and the key never lands in
+  `missingRequired`.
 
 ### Registry-backed image appearance
 
@@ -102,9 +149,31 @@ registry's policy before the adapter sees it:
   longer permits them;
 - `none` follows the registry's prompt-elision rule, and metadata may omit other
   valid storage values that add no useful image instruction;
-- `formatAttribute` supplies the readable label and value. The source attribute
-  id and canonical truth fingerprint remain provenance and never become prompt
-  prose.
+- `formatAttribute` supplies the readable label and value, and
+  `formatAttributePhrase` the prose form beside it. The source attribute id and
+  canonical truth fingerprint remain provenance and never become prompt prose.
+
+An image-eligible attribute that declares an `imageAppearance.phrase`
+([../contracts/attributes.md](../contracts/attributes.md) §Appearance phrases)
+reaches the world digest as the record `{ text, phrase: { group, role, fragment,
+order } }` rather than as "Hair color: dark brown". `text` is the standalone
+noun phrase ("dark-brown hair"), which every dialect words through the value
+member it already reads; `phrase` is the same fact taken apart — down to where
+the fragment sits among its group's pieces — so a prose dialect composes one
+clause per feature group from several claims that each keep their own segment,
+fitting and provenance. An attribute with no declared phrase carries the label
+form. Both paths into a subject's appearance facts — the visual-state resolver
+for a selected fact and the registry projection this adapter runs — emit the same
+record, so one attribute reads the same however it arrived. The registry owns the
+wording and the dialect owns the grammar: no attribute id reaches
+`@vesper/image-core`.
+
+A committed hairstyle carries a phrase too. It replaces the sheet's own
+`hair.arrangement` and `hair.style`, so the adapter words it as the hair trailer
+it replaced — `{ text: "with the hair worn loose", phrase: { group: "hair", role:
+"trailer", fragment: "worn loose", order: 0 } }` — and a composing dialect states
+it where the sheet's arrangement would have sat, ahead of the length. The `text`
+member keeps the `with …` clause shape every other dialect words it through.
 
 The adapter then applies render-specific policy once for every lane. A fact's
 inclusive minimum-to-maximum framing range and body location decide whether the
@@ -153,10 +222,12 @@ Realized-body applicability chooses one ordinary upper-torso size owner. When
 the realized body has no `breasts` region, applicable `chest.size` describes
 chest build under normal framing and coverage policy. When that region exists,
 it makes `chest.size` inapplicable and `breasts.size` owns the silhouette.
-`breasts.size` is the single `ordinarySilhouette` exception: its shape may be
-stated through clothing on an ordinary route. Other breast attributes remain on
-the intimate reveal path and retain their exposure rules, so an ordinary prompt
-never gains nipple or other surface detail from this exception.
+`breasts.size` is the single `ordinarySilhouette` exception: size is the one bust
+fact clothing does not hide, so it may be stated through clothing on an ordinary
+route. Every other breast attribute — shape, augmentation, fullness, nipples — is
+a surface read a garment flattens or covers; each stays on the intimate reveal
+path with its exposure rules, so an ordinary prompt gains no surface detail from
+this exception.
 
 ### Pregnancy silhouette
 
@@ -235,6 +306,34 @@ and settable by no caller) and applied by the adapter
   ([pipelines/scene-subjects.md](pipelines/scene-subjects.md) §Identity anchors
   and the setting).
 
+## Naming a subject per lane
+
+Whether a compiled prompt offers the dialect a subject's display name is the
+lane's policy too, decided in the same seam and settable by no caller
+(`CHARACTER_LANE_SUBJECT_NAMING`):
+
+| Lane                       | Policy              | Why                                                     |
+| -------------------------- | ------------------- | ------------------------------------------------------- |
+| avatar, variant, chat look | `label`             | the render is OF somebody the prompt has to talk about  |
+| scene                      | `reference_binding` | the cast arrive bound to images that identify them      |
+
+- The policy applies **only to a subject some required identity reference in the
+  planned send list actually shows** — the same predicate the identity anchor is
+  synthesized under. A cast member with no reference of their own, which is the
+  single-reference rung's bystander and the bare-prompt rung's whole cast, has no
+  image to be introduced by, so they keep their name and the prompt can still
+  tell them apart.
+- Under `reference_binding` no label for that subject reaches the digest and the
+  dialect introduces them by the image that shows them instead, because on the
+  fictional-celebrity workflow a display name is a real person's name standing
+  beside a photograph of somebody else — a competing identity cue in the same
+  prompt as the reference it contradicts, repeated once per claim. Only the
+  digest loses it: the cut's own name is untouched, and diagnostics, refusals and
+  provenance still read it.
+- How a label-less subject is then worded is the dialect's
+  ([../image-models/models/qwen-image-edit-2511.md](../image-models/models/qwen-image-edit-2511.md)
+  §How this dialect names a person).
+
 ## Hair the headwear conceals
 
 A cut carries the subject's resolved hair-occlusion band beside its coverage
@@ -256,10 +355,21 @@ adapter — never a lane, never a route — applies the one image consequence:
   none of it is visible. It is `required_visual` and filed in the `wardrobe`
   segment kind, beside the garment that causes it and unfittable by kind, so no
   budget squeeze can drop the statement while the authored hair stays withheld
-  ([prompt-programs.md](prompt-programs.md) §Concepts). Each dialect words it in
+  ([prompt-programs.md](prompt-programs.md) §Concepts). It is the one required
+  fact an edit's **derived preserve set never names**
+  ([§Identity on a reference-anchored render](#identity-on-a-reference-anchored-render)):
+  a preserve entry says a fact of the SOURCE survives the change, and the
+  concealment is a fact about this render's own wardrobe, so "keep the hair
+  concealment unchanged from the source" asks to carry over a concealment a
+  bare-headed anchor does not have — and reads, on an instruction editor, as
+  "keep the hair" beside the sentence that just said none is visible. The claim's
+  own sentence is the instruction. Each dialect words it in
   its own register with the same meaning — the prose families
   "`<Name>`'s hair is fully covered by the headwear; no hair is visible.", the
-  tag family "`<Name>` hair fully covered by headwear, no visible hair".
+  tag family "`<Name>` hair fully covered by headwear, no visible hair". The Qwen
+  edit dialect takes the possessive from the subject's own voice, so a scene that
+  withheld the display name says "Her hair is fully covered …" rather than naming
+  a person its other sentences refer to by pronoun.
 - **At `none` and `partial` nothing changes.** Some hair remains visible, so
   the authored facts stand exactly as visual state selected them, and no
   concealment fact is stated. The two bands stay distinct values even though
@@ -315,29 +425,55 @@ cannot support. A subject whose projection already states identity keeps its own
 facts and gains nothing, so a describe-the-face lane cannot lock twice.
 
 **The lock wording belongs to the dialect, never to the digest.** The digest
-states what is true; each endpoint decides how it says so. The Qwen edit
-dialects word the lock from `QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK` /
-`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` (`@vesper/image-core`,
-`dialect-qwen-2511.ts`), chosen by reference count — zero references lock
-nothing, because there is no image to lock an identity to — and the prose
-family emits its provider-neutral sentence. No adapter in
-`@vesper/image-models` touches prompt text, so a prompt reaches the provider
-exactly as it was compiled and hashed.
+states what is true and each endpoint decides how it says so; zero references
+lock nothing, because there is no image to lock an identity to. The prose family
+emits its provider-neutral sentence. The Qwen edit dialect merges the lock into
+the one sentence that binds the subject to its numbered image, and chooses that
+sentence's form by **the number of PEOPLE the identity slots show, never the
+number of slots**: a reference view enters the send list as a second identity
+slot for the same character
+([pipelines/reference-views.md](pipelines/reference-views.md)), so a form counted
+over slots called one woman two people and asked the prompt to keep "each
+person's" face. Three forms follow, and so do three preserve clauses — one
+person in one image, one person in several, and several people. A cast member the
+payload carries no image of is bound to nothing and gets a sentence of their own
+saying they have no reference and are described below, so the single-reference
+rung's bystander is never covered by a promise about "their own image"; the
+anchored person is then told what they are in the picture rather than that they
+are its sole subject. The exported
+`QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`,
+`QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK` and
+`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` are those sentences' preserve clauses
+rather than whole sentences, and no clause contains another, so a reader can
+assert which binding a render chose
+([../image-models/models/qwen-image-edit-2511.md](../image-models/models/qwen-image-edit-2511.md)
+§Numbered-reference instruction policy). Several images of one person cannot be
+asked for "exactly as shown", so the grouped clause asks for consistency ACROSS
+them. No adapter in `@vesper/image-models` touches prompt text, so a prompt
+reaches the provider exactly as it was compiled and hashed.
 
-**The lock never asks the reference to restore hair the headwear hides.** A
-subject at the `full` hair-occlusion band carries a `subject.hair_concealment`
-claim ([§Hair the headwear conceals](#hair-the-headwear-conceals)), and the
-dialect reads the band from that claim in the set it already renders — no
-second channel carries it. When any cast member's claim is present the lock
-ships its hair-free spelling (`…_IDENTITY_LOCK_HAIR_CONCEALED` in each family:
-the prose sentence without "hair color and style", the Qwen single- and
-multi-reference locks without "hair"), and every other cue — face, skin tone,
-build or proportions, apparent age — stays as the measured lock states it. The
-rule is conservative on purpose: the lock is one sentence for the whole cast,
-so one covered person drops the clause for everyone, because a lock that kept
-"hair" would tell the model to paint that person's reference hair back over the
-hijab, and the uncovered rest of the cast still carry their hair in their
-references. At `none` and `partial` the measured lock ships untouched.
+**What a lock preserves is that dialect's own set.** The prose family's measured
+sentence names face, hair colour and style, skin tone, body proportions and
+apparent age. The Qwen edit dialect's names face, skin tone and apparent age
+alone and leaves hair, build, wardrobe and pose to the text — on an instruction
+editor those are the facts the prompt states and the render is asked to change,
+and a preserve clause claiming them leaves every later hair or build sentence
+ambiguous between a reminder and an override.
+
+**No lock asks the reference to restore hair the headwear hides.** A subject at
+the `full` hair-occlusion band carries a `subject.hair_concealment` claim
+([§Hair the headwear conceals](#hair-the-headwear-conceals)), and a dialect reads
+the band from that claim in the set it already renders — no second channel
+carries it. The prose family then ships its hair-free spelling
+(`PROSE_FAMILY_IDENTITY_LOCK_HAIR_CONCEALED`), with every other cue exactly as
+the measured lock states it. That rule is conservative on purpose: the sentence
+is one lock for the whole cast, so one covered person drops the clause for
+everyone — a lock that kept "hair" would tell the model to paint that person's
+reference hair back over the hijab, and the uncovered rest of the cast still
+carry their hair in their references. The Qwen edit dialect needs no variant,
+because hair is in none of its three preserve clauses; its `…_HAIR_CONCEALED`
+names are byte-identical deprecated aliases. At `none` and `partial` every measured
+lock ships untouched.
 
 **A face the shot cannot show adapts the lock, in a sentence of its own and
 never inside the lock string.** The lock says preserve the exact face, and on a
@@ -349,9 +485,10 @@ face is not the evidence, and that the turn is not on the table. It is filed in
 the `identity` segment kind at a priority strictly below the lock's, so it
 **follows the lock within the identity band and never precedes it**, and it is as
 unfittable as the lock it corrects: an adaptation a budget squeeze dropped while
-the lock survived would leave exactly the failure it exists to end. Nothing
-promises the two are adjacent — every subject's identity claim sits at the lock's
-own priority, so on an ensemble one of those may fall between them.
+the lock survived would leave exactly the failure it exists to end. Whether the
+two end up adjacent is the dialect's: one that emits a sentence per claim may
+let another subject's identity claim fall between them, while one that groups its
+binding band writes the adaptation immediately after the sentence it corrects.
 
 **The preservation set is anchored per subject, never per payload.** "Preserve
 … exactly from the reference" is said only where an identity reference for
@@ -364,13 +501,14 @@ Which shots carry an adaptation at all is the scene lane's
 ([pipelines/scene-framing.md](pipelines/scene-framing.md) §The camera).
 
 **Covered hair leaves the adaptation's preserve list, per subject.** For a
-subject whose own `subject.hair_concealment` claim is in the set, the sentence
-drops "hair color and style" (the tag family drops "hair") and keeps every
-other word — the visible features, build and skin tone, the anchor, and the
-"do not rotate … to face the camera" clause byte for byte. Decided per subject
-rather than per cast, because the sentence is per subject: a covered focal
-beside a bare-headed bystander adapts only the focal's list. At `none` and
-`partial` the measured wording is unchanged.
+subject whose own `subject.hair_concealment` claim is in the set, the prose
+family's sentence drops "hair color and style" (the tag family drops "hair") and
+keeps every other word — the visible features, build and skin tone, the anchor,
+and the "do not rotate … to face the camera" clause byte for byte. Decided per
+subject rather than per cast, because the sentence is per subject: a covered
+focal beside a bare-headed bystander adapts only the focal's list. At `none` and
+`partial` the measured wording is unchanged. The Qwen edit dialect's adaptation
+names no hair in either band, so it takes no per-subject edit.
 
 ## Intimate anatomy on a permitting route
 

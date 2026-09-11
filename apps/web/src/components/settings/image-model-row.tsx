@@ -6,6 +6,7 @@ import {
   type ImageEditKind,
   type ImageIdentityPreservation,
 } from "@vesper/image-core";
+import { imageModelProvider } from "@vesper/image-models";
 import {
   imageReferenceTransports,
   type adminImageModelsApi,
@@ -85,15 +86,17 @@ export function ModelRow({
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Button
-            size="sm"
-            variant="quiet"
-            busy={busy}
-            onClick={() => onPatch({ reprobe: true })}
-            title="Re-read this model's API and refresh what it can do — never the reviewed ratings"
-          >
-            Re-probe
-          </Button>
+          {imageModelProvider(model.slug) === "replicate" ? (
+            <Button
+              size="sm"
+              variant="quiet"
+              busy={busy}
+              onClick={() => onPatch({ reprobe: true })}
+              title="Re-read this model's API and refresh what it can do — never the reviewed ratings"
+            >
+              Re-probe
+            </Button>
+          ) : null}
           <Button size="sm" variant="quiet" onClick={onDelete}>
             Remove
           </Button>

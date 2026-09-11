@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { imageModelSchema } from "@vesper/image-core";
+import { FAL_QWEN3_EDIT_SLUG } from "@vesper/image-models";
 import { DEFAULT_PREDICTION_TIMEOUT_MS, MAX_PREDICTION_TIMEOUT_MS } from "@vesper/image-replicate";
 import {
   disableSafetyChecker,
   hasReplicate,
+  hasImageProviderForModel,
+  previewImageModelRequest,
+  qualifiedImageModelIdentity,
   replicateClient,
   resetReplicateRuntimeForTesting,
   resolveReplicateConfig,
@@ -17,7 +22,12 @@ import {
  * states the deployment it is about rather than inheriting one.
  */
 
-const ENV_KEYS = ["REPLICATE_API_TOKEN", "REPLICATE_SAFE_MODE", "REPLICATE_PREDICTION_TIMEOUT_MS"] as const;
+const ENV_KEYS = [
+  "REPLICATE_API_TOKEN",
+  "REPLICATE_SAFE_MODE",
+  "REPLICATE_PREDICTION_TIMEOUT_MS",
+  "FAL_API_KEY",
+] as const;
 const original = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
 function withEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string>>): void {
@@ -106,5 +116,44 @@ describe("the process runtime", () => {
     withEnv({});
     expect(hasReplicate()).toBe(false);
     expect(replicateClient().configured).toBe(false);
+  });
+});
+
+describe("provider-aware image routing", () => {
+  const falModel = imageModelSchema.parse({
+    id: "fal-edit",
+    slug: FAL_QWEN3_EDIT_SLUG,
+    label: "fal edit",
+    canGenerate: false,
+    canEdit: true,
+  });
+
+  it("checks the credential for the selected model and qualifies its persisted identity", () => {
+    withEnv({ FAL_API_KEY: "fal_live" });
+    expect(hasImageProviderForModel(falModel)).toBe(true);
+    expect(hasImageProviderForModel("owner/replicate-model")).toBe(false);
+    expect(qualifiedImageModelIdentity(falModel)).toBe(`fal/${FAL_QWEN3_EDIT_SLUG}`);
+    expect(qualifiedImageModelIdentity(null)).toBe("replicate/none");
+  });
+
+  it("previews the same fal wire shape as send, with ordered placeholder references", () => {
+    const preview = previewImageModelRequest({
+      model: falModel,
+      prompt: "change the jacket",
+      referenceCount: 2,
+      aspect: "3:4",
+      controlInput: { image_size: "2K", seed: 7 },
+    });
+    expect(preview.request).toMatchObject({
+      prompt: "change the jacket",
+      image_size: { width: 1536, height: 2048 },
+      seed: 7,
+      image_urls: [
+        "https://placeholder.invalid/reference-1",
+        "https://placeholder.invalid/reference-2",
+      ],
+    });
+    expect(preview.request).not.toHaveProperty("aspect_ratio");
+    expect(preview.sentShape).toEqual({ field: "image_size", value: { width: 1536, height: 2048 } });
   });
 });

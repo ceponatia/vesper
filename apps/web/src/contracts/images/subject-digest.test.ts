@@ -1,5 +1,6 @@
 import {
   buildImageWorldDigest,
+  imageAppearancePhrase,
   imageConcept,
   imageMorphologyProtectionOf,
   qwenImage2512Dialect,
@@ -20,6 +21,7 @@ import {
   visualStateGarmentFixture,
   visualStateNonHumanBody,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
   VISUAL_STATE_FIXTURE_ACTOR,
   type VisualStateFeature,
 } from "../visual-state";
@@ -33,6 +35,8 @@ import {
   IMAGE_CHARACTER_ATTRIBUTE_OWNER,
   IMAGE_CHARACTER_COVERAGE_OWNER,
   IMAGE_CHARACTER_COVERAGE_UNRESOLVED,
+  IMAGE_CHARACTER_VALUE_UNREADABLE,
+  IMAGE_CHARACTER_WARDROBE_CONCEALED,
   type CharacterSubjectSources,
 } from "./character-adapter";
 import {
@@ -40,6 +44,7 @@ import {
   projectSubjectDigests,
   projectCameraFacts,
   standaloneCharacterReadToken,
+  IMAGE_SUBJECT_PROJECTION_OWNER,
   IMAGE_SUBJECT_VALUE_UNRESOLVED,
 } from "./subject-digest";
 import {
@@ -455,6 +460,19 @@ describe("camera facts", () => {
 
 const ADULT_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "late_twenties", source: "creation" };
 const MINOR_AGE_VALUE: AttributeValue = { id: "identity.apparent_age", value: "teen", source: "creation" };
+/**
+ * The prose the registry words for the fixture's own values (#547), positions
+ * included: a colour is the adjective English seats against its noun, so both
+ * declare `order: 1`.
+ */
+const PLATINUM_HAIR = {
+  text: "platinum hair",
+  phrase: { group: "hair", role: "adjective", fragment: "platinum", order: 1 },
+};
+const BLUE_EYES = { text: "blue eyes", phrase: { group: "eyes", role: "adjective", fragment: "blue", order: 1 } };
+/** The fixture nose, worded by `nose.shape`'s own phrase — a face `with` clause. */
+const CROOKED_NOSE = { text: "a crooked nose", phrase: { group: "face", role: "with", fragment: "a crooked nose" } };
+
 const REQUIRED_APPEARANCE_VALUES: readonly AttributeValue[] = [
   { id: "identity.gender", value: "female", source: "creation" },
   { id: "skin.tone", value: "light", source: "creation" },
@@ -486,6 +504,21 @@ function adapterSlices(digest: VisualImageDigest, overrides: Partial<CharacterSu
   return projectCharacterWorldSlices({ digest, sources: { [SUBJECT]: fixtureSources(overrides) } });
 }
 
+/**
+ * Every emitted value as the words a dialect would actually say. A phrase
+ * record (#547) contributes its text and its fragment rather than
+ * "[object Object]", so a leak sweep over this string still covers a phrased
+ * fact instead of quietly skipping it.
+ */
+function emittedWords(facts: readonly ImageWorldFact[]): string {
+  return facts
+    .map((fact) => {
+      const phrase = imageAppearancePhrase(fact.value);
+      return phrase === null ? String(fact.value) : `${phrase.text} ${phrase.phrase.fragment}`;
+    })
+    .join(" ");
+}
+
 describe("projectCharacterWorldSlices", () => {
   it("creates a complete source-backed subject when visual selection contains no facts", () => {
     const digest = buildVisualImageDigest({
@@ -502,11 +535,11 @@ describe("projectCharacterWorldSlices", () => {
       label: "the subject",
       missingRequired: [],
     });
-    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "hair.color")?.value).toBe(
-      "Hair color: platinum",
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "hair.color")?.value).toEqual(
+      PLATINUM_HAIR,
     );
-    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
-      "Eye color: blue",
+    expect(complete.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toEqual(
+      BLUE_EYES,
     );
 
     const withoutHair = adapterSlices(digest, {
@@ -525,11 +558,11 @@ describe("projectCharacterWorldSlices", () => {
     const subject = slices.subjects[0];
     const appearance = (subject?.facts ?? []).filter((fact) => fact.concept === "subject.appearance");
     expect(appearance.find((fact) => fact.source.key === "hair.color")).toMatchObject({
-      value: "Hair color: platinum",
+      value: PLATINUM_HAIR,
       disposition: "required_visual",
     });
     expect(appearance.find((fact) => fact.source.key === "eyes.color")).toMatchObject({
-      value: "Eye color: blue",
+      value: BLUE_EYES,
       disposition: "required_visual",
     });
     expect(new Set(appearance.map((fact) => fact.source.key)).size).toBe(appearance.length);
@@ -552,8 +585,8 @@ describe("projectCharacterWorldSlices", () => {
       identityReferenceSubjects: new Set([`subject.${SUBJECT}`]),
     });
     expect(anchored.subjects[0]?.missingRequired).not.toContain(missing);
-    expect(anchored.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
-      "Eye color: blue",
+    expect(anchored.subjects[0]?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toEqual(
+      BLUE_EYES,
     );
   });
 
@@ -605,7 +638,12 @@ describe("projectCharacterWorldSlices", () => {
     const sourceKeys = (subject?.facts ?? []).map((fact) => fact.source.key);
     expect(sourceKeys).not.toContain("hair.arrangement");
     expect(sourceKeys).not.toContain("hair.style");
-    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("loose");
+    // The replacement is worded as the hair TRAILER it replaces, so it composes
+    // where the sheet's own arrangement would have (#547).
+    expect(subject?.facts.find((fact) => fact.key === `${SUBJECT}/hair/presentation.hairstyle`)?.value).toEqual({
+      text: "with the hair worn loose",
+      phrase: { group: "hair", role: "trailer", fragment: "worn loose", order: 0 },
+    });
   });
 
   it("lets an emitted live grooming fact replace the sheet grooming fallback", () => {
@@ -652,9 +690,12 @@ describe("projectCharacterWorldSlices", () => {
         { id: "presentation.grooming", value: "neat", source: "manual" },
       ]),
     }).subjects[0];
-    expect(subject?.facts.find((fact) => fact.source.key === "presentation.grooming")?.value).toBe(
-      "Grooming: neat",
-    );
+    // Still the sheet's own value, now worded by the registry (#547): the
+    // fallback survives an unreadable live fact, and it survives as prose.
+    expect(subject?.facts.find((fact) => fact.source.key === "presentation.grooming")?.value).toEqual({
+      text: "a neat, groomed look",
+      phrase: { group: "other", role: "with", fragment: "a neat, groomed look" },
+    });
   });
 
   it("hides chest hair under an opaque torso and states it when the torso is bare", () => {
@@ -675,7 +716,10 @@ describe("projectCharacterWorldSlices", () => {
     expect(chestHair(FULLY_COVERED)).toBeUndefined();
     expect(chestHair({ ...FULLY_COVERED, torso: "bare" })).toMatchObject({
       concept: "subject.appearance",
-      value: "Chest hair: thick",
+      value: {
+        text: "thick chest hair",
+        phrase: { group: "build", role: "with", fragment: "thick chest hair" },
+      },
     });
   });
 
@@ -683,7 +727,8 @@ describe("projectCharacterWorldSlices", () => {
    * The issue's completion criterion, stated as one case: with every canonical
    * owner joined, the fixture subject binds — no required anchor is suppressed,
    * nothing lands in `missingRequired`, and every emitted value is readable
-   * prompt material rather than a fingerprint or a record. The per-owner
+   * prompt material — a string, or the registry's own phrase record (#547) —
+   * rather than a fingerprint or a record from anywhere else. The per-owner
    * assertions pin the value each canonical owner is expected to speak in.
    */
   it("completes the fixtures: every required anchor valued, none suppressed", () => {
@@ -691,11 +736,22 @@ describe("projectCharacterWorldSlices", () => {
     const subject = adapterSlices(digest).subjects[0];
     expect(subject?.missingRequired).toEqual([]);
     for (const fact of subject?.facts ?? []) {
-      expect(typeof fact.value).toBe("string");
-      expect(fact.value).not.toBe(fact.truthFingerprint);
+      // An appearance attribute the registry words as prose travels as a phrase
+      // record (#547); every other value is still a string. A record counts
+      // only when `imageAppearancePhrase` reads it whole, so a record from any
+      // other owner — or a malformed one — still fails the string check exactly
+      // as it did before.
+      const phrase = imageAppearancePhrase(fact.value);
+      if (phrase === null) {
+        expect(typeof fact.value).toBe("string");
+        expect(fact.value).not.toBe(fact.truthFingerprint);
+      } else {
+        expect(phrase.text).not.toBe(fact.truthFingerprint);
+        expect(phrase.phrase.fragment).not.toBe(fact.truthFingerprint);
+      }
     }
     const byKey = new Map((subject?.facts ?? []).map((fact) => [fact.key, fact]));
-    expect(byKey.get(`${SUBJECT}/nose/shape`)?.value).toBe("Nose shape: crooked");
+    expect(byKey.get(`${SUBJECT}/nose/shape`)?.value).toEqual(CROOKED_NOSE);
     expect(byKey.get(`${SUBJECT}/fingers:left:ring_finger/presence`)?.value).toBe("left ring finger: absent");
     expect(byKey.get(`${SUBJECT}/face/apparent_age`)?.value).toBe("in the late twenties");
     expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
@@ -851,6 +907,75 @@ describe("projectCharacterWorldSlices", () => {
   });
 
   /**
+   * #547: an appearance attribute the registry words as PROSE reaches the
+   * digest as the phrase record, and one it does not keeps its label form.
+   *
+   * Both paths into a subject's appearance facts are exercised at once, because
+   * they are the two ways the same attribute can arrive and they used to be
+   * able to disagree: `nose.shape` comes through the visual-state resolver
+   * (`attributeSemanticValue`), `hair.color` and `hair.length` through the
+   * registry projection this adapter runs itself.
+   *
+   * The record has to survive two seams to be useful — the renderer table, which
+   * previously suppressed any record at `appearance.attribute` as unreadable,
+   * and the dialect, which words a record through its `text` member. So the
+   * second half compiles the real 2512 dialect over the emitted claims: a
+   * dialect that does not compose phrases still gets a sentence, and it is
+   * prose rather than "Mira has hair color: platinum".
+   */
+  it("emits the registry's phrase for a worded attribute and the label form for an unworded one", () => {
+    const digest = characterDigest();
+    const slices = projectCharacterWorldSlices({
+      digest,
+      labels: { [SUBJECT]: "Mira" },
+      sources: { [SUBJECT]: fixtureSources() },
+    });
+    const facts = slices.subjects[0]?.facts ?? [];
+    const valueOf = (key: string): unknown => facts.find((fact) => fact.source.key === key)?.value;
+
+    // The registry projection's own path.
+    expect(imageAppearancePhrase(valueOf("hair.color"))).toEqual(PLATINUM_HAIR);
+    expect(imageAppearancePhrase(valueOf("hair.length"))).toEqual({
+      text: "hair to the shoulders",
+      // A length trails the arrangement, so it declares the higher position.
+      phrase: { group: "hair", role: "trailer", fragment: "to the shoulders", order: 1 },
+    });
+    // The visual-state resolver's path, over the fixture's selected nose fact —
+    // found by fact key, because a resolver-answered fact carries the visual
+    // state's own source key rather than the bare attribute id.
+    const nose = facts.find((fact) => fact.key === `${SUBJECT}/nose/shape`);
+    expect(imageAppearancePhrase(nose?.value)).toEqual(CROOKED_NOSE);
+    // No phrase declared: the self-describing form the registry always had.
+    expect(valueOf("identity.gender")).toBe("Gender: female");
+
+    const world = buildImageWorldDigest({
+      read: { kind: "transactional_projection", token: "read-appearance" },
+      operation: {
+        kind: "generate",
+        task: "portrait",
+        strategy: "text_to_image_description",
+        subjectCount: 1,
+        style: { medium: "photographic", descriptors: [] },
+        literalText: [],
+      },
+      subjects: slices.subjects,
+    }).digest;
+    const claims = selectImagePositiveClaims(world).filter((claim) => claim.concept === "subject.appearance");
+    const compiled = qwenImage2512Dialect.compilePositive({
+      claims,
+      operation: world.operation,
+      references: [],
+      entityLabels: { [`subject.${SUBJECT}`]: "Mira" },
+      budget: {},
+    });
+    expect(compiled.droppedClaimIds).toEqual([]);
+    const sentences = compiled.segments.map((segment) => segment.text);
+    expect(sentences).toContain("Mira has platinum hair.");
+    expect(sentences).toContain("Mira has hair to the shoulders.");
+    expect(sentences).not.toContain("Mira has Hair color: platinum.");
+  });
+
+  /**
    * Gap 1: the age anchor's canonical semantic path, with the owner-ruled floor.
    * An adult band becomes a required `subject.apparent_age` claim sourced from
    * the attribute registry; a minor band states NOTHING and refuses nothing (a
@@ -991,10 +1116,13 @@ describe("projectCharacterWorldSlices", () => {
     expect(byKey.get(`${SUBJECT}/item:g_ring/wardrobe.item`)?.value).toBe("nose ring: Thin gold hoop");
     expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
     expect(byKey.get(`${SUBJECT}/subject:${SUBJECT}/body_language.posture`)?.value).toBe("kneeling");
-    expect(byKey.get(`${SUBJECT}/hair/presentation.hairstyle`)?.value).toBe("loose");
+    expect(byKey.get(`${SUBJECT}/hair/presentation.hairstyle`)?.value).toEqual({
+      text: "with the hair worn loose",
+      phrase: { group: "hair", role: "trailer", fragment: "worn loose", order: 0 },
+    });
     expect(byKey.get(`${SUBJECT}/wings/species.feature_group`)?.value).toBe("wings");
 
-    const prose = (subject?.facts ?? []).map((fact) => String(fact.value)).join(" ");
+    const prose = emittedWords(subject?.facts ?? []);
     expect(prose).not.toContain("def_");
     expect(prose).not.toContain(VISUAL_STATE_FIXTURE_ACTOR);
   });
@@ -1052,7 +1180,7 @@ describe("hair the headwear fully hides", () => {
     expect(subject?.missingRequired).toEqual([]);
     // Nothing else moved: the nose, the wings and the garment are exactly as
     // they were, so the filter is structural rather than a broad sweep.
-    expect(byKey.get(`${SUBJECT}/nose/shape`)?.value).toBe("Nose shape: crooked");
+    expect(byKey.get(`${SUBJECT}/nose/shape`)?.value).toEqual(CROOKED_NOSE);
     expect(byKey.get(`${SUBJECT}/item:g_worn/wardrobe.garment`)?.value).toBe("top");
   });
 
@@ -1061,6 +1189,168 @@ describe("hair the headwear fully hides", () => {
     const facts = adapterSlices(digest, { hairOcclusion: band }).subjects[0]?.facts ?? [];
     expect(facts.some((fact) => fact.key === HAIRSTYLE_KEY)).toBe(true);
     expect(facts.some((fact) => fact.concept === "subject.hair_concealment")).toBe(false);
+  });
+});
+
+/**
+ * What the adapter refuses to say, and what it now says instead (#544).
+ *
+ * Three defects the compiled Qwen scene prompt shipped on 2026-09-10, each
+ * traced to this module: a support relation flattened into "Katelyn Nacon is
+ * surface, ground, legs, borne by." (D1), a bra and panties stated under an
+ * opaque sweater (D6), and the subject re-named in every sentence because no
+ * dialect may guess a pronoun (D2). The wording of one structured value is
+ * `character-adapter-renderers.test.ts`'s claim; these cases prove the
+ * PROJECTION applies it — the fact leaves, the suppression is recorded with its
+ * own reason, and the mandatory floor is not moved by a designed silence.
+ */
+describe("what a scene prompt may say about a subject (#544)", () => {
+  const WORN_GARMENT_KEY = `${SUBJECT}/item:g_worn/wardrobe.garment`;
+  const SUPPORT_KEY = `${SUBJECT}/subject:${SUBJECT}/body_language.support`;
+
+  /** The exact value from the owner's 2026-09-10 report: weight on the ground. */
+  function supportFeature(): VisualStateFeature {
+    return visualStateFeatureFixture({
+      subjectId: SUBJECT,
+      kindId: VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+      layer: "body_language",
+      stability: "instantaneous",
+      aspect: "body_language.support",
+      locus: { kind: "subject", subjectId: SUBJECT },
+      sourceRef: { kind: "scene_relation", relationId: "rel_support" },
+      value: {
+        relations: [
+          {
+            role: "borne_by",
+            anchor: { kind: "surface", supportId: "sup_ground", surfaceKind: "ground" },
+            loadZones: ["legs"],
+          },
+        ],
+      },
+    });
+  }
+
+  function digestOf(features: readonly VisualStateFeature[]): VisualImageDigest {
+    return buildVisualImageDigest({
+      snapshot: visualAttentionSnapshotFixture([...features]),
+      context: visualAttentionContextFixture("image", { framing: { status: "known", value: "full_figure" } }),
+    });
+  }
+
+  /**
+   * D1, at the projection. With no posture fact the support relation states
+   * where the weight rests in words somebody can draw; the flattened leaves
+   * never appear in any emitted value.
+   */
+  it("words a support anchor and never ships its flattened relation record", () => {
+    const digest = digestOf([supportFeature(), ageAnchorFeature()]);
+    expect([...digest.mandatoryFacts, ...digest.optionalFacts].map((fact) => fact.kindId)).toContain(
+      VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+    );
+    const subject = adapterSlices(digest).subjects[0];
+    expect(subject?.facts.find((fact) => fact.key === SUPPORT_KEY)?.value).toBe("standing on the floor");
+    const prose = emittedWords(subject?.facts ?? []);
+    expect(prose).not.toContain("borne by");
+    expect(prose).not.toContain("surface, ground");
+  });
+
+  /**
+   * The same relation beside a posture says nothing at all: posture already
+   * places the body, and the two claims together are the duplication D10
+   * records. A designed silence still leaves a provenance record.
+   */
+  it("withholds a support relation a posture already places", () => {
+    const digest = characterDigest([supportFeature(), ageAnchorFeature()]);
+    expect([...digest.mandatoryFacts, ...digest.optionalFacts].map((fact) => fact.kindId)).toContain(
+      VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+    );
+    const slices = adapterSlices(digest);
+    expect(slices.subjects[0]?.facts.some((fact) => fact.key === SUPPORT_KEY)).toBe(false);
+    expect(slices.suppressions).toContainEqual({
+      key: SUPPORT_KEY,
+      owner: IMAGE_SUBJECT_PROJECTION_OWNER,
+      reason: IMAGE_CHARACTER_VALUE_UNREADABLE,
+    });
+  });
+
+  /**
+   * D6: a worn garment the wardrobe projection tags as fully concealed leaves
+   * the prompt as a DESIGNED suppression. The tag is that projection's own read
+   * of its occlusion edges (the tag literal is the contract between the two
+   * slices), the exposure claims over the same coverage readout are untouched,
+   * and the key never reaches `missingRequired` — a designed silence may not
+   * refuse a rung.
+   */
+  it("withholds a concealed garment while leaving coverage and the mandatory floor alone", () => {
+    const concealed = garmentFeatures().map((feature) =>
+      feature.key === WORN_GARMENT_KEY
+        ? { ...feature, semanticTags: [...feature.semanticTags, "wardrobe.concealed"] }
+        : feature,
+    );
+    const digest = digestOf([...concealed, ageAnchorFeature()]);
+    const slices = projectCharacterWorldSlices({
+      digest,
+      sources: {
+        [SUBJECT]: fixtureSources({
+          exposure: { torso: "covered", pelvis: "covered", legs: "bare", feet: "covered" },
+        }),
+      },
+    });
+    const subject = slices.subjects[0];
+
+    expect(subject?.facts.some((fact) => fact.key === WORN_GARMENT_KEY)).toBe(false);
+    expect(slices.suppressions).toContainEqual({
+      key: WORN_GARMENT_KEY,
+      owner: IMAGE_SUBJECT_PROJECTION_OWNER,
+      reason: IMAGE_CHARACTER_WARDROBE_CONCEALED,
+    });
+    expect(subject?.missingRequired).not.toContain(WORN_GARMENT_KEY);
+    // Coverage is untouched truth: the bare legs are still stated.
+    expect(subject?.facts.filter((fact) => fact.concept === "subject.exposure").map((fact) => fact.key)).toEqual([
+      `subject.${SUBJECT}.exposure.legs`,
+    ]);
+
+    // Untagged, the same garment is stated exactly as before.
+    const stated = adapterSlices(digestOf([...garmentFeatures(), ageAnchorFeature()])).subjects[0];
+    expect(stated?.facts.find((fact) => fact.key === WORN_GARMENT_KEY)?.value).toBe("top");
+  });
+
+  /**
+   * The other side of "no structural fallback": a MANDATORY fact whose value no
+   * renderer can word is reported, not quietly dropped and not flattened, so a
+   * lane compiled with `refuseOnMissingRequired` refuses before provider spend.
+   */
+  it("reports a mandatory wardrobe fact no renderer can word", () => {
+    const broken = garmentFeatures().map((feature) =>
+      feature.key === WORN_GARMENT_KEY ? { ...feature, value: {} } : feature,
+    );
+    const slices = adapterSlices(digestOf([...broken, ageAnchorFeature()]));
+    expect(slices.subjects[0]?.facts.some((fact) => fact.key === WORN_GARMENT_KEY)).toBe(false);
+    expect(slices.suppressions).toContainEqual({
+      key: WORN_GARMENT_KEY,
+      owner: IMAGE_SUBJECT_PROJECTION_OWNER,
+      reason: IMAGE_CHARACTER_VALUE_UNREADABLE,
+    });
+    expect(slices.subjects[0]?.missingRequired).toContain(WORN_GARMENT_KEY);
+  });
+
+  /**
+   * D2: the slice carries the pronoun set its `identity.gender` implies, so a
+   * prose dialect can introduce the subject once instead of writing a real
+   * person's name into 28 sentences beside their own identity reference. No
+   * gender, no field — a dialect then names them or points at the reference,
+   * and never guesses.
+   */
+  it("carries the pronoun set the subject's gender implies, and none without one", () => {
+    const digest = characterDigest([ageAnchorFeature()]);
+    expect(adapterSlices(digest).subjects[0]?.pronouns).toBe("she_her");
+
+    const genderless = adapterSlices(digest, {
+      attributes: completeFixtureAttributes([...crookedNoseAttributes(), ADULT_AGE_VALUE]).filter(
+        (attribute) => attribute.id !== "identity.gender",
+      ),
+    }).subjects[0];
+    expect(genderless?.pronouns).toBeUndefined();
   });
 });
 

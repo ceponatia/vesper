@@ -64,7 +64,15 @@ export const hairGroup = defineAttributeGroup("hair", [
       "brunette",
       "dyed hair",
     ],
-    imageAppearance: { class: "core", referenceFreeRequired: true },
+    imageAppearance: {
+      class: "core",
+      referenceFreeRequired: true,
+      // "dark-brown hair" — a two-word colour in front of its noun hyphenates.
+      // Order 1: colour is the adjective English puts closest to the noun, so
+      // "healthy dark-brown hair" rather than the claim order's "dark-brown
+      // healthy hair".
+      phrase: { group: "hair", role: "adjective", fragment: "{compound}", order: 1 },
+    },
     coreVisual: true,
     defaultValue: "brown",
   },
@@ -89,7 +97,32 @@ export const hairGroup = defineAttributeGroup("hair", [
     ],
     bodyLocationId: "hair",
     aliases: ["hair length"],
-    imageAppearance: { class: "core", referenceFreeRequired: true },
+    imageAppearance: {
+      class: "core",
+      referenceFreeRequired: true,
+      phrase: {
+        group: "hair",
+        role: "trailer",
+        // Order 1, behind the arrangement's 0: a trailer follows the noun, so
+        // the lower number lands first and the head reads "hair worn loose to
+        // mid-back" rather than "hair to mid-back worn loose".
+        order: 1,
+        // The vocabulary runs from a shaved scalp to hair at the feet, so no single
+        // template words it: "hair to shaved" is not English. Each member states
+        // where the length ends, or how the hair was cut when there is no length
+        // to reach for.
+        fragmentByValue: {
+          shaved: "shaved to the scalp",
+          buzzed: "buzzed short",
+          short: "cut short",
+          chin_length: "to the chin",
+          shoulder_length: "to the shoulders",
+          mid_back: "to mid-back",
+          waist_length: "to the waist",
+          feet_length: "to the feet",
+        },
+      },
+    },
   },
   {
     id: "hair.texture",
@@ -103,7 +136,10 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: ["straight", "wavy", "curly", "coily", "kinky"],
     bodyLocationId: "hair",
     aliases: ["hair texture"],
-    imageAppearance: { class: "core" },
+    imageAppearance: {
+      class: "core",
+      phrase: { group: "hair", role: "adjective", fragment: "{value}" },
+    },
   },
   {
     id: "hair.density",
@@ -153,7 +189,11 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: ["silky", "smooth", "healthy", "dry", "frizzy", "brittle", "straw_like"],
     bodyLocationId: "hair",
     aliases: ["hair condition"],
-    imageAppearance: { class: "fine", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "portrait",
+      phrase: { group: "hair", role: "adjective", fragment: "{compound}" },
+    },
   },
   {
     id: "hair.arrangement",
@@ -171,7 +211,21 @@ export const hairGroup = defineAttributeGroup("hair", [
     allowedValues: ["loose", "ponytail", "braid", "bun", "other"],
     bodyLocationId: "hair",
     aliases: ["hair arrangement"],
-    imageAppearance: { class: "fallback" },
+    imageAppearance: {
+      class: "fallback",
+      phrase: {
+        group: "hair",
+        role: "trailer",
+        // "other" means "read the styling text" (hair.style holds it), so it has
+        // no phrase of its own and keeps the label form rather than inventing one.
+        fragmentByValue: {
+          loose: "worn loose",
+          ponytail: "in a ponytail",
+          braid: "in a braid",
+          bun: "in a bun",
+        },
+      },
+    },
     defaultValue: "loose",
     narratorGuidance: {
       loose: "hanging free — nothing binding or pinning it",

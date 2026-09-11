@@ -45,6 +45,17 @@ export const breastsGroup = defineAttributeGroup("breasts", [
       class: "reinforcement",
       minimumFraming: "portrait",
       ordinarySilhouette: true,
+      phrase: {
+        group: "build",
+        role: "with",
+        fragment: "a {value} bust",
+        // A chest with nothing to call a bust is described as a chest.
+        fragmentByValue: {
+          flat: "a flat chest",
+          nearly_flat: "a nearly flat chest",
+          perky_small: "a small, perky bust",
+        },
+      },
     },
     promptHints: [
       "Describe breasts only as far as wardrobe exposure and the exposure mask allow; one impression, not a checklist.",
@@ -78,7 +89,12 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     ],
     bodyLocationId: "breasts",
     aliases: ["breast shape"],
-    imageReveal: "shape",
+    // `skin`, not `shape`: surface shape a covered torso cannot show. A sweater
+    // flattens pert into whatever the sweater does, so stating it on a clothed
+    // render describes a body the picture does not contain. `breasts.size` is
+    // the one silhouette that survives clothing, and it stays the only
+    // `ordinarySilhouette` exception (types.ts).
+    imageReveal: "skin",
   },
   {
     id: "breasts.augmentation",
@@ -97,7 +113,9 @@ export const breastsGroup = defineAttributeGroup("breasts", [
     ],
     bodyLocationId: "breasts",
     aliases: ["implants", "boob job", "fake breasts", "augmented"],
-    imageReveal: "shape",
+    // How obviously augmentation READS is a surface fact — scar lines, the
+    // upper-pole shape, the way the tissue sits. Clothing hides all of it.
+    imageReveal: "skin",
   },
   {
     id: "breasts.fullness",
@@ -120,7 +138,9 @@ export const breastsGroup = defineAttributeGroup("breasts", [
       "heavy_with_milk",
     ],
     bodyLocationId: "breasts",
-    imageReveal: "shape",
+    // The definition says it: "especially from the side or when squeezed" —
+    // a bare-torso read, not a silhouette one.
+    imageReveal: "skin",
   },
   {
     id: "breasts.nipples",

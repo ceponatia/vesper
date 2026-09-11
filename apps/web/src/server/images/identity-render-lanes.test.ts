@@ -22,7 +22,13 @@ import { expectDiagnostic } from "@/test/diagnostics";
 
 vi.mock("../ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../ai")>();
-  return { ...actual, isDemoMode: vi.fn(), hasReplicate: vi.fn(), classifyImageFailure: vi.fn() };
+  return {
+    ...actual,
+    isDemoMode: vi.fn(),
+    hasReplicate: vi.fn(),
+    hasImageProviderForModel: vi.fn(() => true),
+    classifyImageFailure: vi.fn(),
+  };
 });
 vi.mock("../db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db")>();

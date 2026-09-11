@@ -43,9 +43,9 @@ export function capabilitySnapshotOf(model: ImageModel): ImageGeneratorCapabilit
   };
 }
 
-export interface PlannedShape {
+export interface PlannedShape<TValue = unknown> {
   field: string;
-  value: string | null;
+  value: TValue;
   dimensions: DimensionChoice;
 }
 
@@ -178,8 +178,22 @@ function sanitizedProviderRequest(
 
 function sanitizedControlValue(value: unknown): unknown {
   if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (isImageSize(value)) return { width: value.width, height: value.height };
   if (typeof value !== "string") return "[omitted]";
   if (/^data:/i.test(value)) return "[inline image redacted]";
   if (/^https?:\/\//i.test(value)) return "[url redacted]";
   return value.length > 300 ? `${value.slice(0, 300)}…` : value;
+}
+
+/** fal's custom image size is harmless scalar provenance, not an opaque input bag. */
+function isImageSize(value: unknown): value is { width: number; height: number } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    Object.keys(record).length === 2 &&
+    Number.isInteger(record["width"]) &&
+    Number.isInteger(record["height"]) &&
+    (record["width"] as number) > 0 &&
+    (record["height"] as number) > 0
+  );
 }

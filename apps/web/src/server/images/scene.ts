@@ -6,6 +6,7 @@ import {
   composerFallbackModelId,
   generateChecked,
   isDemoMode,
+  qualifiedImageModelIdentity,
   sceneComposerModelId,
 } from "../ai";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
@@ -500,7 +501,8 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
   const anchorRef = imageRefs[0];
 
   /** Stored on the image row for provider/model auditability. */
-  const modelFor = (id: SceneAttemptId): string => (id === "demo" || !model ? "demo" : `replicate/${model.slug}`);
+  const modelFor = (id: SceneAttemptId): string =>
+    id === "demo" || !model ? "demo" : qualifiedImageModelIdentity(model);
 
   // The references one rung OFFERS its program — the lane's own list, in the
   // lane's own order, already cut to the model's capacity. Not the send list:

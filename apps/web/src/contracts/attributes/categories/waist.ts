@@ -13,7 +13,11 @@ export const waistGroup = defineAttributeGroup("waist", [
     allowedValues: ["straight", "subtle", "defined", "cinched", "soft", "rounded", "thick"],
     bodyLocationId: "waist",
     aliases: ["waist", "waistline"],
-    imageAppearance: { class: "reinforcement", minimumFraming: "full_figure" },
+    imageAppearance: {
+      class: "reinforcement",
+      minimumFraming: "full_figure",
+      phrase: { group: "build", role: "with", fragment: "a {value} waist" },
+    },
     imageReveal: "shape",
   },
 ]);

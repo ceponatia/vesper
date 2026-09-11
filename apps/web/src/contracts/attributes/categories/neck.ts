@@ -12,7 +12,12 @@ export const neckGroup = defineAttributeGroup("neck", [
     allowedValues: ["short", "average", "long", "graceful", "thick", "slender"],
     bodyLocationId: "neck",
     aliases: ["neck"],
-    imageAppearance: { class: "fine", minimumFraming: "portrait", maximumFraming: "waist_up" },
+    imageAppearance: {
+      class: "fine",
+      minimumFraming: "portrait",
+      maximumFraming: "waist_up",
+      phrase: { group: "other", role: "with", fragment: "a {value} neck" },
+    },
   },
   {
     id: "neck.throat_prominence",

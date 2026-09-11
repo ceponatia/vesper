@@ -20,7 +20,7 @@ import {
   visualStateImageDigestOfShadow,
   type VisualStateShadowInput,
 } from "@/server/visual-state";
-import { hasReplicate, isDemoMode } from "../ai";
+import { hasImageProviderForModel, isDemoMode, qualifiedImageModelIdentity } from "../ai";
 import { db, images } from "../db";
 import {
   IMAGE_TARGET_ASPECT,
@@ -518,7 +518,7 @@ export function activeChatLookProgram(
  * anywhere of why.
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
-  if (isDemoMode() || !hasReplicate()) return null;
+  if (isDemoMode()) return null;
   const collected = new DiagnosticCollector();
   const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
   try {
@@ -527,6 +527,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     // having a control of its own.
     const resolved = await resolveImageProfileForTask("chat_look", null, sink);
     if (!resolved) return null;
+    if (!hasImageProviderForModel(resolved.model)) return null;
     // The cut is realized BEFORE the identity pack is consulted: it is pure and
     // free, and refusing here costs no owned byte reads. A caller with no cut
     // to give has nothing this mint can compile, and it is NOT a fallback to a
@@ -580,7 +581,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
         prompt: transport.prompt,
         meta: {
           lookKey: input.lookKey,
-          model: `replicate/${model.slug}`,
+          model: qualifiedImageModelIdentity(model),
           identityReferences: identity.provenance,
           // The digest provenance lands at RESERVE time beside the key, so the
           // visual moment that shaped the prompt survives a failed render — the
@@ -650,7 +651,7 @@ export function buildChatPlacePrompt(input: { placeName: string; sketch: string 
  * on the next render there. Never throws.
  */
 export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise<string | null> {
-  if (isDemoMode() || !hasReplicate() || !input.sketch.trim()) return null;
+  if (isDemoMode() || !input.sketch.trim()) return null;
   const collected = new DiagnosticCollector();
   const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
   try {
@@ -659,6 +660,7 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
     // lanes' do.
     const resolved = await resolveImageProfileForTask("chat_place", null, sink);
     if (!resolved) return null;
+    if (!hasImageProviderForModel(resolved.model)) return null;
     const model = resolved.model;
     const prompt = buildChatPlacePrompt(input);
     const { imageId, status } = await runImagePipeline({
@@ -667,7 +669,7 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
         kind: "chat_place",
         chatId: input.chatId,
         prompt,
-        meta: { placeName: input.placeName, model: `replicate/${model.slug}` },
+        meta: { placeName: input.placeName, model: qualifiedImageModelIdentity(model) },
       },
       produce: async () => {
         // 3:2 landscape — an establishing shot, not a portrait.

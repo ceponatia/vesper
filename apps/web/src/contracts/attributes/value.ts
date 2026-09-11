@@ -1,5 +1,16 @@
+import {
+  imageAppearanceIndefiniteArticle,
+  imageAppearancePhraseGroupNoun,
+  imageAppearancePhraseGroupTakesArticle,
+} from "@vesper/image-core";
 import { z } from "zod";
-import { attributeIdPatternSchema, type AttributeDefinition, type AttributeMutability } from "./types";
+import {
+  attributeIdPatternSchema,
+  type AttributeDefinition,
+  type AttributeMutability,
+  type ImageAppearancePhraseMetadata,
+  type ImageAppearancePhraseValue,
+} from "./types";
 import {
   provenanceSourceSchema,
   provenanceSources,
@@ -99,6 +110,117 @@ export function formatAttributeValue(def: AttributeDefinition, value: string | s
   if (typeof rendered === "boolean") return rendered ? humanizeVocabularyValue(def.label).toLowerCase() : "";
   if (typeof rendered === "number") return `${rendered}${def.unit ? ` ${def.unit}` : ""}`;
   return Array.isArray(rendered) ? rendered.map(humanizeVocabularyValue).join(", ") : humanizeVocabularyValue(rendered);
+}
+
+/**
+ * The same vocabulary member hyphenated rather than spaced — `mid_back` →
+ * `mid-back`. What English does to a compound modifier standing in front of a
+ * noun ("dark-brown hair", "deep-set eyes"), and the reason a phrase template
+ * chooses between `{value}` and `{compound}` instead of the registry storing
+ * two spellings of every value.
+ */
+function compoundVocabularyValue(value: string): string {
+  return value.replaceAll("_", "-").trim();
+}
+
+/** {@link formatAttributeValue}'s compound-modifier spelling. */
+function formatAttributeCompound(def: AttributeDefinition, value: string | string[] | number | boolean): string {
+  const rendered = promptValueWithNoneElided(def, value);
+  if (rendered === null) return "";
+  if (typeof rendered !== "string" && !Array.isArray(rendered)) return formatAttributeValue(def, value);
+  return Array.isArray(rendered)
+    ? rendered.map(compoundVocabularyValue).join(", ")
+    : compoundVocabularyValue(rendered);
+}
+
+/**
+ * "a ample bust" → "an ample bust".
+ *
+ * A phrase template writes its own article because only the template knows
+ * whether its noun is countable ("a subtle waist") or plural ("slender arms"),
+ * and the article then has to agree with a value the template has not seen yet.
+ * Correcting it here is what lets one template cover a whole enum instead of
+ * every vowel-initial member needing a hand-written entry.
+ */
+function withAgreeingArticles(text: string): string {
+  return text.replace(/\ba (?=[aeiou])/giu, "an ");
+}
+
+/** One phrase template, with the resolved value interpolated. */
+function renderPhraseTemplate(
+  def: AttributeDefinition,
+  template: string,
+  value: string | string[] | number | boolean,
+  fragment?: string,
+): string {
+  const rendered = template
+    .replaceAll("{value}", formatAttributeValue(def, value))
+    .replaceAll("{compound}", formatAttributeCompound(def, value))
+    .replaceAll("{fragment}", fragment ?? "");
+  return withAgreeingArticles(rendered).replace(/\s+/gu, " ").trim();
+}
+
+/** The template that words THIS value: its own entry, else the attribute's. */
+function phraseTemplateFor(
+  phrase: ImageAppearancePhraseMetadata,
+  value: string | string[] | number | boolean,
+): string | null {
+  if (typeof value === "string") {
+    const perValue = phrase.fragmentByValue?.[value];
+    if (perValue !== undefined) return perValue;
+  }
+  return phrase.fragment ?? null;
+}
+
+/**
+ * The standalone noun phrase a role implies — what a dialect that does not
+ * compose says about this fact on its own.
+ *
+ * `null` when the role needs a group noun the group does not have; a definition
+ * in that shape is rejected at group-definition time, so this is the second
+ * lock rather than a live fallback.
+ */
+function derivedStandalone(phrase: ImageAppearancePhraseMetadata, fragment: string): string | null {
+  if (phrase.role === "with") return fragment;
+  const noun = imageAppearancePhraseGroupNoun(phrase.group);
+  if (noun === null) return null;
+  const body = phrase.role === "adjective" ? `${fragment} ${noun}` : `${noun} ${fragment}`;
+  return imageAppearancePhraseGroupTakesArticle(phrase.group)
+    ? `${imageAppearanceIndefiniteArticle(body)} ${body}`
+    : body;
+}
+
+/**
+ * This attribute's value as PROSE — the standalone noun phrase plus the pieces
+ * a composing dialect joins ("dark-brown hair" / adjective "dark-brown" in the
+ * hair group).
+ *
+ * `null` whenever the registry has no wording for this value: the attribute
+ * declares no phrase at all, this member has no template of its own under a
+ * per-value map, or the value elides ("none"). The caller then falls back to
+ * {@link formatAttribute}'s label form, which is the same answer the registry
+ * gave before phrases existed.
+ */
+export function formatAttributePhrase(
+  def: AttributeDefinition,
+  value: string | string[] | number | boolean,
+): ImageAppearancePhraseValue | null {
+  const phrase = def.imageAppearance?.phrase;
+  if (phrase === undefined) return null;
+  if (formatAttributeValue(def, value).length === 0) return null;
+  const template = phraseTemplateFor(phrase, value);
+  if (template === null) return null;
+  const fragment = renderPhraseTemplate(def, template, value);
+  if (fragment.length === 0) return null;
+  const text =
+    phrase.standalone === undefined
+      ? derivedStandalone(phrase, fragment)
+      : renderPhraseTemplate(def, phrase.standalone, value, fragment);
+  if (text === null || text.length === 0) return null;
+  // The declared position travels with the pieces; an attribute that declares
+  // none carries no member, which is the same statement as the default.
+  const ordered = phrase.order === undefined ? {} : { order: phrase.order };
+  return { text, phrase: { group: phrase.group, role: phrase.role, fragment, ...ordered } };
 }
 
 /** Self-describing `Label: value` form (scene appearance summaries, digest fact values). */

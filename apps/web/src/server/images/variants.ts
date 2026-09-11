@@ -8,7 +8,7 @@ import {
 } from "@vesper/image-core";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
-import { isDemoMode } from "../ai";
+import { isDemoMode, qualifiedImageModelIdentity } from "../ai";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logEvent } from "../events";
@@ -363,7 +363,7 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       meta: {
         variantKind: input.kind,
         demo,
-        model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
+        model: demo ? "demo" : qualifiedImageModelIdentity(model),
         // The weights this row ran on, by id — the same field the scene lane
         // records, and never the locator.
         ...(nsfwRoute?.ok ? { lora: nsfwRoute.binding.id } : {}),

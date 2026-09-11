@@ -202,18 +202,23 @@ export interface SceneComposerContext {
  * The gaze translation's orientation clause, woven into BOTH rule sets.
  *
  * The pipeline's oldest camera bug is that it actively rotates the subject toward the lens:
- * a player-directed beat becomes "toward the viewer", which is exactly right when the player
+ * a player-directed beat becomes "toward the camera", which is exactly right when the player
  * stands in front of her and exactly backwards when they have just walked up behind her. So
  * the translation is now conditioned on the camera the composer itself proposed — the same
  * sentence, aimed the way the shot is.
+ *
+ * The target is the CAMERA rather than "the viewer" (#544 D3): the viewer is the one thing
+ * this image never contains, and a prompt that names them as the thing she is looking at
+ * hands the model a second person to place across the room. The lens is in the picture's
+ * geometry; the person behind it is not.
  */
 const GAZE_ORIENTATION_CLAUSE =
-  ' (with camera.orientation "away" or "away_glance_back", that same beat becomes "glancing back over her shoulder toward the viewer" instead)';
+  ' (with camera.orientation "away" or "away_glance_back", that same beat becomes "glancing back over her shoulder toward the camera" instead)';
 
 /** The player-absence rules (session lane, and the chat lane before slice 3). */
 const COMPOSER_DISEMBODIED_RULES = [
-  "The image is rendered from the player's first-person POV — shot through the player's own eyes. The player must NEVER appear in the image — no body, no face, no hands, and never a camera or held object in frame. Never describe the player or their clothing in any field.",
-  `- Every pose/activity/action phrase must describe that character ALONE, paintable with no player in frame. Never mention the player or their body — "walking beside the player" or "a hand resting on his arm" cannot be painted. Translate player-directed beats into their solo visual equivalent: eyes or head turned toward the player become "toward the viewer"${GAZE_ORIENTATION_CLAUSE}; touching, leading, or leaning on the player becomes the character's own posture and motion (her hand extended slightly, glancing back mid-step); keep the expression and energy, lose the contact. Example: narration "she leads you back toward the gallery, hand on your arm, laughing" → pose "glancing back toward the viewer, mid-laugh", activity "stepping toward the main gallery, heels clicking on the stone floor".`,
+  "The image is rendered from the player's first-person POV — shot through the player's own eyes. The player must NEVER appear in the image — no body, no face, no hands, and never a camera or held object in frame. Never describe the player or their clothing in any field. Do not name \"the viewer\" either: nobody stands on this side of the lens, so anything the character directs outward is directed at \"the camera\" or \"the lens\".",
+  `- Every pose/activity/action phrase must describe that character ALONE, paintable with no player in frame. Never mention the player or their body — "walking beside the player" or "a hand resting on his arm" cannot be painted. Translate player-directed beats into their solo visual equivalent: eyes or head turned toward the player become "toward the camera", or "looking directly into the lens"${GAZE_ORIENTATION_CLAUSE}; touching, leading, or leaning on the player becomes the character's own posture and motion (her hand extended slightly, glancing back mid-step); keep the expression and energy, lose the contact. Example: narration "she leads you back toward the gallery, hand on your arm, laughing" → pose "glancing back toward the camera, mid-laugh", activity "stepping toward the main gallery, heels clicking on the stone floor".`,
 ] as const;
 
 /**
@@ -234,7 +239,7 @@ const COMPOSER_DISEMBODIED_RULES = [
 const COMPOSER_EMBODIED_RULES = [
   "The image is rendered from the player's first-person POV — shot through their own eyes, so their face and head are NEVER in frame. Their own hands, arms, lap or legs MAY enter the foreground when the scene actually puts them there — that is what `viewerBody` is for. Never describe the player's clothing, and never place the player as a person standing in the scene.",
   '- viewerBody: which of the player\'s OWN body parts are in the shot, as a list of ids from exactly: "hands", "forearms", "lap_thighs", "legs_feet", "torso". Empty is the default and the common case — list a part ONLY when the recent narration puts it in the frame (her cheek against their palm → ["hands"]; her head resting in their lap → ["lap_thighs"]). Never list a part merely because the player has one, and never more than the beat needs. For EVERY id listed, add one viewerBodyEvidence entry: { "part": the id, "quote": a short phrase copied EXACTLY, word for word, from the recent narration that physically puts that part of the player in the shot }. A part whose quote is missing, paraphrased, or invented is dropped in code — if you cannot copy a real phrase, leave both lists empty.',
-  `- pose/activity may now name contact with the player, but ALWAYS from the character's side and only for a part you listed in viewerBody: "her hand closing over the viewer's forearm" is paintable when forearms is listed. Call them "the viewer", never "the player" and never "him"/"her". With viewerBody empty, translate contact away as before: eyes or head turned toward the player become "toward the viewer"${GAZE_ORIENTATION_CLAUSE}; touching or leading becomes the character's own posture and motion (her hand extended, glancing back mid-step) — keep the expression and energy, lose the contact.`,
+  `- pose/activity may now name contact with the player, but ALWAYS from the character's side and only for a part you listed in viewerBody: "her hand closing over the viewer's forearm" is paintable when forearms is listed. For a part you listed, and ONLY there, call them "the viewer" — never "the player" and never "him"/"her". GAZE is different, and it is never contact: eyes and head go to "the camera" or "the lens", never to the viewer, whatever is in viewerBody. With viewerBody empty, translate contact away as before: eyes or head turned toward the player become "toward the camera"${GAZE_ORIENTATION_CLAUSE}; touching or leading becomes the character's own posture and motion (her hand extended, glancing back mid-step) — keep the expression and energy, lose the contact.`,
 ] as const;
 
 /** `"a", "b", "c"` — the registry's own ids, so a new member reaches the rule as a data edit. */
@@ -306,6 +311,7 @@ const composerRules = (embodied: boolean): readonly string[] => {
     '- others: any remaining names from the "Present characters" list that belong in frame, each with a short phrase for what they are doing. Never include the player or anyone not on the list — characters who are not in the room must not appear.',
     "- pose and activity: what the focal character is doing right now, from the recent narration and their recorded activity. Pose is the body — stance, orientation, expression — in one compact phrase; activity is what they are doing in the scene. The two must not repeat each other's beats: state a facial expression ONCE, in pose (never a smile in pose and a laugh in activity — pick the single strongest beat).",
     '- Body parts in any phrase must be possessively bound to their owner: "her hand raising the cup", "Mira\'s fingers on the railing" — never a bare "a hand", "one hand" or "one finger". In a first-person POV image an unowned limb reads as the player\'s.',
+    '- Feeling is SHOWN, never labelled. pose carries the character\'s visible expression — what a photograph would actually catch: "a small smile playing at her lips", "one brow raised", "eyes lowered", "jaw set" — and it is the only field that states one. mood is ATMOSPHERE only, the air of the place and the moment; never put an emotion word there for the character, and never name in mood a feeling pose has already shown.',
     ...lane,
     COMPOSER_CAMERA_RULE,
     // Staging is the embodied lane's alone: every catalog entry places the viewer's own body
@@ -313,7 +319,7 @@ const composerRules = (embodied: boolean): readonly string[] => {
     ...(embodied ? [COMPOSER_STAGING_RULE] : []),
     '- Wardrobe: each character\'s "visible wardrobe" line is the authoritative outfit state; never infer clothing from the narration — prose lies.',
     "- setting: the current location's appearance and atmosphere as seen from where the player stands.",
-    "- lighting and mood: match the time of day and the emotional tone of the recent narration.",
+    "- lighting and mood: match the time of day and the atmosphere of the recent narration.",
     '- NEVER describe skin colour or reddening in any field — no "flushed", "blushing", "rosy", "red-faced", "colour rising". An image model paints those as makeup, not feeling. State the same beat as physiology instead: eyes bright or heavy-lidded, lips parted, breath shallow, a sheen of sweat, damp hairline, loosened posture. The narration you are given WILL say "flushed" — translate it, never copy it.',
     "- Keep each field to one or two short sentences.",
   ];

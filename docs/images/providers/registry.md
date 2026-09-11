@@ -8,9 +8,9 @@ the runtime truth.
 
 Replicate models disagree with each other in ways no shared mapping can paper over. The
 reference input is `image` on one model, `image_input` on another, `images` on a third,
-`reference_image` on a fourth — and both Qwen models call it `image` with *different* arities.
-So a row stores `referenceField` + `referenceArity`, `maxReferences`, `aspectMode` +
-`supportedAspects`, `outputFormat`, and free-form `extraInput` constants.
+`reference_image` on a fourth — and the three Qwen models all call it `image` while
+*disagreeing* on arity. So a row stores `referenceField` + `referenceArity`, `maxReferences`,
+`aspectMode` + `supportedAspects`, `outputFormat`, and free-form `extraInput` constants.
 
 Two mechanical capability booleans feed the rest of the system: `canGenerate` (can run from a
 bare prompt) and `canEdit` (has a reference input at all). They are **not sufficient picker
@@ -119,9 +119,22 @@ marking every field the render path already owns (prompt, primary reference, the
 Descriptors are metadata — the [Image Generator](../../image-generator/README.md)'s
 advanced-input form renders them — never a second control system.
 
+**The prompt binding's LENGTHS are owner-curated; the probe does not write them.** The derivation
+writes no `prompt` member at all, because a JSON schema states that a `prompt` field exists and
+what type it is, never how long a prompt the model answers well to — that guidance is published
+prose about a model family. So the binding's two lengths are curated data on the row: `maxChars`,
+a provider ceiling whose breach is an error and the only limit allowed to compress a mandatory
+segment, and `recommendedChars`, the advisory length optional material is trimmed toward.
+`recommendedChars` is Vesper's own number: it is set from the family's broader published prompt
+guidance and tuned against graded trials, and no provider schema states it.
+**A re-probe or a version activation replaces `advancedCapabilities` wholesale and drops them**,
+because `imageModelReprobeFields` protects the two owner-curated columns above and not a member
+inside a probe-owned record; a row whose budget matters is curated again after a re-pin.
+
 A row probed before any of this holds `{}`, and empty means "send no optional control" — so a
 profile's control defaults sit recorded-but-inert until its model's version is probed or pinned,
-which is the designed activation path.
+which is the designed activation path. An absent prompt budget means no fitting: every optional
+claim is emitted, in canonical order.
 
 ## Version promotion
 

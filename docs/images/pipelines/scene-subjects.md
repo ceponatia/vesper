@@ -144,9 +144,9 @@ fallback or a content-rejection retry. The projection reads the cut's own resolv
 and coverage readout under one rule, the same one the Image Lab's staged bench compiles
 through ([../../contracts/attributes.md](../../contracts/attributes.md) `imageReveal`):
 
-- `"shape"` — silhouette that reads *through* clothing (breast size and shape) — is stated
-  **always**;
-- `"skin"` — surface detail (nipples) — only when its region reads bare or sheer;
+- `"shape"` — silhouette that reads *through* clothing (breast size) — is stated **always**;
+- `"skin"` — surface detail a garment hides (breast shape, augmentation and fullness, nipples) —
+  only when its region reads bare or sheer;
 - untagged intimate anatomy (vulva, penis, testicles) when its region is exposed; anal and
   perineal categories never render in an image (owner ruling 2026-07-23: every render views
   the character from the front);
@@ -222,15 +222,39 @@ memory keeps the `DEFAULT_CHAT_ROOM` placeholder.
 
 The composer's pose and activity rules require each phrase to be paintable with the character
 ALONE. Player-directed beats translate to their solo equivalent: gaze and orientation become
-"toward the viewer"; contact and leading are dropped while expression and energy are kept — a
-worked example lives in `SCENE_COMPOSER_SYSTEM`. Pose and activity must carry distinct beats
-(no smile in one and laugh in the other).
+"toward the camera" or "looking directly into the lens"; contact and leading are dropped while
+expression and energy are kept — a worked example lives in `SCENE_COMPOSER_SYSTEM`. Pose and
+activity must carry distinct beats (no smile in one and laugh in the other).
 
-A deterministic backstop, `scrubPlayerFromAction` (applied in `characterSpec`, so composer text
-and the posture/activity fallback both pass through it), rewrites gaze-type player references
-to the viewer and drops any clause still naming the player. Pronoun references are deliberately
-left to the composer rule, because in a multi-character scene a pronoun may be another
-character.
+**Gaze goes to the camera, never to the viewer.** The viewer is the one thing a disembodied
+first-person image is required not to contain, so a phrase describing her looking at "the
+viewer" hands the model a second person to place across the room — in the same prompt that
+forbids drawing them. The lens is in the picture's geometry; whoever stands behind it is not.
+"The viewer" survives in exactly one place, contact with a viewer part the shot actually holds
+in frame ([scene-framing.md](scene-framing.md) §The embodied viewer), and gaze is never contact,
+so it goes to the camera whatever `viewerBody` carries.
+
+Two deterministic backstops run behind those rules in `characterSpec`, so composer text and the
+posture/activity fallback both pass through them. `scrubPlayerFromAction` rewrites gaze-type
+player references to the camera — to the viewer on an embodied shot, where the viewer's own body
+IS in frame and that word carries the measured contact geometry — and drops whole any clause
+still naming the player; pronoun references are deliberately left to the composer rule, because
+in a multi-character scene a pronoun may be another character. `viewerGazeToCamera` then takes
+the last pass, on a disembodied shot only: it rewrites a gaze aimed at the viewer to the camera,
+to the lens after "into", and drops whole any clause still naming a viewer it could not aim. The
+lowering spends it a second time against the mode THAT rung resolved, because embodiment is
+decided per rung and a phrase written for an embodied plan would otherwise name a viewer beside
+a frame asserting the viewer is absent; it is idempotent, so the ordinary case compiles
+unchanged.
+
+**Only a gaze is re-aimed; a touch is dropped.** Both backstops read one closed vocabulary of
+gaze and orientation words, because the prepositions they match — `at`, `on`, `onto`, `to`,
+`into` — carry contact as readily as looking. Re-aimed rather than dropped, "leaning on the
+viewer" or "throwing a pillow at the viewer" would become a physical interaction with the
+CAMERA: a solid body exactly where the capture-mode sentence swears nothing is. `facing` and
+`toward`/`towards` need no lead word, since the preposition is itself the orientation;
+everything else needs a gaze word in front of it, and a clause the vocabulary cannot aim falls
+to the clause drop with every other viewer reference.
 
 **Pose and activity stay two fields all the way down.** How a body is HELD and what it is
 DOING are different beats and they lower to different concepts, so every scrub — the player

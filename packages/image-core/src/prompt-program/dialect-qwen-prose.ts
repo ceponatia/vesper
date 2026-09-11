@@ -1,4 +1,4 @@
-import { diag } from "@vesper/contracts";
+import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { ImagePromptSegment } from "../render-intent/prompt-segments";
 import type { SceneCaptureMode, SceneViewerBodyPartId } from "../scene-ir";
 import type {
@@ -14,10 +14,12 @@ import type { ImagePositiveClaim } from "./positive-claims";
 import {
   imageSceneCaptureMode,
   imageScenePossessionOwners,
+  imageSceneStagingForm,
   imageViewerBodyParts,
   imageViewerDescriptors,
   type ImageObscuredFace,
 } from "./scene-facts";
+import type { ImageSubjectPronounSet } from "./world-digest";
 
 /**
  * Wording helpers shared by the Qwen-family dialects — and, for the
@@ -41,10 +43,22 @@ import {
  * A claim's value as prose.
  *
  * Values arrive from projections in three honest shapes — a string, a list of
- * strings, or a small record with a `label`/`text`/`value` member — and this
- * flattens all three. A record with none of those is rendered as its own values
- * joined, which is a last resort that at least says something true rather than
- * emitting `[object Object]` into a payload.
+ * strings, or a small record with a `label`/`text`/`value`/`name` member — and
+ * this flattens all three. **A record with none of them words NOTHING.**
+ *
+ * The structural fallback this replaced joined such a record's own leaf values,
+ * on the reasoning that saying something true beat emitting `[object Object]`.
+ * It shipped structure as language instead: a body-language support state
+ * `{ relations: [{ role: "borne_by", anchor: { kind: "surface", surfaceKind:
+ * "ground" }, loadZones: ["legs"] }] }` reached a provider as "surface, ground,
+ * legs, borne by", and a garment presentation `{ channel: "tuck", band: "out" }`
+ * as "out, tuck" — each true of the data and nonsense as instruction.
+ *
+ * The empty string is what every dialect already reads as "no wording": the
+ * claim is recorded as declined, and a MANDATORY one refuses the compile before
+ * provider spend. That is the fail-closed direction for a kind whose value no
+ * renderer understands — the missing renderer is the defect, and a prompt full
+ * of flattened records is how it stayed invisible.
  */
 export function describe(value: unknown): string {
   if (typeof value === "string") return value.trim();
@@ -56,9 +70,88 @@ export function describe(value: unknown): string {
       const member = record[key];
       if (typeof member === "string" && member.trim().length > 0) return member.trim();
     }
-    return listWords(Object.values(record).map(describe).filter((entry) => entry.length > 0));
+    return "";
   }
   return "";
+}
+
+/** A claim whose value had no prompt wording, dropped rather than flattened. */
+export const IMAGE_PROMPT_VALUE_UNREADABLE = "image_prompt_program.value_unreadable";
+
+/**
+ * Whether a claim value is a RECORD no dialect can word ({@link describe}).
+ *
+ * Asked at the top of each family's `renderClaim`, because a blank value does
+ * not blank a sentence on its own: `"<subject> is "` still renders, and the
+ * claim would then travel as a mutilated clause instead of being recorded as
+ * declined. Declining it is what turns a visual-state kind with no prompt
+ * renderer into a visible refusal rather than into prose nobody can act on.
+ *
+ * Records a NARROWING READER owns are not unwordable — they are simply not
+ * `describe`'s to word. `scene.staging` is the one such value today: its form
+ * carries the registry's measured wording behind `imageSceneStagingForm`, and
+ * asking it structurally rather than keeping a list of exempt concepts is what
+ * keeps this from drifting as concepts are added. A future typed record with no
+ * reader of its own declines and reports, which is the safe direction.
+ */
+export function unwordableImageClaimValue(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  if (imageSceneStagingForm(value) !== null) return false;
+  return describe(value).length === 0;
+}
+
+/** Report one declined value, so a projection shipping an unrenderable kind is visible. */
+export function reportUnwordableClaimValue(claim: ImagePositiveClaim, sink?: DiagnosticSink): void {
+  sink?.push(
+    diag("warn", IMAGE_PROMPT_VALUE_UNREADABLE, "a claim value had no prompt wording and was dropped", {
+      path: "image_prompt_program",
+      context: { claim: claim.id, concept: claim.concept },
+    }),
+  );
+}
+
+/**
+ * The words one pronoun set contributes to a sentence.
+ *
+ * Plumbing rather than wording: WHICH sentences may use a pronoun, and where, is
+ * each dialect's decision (#544 F2). `plural` is verb agreement and nothing else
+ * — `they_them` takes "are"/"have"/"wear" for a single person — and `noun` is the
+ * word a reference binding uses when no display label names the subject ("the
+ * woman in Image 1").
+ */
+export interface ImagePronounWords {
+  readonly subject: string;
+  readonly object: string;
+  readonly possessive: string;
+  /** The independent possessive: "hers", "his", "theirs". */
+  readonly independent: string;
+  readonly noun: string;
+  readonly plural: boolean;
+  /**
+   * Whether the set STATES the subject's build, so a dialect may let it stand in
+   * for the gender fact the digest projected.
+   *
+   * `they_them` does not, and the difference is not cosmetic: the application
+   * supplies it for `androgynous_born_female`, `androgynous_born_male` and the
+   * nonbinary values alike, whose gender attribute still carries the underlying
+   * build distinction. "They" conveys neither variant, so a dialect that treated
+   * it as carrying the whole gender claim would delete the only thing in the
+   * prompt that said which body to draw — and on this family the reference no
+   * longer preserves build either.
+   */
+  readonly carriesGender: boolean;
+}
+
+/** One pronoun set's words. Total over the set vocabulary; no set means no pronoun. */
+export function imagePronounWords(set: ImageSubjectPronounSet): ImagePronounWords {
+  switch (set) {
+    case "she_her":
+      return { subject: "she", object: "her", possessive: "her", independent: "hers", noun: "woman", plural: false, carriesGender: true };
+    case "he_him":
+      return { subject: "he", object: "him", possessive: "his", independent: "his", noun: "man", plural: false, carriesGender: true };
+    case "they_them":
+      return { subject: "they", object: "them", possessive: "their", independent: "theirs", noun: "person", plural: true, carriesGender: false };
+  }
 }
 
 /** The change contract's value, which carries the concept alongside the value. */
@@ -501,6 +594,61 @@ const STAGING_SUBJECT_PLACEHOLDER = /\{name\}/gu;
  */
 export function stagingSentence(template: string, subject: string | null): string | null {
   const bound = template.replace(STAGING_SUBJECT_PLACEHOLDER, subject ?? "the subject").trim();
+  return bound.length === 0 ? null : capitalize(bound);
+}
+
+/**
+ * The same placeholder, matched together with the possessive `'s` a template
+ * writes immediately after it — the shape {@link stagingSentenceForVoice} needs
+ * and {@link STAGING_SUBJECT_PLACEHOLDER} cannot express: substituting a
+ * possessive pronoun for `{name}` inside `{name}'s` would compile "her's".
+ */
+const STAGING_SUBJECT_REFERENCE = /\{name\}('s)?/gu;
+
+/**
+ * One adopted staging template, bound to a subject the dialect INTRODUCES once
+ * and refers to by pronoun afterwards (#544 F2).
+ *
+ * {@link stagingSentence} binds every occurrence to one string, which is right
+ * for a family that re-names its subject in every clause and wrong for one that
+ * does not: on the scene lane the subject has no display label, so that binding
+ * compiles "The subject standing with the subject's back against the viewer's
+ * chest" — the arrangement's own sentence saying "the subject" four times in a
+ * prompt whose every other sentence says "she".
+ *
+ * So the FIRST occurrence is the introduction — the arrangement is usually the
+ * first sentence about the body, and a pronoun opening it would refer back to
+ * nothing — and every later one is a pronoun:
+ *
+ * - `{name}'s` takes the possessive determiner ("her back", "his hips");
+ * - a later bare `{name}` takes the OBJECT pronoun. Every later bare occurrence
+ *   in the staging catalog follows a preposition ("closed around {name} from
+ *   behind"), which is object position, and the subject pronoun there would
+ *   compile "closed around she". The first occurrence, the one place a subject
+ *   pronoun would be right, is the introduction instead.
+ *
+ * `pronouns` null — no set, or a set another cast member shares — keeps the
+ * introduction throughout, which is exactly {@link stagingSentence}'s behavior
+ * with the introduction in place of the label.
+ *
+ * A template that binds to nothing at all yields null rather than an empty
+ * sentence, for the same reason {@link stagingSentence} does: the arrangement is
+ * the whole content of the claim.
+ */
+export function stagingSentenceForVoice(
+  template: string,
+  introduction: string,
+  pronouns: ImagePronounWords | null,
+): string | null {
+  let seen = 0;
+  const bound = template
+    .replace(STAGING_SUBJECT_REFERENCE, (_match: string, possessive: string | undefined): string => {
+      const first = seen === 0;
+      seen += 1;
+      if (first || pronouns === null) return possessive === undefined ? introduction : `${introduction}'s`;
+      return possessive === undefined ? pronouns.object : pronouns.possessive;
+    })
+    .trim();
   return bound.length === 0 ? null : capitalize(bound);
 }
 

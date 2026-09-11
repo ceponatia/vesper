@@ -10,4 +10,5 @@ export * from "./generate-timeout";
 export * from "./embeddings";
 export * from "./errors";
 export * from "./replicate-runtime";
+export * from "./fal-runtime";
 export * from "./image-providers";

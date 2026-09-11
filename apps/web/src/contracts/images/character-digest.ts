@@ -204,7 +204,10 @@ export function characterChangeContract(
     .flatMap((subject) => subject.facts)
     .filter(
       (fact) =>
-        fact.disposition === "required_visual" && fact.concept !== input.concept && !replaced.has(fact.key),
+        fact.disposition === "required_visual" &&
+        fact.concept !== input.concept &&
+        !replaced.has(fact.key) &&
+        !isRenderOwnFactConcept(fact.concept),
     )
     .map((fact) => fact.key)
     .sort();
@@ -215,6 +218,30 @@ export function characterChangeContract(
     preserve,
     geometry: input.geometry ?? "locked",
   };
+}
+
+/**
+ * Whether a required fact describes THIS RENDER rather than the source image,
+ * and so may never enter a derived preserve set.
+ *
+ * A preserve entry means "this fact of the source survives the change", and a
+ * dialect words it as an instruction: "Keep the horns, the apparent age and the
+ * hair concealment unchanged from the source." Every ordinary required fact is a
+ * true statement about the reference — the character's horns are in the
+ * photograph — so the instruction is honest.
+ *
+ * `subject.hair_concealment` is not. The projection states it because the
+ * wardrobe THIS render draws hides the hair (docs/images/character-prompts.md
+ * §Hair the headwear conceals); the reference is usually a bare-headed anchor,
+ * so asking to keep the concealment "unchanged from the source" asks to carry
+ * over a concealment the source does not have — and, on the endpoint that reads
+ * its prompt as an edit instruction, reads as "keep the hair" beside the very
+ * sentence that just said no hair is visible (issue #312, PR #545 review). The
+ * concealment claim states itself in its own sentence, which is the instruction;
+ * it needs no second, contradictory one.
+ */
+function isRenderOwnFactConcept(concept: ImageConceptId): boolean {
+  return concept === "subject.hair_concealment";
 }
 
 // ---------------------------------------------------------------------------

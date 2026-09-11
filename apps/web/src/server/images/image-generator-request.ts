@@ -32,10 +32,10 @@ import {
   imageGeneratorRunInputsSchema,
   type ImageGeneratorRunInputs,
 } from "@/contracts/images/image-generator";
-import { previewRegistryModelInput, providerInputViolations } from "@vesper/image-replicate";
+import { providerInputViolations } from "@vesper/image-replicate";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
-import { disableSafetyChecker } from "../ai";
+import { previewImageModelRequest } from "../ai";
 import { db, imageGeneratorRuns } from "../db";
 import { imageMeta } from "./asset-storage";
 import {
@@ -455,7 +455,7 @@ export async function prepareGeneratorRequest(
   // own builder rather than predicted here. It is both what the pre-spend gate
   // judges and what the record reports, so the two can never describe different
   // requests.
-  const sentRequest = previewRegistryModelInput({
+  const preview = previewImageModelRequest({
     model: sentModel,
     prompt: finalPrompt,
     referenceCount: plan.references.length,
@@ -467,8 +467,13 @@ export async function prepareGeneratorRequest(
     aspect: plannedShape.value,
     controlInput: plan.controlInput,
     policy: IMAGE_GENERATOR_RENDER_POLICY,
-    safetyCheckerDisabled: disableSafetyChecker(),
   });
+  const sentRequest = preview.request;
+  const recordedShape: PlannedShape = {
+    ...plannedShape,
+    field: preview.sentShape.field ?? plannedShape.field,
+    value: preview.sentShape.value,
+  };
   const outcome = {
     sentRoles: plan.sentReferences.map((reference) => reference.role),
     dedicatedFields: plan.controlReferences.map((reference) => reference.field),
@@ -484,7 +489,7 @@ export async function prepareGeneratorRequest(
       plan,
       planReferences: references.list,
       shape,
-      plannedShape,
+      plannedShape: recordedShape,
       sentRequest,
       finalPrompt,
       policy: IMAGE_GENERATOR_RENDER_POLICY,
@@ -685,7 +690,7 @@ function plannedShapeInput(
   model: ImageModel,
   shape: Extract<GeneratorShape, { ok: true }>,
   plan: PlannedImageRender,
-): PlannedShape {
+): PlannedShape<string | null> {
   const dimensions =
     shape.aspectRatio === null
       ? providerDefaultDimensions()

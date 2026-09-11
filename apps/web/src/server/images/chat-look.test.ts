@@ -17,7 +17,13 @@ import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
-import { LANE_PROBE_SUBJECT_ID, laneProbeShadowInput, resolvedImageProfileFixture } from "@/server/test-support";
+import {
+  attr,
+  LANE_PROBE_SUBJECT_ID,
+  laneProbeProfile,
+  laneProbeShadowInput,
+  resolvedImageProfileFixture,
+} from "@/server/test-support";
 import { safeBuildVisualStateShadow } from "@/server/visual-state";
 import {
   activeChatLookProgram,
@@ -215,8 +221,11 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
   it("reinforces the shared canonical platinum hair and blue eyes in a chat look", () => {
     const program = compile(laneProbeShadowInput());
 
-    expect(program.prompt).toMatch(/hair color: platinum/i);
-    expect(program.prompt).toMatch(/eye color: blue/i);
+    // The registry's PROSE, not its label form (#547): an image-eligible
+    // attribute that declares a phrase reaches every dialect as the noun
+    // phrase it was authored as.
+    expect(program.prompt).toMatch(/platinum hair/i);
+    expect(program.prompt).toMatch(/blue eyes/i);
   });
 
   it("two cuts that differ only in a current-layer fact compile the same prompt", () => {
@@ -311,6 +320,69 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
     expect(statesCurrent(exhausted.subjects[0]?.facts ?? [])).toBe(true);
     expect(exhausted.prompt).toBe(rested.prompt);
     expect(exhausted.negativePrompt).toBe(rested.negativePrompt);
+  });
+
+  /**
+   * WHAT THE MINT STILL SENDS (issue #552).
+   *
+   * The cases above prove the anchor is a function of the look key's inputs;
+   * this one and the next prove the prompt those inputs compile to still says
+   * what an anchor is FOR. Both are claims a scene-shaped change is likely to
+   * take away from this lane by accident, since the reveal-tier and
+   * subject-naming work was asserted only on the scene's side of the shared
+   * seam.
+   *
+   * PROTECTS: the mint binds its subject to the identity image it sends, and
+   * states the wardrobe change it exists to make.
+   *
+   * The mint hands the seam no display name — the anchor is an edit of the
+   * character's own identity pack, so the image IS the introduction — and the
+   * dialect's fallback for a subject it can bind to nobody is the placeholder
+   * "the subject in Image N". A prompt that fell back to it would be an
+   * identity-anchored edit whose sentences point at nobody, under a cache key
+   * every later scene composes from. The change contract is the other half:
+   * with no delta and no preserve set the endpoint is handed a description of
+   * somebody and no instruction about what to do to them.
+   */
+  it("binds its subject to the identity image and carries the wardrobe change contract", () => {
+    const program = compile(laneProbeShadowInput());
+
+    expect(program.prompt).toMatch(/\bin Image 1\b/);
+    expect(program.prompt).toContain("as the sole subject");
+    expect(program.prompt).not.toContain("the subject in Image 1");
+    expect(program.prompt).toContain("Make exactly this change: a linen sundress");
+    expect(program.prompt).toMatch(/\bKeep\b[^.]*\bunchanged from the source\./);
+  });
+
+  /**
+   * PROTECTS: a covered torso states the breast silhouette and no surface detail.
+   *
+   * `breasts.size` reads through clothing and is the one declared
+   * `ordinarySilhouette` exception; `breasts.shape`, `breasts.augmentation` and
+   * `breasts.fullness` are surface facts a sweater hides, and they sit in the
+   * `skin` reveal tier. A look anchor is always fully covered
+   * (`FULLY_COVERED` above), so a tier revert shows up here as an anchor
+   * describing a body the picture does not contain — and the anchor is the face
+   * every later scene in the conversation composes from, so the error
+   * propagates rather than staying in one render.
+   */
+  it("states the breast size and no surface detail on a fully covered anchor", () => {
+    const base = laneProbeProfile();
+    const program = compile(
+      laneProbeShadowInput(
+        laneProbeProfile({
+          attributes: [
+            ...base.attributes,
+            attr("breasts.shape", "teardrop", "base"),
+            attr("breasts.augmentation", "obviously_augmented", "base"),
+            attr("breasts.fullness", "plump", "base"),
+          ],
+        }),
+      ),
+    );
+
+    expect(program.prompt).toMatch(/an ample bust/i);
+    for (const word of [/teardrop/i, /augment/i, /plump/i]) expect(program.prompt).not.toMatch(word);
   });
 });
 

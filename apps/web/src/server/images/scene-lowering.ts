@@ -14,7 +14,13 @@ import { sceneStagingSurfaceForms } from "@/contracts/images/scene-staging";
 import { resolveViewerParts, type ViewerBodyPart, type ViewerBodyPartId } from "@/contracts/images/viewer-body";
 import { viewerBodyFacts } from "@/contracts/images/viewer-digest";
 import type { RealizedBody } from "@/contracts/species";
-import { normalizeName, type SceneCharacterSpec, type SceneRenderPlan } from "./prompts-scene-plan";
+import {
+  mentionsLimb,
+  normalizeName,
+  viewerGazeToCamera,
+  type SceneCharacterSpec,
+  type SceneRenderPlan,
+} from "./prompts-scene-plan";
 
 /**
  * THE LOWERING: a resolved `SceneRenderPlan` → the typed inputs a prompt program
@@ -72,6 +78,9 @@ const SCENE_LOCATION_REF = "location.scene";
 
 /** A staged arrangement was gated out of the prompt after the plan committed it. */
 export const IMAGE_SCENE_STAGING_UNSENT = "images.scene_lowering.staging_unsent";
+
+/** The composer's atmosphere was withheld because the place's own text states it. */
+export const IMAGE_SCENE_MOOD_REDUNDANT = "images.scene_lowering.mood_redundant";
 
 /** A camera component a lane may state a fact for, or declare itself silent about. */
 type SceneCameraComponent = ImageCameraFact["component"];
@@ -201,11 +210,11 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
 
   const facts: ImageWorldFact[] = [
     captureModeFact(captureMode, focalRef),
-    ...possessionFact(captureMode, featured, refByName),
-    ...moodFact(plan.mood),
+    ...possessionFact(captureMode, plan.focal, featured, refByName),
+    ...moodFact(plan, input.sink),
     ...staging,
     ...viewerFacts(input, captureMode, inFrame, stagedGeometryOwned(input, staging)),
-    ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)))),
+    ...featured.flatMap((spec) => actionFacts(spec, refByName.get(normalizeName(spec.name)), captureMode)),
     ...faceVisibilityFact(plan, focalRef),
   ];
 
@@ -214,6 +223,16 @@ export function lowerScenePlan(input: SceneLoweringInput): SceneProgramInputs {
 
 function source(key: string): ImageSourceRef {
   return { owner: IMAGE_SCENE_PLAN_OWNER, key };
+}
+
+/** One person's two action fields, as the plan wrote them. */
+function actionText(spec: SceneCharacterSpec): readonly string[] {
+  return [(spec.pose ?? "").trim(), (spec.activity ?? "").trim()];
+}
+
+/** Whether either action field puts a limb in the picture. */
+function namesALimb(spec: SceneCharacterSpec): boolean {
+  return actionText(spec).some((text) => mentionsLimb(text));
 }
 
 /**
@@ -256,16 +275,36 @@ function captureModeFact(mode: SceneCaptureMode, focalRef: string | undefined): 
  * observing camera has no viewer in the room, so the clause would be binding
  * limbs against a frame that never risked an unowned one.
  *
+ * And only where there is a limb to bind (issue #544 F3). The clause answers the
+ * pose text: a phrase that puts a hand, an arm or a knee in the picture is what
+ * risks the model composing that limb as the viewer's foreground, and where the
+ * focal's pose and activity name none, the sentence binds nothing and spends a
+ * whole claim asserting that a person nobody described owns parts nobody
+ * mentioned. The limb vocabulary is the plan resolver's own
+ * ({@link mentionsLimb}), so the noun that arms this clause and the noun the
+ * binder possessively bound cannot drift apart.
+ *
+ * Read off EVERY featured member, not the focal alone: a bystander's "her hand
+ * on the doorframe" puts a limb in the picture exactly as the focal's would,
+ * and the phantom-limb defence is about the limb, not about who owns it.
+ *
  * Optional rather than required, unlike the capture mode: the clause is worth
  * nothing without names, the names come from labels this module cannot see, and
- * a label gap must degrade the sentence rather than fail the render.
+ * a label gap must degrade the sentence rather than fail the render. That
+ * degradation is now the ORDINARY case on a reference-anchored scene, where the
+ * seam offers the dialect no display name at all
+ * (`CHARACTER_LANE_SUBJECT_NAMING.scene`) and the dialect's own binding wording
+ * is what has to name the owners; the claim is still emitted, because what a
+ * dialect makes of it is the dialect's to decide.
  */
 function possessionFact(
   mode: SceneCaptureMode,
+  focal: SceneCharacterSpec | null,
   featured: readonly SceneCharacterSpec[],
   refByName: ReadonlyMap<string, string>,
 ): readonly ImageWorldFact[] {
   if (mode !== "first_person_disembodied") return [];
+  if (focal === null || !featured.some(namesALimb)) return [];
   const owners = featured
     .filter((spec) => spec.name.trim().length > 0)
     .map((spec) => refByName.get(normalizeName(spec.name)))
@@ -285,15 +324,101 @@ function possessionFact(
 }
 
 /**
+ * Words a mood shares with any sentence, dropped before the redundancy compare.
+ *
+ * Without them a mood and a setting that merely both contain "the" and "of"
+ * would read as the same statement, and the atmosphere the composer wrote would
+ * vanish from the prompt on a coincidence of grammar. The list is closed and
+ * deliberately short: only words that carry no atmosphere at all.
+ */
+const MOOD_FUNCTION_WORDS: ReadonlySet<string> = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "or",
+  "but",
+  "of",
+  "in",
+  "on",
+  "at",
+  "to",
+  "with",
+  "into",
+  "from",
+  "for",
+  "by",
+  "as",
+  "is",
+  "it",
+  "its",
+  "that",
+  "this",
+  "there",
+  "here",
+  "very",
+  "quite",
+  "rather",
+  "somewhat",
+]);
+
+/**
+ * A phrase as lower-case word tokens, with case and punctuation normalized away.
+ *
+ * Deliberately blunt, in the {@link sceneLightingBand} family: the composer
+ * writes free text and this module needs a comparison a reader can reproduce by
+ * hand. No stemming — "warmth" and "warm" are different words here, and the
+ * failure that costs is a mood stated twice in slightly different words, which
+ * is far cheaper than an atmosphere silently deleted for a near-match.
+ */
+function moodWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 0);
+}
+
+/**
  * How the moment feels — the composer's own phrase, unwrapped.
  *
  * A scene fact rather than a location one because the same bedroom is cheerful
  * in one render and threatening in the next: filing mood against the place would
  * make it a property of the room.
+ *
+ * STATED WHENEVER THE COMPOSER WROTE ONE. `mood` is atmosphere — the air of the
+ * place and the moment ("quiet late-night warmth", "tense fluorescent
+ * stillness") — and `pose` is the character's visible expression; they are two
+ * different claims about two different things, so a described pose is no reason
+ * to delete the air around it. An ordinary pose ("standing beside the desk")
+ * carries no atmosphere at all, and a shot that dropped the mood for it would
+ * lose the only sentence saying how the picture feels.
+ *
+ * Withheld on ONE ground: the setting or the lighting text already says it. A
+ * mood every one of whose content words appears in that text is a restatement,
+ * and an image model handed the same claim twice weights it twice — a lighting
+ * phrase of "a single candle against the dark" beside a mood of "dark" spends a
+ * whole claim repeating the light. The compare is deterministic and
+ * hand-checkable: both sides lower-cased and split on non-letters, function
+ * words dropped from the mood, and every survivor looked up in the place's own
+ * words.
+ *
+ * A mood of nothing but function words is KEPT, not withheld: "every content
+ * word appears" is vacuously true of a phrase with no content words, and a
+ * vacuous truth is not evidence that the setting already said it.
  */
-function moodFact(mood: string): readonly ImageWorldFact[] {
-  const value = mood.trim();
+function moodFact(plan: SceneRenderPlan, sink: DiagnosticSink | undefined): readonly ImageWorldFact[] {
+  const value = plan.mood.trim();
   if (value.length === 0) return [];
+  const words = moodWords(value).filter((word) => !MOOD_FUNCTION_WORDS.has(word));
+  const place = new Set(moodWords(`${plan.setting} ${plan.lighting}`));
+  if (words.length > 0 && words.every((word) => place.has(word))) {
+    sink?.push(
+      diag("info", IMAGE_SCENE_MOOD_REDUNDANT, "the setting or lighting text already states this mood", {
+        context: { mood: value, words },
+      }),
+    );
+    return [];
+  }
   return [
     {
       key: "scene.mood",
@@ -522,15 +647,28 @@ function stagedPartsInFrame(input: SceneLoweringInput): boolean {
  * is identical either way — claims are ordered by the CONCEPT's channel, not by
  * the list a fact travelled in — so the choice buys honest provenance and costs
  * the prompt nothing.
+ *
+ * The camera rewrite is spent here a second time, against the mode THIS RUNG
+ * resolved (#544 F3). The plan resolver already ran it, but it ran against the
+ * plan's embodiment, and embodiment is decided per rung: coverage and the
+ * intimate route can take every viewer part out of frame on the moderated
+ * fallback, and a phrase written for the embodied plan would then name a viewer
+ * beside a frame asserting the viewer is never visible. Idempotent on text the
+ * plan already rewrote, so the ordinary case compiles unchanged.
  */
-function actionFacts(spec: SceneCharacterSpec, subjectRef: string | undefined): readonly ImageWorldFact[] {
+function actionFacts(
+  spec: SceneCharacterSpec,
+  subjectRef: string | undefined,
+  mode: SceneCaptureMode,
+): readonly ImageWorldFact[] {
   if (subjectRef === undefined) return [];
   const parts: readonly [string | undefined, ImageWorldFact["concept"], string][] = [
     [spec.pose, "subject.body_language", "pose"],
     [spec.activity, "subject.activity", "activity"],
   ];
   return parts.flatMap(([value, concept, member]) => {
-    const text = (value ?? "").trim();
+    const stated = (value ?? "").trim();
+    const text = mode === "first_person_disembodied" ? viewerGazeToCamera(stated).trim() : stated;
     if (text.length === 0) return [];
     return [
       {

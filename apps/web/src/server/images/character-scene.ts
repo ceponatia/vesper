@@ -11,7 +11,7 @@ import type { IdentityReferenceProvenance, SceneCaptureMode, SceneReferenceSourc
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag, DiagnosticCollector, teeSink } from "@/contracts/diagnostics";
 import { logDiagnostics } from "@/server/log";
-import { classifyImageFailure, hasReplicate, isDemoMode } from "../ai";
+import { classifyImageFailure, hasImageProviderForModel, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
 import { deleteOwnedImage } from "./asset-deletion";
@@ -310,7 +310,8 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // profile rather than moving the chat onto a different model.
   const imageProfile = isDemoMode() ? null : await resolveImageProfileForTask("scene", input.sceneModel, sink);
   const model = imageProfile?.model ?? null;
-  const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
+  const referenceRoute =
+    !isDemoMode() && model !== null && hasImageProviderForModel(model) && model.canEdit;
   // One anchor per cast member, resolved in roster order: this character's own
   // tracked look when the chat has minted one, else the identity-pack service's
   // candidate for their accepted portrait (5B ruling — a minted chat look
@@ -484,6 +485,11 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       sink: input.sink ? teeSink(input.sink, routeDiagnostics) : routeDiagnostics,
     });
     logDiagnostics("images.scene_lora", routeDiagnostics.items, { characterId: input.characterId });
+    const finalProfile = lora?.profile ?? imageProfile;
+    const providerRefusal =
+      finalProfile !== null && !hasImageProviderForModel(finalProfile.model)
+        ? `the image provider for ${finalProfile.model.slug} is not configured`
+        : null;
     return renderResolvedScene({
       plan: attemptPlan,
       references: [
@@ -520,7 +526,7 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // The route's profile IS the lane's profile paired with the intimate
       // model's registered row; off the route it is the resolved object itself,
       // so a LoRA-free render is unchanged down to the reference.
-      profile: lora?.profile ?? imageProfile,
+      profile: finalProfile,
       ...(lora ? { resolvedLora: lora.binding } : {}),
       flavor: input.flavor,
       // No provenance travels with a refusal: an earlier cast member's pack may
@@ -544,7 +550,7 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // render: the persona's sheet does not change between rungs, and only the
       // route's intimate permission does.
       ...(viewer === undefined ? {} : { viewer }),
-      failedPrecondition: identityRefusal ?? visualRefusal,
+      failedPrecondition: identityRefusal ?? visualRefusal ?? providerRefusal,
       linkage: {
         ownerId: input.userId,
         entityKind: "character",

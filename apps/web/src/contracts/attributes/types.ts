@@ -1,5 +1,29 @@
+import {
+  imageAppearancePhraseGroupNoun,
+  imageAppearancePhraseGroups,
+  imageAppearancePhraseRoles,
+  type ImageAppearancePhrase,
+  type ImageAppearancePhraseGroup,
+  type ImageAppearancePhraseRole,
+  type ImageAppearancePhraseValue,
+} from "@vesper/image-core";
 import { z } from "zod";
 import { attributeCategories, attributeCategorySchema, type AttributeCategory } from "./category-ids";
+
+/**
+ * The phrase vocabulary is `@vesper/image-core`'s: the registry declares which
+ * group and role an attribute's phrase takes, the engine's dialects compose in
+ * those terms, and one closed list keeps the two from drifting. Re-exported so
+ * the rest of the app reads them off the attribute barrel like every other
+ * registry type.
+ */
+export type {
+  ImageAppearancePhrase,
+  ImageAppearancePhraseGroup,
+  ImageAppearancePhraseRole,
+  ImageAppearancePhraseValue,
+};
+export { imageAppearancePhraseGroupNoun, imageAppearancePhraseGroups, imageAppearancePhraseRoles };
 
 export const attributeKinds = ["physical", "biological", "presentation", "cultural", "condition", "sensory"] as const;
 export const attributeKindSchema = z.enum(attributeKinds);
@@ -47,6 +71,81 @@ export const imageAppearanceMinimumFramings = [
 export const imageAppearanceMinimumFramingSchema = z.enum(imageAppearanceMinimumFramings);
 export type ImageAppearanceMinimumFraming = z.infer<typeof imageAppearanceMinimumFramingSchema>;
 
+export const imageAppearancePhraseGroupSchema = z.enum(imageAppearancePhraseGroups);
+export const imageAppearancePhraseRoleSchema = z.enum(imageAppearancePhraseRoles);
+
+/**
+ * How this attribute reads as PROSE rather than as a label.
+ *
+ * Without one, an image-eligible attribute reaches a prompt in its
+ * self-describing `Label: value` form, and a sentence made of several of them
+ * reads "She has musculature: lightly toned, weight presentation: slim and arm
+ * build: slender" — a registry listing in a sentence's shape. A phrase says how
+ * the same fact is worded instead: which feature `group` it belongs to, what
+ * grammatical `role` its piece plays there, and the piece itself.
+ *
+ * The registry owns the wording and the engine owns the grammar. Nothing
+ * downstream invents words an attribute did not declare, and no dialect learns
+ * an attribute id: the group/role vocabulary is `@vesper/image-core`'s, and the
+ * fragment is authored here beside the values it words.
+ *
+ * **Templates** interpolate the resolved value two ways:
+ * - `{value}` — the humanized value `formatAttributeValue` renders
+ *   (`mid_back` → "mid back"), for a fragment that reads as running words
+ *   ("{value} arms" → "slender arms").
+ * - `{compound}` — the same value hyphenated instead (`mid_back` → "mid-back"),
+ *   for a fragment that modifies a noun, where English hyphenates a compound
+ *   modifier: "dark-brown hair", "deep-set eyes", "silicone-smooth skin".
+ *
+ * An indefinite article the template writes is corrected to agree with what
+ * follows it, so `"a {value} bust"` renders "an ample bust" without every
+ * vowel-initial member needing its own entry.
+ */
+export const imageAppearancePhraseSchema = z.object({
+  group: imageAppearancePhraseGroupSchema,
+  role: imageAppearancePhraseRoleSchema,
+  /** The fragment template applied to every value that has no entry of its own. */
+  fragment: z.string().min(1).optional(),
+  /**
+   * Per-value fragment templates, keyed by enum member — the same partial-map
+   * shape `narratorGuidance` uses, and for the same reason: a closed vocabulary
+   * is not always homogeneous. `hair.length` runs from `shaved` to
+   * `feet_length`, and no single template words both ("hair to shaved"). A
+   * member listed here overrides `fragment`; a member with neither keeps the
+   * attribute's label form, which is the honest answer for a value with no
+   * natural phrase (`hair.arrangement: other` means "read the styling text").
+   */
+  fragmentByValue: z.record(z.string(), z.string().min(1)).optional(),
+  /**
+   * The standalone noun phrase, overriding the form derived from the role:
+   * `adjective` → "{fragment} <group noun>", `with` → "{fragment}", `trailer` →
+   * "<group noun> {fragment}". Required on an `adjective` or `trailer` phrase in
+   * the `other` group, which has no group noun to derive from. May interpolate
+   * `{fragment}` as well as `{value}` / `{compound}`.
+   */
+  standalone: z.string().min(1).optional(),
+  /**
+   * Where this fragment sits among its group's pieces of the same role,
+   * ascending; 0 without one, and equal orders keep claim order.
+   *
+   * English orders a noun's modifiers, and the claim order a dialect receives is
+   * the projection's — alphabetical by attribute id — which puts colour before
+   * condition ("dark-brown healthy hair") and muscle before weight ("a lightly
+   * toned, slim build"). Both read backwards, and the fix belongs beside the
+   * words rather than in the dialect: the position is a property of what the
+   * fragment SAYS, and only the registry knows that.
+   *
+   * Pieces are laid out ascending, so a higher number means the opposite thing
+   * on either side of the noun: an `adjective` precedes it, so higher sits
+   * closer (`hair.color` is 1 and lands against "hair"), and a `trailer` follows
+   * it, so lower does (`hair.arrangement` is 0 and precedes `hair.length`'s 1,
+   * giving "hair worn loose to mid-back").
+   */
+  order: z.number().int().optional(),
+});
+
+export type ImageAppearancePhraseMetadata = z.infer<typeof imageAppearancePhraseSchema>;
+
 export const imageAppearanceMetadataSchema = z.object({
   class: imageAppearanceClassSchema,
   referenceFreeRequired: z.boolean().optional(),
@@ -56,6 +155,8 @@ export const imageAppearanceMetadataSchema = z.object({
   ordinarySilhouette: z.boolean().optional(),
   /** Values that are valid storage vocabulary but add no useful image fact. */
   omitValues: z.array(z.string().min(1)).readonly().optional(),
+  /** How this attribute reads as prose instead of as a label. */
+  phrase: imageAppearancePhraseSchema.optional(),
 });
 
 export type ImageAppearanceMetadata = z.infer<typeof imageAppearanceMetadataSchema>;
@@ -310,6 +411,40 @@ export function defineAttributeGroup(category: AttributeCategory, definitions: r
     for (const value of def.imageAppearance?.omitValues ?? []) {
       if (!def.allowedValues?.includes(value)) {
         throw new Error(`Attribute ${def.id} imageAppearance omitValue "${value}" is not in allowedValues`);
+      }
+    }
+    // A phrase with nothing to render is a definition that silently keeps the
+    // label form it was written to replace — the one failure mode an authoring
+    // mistake here produces, and invisible from the output alone.
+    const phrase = def.imageAppearance?.phrase;
+    if (phrase) {
+      const perValue = Object.keys(phrase.fragmentByValue ?? {});
+      if (phrase.fragment === undefined && perValue.length === 0) {
+        throw new Error(`Attribute ${def.id} imageAppearance.phrase declares neither fragment nor fragmentByValue`);
+      }
+      // Per-value fragments key off enum members, like narratorGuidance: a stray
+      // key would never render, or would mask a vocabulary rename.
+      if (perValue.length > 0 && def.valueType !== "enum" && def.valueType !== "enum_list") {
+        throw new Error(`Attribute ${def.id} has imageAppearance.phrase.fragmentByValue but is not an enum/enum_list`);
+      }
+      for (const key of perValue) {
+        if (!def.allowedValues?.includes(key)) {
+          throw new Error(
+            `Attribute ${def.id} imageAppearance.phrase.fragmentByValue key "${key}" is not in allowedValues`,
+          );
+        }
+      }
+      // `other` has no group noun, so an adjective or trailer has nothing to
+      // attach to and the standalone form must be authored outright.
+      if (
+        phrase.standalone === undefined &&
+        phrase.role !== "with" &&
+        imageAppearancePhraseGroupNoun(phrase.group) === null
+      ) {
+        throw new Error(
+          `Attribute ${def.id} imageAppearance.phrase is a ${phrase.role} in the "${phrase.group}" group` +
+            " and must declare standalone",
+        );
       }
     }
     if (def.imageAppearance?.minimumFraming && def.imageAppearance.maximumFraming) {

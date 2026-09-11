@@ -18,7 +18,14 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     autoDefaultExcludes: ["gold", "red", "crimson", "silver", "white", "solid_black"],
     bodyLocationId: "eyes",
     aliases: ["eye color", "eye colour"],
-    imageAppearance: { class: "core", referenceFreeRequired: true },
+    imageAppearance: {
+      class: "core",
+      referenceFreeRequired: true,
+      // Order 1 for the same reason `hair.color` takes it: the colour is the
+      // adjective that sits against the noun, beside the shape's and the glow's
+      // 0 — "almond-shaped hazel eyes", never "hazel almond-shaped eyes".
+      phrase: { group: "eyes", role: "adjective", fragment: "{compound}", order: 1 },
+    },
     coreVisual: true,
     defaultValue: "brown",
   },
@@ -33,7 +40,17 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     allowedValues: ["round", "vertical_slit", "horizontal_slit", "goat"],
     bodyLocationId: "eyes",
     aliases: ["pupils", "slit pupils"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "close_up", omitValues: ["round"] },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "close_up",
+      omitValues: ["round"],
+      phrase: {
+        group: "eyes",
+        role: "with",
+        fragment: "{compound} pupils",
+        fragmentByValue: { goat: "goat-like pupils" },
+      },
+    },
     promptHints: ["Vertical-slit pupils read demonic/feline, horizontal/goat bestial; round is the human default."],
   },
   {
@@ -47,7 +64,15 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     allowedValues: ["none", "faint_glow", "glowing"],
     bodyLocationId: "eyes",
     aliases: ["glowing eyes"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "eyes",
+        role: "adjective",
+        fragmentByValue: { faint_glow: "faintly glowing", glowing: "glowing" },
+      },
+    },
     promptHints: ["A supernatural cue; let it read strongest in low light."],
   },
   {
@@ -65,6 +90,15 @@ export const eyesGroup = defineAttributeGroup("eyes", [
     ],
     bodyLocationId: "eyes",
     aliases: ["eye shape"],
-    imageAppearance: { class: "reinforcement", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "eyes",
+        role: "adjective",
+        fragment: "{compound}",
+        fragmentByValue: { almond: "almond-shaped" },
+      },
+    },
   },
 ]);

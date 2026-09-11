@@ -7,7 +7,13 @@ import { adaptProjectedAppearanceTruth } from "./compat";
 import { visualStateCompositionFor, resolveVisualStateComposition } from "./composition";
 import { VISUAL_STATE_VALUE_INVALID } from "./diagnostics";
 import type { VisualStateFeature } from "./feature";
-import { effectiveCoverageReadSchema } from "../items/effective-coverage-read";
+import {
+  effectiveCoverageBandOf,
+  effectiveCoverageReadSchema,
+  EFFECTIVE_COVERAGE_HINTED_FLOOR,
+  EFFECTIVE_COVERAGE_OPAQUE_FLOOR,
+  type EffectiveCoverageRead,
+} from "../items/effective-coverage-read";
 import { nextGarmentPresentation, type GarmentPresentationOperation } from "../items/garment-presentation";
 import {
   visualStateFeatureFixture,
@@ -20,7 +26,11 @@ import {
 import { projectPresentationFeatures } from "./presentation";
 import { buildVisualStateSnapshot } from "./snapshot";
 import { projectSpeciesFeatureGroups } from "./species";
-import { projectWardrobeFeatures, type VisualStateGarmentInput } from "./wardrobe";
+import {
+  projectWardrobeFeatures,
+  VISUAL_STATE_WARDROBE_CONCEALED_TAG,
+  type VisualStateGarmentInput,
+} from "./wardrobe";
 
 /**
  * Fixtures VS-6 and VS-8 at the LOCUS level: what a garment is and where it
@@ -514,5 +524,165 @@ describe("projectWardrobeFeatures — effective coverage (slice 3)", () => {
         degree: AFFORDANCE_UNIT_ONE,
       },
     ]);
+  });
+});
+
+/**
+ * The concealed-garment tag (#544 F6): the ONE interface by which a consumer
+ * that describes a picture learns that a piece of wardrobe truth has nothing to
+ * show. Everything else about the feature is deliberately untouched, so these
+ * tests assert the tag AND the value beside it.
+ *
+ * Falsified against a rule that thresholded `overlapDegree` (a bodysuit mostly
+ * under a sweater is mostly hidden and entirely visible), against one that
+ * reused `coverDegree` (whose no-evidence default is FULL, so every garment in
+ * a snapshot with no captured read would vanish), and against one that read
+ * layer as `>=` (two base pieces would conceal each other).
+ */
+describe("projectWardrobeFeatures — concealed garments (#544)", () => {
+  /** The literal the image character adapter matches on. Renaming it is a cross-slice break. */
+  it("names the tag the compilers match on", () => {
+    expect(VISUAL_STATE_WARDROBE_CONCEALED_TAG).toBe("wardrobe.concealed");
+  });
+
+  type OpacityRow = { readonly garmentId: string; readonly effectiveOpacity: number };
+
+  /** A captured effective-coverage read, built through the real schema. */
+  function capture(entries: Readonly<Record<string, readonly OpacityRow[]>>): EffectiveCoverageRead {
+    return effectiveCoverageReadSchema.parse({
+      atMinutes: 0,
+      entries: Object.entries(entries).map(([locationId, rows]) => ({
+        locationId,
+        band: effectiveCoverageBandOf(Math.max(...rows.map((row) => row.effectiveOpacity))),
+        evidence: rows.map((row) => ({
+          garmentId: row.garmentId,
+          regionId: `${row.garmentId}:body`,
+          effectiveOpacity: row.effectiveOpacity,
+        })),
+      })),
+    });
+  }
+
+  function projectWith(
+    garments: readonly VisualStateGarmentInput[],
+    captured?: EffectiveCoverageRead,
+  ): readonly VisualStateFeature[] {
+    return projectWardrobeFeatures({
+      garments,
+      subjectsByActor: SUBJECTS,
+      ...(captured === undefined
+        ? {}
+        : { capturedCoverage: new Map([[VISUAL_STATE_FIXTURE_SUBJECT_ID, captured]]) }),
+    });
+  }
+
+  const tagsOf = (features: readonly VisualStateFeature[], garmentId: string): readonly string[] =>
+    features.find((feature) => feature.key.includes(garmentId))?.semanticTags ?? [];
+
+  /** Underwear (chest) beneath a top (shoulders, chest, back, waist, upper arms). */
+  const bra = () => visualStateGarmentFixture({ id: "g_bra", categoryId: "bra", layer: 0 });
+  const sweater = () => visualStateGarmentFixture({ id: "g_sweater", categoryId: "top", layer: 1 });
+
+  /** The sweater stops light everywhere it sits; the bra's own row is beside it. */
+  const opaqueSweater = () =>
+    capture({
+      shoulders: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_OPAQUE_FLOOR }],
+      chest: [
+        { garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_OPAQUE_FLOOR },
+        { garmentId: "g_bra", effectiveOpacity: EFFECTIVE_COVERAGE_OPAQUE_FLOOR },
+      ],
+      back: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_OPAQUE_FLOOR }],
+      waist: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_OPAQUE_FLOOR }],
+      upper_arms: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_OPAQUE_FLOOR }],
+    });
+
+  it("tags the bra an opaque sweater covers everywhere it sits", () => {
+    const features = projectWith([bra(), sweater()], opaqueSweater());
+    expect(tagsOf(features, "g_bra")).toContain(VISUAL_STATE_WARDROBE_CONCEALED_TAG);
+  });
+
+  it("leaves the concealed garment's own wardrobe truth intact", () => {
+    const [feature] = projectWith([bra(), sweater()], opaqueSweater());
+    // Still worn, still named, still mandatory for continuity: the tag says the
+    // camera cannot see it, not that she stopped wearing it.
+    expect(feature?.value).toMatchObject({ name: "bra", locus: { kind: "worn" } });
+    expect(feature?.priors.mandatoryForContinuity).toBe(true);
+    expect(feature?.relationships).toEqual([]);
+  });
+
+  it("does not tag the outermost piece", () => {
+    const features = projectWith([bra(), sweater()], opaqueSweater());
+    expect(tagsOf(features, "g_sweater")).not.toContain(VISUAL_STATE_WARDROBE_CONCEALED_TAG);
+  });
+
+  it("states a bra under a sheer blouse", () => {
+    const sheer = capture({
+      shoulders: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_HINTED_FLOOR }],
+      chest: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_HINTED_FLOOR }],
+      back: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_HINTED_FLOOR }],
+      waist: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_HINTED_FLOOR }],
+      upper_arms: [{ garmentId: "g_sweater", effectiveOpacity: EFFECTIVE_COVERAGE_HINTED_FLOOR }],
+    });
+    expect(tagsOf(projectWith([bra(), sweater()], sheer), "g_bra")).not.toContain(
+      VISUAL_STATE_WARDROBE_CONCEALED_TAG,
+    );
+  });
+
+  it("states every garment when nobody layered the wardrobe", () => {
+    const unlayered = [
+      visualStateGarmentFixture({ id: "g_bra", categoryId: "bra" }),
+      visualStateGarmentFixture({ id: "g_sweater", categoryId: "top" }),
+    ];
+    const features = projectWith(unlayered, opaqueSweater());
+    for (const feature of features) {
+      expect(feature.semanticTags, feature.key).not.toContain(VISUAL_STATE_WARDROBE_CONCEALED_TAG);
+    }
+  });
+
+  it("states a garment whose coverage reaches past the piece over it", () => {
+    // A longline bodysuit: chest and waist sit under the sweater, the pelvis
+    // (and the hips, groin and buttocks it expands to) does not. Most of it is
+    // hidden, so a share-based rule would have hidden a visible garment.
+    const bodysuit = visualStateGarmentFixture({
+      id: "g_bra",
+      categoryId: "bra",
+      coverage: ["chest", "waist", "pelvis"],
+      layer: 0,
+    });
+    expect(tagsOf(projectWith([bodysuit, sweater()], opaqueSweater()), "g_bra")).not.toContain(
+      VISUAL_STATE_WARDROBE_CONCEALED_TAG,
+    );
+  });
+
+  it("states the garment underneath when no capture says how opaque the cover is", () => {
+    // No captured read at all — the exact case `coverDegree` degrades to FULL
+    // for. Concealment must degrade the other way.
+    expect(tagsOf(projectWith([bra(), sweater()]), "g_bra")).not.toContain(
+      VISUAL_STATE_WARDROBE_CONCEALED_TAG,
+    );
+  });
+
+  it("does not let two pieces on the same layer conceal each other", () => {
+    const camisole = visualStateGarmentFixture({ id: "g_bra", categoryId: "bra", layer: 1 });
+    const features = projectWith([camisole, sweater()], opaqueSweater());
+    for (const feature of features) {
+      expect(feature.semanticTags, feature.key).not.toContain(VISUAL_STATE_WARDROBE_CONCEALED_TAG);
+    }
+  });
+
+  it("never lets an attaching accessory conceal what it hangs over", () => {
+    // Eyewear asserts `attached_to`, not `covers`; glasses hide no eyes, so they
+    // may not hide a garment either. Layer 3 puts them above the bra.
+    const glasses = visualStateGarmentFixture({
+      id: "g_glasses",
+      categoryId: "eyewear",
+      coverage: ["chest"],
+      layer: 3,
+    });
+    const features = projectWith(
+      [bra(), glasses],
+      capture({ chest: [{ garmentId: "g_glasses", effectiveOpacity: EFFECTIVE_COVERAGE_OPAQUE_FLOOR }] }),
+    );
+    expect(tagsOf(features, "g_bra")).not.toContain(VISUAL_STATE_WARDROBE_CONCEALED_TAG);
   });
 });

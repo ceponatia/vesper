@@ -30,11 +30,13 @@ import {
   possessionSentence,
   preservedMeanings,
   prefixed,
+  reportUnwordableClaimValue,
   relationSentence,
   sentence,
   spatialWord,
   stagingSentence,
   subjectCountSentence,
+  unwordableImageClaimValue,
   viewerAppearanceSentence,
   viewerGeometrySentence,
   viewerIntimateSentence,
@@ -280,6 +282,15 @@ function renderClaim(
   });
   /** A sentence a helper may decline to write — null in, null out, never an empty segment. */
   const sayOrNull = (text: string | null): ImagePromptSegment | null => (text === null ? null : say(text));
+  // A record no renderer understands words NOTHING (#544 D1). Declining it here
+  // rather than interpolating a blank is what makes the drop visible: `"<subject>
+  // is "` is not an empty segment, so a mutilated clause would have travelled in
+  // place of the flattened structure this replaced. The shared compile step
+  // records the claim as dropped, and a mandatory one refuses before spend.
+  if (unwordableImageClaimValue(claim.value)) {
+    reportUnwordableClaimValue(claim, input.sink);
+    return null;
+  }
   const value = describe(claim.value);
   const subject = label(input, claim.subjectRef);
   const object = label(input, claim.objectRef);

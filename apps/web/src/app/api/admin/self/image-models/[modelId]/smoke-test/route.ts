@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
-import { smokeTestCandidate } from "@/server/images";
+import { IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED, smokeTestCandidate } from "@/server/images";
 
 type Params = { modelId: string };
 
@@ -26,6 +26,9 @@ export const POST = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx) 
 
   const result = await smokeTestCandidate(modelId, body.value);
   if (!result.ok) {
+    if (result.code === "provider_operation_unsupported") {
+      return jsonError(IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED, result.message, 400);
+    }
     if (result.code === "smoke_failed") {
       const detail = result.predictionId ? ` (prediction ${result.predictionId})` : "";
       return jsonError("image_model.smoke_failed", `${result.message}${detail}`, 502);
