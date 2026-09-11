@@ -14,6 +14,11 @@
 -- - Vesper sends enable_safety_checker=false and enable_prompt_expansion=false;
 -- - fal does not expose immutable weights/version hashes, so probed_version_id
 --   stores a Vesper schema-capture marker, not a provider weights pin.
+--
+-- fal's `image_size` is a union of named presets or {width,height}. Vesper keeps
+-- aspect and quality tier separate in its normalized controls: the ordinary
+-- aspect resolver supplies 1:1/3:4/etc while the `resolutionTier` binding carries
+-- 1K/2K. The fal transport combines those two facts into custom width/height.
 
 -- ---------------------------------------------------------------------------
 -- Repurpose the two 0134 Qwen 3 rows into the two real fal endpoint rows.
@@ -29,18 +34,8 @@ SET
   "reference_arity" = 'array',
   "reference_transport" = 'data_url',
   "max_references" = 0,
-  "aspect_mode" = 'size',
-  "supported_aspects" = '[
-    "1024*1024","2048*2048",
-    "1024*768","2048*1536",
-    "768*1024","1536*2048",
-    "1024*576","2048*1152",
-    "576*1024","1152*2048",
-    "1024*683","2048*1365",
-    "683*1024","1365*2048",
-    "1024*512","2048*1024",
-    "512*1024","1024*2048"
-  ]'::jsonb,
+  "aspect_mode" = 'aspect_ratio',
+  "supported_aspects" = '["1:1","16:9","9:16","4:3","3:4","3:2","2:3","2:1","1:2"]'::jsonb,
   "output_format" = 'png',
   "extra_input" = '{"enable_safety_checker":false,"enable_prompt_expansion":false,"num_images":1,"output_format":"png"}'::jsonb,
   "probed_version_id" = 'fal-qwen3-text-schema-2026-09-11',
@@ -60,7 +55,7 @@ SET
     "providerInputs":[
       {"field":"prompt","type":"string","required":true,"description":"Prompt for Qwen Image 3 generation","reserved":true},
       {"field":"negative_prompt","type":"string","required":false,"default":"","description":"Elements to avoid","reserved":true},
-      {"field":"image_size","type":"unknown","required":false,"description":"Output dimensions; Vesper maps the 1K/2K tier plus requested aspect to width/height","reserved":true},
+      {"field":"image_size","type":"unknown","required":false,"description":"fal ImageSize; Vesper combines its 1K/2K tier with the selected aspect into width/height","reserved":true},
       {"field":"enable_prompt_expansion","type":"boolean","required":false,"default":true,"description":"fal prompt expansion; Vesper fixes this off","reserved":true},
       {"field":"seed","type":"integer","required":false,"minimum":0,"maximum":2147483647,"reserved":true},
       {"field":"enable_safety_checker","type":"boolean","required":false,"default":true,"description":"fal safety checker; Vesper requests false (account authorization may still be required by fal)","reserved":true},
@@ -89,18 +84,8 @@ SET
   "reference_arity" = 'array',
   "reference_transport" = 'data_url',
   "max_references" = 3,
-  "aspect_mode" = 'size',
-  "supported_aspects" = '[
-    "1024*1024","2048*2048",
-    "1024*768","2048*1536",
-    "768*1024","1536*2048",
-    "1024*576","2048*1152",
-    "576*1024","1152*2048",
-    "1024*683","2048*1365",
-    "683*1024","1365*2048",
-    "1024*512","2048*1024",
-    "512*1024","1024*2048"
-  ]'::jsonb,
+  "aspect_mode" = 'aspect_ratio',
+  "supported_aspects" = '["1:1","16:9","9:16","4:3","3:4","3:2","2:3","2:1","1:2"]'::jsonb,
   "output_format" = 'png',
   "extra_input" = '{"enable_safety_checker":false,"enable_prompt_expansion":false,"num_images":1,"output_format":"png"}'::jsonb,
   "probed_version_id" = 'fal-qwen3-edit-schema-2026-09-11',
@@ -120,7 +105,7 @@ SET
     "providerInputs":[
       {"field":"prompt","type":"string","required":true,"description":"Edit instruction for Qwen Image 3","reserved":true},
       {"field":"negative_prompt","type":"string","required":false,"default":"","description":"Elements to avoid","reserved":true},
-      {"field":"image_size","type":"unknown","required":false,"description":"Output dimensions; Vesper maps the 1K/2K tier plus requested aspect to width/height","reserved":true},
+      {"field":"image_size","type":"unknown","required":false,"description":"fal ImageSize; Vesper combines its 1K/2K tier with the selected aspect into width/height","reserved":true},
       {"field":"enable_prompt_expansion","type":"boolean","required":false,"default":true,"description":"fal prompt expansion; Vesper fixes this off","reserved":true},
       {"field":"seed","type":"integer","required":false,"minimum":0,"maximum":2147483647,"reserved":true},
       {"field":"enable_safety_checker","type":"boolean","required":false,"default":true,"description":"fal safety checker; Vesper requests false (account authorization may still be required by fal)","reserved":true},
