@@ -10,7 +10,9 @@ Choose a focused project role when it materially helps the task:
 | `vesper-scenario-reviewer` | Trace meaningful state transitions, failure recovery, and access boundaries. |
 | `vesper-test-keeper` | Bring every test that owns a finished change up to date and report the CI evidence. |
 
-These profiles inherit the selected model. Do not run every role for every change.
+These profiles inherit the selected model. Claude-side roles under
+`.claude/agents/` pin their model instead, and `AGENTS.md` §Subagent model
+policy (Claude) owns that table. Do not run every role for every change.
 Context, UX, and scenario roles inspect without editing; the UI role may record
 evaluation artifacts; the test keeper edits tests only. They do not implement
 fixes or spawn further agents. Run the test keeper after an implementation slice

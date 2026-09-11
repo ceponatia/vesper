@@ -51,4 +51,21 @@ Report each issue checklist item as completed with evidence or pending with a re
 send milestone evidence during work rather than waiting until the final report.
 Include actionable findings with paths and user impact. Inspect the scoped diff
 for unrelated edits and unexpected control characters before reporting. Preserve
-preexisting work and distinguish it from your contribution.
+preexisting work and distinguish it from your contribution. On a first failed
+attempt, or when the only remaining approach would change architecture or widen
+scope, stop and return the escalation record below instead of trying again.
+
+## Escalation record (escalation spawns only)
+
+- Originating brief: <this brief, or a link/path to it>.
+- Trigger: <what made this stop worth returning instead of continuing>.
+- Findings: <what you learned about the actual problem>.
+- Attempted approaches: <each approach tried and why it failed>.
+- Changed files: <paths touched so far>.
+- CI output: <failing workflow, run id, head and the observed failure — or none, with why no run exists>.
+- Unresolved question: <what the next worker must decide or discover>.
+
+Alternative, for a slice owned by `vesper-escalation` from the start rather
+than handed off from a failed attempt:
+
+Risk area: <kernel | simulation-core | migration | authz | persistence/replay> — <why>.

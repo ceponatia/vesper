@@ -51,6 +51,13 @@ fix commit and location, then resolve it. Never silently fix a thread and never
 resolve one you did not address. Reply with reasoning and leave it open when
 owner judgment is still needed.
 
+Correction rounds are capped per finding: two on the default worker (Sonnet
+on Claude, the default worker on Codex), then one on the escalation role.
+When that round does not close the finding, stop the loop — leave the thread
+open with the escalation record and hand the PR to the owner for review and
+next steps instead of requesting another review pass. The root instructions'
+subagent model policy owns the cap.
+
 Read [references/operations.md](references/operations.md) when CI fails, review
 findings exist, Codex needs another pass, the branch moved concurrently, or a
 merge is authorized.

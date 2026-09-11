@@ -44,5 +44,9 @@ They are task artifacts, not memories or another source of GitHub work state.
 
 Consult the current [hook documentation](https://learn.chatgpt.com/docs/hooks)
 and [custom-agent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents)
-for the active host's schema. The project does not pin models, raise concurrency,
-change global approval policy, or use model-driven review hooks after each edit.
+for the active host's schema. The Codex project roles pin no model (the
+owner's Codex policy in `AGENTS.md` governs); the Claude roles under
+`.claude/agents/` pin theirs, and `.claude/hooks/agent_policy.py` (a symlink
+to `.codex/hooks/agent_policy.py`, loaded by Claude Code only) enforces their
+use. The project does not raise concurrency, change global approval policy,
+or use model-driven review hooks after each edit.
