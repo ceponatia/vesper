@@ -73,9 +73,15 @@ _BRIEF_TEMPLATE_TEXT = BRIEF_TEMPLATE.read_text(encoding="utf-8")
 # The whole "## Escalation record" section of the template, verbatim, with every
 # field still in its unfilled `<placeholder>` form -- this is what a worker who
 # pastes the template without filling it in would actually send.
-FULL_TEMPLATE_ESCALATION_SECTION = _BRIEF_TEMPLATE_TEXT[
-    _BRIEF_TEMPLATE_TEXT.index("## Escalation record (escalation spawns only)"):
-]
+_RECORD_HEADING_AT = _BRIEF_TEMPLATE_TEXT.index("## Escalation record (escalation spawns only)")
+FULL_TEMPLATE_ESCALATION_SECTION = _BRIEF_TEMPLATE_TEXT[_RECORD_HEADING_AT:]
+
+# Everything above that section: the brief's ordinary instructions, which the
+# placeholder rule has to leave alone.
+TEMPLATE_BODY_ABOVE_RECORD = _BRIEF_TEMPLATE_TEXT[:_RECORD_HEADING_AT]
+
+# Any `<...>` chunk at all, the shape the rule used to match wholesale.
+ANY_ANGLE_CHUNK = re.compile(r"<[^<>]*>")
 
 # The template's unfilled Risk area alternative, read from the template so the
 # fixture cannot drift from the text a worker actually pastes.
@@ -155,8 +161,8 @@ MULTILINE_FIELD_ESCALATION_PROMPT = "\n".join([
 ])
 
 # Real field values that quote the docs' own `<worktree>/...` paths: a path root
-# is the one angle-bracket shape a filled value may keep, because it names a real
-# file this slice touched rather than prose the writer failed to replace.
+# has the template's own placeholder shape, so it is stripped before the check --
+# it names a real file this slice touched, not prose the writer failed to replace.
 ANGLE_BRACKET_VALUE_PROMPT = "\n".join([
     "Escalation:",
     "- Originating brief: #999 -- do a bounded thing.",
@@ -166,6 +172,25 @@ ANGLE_BRACKET_VALUE_PROMPT = "\n".join([
     "- Changed files: <worktree>/.codex/hooks/agent_policy.py.",
     "- Unresolved question: whether the hook should resolve symlinks at all.",
 ])
+
+# Real field values carrying the angle brackets that ordinary evidence uses: a
+# Markdown autolink to the issue, a JSX tag, and a TypeScript generic. None of
+# them is the template's placeholder shape, so none of them may unfill a record.
+CODE_AND_AUTOLINK_VALUE_PROMPT = "\n".join([
+    "Escalation:",
+    "- Originating brief: <https://github.com/ceponatia/vesper/issues/560>.",
+    "- Trigger: the builder's second attempt failed the same way as the first.",
+    "- Findings: <CharacterCard /> reads the id as Record<string, X>, so the cast drops it.",
+    "- Attempted approaches: widening the generic, then a cast at the call site; both lost the id.",
+    "- Changed files: apps/web/src/components/character-card.tsx.",
+    "- Unresolved question: whether the id belongs in the props type at all.",
+])
+
+# Route B with the category chosen and nothing else -- the template's placeholder
+# deleted rather than answered. A category names no risk the next worker could
+# not read off the branch, and on this route that one line is the whole record.
+BARE_CATEGORY_RISK_AREA_PROMPT = "Risk area: migration"
+NONE_RISK_AREA_PROMPT = "Risk area: none"
 
 # `Findings:` with nothing after it and the next field immediately below.
 EMPTY_FIELD_ESCALATION_PROMPT = "\n".join([
@@ -406,12 +431,37 @@ class CheckFunctionTests(unittest.TestCase):
 
     def test_escalation_field_quoting_a_placeholder_path_is_allowed(self):
         """`<worktree>/...` is a real path this slice touched, not template boilerplate: a
-        placeholder followed immediately by `/` names a path root, and rejecting every angle
-        bracket would deny real records about paths."""
+        bracketed token followed immediately by `/` names a path root, and reading it as
+        template prose would deny real records about paths."""
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": ANGLE_BRACKET_VALUE_PROMPT}
         )
         self.assertIsNone(reason)
+
+    def test_escalation_field_carrying_an_autolink_jsx_or_a_generic_is_allowed(self):
+        """Real evidence uses angle brackets: `<https://.../issues/560>` is the issue link the
+        record is supposed to carry, `<CharacterCard />` and `Record<string, X>` are the code
+        the finding is about. Reading any of them as leftover template prose would deny the
+        very records this gate exists to require."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": CODE_AND_AUTOLINK_VALUE_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_with_a_bare_risk_area_category_is_denied_for_the_missing_rationale(self):
+        """`Risk area: migration` deletes the placeholder instead of answering it. The line is
+        the entire record on this route, so a category with no reason must not open it -- and
+        the deny reason has to say that, not repeat the placeholder complaint."""
+        for prompt in (BARE_CATEGORY_RISK_AREA_PROMPT, NONE_RISK_AREA_PROMPT):
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "vesper-escalation", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                route_b = next(
+                    line for line in reason.splitlines() if line.startswith("Route B")
+                )
+                self.assertIn("without a rationale", route_b)
+                self.assertNotIn("present but unfilled", route_b)
+                self.assertIn("Risk area: migration — 0134 rewrites a hot table", route_b)
 
     def test_escalation_with_an_empty_field_is_denied_and_names_it(self):
         reason = HOOK.check(
@@ -545,6 +595,27 @@ class ProcessTests(unittest.TestCase):
         })
         self.assertEqual(code, 0, err)
 
+    def test_vesper_escalation_with_a_bare_risk_area_category_is_denied(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "vesper-escalation",
+                "prompt": BARE_CATEGORY_RISK_AREA_PROMPT,
+            },
+        })
+        self.assertEqual(code, 2)
+        self.assertIn("without a rationale", err)
+
+    def test_vesper_escalation_with_angle_bracket_evidence_passes(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "vesper-escalation",
+                "prompt": CODE_AND_AUTOLINK_VALUE_PROMPT,
+            },
+        })
+        self.assertEqual(code, 0, err)
+
     def test_vesper_reviewer_with_brief_passes(self):
         code, out, err = run({
             "tool_name": "Agent",
@@ -627,6 +698,27 @@ class EscalationRecordTemplateTests(unittest.TestCase):
         self.assertEqual(_RISK_AREA_SUBS, 1)
         self.assertNotIn(TEMPLATE_RISK_AREA_LINE, RISK_AREA_WITH_UNFILLED_HANDOFF_PROMPT)
 
+    def test_every_angle_bracket_chunk_in_the_record_section_is_read_as_a_placeholder(self):
+        """The placeholder rule is narrow by design, so it can drift off the very text it
+        exists to catch: a template placeholder reworded to start with a capital or to carry a
+        colon would silently stop counting, and a pasted-but-unfilled record would pass."""
+        chunks = set(ANY_ANGLE_CHUNK.findall(FULL_TEMPLATE_ESCALATION_SECTION))
+        self.assertTrue(chunks)
+        detected = {m.group(0) for m in HOOK.PLACEHOLDER.finditer(FULL_TEMPLATE_ESCALATION_SECTION)}
+        self.assertEqual(chunks, detected)
+
+    def test_the_template_s_other_sections_are_placeholders_too_and_hold_no_record_field(self):
+        """The rest of the brief template is the same placeholder prose, and none of it names a
+        record field -- so narrowing the rule changed nothing outside the record section."""
+        chunks = set(ANY_ANGLE_CHUNK.findall(TEMPLATE_BODY_ABOVE_RECORD))
+        self.assertTrue(chunks)
+        detected = {m.group(0) for m in HOOK.PLACEHOLDER.finditer(TEMPLATE_BODY_ABOVE_RECORD)}
+        self.assertEqual(chunks, detected)
+        states = HOOK._record_states(TEMPLATE_BODY_ABOVE_RECORD)
+        for field in HOOK.RECORD_FIELDS + (HOOK.RISK_AREA_FIELD,):
+            with self.subTest(field=field):
+                self.assertEqual(states[field], HOOK.ABSENT)
+
     def test_the_half_edited_fixtures_still_carry_the_template_s_own_placeholder_text(self):
         """Both half-edited fixtures are built by substitution on the template. If the
         template's wording moved, they would silently stop being half-edited -- one a fully
@@ -663,6 +755,34 @@ class PlaceholderValueTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertTrue(HOOK._is_filled_value(value))
+
+    def test_angle_brackets_that_are_not_the_template_s_shape_leave_a_value_filled(self):
+        """Each of these is the reason the rule is shaped the way it is: a Markdown autolink
+        (ruled out by the colon), a JSX tag (by the capital), and a generic (by the word
+        character before `<`). Matching every `<...>` denied all three."""
+        for value in (
+            "<https://github.com/ceponatia/vesper/issues/560>",
+            "the card renders <CharacterCard /> twice",
+            "the id is typed Record<string, X>, so the cast drops it",
+            "the helper returns Array<string> from the adapter",
+        ):
+            with self.subTest(value=value):
+                self.assertTrue(HOOK._is_filled_value(value))
+
+    def test_a_risk_area_value_needs_a_category_and_a_reason_not_a_category_alone(self):
+        """Route B's one line is the whole record. These clear the placeholder rule -- they are
+        real words, not template prose -- and still must not open the route, which is what the
+        word count buys and the placeholder rule alone cannot."""
+        for value in ("migration", "none", "authz -- new route"):
+            with self.subTest(value=value):
+                self.assertTrue(HOOK._is_filled_value(value))
+                self.assertFalse(HOOK._is_filled_value(value, HOOK.RISK_AREA_MIN_WORDS))
+        for value in (
+            "migration -- 0134 rewrites a hot table",
+            "kernel -- this slice rewrites the turn scheduler's ordering rule",
+        ):
+            with self.subTest(value=value):
+                self.assertTrue(HOOK._is_filled_value(value, HOOK.RISK_AREA_MIN_WORDS))
 
 
 class PinnedRoleTableTests(unittest.TestCase):
