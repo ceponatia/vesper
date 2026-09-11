@@ -94,7 +94,10 @@ replacement the original brief, branch, and concrete findings. On Claude, a
 replacement `vesper-builder` gets the brief and findings; once a builder or
 correction worker returns an escalation record or reports a failed attempt,
 that finding goes to `vesper-escalation` with the record, never to another
-builder. Continue the correction loop inside the authorized task.
+builder. That escalation round is the last automated one on a finding: if it
+does not close it, stop the loop and report the open finding with its record
+to the owner. Continue the correction loop inside the authorized task and
+that cap.
 
 ## Integrate and finish
 

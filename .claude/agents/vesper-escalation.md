@@ -33,6 +33,11 @@ local gates (`pnpm test*`, `pnpm lint*` beyond `pnpm lint:docs`,
 commit only by pathspec, never push, no PRs, no `gh` writes, no spawning
 other agents; preserve edits other agents have made.
 
+Your round is the last automated one on this finding. If you cannot close it
+within the record's scope, do not open a further approach: return the
+updated record — what you tried, what remains, and the decision the owner
+must make — and say plainly that the owner's review comes next.
+
 Report: what the previous attempts got wrong — or, starting from a risk
 area, what the risk turned out to be — what you changed in approach and why,
 the files you changed, the verification you actually performed, and anything

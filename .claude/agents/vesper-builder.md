@@ -30,7 +30,8 @@ than trying again. Return an escalation record instead of continuing: the
 originating brief, the trigger, your findings, each attempted approach
 and why it failed, the files you changed, the CI output (the failing
 workflow, run id, head and observed failure, or none and why no run
-exists), and the unresolved question.
+exists), and the unresolved question. A second round on the same finding is
+your last; after it the parent escalates to `vesper-escalation`.
 
 Report exactly per the brief's "Return to parent" section. Separate
 pre-existing work from your own contribution, and never claim a

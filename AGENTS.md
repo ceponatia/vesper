@@ -82,6 +82,13 @@ brief, findings, attempted approaches, changed files, CI output, and the
 unresolved question — do not restart from scratch, and do not escalate
 merely because a task is large.
 
+Review rounds are capped. On any one finding or failing check, `vesper-builder`
+gets at most two rounds — the build or first fix, then one correction — and
+`vesper-escalation` then gets one. If that round does not close it, stop:
+leave the thread open, put the escalation record and what each round tried on
+the PR, and notify the owner for review and next steps. Another automated
+review pass is not a substitute for that decision.
+
 The built-in Explore and Plan agents take no brief and no model.
 `CLAUDE_CODE_SUBAGENT_MODEL` is only the default for ad-hoc spawns that pin
 nothing, and is set to `claude-sonnet-5`; never set
