@@ -120,13 +120,77 @@ forge filling or observer recognition.
 | `maximumFraming`        | Widest eligible band; facts render only inside the inclusive minimum-to-maximum range.                                      |
 | `omitValues`            | Valid stored enum members that deliberately add no image instruction; every member must occur in `allowedValues`.           |
 | `ordinarySilhouette`    | Allows the one approved intimate shape fact to enter an ordinary character-image description through clothing.              |
+| `phrase`                | How the value reads as prose instead of as a label (see **Appearance phrases** below).                                      |
+
+**Set `maximumFraming` to the widest band at which the fact still earns its
+words.** A feature whose *shape* reads at portrait distance may say `portrait`;
+a detail only a tight crop resolves — brow density, teeth, skin texture, a small
+piercing — says `close_up`, so it drops out of portrait, waist-up and wider
+shots rather than spending a clause on a few pixels.
 
 The projector still applies `excludeFromPrompts`, nonvisual-kind filtering,
 the ordinary `none` elision and realized-body applicability. It carries the
 attribute source and canonical truth fingerprint as provenance while
-`formatAttribute` supplies the provider-readable value. A valid subject-bound
+`formatAttribute` supplies the label form and `formatAttributePhrase` the prose
+form beside it. A valid subject-bound
 identity reference satisfies stable reference-free completeness for that
 subject, but available values remain text reinforcement.
+
+### Appearance phrases
+
+`imageAppearance.phrase` says how an attribute's value reads as prose. Without
+one the attribute reaches an image prompt in its `Label: value` form, and a
+sentence built from several of them reads as a registry listing ("She has
+musculature: lightly toned and weight presentation: slim"). With one it reads as
+a noun phrase, and a prose dialect can compose several into a single clause.
+
+| Member            | Meaning                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `group`           | The feature clause the fragment belongs to: `build`, `hair`, `face`, `skin`, `eyes`, or `other`.                  |
+| `role`            | What the fragment does there: `adjective`, `with` (a whole noun phrase), or `trailer`.                            |
+| `fragment`        | The fragment template applied to every value with no entry of its own.                                           |
+| `fragmentByValue` | Per-enum-member fragment templates; a listed member overrides `fragment`.                                        |
+| `standalone`      | The standalone noun phrase, overriding the form derived from the role.                                           |
+| `order`           | Where the fragment sits among its group's pieces of the same role; an integer, 0 without one.                    |
+
+The group and role vocabulary is `@vesper/image-core`'s
+(`prompt-program/appearance-phrase.ts`); the registry owns the words and the
+engine owns the grammar, so no attribute id reaches a dialect.
+
+A template interpolates the resolved value two ways: `{value}` is the humanized
+value `formatAttributeValue` renders (`mid_back` → "mid back"), and `{compound}`
+is the same value hyphenated (`mid_back` → "mid-back") for a modifier standing in
+front of its noun. An indefinite article the template writes agrees with what
+follows it, so `"a {value} bust"` renders "an ample bust".
+
+`formatAttributePhrase` returns both the fragment and the standalone noun phrase
+a consumer states on its own. The standalone is derived from the role —
+`adjective` → "{fragment} \<group noun\>", `with` → "{fragment}", `trailer` →
+"\<group noun\> {fragment}" — with the article the group noun needs, and
+`standalone` overrides it. `other` has no group noun, so an `adjective` or
+`trailer` phrase there must declare `standalone`.
+
+`order` is how the registry states the order English puts the words in. Facts
+reach a dialect in the projection's order — alphabetical by attribute id — which
+would put a colour before a condition ("dark-brown healthy hair") and muscle
+before weight ("a lightly toned, slim build"); both read backwards, and the
+position is a property of the words rather than of the claim that carried them.
+Within a group a composing dialect lays each role's pieces out ascending by
+`order`, ties keeping claim order, so a higher number means the opposite thing on
+either side of the noun: an `adjective` precedes it, so higher sits closer, and a
+`trailer` follows it, so lower does. `hair.color`, `eyes.color`, `skin.tone` and
+`build.musculature` declare 1 as the adjective nearest their noun, and
+`hair.length` declares 1 so an arrangement trailer precedes it ("hair worn loose
+to mid-back"). Everything else declares none and reads in claim order.
+
+At least one of `fragment` / `fragmentByValue` is required, and
+`fragmentByValue` keys must be `allowedValues` members of an enum or enum_list —
+both enforced at group-definition time. A value with neither a template nor an
+entry keeps the label form, which is the honest answer for a member with no
+natural phrase (`hair.arrangement: "other"` means "read the styling text"). So
+does an attribute that declares no phrase at all: free text cannot be templated,
+and `identity.gender` is worded by the image lane's pronoun policy rather than
+here.
 
 `ordinarySilhouette` is valid only on `breasts.size` together with
 `imageReveal: "shape"`; group-definition validation rejects it anywhere else.
@@ -144,6 +208,12 @@ intimate reveal path and its exposure rules.
 | `shape`  | Reads *through* clothing — breast size, waist, hips, leg build, pregnancy — so it is **always** described. |
 | `skin`   | Only when the region is bare or sheer — nipples, leg hair, toenails.                                       |
 | *absent* | Not part of the scene subject's reveal line.                                                               |
+
+`shape` is the silhouette a *clothed* body still has. Breast shape, augmentation
+and fullness are `skin`, not `shape`: a garment flattens surface shape into
+whatever the garment does, so stating one on a covered torso describes a body the
+picture does not contain. `breasts.size` is the one bust fact clothing does not
+hide, and it stays the only `ordinarySilhouette` exception.
 
 Consumed by the scene render.
 

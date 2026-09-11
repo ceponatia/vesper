@@ -245,6 +245,45 @@ function benchProgram(entry: SceneStaging, scene: ImageLabStaging = { ...SCENE, 
 
 const EVERY_STAGING = sceneStagingList.map((entry) => [entry.id, entry] as const);
 
+/**
+ * How a scene-lane prompt names a subject whose identity image it carries, in
+ * each of the three places a staging template can ask for one.
+ *
+ * The bench compiles through `lane: "scene"` — that is the parity pin's whole
+ * point — so it inherits the scene lane's naming policy: no display name for a
+ * reference-anchored subject, the dialect introducing them by their image once
+ * and referring back by the pronoun their `identity.gender` implies (issue #544
+ * F2). The probe subject is `female` and is the only person in the render, so
+ * the set is available and unambiguous.
+ */
+const ANCHORED_INTRODUCTION = "the woman in Image 1";
+const ANCHORED_OBJECT = "her";
+const ANCHORED_POSSESSIVE = "her";
+
+/** `{name}` and the possessive `'s` a template may write immediately after it. */
+const STAGING_PLACEHOLDER = /\{name\}('s)?/gu;
+
+/**
+ * The template with its placeholders bound the way the scene lane's dialect
+ * binds them: the first occurrence introduces, every later one refers back.
+ *
+ * Spelled out here rather than imported because the binding rule is the
+ * DIALECT's and this file is not its owner — what this suite asserts is that the
+ * registry's own words reach the prompt untouched around whatever the
+ * placeholders became, which is the claim the A/B probe refused to render
+ * without.
+ */
+function boundTemplate(template: string): string {
+  let seen = 0;
+  const bound = template.replace(STAGING_PLACEHOLDER, (_match, possessive: string | undefined) => {
+    const first = seen === 0;
+    seen += 1;
+    if (first) return possessive === undefined ? ANCHORED_INTRODUCTION : `${ANCHORED_INTRODUCTION}'s`;
+    return possessive === undefined ? ANCHORED_OBJECT : ANCHORED_POSSESSIVE;
+  });
+  return `${bound.charAt(0).toUpperCase()}${bound.slice(1)}`;
+}
+
 describe("the staged scene program", () => {
   it.each(EVERY_STAGING)(
     "compiles %s byte-identically to the chat lane's single-reference rung for the same staging",
@@ -255,11 +294,29 @@ describe("the staged scene program", () => {
 
   it.each(EVERY_STAGING)("states the %s template verbatim, with {name} bound to the subject", (_id, entry) => {
     // The registry owns every explicit word: nothing between it and the prompt
-    // may reword a template, so the check is for the entry's own text with
-    // `{name}` bound — the same assertion the A/B probe refused to render
+    // may reword a template, so the check is for the entry's own text with its
+    // placeholders bound — the same assertion the A/B probe refused to render
     // without. Riding as a required claim, it also has to survive the budget,
     // and this is what says it did.
-    expect(benchProgram(entry).prompt).toContain(entry.template.replaceAll("{name}", SUBJECT));
+    //
+    // Bound to the reference binding and then to pronouns rather than to a
+    // display name: the bench compiles on the scene lane, which offers the
+    // dialect no name for a subject the payload carries an identity image of
+    // (`CHARACTER_LANE_SUBJECT_NAMING.scene`, issue #544 F2). Every template
+    // opens with the placeholder, so the dialect's own leading capital is
+    // applied here too.
+    const prompt = benchProgram(entry).prompt;
+
+    expect(prompt).toContain(boundTemplate(entry.template));
+    // Nothing is left unbound, and the projection's placeholder for an unnamed
+    // subject never stands in for a name in an arrangement's own sentence — the
+    // possessive is the shape that made the defect unmistakable ("the subject's
+    // back against the viewer's chest"), and it is the one a camera sentence
+    // about "the subject" cannot produce.
+    expect(prompt).not.toContain("{name}");
+    expect(prompt).not.toMatch(/the subject's/iu);
+    // A possessive pronoun substituted into `{name}'s` would compile "her's".
+    expect(prompt).not.toContain("her's");
   });
 
   /**
@@ -300,12 +357,39 @@ describe("the staged scene program", () => {
   it("derives the light from the stated time of day, and prefers an admin's own phrase", () => {
     const entry = staging("held_from_behind");
 
-    expect(benchProgram(entry, { id: entry.id, timeOfDay: "dusk" }).prompt).toContain("Lit by warm dusk light.");
+    // The bench compiles on the scene task, whose register is imperative
+    // (#549): the light is an instruction to carry out rather than a fact about
+    // the input image. The PHRASE is the lowering's either way, which is what
+    // this owns.
+    expect(benchProgram(entry, { id: entry.id, timeOfDay: "dusk" }).prompt).toContain(
+      "Light the scene with warm dusk light.",
+    );
     expect(benchProgram(entry, { id: entry.id, timeOfDay: "dusk", lighting: "one bare bulb overhead" }).prompt).toContain(
-      "Lit by one bare bulb overhead.",
+      "Light the scene with one bare bulb overhead.",
     );
     // Nothing stated at all is the neutral phrase, not an unlit scene.
-    expect(benchProgram(entry, { id: entry.id }).prompt).toContain("Lit by soft natural light.");
+    expect(benchProgram(entry, { id: entry.id }).prompt).toContain("Light the scene with soft natural light.");
+  });
+
+  /**
+   * The bench's own A/B knob (#549), and the only argument this seam takes from
+   * the experiment rather than from the chat lane.
+   *
+   * Which register an edit endpoint actually obeys is an evidence question, and
+   * the two registers of one digest are the same picture asked for twice — same
+   * claims, same references, same program fingerprint — so two rows differing in
+   * nothing but this word are a fair comparison on one seed. A row that names
+   * none benches the SHIPPED prompt: the default is the dialect's, so an unnamed
+   * register must not compile a third spelling nobody renders.
+   */
+  it("compiles the register the row named, and the shipped default when it names none", () => {
+    const entry = staging("held_from_behind");
+    const imperative = benchProgram(entry, { id: entry.id, register: "imperative" }).prompt;
+    const descriptive = benchProgram(entry, { id: entry.id, register: "descriptive" }).prompt;
+
+    expect(imperative).toContain("Light the scene with soft natural light.");
+    expect(descriptive).toContain("Lit by soft natural light.");
+    expect(benchProgram(entry, { id: entry.id }).prompt).toBe(imperative);
   });
 });
 

@@ -109,9 +109,15 @@ export function selectImagePositiveClaims(digest: ImageWorldDigest): readonly Im
       source: entry.source,
     });
   }
-  for (const reference of digest.references) {
+  // The INDEX is part of the id, not decoration: a cast of two carries two
+  // `identity` references, and a role-only id gave both the same one. Claim ids
+  // are documented unique within a program and several things rely on it — the
+  // dropped-claim record, provenance, and a dialect that has to find the slot a
+  // particular reference claim resolved to. Two claims sharing an id made a
+  // dropped second reference indistinguishable from the first.
+  for (const [index, reference] of digest.references.entries()) {
     claims.push({
-      ...operationClaim("operation.reference_role", `reference.${reference.role}`, reference.role),
+      ...operationClaim("operation.reference_role", `reference.${reference.role}.${index}`, reference.role),
       ...(reference.subjectRef === undefined ? {} : { subjectRef: reference.subjectRef }),
       required: reference.required,
       source: reference.source,

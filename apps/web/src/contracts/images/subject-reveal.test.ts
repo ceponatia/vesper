@@ -22,7 +22,22 @@ import {
  * exposure alike (a dressed subject would state no silhouette at all), and
  * against one that read a single coverage answer for the whole body (a bare
  * pelvis would uncover the torso's skin).
+ *
+ * The WORDING is the registry's either way (#547): a reveal fact REPLACES the
+ * cut's own appearance fact for the same attribute on a permitting route
+ * (`character-digest.ts`), so the two paths have to word one attribute one way
+ * — the phrase record where the registry declares a phrase, its `Label: value`
+ * form lower-cased into a clause where it does not. A reveal that still said
+ * "breast size: full" would make the uncensored rung read as the registry
+ * listing the moderated one had already stopped being.
  */
+
+/**
+ * `breasts.size` as the registry words it: a phrase in the `build` group whose
+ * standalone form is the fragment itself, because a `with` phrase is already a
+ * whole noun phrase.
+ */
+const FULL_BUST = { text: "a full bust", phrase: { group: "build", role: "with", fragment: "a full bust" } };
 
 const base = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue => ({
   id,
@@ -47,7 +62,10 @@ describe("subjectIntimateRevealFacts", () => {
       exposure: { ...COVERED, torso: "bare" },
       realizedBody: realizeBody({ intimateRegions: ["breasts", "vulva"] }),
     });
-    expect(facts.map((fact) => fact.value)).toEqual(["breast size: full", "nipples: large"]);
+    // One phrased attribute and one unphrased one, side by side: the nipple
+    // vocabulary declares no prose form, so its label stands and both shapes
+    // travel in the same projection.
+    expect(facts.map((fact) => fact.value)).toEqual([FULL_BUST, "nipples: large"]);
     for (const fact of facts) {
       expect(fact.concept).toBe(IMAGE_SUBJECT_INTIMATE_ANATOMY_CONCEPT);
       expect(fact.subjectRef).toBe("subject.chr-1");
@@ -66,10 +84,10 @@ describe("subjectIntimateRevealFacts", () => {
         realizedBody: realizeBody({ intimateRegions: ["breasts", "vulva"] }),
       }).map((fact) => fact.value);
     // Dressed: the silhouette is all a covered body lets the prompt say.
-    expect(reveal(COVERED)).toEqual(["breast size: full"]);
+    expect(reveal(COVERED)).toEqual([FULL_BUST]);
     // Bare below the waist only: the pelvis earns its untagged anatomy while the
     // still-covered torso keeps its surface detail withheld.
-    expect(reveal({ ...COVERED, pelvis: "bare" })).toEqual(["breast size: full", "labia minora: protruding"]);
+    expect(reveal({ ...COVERED, pelvis: "bare" })).toEqual([FULL_BUST, "labia minora: protruding"]);
   });
 
   it("states nothing for anatomy the realized body does not have", () => {

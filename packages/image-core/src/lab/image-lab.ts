@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { imageReferenceRoleSchema, type ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import { imageRenderControlsSchema, type ImageRenderControls } from "../models/image-model-profiles";
+import { imagePromptRegisters } from "../prompt-program/dialects";
 import type { ImageReferenceDropReason } from "../render-intent/render-intent";
 
 /**
@@ -905,6 +906,19 @@ export const imageLabStagingSchema = z.object({
   /** The chat lane's own shorthand (`dawn`/`day`/`dusk`/`night`), left a free
    * string because that lane's derivation already falls back for anything else. */
   timeOfDay: z.string().trim().max(60).optional(),
+  /**
+   * Which REGISTER the compiled prompt speaks in (#549). Absent ⇒ the dialect's
+   * own default for the scene task, which is what every production render gets.
+   *
+   * The bench's reason for having the field at all: whether an edit endpoint
+   * obeys "Give her a slim build" better than "She has a slim build" is an
+   * evidence question, and the two registers of one digest are the same picture
+   * asked for twice — same claims, same references, same program fingerprint —
+   * so two rows differing only here are a fair A/B on one seed. Enumerated
+   * rather than free text because an unrecognized word would silently compile
+   * the default and leave a row claiming a register it never sent.
+   */
+  register: z.enum(imagePromptRegisters).optional(),
 });
 export type ImageLabStaging = z.infer<typeof imageLabStagingSchema>;
 

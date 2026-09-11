@@ -17,7 +17,16 @@ export const earsGroup = defineAttributeGroup("ears", [
     ],
     bodyLocationId: "ears",
     aliases: ["ear shape", "pointed ears"],
-    imageAppearance: { class: "fine", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragment: "{value} ears",
+        fragmentByValue: { long_pointed: "long, pointed ears", fae_swept: "fae-swept ears", fin_like: "fin-like ears" },
+      },
+    },
   },
   {
     id: "ears.piercings",
@@ -30,6 +39,21 @@ export const earsGroup = defineAttributeGroup("ears", [
     allowedValues: ["none", "single_lobe", "double_lobe", "multiple", "cartilage", "industrial", "gauged"],
     bodyLocationId: "ears",
     aliases: ["piercings", "earrings"],
-    imageAppearance: { class: "fine", maximumFraming: "portrait" },
+    imageAppearance: {
+      class: "fine",
+      maximumFraming: "portrait",
+      phrase: {
+        group: "face",
+        role: "with",
+        fragmentByValue: {
+          single_lobe: "a single piercing in each lobe",
+          double_lobe: "two piercings in each lobe",
+          multiple: "multiple ear piercings",
+          cartilage: "a cartilage piercing",
+          industrial: "an industrial ear bar",
+          gauged: "gauged ears",
+        },
+      },
+    },
   },
 ]);

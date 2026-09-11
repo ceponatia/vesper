@@ -392,6 +392,27 @@ export function fitImagePromptSegments(
 }
 
 /**
+ * The weakest OPTIONAL segment in a list — the one fitting gives up first — or
+ * null when every segment is mandatory.
+ *
+ * Exported so a dialect whose EMITTED text is not the joined segment list can
+ * make the same choice this module's own loop makes. The Qwen 2511 dialect is
+ * that case: it renders one segment per claim and then rewrites the survivors as
+ * grouped prose, so the length a provider sees is not the length
+ * {@link fitImagePromptSegments} measures, and the dialect trims against its own
+ * emission. What must NOT differ between the two is which claim goes first —
+ * a second answer to "weakest" would make a budget squeeze mean two things — so
+ * the rule lives here, once, and both callers read it.
+ */
+export function weakestOptionalImagePromptSegment(
+  segments: readonly ImagePromptSegment[],
+): ImagePromptSegment | null {
+  const ordered = orderImagePromptSegments(segments);
+  const index = weakestIndex(ordered, false);
+  return index === null ? null : (ordered[index] ?? null);
+}
+
+/**
  * The index of the weakest segment on one side of the mandatory line, or null
  * when that side has nothing left to give.
  *
@@ -484,6 +505,40 @@ export function joinImagePromptSegments(segments: readonly ImagePromptSegment[])
     .join(SEGMENT_SEPARATOR);
 }
 
+/** The one code every "this prompt gave up optional detail" event carries. */
+export const IMAGE_PROMPT_SEGMENTS_TRIMMED = "image_prompt.segments_trimmed";
+
+/**
+ * Report optional material a dialect surrendered while fitting its OWN emitted
+ * text, rather than the joined segment list.
+ *
+ * The same event as {@link reportImagePromptFitting}'s trim line and the same
+ * code, because it is the same fact for an operator — this prompt did not fit
+ * and gave up optional detail — and two codes for it would split the one search
+ * an operator runs. What differs is only the measurement: `characters` is the
+ * length of what the provider actually receives.
+ */
+export function reportImagePromptEmissionTrim(
+  removed: readonly ImagePromptSegment[],
+  characters: number,
+  budget: ImagePromptBudget = {},
+  sink?: DiagnosticSink,
+): void {
+  if (removed.length === 0) return;
+  sink?.push(
+    diag("info", IMAGE_PROMPT_SEGMENTS_TRIMMED, "this prompt did not fit its budget and gave up optional detail", {
+      path: "image_render_intent",
+      context: {
+        removed: removed.map((segment) => segment.kind),
+        compressed: [],
+        characters,
+        ...(budget.recommendedCharacters === undefined ? {} : { recommended: budget.recommendedCharacters }),
+        ...(budget.maxCharacters === undefined ? {} : { maximum: budget.maxCharacters }),
+      },
+    }),
+  );
+}
+
 /**
  * Report what fitting cost, without joining anything.
  *
@@ -499,7 +554,7 @@ export function reportImagePromptFitting(
 ): void {
   if (fitted.removed.length > 0 || fitted.compressed.length > 0) {
     sink?.push(
-      diag("info", "image_prompt.segments_trimmed", "this prompt did not fit its budget and gave up optional detail", {
+      diag("info", IMAGE_PROMPT_SEGMENTS_TRIMMED, "this prompt did not fit its budget and gave up optional detail", {
         path: "image_render_intent",
         context: {
           removed: fitted.removed.map((segment) => segment.kind),

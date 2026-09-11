@@ -211,8 +211,11 @@ describe("generateAvatar program wiring", () => {
     const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
     expect(intent?.prompt).toBe(opts?.asset.prompt);
     expect(intent?.prompt).toMatch(/late twenties/);
-    expect(intent?.prompt).toMatch(/hair color: platinum/i);
-    expect(intent?.prompt).toMatch(/eye color: blue/i);
+    // The registry's PROSE, not its label form (#547): an image-eligible
+    // attribute that declares a phrase reaches every dialect as the noun
+    // phrase it was authored as.
+    expect(intent?.prompt).toMatch(/platinum hair/i);
+    expect(intent?.prompt).toMatch(/blue eyes/i);
     expect(Object.keys(opts?.asset.meta ?? {})).toEqual(
       expect.arrayContaining(["visualState", IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY]),
     );
@@ -292,7 +295,7 @@ describe("the portrait program's field policy", () => {
       expect(program.prompt).toMatch(/brown/i);
       expect(program.prompt).toMatch(/platinum/i);
       // The one permitted intimate-region fact is a coverage-safe silhouette.
-      expect(program.prompt).toMatch(/breast size: ample/i);
+      expect(program.prompt).toMatch(/an ample bust/i);
       expect(program.prompt).not.toMatch(/\bpuffy\b/); // intimate surface detail remains gated
       expect(program.prompt).not.toMatch(/gravelly/); // voice.timbre never renders
       expect(program.prompt).not.toMatch(/natal/i); // identity.natal_sex is excludeFromPrompts

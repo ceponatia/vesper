@@ -59,6 +59,15 @@ structured value, its semantic tags, its projection disposition, a priority, and
 the owner's own source reference. The source reference is diagnostic only — no
 compiler in the package reads it, so provenance cannot leak into a payload.
 
+**A subject may also carry a pronoun set** — `she_her`, `he_him` or `they_them`.
+It is not a fact about the picture; it is how a prose dialect refers back to a
+subject it has already introduced instead of re-naming them in every clause. The
+application derives it from the character's own stated gender and states none
+when the character has none ([character-prompts.md](character-prompts.md) §The
+character projection). **A dialect never guesses one**, and never infers it from
+anything else in the digest: a wrong pronoun is a wrong person. Items and
+locations carry none.
+
 ### Projection dispositions
 
 Every image-eligible source field carries one classification, recorded in
@@ -173,11 +182,11 @@ none of them in a mandatory kind.
 
 `scene.capture_mode` distinguishes the embodied first person from the
 disembodied one, because the two decide different prompts: the disembodied form
-asserts the viewer's absence and lets `scene.possession` bind every visible limb
-to the cast, while the embodied form asserts only that the face and head stay out
-of frame — binding the cast to every visible limb there would hand them the
-viewer's own hands. The count claim stays the cast's either way; how a dialect
-words it beside cropped viewer anatomy is the dialect's decision
+puts nothing of the viewer in the frame and lets `scene.possession` bind every
+visible limb to the cast, while the embodied form asserts only that the face and
+head stay out of frame — binding the cast to every visible limb there would hand
+them the viewer's own hands. The count claim stays the cast's either way; how a
+dialect words it beside cropped viewer anatomy is the dialect's decision
 ([pipelines/scene-framing.md](pipelines/scene-framing.md) §Whose eyes the shot is
 through).
 
@@ -215,6 +224,13 @@ carried.
 Emission order is the prompt-segment vocabulary's canonical order, with mandatory
 claims ahead of optional ones inside each kind. A dialect may reorder within its
 own compile; the fitter protects the mandatory floor either way.
+
+**A claim id is unique within a program**, and several things depend on it: the
+dropped-claim record, provenance, and a dialect that has to find the send slot one
+particular reference claim resolved to. A reference claim therefore carries its
+position in the send list (`operation.reference.<role>.<index>`), so a cast of two
+carrying two identity references keeps them distinct and a dropped second
+reference is distinguishable from the first.
 
 ## Negative constraints
 
@@ -292,6 +308,15 @@ that steers, and exclusions that matter have to become affirmative claims.
 
 A binding naming a dialect with no registered compiler **refuses**. Falling back
 to a generic prompt would silently drop every guarantee this layer provides.
+
+**Rendering is per claim; emission is the dialect's.** Every dialect renders one
+segment per claim, so the fitter decides what a budget squeeze keeps over the same
+units whatever the endpoint. A dialect may then emit those survivors regrouped —
+several claims merged into one sentence, in bands of its own choosing — because
+some endpoints are documented to answer better to connected prose than to a list.
+A merged sentence is one segment carrying every claim id it absorbed, so the
+joined segments are still exactly the compiled text and provenance still names the
+semantic units behind each sentence. An absorbed claim is not a dropped claim.
 
 ### Families
 
@@ -411,7 +436,8 @@ Every refusal happens before provider spend, and each has its own code:
 Softer degradation is reported and carries on: a narrowed or dropped optional
 constraint, a trimmed optional claim, a version with no negative field, and a
 preserve entry naming a fact this program does not state
-(`image_prompt_program.preserve_unworded`). The character seam adds three
+(`image_prompt_program.preserve_unworded`), and a claim value no dialect can word
+(`image_prompt_program.value_unreadable`). The character seam adds three
 refusals of its own — [character-prompts.md](character-prompts.md).
 
 ## What may reach a provider
@@ -425,6 +451,14 @@ travel in it.
   derivable and checkable; turning an identifier into language is the dialect's
   job, and a dialect that cannot word an entry drops it and reports rather than
   emitting the identifier.
+- **A value no dialect can word is declined, never flattened.** A projection may
+  hand a claim a small record; a dialect reads the member carrying its words and
+  states nothing at all when there is none. Joining such a record's own leaves
+  instead ships structure as language — a support relation reaching a provider as
+  "surface, ground, legs, borne by", a tuck reading as "out, tuck" — each true of
+  the data and nonsense as instruction. The decline is recorded, so a projection
+  shipping a kind nobody wrote a renderer for is visible rather than disguised as
+  prose, and a mandatory claim that words nothing refuses before spend.
 - **The preserve set is structural; its wording is not.** A change contract
   names the facts an edit must not touch by key. The dialect resolves each key
   against the program's own claims and renders what the fact names — its locus,

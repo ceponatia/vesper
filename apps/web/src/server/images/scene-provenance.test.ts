@@ -334,8 +334,13 @@ describe("renderResolvedScene identity provenance", () => {
       parseImagePromptProgramProvenance(pipelineCalls[0]?.asset.meta?.[IMAGE_PROMPT_PROGRAM_META_KEY]),
     ).not.toBeNull();
     // Both people are in the one prompt — the whole cast compiled, not the focal.
-    expect(reservedPrompt).toContain(LANE_PROBE_NAME);
-    expect(reservedPrompt).toContain(LANE_PROBE_SECOND_NAME);
+    // Read off each fixture's own disjoint vocabulary rather than their display
+    // names: the scene lane offers the dialect no name for a subject the payload
+    // carries an identity image of (`CHARACTER_LANE_SUBJECT_NAMING.scene`, #544
+    // F2), and the fixtures are built so that a word nobody else could have
+    // produced IS the attribution (`image-lane-probe.ts`).
+    expect(reservedPrompt).toMatch(/platinum/i);
+    expect(reservedPrompt).toMatch(/teal/i);
 
     // The corrected row describes the WINNING rung: a different compiled prompt,
     // its own parseable provenance, and no trace of the stale fragment.
@@ -395,11 +400,12 @@ describe("renderResolvedScene reference payload", () => {
     );
 
     const prompt = pipelineCalls[0]?.asset.prompt as string;
-    const numbered = [...prompt.matchAll(/Image (\d+) shows ([A-Za-z]+)/g)].map((match) => [Number(match[1]), match[2]]);
-    expect(numbered).toEqual([
-      [1, LANE_PROBE_NAME],
-      [2, LANE_PROBE_SECOND_NAME],
-    ]);
+    // The SLOTS, in the prompt's own order. Who each one shows is the dialect's
+    // reference binding rather than a display name on this lane (#544 F2), so
+    // what this owns is that the prompt numbers exactly the images the payload
+    // sends and nothing it does not account for.
+    const numbered = [...prompt.matchAll(/Image (\d+) shows /g)].map((match) => Number(match[1]));
+    expect(numbered).toEqual([1, 2]);
 
     const sent = mockIntent.mock.calls[0]?.[0].references ?? [];
     expect(sent.map((reference) => reference.sourceImageId)).toEqual([LANE_PROBE_IMAGE_ID, LANE_PROBE_SECOND_IMAGE_ID]);
@@ -425,8 +431,18 @@ describe("renderResolvedScene intimate reveal", () => {
     mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
     await renderResolvedScene(baseInput({ ...laneProbeCastSceneRender({ bareFocal: true }) }));
     const prompt = pipelineCalls[0]?.asset.prompt as string;
-    expect(prompt).toContain("Nyx has nipples: puffy."); // torso bare → skin stated
-    expect(prompt).toContain("Nyx has breast size: ample."); // shape reads through regardless
+    // Attribution is the fixtures' disjointness, not the sentence's subject: the
+    // scene lane states no display name for a reference-anchored subject (#544
+    // F2), and only the focal could have produced "puffy" or "ample" just as
+    // only the bystander could have produced "inverted".
+    // One subject's exposed anatomy is stated in ONE sentence (#544 F10), so the
+    // pin is the values inside that sentence rather than a sentence-final period
+    // only the last of them can carry.
+    const anatomy = prompt.match(/[^.]*\bample bust\b[^.]*\./u)?.[0] ?? "";
+    expect(anatomy).toContain("nipples: puffy"); // torso bare → skin stated
+    // The registry words `breasts.size` as prose and gives the nipple vocabulary
+    // no phrase, so one sentence carries both spellings (#547).
+    expect(anatomy).toContain("an ample bust"); // shape reads through regardless
     expect(prompt).not.toContain("inverted"); // Ilsa's torso is covered → her skin is withheld
   });
 
@@ -441,7 +457,15 @@ describe("renderResolvedScene intimate reveal", () => {
     );
     const prompt = pipelineCalls[0]?.asset.prompt as string;
     expect(prompt).not.toContain("nipples");
-    expect(prompt).not.toContain("breast size");
+    // The SILHOUETTE is not what a forbidding rung withholds. `breasts.size`
+    // reads through clothing (`imageReveal: "shape"`, `ordinarySilhouette`), so
+    // it is the ORDINARY appearance route's claim and is stated on every rung;
+    // the reveal above only replaces it with the same phrase where the route
+    // permits (#547). What the permission decides is the SKIN, which is the
+    // assertion above it. Pinned by phrase rather than by the retired
+    // `breast size:` label form, which asserted a spelling this lane no longer
+    // writes anywhere — true of any prompt, and therefore of none.
+    expect(prompt).toMatch(/\bample bust\b/u);
     // Coverage is the wardrobe's truth, not intimate detail: stated on every rung.
     expect(prompt).toContain("bare at the torso");
   });
@@ -474,7 +498,7 @@ describe("renderResolvedScene intimate reveal", () => {
     // The reserved row carries the PRIMARY (multi) rung's prompt: moderated.
     expect(pipelineCalls[0]?.asset.prompt as string).not.toContain("nipples");
     // The correction carries the WINNING (single-anchor) rung's: permitting.
-    expect(updateCalls[0]?.prompt as string).toContain(`${LANE_PROBE_NAME} has nipples: puffy.`);
+    expect(updateCalls[0]?.prompt as string).toContain("nipples: puffy");
   });
 });
 
@@ -505,8 +529,11 @@ describe("renderResolvedScene apparent age", () => {
       // The two fixtures' bands, in the image vocabulary's words, and the
       // dialect's age clause itself — a rung that stated either would fail.
       expect(prompt).not.toMatch(/late twenties|forties|\bappears in\b/);
-      expect(prompt).toContain(LANE_PROBE_NAME);
-      expect(prompt).toContain(LANE_PROBE_SECOND_NAME);
+      // The positive control, by each fixture's own disjoint vocabulary — the
+      // scene lane states no display name for a reference-anchored subject
+      // (#544 F2), so a name is no longer the thing that says they are here.
+      expect(prompt).toMatch(/platinum/i);
+      expect(prompt).toMatch(/teal/i);
     }
   });
 });

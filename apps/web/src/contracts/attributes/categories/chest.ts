@@ -20,7 +20,11 @@ export const chestGroup = defineAttributeGroup("chest", [
     bodyLocationId: "chest",
     supersededByIntimateRegions: ["breasts"],
     aliases: ["chest", "chest build", "ribcage"],
-    imageAppearance: { class: "reinforcement", minimumFraming: "portrait" },
+    imageAppearance: {
+      class: "reinforcement",
+      minimumFraming: "portrait",
+      phrase: { group: "build", role: "with", fragment: "a {value} chest" },
+    },
     promptHints: ["Describe the chest only as far as wardrobe exposure and the exposure mask allow."],
   },
   {
@@ -39,7 +43,12 @@ export const chestGroup = defineAttributeGroup("chest", [
     bodyLocationId: "chest",
     supersededByIntimateRegions: ["breasts"],
     aliases: ["chest hair"],
-    imageAppearance: { class: "fine", minimumFraming: "portrait", maximumFraming: "waist_up" },
+    imageAppearance: {
+      class: "fine",
+      minimumFraming: "portrait",
+      maximumFraming: "waist_up",
+      phrase: { group: "build", role: "with", fragment: "{value} chest hair" },
+    },
     imageReveal: "skin",
   },
 ]);

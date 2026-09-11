@@ -12,7 +12,12 @@ export const handsGroup = defineAttributeGroup("hands", [
     allowedValues: ["small", "slender", "average", "large", "broad"],
     bodyLocationId: "hands",
     aliases: ["hands", "hand size"],
-    imageAppearance: { class: "fine", minimumFraming: "full_figure", maximumFraming: "full_figure" },
+    imageAppearance: {
+      class: "fine",
+      minimumFraming: "full_figure",
+      maximumFraming: "full_figure",
+      phrase: { group: "other", role: "with", fragment: "{value} hands" },
+    },
   },
   {
     id: "hands.texture",
@@ -38,6 +43,11 @@ export const handsGroup = defineAttributeGroup("hands", [
     allowedValues: ["bitten", "short", "neatly_trimmed", "manicured", "long", "pointed", "painted", "chipped"],
     bodyLocationId: "fingers",
     aliases: ["nails", "fingernails", "manicure"],
-    imageAppearance: { class: "fine", minimumFraming: "full_figure", maximumFraming: "full_figure" },
+    imageAppearance: {
+      class: "fine",
+      minimumFraming: "full_figure",
+      maximumFraming: "full_figure",
+      phrase: { group: "other", role: "with", fragment: "{value} nails" },
+    },
   },
 ]);

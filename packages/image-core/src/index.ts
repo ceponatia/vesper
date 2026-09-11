@@ -187,6 +187,26 @@ export type {
   ImageLoraRenderBinding,
   ImageLoraUpdateRequest,
 } from "./loras";
+/**
+ * The appearance-phrase value shape. A deep import rather than a re-export
+ * through `./prompt-program`: the composition vocabulary is a value CONTRACT
+ * between the application's attribute registry and whichever dialect composes,
+ * not another member of the prompt-program barrel's reading order.
+ */
+export {
+  imageAppearanceIndefiniteArticle,
+  imageAppearancePhrase,
+  imageAppearancePhraseGroupNoun,
+  imageAppearancePhraseGroupTakesArticle,
+  imageAppearancePhraseGroups,
+  imageAppearancePhraseRoles,
+} from "./prompt-program/appearance-phrase";
+export type {
+  ImageAppearancePhrase,
+  ImageAppearancePhraseGroup,
+  ImageAppearancePhraseRole,
+  ImageAppearancePhraseValue,
+} from "./prompt-program/appearance-phrase";
 export {
   activeImagePromptBinding,
   buildImageWorldDigest,
@@ -245,6 +265,7 @@ export {
   imageWorldDigestFingerprint,
   imageWorldEntity,
   imageWorldRelationKinds,
+  imageSubjectPronounSets,
   implementedImagePromptDialectIds,
   isImageConceptId,
   isImageConflictKey,
@@ -279,10 +300,14 @@ export {
   // The 2511 identity-lock byte contract with `@vesper/image-models` — public so
   // the app's program suite (character-prompt-program.test.ts) can pin the
   // exact bytes.
+  QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
+  // The register a dialect may be asked to speak in — wording, never a
+  // different job (`qwen-image-edit-2511.md` §The register).
+  imagePromptRegisters,
   imagePromptProgramProvenanceSchema,
   imageWorldStateProvenanceSchema,
 } from "./prompt-program";
@@ -341,12 +366,14 @@ export type {
   ImagePromptProgramProvenance,
   ImagePromptProgramRefusal,
   ImagePromptProgramRefusalCode,
+  ImagePromptRegister,
   ImageReferenceFact,
   ImageSourceRef,
   ImageSourceRevision,
   ImageStyleIntent,
   ImageStyleMedium,
   ImageSubjectDigest,
+  ImageSubjectPronounSet,
   ImageWorldDigest,
   ImageWorldDigestInput,
   ImageWorldDigestIssue,

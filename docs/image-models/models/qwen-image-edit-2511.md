@@ -120,44 +120,322 @@ Diagnostics and provenance report the final payload, not infer it from the row.
 
 ## Numbered-reference instruction policy
 
-Qwen's multi-image guidance recommends identifying which image supplies which
-subject or visual element and stating what should change versus remain fixed.
-Vesper words that contract in the Qwen 2511 delta-edit dialect
-(`dialect-qwen-2511.ts`, `@vesper/image-core`), which compiles a subject's
-`subject.identity` claim into the family's identity lock, chosen by reference
-count. The dialect is the only source of the wording — no adapter in
+Qwen's guidance for this family asks a caller to identify which image supplies
+which subject or element, to say what changes and what stays fixed, and to write
+connected sentences rather than a list. Vesper words all of that in the Qwen 2511
+delta-edit dialect (`dialect-qwen-2511.ts`, `@vesper/image-core`) under the
+dialect id `qwen_2511_delta_edit`, which carries this endpoint's own bindings and
+packs. The dialect is the only source of the wording — no adapter in
 `@vesper/image-models` touches prompt text, so a prompt reaches this endpoint
-exactly as it was compiled and hashed — under the dialect id
-`qwen_2511_delta_edit`, which carries this endpoint's own bindings and packs.
+exactly as it was compiled and hashed.
 
-With one reference (`QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`):
+**The reference is authoritative for face, skin tone and apparent age; the text
+is authoritative for hair, build, wardrobe and pose.** That split is what the
+binding sentence states, and it is why the prompt may describe a haircut or an
+outfit the photograph does not show without contradicting itself.
+
+**The binding names the cast and states the preserve set in one place.** The
+lock, each identity slot's own `Image N` assignment and the subject's name are
+one statement, not three: a display name repeated beside a numbered photograph is
+a second identity cue competing with the picture the endpoint was given, and a
+blanket "change only what this instruction requests" is a preserve clause with no
+change to bound.
+
+**The form is chosen over the PEOPLE the identity slots show, never over the
+slots.** A payload may carry several images of one person — a reference sheet's
+view enters the send list as a second identity slot for the same character
+([reference-views.md](../../images/pipelines/reference-views.md)) — and a form
+counted over slots calls that two people. Three forms follow.
+
+One person, one image:
 
 ```text
-Image 1 is the identity reference. Preserve the exact face, hair, skin tone,
-body proportions, and apparent age. Change only what this instruction requests.
+Use the woman in Image 1 as the sole subject; keep her face, skin tone and
+apparent age exactly as shown.
 ```
 
-With several references (`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK`):
+One person, several images — the images named as a set, each given its own
+purpose, and a preserve set asking for consistency ACROSS them, because "exactly
+as shown" cannot be said of two photographs at once:
 
 ```text
-Use numbered references as assigned below. Preserve each person's exact face,
-hair, skin tone, build, and apparent age; change only requested details.
+Use the woman shown in Images 1 and 2 as the sole subject. Image 1 is her primary
+identity reference; Image 2 shows her seen from behind, the same person. Keep her
+face, skin tone and apparent age consistent with these references.
 ```
 
-The lock leads the compiled prompt, ahead of the numbered `Image N` assignments:
-the multi-reference lock says "as assigned below", so the dialect's own emission
-order puts the assignments after it. Zero references lock nothing — there is no
-image to lock an identity to, and describing a face in prose on an endpoint whose
-whole identity transport IS the reference would render a stranger. The numbered
-assignments are compiled from the prompt program's own reference plan, so a slot
-names the image the payload carries at that position
-([character-prompts.md](../../images/character-prompts.md) §Reference planning and
-numbering). Fitting runs before the dialect reorders, so what a budget squeeze
-keeps or trims is unchanged by the order.
+Several people — one clause per person, listing that person's own images, and the
+preserve set stated once for everybody:
+
+```text
+Use the numbered images as assigned: Image 1 shows a woman, Image 2 shows a man;
+keep each person's face, skin tone and apparent age exactly as their own image
+shows.
+```
+
+**A cast member the payload carries no image of is said to have none.** The scene
+ladder's single-reference rung sends one identity image for a cast of two
+([character-prompts.md](../../images/character-prompts.md) §Naming a subject per
+lane), and a form chosen over the identity groups alone fell to the
+several-people sentence — which promises to keep "each person's face … as their
+own image shows" about somebody with no image at all. That is a false identity
+contract, and the wording that invites the one reference to bleed into the person
+it was never taken of. So the bound person keeps the binding a photograph can
+support, is told what they are in this picture rather than that they are its sole
+subject, and every unanchored voice gets a sentence of its own:
+
+```text
+Use the woman in Image 1 as one of the two people in the picture; keep her face,
+skin tone and apparent age exactly as shown. Nyx has no reference image and is
+described below.
+```
+
+Several anchored people beside a text-described one keep the assignment list
+above and add the same sentence for each unanchored voice: the multi preserve
+clause is already scoped by its own "their own image", and what was missing is
+anything saying who has none. The name is what tells an unanchored member apart
+and the naming policy guarantees one; a member who somehow arrived without a name
+is "The other person". The person count still closes the instruction and still
+says how many people the picture holds.
+
+A person's **primary** image is their first identity slot in send order. It is
+the number the introduction cites ("the woman in Image 1") and the number the
+face-visibility clause anchors to; every other slot of theirs is a support image.
+What a support image IS comes from the lane's own `description` and is quoted
+verbatim, because the vocabulary that rendered the image is the only thing that
+can describe it honestly. The clause names the PERSON the image shows — "Image 2
+shows her seen from behind, the same person", with the description following the
+subject's object pronoun, or the introduction wherever no pronoun may be used.
+"Image 2 is seen from behind" would make the photograph the thing seen from
+behind, which is a sentence about the picture rather than about the woman in it.
+A slot with no description keeps "is": it is named as another reference image of
+the same person, which is a fact about the picture. Where a person's clause carries such a
+description, the assignment list rises from commas to semicolons, since its
+entries then carry commas of their own.
+
+The exported `QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK`,
+`QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK` and
+`QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK` are the **preserve clauses** of those
+three sentences rather than whole sentences: the rest names the subject, the
+image numbers and a possessive, none of which is constant. No clause contains
+another, so a reader can assert which binding a render chose. The
+`…_HAIR_CONCEALED` names are byte-identical deprecated aliases — hair is in
+neither preserve set, so a covered head needs no separate spelling.
+
+A payload carrying no reference compiles no binding sentence, which drops a
+mandatory claim and refuses before spend: this endpoint's whole identity
+transport IS the reference, and describing a face in prose would render a
+stranger. Identity slots are named inside the binding; every other role keeps its
+own numbered assignment sentence, compiled from the program's own reference plan
+so a slot names the image the payload carries at that position
+([character-prompts.md](../../images/character-prompts.md) §Reference planning
+and numbering). A structural control role — mask, pose, depth, edge, control —
+words nothing at all, because the probed schema has no structural input and a
+sentence claiming one would assert a transport this endpoint does not have.
 
 The apparent-age requirement remains text-authoritative. This preserves the owner
 ruling that age text must correct an age-ambiguous reference rather than inherit
 drift from it.
+
+### How this dialect names a person
+
+Three ways, in order: the display **label** the application supplied; the
+**reference binding** — "the woman in Image 1" — when it supplied none, which is
+the ordinary scene case ([character-prompts.md](../../images/character-prompts.md)
+§Naming a subject per lane); or "the subject" when there is neither. Inside the
+multi binding a subject is named INDEFINITELY ("Image 1 shows a woman") and
+everywhere else definitely, because "Image 1 shows the woman in Image 1" defines
+the image by itself.
+
+After that introduction the dialect refers back with the subject's **pronoun
+set**, which the world digest carries and this dialect never guesses. It is
+withheld in three cases, each a pronoun that would not resolve: the digest stated
+no set; two subjects in this cast share one; or no sentence in this prompt
+introduces the subject, which is a cast member the payload carries no identity
+image for. A withheld pronoun leaves the introduction standing in every clause.
+`they_them` takes plural verb agreement for a single person, in the relation
+clauses as well as the subject ones ("They hold a chipped enamel cup").
+
+### Grouped emission
+
+The dialect renders **one segment per claim**, so fitting and provenance work over
+exactly the units they always did, and then emits the survivors as grouped prose
+in a fixed band order: binding, change, build, wardrobe, exposure, pose, capture,
+setting, mood, style, close. Each emitted sentence becomes one segment carrying
+the claim ids it absorbed, so the joined segments are still exactly the compiled
+text and `source` still names the semantic units behind every sentence a provider
+receives.
+
+What the bands merge:
+
+- **build** states the age anchor, then ONE sentence describing the person,
+  composed from the registry's appearance phrases. Each attribute arrives already
+  taken apart — the feature group it belongs to, the grammatical role its piece
+  plays there, and the piece itself
+  ([character-prompts.md](../../images/character-prompts.md) §Registry-backed
+  image appearance) — and this dialect writes the grammar: one clause per group
+  in the order build, hair, face, skin, eyes, each clause the group's adjectives
+  before its noun, its trailers after, and its `with`-phrases hung off it. Within
+  a clause the pieces sort ascending by the registry's declared `order`, ties
+  keeping claim order, because the claims arrive alphabetically by attribute id
+  and English does not: colour sits against its noun ("healthy dark-brown hair"),
+  muscle against its own ("a slim, lightly toned build"), and a hair arrangement
+  precedes a hair length ("hair worn loose to mid-back"). Build and face
+  adjectives are COORDINATE and take commas ("a slim, lightly toned build"); hair,
+  skin and eye adjectives are CUMULATIVE and stack unpunctuated ("healthy
+  dark-brown hair"), where a comma would read as two different heads of hair. The
+  clauses are listed with a serial comma wherever a bare "and" would be
+  read as part of the clause before it — which is whenever a clause carries a
+  conjunction of its own: "She has a slim, lightly toned build with slender arms
+  and a subtle waist, and healthy dark-brown hair worn loose to mid-back." A
+  group with `with`-phrases and nothing to attach them to states them alone,
+  because "a build with slender arms" says nothing the arms did not. An attribute
+  the registry gives no phrase keeps its `Label: value` form and is listed in the
+  same sentence, and a phrase in the `other` group — a stature, a personal style
+  — stands as its own noun phrase, having no group noun to join.
+- **wardrobe** puts every garment in one sentence in the order the projection
+  stated them; **pose** takes one or two sentences — the pose with the expression
+  folded into it, and the activity in its own — because two composer phrases
+  joined under one subject frame with "and" produce a sentence no reader would
+  write, and two short grammatical sentences beat one malformed one. One sentence
+  per band is not a goal.
+- A value the character projection wrote as a `with …` fragment ("with the
+  sweater tucked in", "with a bindi") **trails** the sentence it qualifies — the
+  garment list, or the description the build band wrote — and earns a sentence of
+  its own only when that host was suppressed or trimmed.
+- A current-state value that also carries a **phrase** composes instead of
+  trailing. A committed hairstyle is the case: it replaces the sheet's own
+  `hair.arrangement` upstream and is worded as the same hair trailer, so it sits
+  where that trailer would have — "dark-brown hair worn loose to mid-back", not
+  "dark-brown hair to mid-back, with the hair worn loose". Its `text` keeps the
+  `with …` shape, which is what files it in this band rather than in the garment
+  sentence.
+- A posture another phrase in the same sentence already **contains** is dropped,
+  so a committed "standing" beside a composed "standing at the craft services
+  table" is not composed twice. Containment is matched on WORD boundaries: a
+  letter test read "sitting" out of "babysitting a child" and "standing" out of
+  "understanding the assignment", dropping the required posture and crediting a
+  sentence that never said it. It can only ever drop the shorter of two phrases,
+  and two equal phrases are each other's equal rather than each other's
+  container.
+- A further subject's identity claim is **absorbed** by the multi binding, which
+  has already introduced each person by their own image.
+- A stated gender is absorbed when a GENDERED pronoun already carries it, and
+  kept whenever none does — a shared set, no set at all, or `they_them`. The
+  application supplies `they_them` for every androgynous and nonbinary value
+  while the gender attribute keeps the natal build distinction those values
+  carry, and "they" conveys neither variant; absorbing it would leave nothing
+  saying which body to draw in a prompt whose reference no longer preserves
+  build.
+
+An absorbed claim is attributed to the sentence that carries it, never recorded
+as dropped: a clause folded into another claim's sentence is not a claim the
+render lost.
+
+### The sentences this endpoint owns
+
+- **Capture.** A first-person shot with no viewer body in frame reads "Seen from
+  the camera's own eye-level point of view." It names the camera and nothing
+  else: a POV sentence naming a viewer puts a person in the room and then forbids
+  drawing them. The embodied and selfie forms keep the family's measured wording.
+- **Close.** The person count is the LAST sentence, which is where a "nobody
+  else" assertion can do its job: "She is the only person in the picture; the
+  foreground is clear.", or "Exactly N people are in the picture and nobody else;
+  the foreground is clear." An embodied shot takes the `fully in frame` forms
+  instead, because the count is the cast and a limb the frame edge cuts is not
+  one of them.
+- **Possession.** "Every visible body part is hers." Deliberately abstract: a
+  limb noun summons a limb even when it is possessively bound. A usable pronoun
+  gives the independent possessive, several owners take "belongs to A or B", and
+  an owner this prompt cannot name yields no sentence at all.
+- **Face visibility.** A shot that cannot show the face states, immediately after
+  the binding, what to preserve instead and that the subject is not to be rotated
+  to the camera. Its "from Image N" anchor is per subject, never per payload.
+- **Hair concealment.** "Her hair is fully covered by the headwear; no hair is
+  visible." — the claim that keeps hair off a render whose reference shows it.
+- **Atmosphere.** The scene's mood band reads "The atmosphere is …", never "The
+  mood is …", which is what every other family says: beside a subject the prompt
+  has just described, "mood" reads as that person's mood, while the claim is the
+  room's — the label a model spends on light, colour and distance rather than on
+  a face.
+
+### The register
+
+The dialect addresses the model in one of two **registers**, which is a wording
+axis and never a different job: the same claims, the same references and the same
+program fingerprint compile either way, and only the sentences move. A caller may
+name one on the compile input; absent one, the task decides.
+
+- **Imperative** is the default on the `scene` task. The scene rung carries no
+  change contract — the description IS the instruction — and this endpoint's
+  `prompt` is an edit instruction rather than a scene description, so a
+  description of a woman in a lounge handed to an edit model beside a photograph
+  of her can be read as a reminder about the picture it was given.
+- **Descriptive** is the default everywhere else, because every other task states
+  its own change contract and a second imperative voice would compete with it.
+
+Band by band, imperative beside descriptive:
+
+| Band     | Imperative                   | Descriptive                 |
+| -------- | ---------------------------- | --------------------------- |
+| binding  | `Create a new scene using …` | `Use …`                     |
+| build    | `Give her …`                 | `She has …`                 |
+| wardrobe | `Dress her in …`             | `She wears …`               |
+| pose     | `Show her …`                 | `She is …`                  |
+| setting  | `Place her in …`             | `A warm lounge with …`      |
+| lighting | `Light the scene with …`     | `Lit by …`                  |
+| mood     | `Keep the atmosphere …`      | `The atmosphere is …`       |
+| style    | `Render it as a photograph…` | `Rendered as a photograph…` |
+
+Five things stay assertions in both registers, and each for its own reason. The
+**close** is the picture's own person count. The **capture** and camera sentences
+state where the frame stands rather than what to do. A **staged arrangement** and
+the **possession** clause carry measured wording that a rewrite would throw away.
+The **face-visibility** and **hair-concealment** sentences are already
+instructions about what to preserve. And a **predicate current-state** reading —
+one the projection did not write as a `with …` clause, such as "damp at the hair"
+— is a condition of the person the render is of rather than a change to make to
+her, so it reads "She is damp at the hair." in either register and never "Show
+her damp at the hair.", which would order the model to wet her.
+
+The imperative binds to the subject's OBJECT pronoun ("Dress her in …") and falls
+back to the introduction wherever no pronoun may be used, exactly as the
+descriptive frame does. A setting phrase that does not open with an article, or a
+render with no single subject to place, is labelled instead: "The setting: a
+lamplit study, rain streaking the tall window."
+
+### The prompt budget
+
+The row's prompt binding declares `recommendedChars: 1300`. The number is a
+**Vesper advisory**, set from the Qwen-Image family's broader prompt guidance and
+tuned against graded trials — not a length this endpoint prescribes. The prompt
+guidance for image editing asks for direct, specific instructions and clarity
+about what to preserve, and states no word or character count at all. Advisory
+means what it says: optional material is trimmed toward the number, a mandatory
+segment is never compressed for it, and exceeding it is reported rather than
+refused. The value is owner-curated data on `advancedCapabilities`
+([providers/registry.md](../../images/providers/registry.md) §Probe-owned
+columns).
+
+**The number is measured against the GROUPED prose, never the per-claim form.**
+This dialect renders one segment per claim and then rewrites the survivors as
+grouped sentences, which are far shorter — one sentence naming a body where the
+segments named it once per attribute. Fitting the expanded form therefore trimmed
+optional appearance and setting claims out of prompts that fit comfortably once
+grouped, paying real detail for a length the provider never saw. So the compile
+groups first with no budget at all; if the emitted text fits, nothing is dropped.
+If it does not, the weakest optional claim is surrendered — the same
+lowest-priority-then-latest rule the shared fitter uses, so a squeeze picks the
+same victim either way — and the prose is regrouped, until it fits or no optional
+claim is left. Each surrender is recorded in `droppedClaimIds` with the claim id
+every other drop carries, and reported under `image_prompt.segments_trimmed`. Two
+compiles of one digest still agree: every pass starts from fresh render state.
+
+A hard ceiling is a different limit and keeps the shared fitter's own path. It is
+a provider error rather than a quality hint, it is the only limit that may
+compress a mandatory segment, and that compression is defined over the per-claim
+segments. Vesper has measured no hard ceiling for this endpoint, so the row
+carries no `maxChars`.
 
 ## Seeded profiles
 

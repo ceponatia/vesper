@@ -173,9 +173,11 @@ describe("assembleCharacterWorldDigest", () => {
     expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.appearance.hair.color`);
     expect(assembly.missingRequired).not.toContain(`subject.${SUBJECT}.apparent_age`);
     expect(subject?.facts.some((fact) => fact.concept === "subject.identity")).toBe(true);
-    expect(subject?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toBe(
-      "Eye color: blue",
-    );
+    // The registry words eye colour as prose (#547); the label form is gone.
+    expect(subject?.facts.find((fact) => fact.source.key === "eyes.color")?.value).toEqual({
+      text: "blue eyes",
+      phrase: { group: "eyes", role: "adjective", fragment: "blue", order: 1 },
+    });
   });
 
   it("lets an intimate route replace the ordinary bust silhouette instead of stating it twice", () => {
@@ -224,6 +226,16 @@ describe("characterChangeContract", () => {
    * "preserve everything", the wording the research blames for the
    * squashed-figure geometry failure, and a derivation that pins the outfit
    * being replaced.
+   *
+   * The hair-concealment fact is here because it is the one required fact that
+   * is NOT a fact of the source (PR #545 review). The projection states it
+   * because the wardrobe this render draws hides the hair, and the reference is
+   * ordinarily a bare-headed anchor — so "keep the hair concealment unchanged
+   * from the source" asks for a concealment the photograph does not have, and
+   * on the endpoint that reads its prompt as an edit instruction it compiled
+   * "Keep … the hair concealment … unchanged from the source." beside the very
+   * sentence saying no hair is visible (issue #312). Its own claim is the
+   * instruction; the preserve set must not restate it.
    */
   it("derives the preserve set from the untouched required anchors", () => {
     const fact = (
@@ -249,6 +261,7 @@ describe("characterChangeContract", () => {
           fact("s1/identity", "subject.identity", "required_visual"),
           fact("s1/morphology", "subject.morphology", "required_visual"),
           fact("s1/wardrobe", "subject.wardrobe", "required_visual"),
+          fact("s1/hair_concealment", "subject.hair_concealment", "required_visual"),
           fact("s1/detail", "subject.appearance", "optional_visual"),
         ],
         morphology: [],
@@ -264,6 +277,9 @@ describe("characterChangeContract", () => {
       subjects,
     );
     expect(change.preserve).toEqual(["s1/identity", "s1/morphology"]);
+    // Named apart from the equality above, so a regression reads as what it is
+    // rather than as an array that grew by one.
+    expect(change.preserve).not.toContain("s1/hair_concealment");
     expect(change.geometry).toBe("locked");
   });
 });

@@ -508,7 +508,12 @@ export interface StagedSceneProgram {
  *   stated by the template either way; what a chat scene adds on top is the
  *   player's own skin and build, which a bench has nobody to read;
  * - `refuseOnMissingRequired`, because a staged act on somebody with a lost
- *   identity or morphology anchor is the act happening to a stranger.
+ *   identity or morphology anchor is the act happening to a stranger;
+ * - the staging's `register`, when the row names one, is the single exception to
+ *   "argument for argument": it is the bench's A/B knob, absent on every chat
+ *   render and on every staged row that does not ask for the other spelling, and
+ *   it changes the WORDS a dialect writes rather than the program the words come
+ *   from — the two registers of one digest share a program fingerprint.
  *
  * Pure, and exported for that reason: the program this returns is the parity
  * pin — for the same plan and the same cut it must be byte-identical to what
@@ -535,6 +540,11 @@ export function stagedSceneProgram(input: StagedSceneProgramInput): StagedSceneP
     location: lowered.location,
     camera: lowered.camera,
     intimateReveal: true,
+    // The row's register when it named one, the dialect's own default when it
+    // did not — the one knob this seam takes from the experiment rather than
+    // from the chat lane, and the only difference a register row may have from
+    // its pair (#549).
+    ...(input.scene.register === undefined ? {} : { register: input.scene.register }),
     read: input.read,
     references: input.references.map(
       (reference): CharacterPromptReference =>

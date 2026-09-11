@@ -30,7 +30,28 @@ export const buildGroup = defineAttributeGroup("build", [
       "towering",
     ],
     aliases: ["height", "tall", "short", "petite"],
-    imageAppearance: { class: "reinforcement", minimumFraming: "full_figure" },
+    imageAppearance: {
+      class: "reinforcement",
+      minimumFraming: "full_figure",
+      phrase: {
+        // Height is nobody's build, hair or face, so it is stated on its own
+        // rather than folded into another feature's clause. "Stature" is the noun
+        // that carries every member: "a below-average height" is not English and
+        // "a below-average build" would be a claim about mass.
+        group: "other",
+        role: "with",
+        fragmentByValue: {
+          very_short: "a very short stature",
+          short: "a short stature",
+          below_average: "a below-average stature",
+          average: "an average stature",
+          above_average: "an above-average stature",
+          tall: "a tall stature",
+          very_tall: "a very tall stature",
+          towering: "a towering stature",
+        },
+      },
+    },
     promptHints: [
       'Convey height through comparison and blocking ("she has to look up at him"), never as a number.',
     ],
@@ -54,7 +75,12 @@ export const buildGroup = defineAttributeGroup("build", [
       "heavy_boned",
     ],
     aliases: ["frame", "build", "figure", "physique", "bone structure"],
-    imageAppearance: { class: "core", referenceFreeRequired: true, minimumFraming: "portrait" },
+    imageAppearance: {
+      class: "core",
+      referenceFreeRequired: true,
+      minimumFraming: "portrait",
+      phrase: { group: "build", role: "adjective", fragment: "{compound}" },
+    },
     coreVisual: true,
     defaultValue: "slight",
     narratorGuidance: {
@@ -83,7 +109,22 @@ export const buildGroup = defineAttributeGroup("build", [
       "powerfully_built",
     ],
     aliases: ["muscles", "muscle tone", "musculature"],
-    imageAppearance: { class: "core", minimumFraming: "portrait" },
+    imageAppearance: {
+      class: "core",
+      minimumFraming: "portrait",
+      phrase: {
+        group: "build",
+        role: "adjective",
+        fragment: "{value}",
+        // Order 1, ahead of the frame's and the weight's 0: muscle is the
+        // adjective nearest the noun, so the build reads "a slim, lightly toned
+        // build" rather than the claim order's "a lightly toned, slim build".
+        order: 1,
+        // "a powerfully built build" says the noun twice; "a defined build" is the
+        // one member whose bare word reads as vague rather than as muscle.
+        fragmentByValue: { defined: "well-defined", powerfully_built: "powerful" },
+      },
+    },
     narratorGuidance: {
       untoned: "no muscle definition — soft and unworked",
       lightly_toned: "the faintest firmness, barely worked",
@@ -113,7 +154,12 @@ export const buildGroup = defineAttributeGroup("build", [
       "very_heavy",
     ],
     aliases: ["weight", "body weight"],
-    imageAppearance: { class: "core", referenceFreeRequired: true, minimumFraming: "portrait" },
+    imageAppearance: {
+      class: "core",
+      referenceFreeRequired: true,
+      minimumFraming: "portrait",
+      phrase: { group: "build", role: "adjective", fragment: "{value}" },
+    },
     promptHints: [
       "Describe weight as silhouette and presence, never as a number or a judgement.",
     ],
@@ -150,7 +196,23 @@ export const buildGroup = defineAttributeGroup("build", [
     bodyLocationId: "waist",
     requiresIntimateRegions: ["vulva"],
     aliases: ["pregnant", "pregnancy", "expecting", "with child", "baby bump"],
-    imageAppearance: { class: "core", minimumFraming: "waist_up" },
+    imageAppearance: {
+      class: "core",
+      minimumFraming: "waist_up",
+      phrase: {
+        group: "build",
+        role: "with",
+        // A silhouette the build sentence carries — "a slim build with a heavily
+        // pregnant belly" — never an adjective on the build itself, which would
+        // fold pregnancy into weight (the promptHint above forbids exactly that).
+        fragmentByValue: {
+          barely_showing: "an early pregnancy bump",
+          showing: "a visibly pregnant belly",
+          heavily_pregnant: "a heavily pregnant belly",
+          full_term: "a full-term pregnant belly",
+        },
+      },
+    },
     imageReveal: "shape",
     promptHints: [
       "Pregnancy is its own silhouette; a slim, firm body can be heavily pregnant. Never fold it into weight or softness.",
