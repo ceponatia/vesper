@@ -15,6 +15,8 @@ export const FAL_QWEN3_EDIT_SCHEMA_REVISION = "fal-qwen3-edit-schema-2026-09-11"
 const FAL_RUN_HOST = "https://fal.run";
 const DEFAULT_TIMEOUT_MS = 300_000;
 
+type Qwen3ResolutionTier = "1K" | "2K";
+
 export interface FalPreparedReference {
   bytes: Buffer;
   mediaType: string;
@@ -23,8 +25,8 @@ export interface FalPreparedReference {
 export interface FalImageRequest {
   prompt: string;
   references?: readonly FalPreparedReference[];
-  /** `WIDTH*HEIGHT`, selected by Vesper's shared dimension resolver. */
-  size?: string | null;
+  /** Aspect selected by Vesper's shared shape resolver, e.g. `3:4`. */
+  aspect?: string | null;
   /** Provider-shaped values already validated by the profile/compiler. */
   controlInput?: Readonly<Record<string, unknown>>;
   timeoutMs?: number | null;
@@ -73,6 +75,12 @@ export function falQwen3Payload(model: ImageModel, request: FalImageRequest): Re
   }
   if (!isFalQwen3Slug(model.slug)) throw new Error(`unsupported fal image model: ${model.slug}`);
 
+  const controls = { ...(request.controlInput ?? {}) };
+  const tier = resolutionTier(controls["image_size"]);
+  // `image_size` is a normalized Vesper 1K/2K tier in controlInput, not a raw
+  // fal value. Consume it here, then write fal's actual {width,height} object.
+  delete controls["image_size"];
+
   const input: Record<string, unknown> = {
     // Vesper owns the prompt and safety posture. These defaults are deliberately
     // explicit instead of relying on fal's current defaults (both are true).
@@ -81,12 +89,11 @@ export function falQwen3Payload(model: ImageModel, request: FalImageRequest): Re
     num_images: 1,
     output_format: "png",
     ...model.extraInput,
-    ...request.controlInput,
+    ...controls,
     prompt: request.prompt,
+    image_size: qwen3ImageSize(request.aspect, tier),
   };
 
-  const imageSize = parsePixelPair(request.size);
-  if (imageSize) input.image_size = imageSize;
   if (model.slug === FAL_QWEN3_EDIT_SLUG) {
     input.image_urls = references.map((reference) =>
       `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`,
@@ -180,13 +187,33 @@ export async function runFalQwen3ImageModel(
   }
 }
 
-function parsePixelPair(value: string | null | undefined): { width: number; height: number } | null {
-  if (!value) return null;
-  const match = /^(\d+)\*(\d+)$/.exec(value.trim());
+function resolutionTier(value: unknown): Qwen3ResolutionTier {
+  return value === "2K" ? "2K" : "1K";
+}
+
+/**
+ * Convert Vesper's independent aspect + 1K/2K tier into fal's custom ImageSize.
+ * No aspect is the bench's native-shape case; choosing a resolution necessarily
+ * names a shape, so its neutral default is square.
+ */
+export function qwen3ImageSize(
+  aspect: string | null | undefined,
+  tier: Qwen3ResolutionTier,
+): { width: number; height: number } {
+  const longEdge = tier === "2K" ? 2048 : 1024;
+  const ratio = parseAspectRatio(aspect ?? "1:1") ?? 1;
+  if (ratio >= 1) {
+    return { width: longEdge, height: Math.max(512, Math.round(longEdge / ratio)) };
+  }
+  return { width: Math.max(512, Math.round(longEdge * ratio)), height: longEdge };
+}
+
+function parseAspectRatio(value: string): number | null {
+  const match = /^(\d+):(\d+)$/.exec(value.trim());
   if (!match) return null;
   const width = Number(match[1]);
   const height = Number(match[2]);
-  return width > 0 && height > 0 ? { width, height } : null;
+  return width > 0 && height > 0 ? width / height : null;
 }
 
 async function downloadFalImage(url: string, timeoutMs: number): Promise<Buffer> {
