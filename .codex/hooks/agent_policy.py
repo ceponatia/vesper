@@ -15,13 +15,16 @@ failed attempt.
 
 Reading a prompt as an implementation assignment is a heuristic, not a
 parse: the brief template's own markers, an instruction to commit, or a
-build verb in imperative position next to a repository path. Two kinds of
-assignment are deliberately not caught, because the only rules broad
-enough to catch them also deny ordinary prompts, and a gate that denies
-ordinary prompts gets worked around: one that names no file and asks for
-no commit — "update the docs" — and one whose verb never lands in
-imperative position — "your task is to update the hook". The mirror of
-the second is what the position rule buys: "summarize the write path in
+build verb next to a repository file. Position is what separates an
+instruction from prose in the last two -- "and commit the fix" assigns
+work, "the changes in commit 2248b048" does not -- so both are read in
+imperative position and nowhere else. Two kinds of assignment are
+deliberately not caught, because the only rules broad enough to catch
+them also deny ordinary prompts, and a gate that denies ordinary prompts
+gets worked around: one that names no file and asks for no commit —
+"update the docs" — and one whose verb never lands in imperative
+position — "your task is to update the hook". The mirror of the second
+is what the position rule buys: "summarize the write path in
 apps/.../thing.ts" is research, not a write instruction. The built-in
 read-only agent types are exempt from the rule outright: they cannot edit
 or commit, so a brief-shaped prompt to one of them is research.
@@ -53,7 +56,7 @@ READ_ONLY_TYPES = {"Explore", "Plan", "claude-code-guide", "statusline-setup"}
 # that never went near the template. A build verb...
 BUILD_VERB = (
     r"implement|edit|modify|refactor|rewrite|fix|add|remove|delete|rename"
-    r"|write|update|create"
+    r"|write|update|create|change|replace"
 )
 # ...read in imperative position, and nowhere else. Every one of these words is
 # also an ordinary English noun or adjective -- "the write path", "an update on
@@ -78,16 +81,27 @@ REPO_PATH = re.compile(r"\S*/\S*\.[A-Za-z0-9]{1,6}(?![\w/])")
 # ...or a bare filename, where only the extensions this repo actually edits
 # count, so ordinary prose ("v1.2", "see §4.2") is not read as a path.
 BARE_FILE = re.compile(r"\b[\w.-]+\.(?:tsx?|py|mdx?|json|toml|sql|[mc]?js|ya?ml)\b", re.IGNORECASE)
+# ...or one of the files this repository keeps with no extension at all, where
+# the name is the whole filename (`Update Dockerfile to copy the manifest` names
+# a file as surely as any path). Deliberately case-sensitive and matched as a
+# standalone token: `LICENSE` and `Dockerfile` are files, `the license this repo
+# ships under` is prose, and `Dockerfiles` is neither.
+KNOWN_FILE = re.compile(
+    r"(?<![\w./-])(?:Dockerfile|Makefile|LICENSE|CODEOWNERS)(?![\w-])"
+    r"|(?<!\S)\.(?:gitignore|dockerignore|env(?:\.example)?)(?![\w-])"
+)
 
 # Or an instruction to commit, which no read-only assignment carries. `commit`
-# alone is a noun in review prose ("the commit that broke it"), so it counts
-# only alongside a word that makes it an instruction, in the same sentence.
+# alone is a noun in review prose -- "the commit that broke it", "review the
+# changes in commit 2248b048" -- and a review prompt is exactly the prompt that
+# also says `changes`, so the bare word counts only where the prompt is giving
+# an instruction: the same imperative position the build verbs are read in
+# (`and commit the fix`, `Then commit.`, `- commit by pathspec`). Two spellings
+# are instructions wherever they sit -- the git command itself, and the brief
+# template's own `commit by pathspec`, which no prose uses.
 GIT_COMMIT = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
-COMMIT_WORD = re.compile(r"\bcommit\b", re.IGNORECASE)
-COMMIT_INSTRUCTION = re.compile(r"\b(?:pathspec|fix|changes?)\b", re.IGNORECASE)
-# A sentence end, or a newline. `.` splits only before whitespace, so the dots
-# inside `.codex/hooks/agent_policy.py` do not end a sentence.
-SENTENCE_END = re.compile(r"[.!?;]+(?=\s|$)|\n+")
+IMPERATIVE_COMMIT = re.compile(rf"(?:{IMPERATIVE_LEAD})commit\b", re.IGNORECASE)
+COMMIT_BY_PATHSPEC = re.compile(r"\bcommit\s+by\s+pathspec\b", re.IGNORECASE)
 
 # The handoff record of the "## Escalation record" section in
 # .agents/skills/vesper-agent-build/templates/agent-brief.md. Route A: a worker
@@ -185,17 +199,21 @@ def _has_brief(prompt: str) -> bool:
 
 
 def _has_commit_signal(prompt: str) -> bool:
-    """True when the prompt tells the worker to commit."""
-    if GIT_COMMIT.search(prompt):
-        return True
-    return any(
-        COMMIT_WORD.search(sentence) and COMMIT_INSTRUCTION.search(sentence)
-        for sentence in SENTENCE_END.split(prompt)
+    """True when the prompt tells the worker to commit, not when it talks about a commit.
+
+    `Review the changes in commit 2248b048 and summarize them` is research and
+    names a commit; `and commit the fix`, `Then commit.`, `git commit -m ...`
+    and `commit by pathspec` are instructions.
+    """
+    return bool(
+        GIT_COMMIT.search(prompt)
+        or COMMIT_BY_PATHSPEC.search(prompt)
+        or IMPERATIVE_COMMIT.search(prompt)
     )
 
 
 def _names_a_repo_file(prompt: str) -> bool:
-    return bool(REPO_PATH.search(prompt) or BARE_FILE.search(prompt))
+    return bool(REPO_PATH.search(prompt) or BARE_FILE.search(prompt) or KNOWN_FILE.search(prompt))
 
 
 def _imperative_build_verb(prompt: str) -> bool:
@@ -238,12 +256,16 @@ def _normalize_words(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
-# Each approved area as a whole-word pattern over normalized text, so a category
-# matches however the writer spelled it: `migrations` (plural), `simulation core`
-# or `simulation-core` (either separator), `persistence/replay correctness` (the
-# pairing plus a noun). `styling`, `ui` and `docs` match nothing.
+# Each approved area as a pattern anchored at the start of the normalized
+# category, so a category matches however the writer spelled it -- `migrations`
+# (plural), `simulation core` or `simulation-core` (either separator),
+# `persistence/replay correctness` (the pairing plus a noun) -- and only when the
+# category leads with that area rather than merely containing it. The anchor is
+# the whole rule: read anywhere in the category, `non-authorization` and
+# `unrelated to migration` opened the route on the very word they negate.
+# `styling`, `ui` and `docs` match nothing either way.
 RISK_AREA_PATTERNS = tuple(
-    re.compile(r"\b" + _normalize_words(area).replace(" ", r"\s+") + r"s?\b")
+    re.compile(r"\A" + _normalize_words(area).replace(" ", r"\s+") + r"s?\b")
     for area in RISK_AREAS
 )
 
@@ -259,8 +281,9 @@ def _risk_category(value: str) -> str:
 
 
 def _is_approved_risk_area(value: str) -> bool:
-    """True when the value's leading category names an area `AGENTS.md` lets a
-    slice start on escalation for."""
+    """True when the value's leading category begins with an area `AGENTS.md` lets
+    a slice start on escalation for -- `non-authorization` and `unrelated to
+    migration` name none, however approved the word inside them is."""
     category = _normalize_words(_risk_category(value))
     return any(pattern.search(category) for pattern in RISK_AREA_PATTERNS)
 

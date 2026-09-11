@@ -248,10 +248,11 @@ FILLED_RISK_AREA_PROMPT = "Risk area: migration -- 0134 renames a column on a ho
 OFF_POLICY_RISK_AREA_PROMPT = "Risk area: styling -- this button needs careful visual polish."
 
 # One line per approved area, spelled the way a writer actually spells it rather
-# than the way the constant does: plural, the pairing plus a noun, and a space
-# where the constant has a hyphen.
+# than the way the constant does: plural, the pairing plus a noun, a space where
+# the constant has a hyphen, and the area followed by the writer's own words.
 APPROVED_RISK_AREA_PROMPTS = (
     "Risk area: kernel -- this slice rewrites the turn scheduler's ordering rule.",
+    "Risk area: kernel body events -- arming runs before the fold.",
     "Risk area: simulation core -- body kernel arming runs before the fold.",
     "Risk area: simulation-core -- body kernel arming runs before the fold.",
     "Risk area: migrations -- 0134 renames a column on a hot table.",
@@ -287,6 +288,57 @@ NOUN_VERB_RESEARCH_PROMPTS = (
 IMPERATIVE_ASSIGNMENT_PROMPTS = (
     "Then update docs/testing.md.",
     "- add a fixture to .codex/hooks/test_agent_policy.py",
+)
+
+# The most ordinary review assignment there is, and the one the commit rule used
+# to deny: `commit` and `changes` land in the same sentence because that is what
+# a prompt about a commit says.
+COMMIT_RESEARCH_PROMPT = "Review the changes in commit 2248b048 and summarize them"
+# The spellings that do tell a worker to commit: the word after a discourse cue,
+# at the head of a sentence, the git command, and the brief template's own phrase
+# -- an instruction wherever it sits, since no prose says it.
+COMMIT_INSTRUCTION_PROMPTS = (
+    "and commit the fix",
+    "Then commit.",
+    "git commit -m 'wip'",
+    "The rule here is to commit by pathspec",
+)
+
+# Imperative assignments the verb list missed. `Change <file> to ...` is how a
+# parent most often types one by hand.
+VERB_GAP_ASSIGNMENT_PROMPTS = (
+    "Change .codex/hooks/agent_policy.py to recognize this instruction",
+    "Replace the regex in .codex/hooks/agent_policy.py",
+)
+# ...and ones naming a file this repository keeps with no extension at all, which
+# a dotted-extension rule read as ordinary words.
+EXTENSIONLESS_FILE_ASSIGNMENT_PROMPTS = (
+    "Update Dockerfile to copy the new package manifest",
+    "Then add a rule to .gitignore",
+)
+# The prose those filenames are made of, which must stay prose: `the license` in
+# a sentence is not the `LICENSE` file.
+KNOWN_FILE_PROSE_PROMPTS = (
+    "Update the license section of the readme",
+    "Summarize the license this repository ships under",
+)
+
+# Route B categories that name an approved area only to say it does not apply.
+# Each carries a real rationale and clears every other check, so the category
+# rule is the only thing between them and the Opus role.
+NEGATED_RISK_AREA_PROMPTS = (
+    (
+        "Risk area: non-authorization -- this button needs careful visual polish.",
+        "non-authorization",
+    ),
+    (
+        "Risk area: unrelated to migration -- this button needs careful visual polish.",
+        "unrelated to migration",
+    ),
+    (
+        "Risk area: not a kernel change -- this button needs careful visual polish.",
+        "not a kernel change",
+    ),
 )
 
 
@@ -529,6 +581,24 @@ class CheckFunctionTests(unittest.TestCase):
         self.assertNotIn("without a rationale", route_b)
         self.assertNotIn("present but unfilled", route_b)
 
+    def test_escalation_with_a_negated_risk_area_is_denied(self):
+        """`non-authorization` and `unrelated to migration` carry an approved word inside a
+        category that says the opposite, and everything else about the line is well formed.
+        Looking for the word anywhere in the category opened the Opus role on the very
+        negation, so the category has to lead with the area rather than contain it."""
+        for prompt, named in NEGATED_RISK_AREA_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "vesper-escalation", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                route_b = next(
+                    line for line in reason.splitlines() if line.startswith("Route B")
+                )
+                self.assertIn(named, route_b)
+                self.assertIn("not one of the areas", route_b)
+                self.assertIn("vesper-builder", route_b)
+                self.assertNotIn("without a rationale", route_b)
+                self.assertNotIn("present but unfilled", route_b)
+
     def test_escalation_with_an_approved_risk_area_is_allowed_however_it_is_spelled(self):
         """The gate reads the category, not the constant: a plural, a space in place of the
         hyphen, and the `persistence/replay` pairing with a noun after it are how writers
@@ -641,6 +711,54 @@ class CheckFunctionTests(unittest.TestCase):
                 reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
                 self.assertIsNotNone(reason)
                 self.assertIn("vesper-builder", reason)
+
+    def test_a_prompt_reviewing_a_commit_is_allowed(self):
+        """`commit` is a noun in review prose, and a prompt about a commit is exactly the
+        prompt that also says `changes` -- so reading the two in one sentence as an
+        instruction denied the most ordinary read-only assignment there is."""
+        reason = HOOK.check(
+            {"subagent_type": "general-purpose", "prompt": COMMIT_RESEARCH_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_every_commit_instruction_spelling_is_still_denied(self):
+        """The other half of the same move: narrowing the rule to imperative position must
+        not drop the signal. A discourse cue, a sentence head, the git command and the
+        template's own `commit by pathspec` all still say commit."""
+        for prompt in COMMIT_INSTRUCTION_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                self.assertIn("vesper-builder", reason)
+
+    def test_change_and_replace_assign_work_like_the_other_build_verbs(self):
+        """They are the same instruction as `edit` or `rewrite`, written the way a parent
+        writes it; a verb list missing them let the free-form spawn through to whatever
+        model the ad-hoc default happens to be."""
+        for prompt in VERB_GAP_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                self.assertIn("vesper-builder", reason)
+
+    def test_an_assignment_naming_an_extensionless_repository_file_is_denied(self):
+        """`Dockerfile` and `.gitignore` are files this repository holds and a worker edits.
+        Requiring a dotted extension read them as ordinary words and allowed the
+        assignment."""
+        for prompt in EXTENSIONLESS_FILE_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                self.assertIn("vesper-builder", reason)
+
+    def test_a_prose_mention_of_an_extensionless_filename_is_allowed(self):
+        """What that rule must not cost: `the license` in a sentence is not the `LICENSE`
+        file. Matching those names case-sensitively and as whole tokens is what keeps an
+        ordinary sentence from being read as a path."""
+        for prompt in KNOWN_FILE_PROSE_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNone(reason)
 
     def test_an_assignment_naming_no_file_and_no_commit_is_allowed_by_design(self):
         """The heuristic's documented limit, asserted so it stays a decision rather than a
@@ -800,6 +918,23 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(code, 2)
                 self.assertIn("vesper-builder", err)
 
+    def test_general_purpose_reviewing_a_commit_passes(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "general-purpose", "prompt": COMMIT_RESEARCH_PROMPT},
+        })
+        self.assertEqual(code, 0, err)
+
+    def test_general_purpose_with_an_extensionless_file_assignment_is_denied(self):
+        for prompt in EXTENSIONLESS_FILE_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                code, out, err = run({
+                    "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "general-purpose", "prompt": prompt},
+                })
+                self.assertEqual(code, 2)
+                self.assertIn("vesper-builder", err)
+
     def test_explore_with_a_free_form_assignment_passes(self):
         code, out, err = run({
             "tool_name": "Agent",
@@ -818,6 +953,17 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("styling", err)
         self.assertIn("vesper-builder", err)
+
+    def test_vesper_escalation_with_a_negated_risk_area_is_denied(self):
+        for prompt, named in NEGATED_RISK_AREA_PROMPTS:
+            with self.subTest(prompt=prompt):
+                code, out, err = run({
+                    "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "vesper-escalation", "prompt": prompt},
+                })
+                self.assertEqual(code, 2)
+                self.assertIn(named, err)
+                self.assertIn("vesper-builder", err)
 
     def test_vesper_reviewer_with_brief_passes(self):
         code, out, err = run({
@@ -1046,6 +1192,82 @@ class ImperativeBuildVerbTests(unittest.TestCase):
         ):
             with self.subTest(prompt=prompt):
                 self.assertFalse(HOOK._imperative_build_verb(prompt))
+
+
+class CommitSignalTests(unittest.TestCase):
+    """State the commit rule on the helper directly. `commit` is an ordinary noun in review
+    prose, so where the word sits is the entire rule -- and a prompt-shaped fixture can be
+    denied for another reason (a template marker, a build verb beside a path) without ever
+    touching it."""
+
+    def test_an_instruction_to_commit_is_read_as_one(self):
+        for prompt in (
+            "commit the fix",  # the prompt's first word
+            "Commit by pathspec in one commit.",
+            "Then commit.",
+            "Read the brief and commit the fix",  # a discourse cue
+            "Do the work. Commit it.",  # a new sentence
+            "Steps:\n- commit by pathspec",  # a list item
+            "1. commit the fix",
+            "please commit when the tests pass",
+            "git commit -m 'wip'",  # the command, in any position
+            "run `git commit` once CI is green",
+            "the rule here is to commit by pathspec",  # the template phrase, in any position
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(HOOK._has_commit_signal(prompt))
+
+    def test_a_commit_named_in_prose_is_not(self):
+        """Every one of these is research about a commit. The first two are why the rule
+        moved: both put `commit` and `changes` in one sentence, which used to be the test,
+        and reviewing a commit is an ordinary reason to spawn `general-purpose` at all."""
+        for prompt in (
+            "Review the changes in commit 2248b048 and summarize them",
+            "Explain what changes the commit that broke CI introduced",
+            "find the commit that renamed the helper",
+            "summarize the changes since the last commit",
+            "which commit fixed the flake?",
+            "the commit message convention lives in AGENTS.md",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(HOOK._has_commit_signal(prompt))
+
+
+class LeadingRiskCategoryTests(unittest.TestCase):
+    """State the Route B category rule on the helper directly. A record-shaped fixture can be
+    denied for a missing rationale or a stray placeholder without the category ever being
+    read, so the two directions are asserted on the value itself."""
+
+    def test_a_category_leading_with_an_approved_area_is_approved(self):
+        """Anchoring must not cost the spellings writers actually use: a plural, either
+        separator, the `persistence/replay` pairing, and the area followed by the writer's
+        own words."""
+        for value in (
+            "kernel -- the turn scheduler's ordering rule",
+            "kernel body events — arming runs before the fold",
+            "migrations -- 0134 renames a column",
+            "simulation core -- the fold runs early",
+            "simulation-core -- the fold runs early",
+            "authz — the new route needs an owner check",
+            "authorization: the new route needs an owner check",
+            "persistence/replay correctness -- replay drops the last event",
+            "replay -- the fold drops its last event",
+        ):
+            with self.subTest(value=value):
+                self.assertTrue(HOOK._is_approved_risk_area(value))
+
+    def test_a_category_that_only_contains_an_approved_area_is_not(self):
+        """Each of the first four names an approved area and then says it does not apply.
+        Searching the category for the word approved every one of them."""
+        for value in (
+            "non-authorization -- this button needs careful visual polish",
+            "unrelated to migration -- this button needs careful visual polish",
+            "not a kernel change -- this button needs careful visual polish",
+            "no migration here -- the copy changes only",
+            "styling -- this button needs careful visual polish",
+        ):
+            with self.subTest(value=value):
+                self.assertFalse(HOOK._is_approved_risk_area(value))
 
 
 class PinnedRoleTableTests(unittest.TestCase):
