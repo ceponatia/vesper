@@ -59,8 +59,8 @@ over with one shared mapping:
   from the reviewed policy
   (`packages/image-core/src/models/reviewed-profile-controls.ts`), and every render is cropped to shape
   after download regardless.
-- Output is an array of URIs on twelve of fourteen models, and a bare URI string
-  on the other two.
+- Output is an array of URIs on twelve of fifteen models, and a bare URI string
+  on the other three.
 - One model watermarks by default (`apply_watermark`), which the probe pins off.
 - **Community models can only be run by version id.** The bare-slug endpoint is
   official-models-only, so a community model's registry row is auto-pinned to
@@ -83,7 +83,7 @@ model can run with no reference image; "edit" means it has a reference input at
 all. Neither promises identity preservation — that is the rating beside it
 (§Reviewed capability).
 
-Only the ten seeded models carry reviewed ratings. The four below them are
+Only the eleven seeded models carry reviewed ratings. The four below them are
 reference docs for models Vesper *can* run but does not ship a row for: an admin
 adds them from `/settings/image-models`, and they stay unrated until someone has
 looked at their output.
@@ -113,10 +113,15 @@ looked at their output.
   identity adapter with 283 lifetime runs. Variant and scene only.
 - [Pruna P-Image](p-image.md) — `prunaai/p-image`. Generate yes, edit **no**, no
   references. `none` · `unknown`. Portrait studio only; the speed baseline.
+- [Qwen Image 2](qwen-image-2.md) — `qwen/qwen-image-2`. Generate yes, edit yes,
+  1 reference. `unknown` · `unknown`, plus an operator warning — untried, with no
+  declared safety switch and prompt expansion on by default. On no player surface:
+  the admin Image Generator reaches it and nothing else does.
 
-Of those last four, only SDXL PuLID takes a reference image, which is why it is
-the only one on the variant and scene surfaces — the other three cannot hold a
-character's face across a render at all.
+Of the four adult/identity additions above — NSFW FLUX Dev, LikeReality Pony v1,
+SDXL PuLID and Pruna P-Image — only SDXL PuLID takes a reference image, which is
+why it is the only one on the variant and scene surfaces; the other three cannot
+hold a character's face across a render at all.
 
 Documented but not seeded — no row, and therefore no reviewed rating:
 
@@ -138,8 +143,11 @@ wrapper's own configuration: no reviewed dimensions, no cleared negative
 default, no sampler correction, and no seeded task-profile controls. The
 per-model pages below record what each wrapper defaults to and what its creator
 recommends, so an admin adding one knows what they are getting — but nothing in
-Vesper corrects it on their behalf. The reviewed set is the Qwen family plus the
-seeded adult/identity additions.
+Vesper corrects it on their behalf. The reviewed set is the two Qwen rows the
+production lanes run — [Qwen Image 2512](qwen-image-2512.md) and [Qwen Image Edit
+2511](qwen-image-edit-2511.md) — plus the seeded adult/identity additions. Sharing
+the family name does not join it: [Qwen Image 2](qwen-image-2.md) is seeded and
+carries neither a reviewed correction nor a profile.
 
 ## Moderation, by hosting model
 
@@ -147,9 +155,9 @@ Which models will refuse a render is not a property of the prompt — it follows
 from how Replicate runs them:
 
 - **Open weights on Replicate's GPUs** — the NSFW classifier is a component in
-  the cog wrapper and `disable_safety_checker` removes it. Both Qwen models,
-  FLUX dev, Juggernaut XL v9 and Pruna P-Image work this way; the `nsfw-api`
-  pipelines and the two `aisha-ai-official` fine-tunes ship with no checker at
+  the cog wrapper and `disable_safety_checker` removes it. Qwen Image 2512, Qwen
+  Image Edit 2511, FLUX dev, Juggernaut XL v9 and Pruna P-Image work this way;
+  the `nsfw-api` pipelines and the two `aisha-ai-official` fine-tunes ship with no checker at
   all, which is why their rows carry no safety key — the probe only pins inputs
   a schema actually declares.
 - **Vendor-API proxies** — moderation runs on the vendor's servers before
@@ -157,6 +165,11 @@ from how Replicate runs them:
   refuse this way (`ContentModerationError`, and Wan's `Async prediction failed`
   prefix is the giveaway of a proxied call). Seedream 4.5 is the exception that
   proves the rule: BytePlus exposes a relaxation, so it takes the flag.
+
+A row can sit in neither group. [Qwen Image 2](qwen-image-2.md) declares no safety
+input, which is equally consistent with a wrapper that ships no checker and with a
+proxied vendor call, and no render here has settled it. Its page records which
+reading its control set suggests, and why a suggestion is not evidence.
 
 The flag only removes the classifier. What a model was *trained* to draw is a
 separate ceiling, and the reason the SDXL-lineage fine-tunes here behave
@@ -189,8 +202,11 @@ not the prose here, are the runtime source of truth
 ([providers/README.md](../../images/providers/README.md)).
 
 `probed_version_id` — the version the stored bindings came from, and the version named in each
-file's provenance line — is written on rows added through the admin page and on the four seeded
-rows whose slugs name it. The six original seeded rows carry none: they predate the column.
+file's provenance line — is written on rows added through the admin page, on every seeded row
+whose slug names a version, and on the seeded bare-slug rows a migration pins explicitly: Pruna
+P-Image, both Seedream rows, and Qwen Image 2. Four rows are seeded without one — Qwen Image
+2512, Qwen Image Edit 2511, Stable Diffusion 3.5 Large and Wan 2.7 Image Pro — because they
+predate the column; a re-probe or a version activation from the admin page writes it.
 `advanced_capabilities` is probe-owned and
 holds optional control bindings plus provider-input descriptors; a row created
 before a capability derivation existed gains those fields on re-probe or version
