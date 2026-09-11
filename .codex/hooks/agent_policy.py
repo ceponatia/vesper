@@ -63,6 +63,13 @@ LABEL_LINE = re.compile(
     r"(?P<label>[^:<>\n]{1,60}?)[ \t]*:[ \t]*(?P<value>.*)$"
 )
 
+# A `<...>` chunk standing in for the root of a quoted path, e.g. the
+# `<worktree>` of `<worktree>/.codex/hooks/agent_policy.py`: one token, no
+# whitespace, `/` immediately after. The only angle-bracket shape a filled value
+# may keep.
+PATH_PLACEHOLDER = re.compile(r"<[^<>\s]+>(?=/)")
+PLACEHOLDER = re.compile(r"<[^<>]*>")
+
 ABSENT = "absent"
 UNFILLED = "unfilled"
 FILLED = "filled"
@@ -88,13 +95,19 @@ def _label_matches(label: str, field: str) -> bool:
 def _is_filled_value(value: str) -> bool:
     """True when `value` carries this slice's own facts rather than template text.
 
-    The template writes every field as `<angle-bracket prose>`, so a value is
-    unfilled when nothing but placeholders and punctuation is left once the
-    `<...>` chunks are removed. Removing them instead of rejecting any `<` keeps
-    a real value that happens to quote a placeholder path -- `Changed files:
-    <worktree>/.codex/hooks/agent_policy.py` -- from reading as boilerplate.
+    The template writes every field as `<angle-bracket prose>`, so any `<...>`
+    chunk still in a value is template prose that survived the edit: a
+    half-edited `Risk area: migration — <why>.` names a category but never the
+    reason, which is the whole point of the field. One shape is not boilerplate
+    -- a placeholder standing in for the root of a path the writer is quoting
+    (`<worktree>/.codex/hooks/agent_policy.py`): a single token, no whitespace,
+    with a `/` immediately after it. That one is dropped before the check; every
+    other chunk marks the value unfilled.
     """
-    return bool(re.search(r"\w", re.sub(r"<[^<>]*>", "", value)))
+    remainder = PATH_PLACEHOLDER.sub("", value)
+    if PLACEHOLDER.search(remainder):
+        return False
+    return bool(re.search(r"\w", remainder))
 
 
 def _indent_width(line: str) -> int:
@@ -107,7 +120,9 @@ def _block_is_filled(lines: list[str], boundaries: set[int], index: int, match: 
     The value may sit on the field's own line, or below it as an indented block
     (`Findings:` followed by a numbered list) -- a shape real briefs use. Only
     lines indented deeper than the field count, so a field left empty above
-    ordinary prose stays unfilled.
+    ordinary prose stays unfilled. Continuation lines answer to the same
+    placeholder rule as the field's own line: a block whose every line is still
+    template prose fills nothing.
     """
     if _is_filled_value(match.group("value")):
         return True
@@ -174,8 +189,9 @@ def _escalation_denial(prompt: str) -> str | None:
             problems.append("missing: " + ", ".join(missing))
         if unfilled:
             problems.append(
-                "present but unfilled (empty, or still the template's `<...>` placeholder text): "
-                + ", ".join(unfilled)
+                "present but unfilled (empty, or still carrying the template's `<...>` "
+                "placeholder text — only a quoted path root such as `<worktree>/...` may keep "
+                "its angle brackets): " + ", ".join(unfilled)
             )
         if not marked:
             problems.append("no `Escalation:` line or `## Escalation` heading marks the record")
@@ -188,8 +204,9 @@ def _escalation_denial(prompt: str) -> str | None:
         )
     else:
         route_b = (
-            "the `Risk area:` line is present but unfilled (empty, or still the template's "
-            "`<...>` placeholder text); name the actual risk, e.g. "
+            "the `Risk area:` line is present but unfilled (empty, or still carrying the "
+            "template's `<...>` placeholder text — choosing the category and leaving `<why>` "
+            "is still unfilled); name the actual risk, e.g. "
             "`Risk area: migration — 0134 rewrites a hot table`."
         )
 

@@ -85,6 +85,14 @@ TEMPLATE_RISK_AREA_LINE = next(
     if line.startswith("Risk area:")
 )
 
+# The template's Risk area line with only the category chosen and the reason left
+# as template prose: the half-edited shape a parent produces by deleting the
+# alternatives -- `Risk area: migration -- <why>.` -- and the one the gate used to
+# read as filled because a word survived the placeholder strip.
+PARTIAL_RISK_AREA_LINE, _PARTIAL_RISK_AREA_SUBS = re.subn(
+    r"<kernel[^>]*>", "migration", TEMPLATE_RISK_AREA_LINE
+)
+
 # A slice that starts on escalation: the parent pasted the template section and
 # filled only the Risk area alternative, leaving the six handoff placeholders --
 # which describe a failed attempt that never happened -- above it.
@@ -116,6 +124,20 @@ FILLED_ESCALATION_PROMPT = "\n".join([
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
+# The template's own Trigger line, for a record whose writer filled every field
+# but that one.
+TEMPLATE_TRIGGER_LINE = next(
+    line
+    for line in FULL_TEMPLATE_ESCALATION_SECTION.splitlines()
+    if line.startswith("- Trigger:")
+)
+
+# Five fields filled and the sixth still the template's own line: the record a
+# writer produces by working down the template and skipping one field.
+LEFTOVER_TRIGGER_PROMPT, _LEFTOVER_TRIGGER_SUBS = re.subn(
+    r"(?m)^- Trigger:.*$", TEMPLATE_TRIGGER_LINE, FILLED_ESCALATION_PROMPT
+)
+
 # A field whose value continues as an indented block below its label, the way a
 # parent writes a record with more than one finding.
 MULTILINE_FIELD_ESCALATION_PROMPT = "\n".join([
@@ -132,8 +154,9 @@ MULTILINE_FIELD_ESCALATION_PROMPT = "\n".join([
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
-# Real field values that happen to quote the docs' own `<placeholder>` paths:
-# a filled record must not read as boilerplate just for containing angle brackets.
+# Real field values that quote the docs' own `<worktree>/...` paths: a path root
+# is the one angle-bracket shape a filled value may keep, because it names a real
+# file this slice touched rather than prose the writer failed to replace.
 ANGLE_BRACKET_VALUE_PROMPT = "\n".join([
     "Escalation:",
     "- Originating brief: #999 -- do a bounded thing.",
@@ -346,6 +369,33 @@ class CheckFunctionTests(unittest.TestCase):
         self.assertIsNotNone(reason)
         self.assertIn("Risk area", reason)
 
+    def test_escalation_with_a_half_edited_risk_area_line_is_denied(self):
+        """Choosing the category and leaving `<why>` gives the worker no reason at all. A
+        leftover placeholder must not be rescued by the words around it, or every partially
+        edited template line satisfies the gate."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": PARTIAL_RISK_AREA_LINE}
+        )
+        self.assertIsNotNone(reason)
+        route_b = next(line for line in reason.splitlines() if line.startswith("Route B"))
+        self.assertIn("present but unfilled", route_b)
+
+    def test_escalation_with_one_field_left_as_template_text_is_denied_and_names_only_it(self):
+        """Five filled fields do not carry the sixth: the deny reason names the field still
+        holding the template's prose and stays silent about the five that are done."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": LEFTOVER_TRIGGER_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        route_a = next(line for line in reason.splitlines() if line.startswith("Route A"))
+        self.assertIn("Trigger", route_a)
+        self.assertNotIn("missing", route_a)
+        for field in HOOK.RECORD_FIELDS:
+            if field == "Trigger":
+                continue
+            with self.subTest(field=field):
+                self.assertNotIn(field, route_a)
+
     def test_escalation_with_an_indented_multiline_field_is_allowed(self):
         """A field whose value is a list below its label is filled in; requiring the value on
         the label's own line would deny real records."""
@@ -355,8 +405,9 @@ class CheckFunctionTests(unittest.TestCase):
         self.assertIsNone(reason)
 
     def test_escalation_field_quoting_a_placeholder_path_is_allowed(self):
-        """`<worktree>/...` is a real path this slice touched, not template boilerplate: the
-        placeholder test must look at what remains around the angle brackets."""
+        """`<worktree>/...` is a real path this slice touched, not template boilerplate: a
+        placeholder followed immediately by `/` names a path root, and rejecting every angle
+        bracket would deny real records about paths."""
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": ANGLE_BRACKET_VALUE_PROMPT}
         )
@@ -575,6 +626,43 @@ class EscalationRecordTemplateTests(unittest.TestCase):
         changed shape the fixture would silently become a copy of the unfilled section."""
         self.assertEqual(_RISK_AREA_SUBS, 1)
         self.assertNotIn(TEMPLATE_RISK_AREA_LINE, RISK_AREA_WITH_UNFILLED_HANDOFF_PROMPT)
+
+    def test_the_half_edited_fixtures_still_carry_the_template_s_own_placeholder_text(self):
+        """Both half-edited fixtures are built by substitution on the template. If the
+        template's wording moved, they would silently stop being half-edited -- one a fully
+        filled line, the other a record with six real values -- and prove nothing."""
+        self.assertEqual(_PARTIAL_RISK_AREA_SUBS, 1)
+        self.assertRegex(PARTIAL_RISK_AREA_LINE, r"<[^<>]*>")
+        self.assertEqual(_LEFTOVER_TRIGGER_SUBS, 1)
+        self.assertRegex(LEFTOVER_TRIGGER_PROMPT, r"(?m)^- Trigger:.*<[^<>]*>")
+
+
+class PlaceholderValueTests(unittest.TestCase):
+    """State the filled-versus-template rule on values directly. Every route through the gate
+    rests on it, and a record-shaped fixture can pass for the wrong reason."""
+
+    def test_a_value_still_carrying_template_prose_is_unfilled(self):
+        for value in (
+            "",
+            "<why>",
+            "migration -- <why>.",
+            "<kernel | migration | authz | persistence/replay> -- <why>.",
+            "<paths touched so far>.",
+            "apps/web/src/server/thing.ts and <whatever else this touched>.",
+            "<worktree>/",
+        ):
+            with self.subTest(value=value):
+                self.assertFalse(HOOK._is_filled_value(value))
+
+    def test_a_value_naming_real_facts_is_filled_even_around_a_quoted_path_root(self):
+        for value in (
+            "migration -- 0134 rewrites a hot table",
+            "apps/web/src/server/thing.ts",
+            "<worktree>/.codex/hooks/agent_policy.py",
+            "apps/web/src/server/thing.ts, <worktree>/migrations/0134_thing.sql",
+        ):
+            with self.subTest(value=value):
+                self.assertTrue(HOOK._is_filled_value(value))
 
 
 class PinnedRoleTableTests(unittest.TestCase):
