@@ -18,14 +18,18 @@ parse: the brief template's own markers, an instruction to commit, or a
 build verb next to a repository file. Position is what separates an
 instruction from prose in the last two -- "and commit the fix" assigns
 work, "the changes in commit 2248b048" does not -- so both are read in
-imperative position and nowhere else. Two kinds of assignment are
-deliberately not caught, because the only rules broad enough to catch
-them also deny ordinary prompts, and a gate that denies ordinary prompts
-gets worked around: one that names no file and asks for no commit —
-"update the docs" — and one whose verb never lands in imperative
-position — "your task is to update the hook". The mirror of the second
-is what the position rule buys: "summarize the write path in
-apps/.../thing.ts" is research, not a write instruction. The built-in
+imperative position and nowhere else, and after a discourse cue a build
+verb also has to take an object, because "and" coordinates nouns as
+readily as clauses ("compare the create and delete paths"). Three kinds
+of assignment are deliberately not caught, because the only rules broad
+enough to catch them also deny ordinary prompts, and a gate that denies
+ordinary prompts gets worked around: one that names no file and asks for
+no commit — "update the docs"; one whose verb never lands in imperative
+position — "your task is to update the hook"; and one that quotes its
+git command at the head of a line, where the backtick breaks the lead.
+The mirror of the second is what the position rule buys: "summarize the
+write path in apps/.../thing.ts" is research, not a write instruction,
+and so is "explain why git commit -a is forbidden". The built-in
 read-only agent types are exempt from the rule outright: they cannot edit
 or commit, so a brief-shaped prompt to one of them is research.
 
@@ -62,17 +66,33 @@ BUILD_VERB = (
 # also an ordinary English noun or adjective -- "the write path", "an update on
 # the docs", "the add flow", "a fix" -- and a research prompt about code is
 # exactly the prompt that also names a file, so a verb matched anywhere denied
-# `summarize the write path in apps/.../thing.ts`. Imperative position is: the
-# prompt's first word, the first word of a line or of a list item, the first
-# word of a new sentence, or the word straight after a discourse cue
-# (`please update ...`, `then edit ...`, `and add ...`).
-IMPERATIVE_LEAD = (
+# `summarize the write path in apps/.../thing.ts`. Imperative position is
+# structural -- the prompt's first word, the first word of a line or of a list
+# item, the first word of a new sentence -- or discursive: the word straight
+# after a discourse cue (`please update ...`, `then edit ...`, `and add ...`).
+STRUCTURAL_LEAD = (
     r"(?:\A|\n)[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
     r"|[.!?;]+[ \t]+"
-    r"|\b(?:please|then|and|also|now|first|next|finally)[,:]?[ \t]+"
+)
+DISCOURSE_CUE = r"\b(?:please|then|and|also|now|first|next|finally)[,:]?[ \t]+"
+IMPERATIVE_LEAD = rf"{STRUCTURAL_LEAD}|{DISCOURSE_CUE}"
+# What a cue-led verb has to be followed by to be read as one. `and` is the cue
+# that does double duty: it coordinates clauses (`read the brief and update the
+# hook`) and it coordinates nouns (`compare the create and delete paths`), and
+# in the second the word after the cue is a modifier, not an instruction. A real
+# object is what separates them -- an imperative takes a determiner or names a
+# target outright -- so a cue-led verb counts only when a determiner, an issue
+# number, a path or a filename follows it. `delete paths` and `create endpoint`
+# carry none and stay prose. The structural positions ask for no object: a line
+# or sentence that opens with a build verb is an instruction whatever follows.
+VERB_TARGET = (
+    r"(?:(?:the|a|an|this|that|these|those|its|our|your|every|each|all|any)\b"
+    r"|#\d|[\w.-]*/|\.?[\w-]+\.[A-Za-z0-9]{1,6}\b)"
 )
 IMPERATIVE_BUILD_VERB = re.compile(
-    rf"(?:{IMPERATIVE_LEAD})(?:{BUILD_VERB})\b", re.IGNORECASE
+    rf"(?:{STRUCTURAL_LEAD})(?:{BUILD_VERB})\b"
+    rf"|(?:{DISCOURSE_CUE})(?:{BUILD_VERB})\b[ \t]+{VERB_TARGET}",
+    re.IGNORECASE,
 )
 # ...next to a file this repository holds: a slash-bearing token whose last
 # segment carries an extension (`apps/web/src/thing.ts`,
@@ -83,12 +103,20 @@ REPO_PATH = re.compile(r"\S*/\S*\.[A-Za-z0-9]{1,6}(?![\w/])")
 BARE_FILE = re.compile(r"\b[\w.-]+\.(?:tsx?|py|mdx?|json|toml|sql|[mc]?js|ya?ml)\b", re.IGNORECASE)
 # ...or one of the files this repository keeps with no extension at all, where
 # the name is the whole filename (`Update Dockerfile to copy the manifest` names
-# a file as surely as any path). Deliberately case-sensitive and matched as a
-# standalone token: `LICENSE` and `Dockerfile` are files, `the license this repo
-# ships under` is prose, and `Dockerfiles` is neither.
+# a file as surely as any path). An optional path may lead it: this repository
+# holds `docker/postgres/Dockerfile`, and `./Dockerfile` is how a parent writes
+# the root one -- `REPO_PATH` wants an extension and finds neither, so a rule
+# that refused a preceding slash left the most exact spelling of the filename
+# unrecognized. Deliberately case-sensitive and matched as a whole final
+# segment: `LICENSE` and `Dockerfile` are files, `the license this repo ships
+# under` is prose, and `Dockerfiles` is neither. A URL whose tail happens to be
+# one of these names (`https://example.com/Dockerfile`) matches too -- the cost
+# of reading a path prefix without parsing it, and a link to a Dockerfile beside
+# a build verb is not the prompt this rule gets wrong in practice.
 KNOWN_FILE = re.compile(
-    r"(?<![\w./-])(?:Dockerfile|Makefile|LICENSE|CODEOWNERS)(?![\w-])"
-    r"|(?<!\S)\.(?:gitignore|dockerignore|env(?:\.example)?)(?![\w-])"
+    r"(?<![\w.-])(?:\.?\.?/)?(?:[\w.-]+/)*(?:Dockerfile|Makefile|LICENSE|CODEOWNERS)(?![\w-])"
+    r"|(?<![\w.-])(?:\.?\.?/)?(?:[\w.-]+/)*"
+    r"\.(?:gitignore|dockerignore|env(?:\.example)?)(?![\w-])"
 )
 
 # Or an instruction to commit, which no read-only assignment carries. `commit`
@@ -96,27 +124,39 @@ KNOWN_FILE = re.compile(
 # changes in commit 2248b048" -- and a review prompt is exactly the prompt that
 # also says `changes`, so the bare word counts only where the prompt is giving
 # an instruction: the same imperative position the build verbs are read in
-# (`and commit the fix`, `Then commit.`, `- commit by pathspec`). Two spellings
-# are instructions wherever they sit -- the git command itself, and the brief
-# template's own `commit by pathspec`, which no prose uses.
-GIT_COMMIT = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
+# (`and commit the fix`, `Then commit.`, `- commit by pathspec`). The git
+# command itself is read the same way and for the same reason: `Explain why git
+# commit -a is forbidden in AGENTS.md` quotes the command to ask about it, and a
+# prompt about a forbidden command is exactly the prompt that spells it out. One
+# spelling is an instruction wherever it sits -- the brief template's own
+# `commit by pathspec`, which no prose uses. The cost of the position rule is a
+# command quoted at the head of a line -- "`git commit -m x` is forbidden" and
+# "run `git commit` once CI is green" read the same way, because the backtick
+# breaks the lead in both. That is wrong in the direction that lets a prompt
+# through, which is the direction this gate is deliberately wrong in.
+GIT_COMMIT = re.compile(rf"(?:{IMPERATIVE_LEAD})git\s+commit\b", re.IGNORECASE)
 IMPERATIVE_COMMIT = re.compile(rf"(?:{IMPERATIVE_LEAD})commit\b", re.IGNORECASE)
 COMMIT_BY_PATHSPEC = re.compile(r"\bcommit\s+by\s+pathspec\b", re.IGNORECASE)
 
 # The handoff record of the "## Escalation record" section in
 # .agents/skills/vesper-agent-build/templates/agent-brief.md. Route A: a worker
-# taking over a failed attempt must arrive with all six, each filled in -- these
-# are exactly the facts that keep it from restarting blindly.
+# taking over a failed attempt must arrive with all seven, each filled in --
+# these are exactly the facts that keep it from restarting blindly. `CI output`
+# is one of them because `AGENTS.md` lists CI contradicting the builder's model
+# as a reason to escalate at all: a record that stops at the unresolved question
+# sends the worker to reconstruct the failure it was escalated over. `none` is a
+# legitimate answer when no run exists, with the reason it does not.
 RECORD_FIELDS = (
     "Originating brief",
     "Trigger",
     "Findings",
     "Attempted approaches",
     "Changed files",
+    "CI output",
     "Unresolved question",
 )
 # The template's alternative, for a slice owned by `vesper-escalation` from the
-# start. Route B: one line is the whole record, and the six handoff fields above
+# start. Route B: one line is the whole record, and the seven handoff fields above
 # it in the pasted template stay unfilled precisely because nothing failed yet --
 # so a `Risk area:` line is sufficient on its own. Being the whole record, it has
 # to earn that: a bare category names no risk the worker could not read off the
@@ -202,8 +242,9 @@ def _has_commit_signal(prompt: str) -> bool:
     """True when the prompt tells the worker to commit, not when it talks about a commit.
 
     `Review the changes in commit 2248b048 and summarize them` is research and
-    names a commit; `and commit the fix`, `Then commit.`, `git commit -m ...`
-    and `commit by pathspec` are instructions.
+    names a commit, and so is `Explain why git commit -a is forbidden in
+    AGENTS.md`; `and commit the fix`, `Then commit.`, a line that opens
+    `git commit -m ...` and `commit by pathspec` are instructions.
     """
     return bool(
         GIT_COMMIT.search(prompt)
@@ -226,6 +267,13 @@ def _imperative_build_verb(prompt: str) -> bool:
     prompt, of a line, of a list item or of a sentence, or straight after a
     discourse cue -- and is ignored anywhere a determiner or another word put
     it in the middle of a noun phrase.
+
+    After a cue the verb needs an object too. `and` joins clauses and noun
+    phrases alike, so `read the brief and update the hook` is an instruction
+    while `compare the create and delete paths` is one noun phrase; a following
+    determiner, issue number, path or filename is what tells them apart. The
+    structural positions need no object: nothing but an instruction opens a line
+    with `rewrite`.
     """
     return bool(IMPERATIVE_BUILD_VERB.search(prompt))
 
@@ -309,7 +357,7 @@ def _is_filled_value(value: str, min_words: int = 1) -> bool:
     (`<worktree>/...`, dropped by `PATH_PLACEHOLDER` before the check).
 
     `min_words` is how many `\w+` tokens must survive. One -- any real content at
-    all -- is the rule for the six handoff fields. Route B's `Risk area:` line is
+    all -- is the rule for the seven handoff fields. Route B's `Risk area:` line is
     the whole record on its own, so it asks for four: enough that the line has to
     carry a reason and not just a category.
     """
@@ -375,7 +423,7 @@ def _field_state(
     """One labelled field's reading: FILLED, NOT_RISK_AREA, NO_RATIONALE, or UNFILLED.
 
     Every field but `Risk area:` is filled by any content that is not template
-    prose -- the six handoff fields are read together, and a short one is still a
+    prose -- the seven handoff fields are read together, and a short one is still a
     fact the next worker did not have. `Risk area:` is read alone, so it has two
     more questions to answer. It has to clear `RISK_AREA_MIN_WORDS`; clearing the
     placeholder rule but not the word count is NO_RATIONALE, a named category with
@@ -456,7 +504,7 @@ def _escalation_denial(prompt: str) -> str | None:
     if not marked and not unfilled and missing == list(RECORD_FIELDS):
         route_a = (
             "not attempted — add an `Escalation:` line or a `## Escalation` heading plus all "
-            "six fields, each filled with this slice's facts: " + ", ".join(RECORD_FIELDS) + "."
+            "seven fields, each filled with this slice's facts: " + ", ".join(RECORD_FIELDS) + "."
         )
     else:
         problems = []

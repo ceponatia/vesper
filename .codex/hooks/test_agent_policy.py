@@ -29,6 +29,7 @@ ESCALATION_PROMPT = "\n".join([
     "Findings: the guard runs after the read, so concurrent writers still interleave.",
     "Attempted approaches: a service-layer guard, then a unique index; both missed concurrent inserts.",
     "Changed files: apps/web/src/server/thing.ts.",
+    "CI output: verify run 34639284299 failed at the integration suite.",
     "Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -44,6 +45,7 @@ LATE_ESCALATION_PROMPT = "\n".join([
     "- Findings: the guard runs after the read, so concurrent writers still interleave.",
     "- Attempted approaches: a service-layer guard, then a unique index; both missed inserts.",
     "- Changed files: apps/web/src/server/thing.ts.",
+    "- CI output: verify run 34639284299 failed at the integration suite on a8da4b87.",
     "- Unresolved question: where the lock belongs.",
 ])
 
@@ -54,7 +56,7 @@ HEADING_ONLY_PROMPT = "\n".join([
     "Take over #999 from the builder and sort it out.",
 ])
 
-# Two of the six fields filled, the rest simply deleted rather than left as
+# Two of the seven fields filled, the rest simply deleted rather than left as
 # template text -- the partial record that used to satisfy the gate.
 PARTIAL_ESCALATION_PROMPT = "\n".join([
     "Escalation:",
@@ -100,7 +102,7 @@ PARTIAL_RISK_AREA_LINE, _PARTIAL_RISK_AREA_SUBS = re.subn(
 )
 
 # A slice that starts on escalation: the parent pasted the template section and
-# filled only the Risk area alternative, leaving the six handoff placeholders --
+# filled only the Risk area alternative, leaving the seven handoff placeholders --
 # which describe a failed attempt that never happened -- above it.
 RISK_AREA_WITH_UNFILLED_HANDOFF_PROMPT, _RISK_AREA_SUBS = re.subn(
     r"(?m)^Risk area:.*$",
@@ -117,6 +119,7 @@ TEMPLATE_HEADING_FILLED_PROMPT = "\n".join([
     "- Findings: the guard runs after the read, so concurrent writers still interleave.",
     "- Attempted approaches: a service-layer guard, then a unique index; both missed inserts.",
     "- Changed files: apps/web/src/server/thing.ts.",
+    "- CI output: none -- the branch was never pushed, so no run exists.",
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -127,6 +130,7 @@ FILLED_ESCALATION_PROMPT = "\n".join([
     "- Findings: the backfill default is safe for existing rows but not concurrent writers.",
     "- Attempted approaches: a service-layer guard, then a DB constraint; both missed concurrent inserts.",
     "- Changed files: apps/web/src/server/thing.ts, migrations/0134_thing.sql.",
+    "- CI output: verify run 34639284299 failed at migrate on a8da4b87.",
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -138,7 +142,7 @@ TEMPLATE_TRIGGER_LINE = next(
     if line.startswith("- Trigger:")
 )
 
-# Five fields filled and the sixth still the template's own line: the record a
+# Six fields filled and the seventh still the template's own line: the record a
 # writer produces by working down the template and skipping one field.
 LEFTOVER_TRIGGER_PROMPT, _LEFTOVER_TRIGGER_SUBS = re.subn(
     r"(?m)^- Trigger:.*$", TEMPLATE_TRIGGER_LINE, FILLED_ESCALATION_PROMPT
@@ -157,6 +161,7 @@ MULTILINE_FIELD_ESCALATION_PROMPT = "\n".join([
     "- Attempted approaches:",
     "  (a) a service-layer guard; (b) a unique index. Both missed concurrent inserts.",
     "- Changed files: apps/web/src/server/thing.ts, migrations/0134_thing.sql.",
+    "- CI output: verify run 34639284299 failed at the integration suite.",
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -170,6 +175,7 @@ ANGLE_BRACKET_VALUE_PROMPT = "\n".join([
     "- Findings: the hook resolves <worktree>/.codex/hooks/agent_policy.py, not the symlink.",
     "- Attempted approaches: a relative path, then a resolved one; both broke under the symlink.",
     "- Changed files: <worktree>/.codex/hooks/agent_policy.py.",
+    "- CI output: none -- no CI job selects the hook fixtures.",
     "- Unresolved question: whether the hook should resolve symlinks at all.",
 ])
 
@@ -183,6 +189,7 @@ CODE_AND_AUTOLINK_VALUE_PROMPT = "\n".join([
     "- Findings: <CharacterCard /> reads the id as Record<string, X>, so the cast drops it.",
     "- Attempted approaches: widening the generic, then a cast at the call site; both lost the id.",
     "- Changed files: apps/web/src/components/character-card.tsx.",
+    "- CI output: typecheck failed on <https://github.com/ceponatia/vesper/actions/runs/34639284299>.",
     "- Unresolved question: whether the id belongs in the props type at all.",
 ])
 
@@ -201,6 +208,7 @@ EMPTY_FIELD_ESCALATION_PROMPT = "\n".join([
     "- Findings:",
     "- Attempted approaches: a service-layer guard, then a unique index.",
     "- Changed files: apps/web/src/server/thing.ts.",
+    "- CI output: verify run 34639284299 failed at the integration suite.",
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -214,6 +222,7 @@ PROSE_AFTER_EMPTY_FIELD_PROMPT = "\n".join([
     "Take over and work out what is going on.",
     "- Attempted approaches: a service-layer guard, then a unique index.",
     "- Changed files: apps/web/src/server/thing.ts.",
+    "- CI output: verify run 34639284299 failed at the integration suite.",
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -227,16 +236,47 @@ PARAPHRASED_LABEL_ESCALATION_PROMPT = "\n".join([
     "- **Findings**: the guard runs after the read, so concurrent writers interleave.",
     "- Attempted approaches so far: a service-layer guard, then a unique index.",
     "- Changed files so far: apps/web/src/server/thing.ts.",
+    "- **CI output**: verify run 34639284299 failed at the integration suite.",
     "- **Unresolved question**: whether the lock belongs in the repo or the service.",
 ])
 
-# Six filled fields, but nothing says this is an escalation record.
+# Seven filled fields, but nothing says this is an escalation record.
 MARKERLESS_RECORD_PROMPT = "\n".join([
     "- Originating brief: #999 -- do a bounded thing.",
     "- Trigger: the second attempt failed the same way as the first.",
     "- Findings: the guard runs after the read, so concurrent writers interleave.",
     "- Attempted approaches: a service-layer guard, then a unique index.",
     "- Changed files: apps/web/src/server/thing.ts.",
+    "- CI output: verify run 34639284299 failed at the integration suite.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
+# The record as it read before `CI output` joined it: six filled fields and no
+# seventh. `AGENTS.md` escalates over CI contradicting the builder's model, so a
+# record that stops at the unresolved question sends the next worker to
+# reconstruct the very failure it was escalated over.
+SIX_FIELD_RECORD_PROMPT = "\n".join([
+    "Escalation:",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the second attempt failed the same way as the first.",
+    "- Findings: the guard runs after the read, so concurrent writers interleave.",
+    "- Attempted approaches: a service-layer guard, then a unique index.",
+    "- Changed files: apps/web/src/server/thing.ts.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
+# The seventh field answered with `none` and the reason there is none. A slice
+# whose change was never pushed has no run to report, and a rule that demanded a
+# run id would deny the record for telling the truth -- so `none` with a reason
+# is content, and only an empty field or leftover template prose is not.
+CI_OUTPUT_NONE_PROMPT = "\n".join([
+    "Escalation:",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the second attempt failed the same way as the first.",
+    "- Findings: the guard runs after the read, so concurrent writers interleave.",
+    "- Attempted approaches: a service-layer guard, then a unique index.",
+    "- Changed files: apps/web/src/server/thing.ts.",
+    "- CI output: none -- no run exists for this uncommitted change.",
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -295,13 +335,23 @@ IMPERATIVE_ASSIGNMENT_PROMPTS = (
 # a prompt about a commit says.
 COMMIT_RESEARCH_PROMPT = "Review the changes in commit 2248b048 and summarize them"
 # The spellings that do tell a worker to commit: the word after a discourse cue,
-# at the head of a sentence, the git command, and the brief template's own phrase
-# -- an instruction wherever it sits, since no prose says it.
+# at the head of a sentence, the git command in either of those positions, and
+# the brief template's own phrase -- an instruction wherever it sits, since no
+# prose says it.
 COMMIT_INSTRUCTION_PROMPTS = (
     "and commit the fix",
     "Then commit.",
     "git commit -m 'wip'",
+    "Then git commit -m 'wip'",
     "The rule here is to commit by pathspec",
+)
+
+# Research about the command itself, which the command rule used to deny wherever
+# it appeared: a prompt asking why a command is forbidden is exactly the prompt
+# that spells the command out.
+GIT_COMMAND_RESEARCH_PROMPTS = (
+    "Explain why git commit -a is forbidden in AGENTS.md",
+    "`git commit -m x` is forbidden by AGENTS.md",
 )
 
 # Imperative assignments the verb list missed. `Change <file> to ...` is how a
@@ -316,6 +366,32 @@ EXTENSIONLESS_FILE_ASSIGNMENT_PROMPTS = (
     "Update Dockerfile to copy the new package manifest",
     "Then add a rule to .gitignore",
 )
+# The same filenames with the path a parent actually types. `REPO_PATH` wants an
+# extension and these have none, so the most exact spelling of the file was the
+# one the rule missed: this repository really does hold `docker/postgres/Dockerfile`.
+PATH_QUALIFIED_FILE_ASSIGNMENT_PROMPTS = (
+    "Update docker/postgres/Dockerfile to copy the new package manifest",
+    "Update ./Dockerfile to copy the new package manifest",
+    "Then add a rule to apps/web/.gitignore",
+)
+
+# Research whose build verb is the second half of a coordinated noun phrase.
+# `and` joins nouns as readily as clauses, so `delete paths` and `create
+# endpoint` satisfied the cue rule while modifying a noun -- and a prompt
+# comparing two code paths is exactly the prompt that names the file, which is
+# the other half of the rule.
+COORDINATED_NOUN_RESEARCH_PROMPTS = (
+    "Compare the create and delete paths in apps/web/src/server/foo.ts",
+    "trace the add flow and create endpoint in apps/web/src/server/foo.ts",
+)
+
+# The same cue with a real object after the verb: what an instruction has and a
+# coordinated noun does not.
+CUE_LED_ASSIGNMENT_PROMPTS = (
+    "Read the brief and update the hook in .codex/hooks/agent_policy.py",
+    "then add a fixture to .codex/hooks/test_agent_policy.py",
+)
+
 # The prose those filenames are made of, which must stay prose: `the license` in
 # a sentence is not the `LICENSE` file.
 KNOWN_FILE_PROSE_PROMPTS = (
@@ -420,7 +496,7 @@ class CheckFunctionTests(unittest.TestCase):
         )
         self.assertIsNone(reason)
 
-    def test_escalation_with_the_brief_template_heading_and_six_filled_fields_is_allowed(self):
+    def test_escalation_with_the_brief_template_heading_and_seven_filled_fields_is_allowed(self):
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": TEMPLATE_HEADING_FILLED_PROMPT}
         )
@@ -435,15 +511,21 @@ class CheckFunctionTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, reason)
 
-    def test_escalation_with_a_two_field_record_is_denied_and_names_the_four_missing(self):
-        """Deleting the fields you cannot fill must not pass: the deny reason names the four
+    def test_escalation_with_a_two_field_record_is_denied_and_names_the_missing_ones(self):
+        """Deleting the fields you cannot fill must not pass: the deny reason names the five
         that are gone and stays silent about the two that are there."""
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": PARTIAL_ESCALATION_PROMPT}
         )
         self.assertIsNotNone(reason)
         route_a = next(line for line in reason.splitlines() if line.startswith("Route A"))
-        for field in ("Findings", "Attempted approaches", "Changed files", "Unresolved question"):
+        for field in (
+            "Findings",
+            "Attempted approaches",
+            "Changed files",
+            "CI output",
+            "Unresolved question",
+        ):
             with self.subTest(field=field):
                 self.assertIn(field, route_a)
         self.assertNotIn("Originating brief", route_a)
@@ -464,6 +546,33 @@ class CheckFunctionTests(unittest.TestCase):
     def test_escalation_with_a_filled_record_is_allowed(self):
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": FILLED_ESCALATION_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_without_the_ci_output_field_is_denied_and_names_it(self):
+        """`AGENTS.md` escalates over CI contradicting the builder's model, so the record has
+        to carry what CI actually said. A six-field record is complete by every other measure
+        -- marked, filled, no placeholders -- which is why the missing field has to be named
+        rather than left to a general complaint about the record."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": SIX_FIELD_RECORD_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        route_a = next(line for line in reason.splitlines() if line.startswith("Route A"))
+        self.assertIn("missing: CI output", route_a)
+        for field in HOOK.RECORD_FIELDS:
+            if field == "CI output":
+                continue
+            with self.subTest(field=field):
+                self.assertNotIn(field, route_a)
+
+    def test_escalation_reporting_no_ci_run_with_a_reason_is_allowed(self):
+        """The field asks what CI said, not that CI ran. An uncommitted change has no run,
+        and denying `none -- no run exists for this uncommitted change` would deny the record
+        for being accurate -- which is how a required field turns into a field people fill
+        with anything."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": CI_OUTPUT_NONE_PROMPT}
         )
         self.assertIsNone(reason)
 
@@ -505,8 +614,8 @@ class CheckFunctionTests(unittest.TestCase):
         self.assertIn("present but unfilled", route_b)
 
     def test_escalation_with_one_field_left_as_template_text_is_denied_and_names_only_it(self):
-        """Five filled fields do not carry the sixth: the deny reason names the field still
-        holding the template's prose and stays silent about the five that are done."""
+        """Six filled fields do not carry the seventh: the deny reason names the field still
+        holding the template's prose and stays silent about the six that are done."""
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": LEFTOVER_TRIGGER_PROMPT}
         )
@@ -645,8 +754,8 @@ class CheckFunctionTests(unittest.TestCase):
         )
         self.assertIsNone(reason)
 
-    def test_escalation_with_six_filled_fields_but_no_marker_is_denied_for_the_marker(self):
-        """Six filled fields loose in a prompt are not yet a record the role can find: the
+    def test_escalation_with_seven_filled_fields_but_no_marker_is_denied_for_the_marker(self):
+        """Seven filled fields loose in a prompt are not yet a record the role can find: the
         deny reason asks for the marker and reports no missing field."""
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": MARKERLESS_RECORD_PROMPT}
@@ -756,6 +865,47 @@ class CheckFunctionTests(unittest.TestCase):
         file. Matching those names case-sensitively and as whole tokens is what keeps an
         ordinary sentence from being read as a path."""
         for prompt in KNOWN_FILE_PROSE_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNone(reason)
+
+    def test_an_assignment_naming_a_path_qualified_repository_file_is_denied(self):
+        """The spelling the rule missed while it refused a preceding slash: `REPO_PATH` wants
+        an extension and `Dockerfile` has none, so `Update docker/postgres/Dockerfile to ...`
+        -- the most exact way to name a file this repository holds -- reached an unpinned
+        agent."""
+        for prompt in PATH_QUALIFIED_FILE_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                self.assertIn("vesper-builder", reason)
+
+    def test_a_research_prompt_coordinating_a_build_verb_as_a_noun_is_allowed(self):
+        """`and` joins noun phrases as readily as clauses: in `the create and delete paths`
+        the word after the cue modifies `paths`. Reading every cue-led verb as an instruction
+        denied a prompt that only compares two code paths -- and comparing code paths is the
+        ordinary reason to spawn `general-purpose` on a named file at all."""
+        for prompt in COORDINATED_NOUN_RESEARCH_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNone(reason)
+
+    def test_a_cue_led_verb_with_a_real_object_is_still_denied(self):
+        """The other half of that move: narrowing the cue branch must not drop the signal.
+        A determiner or a named target after the verb is what an instruction carries and a
+        coordinated noun does not."""
+        for prompt in CUE_LED_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                self.assertIn("vesper-builder", reason)
+
+    def test_a_prompt_asking_about_the_git_commit_command_is_allowed(self):
+        """`Explain why git commit -a is forbidden in AGENTS.md` is research, and a prompt
+        about a forbidden command is exactly the prompt that spells the command out. Reading
+        the command as an instruction wherever it appeared denied it, and it also names
+        `AGENTS.md`, so the file half of the rule could not save it either."""
+        for prompt in GIT_COMMAND_RESEARCH_PROMPTS:
             with self.subTest(prompt=prompt):
                 reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
                 self.assertIsNone(reason)
@@ -935,6 +1085,43 @@ class ProcessTests(unittest.TestCase):
                 self.assertEqual(code, 2)
                 self.assertIn("vesper-builder", err)
 
+    def test_general_purpose_with_a_path_qualified_file_assignment_is_denied(self):
+        for prompt in PATH_QUALIFIED_FILE_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                code, out, err = run({
+                    "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "general-purpose", "prompt": prompt},
+                })
+                self.assertEqual(code, 2)
+                self.assertIn("vesper-builder", err)
+
+    def test_general_purpose_with_a_coordinated_noun_research_prompt_passes(self):
+        for prompt in COORDINATED_NOUN_RESEARCH_PROMPTS + GIT_COMMAND_RESEARCH_PROMPTS:
+            with self.subTest(prompt=prompt):
+                code, out, err = run({
+                    "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "general-purpose", "prompt": prompt},
+                })
+                self.assertEqual(code, 0, err)
+
+    def test_vesper_escalation_without_the_ci_output_field_is_denied(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "vesper-escalation",
+                "prompt": SIX_FIELD_RECORD_PROMPT,
+            },
+        })
+        self.assertEqual(code, 2)
+        self.assertIn("CI output", err)
+
+    def test_vesper_escalation_reporting_no_ci_run_passes(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "vesper-escalation", "prompt": CI_OUTPUT_NONE_PROMPT},
+        })
+        self.assertEqual(code, 0, err)
+
     def test_explore_with_a_free_form_assignment_passes(self):
         code, out, err = run({
             "tool_name": "Agent",
@@ -1084,7 +1271,7 @@ class EscalationRecordTemplateTests(unittest.TestCase):
     def test_the_half_edited_fixtures_still_carry_the_template_s_own_placeholder_text(self):
         """Both half-edited fixtures are built by substitution on the template. If the
         template's wording moved, they would silently stop being half-edited -- one a fully
-        filled line, the other a record with six real values -- and prove nothing."""
+        filled line, the other a record with seven real values -- and prove nothing."""
         self.assertEqual(_PARTIAL_RISK_AREA_SUBS, 1)
         self.assertRegex(PARTIAL_RISK_AREA_LINE, r"<[^<>]*>")
         self.assertEqual(_LEFTOVER_TRIGGER_SUBS, 1)
@@ -1193,6 +1380,50 @@ class ImperativeBuildVerbTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertFalse(HOOK._imperative_build_verb(prompt))
 
+    def test_after_a_discourse_cue_a_build_verb_needs_an_object(self):
+        """`and` is the cue that does double duty: it joins clauses, and it joins noun
+        phrases. In `the create and delete paths` the word after the cue modifies `paths`,
+        and every build verb is also a noun modifier, so position alone put these on the
+        instruction side. What tells them apart is what follows the verb -- an imperative
+        takes a determiner or names a target outright."""
+        for prompt in (
+            "Compare the create and delete paths in foo.ts",
+            "trace the add flow and create endpoint",
+            "look at the read and write paths",
+            "the guard and update ordering is what breaks",
+            "then rewrite",  # a cue-led verb with nothing after it at all
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(HOOK._imperative_build_verb(prompt))
+
+    def test_a_cue_led_verb_with_an_object_is_still_an_instruction(self):
+        """The other direction of the same rule: a determiner, an issue number, a path or a
+        filename after the verb is what a real cue-led instruction carries, and dropping any
+        of them would leave the assignment a parent most often types uncaught."""
+        for prompt in (
+            "read the brief and update the hook",
+            "Then update docs/testing.md.",
+            "then add a fixture to .codex/hooks/test_agent_policy.py",
+            "and fix #560",
+            "please rewrite apps/web/src/server/thing.ts",
+            "also delete this branch",
+            "now modify every fixture",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(HOOK._imperative_build_verb(prompt))
+
+    def test_a_structural_position_needs_no_object(self):
+        """The cue rule must not leak into the positions where nothing but an instruction can
+        sit: a line, a list item or a sentence that opens with a build verb is an assignment
+        whatever follows it, including nothing."""
+        for prompt in (
+            "Rewrite",
+            "- delete",
+            "Read the brief. Update.",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(HOOK._imperative_build_verb(prompt))
+
 
 class CommitSignalTests(unittest.TestCase):
     """State the commit rule on the helper directly. `commit` is an ordinary noun in review
@@ -1210,8 +1441,8 @@ class CommitSignalTests(unittest.TestCase):
             "Steps:\n- commit by pathspec",  # a list item
             "1. commit the fix",
             "please commit when the tests pass",
-            "git commit -m 'wip'",  # the command, in any position
-            "run `git commit` once CI is green",
+            "git commit -m 'wip'",  # the command at the head of the prompt
+            "Then git commit -m 'wip'",  # and after a discourse cue
             "the rule here is to commit by pathspec",  # the template phrase, in any position
         ):
             with self.subTest(prompt=prompt):
@@ -1228,6 +1459,32 @@ class CommitSignalTests(unittest.TestCase):
             "summarize the changes since the last commit",
             "which commit fixed the flake?",
             "the commit message convention lives in AGENTS.md",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(HOOK._has_commit_signal(prompt))
+
+    def test_a_prompt_asking_about_the_git_command_is_not(self):
+        """Why the git command moved into the position rule: a prompt about a forbidden
+        command is exactly the prompt that spells the command out, so reading `git commit`
+        as an instruction wherever it appeared denied unambiguously read-only research."""
+        for prompt in (
+            "Explain why git commit -a is forbidden in AGENTS.md",
+            "The commit rule in AGENTS.md forbids git commit -a",
+            "Summarize what git commit --amend does to a pushed branch",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(HOOK._has_commit_signal(prompt))
+
+    def test_a_git_command_quoted_at_the_head_of_a_line_is_a_documented_miss(self):
+        """The price of the position rule, asserted so it stays a decision rather than a
+        surprise. A backtick before the command breaks the lead, so a line opening with the
+        quoted command reads as prose either way -- whether it forbids the command or tells
+        the worker to run it. The rule is wrong in the direction that lets a prompt through,
+        which is the direction this gate is deliberately wrong in; a brief that really
+        assigns a commit also says `commit by pathspec`."""
+        for prompt in (
+            "`git commit -m x` is forbidden by AGENTS.md",
+            "run `git commit` once CI is green",
         ):
             with self.subTest(prompt=prompt):
                 self.assertFalse(HOOK._has_commit_signal(prompt))
