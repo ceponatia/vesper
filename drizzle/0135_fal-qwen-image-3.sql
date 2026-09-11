@@ -39,7 +39,7 @@ SET
   "output_format" = 'png',
   "extra_input" = '{"enable_safety_checker":false,"enable_prompt_expansion":false,"num_images":1,"output_format":"png"}'::jsonb,
   "probed_version_id" = 'fal-qwen3-text-schema-2026-09-11',
-  "edit_kind" = 'none',
+  "edit_kind" = 'unknown',
   "identity_preservation" = 'unknown',
   "operator_warning" = 'fal does not expose an immutable model-version hash; the recorded version is Vesper''s captured 2026-09-11 endpoint schema revision.',
   "advanced_capabilities" = '{
