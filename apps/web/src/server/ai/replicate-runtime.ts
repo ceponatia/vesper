@@ -1,15 +1,11 @@
-import type { ImageModel } from "@vesper/image-core";
 import {
   createReplicateClient,
   DEFAULT_PREDICTION_TIMEOUT_MS,
   MAX_PREDICTION_TIMEOUT_MS,
   MIN_PREDICTION_TIMEOUT_MS,
-  type RegistryModelRequest,
   type ReplicateClient,
   type ReplicateConfig,
-  type ReplicateImageResult,
 } from "@vesper/image-replicate";
-import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { isFalQwen3Slug, runFalQwen3ImageModel } from "./fal-runtime";
 
 /**
@@ -67,6 +63,10 @@ export function resolveReplicateConfig(): ReplicateConfig {
  * The process's configured image registry client, preserving Replicate's public
  * client surface while routing the two fal Qwen Image 3 rows at render time.
  *
+ * A concrete object rather than a Proxy on purpose: all three methods stay
+ * contextually typed as `ReplicateClient`, which keeps provider dispatch under
+ * the repository's no-unsafe-any lint rule.
+ *
  * Lazily rather than at module import: Next loads server modules while building
  * and analyzing routes, when runtime secrets are absent, and a snapshot taken
  * then would describe the build machine rather than the deployment.
@@ -76,34 +76,28 @@ export function replicateClient(): ReplicateClient {
   if (routedClient) return routedClient;
 
   const target = client;
-  routedClient = new Proxy(target, {
-    get(replica, property, receiver) {
-      if (property === "runRegistryImageModel") {
-        return async (
-          model: ImageModel,
-          request: RegistryModelRequest,
-          sink?: DiagnosticSink,
-        ): Promise<ReplicateImageResult> => {
-          if (isFalQwen3Slug(model.slug)) {
-            if ((request.controlReferences?.length ?? 0) > 0) {
-              return { ok: false, error: `${model.slug} does not expose dedicated structural image inputs` };
-            }
-            return runFalQwen3ImageModel(model, {
-              prompt: request.prompt,
-              references: request.references,
-              aspect: request.aspect,
-              controlInput: request.controlInput,
-              timeoutMs: request.timeoutMs,
-              versionId: request.versionId,
-            });
-          }
-          return replica.runRegistryImageModel(model, request, sink);
-        };
+  routedClient = {
+    configured: target.configured,
+    safetyCheckerDisabled: target.safetyCheckerDisabled,
+    runRegistryImageModel: async (model, request, sink) => {
+      if (isFalQwen3Slug(model.slug)) {
+        if ((request.controlReferences?.length ?? 0) > 0) {
+          return { ok: false, error: `${model.slug} does not expose dedicated structural image inputs` };
+        }
+        return runFalQwen3ImageModel(model, {
+          prompt: request.prompt,
+          references: request.references,
+          aspect: request.aspect,
+          controlInput: request.controlInput,
+          timeoutMs: request.timeoutMs,
+          versionId: request.versionId,
+        });
       }
-      const value = Reflect.get(replica, property, receiver);
-      return typeof value === "function" ? value.bind(replica) : value;
+      return target.runRegistryImageModel(model, request, sink);
     },
-  });
+    runReplicatePreprocessor: (request) => target.runReplicatePreprocessor(request),
+    probeReplicateModel: (slug) => target.probeReplicateModel(slug),
+  };
   return routedClient;
 }
 
