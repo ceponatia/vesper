@@ -27,6 +27,25 @@ ESCALATION_PROMPT = (
 
 RISK_AREA_PROMPT = "Risk area: migration -- adds a NOT NULL column to a hot table."
 
+LATE_ESCALATION_PROMPT = "\n".join([
+    "Continue #999 where the builder stopped.",
+    "",
+    "Escalation: two attempts left the same race. Changed files: apps/web/src/server/thing.ts. "
+    "Unresolved: where the lock belongs.",
+])
+
+TEMPLATE_ESCALATION_PROMPT = "\n".join([
+    "## Escalation record (escalation spawns only)",
+    "",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the builder stopped after one failed attempt.",
+])
+
+BRIEF_TEMPLATE = (
+    Path(__file__).resolve().parents[2]
+    / ".agents/skills/vesper-agent-build/templates/agent-brief.md"
+)
+
 
 def run(payload: dict) -> tuple[int, str, str]:
     """Run agent_policy.py as a subprocess with payload on stdin; never execs it."""
@@ -47,6 +66,23 @@ class CheckFunctionTests(unittest.TestCase):
         self.assertIsNotNone(reason)
         self.assertIn("vesper-builder", reason)
 
+    def test_every_pinned_role_denies_an_explicit_model_and_names_its_own_pin(self):
+        """A PINNED role missing from PINNED_MODEL raises here, where the hook itself would
+        fail open and silently let the override through."""
+        for role in sorted(HOOK.PINNED):
+            with self.subTest(role=role):
+                reason = HOOK.check({"subagent_type": role, "model": "haiku", "prompt": ""})
+                self.assertIsNotNone(reason)
+                self.assertIn(role, reason)
+                self.assertIn(f"({HOOK.PINNED_MODEL[role]})", reason)
+
+    def test_explicit_model_on_an_unpinned_role_is_allowed(self):
+        """The deny message sends ad-hoc work to `general-purpose` with a model; keep that route open."""
+        reason = HOOK.check(
+            {"subagent_type": "general-purpose", "model": "opus", "prompt": "look into the flaky test"}
+        )
+        self.assertIsNone(reason)
+
     def test_pinned_role_without_model_and_with_brief_is_allowed(self):
         reason = HOOK.check({"subagent_type": "vesper-builder", "prompt": BRIEF_PROMPT})
         self.assertIsNone(reason)
@@ -61,6 +97,18 @@ class CheckFunctionTests(unittest.TestCase):
 
     def test_escalation_with_risk_area_line_is_allowed(self):
         reason = HOOK.check({"subagent_type": "vesper-escalation", "prompt": RISK_AREA_PROMPT})
+        self.assertIsNone(reason)
+
+    def test_escalation_record_below_an_opening_line_is_allowed(self):
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": LATE_ESCALATION_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_with_the_brief_template_heading_is_allowed(self):
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": TEMPLATE_ESCALATION_PROMPT}
+        )
         self.assertIsNone(reason)
 
     def test_brief_sent_to_unpinned_role_is_denied_and_names_vesper_builder(self):
@@ -161,6 +209,12 @@ class ProcessTests(unittest.TestCase):
         })
         self.assertEqual(code, 0, err)
 
+    def test_non_dict_tool_input_fails_open_with_a_note(self):
+        code, out, err = run({"tool_name": "Agent", "tool_input": "vesper-builder"})
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+        self.assertIn("skipped", err)
+
     def test_malformed_stdin_fails_open(self):
         result = subprocess.run(
             [sys.executable, "-B", str(SCRIPT)],
@@ -170,6 +224,26 @@ class ProcessTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
+
+
+class BriefMarkerTests(unittest.TestCase):
+    """Guard the brief vocabulary: a renamed heading in the template the parent copies, or a
+    detector narrowed to one marker, would let an implementation brief reach an unpinned agent
+    with the hook still reporting success."""
+
+    def test_every_brief_marker_still_appears_in_the_agent_brief_template(self):
+        text = BRIEF_TEMPLATE.read_text(encoding="utf-8")
+        for marker in HOOK.BRIEF_MARKERS:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, text)
+
+    def test_each_brief_marker_alone_denies_an_unpinned_spawn(self):
+        for marker in HOOK.BRIEF_MARKERS:
+            with self.subTest(marker=marker):
+                reason = HOOK.check(
+                    {"subagent_type": "general-purpose", "prompt": f"do a thing\n{marker} x"}
+                )
+                self.assertIsNotNone(reason)
 
 
 if __name__ == "__main__":
