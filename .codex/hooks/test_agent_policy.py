@@ -45,6 +45,22 @@ BRIEF_TEMPLATE = (
     Path(__file__).resolve().parents[2]
     / ".agents/skills/vesper-agent-build/templates/agent-brief.md"
 )
+ROLE_DIR = Path(__file__).resolve().parents[2] / ".claude/agents"
+
+
+def role_frontmatter(path: Path) -> dict:
+    """Read a role file's YAML frontmatter without a YAML dependency: flat `key: value` lines."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    fields = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        key, sep, value = line.partition(":")
+        if sep and key == key.strip():
+            fields[key] = value.strip()
+    return fields
 
 
 def run(payload: dict) -> tuple[int, str, str]:
@@ -244,6 +260,31 @@ class BriefMarkerTests(unittest.TestCase):
                     {"subagent_type": "general-purpose", "prompt": f"do a thing\n{marker} x"}
                 )
                 self.assertIsNotNone(reason)
+
+
+class PinnedRoleTableTests(unittest.TestCase):
+    """Keep the hook's table and the role files it enforces in step: a `vesper-*` role whose
+    frontmatter pins a model but which PINNED omits is a role the policy silently stops
+    protecting, and a mismatched entry makes the deny message name the wrong model."""
+
+    def roles(self) -> dict:
+        found = {}
+        for path in sorted(ROLE_DIR.glob("*.md")):
+            fields = role_frontmatter(path)
+            name = fields.get("name", "")
+            if name.startswith("vesper-"):
+                found[name] = fields.get("model")
+        return found
+
+    def test_every_model_pinning_role_file_is_in_the_hook_table(self):
+        found = self.roles()
+        self.assertTrue(found)
+        self.assertEqual({name for name, model in found.items() if model}, set(HOOK.PINNED))
+
+    def test_hook_table_names_the_model_each_role_file_pins(self):
+        for name, model in self.roles().items():
+            with self.subTest(role=name):
+                self.assertEqual(HOOK.PINNED_MODEL.get(name), model)
 
 
 if __name__ == "__main__":
