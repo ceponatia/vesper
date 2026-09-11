@@ -1,6 +1,7 @@
 import { baseImageModelSlug } from "@vesper/image-core";
 import type { ImageModelAdapter } from "./composer";
-import { qwenImage2512, qwenImage3, qwenImage3Pro, qwenImageEdit2511 } from "./families";
+import { qwenImage2512, qwenImage3Edit, qwenImage3TextToImage, qwenImageEdit2511 } from "./families";
+import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
 
 /**
  * Every model whose family behavior Vesper has written down, keyed by BASE
@@ -13,6 +14,12 @@ import { qwenImage2512, qwenImage3, qwenImage3Pro, qwenImageEdit2511 } from "./f
  * adapter, which is the worst possible failure mode — no error, just the
  * generic behavior coming back.
  *
+ * Qwen Image 3's fal routes include an operation path (`/text-to-image` or
+ * `/edit`) and therefore contain three path segments. They are intentionally
+ * registered verbatim rather than passed through `baseImageModelSlug`, whose
+ * `owner/name[:version]` grammar belongs to Replicate. The lookup handles those
+ * two exact routes first.
+ *
  * Only the Qwen family is here. Other families (Flux, Wan, SDXL, Seedream) stay
  * on the legacy path and migrate when their behavior is next touched, which is
  * exactly why the answer below is nullable rather than exhaustive.
@@ -20,8 +27,8 @@ import { qwenImage2512, qwenImage3, qwenImage3Pro, qwenImageEdit2511 } from "./f
 const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   "qwen/qwen-image-edit-2511": qwenImageEdit2511,
   "qwen/qwen-image-2512": qwenImage2512,
-  "alibaba/qwen-image-3": qwenImage3,
-  "alibaba/qwen-image-3-pro": qwenImage3Pro,
+  [FAL_QWEN3_TEXT_SLUG]: qwenImage3TextToImage,
+  [FAL_QWEN3_EDIT_SLUG]: qwenImage3Edit,
 };
 
 /**
@@ -35,5 +42,7 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
  * unmigrated family would look broken while behaving perfectly.
  */
 export function adapterForImageModel(slug: string): ImageModelAdapter | null {
+  const exact = IMAGE_MODEL_ADAPTERS[slug];
+  if (exact) return exact;
   return IMAGE_MODEL_ADAPTERS[baseImageModelSlug(slug)] ?? null;
 }

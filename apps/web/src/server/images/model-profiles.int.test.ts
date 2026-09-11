@@ -39,15 +39,16 @@ const FIXTURE_BAD_PROFILE_ID = "imgprffixturebadaaaaaaaa";
 const FIXTURE_PROFILE_IDS = [FIXTURE_OK_PROFILE_ID, FIXTURE_BAD_PROFILE_ID];
 
 /**
- * The seeded rows, as the migrations wrote them. Any drift here is a render change.
- * 29 profiles existed through migration 0107; migration 0134 adds three character
- * task profiles for each of Qwen Image 3 and Qwen Image 3 Pro, for 35 total.
+ * The seeded rows, as the migrations wrote them. 0134 added six Qwen Image 3
+ * profiles, then 0135 converted that regular/Pro fiction into fal's real
+ * operation split: one portrait text-to-image profile plus variant and scene
+ * edit profiles. Three obsolete cross-operation profiles are deleted, leaving 32.
  */
-const SEEDED_PROFILE_COUNT = 35;
+const SEEDED_PROFILE_COUNT = 32;
 const QWEN_GENERATE = "qwen/qwen-image-2512";
 const QWEN_EDIT = "qwen/qwen-image-edit-2511";
-const QWEN_3 = "alibaba/qwen-image-3";
-const QWEN_3_PRO = "alibaba/qwen-image-3-pro";
+const QWEN_3_TEXT = "alibaba/qwen-image-3/text-to-image";
+const QWEN_3_EDIT = "alibaba/qwen-image-3/edit";
 
 /**
  * The 0107 curated rows, pinned individually: which model each hangs off, the
@@ -124,7 +125,7 @@ async function insertFixtureProfile(id: string, label: string): Promise<void> {
 }
 
 describe.skipIf(!ready)("seeded image model profiles", () => {
-  it("the migrations seeded 35 built-in profiles, in sort order, all parseable", async () => {
+  it("the migrations seeded 32 built-in profiles, in sort order, all parseable", async () => {
     const sink = new DiagnosticCollector();
     const profiles = await loadImageModelProfiles(sink);
     const builtin = profiles.filter((profile) => profile.builtin);
@@ -155,16 +156,16 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     }
   });
 
-  // The global defaults after 0134. Character Studio portraits/variants and
-  // scene images intentionally move to Qwen Image 3 Pro; item/location/chat-place
+  // The global defaults after 0135. Portrait creation is fal text-to-image;
+  // variant/reference-view and scene work are fal edit. Item/location/chat-place
   // stay on Qwen 2512 and chat-look keeps its dedicated Qwen 2511 path.
   const anchorExpectations: ReadonlyArray<readonly [ImageProfileTask, string]> = [
-    ["portrait", QWEN_3_PRO],
+    ["portrait", QWEN_3_TEXT],
     ["item", QWEN_GENERATE],
     ["location", QWEN_GENERATE],
     ["chat_place", QWEN_GENERATE],
-    ["variant", QWEN_3_PRO],
-    ["scene", QWEN_3_PRO],
+    ["variant", QWEN_3_EDIT],
+    ["scene", QWEN_3_EDIT],
     ["chat_look", QWEN_EDIT],
   ];
 
@@ -181,17 +182,16 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     });
   }
 
-  it("offers each task exactly the models its lane can reach after Qwen Image 3 activation", async () => {
+  it("offers each task exactly the models its lane can reach after the fal Qwen Image 3 split", async () => {
     const offeredSlugs = async (task: ImageProfileTask): Promise<string[]> =>
       (await loadImageModelProfilesForTask(task))
         .filter((candidate) => candidate.profile.builtin)
         .map((candidate) => candidate.model.slug);
 
-    // Qwen Image 3 Pro and Qwen Image 3 are deliberately first in the portrait
-    // picker; all earlier standard and curated choices remain behind them.
+    // Prompt-only fal Qwen 3 leads portrait creation; the edit endpoint is not a
+    // fake generate option and therefore does not appear in this lane.
     expect(await offeredSlugs("portrait")).toEqual([
-      QWEN_3_PRO,
-      QWEN_3,
+      QWEN_3_TEXT,
       QWEN_GENERATE,
       "bytedance/seedream-4.5",
       "bytedance/seedream-5-lite",
@@ -204,11 +204,10 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
       QWEN_GENERATE,
       "stability-ai/stable-diffusion-3.5-large",
     ]);
-    // The same two new unified generate/edit endpoints lead the scene choices;
-    // the prior instruction editors and curated scene profiles stay available.
+    // The fal edit endpoint leads scene work and can carry up to three ordered
+    // references; the prior instruction editors and curated choices remain.
     expect(await offeredSlugs("scene")).toEqual([
-      QWEN_3_PRO,
-      QWEN_3,
+      QWEN_3_EDIT,
       QWEN_EDIT,
       "bytedance/seedream-4.5",
       "bytedance/seedream-5-lite",
@@ -217,6 +216,14 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
       "bytedance/seedream-4.5",
       "bytedance/seedream-5-lite",
       "wan-video/wan-2.7-image-pro",
+    ]);
+    expect(await offeredSlugs("variant")).toEqual([
+      QWEN_3_EDIT,
+      QWEN_EDIT,
+      "bytedance/seedream-4.5",
+      "bytedance/seedream-5-lite",
+      "wan-video/wan-2.7-image-pro",
+      "nsfw-api/sdxl-pulid:83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5",
     ]);
     // The anchor lanes item and chat_look remain seeded on one model each. Location
     // gained the opt-in Seedream 4.5 "Location 4K" row in 0107 — non-default, so the
@@ -253,15 +260,16 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     expect(sink.items.filter((d) => d.code === "image_profile.row_invalid")).toEqual([]);
   });
 
-  // The curated control defaults, as 0107 wrote them. These are dormant facts
-  // today (steps/guidance/negative/tier drop `no_binding` until a version is
-  // probed; Wan's tier resolves immediately through `chooseDimensions`), but the
-  // moment a probe lands they become the render — so drift here is a future
-  // render change and gets pinned now.
-  it("carries the curated control defaults and the ensemble reference policy as seeded", async () => {
+  // The curated control defaults, plus the Qwen 3 trial-cost ruling. The fal
+  // portrait/variant/scene profiles all start at 1K; 2K remains selectable in the
+  // Admin Image Generator through the model's resolutionTier capability.
+  it("carries the curated control defaults and the fal Qwen 3 1K production defaults", async () => {
     const profiles = await loadImageModelProfiles();
     const byId = new Map(profiles.map((profile) => [profile.id, profile]));
 
+    expect(byId.get("imgprfqwen3portraitaaaaaa")?.controlDefaults).toMatchObject({ resolution: "1K" });
+    expect(byId.get("imgprfqwen3provariantaaaa")?.controlDefaults).toMatchObject({ resolution: "1K" });
+    expect(byId.get("imgprfqwen3prosceneaaaaaa")?.controlDefaults).toMatchObject({ resolution: "1K" });
     expect(byId.get("imgprf2512portfastaaaaaa")?.controlDefaults).toMatchObject({ steps: 28 });
     expect(byId.get("imgprf2512portqualityaaa")?.controlDefaults).toMatchObject({ steps: 50 });
     expect(byId.get("imgprf2512portqualityaaa")?.providerOverrides).toEqual({ go_fast: false });
@@ -285,9 +293,8 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
 
     expect(resolved?.model.slug).toBe("bytedance/seedream-4.5");
     expect(resolved?.profile.id).toBe("imgprfs45sceneaaaaaaaaaa");
-    // Qwen Image 3 Pro carries the global scene default, so a stored Seedream pick
-    // lands on a NON-default profile. Warning here would flag every legacy chat that
-    // is working exactly as its owner chose.
+    // fal Qwen Image 3 edit carries the global scene default, so a stored Seedream
+    // pick lands on a NON-default profile without a degradation warning.
     expect(resolved?.profile.isDefault).toBe(false);
     expect(sink.items).toEqual([]);
   });
@@ -307,7 +314,7 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     const sink = new DiagnosticCollector();
     const resolved = await resolveImageProfileForTask("scene", "venice-hidream", sink);
 
-    expect(resolved?.model.slug).toBe(QWEN_3_PRO);
+    expect(resolved?.model.slug).toBe(QWEN_3_EDIT);
     expect(resolved?.profile.id).toBe("imgprfqwen3prosceneaaaaaa");
     const warned = sink.items.filter((d) => d.code === "image_profile.pick_unavailable");
     expect(warned).toHaveLength(1);
@@ -322,7 +329,7 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     const resolved = await resolveImageProfileForTask("scene", "imgprf2512portraitaaaaaa", sink);
 
     expect(resolved?.profile.task).toBe("scene");
-    expect(resolved?.model.slug).toBe(QWEN_3_PRO);
+    expect(resolved?.model.slug).toBe(QWEN_3_EDIT);
     expect(sink.items.map((d) => d.code)).toContain("image_profile.pick_unavailable");
   });
 

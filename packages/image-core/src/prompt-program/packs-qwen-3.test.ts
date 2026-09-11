@@ -1,29 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { qwenImage3CharacterPacks, qwenImage3ProCharacterPacks } from "./packs-qwen-3";
+import { qwenImage3EditCharacterPacks, qwenImage3TextCharacterPacks } from "./packs-qwen-3";
 
-const EXPECTED = [
-  ["portrait", "text_to_image_description"],
-  ["variant", "instruction_edit"],
-  ["scene", "instruction_edit"],
-  ["scene", "text_to_image_description"],
-] as const;
-
-describe("Qwen Image 3 prompt-pack bindings", () => {
-  it.each([
-    ["alibaba/qwen-image-3", qwenImage3CharacterPacks],
-    ["alibaba/qwen-image-3-pro", qwenImage3ProCharacterPacks],
-  ] as const)("binds every character lane for %s", (modelSlug, packs) => {
-    expect(packs.bindings).toHaveLength(4);
-    expect(packs.bindings.map((binding) => [binding.task, binding.promptStrategy])).toEqual(EXPECTED);
-    expect(packs.bindings.every((binding) => binding.modelSlug === modelSlug)).toBe(true);
-    expect(packs.bindings.every((binding) => binding.status === "active")).toBe(true);
+describe("fal Qwen Image 3 prompt-pack bindings", () => {
+  it("binds the prompt-only endpoint only to portrait generation", () => {
+    expect(qwenImage3TextCharacterPacks.bindings).toHaveLength(1);
+    expect(qwenImage3TextCharacterPacks.bindings.map((binding) => [binding.task, binding.promptStrategy])).toEqual([
+      ["portrait", "text_to_image_description"],
+    ]);
+    expect(
+      qwenImage3TextCharacterPacks.bindings.every(
+        (binding) => binding.modelSlug === "alibaba/qwen-image-3/text-to-image" && binding.status === "active",
+      ),
+    ).toBe(true);
   });
 
-  it("keeps regular and Pro pack identities independent for later tuning", () => {
-    expect(qwenImage3CharacterPacks.positive.id).not.toBe(qwenImage3ProCharacterPacks.positive.id);
-    expect(qwenImage3CharacterPacks.negative.id).not.toBe(qwenImage3ProCharacterPacks.negative.id);
-    expect(qwenImage3CharacterPacks.bindings.map((binding) => binding.id)).not.toEqual(
-      qwenImage3ProCharacterPacks.bindings.map((binding) => binding.id),
-    );
+  it("binds the edit endpoint to variant and scene instruction edits", () => {
+    expect(qwenImage3EditCharacterPacks.bindings).toHaveLength(2);
+    expect(qwenImage3EditCharacterPacks.bindings.map((binding) => [binding.task, binding.promptStrategy])).toEqual([
+      ["variant", "instruction_edit"],
+      ["scene", "instruction_edit"],
+    ]);
+    expect(
+      qwenImage3EditCharacterPacks.bindings.every(
+        (binding) => binding.modelSlug === "alibaba/qwen-image-3/edit" && binding.status === "active",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps generation and edit pack identities independent for later tuning", () => {
+    expect(qwenImage3TextCharacterPacks.positive.id).not.toBe(qwenImage3EditCharacterPacks.positive.id);
+    expect(qwenImage3TextCharacterPacks.negative.id).not.toBe(qwenImage3EditCharacterPacks.negative.id);
   });
 });

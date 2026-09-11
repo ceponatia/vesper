@@ -1,7 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { characters, db, items } from "../db";
-import { isDemoMode } from "../ai";
+import { isDemoMode, qualifiedImageModelIdentity } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
@@ -298,7 +298,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       prompt,
       meta: {
         style,
-        model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
+        model: demo ? "demo" : qualifiedImageModelIdentity(model),
         demo,
         ...(cut?.digestMeta ?? {}),
         // The compiled program's own provenance, exactly as the entity lane

@@ -59,6 +59,7 @@ const STRUCTURAL_MODEL_ID = "imgmdlgenstructuralaaaaa";
 const REQUIRED_CONTROL_MODEL_ID = "imgmdlgenreqcontrolaaaaa";
 const REPROBED_MODEL_ID = "imgmdlgenreprobedaaaaaaa";
 const SIZE_MODEL_ID = "imgmdlgensizemodeaaaaaaa";
+const FAL_MODEL_ID = "imgmdlqwenimage3aaaaaaa";
 const FIXTURE_MODEL_IDS = [
   PINNED_MODEL_ID,
   UNPINNED_MODEL_ID,
@@ -917,6 +918,26 @@ describe.skipIf(!ready)("image generator output shape", () => {
     expect(captured.at(0)?.intent.target.aspectRatio).toBe(1);
     expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
       shape: { mode: "explicit", requestedAspect: "1:1", field: "aspect_ratio", value: "1:1" },
+    });
+  });
+
+  it("records fal's custom dimensions as the effective provider request and sent shape", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({
+      modelId: FAL_MODEL_ID,
+      controls: { aspect: "3:4", resolution: "2K" },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      providerRequest: { image_size: { width: 1536, height: 2048 } },
+      shape: {
+        mode: "explicit",
+        requestedAspect: "3:4",
+        field: "image_size",
+        value: { width: 1536, height: 2048 },
+      },
     });
   });
 

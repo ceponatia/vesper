@@ -1,75 +1,61 @@
 import { describe, expect, it } from "vitest";
-import { qwenImage2512, qwenImage3, qwenImage3Pro, qwenImageEdit2511 } from "./families";
+import { qwenImage2512, qwenImage3Edit, qwenImage3TextToImage, qwenImageEdit2511 } from "./families";
 import { adapterForImageModel } from "./registry";
+import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG, imageModelProvider } from "./provider";
 
 /**
  * Adapter resolution.
  *
- * The defect worth a permanent test is the version pin. A registry row's slug
- * may carry an `owner/name:version` suffix — every community checkpoint's row
- * does, because the bare-slug endpoint is official-models-only — and a lookup
- * keyed on the raw slug would return nothing for exactly the rows that were
- * pinned for reproducibility: no error, no diagnostic, just the family's prompt
- * dialect and cold-start budget quietly gone. The prefix cases guard the same
- * lookup from both of the other directions: a differently-named sibling endpoint
- * must not inherit an adapter because its slug EXTENDS a registered one
- * (`qwen/qwen-image-edit-2511-turbo`), and must not inherit one because a
- * registered slug extends IT (`qwen/qwen-image-2`, which every character of
- * `qwen/qwen-image-2512` begins with). Exact-key lookup is what answers both,
- * pinned or bare.
- *
- * Null is asserted as the ORDINARY answer, not an error path: most registered
- * models have no adapter and must keep rendering exactly as they do today.
+ * Replicate rows may carry `owner/name:version`, while fal Qwen Image 3 rows are
+ * exact operation endpoints with a third path segment. The registry must resolve
+ * both forms without prefix inheritance: similarly named siblings are separate
+ * endpoints and a retired Replicate Qwen 3 slug must not inherit fal behavior.
  */
 describe("adapterForImageModel", () => {
-  it("resolves every registered Qwen endpoint, pinned or bare", () => {
+  it("resolves every registered Qwen endpoint", () => {
     expect(adapterForImageModel("qwen/qwen-image-edit-2511")).toBe(qwenImageEdit2511);
     expect(adapterForImageModel("qwen/qwen-image-2512")).toBe(qwenImage2512);
-    expect(adapterForImageModel("alibaba/qwen-image-3")).toBe(qwenImage3);
-    expect(adapterForImageModel("alibaba/qwen-image-3-pro")).toBe(qwenImage3Pro);
-    // The pin is a slug SHAPE the registry must survive, not a claim that this
-    // row is stored pinned today: any row may be re-registered against a fixed
-    // provider version, and the family's behavior does not change when it is.
+    expect(adapterForImageModel("alibaba/qwen-image-3/text-to-image")).toBe(qwenImage3TextToImage);
+    expect(adapterForImageModel("alibaba/qwen-image-3/edit")).toBe(qwenImage3Edit);
     expect(
       adapterForImageModel(
         "qwen/qwen-image-edit-2511:2ef4a1e6dbbd5b8f0d8f3cbbd3a1cbee0b1d4c0f6ee1c8ad5b7f2e0c9a3d4b1e",
       ),
     ).toBe(qwenImageEdit2511);
-    expect(
-      adapterForImageModel(
-        "alibaba/qwen-image-3:8235a8d30fc32fd33a4e0e91d9cffaae6f2250fc56ff8e5736ca4a9c5b9f9fbc",
-      ),
-    ).toBe(qwenImage3);
   });
 
-  it("keeps the Qwen Image 3 and Pro adapters distinct even while their first capability sets match", () => {
-    expect(qwenImage3).not.toBe(qwenImage3Pro);
-    expect(qwenImage3.capabilities).toEqual(["prompt", "aspectRatio", "seed", "negativePrompt"]);
-    expect(qwenImage3Pro.capabilities).toEqual(qwenImage3.capabilities);
+  it("keeps fal generation and edit adapters distinct even while their first semantic sets match", () => {
+    expect(qwenImage3TextToImage).not.toBe(qwenImage3Edit);
+    expect(qwenImage3TextToImage.capabilities).toEqual(["prompt", "seed", "negativePrompt"]);
+    expect(qwenImage3Edit.capabilities).toEqual(qwenImage3TextToImage.capabilities);
   });
 
-  it("declares runtime LoRA capability on the 2511 edit endpoint and not the generators", () => {
-    // Replicate's current 2511 schema exposes lora_weights + lora_scale. The
-    // adapter is the family-level semantic claim; the probed registry row still
-    // decides whether a concrete version has the two provider bindings at render
-    // time.
+  it("declares runtime LoRA capability on the 2511 edit endpoint and not the generators/editors that lack it", () => {
     expect(qwenImageEdit2511.capabilities).toContain("lora");
     expect(qwenImage2512.capabilities).not.toContain("lora");
-    expect(qwenImage3.capabilities).not.toContain("lora");
-    expect(qwenImage3Pro.capabilities).not.toContain("lora");
+    expect(qwenImage3TextToImage.capabilities).not.toContain("lora");
+    expect(qwenImage3Edit.capabilities).not.toContain("lora");
   });
 
   it.each([
     "bytedance/seedream-4.5",
     "qwen/qwen-image-edit-2511-turbo",
-    // Replicate's unified Qwen Image 2 endpoint remains on the generic path.
-    // Sharing a name prefix with the registered Qwen endpoints is not enough to
-    // inherit an adapter; it gets one only when somebody writes one for that
-    // exact base slug.
     "qwen/qwen-image-2",
     "qwen/qwen-image-2:266e594fa007032292c211586354fe193d7aa4e675a1eeb0aef0c6a424468ddd",
+    // Retired Replicate Qwen Image 3 identities must not inherit the fal endpoint adapters.
+    "alibaba/qwen-image-3",
+    "alibaba/qwen-image-3-pro",
     "",
   ])("answers null for %s, which is the ordinary no-special-behavior case", (slug) => {
     expect(adapterForImageModel(slug)).toBeNull();
+  });
+});
+
+describe("imageModelProvider", () => {
+  it("classifies only the two reviewed fal endpoints as fal", () => {
+    expect(imageModelProvider(FAL_QWEN3_TEXT_SLUG)).toBe("fal");
+    expect(imageModelProvider(FAL_QWEN3_EDIT_SLUG)).toBe("fal");
+    expect(imageModelProvider("alibaba/qwen-image-3")).toBe("replicate");
+    expect(imageModelProvider("qwen/qwen-image-2512:version")).toBe("replicate");
   });
 });

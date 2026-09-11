@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { pinnedImageModelVersion } from "@vesper/image-core";
+import { imageModelProvider } from "@vesper/image-models";
 import {
   adminImageModelsApi,
   imageVersionBlockedBodySchema,
@@ -92,6 +93,20 @@ export function ImageModelVersionPanel({
   const isPinnedSlug = model.slug.includes(":");
   const candidateVersion = probe?.candidate.versionId ?? null;
   const enabledProfiles = profiles.filter((profile) => profile.enabled);
+
+  if (imageModelProvider(model.slug) !== "replicate") {
+    return (
+      <div className="mt-3 border-t border-ink-600/60 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-[11px] font-medium tracking-wide text-paper-400 uppercase">Provider revision</h4>
+          {pinned ? <Tag title={pinned}>{shortVersion(pinned)}</Tag> : <Tag>managed endpoint</Tag>}
+        </div>
+        <p className="mt-1 text-[11px] text-paper-500">
+          fal manages this endpoint without Replicate-style versions, probes, smoke tests, or activation.
+        </p>
+      </div>
+    );
+  }
 
   const checkLatest = async () => {
     setProbing(true);

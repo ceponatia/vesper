@@ -1,16 +1,20 @@
 import { defineImageModel, type ImageModelAdapter } from "../../composer";
-import { aspectRatioFeature, negativePromptFeature, promptFeature, seedFeature } from "../../features";
+import { negativePromptFeature, promptFeature, seedFeature } from "../../features";
 import { QWEN_IMAGE_FAMILY } from "./shared";
 
 /**
- * `alibaba/qwen-image-3` — Alibaba's unified Qwen Image 3 endpoint on Replicate.
+ * `alibaba/qwen-image-3/text-to-image` on fal — prompt-only Qwen Image 3.
  *
- * This first adapter is intentionally thin: it states only the semantic controls
- * the live schema already exposes and leaves prompt tuning / execution quirks for
- * measured follow-up work. Reference arity and provider field names remain owned
- * by the probed registry row, not duplicated here.
+ * Intentionally its OWN adapter. fal publishes generation and editing as
+ * separate endpoints with different image-input contracts, so collapsing them
+ * into one definition would make future endpoint-specific findings impossible
+ * to express without slug checks elsewhere.
+ *
+ * Provider field names, 1K/2K size choices and fal's safety field remain owned
+ * by the registry capability record; this first adapter states only the
+ * provider-neutral semantic controls Vesper has reviewed.
  */
-export const qwenImage3: ImageModelAdapter = defineImageModel({
+export const qwenImage3TextToImage: ImageModelAdapter = defineImageModel({
   family: QWEN_IMAGE_FAMILY,
-  features: [promptFeature(), aspectRatioFeature(), seedFeature(), negativePromptFeature()],
+  features: [promptFeature(), seedFeature(), negativePromptFeature()],
 });

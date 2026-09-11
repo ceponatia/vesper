@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
-import { activateCandidateVersion } from "@/server/images";
+import { IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED, activateCandidateVersion } from "@/server/images";
 
 type Params = { modelId: string };
 
@@ -35,6 +35,8 @@ export const POST = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx) 
         return jsonError("not_found", result.message, 404);
       case "version_unavailable":
         return jsonError("image_model.version_unavailable", result.message, 400);
+      case "provider_operation_unsupported":
+        return jsonError(IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED, result.message, 400);
       case "activation_blocked":
         return jsonOk(
           {
