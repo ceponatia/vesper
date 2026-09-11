@@ -14,6 +14,48 @@
 - This app is under active development. Prefer removing obsolete behavior over compatibility wrappers unless
   the user or current product contract requires compatibility.
 
+  ## Subagent model policy (Codex Only)
+
+Use subagents aggressively when work can be investigated or executed
+independently.
+
+Normal delegated work should use the default subagent configuration.
+The default subagent is expected to be GPT-5.6 Terra at medium reasoning.
+
+Do not escalate merely because a task is large. Terra is appropriate for:
+
+- repository exploration
+- implementing well-specified GitHub issues
+- ordinary bug fixes
+- tests
+- contained refactors
+- repetitive or mechanical implementation work
+
+Escalate to the `sol_escalation` agent when any of the following occurs:
+
+- a Terra worker makes two materially different attempts without resolving
+  the underlying problem;
+- the worker cannot determine the root cause from available evidence;
+- implementation reveals architectural ambiguity not captured by the issue;
+- the task unexpectedly involves concurrency, transaction semantics,
+  persistence/replay correctness, migrations, authorization/security
+  boundaries, or similarly consequential system behavior;
+- tests fail in ways that contradict the worker's model of the system;
+- the worker reports that multiple plausible implementations have
+  substantially different architectural consequences;
+- the main agent has low confidence that the Terra result is correct.
+
+When escalating:
+
+1. Do not ask another Terra worker to start over from scratch.
+2. Provide `sol_escalation` with the originating task, relevant findings,
+   attempted approaches, changed files, test output, and unresolved question.
+3. Let the Sol agent reconsider the approach rather than merely repair the
+   previous patch.
+4. After Sol returns, integrate or continue based on its findings.
+
+Do not use Sol escalation for routine work solely because it is available.
+
 ## Skills and work state
 
 - Canonical skills live under `.agents/skills/`; `.claude/skills/*` are compatibility symlinks. Edit the
