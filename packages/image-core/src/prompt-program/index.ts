@@ -11,8 +11,8 @@
  * `scene-facts` sits beside `world-digest`: it is what a scene fact's untyped
  * value is allowed to be, narrowed once so no dialect has to guess.
  *
- * The two `dialect-*` / `packs-*` modules are imported for their SIDE EFFECT —
- * each registers itself — so importing this barrel is what makes an endpoint
+ * The `dialect-*` / `packs-*` modules are imported for their SIDE EFFECT — each
+ * registers itself — so importing this barrel is what makes an endpoint
  * available. That is deliberate: registration at import time is what keeps the
  * registry closed to callers while staying one file per endpoint.
  */
@@ -29,6 +29,7 @@ export * from "./dialect-tag-family";
 export * from "./dialects";
 export * from "./negative-constraints";
 export * from "./packs-qwen-2512";
+export * from "./packs-qwen-3";
 export * from "./positive-claims";
 export * from "./prompt-packs";
 export * from "./provenance";
