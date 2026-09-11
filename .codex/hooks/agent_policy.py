@@ -15,13 +15,16 @@ failed attempt.
 
 Reading a prompt as an implementation assignment is a heuristic, not a
 parse: the brief template's own markers, an instruction to commit, or a
-build verb next to a repository path. A build assignment that names no
-file and asks for no commit — "update the docs" — is deliberately not
-caught, because the only rule broad enough to catch it also denies
-ordinary prompts, and a gate that denies ordinary prompts gets worked
-around. The built-in read-only agent types are exempt from the rule
-outright: they cannot edit or commit, so a brief-shaped prompt to one of
-them is research.
+build verb in imperative position next to a repository path. Two kinds of
+assignment are deliberately not caught, because the only rules broad
+enough to catch them also deny ordinary prompts, and a gate that denies
+ordinary prompts gets worked around: one that names no file and asks for
+no commit — "update the docs" — and one whose verb never lands in
+imperative position — "your task is to update the hook". The mirror of
+the second is what the position rule buys: "summarize the write path in
+apps/.../thing.ts" is research, not a write instruction. The built-in
+read-only agent types are exempt from the rule outright: they cannot edit
+or commit, so a brief-shaped prompt to one of them is research.
 
 It never blocks on its own failure: any internal error exits 0 (fail
 open), same as `preflight.py`. It is Claude-only — the `Agent` tool has no
@@ -48,10 +51,25 @@ READ_ONLY_TYPES = {"Explore", "Plan", "claude-code-guide", "statusline-setup"}
 
 # What marks a free-form prompt as an implementation assignment, for the prompts
 # that never went near the template. A build verb...
-BUILD_VERB = re.compile(
-    r"\b(?:implement|edit|modify|refactor|rewrite|fix|add|remove|delete|rename"
-    r"|write|update|create)\b",
-    re.IGNORECASE,
+BUILD_VERB = (
+    r"implement|edit|modify|refactor|rewrite|fix|add|remove|delete|rename"
+    r"|write|update|create"
+)
+# ...read in imperative position, and nowhere else. Every one of these words is
+# also an ordinary English noun or adjective -- "the write path", "an update on
+# the docs", "the add flow", "a fix" -- and a research prompt about code is
+# exactly the prompt that also names a file, so a verb matched anywhere denied
+# `summarize the write path in apps/.../thing.ts`. Imperative position is: the
+# prompt's first word, the first word of a line or of a list item, the first
+# word of a new sentence, or the word straight after a discourse cue
+# (`please update ...`, `then edit ...`, `and add ...`).
+IMPERATIVE_LEAD = (
+    r"(?:\A|\n)[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
+    r"|[.!?;]+[ \t]+"
+    r"|\b(?:please|then|and|also|now|first|next|finally)[,:]?[ \t]+"
+)
+IMPERATIVE_BUILD_VERB = re.compile(
+    rf"(?:{IMPERATIVE_LEAD})(?:{BUILD_VERB})\b", re.IGNORECASE
 )
 # ...next to a file this repository holds: a slash-bearing token whose last
 # segment carries an extension (`apps/web/src/thing.ts`,
@@ -180,22 +198,38 @@ def _names_a_repo_file(prompt: str) -> bool:
     return bool(REPO_PATH.search(prompt) or BARE_FILE.search(prompt))
 
 
+def _imperative_build_verb(prompt: str) -> bool:
+    """True when a build verb appears where the prompt is giving an instruction.
+
+    `edit the hook` is an assignment; `the write path`, `an update on the docs`
+    and `the add flow` are the same words used as nouns, and the second kind is
+    what a research prompt about code is made of. Position is the only signal
+    that separates them without a parse, so the verb counts at the start of the
+    prompt, of a line, of a list item or of a sentence, or straight after a
+    discourse cue -- and is ignored anywhere a determiner or another word put
+    it in the middle of a noun phrase.
+    """
+    return bool(IMPERATIVE_BUILD_VERB.search(prompt))
+
+
 def _is_implementation_brief(prompt: str) -> bool:
     """True when this prompt assigns implementation work.
 
     Three readings, any one of which is enough: the template's markers, an
-    instruction to commit, or a build verb next to a file in this repository.
-    The last two are what catch the assignment a parent types by hand --
-    `Implement #560; edit .codex/hooks/agent_policy.py and commit the fix` --
-    which carries no template text at all and is exactly the spawn the pinned
-    builder exists to take. A build assignment naming neither a file nor a
-    commit is not caught; see the module docstring for why that is deliberate.
+    instruction to commit, or a build verb in imperative position next to a
+    file in this repository. The last two are what catch the assignment a
+    parent types by hand -- `Implement #560; edit .codex/hooks/agent_policy.py
+    and commit the fix` -- which carries no template text at all and is exactly
+    the spawn the pinned builder exists to take. A build assignment naming
+    neither a file nor a commit is not caught, and neither is one whose verb
+    never reaches imperative position; see the module docstring for why both
+    limits are deliberate.
     """
     if _has_brief(prompt):
         return True
     if _has_commit_signal(prompt):
         return True
-    return bool(BUILD_VERB.search(prompt)) and _names_a_repo_file(prompt)
+    return _imperative_build_verb(prompt) and _names_a_repo_file(prompt)
 
 
 def _normalize_words(text: str) -> str:

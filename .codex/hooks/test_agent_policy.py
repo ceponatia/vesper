@@ -273,6 +273,22 @@ COMMIT_ONLY_PROMPT = "git commit the fix"
 # documented blind spot.
 PATHLESS_ASSIGNMENT_PROMPTS = ("fix the wording", "update the docs")
 
+# Research prompts whose ordinary English happens to carry a build verb as a
+# noun, next to the very path they are asking about. Both are real prompts a
+# parent typed, and both were denied while the verb rule read any position --
+# which is the ordinary reason to spawn `general-purpose` at all.
+NOUN_VERB_RESEARCH_PROMPTS = (
+    "Find where the chat continuity repair is implemented in "
+    "apps/web/src/server/engine/chat-continuity-repair.ts and summarize the write path.",
+    "Give me an update on what changed in docs/testing.md this week.",
+)
+# The same words in imperative position, where they really do assign the work:
+# after a discourse cue, and as a list item.
+IMPERATIVE_ASSIGNMENT_PROMPTS = (
+    "Then update docs/testing.md.",
+    "- add a fixture to .codex/hooks/test_agent_policy.py",
+)
+
 
 def role_frontmatter(path: Path) -> dict:
     """Read a role file's YAML frontmatter without a YAML dependency: flat `key: value` lines."""
@@ -606,6 +622,26 @@ class CheckFunctionTests(unittest.TestCase):
         reason = HOOK.check({"subagent_type": "general-purpose", "prompt": RESEARCH_PROMPT})
         self.assertIsNone(reason)
 
+    def test_a_build_verb_used_as_a_noun_beside_a_path_is_allowed(self):
+        """A research prompt about code names files; `the write path` and `an update on`
+        are the same words the build rule looks for, used as nouns. Reading the verb in
+        any position denied both of these, and denying research on a named file is
+        exactly the gate-gets-worked-around failure the rule is shaped to avoid."""
+        for prompt in NOUN_VERB_RESEARCH_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNone(reason)
+
+    def test_a_build_verb_in_imperative_position_beside_a_path_is_denied(self):
+        """The other half of the same rule: position is what separates the noun from the
+        instruction, so a verb after a discourse cue or at the head of a list item still
+        assigns the work even with no template text and no commit instruction."""
+        for prompt in IMPERATIVE_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNotNone(reason)
+                self.assertIn("vesper-builder", reason)
+
     def test_an_assignment_naming_no_file_and_no_commit_is_allowed_by_design(self):
         """The heuristic's documented limit, asserted so it stays a decision rather than a
         surprise: `fix the wording` is indistinguishable from ordinary prose, and the only
@@ -744,6 +780,25 @@ class ProcessTests(unittest.TestCase):
         })
         self.assertEqual(code, 2)
         self.assertIn("vesper-builder", err)
+
+    def test_general_purpose_with_a_research_prompt_naming_a_path_passes(self):
+        for prompt in NOUN_VERB_RESEARCH_PROMPTS:
+            with self.subTest(prompt=prompt):
+                code, out, err = run({
+                    "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "general-purpose", "prompt": prompt},
+                })
+                self.assertEqual(code, 0, err)
+
+    def test_general_purpose_with_an_imperative_assignment_is_denied(self):
+        for prompt in IMPERATIVE_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                code, out, err = run({
+                    "tool_name": "Agent",
+                    "tool_input": {"subagent_type": "general-purpose", "prompt": prompt},
+                })
+                self.assertEqual(code, 2)
+                self.assertIn("vesper-builder", err)
 
     def test_explore_with_a_free_form_assignment_passes(self):
         code, out, err = run({
@@ -944,6 +999,53 @@ class PlaceholderValueTests(unittest.TestCase):
         ):
             with self.subTest(value=value):
                 self.assertTrue(HOOK._is_filled_value(value, HOOK.RISK_AREA_MIN_WORDS))
+
+
+class ImperativeBuildVerbTests(unittest.TestCase):
+    """State the position rule on the helper directly. The verb list is a list of ordinary
+    English words, so which position counts is the entire rule -- and a prompt-shaped fixture
+    can pass for another reason (a template marker, a commit instruction) without touching it."""
+
+    def test_a_build_verb_in_imperative_position_is_read_as_an_instruction(self):
+        for prompt in (
+            "implement the fix",  # the prompt's first word
+            "Edit the hook",
+            "Read the brief. Update the docstring.",  # a new sentence
+            "Implement #560; edit the hook",
+            "Look at it! Rewrite the helper.",
+            "Read the brief\nadd a fixture",  # a new line
+            "Steps:\n- add a fixture\n- rename the helper",  # a list item
+            "  * delete the dead branch",
+            "1. modify the regex",
+            "2) remove the old rule",
+            "please update the docstring",  # a discourse cue
+            "Read it and edit the hook",
+            "Look at the brief, then add a fixture",
+            "Then, update the docstring",
+            "Also: create the helper",
+            "now fix the regex",
+            "First fix the regex, next rewrite the comment, finally add a fixture",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(HOOK._imperative_build_verb(prompt))
+
+    def test_a_build_verb_anywhere_else_is_not(self):
+        """Each of these is a word the rule looks for, sitting in a noun phrase. They are how
+        people write about code, and the reason the verb list alone cannot carry the rule."""
+        for prompt in (
+            "summarize the write path",
+            "give me an update on the docs",
+            "trace the add flow through the reducer",
+            "the create endpoint returns 500",
+            "explain what the fix changed",
+            "document the rename that landed last week",
+            "check whether the delete cascade fires",
+            "the write-ahead log is replayed on resume",
+            "find where the repair is implemented",  # inflected, not the bare verb
+            "the hook is rewritten on every push",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(HOOK._imperative_build_verb(prompt))
 
 
 class PinnedRoleTableTests(unittest.TestCase):
