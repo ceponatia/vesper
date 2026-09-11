@@ -91,7 +91,7 @@ export function replicateClient(): ReplicateClient {
             return runFalQwen3ImageModel(model, {
               prompt: request.prompt,
               references: request.references,
-              size: request.aspect,
+              aspect: request.aspect,
               controlInput: request.controlInput,
               timeoutMs: request.timeoutMs,
               versionId: request.versionId,
