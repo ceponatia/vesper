@@ -91,9 +91,10 @@ characters and other mechanical hazards, then inspect:
 
 Send corrections to the same agent. If it is no longer available, give its
 replacement the original brief, branch, and concrete findings. On Claude, a
-replacement `vesper-builder` gets the brief and findings; a second failed
-round on the same finding goes to `vesper-escalation` with the record.
-Continue the correction loop inside the authorized task.
+replacement `vesper-builder` gets the brief and findings; once a builder or
+correction worker returns an escalation record or reports a failed attempt,
+that finding goes to `vesper-escalation` with the record, never to another
+builder. Continue the correction loop inside the authorized task.
 
 ## Integrate and finish
 

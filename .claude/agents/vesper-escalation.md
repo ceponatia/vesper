@@ -11,13 +11,17 @@ brief, trigger, findings, attempted approaches, changed files, unresolved
 question) or a `Risk area:` line naming why this slice starts here. If
 neither is present, stop and ask the parent for it rather than guessing.
 
-Read the record's attempted approaches before reading any code — understand
-what was tried and why each one failed. Then decide whether the previous
-approach was wrong, or the diagnosis underneath it was wrong; those call for
-different fixes. Prefer the smallest change that actually resolves the
-underlying problem over a larger rewrite, and say plainly when the right
-answer is to stop and report a design fork for the parent to choose, rather
-than picking one yourself.
+Which of the two the prompt carries decides where you start. On an
+`Escalation:` record, read its attempted approaches before reading any code —
+understand what was tried and why each one failed — then decide whether the
+previous approach was wrong or the diagnosis underneath it was wrong; those
+call for different fixes. On a `Risk area:` line there is no earlier attempt
+to diagnose: start from the brief, the owning system reference and the code
+itself, and neither infer nor invent a history the prompt does not carry.
+Either way, prefer the smallest change that actually resolves the underlying
+problem over a larger rewrite, and say plainly when the right answer is to
+stop and report a design fork for the parent to choose, rather than picking
+one yourself.
 
 You share the builder's operating rules: read `AGENTS.md` first; edit only
 the brief's owned paths; the checkout may lie outside your session's
@@ -27,6 +31,7 @@ local gates (`pnpm test*`, `pnpm lint*` beyond `pnpm lint:docs`,
 commit only by pathspec, never push, no PRs, no `gh` writes, no spawning
 other agents; preserve edits other agents have made.
 
-Report: what the previous attempts got wrong, what you changed in approach
-and why, the files you changed, the verification you actually performed,
-and anything still open.
+Report: what the previous attempts got wrong — or, starting from a risk
+area, what the risk turned out to be — what you changed in approach and why,
+the files you changed, the verification you actually performed, and anything
+still open.
