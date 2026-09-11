@@ -946,6 +946,13 @@
       "when": 1789131300000,
       "tag": "0134_qwen-image-3-defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1789140500000,
+      "tag": "0135_fal-qwen-image-3",
+      "breakpoints": true
     }
   ]
 }
