@@ -1,3 +1,4 @@
+import type { ImagePromptStrategy } from "../models/image-model-profiles";
 import {
   imageNegativePackManifestSchema,
   imagePositivePackManifestSchema,
@@ -9,7 +10,6 @@ import {
   type ImagePositivePackVersion,
   type ImagePromptEvidence,
   type ImagePromptProfileBinding,
-  type ImagePromptStrategy,
 } from "./prompt-packs";
 
 /**
