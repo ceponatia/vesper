@@ -81,8 +81,18 @@
 --      ':' compares the provider path alone, and the comparison is equality, so
 --      the sibling `qwen/qwen-image-2512` is not matched.
 --   2. `ON CONFLICT ("slug") DO NOTHING` keeps the statement idempotent against
---      the bare slug itself, and keeps it from resurrecting a row an owner
---      deliberately deleted (owner ruling 4: seeded rows are ordinary rows).
+--      the bare slug itself, so a re-run beside an existing bare row is a no-op
+--      rather than an error.
+--
+-- Neither guard can honour a DELETION. A row that no longer exists creates no
+-- conflict and satisfies NOT EXISTS, so an administrator who registered this
+-- endpoint by hand and then removed it before this file reached their database
+-- gets the built-in row once when it does. The database records no tombstone,
+-- so no predicate could tell that history from a database that never had the
+-- row — and the seeded-row contract is what makes this acceptable rather than
+-- a defect: seeded rows are ordinary rows (owner ruling 4), so the row is
+-- deletable again exactly as it was the first time, and a migration runs once
+-- per database, so a deletion made AFTER it stays deleted.
 INSERT INTO "image_models" (
   "id", "slug", "label", "can_generate", "can_edit", "reference_field", "reference_arity",
   "reference_transport", "max_references", "aspect_mode", "supported_aspects", "output_format",
