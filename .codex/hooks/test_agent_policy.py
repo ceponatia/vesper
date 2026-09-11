@@ -47,6 +47,27 @@ BRIEF_TEMPLATE = (
 )
 ROLE_DIR = Path(__file__).resolve().parents[2] / ".claude/agents"
 
+_BRIEF_TEMPLATE_TEXT = BRIEF_TEMPLATE.read_text(encoding="utf-8")
+
+# The whole "## Escalation record" section of the template, verbatim, with every
+# field still in its unfilled `<placeholder>` form -- this is what a worker who
+# pastes the template without filling it in would actually send.
+FULL_TEMPLATE_ESCALATION_SECTION = _BRIEF_TEMPLATE_TEXT[
+    _BRIEF_TEMPLATE_TEXT.index("## Escalation record (escalation spawns only)"):
+]
+
+FILLED_ESCALATION_PROMPT = "\n".join([
+    "Escalation:",
+    "- Originating brief: #999, the pregnancy-stage helper slice.",
+    "- Trigger: the second fix attempt hit the same race as the first.",
+    "- Findings: the backfill default is safe for existing rows but not concurrent writers.",
+    "- Attempted approaches: a service-layer guard, then a DB constraint; both missed concurrent inserts.",
+    "- Changed files: apps/web/src/server/thing.ts, migrations/0134_thing.sql.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
+FILLED_RISK_AREA_PROMPT = "Risk area: migration -- 0134 renames a column on a hot table."
+
 
 def role_frontmatter(path: Path) -> dict:
     """Read a role file's YAML frontmatter without a YAML dependency: flat `key: value` lines."""
@@ -124,6 +145,27 @@ class CheckFunctionTests(unittest.TestCase):
     def test_escalation_with_the_brief_template_heading_is_allowed(self):
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": TEMPLATE_ESCALATION_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_with_the_unfilled_template_section_is_denied_as_boilerplate(self):
+        """Pasting the whole template section without filling it in must not satisfy the
+        gate: every field is still `<placeholder>` text, not this slice's facts."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": FULL_TEMPLATE_ESCALATION_SECTION}
+        )
+        self.assertIsNotNone(reason)
+        self.assertTrue("boilerplate" in reason.lower() or "placeholder" in reason.lower())
+
+    def test_escalation_with_a_filled_record_is_allowed(self):
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": FILLED_ESCALATION_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_with_a_filled_risk_area_line_naming_a_migration_is_allowed(self):
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": FILLED_RISK_AREA_PROMPT}
         )
         self.assertIsNone(reason)
 
@@ -231,6 +273,19 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(out, "")
         self.assertIn("skipped", err)
 
+    def test_non_object_json_payload_fails_open(self):
+        """Valid JSON that parses to something other than an object (e.g. a bare list) must
+        not reach `payload.get(...)`: that would raise AttributeError uncaught and exit 1,
+        contradicting the "any internal error exits 0" fail-open contract."""
+        result = subprocess.run(
+            [sys.executable, "-B", str(SCRIPT)],
+            input="[]",
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+
     def test_malformed_stdin_fails_open(self):
         result = subprocess.run(
             [sys.executable, "-B", str(SCRIPT)],
@@ -260,6 +315,15 @@ class BriefMarkerTests(unittest.TestCase):
                     {"subagent_type": "general-purpose", "prompt": f"do a thing\n{marker} x"}
                 )
                 self.assertIsNotNone(reason)
+
+    def test_every_record_placeholder_still_appears_in_the_agent_brief_template(self):
+        """A template rewording that drops or rephrases one of these placeholder strings
+        would silently disarm the unfilled-escalation-record check: it would stop matching
+        anything a worker actually pastes, and the gate would let boilerplate through."""
+        text = BRIEF_TEMPLATE.read_text(encoding="utf-8")
+        for placeholder in HOOK.RECORD_PLACEHOLDERS:
+            with self.subTest(placeholder=placeholder):
+                self.assertIn(placeholder, text)
 
 
 class PinnedRoleTableTests(unittest.TestCase):

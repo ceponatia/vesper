@@ -30,6 +30,21 @@ PINNED_MODEL = {
 BRIEF_MARKERS = ("## Checkout and ownership", "Owned writable paths", "# Brief:")
 ESCALATION_LINE = re.compile(r"^(Escalation|Risk area):", re.MULTILINE)
 
+# Copied verbatim from the "## Escalation record" section of
+# .agents/skills/vesper-agent-build/templates/agent-brief.md. A prompt that
+# still contains one of these means the escalation record is the unfilled
+# template, not a filled-in record -- the brief's placeholder text, not this
+# slice's facts.
+RECORD_PLACEHOLDERS = (
+    "Risk area: <kernel | migration | authz | persistence/replay>",
+    "Originating brief: <this brief, or a link/path to it>",
+    "Trigger: <what made this stop worth returning instead of continuing>",
+    "Findings: <what you learned about the actual problem>",
+    "Attempted approaches: <each approach tried and why it failed>",
+    "Changed files: <paths touched so far>",
+    "Unresolved question: <what the next worker must decide or discover>",
+)
+
 
 def _has_brief(prompt: str) -> bool:
     return any(marker in prompt for marker in BRIEF_MARKERS)
@@ -37,6 +52,11 @@ def _has_brief(prompt: str) -> bool:
 
 def _has_escalation_record(prompt: str) -> bool:
     return bool(ESCALATION_LINE.search(prompt)) or "## Escalation" in prompt
+
+
+def _record_placeholder(prompt: str) -> str | None:
+    """Return the first unfilled template placeholder still present in `prompt`, or None."""
+    return next((placeholder for placeholder in RECORD_PLACEHOLDERS if placeholder in prompt), None)
 
 
 def check(tool_input: dict) -> str | None:
@@ -58,13 +78,24 @@ def check(tool_input: dict) -> str | None:
             "model for an ad-hoc task that isn't one of the pinned Vesper roles."
         )
 
-    if subagent_type == "vesper-escalation" and not _has_escalation_record(prompt):
-        return (
-            "[vesper agent policy] `vesper-escalation` needs either an `Escalation:` "
-            "record (originating brief, trigger, findings, attempted approaches, "
-            "changed files, unresolved question) or a `Risk area:` line naming why "
-            "this slice starts here. Add one of those to the prompt and retry."
-        )
+    if subagent_type == "vesper-escalation":
+        if not _has_escalation_record(prompt):
+            return (
+                "[vesper agent policy] `vesper-escalation` needs either an `Escalation:` "
+                "record (originating brief, trigger, findings, attempted approaches, "
+                "changed files, unresolved question) or a `Risk area:` line naming why "
+                "this slice starts here. Add one of those to the prompt and retry."
+            )
+
+        placeholder = _record_placeholder(prompt)
+        if placeholder:
+            return (
+                "[vesper agent policy] this escalation record is still the brief "
+                f"template's boilerplate (found the unfilled placeholder `{placeholder}`). "
+                "Fill the six fields (originating brief, trigger, findings, attempted "
+                "approaches, changed files, unresolved question) or the `Risk area:` line "
+                "with this slice's actual facts before spawning."
+            )
 
     if _has_brief(prompt) and subagent_type not in PINNED:
         return (
@@ -82,6 +113,9 @@ def main() -> int:
     try:
         payload = json.load(sys.stdin)
     except Exception:
+        return 0
+
+    if not isinstance(payload, dict):
         return 0
 
     if payload.get("tool_name") != "Agent":
