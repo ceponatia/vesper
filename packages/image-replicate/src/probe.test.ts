@@ -820,6 +820,213 @@ describe("probeReplicateModel", () => {
       const reversed = await probeWith(Object.fromEntries(Object.entries(properties).reverse()));
       expect(JSON.stringify(reversed)).toBe(JSON.stringify(forward));
     });
+
+    it("derives the Qwen Image 2 row and capability record that migration 0133 seeds", async () => {
+      // `qwen/qwen-image-2` at version 266e594f…, transcribed from the published
+      // schema captured on 2026-09-10. This is Replicate's unified generate+edit
+      // endpoint, and it is NOT Qwen Image Edit 2511: both name their reference
+      // input `image`, but 2511 declares an ARRAY of URIs and this one declares a
+      // SINGLE nullable URI. Carrying 2511's assumption across would post
+      // `["https://…"]` into a string field and fail every render at spend time,
+      // which is why `referenceArity` is also asserted on its own below.
+      const schema = openapi({
+        required: ["prompt"],
+        properties: {
+          seed: {
+            type: "integer",
+            title: "Seed",
+            "x-order": 6,
+            nullable: true,
+            // Prose only. The schema declares no `minimum`/`maximum`, so the
+            // binding carries no range — absent means "the provider declared no
+            // bound", never a range read out of a sentence.
+            description: "Random seed for reproducible generation. Range: 0-2147483647",
+          },
+          image: {
+            ...uri,
+            title: "Image",
+            "x-order": 1,
+            nullable: true,
+            description:
+              "Optional reference image for image editing, style transfer, or image-to-image generation",
+          },
+          prompt: {
+            type: "string",
+            title: "Prompt",
+            "x-order": 0,
+            description: "Text prompt for image generation or editing",
+          },
+          aspect_ratio: {
+            ...enumRef("aspect_ratio"),
+            default: "1:1",
+            "x-order": 3,
+            description: "Aspect ratio of the generated image",
+          },
+          negative_prompt: {
+            type: "string",
+            title: "Negative Prompt",
+            default: "",
+            "x-order": 5,
+            description: "Negative prompt to specify elements to avoid in the generated image",
+          },
+          match_input_image: {
+            type: "boolean",
+            title: "Match Input Image",
+            default: false,
+            "x-order": 2,
+            description:
+              "When true and an image is provided, use the input image's aspect ratio and resolution instead of the aspect_ratio parameter",
+          },
+          enable_prompt_expansion: {
+            type: "boolean",
+            title: "Enable Prompt Expansion",
+            default: true,
+            "x-order": 4,
+            description: "Automatically expand and optimize the prompt for better results",
+          },
+        },
+        enums: { aspect_ratio: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2"] },
+      });
+      // The declared Output is a BARE URI STRING, not the array most registered
+      // models return. Carried for fidelity only: the probe reads `Input` and
+      // nothing else, so the `output` member below is the capability contract's
+      // own default rather than a derivation — right for this endpoint, but not
+      // a fact this schema proved.
+      schema.components.schemas.Output = { type: "string", title: "Output", format: "uri" };
+
+      stubFetch(() => ({
+        name: "qwen-image-2",
+        owner: "qwen",
+        // Official, so the row keeps the BARE slug and the pin lives in
+        // `probed_version_id` — the bare-slug prediction endpoint is
+        // official-models-only.
+        is_official: true,
+        latest_version: {
+          id: "266e594fa007032292c211586354fe193d7aa4e675a1eeb0aef0c6a424468ddd",
+          openapi_schema: schema,
+        },
+      }));
+
+      const result = await probeReplicateModel("qwen/qwen-image-2");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Asserted WHOLE, and as a literal, because this is a migration
+      // compatibility value: drizzle/0133_qwen-image-2.sql seeds exactly these
+      // columns and exactly this `advanced_capabilities` JSON, and the admin
+      // version card diffs the stored record against a fresh probe. A hand-typed
+      // row that disagreed with the derivation — a `reserved` flag on
+      // `enable_prompt_expansion`, a seed range the schema never declared, an
+      // array output — shows up either as a phantom version diff on a row nobody
+      // touched, or as an advanced control sent to a field this version does not
+      // own. The migration and this literal move together.
+      expect(result.probe).toEqual({
+        slug: "qwen/qwen-image-2",
+        isOfficial: true,
+        label: "Qwen Image 2",
+        versionId: "266e594fa007032292c211586354fe193d7aa4e675a1eeb0aef0c6a424468ddd",
+        // Only `prompt` is required, so it generates; `image` exists, so it edits.
+        canGenerate: true,
+        canEdit: true,
+        referenceField: "image",
+        referenceArity: "single",
+        maxReferences: 1,
+        aspectMode: "aspect_ratio",
+        supportedAspects: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2"],
+        // No `output_format` enum, and none of the pinnable keys
+        // (`disable_safety_checker`, `go_fast`, `output_quality`,
+        // `apply_watermark`, the group-generation pair) is declared — so copying
+        // 2512's `extra_input` onto this row would post inputs it rejects.
+        outputFormat: null,
+        extraInput: {},
+        advancedCapabilities: {
+          controls: {
+            seed: { field: "seed", type: "integer" },
+            negativePrompt: { field: "negative_prompt", type: "string" },
+          },
+          additionalImageInputs: [],
+          output: { arity: "single", supportsMultiple: false },
+          knownInputFields: [
+            "aspect_ratio",
+            "enable_prompt_expansion",
+            "image",
+            "match_input_image",
+            "negative_prompt",
+            "prompt",
+            "seed",
+          ],
+          providerInputs: [
+            {
+              field: "aspect_ratio",
+              type: "enum",
+              required: false,
+              default: "1:1",
+              enumValues: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2"],
+              description: "Aspect ratio of the generated image",
+              reserved: true,
+            },
+            // One of the two OPEN descriptors, and the reason the issue's
+            // "prompt-expansion control" needs no model-specific UI: the
+            // Generator's advanced-input form is built from this list, so the
+            // provider default being ON is something an admin can switch off for
+            // a controlled run without any code knowing this field's name.
+            {
+              field: "enable_prompt_expansion",
+              type: "boolean",
+              required: false,
+              default: true,
+              description: "Automatically expand and optimize the prompt for better results",
+              reserved: false,
+            },
+            {
+              field: "image",
+              type: "uri",
+              required: false,
+              description:
+                "Optional reference image for image editing, style transfer, or image-to-image generation",
+              reserved: true,
+            },
+            {
+              field: "match_input_image",
+              type: "boolean",
+              required: false,
+              default: false,
+              description:
+                "When true and an image is provided, use the input image's aspect ratio and resolution instead of the aspect_ratio parameter",
+              reserved: false,
+            },
+            {
+              field: "negative_prompt",
+              type: "string",
+              required: false,
+              // The declared default is the empty string, and an empty default is
+              // still a declared one — `default` is carried whenever the schema
+              // states it.
+              default: "",
+              description: "Negative prompt to specify elements to avoid in the generated image",
+              reserved: true,
+            },
+            {
+              field: "prompt",
+              type: "string",
+              required: true,
+              description: "Text prompt for image generation or editing",
+              reserved: true,
+            },
+            {
+              field: "seed",
+              type: "integer",
+              required: false,
+              description: "Random seed for reproducible generation. Range: 0-2147483647",
+              reserved: true,
+            },
+          ],
+        },
+      });
+      // Called out on its own because it is the checklist item: the reference
+      // transport uses this endpoint's real single-URI `image` field and does not
+      // inherit 2511's array binding from the shared field name.
+      expect(result.probe.referenceArity).toBe("single");
+    });
   });
 
   describe("pinned versions", () => {

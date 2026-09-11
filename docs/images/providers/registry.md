@@ -8,9 +8,9 @@ the runtime truth.
 
 Replicate models disagree with each other in ways no shared mapping can paper over. The
 reference input is `image` on one model, `image_input` on another, `images` on a third,
-`reference_image` on a fourth — and both Qwen models call it `image` with *different* arities.
-So a row stores `referenceField` + `referenceArity`, `maxReferences`, `aspectMode` +
-`supportedAspects`, `outputFormat`, and free-form `extraInput` constants.
+`reference_image` on a fourth — and the three Qwen models all call it `image` while
+*disagreeing* on arity. So a row stores `referenceField` + `referenceArity`, `maxReferences`,
+`aspectMode` + `supportedAspects`, `outputFormat`, and free-form `extraInput` constants.
 
 Two mechanical capability booleans feed the rest of the system: `canGenerate` (can run from a
 bare prompt) and `canEdit` (has a reference input at all). They are **not sufficient picker
