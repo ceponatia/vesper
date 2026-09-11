@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { qwenImage2512, qwenImageEdit2511 } from "./families";
+import { qwenImage2512, qwenImage3, qwenImage3Pro, qwenImageEdit2511 } from "./families";
 import { adapterForImageModel } from "./registry";
 
 /**
@@ -25,6 +25,8 @@ describe("adapterForImageModel", () => {
   it("resolves every registered Qwen endpoint, pinned or bare", () => {
     expect(adapterForImageModel("qwen/qwen-image-edit-2511")).toBe(qwenImageEdit2511);
     expect(adapterForImageModel("qwen/qwen-image-2512")).toBe(qwenImage2512);
+    expect(adapterForImageModel("alibaba/qwen-image-3")).toBe(qwenImage3);
+    expect(adapterForImageModel("alibaba/qwen-image-3-pro")).toBe(qwenImage3Pro);
     // The pin is a slug SHAPE the registry must survive, not a claim that this
     // row is stored pinned today: any row may be re-registered against a fixed
     // provider version, and the family's behavior does not change when it is.
@@ -33,27 +35,37 @@ describe("adapterForImageModel", () => {
         "qwen/qwen-image-edit-2511:2ef4a1e6dbbd5b8f0d8f3cbbd3a1cbee0b1d4c0f6ee1c8ad5b7f2e0c9a3d4b1e",
       ),
     ).toBe(qwenImageEdit2511);
+    expect(
+      adapterForImageModel(
+        "alibaba/qwen-image-3:8235a8d30fc32fd33a4e0e91d9cffaae6f2250fc56ff8e5736ca4a9c5b9f9fbc",
+      ),
+    ).toBe(qwenImage3);
   });
 
-  it("declares runtime LoRA capability on the edit endpoint and not the generator", () => {
+  it("keeps the Qwen Image 3 and Pro adapters distinct even while their first capability sets match", () => {
+    expect(qwenImage3).not.toBe(qwenImage3Pro);
+    expect(qwenImage3.capabilities).toEqual(["prompt", "aspectRatio", "seed", "negativePrompt"]);
+    expect(qwenImage3Pro.capabilities).toEqual(qwenImage3.capabilities);
+  });
+
+  it("declares runtime LoRA capability on the 2511 edit endpoint and not the generators", () => {
     // Replicate's current 2511 schema exposes lora_weights + lora_scale. The
     // adapter is the family-level semantic claim; the probed registry row still
     // decides whether a concrete version has the two provider bindings at render
     // time.
     expect(qwenImageEdit2511.capabilities).toContain("lora");
     expect(qwenImage2512.capabilities).not.toContain("lora");
+    expect(qwenImage3.capabilities).not.toContain("lora");
+    expect(qwenImage3Pro.capabilities).not.toContain("lora");
   });
 
   it.each([
     "bytedance/seedream-4.5",
     "qwen/qwen-image-edit-2511-turbo",
-    // Replicate's unified generate+edit endpoint, seeded by
-    // drizzle/0133_qwen-image-2.sql. It shares the `qwen/qwen-image-` prefix with
-    // the registered 2512 generator — 2512's whole slug starts with this one —
-    // and it must NOT borrow that family's prompt dialect or execution hints:
-    // nobody has written down behavior for this endpoint, so the generic path is
-    // the deliberate answer, not a gap. Both the bare slug and the pinned form
-    // the admin add path would store must answer the same.
+    // Replicate's unified Qwen Image 2 endpoint remains on the generic path.
+    // Sharing a name prefix with the registered Qwen endpoints is not enough to
+    // inherit an adapter; it gets one only when somebody writes one for that
+    // exact base slug.
     "qwen/qwen-image-2",
     "qwen/qwen-image-2:266e594fa007032292c211586354fe193d7aa4e675a1eeb0aef0c6a424468ddd",
     "",
