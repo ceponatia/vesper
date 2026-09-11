@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db, images, items, locations } from "../db";
-import { isDemoMode } from "../ai";
+import { isDemoMode, qualifiedImageModelIdentity } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseAspectValue } from "@vesper/image-core";
@@ -72,7 +72,7 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
       entityKind: input.entityKind,
       entityId: input.entityId,
       prompt,
-      meta: { model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`, demo, ...(compiled?.meta ?? {}) },
+      meta: { model: demo ? "demo" : qualifiedImageModelIdentity(model), demo, ...(compiled?.meta ?? {}) },
     },
     // A missing entity still leaves a failed row behind — no event, no diagnostic.
     // A prompt-program refusal is louder: the row carries the reason, because a

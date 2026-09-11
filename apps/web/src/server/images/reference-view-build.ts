@@ -24,7 +24,12 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { characters, db } from "../db";
-import { hasReplicate, isDemoMode } from "../ai";
+import {
+  hasAnyImageProvider,
+  hasImageProviderForModel,
+  isDemoMode,
+  qualifiedImageModelIdentity,
+} from "../ai";
 import { runImagePipeline } from "./assets";
 import { deleteOwnedImage } from "./asset-deletion";
 import { loadDefaultWardrobeWithRevisions, type AvatarWardrobeLoad } from "./avatar";
@@ -206,7 +211,7 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
   const { targets } = normalizeReferenceViewTargets(input.targets ?? planned, planned);
   if (targets.length === 0) return report("built", planned.length);
 
-  if (isDemoMode() || !hasReplicate()) {
+  if (isDemoMode() || !hasAnyImageProvider()) {
     sink.push(
       diag("warn", `${SCOPE}.provider_unavailable`, "no image provider is configured, so no reference view was rendered", {
         path: SCOPE,
@@ -401,7 +406,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
           generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
           faceVisibility: referenceViewFaceVisibility(angle),
         },
-        model: `replicate/${resolved?.model.slug ?? "none"}`,
+        model: qualifiedImageModelIdentity(resolved?.model),
         ...(bareRoute?.ok === true ? { lora: bareRoute.binding.id } : {}),
         ...(packSelection ? { identityReferences: packSelection.provenance } : {}),
         ...(cut?.digestMeta ?? {}),
@@ -492,6 +497,9 @@ function viewPrecondition(inputs: {
 }): string | null {
   if (inputs.cut === null) return "the reference view's visual cut could not be assembled";
   if (inputs.resolved === null) return "no image model is registered for portrait variants";
+  if (!hasImageProviderForModel(inputs.resolved.model)) {
+    return `the ${qualifiedImageModelIdentity(inputs.resolved.model)} provider is not configured`;
+  }
   if (inputs.bareRoute !== null && !inputs.bareRoute.ok) return inputs.bareRoute.error;
   if (inputs.packIdentity === null || !inputs.packIdentity.ok) {
     return inputs.packIdentity && !inputs.packIdentity.ok ? inputs.packIdentity.error : "identity references unavailable";

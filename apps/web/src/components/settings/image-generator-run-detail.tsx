@@ -107,7 +107,7 @@ const effectiveRequestViewSchema = z.object({
       mode: z.string().catch("provider_default"),
       requestedAspect: z.string().nullable().catch(null).default(null),
       field: z.string().nullable().catch(null).default(null),
-      value: z.string().nullable().catch(null).default(null),
+      value: z.unknown().nullable().catch(null).default(null),
     })
     .catch(() => ({ mode: "provider_default", requestedAspect: null, field: null, value: null }))
     .default(() => ({ mode: "provider_default", requestedAspect: null, field: null, value: null })),
@@ -667,7 +667,7 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
               <p className="mt-1 text-xs text-paper-300">
                 {effectiveView.data.shape.field === null || effectiveView.data.shape.value === null
                   ? "No shape field was sent — the model answered at its own default."
-                  : `${effectiveView.data.shape.field} = ${effectiveView.data.shape.value}`}
+                  : `${effectiveView.data.shape.field} = ${JSON.stringify(effectiveView.data.shape.value)}`}
                 {effectiveView.data.postprocess.cropTarget === null
                   ? " No crop was planned."
                   : ` A crop to ${String(effectiveView.data.postprocess.cropTarget)} was planned; the result below says what happened.`}

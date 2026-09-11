@@ -6,10 +6,15 @@ import {
   imageIdentityPreservationSchema,
   imageReferenceTransportSchema,
 } from "@vesper/image-core";
+import { imageModelProvider } from "@vesper/image-models";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { replicateClient } from "@/server/ai";
-import { imageModelReprobeFields, loadImageModel } from "@/server/images";
+import {
+  IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED,
+  imageModelReprobeFields,
+  loadImageModel,
+} from "@/server/images";
 
 type Params = { modelId: string };
 
@@ -110,6 +115,13 @@ export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx)
   // between versions.
   let probedFields = {};
   if (reprobe) {
+    if (imageModelProvider(existing.slug) !== "replicate") {
+      return jsonError(
+        IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED,
+        `${imageModelProvider(existing.slug)} models do not support Replicate version operations`,
+        400,
+      );
+    }
     const probed = await replicateClient().probeReplicateModel(existing.slug);
     if (!probed.ok) return jsonError("image_model.probe_failed", probed.error, 400);
     probedFields = imageModelReprobeFields(probed.probe);

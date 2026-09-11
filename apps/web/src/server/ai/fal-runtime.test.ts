@@ -1,12 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { imageModelSchema, type ImageModel } from "@vesper/image-core";
 import {
   FAL_QWEN3_EDIT_SLUG,
   FAL_QWEN3_TEXT_SLUG,
   falQwen3Payload,
   qwen3ImageSize,
+  runFalQwen3ImageModel,
   type FalPreparedReference,
 } from "./fal-runtime";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 function model(slug: string): ImageModel {
   return imageModelSchema.parse({
@@ -87,5 +93,23 @@ describe("qwen3ImageSize", () => {
     expect(qwen3ImageSize("16:9", "2K")).toEqual({ width: 2048, height: 1152 });
     expect(qwen3ImageSize("9:16", "1K")).toEqual({ width: 576, height: 1024 });
     expect(qwen3ImageSize(null, "1K")).toEqual({ width: 1024, height: 1024 });
+  });
+});
+
+describe("fal result provenance", () => {
+  it("never reports Vesper's requested schema revision as a provider-executed version", async () => {
+    vi.stubEnv("FAL_API_KEY", "fal_test");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ images: [{ url: "data:image/png;base64,aW1hZ2U=" }] }), {
+        status: 200,
+        headers: { "x-fal-request-id": "fal-request-1" },
+      }),
+    );
+
+    const staleRequest = { prompt: "portrait", versionId: "vesper-schema-revision" };
+    const result = await runFalQwen3ImageModel(model(FAL_QWEN3_TEXT_SLUG), staleRequest);
+
+    expect(result).toMatchObject({ ok: true, predictionId: "fal-request-1" });
+    expect(result).not.toHaveProperty("executedVersionId");
   });
 });

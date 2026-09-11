@@ -1,5 +1,5 @@
 import { jsonError, jsonOk, withOwnerAdmin } from "@/server/api";
-import { probeLatestCandidate } from "@/server/images";
+import { IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED, probeLatestCandidate } from "@/server/images";
 
 type Params = { modelId: string };
 
@@ -14,6 +14,9 @@ export const POST = withOwnerAdmin<Params>(async (_user, _req, ctx) => {
   const { modelId } = await ctx.params;
   const result = await probeLatestCandidate(modelId);
   if (!result.ok) {
+    if (result.code === "provider_operation_unsupported") {
+      return jsonError(IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED, result.message, 400);
+    }
     return result.code === "not_found"
       ? jsonError("not_found", result.message, 404)
       : jsonError("image_model.probe_failed", result.message, 400);

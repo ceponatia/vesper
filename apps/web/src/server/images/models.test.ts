@@ -11,10 +11,10 @@ import type { ReplicateClient, ReplicateImageResult } from "@vesper/image-replic
  * that would have been sent.
  */
 
-vi.mock("../ai", () => ({ replicateClient: vi.fn() }));
+vi.mock("../ai", () => ({ replicateClient: vi.fn(), imageModelSentShape: vi.fn() }));
 vi.mock("../db", () => ({ db: vi.fn(), imageModels: {} }));
 
-import { replicateClient } from "../ai";
+import { imageModelSentShape, replicateClient } from "../ai";
 import { renderWithModel } from "./models";
 
 const runModel = vi.fn<ReplicateClient["runRegistryImageModel"]>();
@@ -48,6 +48,10 @@ beforeEach(() => {
   runModel.mockReset();
   runModel.mockResolvedValue({ ok: true, image: Buffer.from("img") } satisfies ReplicateImageResult);
   vi.mocked(replicateClient).mockReturnValue(client);
+  vi.mocked(imageModelSentShape).mockImplementation(({ model, aspect }) => ({
+    field: aspect === null ? null : model.aspectMode,
+    value: aspect,
+  }));
 });
 
 describe("renderWithModel dimension negotiation", () => {
@@ -98,6 +102,24 @@ describe("renderWithModel dimension negotiation", () => {
     expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBe("1:1");
     await renderWithModel({ model: ratioModel, prompt: "an item" });
     expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBe("3:4");
+  });
+
+  it("reports the provider-dispatched shape rather than the registry's normalized aspect", async () => {
+    vi.mocked(imageModelSentShape).mockReturnValueOnce({
+      field: "image_size",
+      value: { width: 1536, height: 2048 },
+    });
+
+    const result = await renderWithModel({
+      model: wan(),
+      prompt: "a portrait",
+      dimensionFacts: { operation: "generate", resolution: "2K", mappedCustomSize: null },
+    });
+
+    expect(result.shape).toMatchObject({
+      field: "image_size",
+      value: { width: 1536, height: 2048 },
+    });
   });
 });
 

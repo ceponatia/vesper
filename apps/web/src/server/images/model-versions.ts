@@ -15,6 +15,7 @@ import {
   validateImageProfileForCandidate,
 } from "@vesper/image-core";
 import type { ProbeResult } from "@vesper/image-replicate";
+import { imageModelProvider } from "@vesper/image-models";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { replicateClient } from "../ai";
 import { db, imageModels } from "../db";
@@ -47,6 +48,20 @@ import { renderImageIntent, type RenderImageIntentResult } from "./render-intent
  */
 
 type SuccessfulProbe = Extract<ProbeResult, { ok: true }>["probe"];
+
+export const IMAGE_MODEL_PROVIDER_OPERATION_UNSUPPORTED = "image_model.provider_operation_unsupported";
+
+function unsupportedVersionOperation(
+  model: ImageModel,
+): { ok: false; code: "provider_operation_unsupported"; message: string } | null {
+  return imageModelProvider(model.slug) === "replicate"
+    ? null
+    : {
+        ok: false,
+        code: "provider_operation_unsupported",
+        message: `${imageModelProvider(model.slug)} models do not support Replicate version operations`,
+      };
+}
 
 // The `{ profileId, key, label, findings }` wire shape is the package's
 // `imageModelProfileFindingsSchema` — one spelling shared with the client,
@@ -113,7 +128,7 @@ export type ProbeLatestCandidateResult =
       diff: ImageCapabilityDiffEntry[];
       profiles: ImageModelProfileFindings[];
     }
-  | { ok: false; code: "not_found" | "probe_failed"; message: string };
+  | { ok: false; code: "not_found" | "probe_failed" | "provider_operation_unsupported"; message: string };
 
 /**
  * Probe the model's BARE path — the pin stripped, so a pinned row still asks
@@ -130,6 +145,8 @@ export async function probeLatestCandidate(
   const deps: ImageModelVersionDependencies = { ...defaultDependencies, ...dependencies };
   const model = await deps.loadModel(modelId);
   if (!model) return { ok: false, code: "not_found", message: "image model not found" };
+  const unsupported = unsupportedVersionOperation(model);
+  if (unsupported) return unsupported;
 
   const probed = await deps.probe(baseImageModelSlug(model.slug));
   if (!probed.ok) return { ok: false, code: "probe_failed", message: probed.error };
@@ -162,7 +179,7 @@ export type SmokeTestCandidateResult =
     }
   | {
       ok: false;
-      code: "not_found" | "profile_not_found" | "smoke_failed";
+      code: "not_found" | "profile_not_found" | "smoke_failed" | "provider_operation_unsupported";
       message: string;
       predictionId?: string;
       durationMs?: number;
@@ -221,6 +238,8 @@ export async function smokeTestCandidate(
   const deps: ImageModelVersionDependencies = { ...defaultDependencies, ...dependencies };
   const model = await deps.loadModel(modelId);
   if (!model) return { ok: false, code: "not_found", message: "image model not found" };
+  const unsupported = unsupportedVersionOperation(model);
+  if (unsupported) return unsupported;
   const profile = await deps.loadProfile(input.profileId);
   if (!profile || profile.imageModelId !== modelId) {
     return { ok: false, code: "profile_not_found", message: "image model profile not found" };
@@ -276,7 +295,7 @@ export interface ActivateCandidateVersionInput {
 
 export type ActivateCandidateVersionResult =
   | { ok: true; model: ImageModel; profiles: ImageModelProfileFindings[] }
-  | { ok: false; code: "not_found" | "version_unavailable"; message: string }
+  | { ok: false; code: "not_found" | "version_unavailable" | "provider_operation_unsupported"; message: string }
   | { ok: false; code: "activation_blocked"; message: string; profiles: ImageModelProfileFindings[] };
 
 /**
@@ -330,6 +349,8 @@ export async function activateCandidateVersion(
   const deps: ImageModelVersionDependencies = { ...defaultDependencies, ...dependencies };
   const model = await deps.loadModel(modelId);
   if (!model) return { ok: false, code: "not_found", message: "image model not found" };
+  const unsupported = unsupportedVersionOperation(model);
+  if (unsupported) return unsupported;
 
   const basePath = baseImageModelSlug(model.slug);
   const probed = await probeExactCandidate(deps, basePath, input.versionId);

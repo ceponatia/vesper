@@ -7,6 +7,7 @@ import {
   imageModelProfileSchema,
   imageModelSchema,
 } from "@vesper/image-core";
+import { FAL_QWEN3_TEXT_SLUG } from "@vesper/image-models";
 import {
   activateCandidateVersion,
   type ImageModelVersionDependencies,
@@ -77,6 +78,38 @@ function baseProbe() {
     advancedCapabilities: emptyImageModelAdvancedCapabilities(),
   };
 }
+
+describe("provider version-operation boundary", () => {
+  it("refuses every Replicate-only operation for fal before probe, render, or persistence", async () => {
+    const probe = vi.fn(async () => ({ ok: false as const, error: "must not run" }));
+    const render = renderMock(async () => ({ ok: false, error: "must not run" }));
+    const persist = vi.fn(async () => undefined);
+    const loadProfile = vi.fn(async () => profile());
+    const falModel = model({ slug: FAL_QWEN3_TEXT_SLUG });
+
+    const latest = await probeLatestCandidate("model_a", undefined, { loadModel: async () => falModel, probe });
+    const smoke = await smokeTestCandidate(
+      "model_a",
+      { versionId: "schema-revision", profileId: "profile_a" },
+      undefined,
+      { loadModel: async () => falModel, loadProfile, render },
+    );
+    const activate = await activateCandidateVersion(
+      "model_a",
+      { versionId: "schema-revision" },
+      undefined,
+      { loadModel: async () => falModel, probe, persist },
+    );
+
+    for (const result of [latest, smoke, activate]) {
+      expect(result).toMatchObject({ ok: false, code: "provider_operation_unsupported" });
+    }
+    expect(probe).not.toHaveBeenCalled();
+    expect(loadProfile).not.toHaveBeenCalled();
+    expect(render).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+  });
+});
 
 describe("probeLatestCandidate", () => {
   it("refuses an unknown model", async () => {

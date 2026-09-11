@@ -5,8 +5,17 @@ import {
   MIN_PREDICTION_TIMEOUT_MS,
   type ReplicateClient,
   type ReplicateConfig,
+  previewRegistryModelInput,
 } from "@vesper/image-replicate";
-import { isFalQwen3Slug, runFalQwen3ImageModel } from "./fal-runtime";
+import { imageAspectInputField, type ImageModel, type ImageRenderPolicy } from "@vesper/image-core";
+import { imageModelProvider } from "@vesper/image-models";
+import {
+  falQwen3PayloadFromUrls,
+  hasFal,
+  isFalQwen3Slug,
+  qwen3ImageSize,
+  runFalQwen3ImageModel,
+} from "./fal-runtime";
 
 /**
  * The application's Replicate runtime — the ONLY code in Vesper that reads
@@ -90,7 +99,6 @@ export function replicateClient(): ReplicateClient {
           aspect: request.aspect,
           controlInput: request.controlInput,
           timeoutMs: request.timeoutMs,
-          versionId: request.versionId,
         });
       }
       return target.runRegistryImageModel(model, request, sink);
@@ -105,6 +113,86 @@ export function replicateClient(): ReplicateClient {
 export function hasReplicate(): boolean {
   client ??= createReplicateClient(resolveReplicateConfig());
   return client.configured;
+}
+
+/** Whether the credential for this model's actual provider is configured. */
+export function hasImageProviderForModel(model: Pick<ImageModel, "slug"> | string): boolean {
+  const slug = typeof model === "string" ? model : model.slug;
+  return imageModelProvider(slug) === "fal" ? hasFal() : hasReplicate();
+}
+
+/** Whether this deployment has at least one image transport configured. */
+export function hasAnyImageProvider(): boolean {
+  return hasFal() || hasReplicate();
+}
+
+/** Stable persisted identity for the provider-qualified registry model. */
+export function qualifiedImageModelIdentity(model: Pick<ImageModel, "slug"> | null | undefined): string {
+  if (!model) return "replicate/none";
+  return `${imageModelProvider(model.slug)}/${model.slug}`;
+}
+
+export interface PreviewImageModelRequest {
+  model: ImageModel;
+  prompt: string;
+  referenceCount: number;
+  controlReferences?: readonly { field: string; arity: "single" | "array"; count: number }[];
+  aspect: string | null;
+  controlInput?: Record<string, unknown>;
+  policy?: ImageRenderPolicy;
+}
+
+/** Provider-dispatched wire preview beside the provider-dispatched actual send. */
+export interface PreviewedImageModelRequest {
+  request: Record<string, unknown>;
+  sentShape: ImageModelSentShape;
+}
+
+export interface ImageModelSentShape {
+  field: string | null;
+  value: unknown;
+}
+
+/** The provider field/value pair the final transport writes for image shape. */
+export function imageModelSentShape(input: {
+  model: ImageModel;
+  aspect: string | null;
+  controlInput?: Readonly<Record<string, unknown>>;
+}): ImageModelSentShape {
+  if (imageModelProvider(input.model.slug) === "fal") {
+    const tier = input.controlInput?.["image_size"] === "2K" ? "2K" : "1K";
+    return { field: "image_size", value: qwen3ImageSize(input.aspect, tier) };
+  }
+  return {
+    field: input.aspect === null ? null : imageAspectInputField(input.model),
+    value: input.aspect,
+  };
+}
+
+export function previewImageModelRequest(input: PreviewImageModelRequest): PreviewedImageModelRequest {
+  if (imageModelProvider(input.model.slug) === "fal") {
+    if ((input.controlReferences?.length ?? 0) > 0) {
+      throw new Error(`${input.model.slug} does not expose dedicated structural image inputs`);
+    }
+    const references = Array.from(
+      { length: input.referenceCount },
+      (_unused, index) => `https://placeholder.invalid/reference-${String(index + 1)}`,
+    );
+    const request = falQwen3PayloadFromUrls(
+      input.model,
+      {
+        prompt: input.prompt,
+        aspect: input.aspect,
+        controlInput: input.controlInput,
+      },
+      references,
+    );
+    return { request, sentShape: imageModelSentShape(input) };
+  }
+  return {
+    request: previewRegistryModelInput({ ...input, safetyCheckerDisabled: disableSafetyChecker() }),
+    sentShape: imageModelSentShape(input),
+  };
 }
 
 /**

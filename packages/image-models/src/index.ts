@@ -61,3 +61,5 @@ export {
   qwenImageEdit2511,
 } from "./families";
 export { adapterForImageModel } from "./registry";
+export { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG, imageModelProvider } from "./provider";
+export type { ImageModelProvider } from "./provider";

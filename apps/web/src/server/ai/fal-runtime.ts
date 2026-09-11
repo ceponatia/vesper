@@ -1,7 +1,7 @@
 import type { ImageModel } from "@vesper/image-core";
+import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG, imageModelProvider } from "@vesper/image-models";
 
-export const FAL_QWEN3_TEXT_SLUG = "alibaba/qwen-image-3/text-to-image";
-export const FAL_QWEN3_EDIT_SLUG = "alibaba/qwen-image-3/edit";
+export { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "@vesper/image-models";
 
 /**
  * fal does not expose immutable weights/version ids for these managed endpoints.
@@ -30,8 +30,6 @@ export interface FalImageRequest {
   /** Provider-shaped values already validated by the profile/compiler. */
   controlInput?: Readonly<Record<string, unknown>>;
   timeoutMs?: number | null;
-  /** Vesper's captured schema revision; fal itself has no immutable version pin. */
-  versionId?: string | null;
 }
 
 export interface FalImageResult {
@@ -39,7 +37,6 @@ export interface FalImageResult {
   image?: Buffer;
   error?: string;
   predictionId?: string;
-  executedVersionId?: string;
   sentReferenceCount?: number;
 }
 
@@ -49,16 +46,11 @@ interface FalImageResponse {
 }
 
 export function isFalQwen3Slug(slug: string): boolean {
-  return slug === FAL_QWEN3_TEXT_SLUG || slug === FAL_QWEN3_EDIT_SLUG;
+  return imageModelProvider(slug) === "fal";
 }
 
 export function hasFal(): boolean {
   return Boolean(process.env.FAL_API_KEY?.trim());
-}
-
-/** Whether this deployment has at least one image transport configured. */
-export function hasAnyImageProvider(): boolean {
-  return hasFal() || Boolean(process.env.REPLICATE_API_TOKEN?.trim());
 }
 
 /**
@@ -67,6 +59,20 @@ export function hasAnyImageProvider(): boolean {
  */
 export function falQwen3Payload(model: ImageModel, request: FalImageRequest): Record<string, unknown> {
   const references = [...(request.references ?? [])];
+  return falQwen3PayloadFromUrls(
+    model,
+    request,
+    references.map((reference) => `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`),
+  );
+}
+
+/** Shared fal wire builder used by both the actual send and sanitized previews. */
+export function falQwen3PayloadFromUrls(
+  model: ImageModel,
+  request: Omit<FalImageRequest, "references">,
+  referenceUrls: readonly string[],
+): Record<string, unknown> {
+  const references = [...referenceUrls];
   if (model.slug === FAL_QWEN3_TEXT_SLUG && references.length > 0) {
     throw new Error(`${FAL_QWEN3_TEXT_SLUG} does not accept reference images`);
   }
@@ -95,9 +101,7 @@ export function falQwen3Payload(model: ImageModel, request: FalImageRequest): Re
   };
 
   if (model.slug === FAL_QWEN3_EDIT_SLUG) {
-    input.image_urls = references.map((reference) =>
-      `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`,
-    );
+    input.image_urls = references;
   }
   return input;
 }
@@ -175,7 +179,6 @@ export async function runFalQwen3ImageModel(
       ok: true,
       image,
       ...(requestId ? { predictionId: requestId } : {}),
-      ...(request.versionId ? { executedVersionId: request.versionId } : {}),
       sentReferenceCount: request.references?.length ?? 0,
     };
   } catch (error) {

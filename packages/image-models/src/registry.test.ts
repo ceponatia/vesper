@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { qwenImage2512, qwenImage3Edit, qwenImage3TextToImage, qwenImageEdit2511 } from "./families";
 import { adapterForImageModel } from "./registry";
+import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG, imageModelProvider } from "./provider";
 
 /**
  * Adapter resolution.
@@ -47,5 +48,14 @@ describe("adapterForImageModel", () => {
     "",
   ])("answers null for %s, which is the ordinary no-special-behavior case", (slug) => {
     expect(adapterForImageModel(slug)).toBeNull();
+  });
+});
+
+describe("imageModelProvider", () => {
+  it("classifies only the two reviewed fal endpoints as fal", () => {
+    expect(imageModelProvider(FAL_QWEN3_TEXT_SLUG)).toBe("fal");
+    expect(imageModelProvider(FAL_QWEN3_EDIT_SLUG)).toBe("fal");
+    expect(imageModelProvider("alibaba/qwen-image-3")).toBe("replicate");
+    expect(imageModelProvider("qwen/qwen-image-2512:version")).toBe("replicate");
   });
 });
