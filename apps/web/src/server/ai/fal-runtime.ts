@@ -16,7 +16,7 @@ const FAL_RUN_HOST = "https://fal.run";
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 export interface FalPreparedReference {
-  buffer: Buffer;
+  bytes: Buffer;
   mediaType: string;
 }
 
@@ -89,7 +89,7 @@ export function falQwen3Payload(model: ImageModel, request: FalImageRequest): Re
   if (imageSize) input.image_size = imageSize;
   if (model.slug === FAL_QWEN3_EDIT_SLUG) {
     input.image_urls = references.map((reference) =>
-      `data:${reference.mediaType};base64,${reference.buffer.toString("base64")}`,
+      `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`,
     );
   }
   return input;
