@@ -34,7 +34,6 @@ data/
 .idea
 scratchpad/
 .codex/
-scripts/
 
 # Local-only UI/QA artifacts — Playwright scratch.
 .playwright-mcp/
