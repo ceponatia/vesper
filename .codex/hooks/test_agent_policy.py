@@ -242,6 +242,37 @@ MARKERLESS_RECORD_PROMPT = "\n".join([
 
 FILLED_RISK_AREA_PROMPT = "Risk area: migration -- 0134 renames a column on a hot table."
 
+# Route B with a reason its writer finds convincing and a category the policy does
+# not list. Careful work is not the test -- every slice's author thinks theirs is
+# careful -- so this is the shape that let any ordinary slice pick the Opus role.
+OFF_POLICY_RISK_AREA_PROMPT = "Risk area: styling -- this button needs careful visual polish."
+
+# One line per approved area, spelled the way a writer actually spells it rather
+# than the way the constant does: plural, the pairing plus a noun, and a space
+# where the constant has a hyphen.
+APPROVED_RISK_AREA_PROMPTS = (
+    "Risk area: kernel -- this slice rewrites the turn scheduler's ordering rule.",
+    "Risk area: simulation core -- body kernel arming runs before the fold.",
+    "Risk area: simulation-core -- body kernel arming runs before the fold.",
+    "Risk area: migrations -- 0134 renames a column on a hot table.",
+    "Risk area: authz -- the new route needs an owner check, not a bare withUser.",
+    "Risk area: authorization -- the new route needs an owner check.",
+    "Risk area: persistence/replay correctness -- event replay drops the last fold.",
+    "Risk area: replay -- the fold drops its last event on resume.",
+)
+
+# The assignment a parent types instead of pasting the template: no marker
+# anywhere, but it names a file in this repository and asks for a commit.
+FREE_FORM_ASSIGNMENT_PROMPT = "Implement #560; edit .codex/hooks/agent_policy.py and commit the fix"
+# The same shape of prompt with no build verb: reading a file is what the
+# unpinned and read-only types are for.
+RESEARCH_PROMPT = "Summarize the design of apps/web/src/server/engine/chat-state.ts"
+# An instruction to commit, and nothing else.
+COMMIT_ONLY_PROMPT = "git commit the fix"
+# A build verb naming no file and asking for no commit: the heuristic's
+# documented blind spot.
+PATHLESS_ASSIGNMENT_PROMPTS = ("fix the wording", "update the docs")
+
 
 def role_frontmatter(path: Path) -> dict:
     """Read a role file's YAML frontmatter without a YAML dependency: flat `key: value` lines."""
@@ -463,6 +494,46 @@ class CheckFunctionTests(unittest.TestCase):
                 self.assertNotIn("present but unfilled", route_b)
                 self.assertIn("Risk area: migration — 0134 rewrites a hot table", route_b)
 
+    def test_escalation_with_a_risk_area_outside_the_approved_list_is_denied(self):
+        """A rationale is not a risk area. `AGENTS.md` limits a direct start to kernel or
+        simulation-core logic, migrations, authorization and persistence/replay correctness,
+        so a convincing sentence about styling must not open the Opus role -- and the deny
+        reason has to name the area it refused, list the ones it takes, and send the slice to
+        the builder, not repeat the rationale or placeholder complaints."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": OFF_POLICY_RISK_AREA_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        route_b = next(line for line in reason.splitlines() if line.startswith("Route B"))
+        self.assertIn("styling", route_b)
+        self.assertIn("vesper-builder", route_b)
+        for area in HOOK.RISK_AREAS:
+            with self.subTest(area=area):
+                self.assertIn(f"`{area}`", route_b)
+        self.assertNotIn("without a rationale", route_b)
+        self.assertNotIn("present but unfilled", route_b)
+
+    def test_escalation_with_an_approved_risk_area_is_allowed_however_it_is_spelled(self):
+        """The gate reads the category, not the constant: a plural, a space in place of the
+        hyphen, and the `persistence/replay` pairing with a noun after it are how writers
+        actually name these areas, and denying them would push real escalation slices onto
+        the builder."""
+        for prompt in APPROVED_RISK_AREA_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "vesper-escalation", "prompt": prompt})
+                self.assertIsNone(reason)
+
+    def test_every_approved_area_opens_the_route_under_its_own_name(self):
+        """An entry in the list that no spelling reaches is a direct-start route the policy
+        documents and the hook silently refuses."""
+        for area in HOOK.RISK_AREAS:
+            with self.subTest(area=area):
+                reason = HOOK.check({
+                    "subagent_type": "vesper-escalation",
+                    "prompt": f"Risk area: {area} -- this slice changes behaviour tests cannot see.",
+                })
+                self.assertIsNone(reason)
+
     def test_escalation_with_an_empty_field_is_denied_and_names_it(self):
         reason = HOOK.check(
             {"subagent_type": "vesper-escalation", "prompt": EMPTY_FIELD_ESCALATION_PROMPT}
@@ -511,6 +582,53 @@ class CheckFunctionTests(unittest.TestCase):
     def test_plain_prompt_to_unpinned_role_is_allowed(self):
         reason = HOOK.check({"subagent_type": "general-purpose", "prompt": "look into the flaky test"})
         self.assertIsNone(reason)
+
+    def test_free_form_assignment_to_an_unpinned_role_is_denied_and_names_vesper_builder(self):
+        """The missed-instructions case the gate exists for: a parent who never opened the
+        template still assigns implementation work, and a marker-only detector waves it
+        through to whatever model the ad-hoc default happens to be."""
+        reason = HOOK.check(
+            {"subagent_type": "general-purpose", "prompt": FREE_FORM_ASSIGNMENT_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("vesper-builder", reason)
+
+    def test_a_commit_instruction_alone_to_an_unpinned_role_is_denied(self):
+        """Nothing read-only commits."""
+        reason = HOOK.check({"subagent_type": "general-purpose", "prompt": COMMIT_ONLY_PROMPT})
+        self.assertIsNotNone(reason)
+        self.assertIn("vesper-builder", reason)
+
+    def test_a_research_prompt_naming_a_file_is_allowed(self):
+        """A path is not an assignment. Denying every prompt that names a file would deny the
+        ordinary reason to spawn `general-purpose` at all, and a gate that denies ordinary
+        prompts gets worked around rather than followed."""
+        reason = HOOK.check({"subagent_type": "general-purpose", "prompt": RESEARCH_PROMPT})
+        self.assertIsNone(reason)
+
+    def test_an_assignment_naming_no_file_and_no_commit_is_allowed_by_design(self):
+        """The heuristic's documented limit, asserted so it stays a decision rather than a
+        surprise: `fix the wording` is indistinguishable from ordinary prose, and the only
+        rule wide enough to catch it denies most real prompts."""
+        for prompt in PATHLESS_ASSIGNMENT_PROMPTS:
+            with self.subTest(prompt=prompt):
+                reason = HOOK.check({"subagent_type": "general-purpose", "prompt": prompt})
+                self.assertIsNone(reason)
+
+    def test_read_only_agent_types_take_an_assignment_shaped_prompt(self):
+        """Explore and Plan hold no edit or commit tools, so a brief-shaped prompt to one of
+        them is research. Denying it would leave no way to ask them to look at the work a
+        brief describes -- which is the reason to spawn them."""
+        for agent_type in sorted(HOOK.READ_ONLY_TYPES):
+            for prompt in (FREE_FORM_ASSIGNMENT_PROMPT, BRIEF_PROMPT, COMMIT_ONLY_PROMPT):
+                with self.subTest(agent_type=agent_type, prompt=prompt):
+                    reason = HOOK.check({"subagent_type": agent_type, "prompt": prompt})
+                    self.assertIsNone(reason)
+
+    def test_no_pinned_role_is_exempt_as_read_only(self):
+        """The exemption skips rule 3 entirely; a pinned role landing in it would also lose
+        the model-override check's neighbours."""
+        self.assertEqual(HOOK.PINNED & HOOK.READ_ONLY_TYPES, set())
 
 
 class ProcessTests(unittest.TestCase):
@@ -616,6 +734,36 @@ class ProcessTests(unittest.TestCase):
         })
         self.assertEqual(code, 0, err)
 
+    def test_general_purpose_with_a_free_form_assignment_is_denied(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "general-purpose",
+                "prompt": FREE_FORM_ASSIGNMENT_PROMPT,
+            },
+        })
+        self.assertEqual(code, 2)
+        self.assertIn("vesper-builder", err)
+
+    def test_explore_with_a_free_form_assignment_passes(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {"subagent_type": "Explore", "prompt": FREE_FORM_ASSIGNMENT_PROMPT},
+        })
+        self.assertEqual(code, 0, err)
+
+    def test_vesper_escalation_with_an_off_policy_risk_area_is_denied(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "vesper-escalation",
+                "prompt": OFF_POLICY_RISK_AREA_PROMPT,
+            },
+        })
+        self.assertEqual(code, 2)
+        self.assertIn("styling", err)
+        self.assertIn("vesper-builder", err)
+
     def test_vesper_reviewer_with_brief_passes(self):
         code, out, err = run({
             "tool_name": "Agent",
@@ -718,6 +866,19 @@ class EscalationRecordTemplateTests(unittest.TestCase):
         for field in HOOK.RECORD_FIELDS + (HOOK.RISK_AREA_FIELD,):
             with self.subTest(field=field):
                 self.assertEqual(states[field], HOOK.ABSENT)
+
+    def test_every_option_the_template_offers_is_an_approved_risk_area(self):
+        """The template's `<kernel | ... >` list is the menu a parent copies from. An option
+        it offers that the gate refuses denies a record written exactly as documented -- the
+        worst failure this hook can have, because the writer did everything right."""
+        options = [
+            option.strip()
+            for option in re.search(r"<([^<>]*)>", TEMPLATE_RISK_AREA_LINE).group(1).split("|")
+        ]
+        self.assertTrue(options)
+        for option in options:
+            with self.subTest(option=option):
+                self.assertTrue(HOOK._is_approved_risk_area(option))
 
     def test_the_half_edited_fixtures_still_carry_the_template_s_own_placeholder_text(self):
         """Both half-edited fixtures are built by substitution on the template. If the

@@ -13,6 +13,16 @@ slice's facts, or a `Risk area:` line naming both a category and the
 reason when the slice starts on escalation instead of taking over a
 failed attempt.
 
+Reading a prompt as an implementation assignment is a heuristic, not a
+parse: the brief template's own markers, an instruction to commit, or a
+build verb next to a repository path. A build assignment that names no
+file and asks for no commit — "update the docs" — is deliberately not
+caught, because the only rule broad enough to catch it also denies
+ordinary prompts, and a gate that denies ordinary prompts gets worked
+around. The built-in read-only agent types are exempt from the rule
+outright: they cannot edit or commit, so a brief-shaped prompt to one of
+them is research.
+
 It never blocks on its own failure: any internal error exits 0 (fail
 open), same as `preflight.py`. It is Claude-only — the `Agent` tool has no
 Codex equivalent, so every other `tool_name` passes through untouched.
@@ -31,6 +41,35 @@ PINNED_MODEL = {
     "vesper-test-keeper": "opus",
 }
 BRIEF_MARKERS = ("## Checkout and ownership", "Owned writable paths", "# Brief:")
+# The built-in agent types that hold no edit or commit tools. A brief-shaped
+# prompt to one of them is a research assignment, not a way around the pinned
+# builder, so rule 3 does not apply to them at all.
+READ_ONLY_TYPES = {"Explore", "Plan", "claude-code-guide", "statusline-setup"}
+
+# What marks a free-form prompt as an implementation assignment, for the prompts
+# that never went near the template. A build verb...
+BUILD_VERB = re.compile(
+    r"\b(?:implement|edit|modify|refactor|rewrite|fix|add|remove|delete|rename"
+    r"|write|update|create)\b",
+    re.IGNORECASE,
+)
+# ...next to a file this repository holds: a slash-bearing token whose last
+# segment carries an extension (`apps/web/src/thing.ts`,
+# `.codex/hooks/agent_policy.py`), which leaves `.../issues/560` alone...
+REPO_PATH = re.compile(r"\S*/\S*\.[A-Za-z0-9]{1,6}(?![\w/])")
+# ...or a bare filename, where only the extensions this repo actually edits
+# count, so ordinary prose ("v1.2", "see §4.2") is not read as a path.
+BARE_FILE = re.compile(r"\b[\w.-]+\.(?:tsx?|py|mdx?|json|toml|sql|[mc]?js|ya?ml)\b", re.IGNORECASE)
+
+# Or an instruction to commit, which no read-only assignment carries. `commit`
+# alone is a noun in review prose ("the commit that broke it"), so it counts
+# only alongside a word that makes it an instruction, in the same sentence.
+GIT_COMMIT = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
+COMMIT_WORD = re.compile(r"\bcommit\b", re.IGNORECASE)
+COMMIT_INSTRUCTION = re.compile(r"\b(?:pathspec|fix|changes?)\b", re.IGNORECASE)
+# A sentence end, or a newline. `.` splits only before whitespace, so the dots
+# inside `.codex/hooks/agent_policy.py` do not end a sentence.
+SENTENCE_END = re.compile(r"[.!?;]+(?=\s|$)|\n+")
 
 # The handoff record of the "## Escalation record" section in
 # .agents/skills/vesper-agent-build/templates/agent-brief.md. Route A: a worker
@@ -55,6 +94,25 @@ RISK_AREA_FIELD = "Risk area"
 # reason. `migration` (1), `none` (1) and `authz — new route` (3) are categories;
 # `migration — 0134 rewrites a hot table` (6) is a rationale.
 RISK_AREA_MIN_WORDS = 4
+# And which categories open the route at all. `AGENTS.md` limits a slice that
+# starts on escalation to kernel or simulation-core logic, migrations,
+# authorization, and persistence or replay correctness; a rationale the writer
+# believes does not make an ordinary slice one of those, so the category is
+# checked against this list and everything else starts on `vesper-builder`.
+RISK_AREAS = (
+    "kernel",
+    "simulation-core",
+    "migration",
+    "authz",
+    "authorization",
+    "persistence",
+    "replay",
+)
+RISK_AREAS_TEXT = ", ".join(f"`{area}`" for area in RISK_AREAS)
+# Where the leading category ends: an em or en dash, a colon, semicolon or
+# comma, or a hyphen that is not inside a word -- so ` - ` and `--` separate and
+# the hyphen of `simulation-core` does not.
+RISK_CATEGORY_END = re.compile(r"[—–:;,]|(?<!\w)-|-(?!\w)")
 
 # What marks a prompt as carrying a handoff record at all (Route A).
 ESCALATION_LINE = re.compile(
@@ -90,26 +148,94 @@ ABSENT = "absent"
 UNFILLED = "unfilled"
 # Route B only: real words, but too few to be a reason -- `Risk area: migration`.
 NO_RATIONALE = "no rationale"
+# Route B only: a category and a reason, but the category is not one of the
+# areas that may start on escalation -- `Risk area: styling — this button needs
+# careful visual polish`.
+NOT_RISK_AREA = "not a risk area"
 FILLED = "filled"
-# Which reading wins when a field appears more than once: real content beats a
-# bare category, and a bare category beats leftover template prose.
-STATE_RANK = {ABSENT: 0, UNFILLED: 1, NO_RATIONALE: 2, FILLED: 3}
+# Which reading wins when a field appears more than once, worst to best: a field
+# that is there beats one that is not, real content beats template prose, and a
+# named category with a reason beats a bare one. Only FILLED opens a route, so
+# the order below decides which complaint the deny message makes, not whether it
+# denies.
+STATE_RANK = {ABSENT: 0, UNFILLED: 1, NO_RATIONALE: 2, NOT_RISK_AREA: 3, FILLED: 4}
 
 
 def _has_brief(prompt: str) -> bool:
+    """True when the prompt carries the brief template's own vocabulary."""
     return any(marker in prompt for marker in BRIEF_MARKERS)
 
 
-def _normalize_label(label: str) -> str:
-    """Lowercase a field label down to its words: `- **Changed files**` -> `changed files`."""
-    return re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
+def _has_commit_signal(prompt: str) -> bool:
+    """True when the prompt tells the worker to commit."""
+    if GIT_COMMIT.search(prompt):
+        return True
+    return any(
+        COMMIT_WORD.search(sentence) and COMMIT_INSTRUCTION.search(sentence)
+        for sentence in SENTENCE_END.split(prompt)
+    )
+
+
+def _names_a_repo_file(prompt: str) -> bool:
+    return bool(REPO_PATH.search(prompt) or BARE_FILE.search(prompt))
+
+
+def _is_implementation_brief(prompt: str) -> bool:
+    """True when this prompt assigns implementation work.
+
+    Three readings, any one of which is enough: the template's markers, an
+    instruction to commit, or a build verb next to a file in this repository.
+    The last two are what catch the assignment a parent types by hand --
+    `Implement #560; edit .codex/hooks/agent_policy.py and commit the fix` --
+    which carries no template text at all and is exactly the spawn the pinned
+    builder exists to take. A build assignment naming neither a file nor a
+    commit is not caught; see the module docstring for why that is deliberate.
+    """
+    if _has_brief(prompt):
+        return True
+    if _has_commit_signal(prompt):
+        return True
+    return bool(BUILD_VERB.search(prompt)) and _names_a_repo_file(prompt)
+
+
+def _normalize_words(text: str) -> str:
+    """Lowercase text down to its words: `- **Changed files**` -> `changed files`,
+    `persistence/replay correctness` -> `persistence replay correctness`."""
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+# Each approved area as a whole-word pattern over normalized text, so a category
+# matches however the writer spelled it: `migrations` (plural), `simulation core`
+# or `simulation-core` (either separator), `persistence/replay correctness` (the
+# pairing plus a noun). `styling`, `ui` and `docs` match nothing.
+RISK_AREA_PATTERNS = tuple(
+    re.compile(r"\b" + _normalize_words(area).replace(" ", r"\s+") + r"s?\b")
+    for area in RISK_AREAS
+)
+
+
+def _risk_category(value: str) -> str:
+    """A `Risk area:` value's leading category: the text before its first
+    separator, or its first word when the value carries none."""
+    end = RISK_CATEGORY_END.search(value)
+    if end:
+        return value[: end.start()].strip()
+    words = value.split()
+    return words[0] if words else ""
+
+
+def _is_approved_risk_area(value: str) -> bool:
+    """True when the value's leading category names an area `AGENTS.md` lets a
+    slice start on escalation for."""
+    category = _normalize_words(_risk_category(value))
+    return any(pattern.search(category) for pattern in RISK_AREA_PATTERNS)
 
 
 def _label_matches(label: str, field: str) -> bool:
     """True when `label` names `field`, allowing the writer's own trailing words
     (`Changed files so far:` is still the changed-files field)."""
-    normalized = _normalize_label(label)
-    target = _normalize_label(field)
+    normalized = _normalize_words(label)
+    target = _normalize_words(field)
     return normalized == target or normalized.startswith(target + " ")
 
 
@@ -140,14 +266,14 @@ def _indent_width(line: str) -> int:
     return len(line) - len(line.lstrip(" \t"))
 
 
-def _block_is_filled(
+def _filled_value(
     lines: list[str],
     boundaries: set[int],
     index: int,
     match: "re.Match",
     min_words: int = 1,
-) -> bool:
-    """True when the field starting at `index` has a filled value.
+) -> str | None:
+    """The filled value of the field starting at `index`, or None when it has none.
 
     The value may sit on the field's own line, or below it as an indented block
     (`Findings:` followed by a numbered list) -- a shape real briefs use. Only
@@ -155,44 +281,63 @@ def _block_is_filled(
     ordinary prose stays unfilled. Continuation lines answer to the same
     placeholder and word-count rules as the field's own line: a block whose every
     line is still template prose fills nothing.
+
+    The text is returned rather than a bare yes, because Route B has a second
+    question to ask of the same value -- which area it names.
     """
-    if _is_filled_value(match.group("value"), min_words):
-        return True
+    value = match.group("value")
+    if _is_filled_value(value, min_words):
+        return value
     indent = len(match.group("indent"))
     for j in range(index + 1, len(lines)):
         if j in boundaries:
-            return False
+            return None
         line = lines[j]
         if not line.strip():
             continue
         if _indent_width(line) <= indent:
-            return False
+            return None
         if _is_filled_value(line, min_words):
-            return True
-    return False
+            return line
+    return None
+
+
+def _block_is_filled(
+    lines: list[str],
+    boundaries: set[int],
+    index: int,
+    match: "re.Match",
+    min_words: int = 1,
+) -> bool:
+    return _filled_value(lines, boundaries, index, match, min_words) is not None
 
 
 def _field_state(
     lines: list[str], boundaries: set[int], index: int, match: "re.Match", field: str
 ) -> str:
-    """One labelled field's reading: FILLED, NO_RATIONALE, or UNFILLED.
+    """One labelled field's reading: FILLED, NOT_RISK_AREA, NO_RATIONALE, or UNFILLED.
 
     Every field but `Risk area:` is filled by any content that is not template
     prose -- the six handoff fields are read together, and a short one is still a
-    fact the next worker did not have. `Risk area:` is read alone, so it also has
-    to clear `RISK_AREA_MIN_WORDS`; clearing the placeholder rule but not the word
-    count is NO_RATIONALE, a named category with the reason left out, which the
-    deny message reports differently from leftover template prose.
+    fact the next worker did not have. `Risk area:` is read alone, so it has two
+    more questions to answer. It has to clear `RISK_AREA_MIN_WORDS`; clearing the
+    placeholder rule but not the word count is NO_RATIONALE, a named category with
+    the reason left out. And the category it names has to be one the policy lets a
+    slice start on: a rationale the writer finds convincing is not the test, or
+    any slice can talk its way onto the escalation role. Each reading gets its own
+    sentence in the deny message.
     """
     if field != RISK_AREA_FIELD:
         return FILLED if _block_is_filled(lines, boundaries, index, match) else UNFILLED
-    if _block_is_filled(lines, boundaries, index, match, RISK_AREA_MIN_WORDS):
-        return FILLED
+    value = _filled_value(lines, boundaries, index, match, RISK_AREA_MIN_WORDS)
+    if value is not None:
+        return FILLED if _is_approved_risk_area(value) else NOT_RISK_AREA
     return NO_RATIONALE if _block_is_filled(lines, boundaries, index, match) else UNFILLED
 
 
-def _record_states(prompt: str) -> dict[str, str]:
-    """Map every record field in `prompt` to ABSENT, UNFILLED, NO_RATIONALE or FILLED."""
+def _scan_record(prompt: str):
+    """Find the prompt's record fields: its lines, where each field's block ends,
+    and the labelled lines themselves keyed by line number."""
     fields = RECORD_FIELDS + (RISK_AREA_FIELD,)
     lines = prompt.splitlines()
 
@@ -207,6 +352,28 @@ def _record_states(prompt: str) -> dict[str, str]:
 
     # A field's block ends at the next record field or the next Markdown heading.
     boundaries = set(labelled) | {i for i, line in enumerate(lines) if HEADING_LINE.match(line)}
+    return lines, boundaries, labelled
+
+
+def _rejected_risk_category(prompt: str) -> str:
+    """The category of the first `Risk area:` value that carries a rationale but
+    names no approved area -- what the NOT_RISK_AREA deny message quotes back."""
+    lines, boundaries, labelled = _scan_record(prompt)
+    for index in sorted(labelled):
+        field, match = labelled[index]
+        if field != RISK_AREA_FIELD:
+            continue
+        value = _filled_value(lines, boundaries, index, match, RISK_AREA_MIN_WORDS)
+        if value is not None and not _is_approved_risk_area(value):
+            return _risk_category(value)
+    return ""
+
+
+def _record_states(prompt: str) -> dict[str, str]:
+    """Map every record field in `prompt` to ABSENT, UNFILLED, NO_RATIONALE,
+    NOT_RISK_AREA or FILLED."""
+    fields = RECORD_FIELDS + (RISK_AREA_FIELD,)
+    lines, boundaries, labelled = _scan_record(prompt)
 
     states = {field: ABSENT for field in fields}
     for index, (field, match) in labelled.items():
@@ -251,6 +418,15 @@ def _escalation_denial(prompt: str) -> str | None:
         route_b = (
             "not attempted — add a `Risk area:` line saying why this slice starts on escalation, "
             "e.g. `Risk area: migration — 0134 rewrites a hot table`."
+        )
+    elif states[RISK_AREA_FIELD] == NOT_RISK_AREA:
+        named = _rejected_risk_category(prompt)
+        route_b = (
+            f"the `Risk area:` line names {f'`{named}`' if named else 'an area'}, which is not "
+            "one of the areas a slice may start on escalation for — those are "
+            f"{RISK_AREAS_TEXT}. A slice outside them, however carefully it has to be done, "
+            "starts on `vesper-builder` (Sonnet), which returns an escalation record if it "
+            "fails; escalate then."
         )
     elif states[RISK_AREA_FIELD] == NO_RATIONALE:
         route_b = (
@@ -301,13 +477,20 @@ def check(tool_input: dict) -> str | None:
         if denial:
             return denial
 
-    if _has_brief(prompt) and subagent_type not in PINNED:
+    if (
+        subagent_type not in PINNED
+        and subagent_type not in READ_ONLY_TYPES
+        and _is_implementation_brief(prompt)
+    ):
         return (
-            "[vesper agent policy] this prompt carries an implementation brief, and "
-            f"`{subagent_type or '(no subagent_type)'}` is not one of the pinned roles.\n"
+            "[vesper agent policy] this prompt assigns implementation work — a brief, an "
+            "instruction to commit, or a build instruction naming a file in this repository "
+            f"— and `{subagent_type or '(no subagent_type)'}` is not one of the pinned "
+            "roles.\n"
             "Implementation briefs go to `vesper-builder` (Sonnet) or `vesper-escalation` "
-            "(Opus; needs a filled escalation record, or a `Risk area:` line naming the risk "
-            "and why). Explore, Plan, and `claude-code-guide` take no brief."
+            "(Opus; needs a filled escalation record, or a `Risk area:` line naming an "
+            f"approved risk area — {RISK_AREAS_TEXT} — and why). A read-only research "
+            "prompt belongs on `Explore` or `Plan`, which this rule exempts."
         )
 
     return None
