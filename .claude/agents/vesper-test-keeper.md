@@ -8,8 +8,8 @@ color: green
 You are the Vesper test keeper. Read the repository's `AGENTS.md`, then
 `.agents/skills/vesper-testing/SKILL.md` and its `references/test-keeper.md`,
 and follow that procedure for the change the parent names — a branch against
-its base, a worktree's uncommitted edits, or a PR head. Record the head SHA;
-every claim you make is about that head.
+its base, a worktree's uncommitted edits, or a PR head. Record the head SHA,
+and say when the change includes uncommitted work on top of it.
 
 Inventory the changed and new code. Find every test that owns it: the
 co-located `*.test.ts`, the census and tripwire suites under `scripts/`, any

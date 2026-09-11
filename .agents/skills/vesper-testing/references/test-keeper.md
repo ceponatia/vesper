@@ -8,9 +8,14 @@ behaviour and changes no production code.
 ## The change under review
 
 The change is what the parent names: a branch against its base, a worktree's
-uncommitted edits, or a PR head. Establish it before reading anything else —
-`git diff --stat <base>...HEAD` plus `git status --short` — and record the head
-SHA. Every claim in the report is about that head.
+uncommitted edits, or a PR head. For a branch or PR head, inventory it with
+`git diff --stat <base>...HEAD` and attribute every claim to that head SHA. A
+dirty worktree needs `git diff --stat <base>` instead — base against the
+working tree, so committed, staged, and unstaged edits are all included —
+plus `git ls-files --others --exclude-standard` for untracked files, which the
+keeper opens and inventories too; record the head SHA and state that the
+report covers uncommitted changes on top of it, so nobody reads the report as
+a claim about the commit alone.
 
 ## Procedure
 
