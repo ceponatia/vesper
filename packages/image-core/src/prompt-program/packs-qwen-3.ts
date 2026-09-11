@@ -1,6 +1,6 @@
-import { imageNegativePackManifestSchema } from "./negative-constraints";
-import { imagePositivePackManifestSchema } from "./positive-claims";
 import {
+  imageNegativePackManifestSchema,
+  imagePositivePackManifestSchema,
   imagePromptPackContentHash,
   registerImageNegativePack,
   registerImagePositivePack,
