@@ -64,6 +64,12 @@ unless the recorded evidence proves it occurred before those edits.
 
 - Read [Codex collaboration](references/codex.md) before delegating. Use the
   collaboration tools and parameter schemas available in the current session.
+- On Claude, spawn `vesper-builder` for a bounded slice, `vesper-escalation`
+  (with the escalation record or a `Risk area:` line) for risk-area slices or
+  after a failed attempt, and `vesper-reviewer` for the semantic pass before
+  integrating a code diff. Never pass `model` to these roles.
+  `AGENTS.md` §Subagent model policy (Claude) owns the role table and
+  escalation triggers, and the Agent-tool preflight refuses other routes.
 - The parent owns push, external messages, board changes, and delivery unless
   explicitly delegated. Do not ask the user again for actions already authorized.
 
@@ -84,8 +90,10 @@ characters and other mechanical hazards, then inspect:
   fields must survive it; zod can otherwise strip the field.
 
 Send corrections to the same agent. If it is no longer available, give its
-replacement the original brief, branch, and concrete findings. Continue the
-correction loop inside the authorized task.
+replacement the original brief, branch, and concrete findings. On Claude, a
+replacement `vesper-builder` gets the brief and findings; a second failed
+round on the same finding goes to `vesper-escalation` with the record.
+Continue the correction loop inside the authorized task.
 
 ## Integrate and finish
 

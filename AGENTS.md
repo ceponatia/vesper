@@ -56,6 +56,38 @@ When escalating:
 
 Do not use Sol escalation for routine work solely because it is available.
 
+## Subagent model policy (Claude)
+
+A delegated slice runs on a project role under `.claude/agents/`, and each of
+those roles pins its own model in its frontmatter; the parent never passes
+`model` on a call to a `vesper-*` role. `.claude/hooks/agent_policy.py`
+(a PreToolUse hook on the Agent tool) enforces this: it refuses an
+implementation brief sent to an un-pinned agent type, a `vesper-escalation`
+spawn with no escalation record, and an explicit `model` override on a
+pinned Vesper role.
+
+| Role | Model | Use |
+| --- | --- | --- |
+| `vesper-builder` | Sonnet | Default worker for a bounded slice with a brief: well-specified issues, ordinary fixes, tests, contained refactors, mechanical work. Stops after one failed attempt and returns an escalation record instead of retrying. |
+| `vesper-escalation` | Opus | Takes over a slice from that record, or owns from the start a slice touching kernel or simulation-core logic, migrations, authorization, persistence or replay correctness. Reconsiders the approach instead of repairing the previous patch. |
+| `vesper-reviewer` | Opus | Read-only semantic review of a diff before integration or a PR. |
+| `vesper-test-keeper` | Opus | Test reconciliation after a coding task; see Skills and work state. |
+
+Escalate when: the builder returns an escalation record or reports a failed
+attempt; a second plausible approach would have different architectural
+consequences; the root cause cannot be determined from the evidence; CI fails
+in a way that contradicts the builder's model of the system; or the parent
+has low confidence in the result. Hand `vesper-escalation` the originating
+brief, findings, attempted approaches, changed files, CI output, and the
+unresolved question — do not restart from scratch, and do not escalate
+merely because a task is large.
+
+The built-in Explore and Plan agents take no brief and no model.
+`CLAUDE_CODE_SUBAGENT_MODEL` is only the default for ad-hoc spawns that pin
+nothing, and is set to `claude-sonnet-5`; never set
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, which would erase the per-role pins.
+Subagents never run on the session's own model when that model is Fable.
+
 ## Skills and work state
 
 - Canonical skills live under `.agents/skills/`; `.claude/skills/*` are compatibility symlinks. Edit the
