@@ -62,6 +62,7 @@ scope, stop and return the escalation record below instead of trying again.
 - Findings: <what you learned about the actual problem>.
 - Attempted approaches: <each approach tried and why it failed>.
 - Changed files: <paths touched so far>.
+- CI output: <failing workflow, run id, head and the observed failure — or none, with why no run exists>.
 - Unresolved question: <what the next worker must decide or discover>.
 
 Alternative, for a slice owned by `vesper-escalation` from the start rather

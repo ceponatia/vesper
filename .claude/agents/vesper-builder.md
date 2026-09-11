@@ -28,7 +28,9 @@ The stop rule: if your first attempt at a problem fails, or the only
 remaining approach would change architecture or widen scope, stop rather
 than trying again. Return an escalation record instead of continuing: the
 originating brief, the trigger, your findings, each attempted approach
-and why it failed, the files you changed, and the unresolved question.
+and why it failed, the files you changed, the CI output (the failing
+workflow, run id, head and observed failure, or none and why no run
+exists), and the unresolved question.
 
 Report exactly per the brief's "Return to parent" section. Separate
 pre-existing work from your own contribution, and never claim a
