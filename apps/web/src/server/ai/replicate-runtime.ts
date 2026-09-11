@@ -1,11 +1,16 @@
+import type { ImageModel } from "@vesper/image-core";
 import {
   createReplicateClient,
   DEFAULT_PREDICTION_TIMEOUT_MS,
   MAX_PREDICTION_TIMEOUT_MS,
   MIN_PREDICTION_TIMEOUT_MS,
+  type RegistryModelRequest,
   type ReplicateClient,
   type ReplicateConfig,
+  type ReplicateImageResult,
 } from "@vesper/image-replicate";
+import type { DiagnosticSink } from "@/contracts/diagnostics";
+import { isFalQwen3Slug, runFalQwen3ImageModel } from "./fal-runtime";
 
 /**
  * The application's Replicate runtime — the ONLY code in Vesper that reads
@@ -16,13 +21,22 @@ import {
  * resolves them once, builds one configured client, and hands that client to
  * every render, preprocessor run and schema probe in the process.
  *
- * That single snapshot is what makes the safety posture single-source. The
- * render kernel fingerprints a plan with `disableSafetyChecker()` and the
- * payload builder writes `client.safetyCheckerDisabled`; because both are the
- * same resolved value, a process cannot hash one posture and send another.
+ * Qwen Image 3 is the narrow exception at the registry-render method: its two
+ * fal endpoint rows are intercepted here and sent through `fal-runtime`. Keeping
+ * the dispatch at this application boundary means all existing callers still
+ * use one registry-render method while Replicate probes, preprocessors, LoRAs,
+ * Qwen Image 2, 2511/2512 and every other model remain Replicate-native.
+ *
+ * That single snapshot is what makes the Replicate safety posture single-source.
+ * The render kernel fingerprints a plan with `disableSafetyChecker()` and the
+ * Replicate payload builder writes `client.safetyCheckerDisabled`; because both
+ * are the same resolved value, a process cannot hash one posture and send another.
+ * fal Qwen 3 owns its explicit `enable_safety_checker: false` in its endpoint row
+ * and transport instead.
  */
 
 let client: ReplicateClient | null = null;
+let routedClient: ReplicateClient | null = null;
 
 /**
  * Read the deployment's Replicate settings.
@@ -50,7 +64,8 @@ export function resolveReplicateConfig(): ReplicateConfig {
 }
 
 /**
- * The process's configured Replicate client, resolved on first use.
+ * The process's configured image registry client, preserving Replicate's public
+ * client surface while routing the two fal Qwen Image 3 rows at render time.
  *
  * Lazily rather than at module import: Next loads server modules while building
  * and analyzing routes, when runtime secrets are absent, and a snapshot taken
@@ -58,27 +73,60 @@ export function resolveReplicateConfig(): ReplicateConfig {
  */
 export function replicateClient(): ReplicateClient {
   client ??= createReplicateClient(resolveReplicateConfig());
-  return client;
+  if (routedClient) return routedClient;
+
+  const target = client;
+  routedClient = new Proxy(target, {
+    get(replica, property, receiver) {
+      if (property === "runRegistryImageModel") {
+        return async (
+          model: ImageModel,
+          request: RegistryModelRequest,
+          sink?: DiagnosticSink,
+        ): Promise<ReplicateImageResult> => {
+          if (isFalQwen3Slug(model.slug)) {
+            if ((request.controlReferences?.length ?? 0) > 0) {
+              return { ok: false, error: `${model.slug} does not expose dedicated structural image inputs` };
+            }
+            return runFalQwen3ImageModel(model, {
+              prompt: request.prompt,
+              references: request.references,
+              size: request.aspect,
+              controlInput: request.controlInput,
+              timeoutMs: request.timeoutMs,
+              versionId: request.versionId,
+            });
+          }
+          return replica.runRegistryImageModel(model, request, sink);
+        };
+      }
+      const value = Reflect.get(replica, property, receiver);
+      return typeof value === "function" ? value.bind(replica) : value;
+    },
+  });
+  return routedClient;
 }
 
 /** Whether this deployment can reach Replicate at all. */
 export function hasReplicate(): boolean {
-  return replicateClient().configured;
+  client ??= createReplicateClient(resolveReplicateConfig());
+  return client.configured;
 }
 
 /**
- * Whether generated images bypass the provider's safety checker.
+ * Whether generated Replicate images bypass the provider's safety checker.
  *
- * Anything that fingerprints what a render sends asks THIS, the same value the
- * payload builder writes — otherwise the fingerprint would describe a stored
- * placeholder while the provider received the deployment's answer.
+ * Anything that fingerprints what a Replicate render sends asks THIS, the same
+ * value the payload builder writes — otherwise the fingerprint would describe a
+ * stored placeholder while the provider received the deployment's answer.
  */
 export function disableSafetyChecker(): boolean {
-  return replicateClient().safetyCheckerDisabled;
+  client ??= createReplicateClient(resolveReplicateConfig());
+  return client.safetyCheckerDisabled;
 }
 
 /**
- * Drop the memoized client so the next call re-reads the environment.
+ * Drop the memoized clients so the next call re-reads the environment.
  *
  * For tests that need to run under a different deployment posture than the one
  * the first call happened to resolve. Production never calls it: one process,
@@ -86,4 +134,5 @@ export function disableSafetyChecker(): boolean {
  */
 export function resetReplicateRuntimeForTesting(): void {
   client = null;
+  routedClient = null;
 }
