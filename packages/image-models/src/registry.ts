@@ -1,6 +1,6 @@
 import { baseImageModelSlug } from "@vesper/image-core";
 import type { ImageModelAdapter } from "./composer";
-import { qwenImage2512, qwenImageEdit2511 } from "./families";
+import { qwenImage2512, qwenImage3, qwenImage3Pro, qwenImageEdit2511 } from "./families";
 
 /**
  * Every model whose family behavior Vesper has written down, keyed by BASE
@@ -20,6 +20,8 @@ import { qwenImage2512, qwenImageEdit2511 } from "./families";
 const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   "qwen/qwen-image-edit-2511": qwenImageEdit2511,
   "qwen/qwen-image-2512": qwenImage2512,
+  "alibaba/qwen-image-3": qwenImage3,
+  "alibaba/qwen-image-3-pro": qwenImage3Pro,
 };
 
 /**
