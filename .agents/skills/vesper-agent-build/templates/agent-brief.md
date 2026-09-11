@@ -67,4 +67,4 @@ scope, stop and return the escalation record below instead of trying again.
 Alternative, for a slice owned by `vesper-escalation` from the start rather
 than handed off from a failed attempt:
 
-Risk area: <kernel | migration | authz | persistence/replay> — <why>.
+Risk area: <kernel | simulation-core | migration | authz | persistence/replay> — <why>.
