@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -19,24 +20,44 @@ BRIEF_PROMPT = "\n".join([
     "- Owned writable paths: apps/web/src/thing.ts",
 ])
 
-ESCALATION_PROMPT = (
-    "Escalation: builder tried a schema tweak, then a service-layer guard; both "
-    "left the same race. Changed files: apps/web/src/server/thing.ts. "
-    "Unresolved: whether the lock should live in the repo or the service."
-)
+# A complete handoff record written as plain `Field: value` lines under an
+# `Escalation:` line -- the prose-style shape a parent types by hand.
+ESCALATION_PROMPT = "\n".join([
+    "Escalation: two attempts left the same race; this needs a different approach.",
+    "Originating brief: #999 -- do a bounded thing.",
+    "Trigger: the second attempt failed exactly as the first did.",
+    "Findings: the guard runs after the read, so concurrent writers still interleave.",
+    "Attempted approaches: a service-layer guard, then a unique index; both missed concurrent inserts.",
+    "Changed files: apps/web/src/server/thing.ts.",
+    "Unresolved question: whether the lock belongs in the repo or the service.",
+])
 
 RISK_AREA_PROMPT = "Risk area: migration -- adds a NOT NULL column to a hot table."
 
+# The same complete record, but below an opening instruction rather than first.
 LATE_ESCALATION_PROMPT = "\n".join([
     "Continue #999 where the builder stopped.",
     "",
-    "Escalation: two attempts left the same race. Changed files: apps/web/src/server/thing.ts. "
-    "Unresolved: where the lock belongs.",
+    "Escalation:",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: two attempts left the same race.",
+    "- Findings: the guard runs after the read, so concurrent writers still interleave.",
+    "- Attempted approaches: a service-layer guard, then a unique index; both missed inserts.",
+    "- Changed files: apps/web/src/server/thing.ts.",
+    "- Unresolved question: where the lock belongs.",
 ])
 
-TEMPLATE_ESCALATION_PROMPT = "\n".join([
+# The record's heading with nothing under it: the shape that used to satisfy the gate.
+HEADING_ONLY_PROMPT = "\n".join([
     "## Escalation record (escalation spawns only)",
     "",
+    "Take over #999 from the builder and sort it out.",
+])
+
+# Two of the six fields filled, the rest simply deleted rather than left as
+# template text -- the partial record that used to satisfy the gate.
+PARTIAL_ESCALATION_PROMPT = "\n".join([
+    "Escalation:",
     "- Originating brief: #999 -- do a bounded thing.",
     "- Trigger: the builder stopped after one failed attempt.",
 ])
@@ -56,6 +77,35 @@ FULL_TEMPLATE_ESCALATION_SECTION = _BRIEF_TEMPLATE_TEXT[
     _BRIEF_TEMPLATE_TEXT.index("## Escalation record (escalation spawns only)"):
 ]
 
+# The template's unfilled Risk area alternative, read from the template so the
+# fixture cannot drift from the text a worker actually pastes.
+TEMPLATE_RISK_AREA_LINE = next(
+    line
+    for line in FULL_TEMPLATE_ESCALATION_SECTION.splitlines()
+    if line.startswith("Risk area:")
+)
+
+# A slice that starts on escalation: the parent pasted the template section and
+# filled only the Risk area alternative, leaving the six handoff placeholders --
+# which describe a failed attempt that never happened -- above it.
+RISK_AREA_WITH_UNFILLED_HANDOFF_PROMPT, _RISK_AREA_SUBS = re.subn(
+    r"(?m)^Risk area:.*$",
+    "Risk area: kernel -- this slice rewrites the turn scheduler's ordering rule.",
+    FULL_TEMPLATE_ESCALATION_SECTION,
+)
+
+# A complete record under the template's own heading, bullet-prefixed.
+TEMPLATE_HEADING_FILLED_PROMPT = "\n".join([
+    "## Escalation record (escalation spawns only)",
+    "",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the second attempt hit the same race as the first.",
+    "- Findings: the guard runs after the read, so concurrent writers still interleave.",
+    "- Attempted approaches: a service-layer guard, then a unique index; both missed inserts.",
+    "- Changed files: apps/web/src/server/thing.ts.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
 FILLED_ESCALATION_PROMPT = "\n".join([
     "Escalation:",
     "- Originating brief: #999, the pregnancy-stage helper slice.",
@@ -63,6 +113,82 @@ FILLED_ESCALATION_PROMPT = "\n".join([
     "- Findings: the backfill default is safe for existing rows but not concurrent writers.",
     "- Attempted approaches: a service-layer guard, then a DB constraint; both missed concurrent inserts.",
     "- Changed files: apps/web/src/server/thing.ts, migrations/0134_thing.sql.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
+# A field whose value continues as an indented block below its label, the way a
+# parent writes a record with more than one finding.
+MULTILINE_FIELD_ESCALATION_PROMPT = "\n".join([
+    "## Escalation record",
+    "",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the second correction round failed the same way as the first.",
+    "- Findings:",
+    "  1. the guard runs after the read, so concurrent writers interleave.",
+    "  2. the unique index only fires once the second insert lands.",
+    "- Attempted approaches:",
+    "  (a) a service-layer guard; (b) a unique index. Both missed concurrent inserts.",
+    "- Changed files: apps/web/src/server/thing.ts, migrations/0134_thing.sql.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
+# Real field values that happen to quote the docs' own `<placeholder>` paths:
+# a filled record must not read as boilerplate just for containing angle brackets.
+ANGLE_BRACKET_VALUE_PROMPT = "\n".join([
+    "Escalation:",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the builder's second attempt failed the same way as the first.",
+    "- Findings: the hook resolves <worktree>/.codex/hooks/agent_policy.py, not the symlink.",
+    "- Attempted approaches: a relative path, then a resolved one; both broke under the symlink.",
+    "- Changed files: <worktree>/.codex/hooks/agent_policy.py.",
+    "- Unresolved question: whether the hook should resolve symlinks at all.",
+])
+
+# `Findings:` with nothing after it and the next field immediately below.
+EMPTY_FIELD_ESCALATION_PROMPT = "\n".join([
+    "## Escalation record",
+    "",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the second attempt failed the same way as the first.",
+    "- Findings:",
+    "- Attempted approaches: a service-layer guard, then a unique index.",
+    "- Changed files: apps/web/src/server/thing.ts.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
+# `Findings:` with nothing after it and unindented prose below: prose that is not
+# part of the field must not count as its value.
+PROSE_AFTER_EMPTY_FIELD_PROMPT = "\n".join([
+    "Escalation:",
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the second attempt failed the same way as the first.",
+    "- Findings:",
+    "Take over and work out what is going on.",
+    "- Attempted approaches: a service-layer guard, then a unique index.",
+    "- Changed files: apps/web/src/server/thing.ts.",
+    "- Unresolved question: whether the lock belongs in the repo or the service.",
+])
+
+# Labels as a parent actually writes them: Markdown emphasis, and a field name that
+# carries the writer's own trailing words.
+PARAPHRASED_LABEL_ESCALATION_PROMPT = "\n".join([
+    "## Escalation record",
+    "",
+    "- **Originating brief**: #999 -- do a bounded thing.",
+    "- **Trigger**: the second attempt failed the same way as the first.",
+    "- **Findings**: the guard runs after the read, so concurrent writers interleave.",
+    "- Attempted approaches so far: a service-layer guard, then a unique index.",
+    "- Changed files so far: apps/web/src/server/thing.ts.",
+    "- **Unresolved question**: whether the lock belongs in the repo or the service.",
+])
+
+# Six filled fields, but nothing says this is an escalation record.
+MARKERLESS_RECORD_PROMPT = "\n".join([
+    "- Originating brief: #999 -- do a bounded thing.",
+    "- Trigger: the second attempt failed the same way as the first.",
+    "- Findings: the guard runs after the read, so concurrent writers interleave.",
+    "- Attempted approaches: a service-layer guard, then a unique index.",
+    "- Changed files: apps/web/src/server/thing.ts.",
     "- Unresolved question: whether the lock belongs in the repo or the service.",
 ])
 
@@ -124,9 +250,14 @@ class CheckFunctionTests(unittest.TestCase):
         reason = HOOK.check({"subagent_type": "vesper-builder", "prompt": BRIEF_PROMPT})
         self.assertIsNone(reason)
 
-    def test_escalation_without_record_is_denied(self):
+    def test_escalation_without_record_is_denied_and_offers_both_routes(self):
         reason = HOOK.check({"subagent_type": "vesper-escalation", "prompt": "take over please"})
         self.assertIsNotNone(reason)
+        self.assertIn("Route A", reason)
+        self.assertIn("Route B", reason)
+        for field in HOOK.RECORD_FIELDS:
+            with self.subTest(field=field):
+                self.assertIn(field, reason)
 
     def test_escalation_with_escalation_line_is_allowed(self):
         reason = HOOK.check({"subagent_type": "vesper-escalation", "prompt": ESCALATION_PROMPT})
@@ -142,11 +273,34 @@ class CheckFunctionTests(unittest.TestCase):
         )
         self.assertIsNone(reason)
 
-    def test_escalation_with_the_brief_template_heading_is_allowed(self):
+    def test_escalation_with_the_brief_template_heading_and_six_filled_fields_is_allowed(self):
         reason = HOOK.check(
-            {"subagent_type": "vesper-escalation", "prompt": TEMPLATE_ESCALATION_PROMPT}
+            {"subagent_type": "vesper-escalation", "prompt": TEMPLATE_HEADING_FILLED_PROMPT}
         )
         self.assertIsNone(reason)
+
+    def test_escalation_with_only_the_record_heading_is_denied_and_names_every_field(self):
+        """A heading is a label, not a record: the worker would start with no findings, no
+        attempted approaches, no changed files and no question -- exactly what it needs."""
+        reason = HOOK.check({"subagent_type": "vesper-escalation", "prompt": HEADING_ONLY_PROMPT})
+        self.assertIsNotNone(reason)
+        for field in HOOK.RECORD_FIELDS:
+            with self.subTest(field=field):
+                self.assertIn(field, reason)
+
+    def test_escalation_with_a_two_field_record_is_denied_and_names_the_four_missing(self):
+        """Deleting the fields you cannot fill must not pass: the deny reason names the four
+        that are gone and stays silent about the two that are there."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": PARTIAL_ESCALATION_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        route_a = next(line for line in reason.splitlines() if line.startswith("Route A"))
+        for field in ("Findings", "Attempted approaches", "Changed files", "Unresolved question"):
+            with self.subTest(field=field):
+                self.assertIn(field, route_a)
+        self.assertNotIn("Originating brief", route_a)
+        self.assertNotIn("Trigger", route_a)
 
     def test_escalation_with_the_unfilled_template_section_is_denied_as_boilerplate(self):
         """Pasting the whole template section without filling it in must not satisfy the
@@ -155,7 +309,10 @@ class CheckFunctionTests(unittest.TestCase):
             {"subagent_type": "vesper-escalation", "prompt": FULL_TEMPLATE_ESCALATION_SECTION}
         )
         self.assertIsNotNone(reason)
-        self.assertTrue("boilerplate" in reason.lower() or "placeholder" in reason.lower())
+        self.assertIn("placeholder", reason.lower())
+        for field in HOOK.RECORD_FIELDS:
+            with self.subTest(field=field):
+                self.assertIn(field, reason)
 
     def test_escalation_with_a_filled_record_is_allowed(self):
         reason = HOOK.check(
@@ -168,6 +325,78 @@ class CheckFunctionTests(unittest.TestCase):
             {"subagent_type": "vesper-escalation", "prompt": FILLED_RISK_AREA_PROMPT}
         )
         self.assertIsNone(reason)
+
+    def test_filled_risk_area_above_the_unfilled_handoff_placeholders_is_allowed(self):
+        """A slice that starts on escalation fills the template's Risk area alternative and
+        leaves the handoff fields unfilled -- there is no failed attempt to report. The
+        documented direct-escalation route has to work with the standard template."""
+        reason = HOOK.check(
+            {
+                "subagent_type": "vesper-escalation",
+                "prompt": RISK_AREA_WITH_UNFILLED_HANDOFF_PROMPT,
+            }
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_with_only_the_template_risk_area_line_is_denied(self):
+        """The alternative pasted but not filled in names no risk at all."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": TEMPLATE_RISK_AREA_LINE}
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("Risk area", reason)
+
+    def test_escalation_with_an_indented_multiline_field_is_allowed(self):
+        """A field whose value is a list below its label is filled in; requiring the value on
+        the label's own line would deny real records."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": MULTILINE_FIELD_ESCALATION_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_field_quoting_a_placeholder_path_is_allowed(self):
+        """`<worktree>/...` is a real path this slice touched, not template boilerplate: the
+        placeholder test must look at what remains around the angle brackets."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": ANGLE_BRACKET_VALUE_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_with_an_empty_field_is_denied_and_names_it(self):
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": EMPTY_FIELD_ESCALATION_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("Findings", reason)
+        self.assertNotIn("Changed files", reason.split("Route B")[0])
+
+    def test_escalation_with_unindented_prose_after_an_empty_field_is_denied(self):
+        """Only an indented block continues a field; the next unindented line belongs to the
+        prompt, not to `Findings:`."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": PROSE_AFTER_EMPTY_FIELD_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("Findings", reason)
+
+    def test_escalation_with_paraphrased_field_labels_is_allowed(self):
+        """The gate reads the record's content, not its typography: bold labels and a field
+        name with trailing words (`Changed files so far:`) still name the same field."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": PARAPHRASED_LABEL_ESCALATION_PROMPT}
+        )
+        self.assertIsNone(reason)
+
+    def test_escalation_with_six_filled_fields_but_no_marker_is_denied_for_the_marker(self):
+        """Six filled fields loose in a prompt are not yet a record the role can find: the
+        deny reason asks for the marker and reports no missing field."""
+        reason = HOOK.check(
+            {"subagent_type": "vesper-escalation", "prompt": MARKERLESS_RECORD_PROMPT}
+        )
+        self.assertIsNotNone(reason)
+        route_a = next(line for line in reason.splitlines() if line.startswith("Route A"))
+        self.assertIn("`Escalation:` line or `## Escalation` heading", route_a)
+        self.assertNotIn("missing", route_a)
 
     def test_brief_sent_to_unpinned_role_is_denied_and_names_vesper_builder(self):
         reason = HOOK.check({"subagent_type": "general-purpose", "prompt": BRIEF_PROMPT})
@@ -246,6 +475,18 @@ class ProcessTests(unittest.TestCase):
         })
         self.assertEqual(code, 0, err)
 
+    def test_vesper_escalation_with_a_partial_record_is_denied_naming_the_missing_fields(self):
+        code, out, err = run({
+            "tool_name": "Agent",
+            "tool_input": {
+                "subagent_type": "vesper-escalation",
+                "prompt": PARTIAL_ESCALATION_PROMPT,
+            },
+        })
+        self.assertEqual(code, 2)
+        self.assertIn("Findings", err)
+        self.assertIn("Unresolved question", err)
+
     def test_vesper_escalation_with_risk_area_line_passes(self):
         code, out, err = run({
             "tool_name": "Agent",
@@ -316,14 +557,24 @@ class BriefMarkerTests(unittest.TestCase):
                 )
                 self.assertIsNotNone(reason)
 
-    def test_every_record_placeholder_still_appears_in_the_agent_brief_template(self):
-        """A template rewording that drops or rephrases one of these placeholder strings
-        would silently disarm the unfilled-escalation-record check: it would stop matching
-        anything a worker actually pastes, and the gate would let boilerplate through."""
-        text = BRIEF_TEMPLATE.read_text(encoding="utf-8")
-        for placeholder in HOOK.RECORD_PLACEHOLDERS:
-            with self.subTest(placeholder=placeholder):
-                self.assertIn(placeholder, text)
+
+class EscalationRecordTemplateTests(unittest.TestCase):
+    """Keep the hook's field names and the template the parent copies in step. A renamed or
+    reworded field in the template reaches the hook two ways, both silent in production: the
+    hook would demand a field no brief writes (denying every real handoff), or stop reading
+    the template's own placeholder text as unfilled (letting boilerplate through)."""
+
+    def test_every_record_field_appears_in_the_template_as_an_unfilled_placeholder(self):
+        states = HOOK._record_states(_BRIEF_TEMPLATE_TEXT)
+        for field in HOOK.RECORD_FIELDS + (HOOK.RISK_AREA_FIELD,):
+            with self.subTest(field=field):
+                self.assertEqual(states[field], HOOK.UNFILLED)
+
+    def test_the_risk_area_fixture_rewrote_exactly_the_template_line(self):
+        """The filled-Risk-area fixture is built by substitution; if the template's line
+        changed shape the fixture would silently become a copy of the unfilled section."""
+        self.assertEqual(_RISK_AREA_SUBS, 1)
+        self.assertNotIn(TEMPLATE_RISK_AREA_LINE, RISK_AREA_WITH_UNFILLED_HANDOFF_PROMPT)
 
 
 class PinnedRoleTableTests(unittest.TestCase):
