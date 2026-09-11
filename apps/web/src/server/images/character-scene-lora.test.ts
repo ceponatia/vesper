@@ -21,7 +21,13 @@ import { emptyCharacterProfile } from "@/contracts/world/profile";
 
 vi.mock("../ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../ai")>();
-  return { ...actual, isDemoMode: vi.fn(() => false), hasReplicate: vi.fn(() => true), classifyImageFailure: vi.fn() };
+  return {
+    ...actual,
+    isDemoMode: vi.fn(() => false),
+    hasReplicate: vi.fn(() => true),
+    hasImageProviderForModel: vi.fn(() => true),
+    classifyImageFailure: vi.fn(),
+  };
 });
 vi.mock("../db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db")>();

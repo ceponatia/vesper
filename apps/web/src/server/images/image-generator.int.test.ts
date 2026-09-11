@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
-import { FAL_QWEN3_TEXT_SLUG } from "@vesper/image-models";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   type ImageGeneratorCreateRunRequest,
@@ -60,7 +59,7 @@ const STRUCTURAL_MODEL_ID = "imgmdlgenstructuralaaaaa";
 const REQUIRED_CONTROL_MODEL_ID = "imgmdlgenreqcontrolaaaaa";
 const REPROBED_MODEL_ID = "imgmdlgenreprobedaaaaaaa";
 const SIZE_MODEL_ID = "imgmdlgensizemodeaaaaaaa";
-const FAL_MODEL_ID = "imgmdlgenfalqwen3aaaaaaa";
+const FAL_MODEL_ID = "imgmdlqwenimage3aaaaaaa";
 const FIXTURE_MODEL_IDS = [
   PINNED_MODEL_ID,
   UNPINNED_MODEL_ID,
@@ -74,7 +73,6 @@ const FIXTURE_MODEL_IDS = [
   REQUIRED_CONTROL_MODEL_ID,
   REPROBED_MODEL_ID,
   SIZE_MODEL_ID,
-  FAL_MODEL_ID,
 ];
 
 const PINNED_SLUG = "vesper-test/generator-pinned";
@@ -89,7 +87,6 @@ const STRUCTURAL_SLUG = "vesper-test/generator-structural";
 const REQUIRED_CONTROL_SLUG = "vesper-test/generator-required-control";
 const REPROBED_SLUG = "vesper-test/generator-reprobed";
 const SIZE_SLUG = "vesper-test/generator-size-mode";
-const FAL_SCHEMA_REVISION = "fal-qwen3-text-schema-2026-09-11";
 /**
  * A LoRA the library curates for SCENE renders only — deliberately not for the
  * synthetic profile's nominal `item` task. It is the exact row shape the bench
@@ -303,39 +300,6 @@ beforeAll(async () => {
         canEdit: true,
         maxReferences: 4,
         probedVersionId: PINNED_VERSION,
-      },
-      {
-        // fal exposes a normalized 1K/2K control, but the transport writes the
-        // provider's custom {width,height} ImageSize object.
-        id: FAL_MODEL_ID,
-        slug: FAL_QWEN3_TEXT_SLUG,
-        label: "Generator fal Qwen 3 Fixture",
-        canGenerate: true,
-        canEdit: false,
-        referenceField: "image_urls",
-        referenceArity: "array",
-        referenceTransport: "data_url",
-        maxReferences: 0,
-        aspectMode: "aspect_ratio",
-        supportedAspects: ["1:1", "3:4"],
-        outputFormat: "png",
-        extraInput: {
-          enable_safety_checker: false,
-          enable_prompt_expansion: false,
-          num_images: 1,
-          output_format: "png",
-        },
-        probedVersionId: FAL_SCHEMA_REVISION,
-        advancedCapabilities: {
-          prompt: { field: "prompt", maxChars: 5000 },
-          controls: {
-            resolutionTier: { field: "image_size", type: "enum", enumValues: ["1K", "2K"] },
-          },
-          providerInputs: [
-            { field: "prompt", type: "string", required: true, reserved: true },
-            { field: "image_size", type: "unknown", required: false, reserved: true },
-          ],
-        },
       },
     ]);
 
