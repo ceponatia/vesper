@@ -247,8 +247,13 @@ export interface ImageLoraBindingPair {
 }
 
 export function resolveImageLoraBindingPair(
-  weights: ImageInputBinding | undefined,
-  scale: ImageInputBinding | undefined,
+  // `| null` alongside `| undefined` because the probe's own per-field
+  // readers (`stringBinding`, `numericBinding`, an array-element reader) each
+  // return `ImageInputBinding | null` for "this field is not that binding" —
+  // accepting both means every caller can pass its binding lookup straight
+  // through instead of normalizing `null` to `undefined` first.
+  weights: ImageInputBinding | null | undefined,
+  scale: ImageInputBinding | null | undefined,
 ): ImageLoraBindingPair | null {
   if (!weights || !scale) return null;
   if (weights.type !== "string" || scale.type !== "number") return null;

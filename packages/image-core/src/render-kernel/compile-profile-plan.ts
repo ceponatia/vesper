@@ -892,7 +892,11 @@ export function loraWireFieldBreach(
   if (shape === "array") {
     if (!Array.isArray(value)) return "carries no array";
     if (value.length !== 1) return `carries an array of ${String(value.length)} entries, not exactly one`;
-    const [entry] = value;
+    // `Array.isArray` narrows `unknown` to `any[]`, and destructuring an `any`
+    // element is an unsafe assignment under type-aware lint. Read the sole
+    // element explicitly typed `unknown` instead — the length check above
+    // already guarantees it exists.
+    const entry: unknown = (value as unknown[])[0];
     if (!isSendableLoraValue(entry)) return "carries a non-finite or empty entry";
     if (expected !== undefined && entry !== expected) {
       return "carries a different value than the resolved binding's own";
