@@ -218,6 +218,40 @@ describe("mapImageRenderControls", () => {
     expect(mapped.dropped).toEqual([{ control: "lora", reason: "no_binding" }]);
   });
 
+  it("wraps a RESOLVED LoRA's locator and scale in singleton arrays when the version declares the array pair", () => {
+    // A FLUX.2 klein `-base-lora` endpoint's `lora_weights`/`lora_scales`
+    // shape: one curated LoRA still, sent as a one-element list on each field.
+    const mapped = mapImageRenderControls({
+      controls: { lora: { id: "lora-1", scale: 0.8 } },
+      capabilities: loraCapabilities({
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+        loraScale: { field: "lora_scales", type: "number", arity: "array" },
+      }),
+      resolvedLora: { id: "lora-1", locator: "owner/style-lora", scale: 0.8 },
+    });
+    expect(mapped.input).toEqual({ lora_weights: ["owner/style-lora"], lora_scales: [0.8] });
+    // `applied` stays the same shape regardless of the wire shape — the record
+    // is about WHICH LoRA and at WHAT strength, never the transport.
+    expect(mapped.applied).toEqual({ lora: { id: "lora-1", scale: 0.8 } });
+    expect(mapped.appliedFields).toEqual({ lora: ["lora_weights", "lora_scales"] });
+    expect(mapped.dropped).toEqual([]);
+  });
+
+  it("drops the whole LoRA when the version's two LoRA fields disagree on arity", () => {
+    // An array `lora_weights` beside a scalar `lora_scale` (or the reverse) is
+    // not a pair `resolveImageLoraBindingPair` recognizes — exactly as
+    // unreachable as a version exposing only one of the two fields.
+    const mapped = mapImageRenderControls({
+      controls: {},
+      capabilities: loraCapabilities({
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+      }),
+      resolvedLora: { id: "lora-1", locator: "owner/style-lora", scale: 0.8 },
+    });
+    expect(mapped.input).toEqual({});
+    expect(mapped.dropped).toEqual([{ control: "lora", reason: "no_binding" }]);
+  });
+
   it("drops a scale the version's own binding refuses instead of clamping it", () => {
     const mapped = mapImageRenderControls({
       controls: {},
@@ -231,6 +265,22 @@ describe("mapImageRenderControls", () => {
   it("sends nothing for an empty control set", () => {
     const mapped = mapImageRenderControls({ controls: {}, capabilities: capabilities() });
     expect(mapped).toEqual({ input: {}, applied: {}, appliedFields: {}, dropped: [] });
+  });
+
+  it("fails closed on an ordinary control whose binding declares array arity", () => {
+    // Only the LoRA pair may declare `arity: "array"`. This generic per-control
+    // transport writes a value verbatim to one field, so an array-arity
+    // binding here — however it got onto the record — must be refused rather
+    // than sent as a bare scalar under a field the provider expects a list
+    // for.
+    const mapped = mapImageRenderControls({
+      controls: { guidance: 5 },
+      capabilities: capabilities({
+        controls: { guidance: { field: "guidance_scale", type: "number", arity: "array", minimum: 0, maximum: 20 } },
+      }),
+    });
+    expect(mapped.input).toEqual({});
+    expect(mapped.dropped).toEqual([{ control: "guidance", reason: "invalid" }]);
   });
 
   it("records the provider field each applied control was written to", () => {

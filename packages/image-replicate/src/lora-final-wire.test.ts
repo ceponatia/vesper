@@ -283,3 +283,409 @@ describe("a curated LoRA row reaching the Replicate payload", () => {
     expect(payload.lora_scale).toBe(row.defaultScale);
   });
 });
+
+/**
+ * The array wire shape: a FLUX.2 klein `-base-lora` endpoint's
+ * `lora_weights`/`lora_scales` fields, each a singleton-capable list rather
+ * than the two Qwen scalar fields. Same chain, same claim — one library row
+ * still reaches the payload as itself — but the two provider fields are now
+ * one-element ARRAYS, and the final-wire invariant that catches "recorded but
+ * never sent" must catch "sent as the wrong shape" too.
+ *
+ * `KLEIN_BASE_LORA` and `KLEIN_PROFILE` below (id/slug/reference shape and the
+ * array `lora_weights`/`lora_scales` pair the #566 probe derivation records —
+ * `probe.test.ts` and `drizzle/0136_flux-2-klein-4b.sql` hold the full
+ * version-matched golden) are module-scoped so this one derivation is shared
+ * by the array-wire case in this describe block and the RefControl depth
+ * recipe case that follows it, rather than hand-typed a second time.
+ */
+const KLEIN_BASE_LORA: ImageModel = imageModelSchema.parse({
+  id: "imgmdlfluxklein4bbaselora",
+  slug: "black-forest-labs/flux-2-klein-4b-base-lora",
+  label: "FLUX.2 Klein 4B (base, LoRA)",
+  canGenerate: true,
+  canEdit: true,
+  editKind: "img2img",
+  referenceField: "images",
+  referenceArity: "array",
+  maxReferences: 5,
+  advancedCapabilities: {
+    controls: {
+      loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+      loraScale: { field: "lora_scales", type: "number", arity: "array" },
+    },
+    knownInputFields: ["lora_weights", "lora_scales"],
+  },
+});
+
+/** The Image Generator's synthetic profile for the `-base-lora` endpoint, shared the same way as {@link KLEIN_BASE_LORA}. */
+const KLEIN_PROFILE: ImageModelProfile = imageModelProfileSchema.parse({
+  id: "image-generator/run-klein",
+  imageModelId: KLEIN_BASE_LORA.id,
+  key: "image-generator",
+  label: "Image Generator",
+  task: "item",
+  operation: "edit",
+  promptStrategy: "instruction_edit",
+  referencePolicy: { allowedRoles: [], requiredRoles: [], roleOrder: [], identityStrategy: "canonical_only" },
+  controlDefaults: { seedPolicy: "caller" },
+});
+
+/**
+ * The exact version #566's migration 0136 seeds for `-base-lora` — the fixture
+ * version the RefControl depth row's `compatibleVersionIds` is tied to below.
+ */
+const KLEIN_BASE_LORA_PINNED_VERSION_ID = "c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc";
+
+describe("a curated LoRA row reaching an array-shaped Replicate payload", () => {
+  const KLEIN_LORA_ROW: ImageLora = imageLoraSchema.parse({
+    id: "imglorkleinstylev1",
+    label: "Klein Style v1",
+    locatorType: "https_url",
+    locator: "https://cdn.example.invalid/loras/klein-style.safetensors",
+    compatibleModelSlugs: ["black-forest-labs/flux-2-klein-4b-base-lora"],
+    compatibleVersionIds: [],
+    defaultScale: 1,
+    minimumScale: 0,
+    maximumScale: 2,
+    allowedTasks: ["scene", "variant", "item"],
+    enabled: true,
+    builtin: false,
+  });
+
+  function resolveKleinBinding(): ImageLoraRenderBinding {
+    const evaluation = evaluateImageLoraForRender({
+      lora: KLEIN_LORA_ROW,
+      modelSlug: KLEIN_BASE_LORA.slug,
+      versionId: null,
+      context: { kind: "generator_bench" },
+      bindings: KLEIN_BASE_LORA.advancedCapabilities.controls,
+    });
+    if (!evaluation.ok) {
+      throw new Error(`[lora-final-wire] the klein row was refused: ${evaluation.code} — ${evaluation.message}`);
+    }
+    return evaluation.binding;
+  }
+
+  function kleinPlanned(binding?: ImageLoraRenderBinding): PlannedImageRender {
+    const intent: ImageRenderIntent = {
+      profile: { model: KLEIN_BASE_LORA, profile: KLEIN_PROFILE },
+      prompt: "a bench render",
+      references: [{ role: "reference", buffer: Buffer.from("bench-reference"), required: true }],
+      target: { aspectRatio: null },
+      ...(binding ? { resolvedLora: binding } : {}),
+    };
+    const result = planImageRender(intent, { safetyCheckerDisabled: SAFETY_CHECKER_DISABLED });
+    if (!result.ok) {
+      throw new Error(`[lora-final-wire] the klein plan was refused: ${result.refusal.code} — ${result.refusal.message}`);
+    }
+    return result.plan;
+  }
+
+  it("sends the row's locator and scale as singleton arrays on a bench render", () => {
+    const plan = kleinPlanned(resolveKleinBinding());
+    const payload = sentPayload(plan);
+    expect(payload.lora_weights).toEqual([KLEIN_LORA_ROW.locator]);
+    expect(payload.lora_scales).toEqual([KLEIN_LORA_ROW.defaultScale]);
+    // The Generator's stored pre-spend record must agree with what is actually sent.
+    const recorded = recordedPayload(plan);
+    expect(recorded.lora_weights).toEqual(payload.lora_weights);
+    expect(recorded.lora_scales).toEqual(payload.lora_scales);
+  });
+
+  it("writes neither array field when the render resolved no LoRA", () => {
+    const payload = sentPayload(kleinPlanned());
+    expect("lora_weights" in payload).toBe(false);
+    expect("lora_scales" in payload).toBe(false);
+  });
+
+  it("posts the row's locator and scale as singleton arrays in the real prediction request body", async () => {
+    const plan = kleinPlanned(resolveKleinBinding());
+    const posted: { input?: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "POST" && url.endsWith("/files")) {
+          return Response.json({ id: "file-1", urls: { get: "https://replicate.delivery/f/bench-reference.webp" } });
+        }
+        if (init?.method === "POST" && url.includes("/predictions")) {
+          posted.push(JSON.parse(String(init.body)) as { input?: Record<string, unknown> });
+          return Response.json({
+            id: "pred-wire-klein",
+            status: "succeeded",
+            output: ["https://replicate.delivery/o/out.webp"],
+          });
+        }
+        return new Response(Buffer.from("image-bytes"), { status: 200 });
+      }),
+    );
+
+    const result = await createReplicateClient({
+      apiToken: "test-token",
+      safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
+      predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
+    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+      prompt: plan.prompt,
+      references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
+      aspect: null,
+      controlInput: plan.controlInput,
+      typedControlFields: plan.typedControlFields,
+      policy: plan.policy,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.input?.lora_weights).toEqual([KLEIN_LORA_ROW.locator]);
+    expect(posted[0]?.input?.lora_scales).toEqual([KLEIN_LORA_ROW.defaultScale]);
+    // Unrelated fields travel unchanged — the array shape is confined to the
+    // two LoRA fields, never a general "wrap everything" transport change.
+    expect(posted[0]?.input?.prompt).toBe(plan.prompt);
+  });
+});
+
+/**
+ * THE klein 4B RefControl depth recipe (#568): a curated depth-conditioning
+ * LoRA row bench-tested on `black-forest-labs/flux-2-klein-4b-base-lora`,
+ * with the depth map as primary image 1 and the identity reference as
+ * primary image 2 — both under the neutral `reference` role the Generator's
+ * primaries carry, in caller order
+ * (`docs/images/providers/render-intents.md` §Which references survive is
+ * the profile's policy). The row's own model card documents that image
+ * order (depth first, reference second) and a `refcontrol` trigger word;
+ * this suite is the proof that Vesper's planner and transport preserve that
+ * order and weave that trigger, rather than silently reordering or dropping
+ * either.
+ *
+ * The row's locator here is an OBVIOUSLY SYNTHETIC address — the real
+ * artifact re-hosting and the live row's creation are owner work, outside
+ * this slice
+ * (`docs/image-models/models/flux-2-klein-4b-base-lora.md` §RefControl depth
+ * recipe and `docs/images/providers/loras.md` record the verified
+ * provenance and the exact row values the owner creates it with).
+ */
+describe("the klein 4B RefControl depth recipe (bench primary-reference order)", () => {
+  /**
+   * The pilot depth row's exact field values
+   * (`docs/images/providers/loras.md` §RefControl depth row (klein 4B,
+   * pilot)): scale band 0.8–1.0 around a default of 0.9 — a pilot choice
+   * informed by the publisher, not a measured optimum — tied to the #566
+   * fixture version, one trigger word carried through the existing
+   * prompt-addition mechanism (no prefix/suffix), Generator-only
+   * (`allowedTasks: []`).
+   */
+  const DEPTH_LORA_ROW: ImageLora = imageLoraSchema.parse({
+    id: "imglorklein4brefcontroldepth",
+    label: "FLUX.2 klein 4B RefControl depth (pilot)",
+    locatorType: "https_url",
+    locator: "https://example.test/lora/klein-depth.safetensors",
+    compatibleModelSlugs: ["black-forest-labs/flux-2-klein-4b-base-lora"],
+    compatibleVersionIds: [KLEIN_BASE_LORA_PINNED_VERSION_ID],
+    defaultScale: 0.9,
+    minimumScale: 0.8,
+    maximumScale: 1.0,
+    triggerWords: ["refcontrol"],
+    allowedTasks: [],
+    enabled: true,
+    builtin: false,
+  });
+
+  /** Stand-ins for the owned depth-map and identity images the admin selected as primary 1 and 2. */
+  const DEPTH_BUFFER = Buffer.from("depth-map-bytes");
+  const IDENTITY_BUFFER = Buffer.from("identity-bytes");
+  /** The short-lived Replicate file URLs each upload resolves to — distinct, so send order is provable. */
+  const DEPTH_UPLOADED_URL = "https://replicate.delivery/pbxt/bench-depth.webp";
+  const IDENTITY_UPLOADED_URL = "https://replicate.delivery/pbxt/bench-identity.webp";
+
+  /** Case-insensitive, non-overlapping occurrences of the trigger word. */
+  function triggerCount(prompt: string): number {
+    return (prompt.match(/refcontrol/gi) ?? []).length;
+  }
+
+  function resolveDepthBinding(): ImageLoraRenderBinding {
+    const evaluation = evaluateImageLoraForRender({
+      lora: DEPTH_LORA_ROW,
+      modelSlug: KLEIN_BASE_LORA.slug,
+      versionId: KLEIN_BASE_LORA_PINNED_VERSION_ID,
+      context: { kind: "generator_bench" },
+      bindings: KLEIN_BASE_LORA.advancedCapabilities.controls,
+    });
+    if (!evaluation.ok) {
+      throw new Error(`[lora-final-wire] the depth row was refused: ${evaluation.code} — ${evaluation.message}`);
+    }
+    return evaluation.binding;
+  }
+
+  /**
+   * The bench's own intent: depth first, identity second, both under the
+   * neutral `reference` role — `purpose` is provenance only and is left
+   * unset here on purpose, so this case proves order survives on CALLER
+   * ORDER ALONE, with no routing hint to lean on.
+   */
+  function depthPlanned(prompt: string, binding?: ImageLoraRenderBinding): PlannedImageRender {
+    const intent: ImageRenderIntent = {
+      profile: { model: KLEIN_BASE_LORA, profile: KLEIN_PROFILE },
+      prompt,
+      references: [
+        { role: "reference", buffer: DEPTH_BUFFER, required: true },
+        { role: "reference", buffer: IDENTITY_BUFFER, required: true },
+      ],
+      target: { aspectRatio: null },
+      ...(binding ? { resolvedLora: binding } : {}),
+    };
+    const result = planImageRender(intent, { safetyCheckerDisabled: SAFETY_CHECKER_DISABLED });
+    if (!result.ok) {
+      throw new Error(`[lora-final-wire] the depth plan was refused: ${result.refusal.code} — ${result.refusal.message}`);
+    }
+    return result.plan;
+  }
+
+  it("sends [depth, identity] in that order, the singleton LoRA pair, and weaves a missing trigger once", async () => {
+    const adminPrompt =
+      "Follow the first image as depth structure and keep the second image's face and identity; ignore the depth map's own colors.";
+    expect(triggerCount(adminPrompt)).toBe(0);
+
+    const plan = depthPlanned(adminPrompt, resolveDepthBinding());
+
+    // The applied record names the row and the SENT scale, never the
+    // locator (docs/images/providers/loras.md §Resolution refuses, never
+    // clamps; image-control-mapping.ts's `mapResolvedLora`).
+    expect(plan.appliedControls.lora).toEqual({ id: DEPTH_LORA_ROW.id, scale: 0.9 });
+
+    // The prompt actually sent is the plan's own recorded final prompt, and
+    // it ends with the one woven trigger — never a second occurrence.
+    expect(plan.prompt.endsWith("refcontrol")).toBe(true);
+    expect(triggerCount(plan.prompt)).toBe(1);
+
+    const posted: { input?: Record<string, unknown>; version?: string }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "POST" && url.endsWith("/files")) {
+          const body = init.body;
+          if (!(body instanceof FormData)) throw new Error("unexpected upload without a FormData body");
+          const file = body.get("content");
+          if (!(file instanceof File)) throw new Error("upload carried no file content");
+          // `transportReplicateReferences` names each upload by its INPUT
+          // slot (`vesper-reference-N`), which is how order is provable here
+          // rather than assumed from completion order.
+          const isDepth = file.name.includes("vesper-reference-1");
+          return Response.json({
+            id: isDepth ? "file-depth" : "file-identity",
+            urls: { get: isDepth ? DEPTH_UPLOADED_URL : IDENTITY_UPLOADED_URL },
+          });
+        }
+        if (init?.method === "POST" && url.includes("/predictions")) {
+          posted.push(JSON.parse(String(init.body)) as { input?: Record<string, unknown>; version?: string });
+          return Response.json({
+            id: "pred-refcontrol",
+            status: "succeeded",
+            output: ["https://replicate.delivery/o/out.webp"],
+          });
+        }
+        return new Response(Buffer.from("image-bytes"), { status: 200 });
+      }),
+    );
+
+    const result = await createReplicateClient({
+      apiToken: "test-token",
+      safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
+      predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
+    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+      prompt: plan.prompt,
+      references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
+      aspect: null,
+      controlInput: plan.controlInput,
+      typedControlFields: plan.typedControlFields,
+      policy: plan.policy,
+      versionId: KLEIN_BASE_LORA_PINNED_VERSION_ID,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(posted).toHaveLength(1);
+    const body = posted[0];
+    // The request targets the pinned version explicitly, the way every
+    // Image Generator run does (docs/images/providers/render-intents.md
+    // §Two things the intent deliberately does not send).
+    expect(body?.version).toBe(KLEIN_BASE_LORA_PINNED_VERSION_ID);
+    expect(body?.input?.images).toEqual([DEPTH_UPLOADED_URL, IDENTITY_UPLOADED_URL]);
+    expect(body?.input?.lora_weights).toEqual([DEPTH_LORA_ROW.locator]);
+    expect(body?.input?.lora_scales).toEqual([0.9]);
+    expect(body?.input?.prompt).toBe(plan.prompt);
+    expect(triggerCount(String(body?.input?.prompt))).toBe(1);
+    // This version declares neither guidance nor go_fast, and no klein 4B
+    // endpoint declares a depth-specific field or a step count — a payload
+    // carrying any of these would be describing a different endpoint.
+    expect(body?.input).not.toHaveProperty("guidance");
+    expect(body?.input).not.toHaveProperty("go_fast");
+    expect(body?.input).not.toHaveProperty("num_inference_steps");
+    expect(body?.input).not.toHaveProperty("depth_image");
+  });
+
+  it("leaves an already-present trigger unchanged and still singular", async () => {
+    const adminPrompt =
+      "Follow the first image's refcontrol depth structure and keep the second image's face and identity.";
+    expect(triggerCount(adminPrompt)).toBe(1);
+
+    const plan = depthPlanned(adminPrompt, resolveDepthBinding());
+
+    // No addition when the trigger is already there: repeated preparation
+    // does not keep adding wording
+    // (packages/image-core/src/loras/image-loras.test.ts pins the
+    // no-resolved-binding case; this is the render-plan-level case with a
+    // real binding).
+    expect(plan.prompt).toBe(adminPrompt);
+    expect(triggerCount(plan.prompt)).toBe(1);
+
+    const posted: { input?: Record<string, unknown>; version?: string }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "POST" && url.endsWith("/files")) {
+          const body = init.body;
+          if (!(body instanceof FormData)) throw new Error("unexpected upload without a FormData body");
+          const file = body.get("content");
+          if (!(file instanceof File)) throw new Error("upload carried no file content");
+          const isDepth = file.name.includes("vesper-reference-1");
+          return Response.json({
+            id: isDepth ? "file-depth" : "file-identity",
+            urls: { get: isDepth ? DEPTH_UPLOADED_URL : IDENTITY_UPLOADED_URL },
+          });
+        }
+        if (init?.method === "POST" && url.includes("/predictions")) {
+          posted.push(JSON.parse(String(init.body)) as { input?: Record<string, unknown>; version?: string });
+          return Response.json({
+            id: "pred-refcontrol-2",
+            status: "succeeded",
+            output: ["https://replicate.delivery/o/out.webp"],
+          });
+        }
+        return new Response(Buffer.from("image-bytes"), { status: 200 });
+      }),
+    );
+
+    const result = await createReplicateClient({
+      apiToken: "test-token",
+      safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
+      predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
+    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+      prompt: plan.prompt,
+      references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
+      aspect: null,
+      controlInput: plan.controlInput,
+      typedControlFields: plan.typedControlFields,
+      policy: plan.policy,
+      versionId: KLEIN_BASE_LORA_PINNED_VERSION_ID,
+    });
+
+    expect(result.ok).toBe(true);
+    const body = posted[0];
+    expect(body?.input?.prompt).toBe(adminPrompt);
+    expect(triggerCount(String(body?.input?.prompt))).toBe(1);
+    expect(body?.input?.images).toEqual([DEPTH_UPLOADED_URL, IDENTITY_UPLOADED_URL]);
+    expect(body?.input?.lora_weights).toEqual([DEPTH_LORA_ROW.locator]);
+    expect(body?.input?.lora_scales).toEqual([0.9]);
+  });
+});

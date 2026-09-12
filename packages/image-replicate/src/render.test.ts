@@ -381,6 +381,60 @@ describe("runRegistryImageModel", () => {
     expect(body.input).toMatchObject({ prompt: "a portrait", aspect_ratio: "3:4", output_format: "webp" });
   });
 
+  it("takes the FIRST url of a multi-image array output, on a model that advertises single output", async () => {
+    // Every other array-output case in this file returns a ONE-element list, so
+    // "the transport reads an array" is covered but "which element" is not.
+    // The FLUX.2 klein 4B endpoints declare `Output` as an array of URIs while
+    // their probed capability record carries the contract's `{arity:"single"}`
+    // default — nothing in that schema promises exactly one member. If the
+    // provider ever answers with several, one image is still what this
+    // single-image transport must produce, and it must be the first: picking
+    // any other member would make a seeded run irreproducible for no reason.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        calls.push(url);
+        if (url.includes("/predictions")) {
+          return Response.json({
+            id: "pred-klein",
+            status: "succeeded",
+            output: [
+              "https://replicate.delivery/first.webp",
+              "https://replicate.delivery/second.webp",
+              "https://replicate.delivery/third.webp",
+            ],
+          });
+        }
+        if (url === "https://replicate.delivery/first.webp") {
+          return new Response(Buffer.from("first-image"), {
+            status: 200,
+            headers: { "content-type": "image/webp" },
+          });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    const klein = model({
+      slug: "black-forest-labs/flux-2-klein-4b",
+      referenceField: "images",
+      referenceArity: "array",
+      maxReferences: 5,
+      outputFormat: "webp",
+      probedVersionId: "8e9c42d77b10a2a41af823ac4500f7545be6ebc4e745830fc3f3de10de200542",
+    });
+    const result = await client().runRegistryImageModel(klein, { prompt: "a lighthouse" });
+
+    expect(result.ok).toBe(true);
+    expect(result.image?.toString()).toBe("first-image");
+    // Proven by what was fetched, not only by the bytes: the two later members
+    // were never downloaded, so no second image was produced and discarded.
+    expect(calls).not.toContain("https://replicate.delivery/second.webp");
+    expect(calls).not.toContain("https://replicate.delivery/third.webp");
+  });
+
   it("uploads references, runs the model, downloads output, and removes temporary files", async () => {
     const calls: Array<{ url: string; method: string }> = [];
     let uploadNumber = 0;
@@ -657,6 +711,43 @@ describe("runRegistryImageModel", () => {
     expect(refused.providerInputViolations?.[0]).toMatchObject({ field: "extra_image", reason: "unsupported_shape" });
   });
 
+  it("refuses an array-shaped LoRA field the raw overlay wrote rather than a typed transport", async () => {
+    // The array-LoRA analogue of the URI-smuggling case above: a `-base-lora`
+    // endpoint's `lora_scales` field takes a list, and only a resolved curated
+    // LoRA (via the mapper's `typedControlFields`) may supply one. Nothing
+    // resolved a LoRA on THIS render, so `lora_scales` is not in
+    // `typedControlFields`, and the raw advanced value must fail closed exactly
+    // like the URI case — never acquire typed-transport privileges just
+    // because the model happens to declare the field.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+      }),
+    );
+    const withArrayLora = model({
+      advancedCapabilities: {
+        ...emptyImageModelAdvancedCapabilities(),
+        knownInputFields: ["prompt", "lora_weights", "lora_scales"],
+        providerInputs: [
+          { field: "prompt", type: "string", required: true, reserved: true },
+          { field: "lora_weights", type: "array", required: false, reserved: true },
+          { field: "lora_scales", type: "array", required: false, reserved: true },
+        ],
+      },
+    });
+    const refused = await client().runRegistryImageModel(withArrayLora, {
+      prompt: "p",
+      controlInput: { lora_scales: [4] },
+      policy: { providerInputs: "strict" },
+    });
+    expect(refused.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(refused.providerInputViolations?.[0]).toMatchObject({ field: "lora_scales", reason: "unsupported_shape" });
+  });
+
   it("leaves a required field with a declared provider default unset", async () => {
     // Provider defaults are not Vesper defaults: demanding the caller restate
     // one would turn "leave it alone" into "copy whatever another lane used".
@@ -799,6 +890,117 @@ describe("runRegistryImageModel", () => {
     // exactly what an operator needs when the pin is under suspicion.
     const failed = await runWithPrediction({ id: "pred-f", status: "failed", output: null, version: "version-bad" });
     expect(failed).toMatchObject({ ok: false, predictionId: "pred-f", executedVersionId: "version-bad" });
+  });
+});
+
+/**
+ * The transport half of the #567 acceptance: the LITERAL payload a registered
+ * klein request posts, on `black-forest-labs/flux-2-klein-4b-base` — the one
+ * klein 4B endpoint that binds guidance. The row below is transcribed from the
+ * golden migration `drizzle/0136_flux-2-klein-4b.sql` seeds and
+ * `probe.test.ts` pins for this exact version — not re-derived from the raw
+ * schema — so this case and that literal move together rather than drift
+ * apart.
+ *
+ * The strict-request arm already has coverage above ("refuses a URI-shaped
+ * field the raw overlay wrote rather than a typed transport", "refuses an
+ * array-shaped LoRA field the raw overlay wrote rather than a typed
+ * transport" — the second is the array-LoRA analogue on a klein `-base-lora`
+ * endpoint's own fields) proving an unsupported explicit control is refused
+ * before spend. This case is the positive half: what a SUPPORTED request
+ * actually sends, adding no adapter validator of its own.
+ */
+describe("runRegistryImageModel: FLUX.2 klein 4B Base literal payload (#567)", () => {
+  const KLEIN_BASE_VERSION = "2289efa5ebba21f5322ba1b73ac92bb6fec9f34bafc08e0c26f465dac6f8b465";
+
+  it("posts the pin, the verbatim prompt, ordered references, guidance/seed, extraInput and webp — with no LoRA/negative/step fields", async () => {
+    const kleinBase = model({
+      slug: "black-forest-labs/flux-2-klein-4b-base",
+      referenceField: "images",
+      referenceArity: "array",
+      referenceTransport: "file",
+      maxReferences: 5,
+      aspectMode: "aspect_ratio",
+      supportedAspects: ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "21:9", "9:21"],
+      outputFormat: "webp",
+      // The three keys migration 0136 pins on this row; `disable_safety_checker`
+      // is overridden by the deployment's own posture at send time regardless
+      // of the stored placeholder — `client()` below configures that posture
+      // true, which is what the assertion checks.
+      extraInput: { disable_safety_checker: true, output_quality: 95, go_fast: true },
+      probedVersionId: KLEIN_BASE_VERSION,
+      advancedCapabilities: {
+        ...emptyImageModelAdvancedCapabilities(),
+        controls: {
+          seed: { field: "seed", type: "integer" },
+          guidance: { field: "guidance", type: "number", minimum: 1, maximum: 10 },
+          fastMode: { field: "go_fast", type: "boolean" },
+        },
+      },
+    });
+
+    let uploadNumber = 0;
+    let predictionBody: { version?: string; input: Record<string, unknown> } | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/v1/files") && method === "POST") {
+          uploadNumber += 1;
+          return Response.json({
+            id: `file-${uploadNumber}`,
+            urls: { get: `https://api.replicate.com/v1/files/file-${uploadNumber}` },
+          });
+        }
+        if (url.includes("/predictions")) {
+          predictionBody = JSON.parse(String(init?.body)) as { version?: string; input: Record<string, unknown> };
+          return Response.json({
+            id: "pred-klein-base",
+            status: "succeeded",
+            output: ["https://replicate.delivery/klein-base.webp"],
+          });
+        }
+        if (url === "https://replicate.delivery/klein-base.webp") {
+          return new Response(Buffer.from("klein-base-image"), { status: 200 });
+        }
+        if (url.includes("/v1/files/file-") && method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }),
+    );
+
+    const prompt = "A pair of twin lighthouses at dusk, storm rolling in from the north.";
+    const result = await client().runRegistryImageModel(kleinBase, {
+      prompt,
+      references: [prepared("ref-a"), prepared("ref-b")],
+      // What the application would have resolved from `model.probedVersionId`
+      // through `pinnedImageModelVersion` and threaded onto the intent — this
+      // package reads only what the caller hands it, never the row's column.
+      versionId: KLEIN_BASE_VERSION,
+      // Already-mapped provider fields, exactly as the real control mapper
+      // would resolve them for this version's own field names.
+      controlInput: { seed: 7, guidance: 4 },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(predictionBody?.version).toBe(KLEIN_BASE_VERSION);
+    // The literal, EXACT posted body — no extra keys of any kind, which is
+    // what rules out lora_weights, lora_scales, negative_prompt and
+    // num_inference_steps without naming each absence separately: none of
+    // them was ever written, because nothing in this request or this row
+    // asked for one.
+    expect(predictionBody?.input).toEqual({
+      prompt,
+      images: ["https://api.replicate.com/v1/files/file-1", "https://api.replicate.com/v1/files/file-2"],
+      output_format: "webp",
+      disable_safety_checker: true,
+      output_quality: 95,
+      go_fast: true,
+      seed: 7,
+      guidance: 4,
+    });
   });
 });
 

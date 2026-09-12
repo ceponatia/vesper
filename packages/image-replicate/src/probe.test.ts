@@ -139,6 +139,54 @@ describe("probeReplicateModel", () => {
     expect(result.probe.maxReferences).toBe(9);
   });
 
+  it("reads a standalone 'Maximum N images' cap", async () => {
+    // The third of the three prose phrasings `referenceCap` reads
+    // (`docs/images/providers/registry.md`'s reference-cap section): a range
+    // and "up to N" both have their own standalone case above, and until now
+    // nothing pinned "Maximum N images" on its own — only through the FLUX.2
+    // klein goldens, which also carry several other properties.
+    stubFetch(() => ({
+      name: "maximum-phrasing",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: { prompt: { type: "string" }, images: uriArray("Maximum 5 images") },
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("acme/maximum-phrasing");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.maxReferences).toBe(5);
+  });
+
+  it("prefers a stated range over a maximum in the same description", async () => {
+    // The patterns are tried MOST SPECIFIC FIRST and each whole, never merged
+    // into one alternation: a description naming both a range and a maximum
+    // means two different things, and the range is the one describing the
+    // input this field actually accepts. A regression that tried "maximum"
+    // before the range, or matched whichever came first in the text, would
+    // read this contradictory-by-construction fixture as 10 instead of 5.
+    stubFetch(() => ({
+      name: "range-and-maximum",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: {
+            prompt: { type: "string" },
+            images: uriArray("List of 1-5 images. Maximum 10 images for a batched request."),
+          },
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("acme/range-and-maximum");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.maxReferences).toBe(5);
+  });
+
   it("pins extraInput only to keys the model actually declares", async () => {
     // Replicate rejects unknown inputs, so a safety toggle must never be
     // introduced on a model that has no such field.
@@ -611,10 +659,49 @@ describe("probeReplicateModel", () => {
       expect(result.probe.advancedCapabilities.controls.sequentialMode).toBeUndefined();
     });
 
-    it("omits a range the schema did not declare, and ignores a LoRA field of the wrong type", async () => {
+    it("omits a range the scalar LoRA pair did not declare", async () => {
       // Absent bounds mean "the provider declared none", never "unbounded" — writing
-      // a made-up range would refuse values the model accepts. And a `lora_weights`
-      // that is not a string is not the binding this derivation knows how to send.
+      // a made-up range would refuse values the model accepts.
+      stubFetch(() => ({
+        name: "unranged-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "string" },
+              lora_scale: { type: "number" },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/unranged-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({
+        loraWeights: { field: "lora_weights", type: "string" },
+        loraScale: { field: "lora_scale", type: "number" },
+      });
+    });
+
+    it("binds neither LoRA field when the two sides declare different shapes, and keeps both descriptors reserved", async () => {
+      // `lora_weights` here is an ARRAY and `lora_scale` is a plain scalar — the
+      // shared pair-shape reading (`resolveImageLoraBindingPair`) refuses this
+      // combination on BOTH readings: as a scalar pair, `lora_weights` is the
+      // wrong shape; as an array pair, there is no `lora_scales` (plural) field
+      // to pair it with. A locator with no matching scale runs at whatever the
+      // model defaults to, which is a different render from the one recorded —
+      // so half a pair must never bind.
+      //
+      // Kills the regression where an unbound (or mismatched) LoRA field's
+      // provider-input descriptor read `reserved: false`: `context.controls`
+      // carries a field only once a full pair resolves, so before the fix a
+      // half or mismatched pair's field looked like any other open advanced
+      // input — offered in the Generator's Advanced section, accepted by
+      // `validateProviderOverrides` (it is still in `knownInputFields`), and
+      // posted verbatim by an admin-typed value. The curated LoRA library must
+      // stay the only path to these fields whether or not they end up bound.
       stubFetch(() => ({
         name: "odd-lora",
         latest_version: {
@@ -632,9 +719,97 @@ describe("probeReplicateModel", () => {
       const result = await probeReplicateModel("acme/odd-lora");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.probe.advancedCapabilities.controls).toEqual({
-        loraScale: { field: "lora_scale", type: "number" },
+      expect(result.probe.advancedCapabilities.controls).toEqual({});
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_weights")).toMatchObject({
+        reserved: true,
       });
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_scale")).toMatchObject({
+        reserved: true,
+      });
+    });
+
+    it("binds neither LoRA field when only one side of the array pair is declared, and keeps the descriptor reserved", async () => {
+      // `lora_weights` is a well-formed array-of-string binding, but nothing
+      // named `lora_scales` exists to pair it with — the scalar `lora_scale`
+      // name would still leave the array side unmatched, so this is "missing",
+      // not "mismatched", and the outcome is the same: bind neither.
+      stubFetch(() => ({
+        name: "half-array-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "array", items: { type: "string" } },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/half-array-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({});
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_weights")).toMatchObject({
+        reserved: true,
+      });
+    });
+
+    it("binds no LoRA field when only a scalar lora_weights is declared, and keeps the descriptor reserved", async () => {
+      // The scalar analogue of the two cases above: `lora_weights` alone,
+      // string-typed, with no `lora_scale` at all. Same relaxation this whole
+      // slice exists to close — a weights-only field must never read as an
+      // ordinary open advanced input just because it failed to pair.
+      stubFetch(() => ({
+        name: "weights-only-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "string" },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/weights-only-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({});
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_weights")).toMatchObject({
+        reserved: true,
+      });
+    });
+
+    it("derives the array LoRA pair, with per-element constraints when the schema declares them", async () => {
+      // The general shape a FLUX.2 klein `-base-lora` endpoint declares:
+      // `lora_weights`/`lora_scales` as singleton-capable lists rather than the
+      // two Qwen scalar fields. This fixture adds an element range neither real
+      // klein schema declares, specifically to prove the derivation reads
+      // `items.minimum`/`items.maximum` when a future array-LoRA endpoint does.
+      stubFetch(() => ({
+        name: "array-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "array", items: { type: "string" } },
+              lora_scales: { type: "array", items: { type: "number", minimum: 0, maximum: 2 } },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/array-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+        loraScale: { field: "lora_scales", type: "number", arity: "array", minimum: 0, maximum: 2 },
+      });
+      expect(result.probe.advancedCapabilities.knownInputFields).toEqual(["lora_scales", "lora_weights", "prompt"]);
     });
 
     it("derives dedicated inputs and reserved descriptors for the Vesper SDXL renderer's shape", async () => {
@@ -1026,6 +1201,616 @@ describe("probeReplicateModel", () => {
       // transport uses this endpoint's real single-URI `image` field and does not
       // inherit 2511's array binding from the shared field name.
       expect(result.probe.referenceArity).toBe("single");
+    });
+
+    // -----------------------------------------------------------------------
+    // FLUX.2 klein 4B — the three registered endpoints, at the versions
+    // migration 0136 seeds
+    // -----------------------------------------------------------------------
+
+    /**
+     * Transcribed from the published Replicate schemas captured on 2026-09-12
+     * (issue #566 comment, evidence state `documented`). The three endpoints
+     * are three DIFFERENT models that happen to share a prompt/reference shape,
+     * and the whole point of probing each at its own version is that their
+     * control surfaces differ: the distilled endpoint has `go_fast` and no
+     * guidance, the ordinary base has both, and `-base-lora` has neither and
+     * carries the array LoRA pair instead. A fixture that mixed them would seed
+     * a control onto a row whose version declares no such field — a provider
+     * rejection at spend time, on a row that looked fine when it was written.
+     *
+     * These four properties are byte-identical across all three captures,
+     * `x-order` included, so they are shared rather than transcribed three
+     * times; every property that differs in ANY respect is written out per
+     * endpoint below.
+     */
+    const KLEIN_PROMPT = {
+      type: "string",
+      title: "Prompt",
+      "x-order": 0,
+      description: "Text prompt for image generation.",
+    };
+    const KLEIN_IMAGES = {
+      type: "array",
+      items: { type: "string", format: "uri" },
+      title: "Images",
+      default: [],
+      "x-order": 1,
+      // The cap that `referenceCap`'s `Maximum N images` pattern exists for.
+      // Before it this read as the conservative default of 3.
+      description:
+        "List of input images for image-to-image generation. Maximum 5 images. Must be jpeg, png, gif, or webp.",
+    };
+    const KLEIN_ASPECT_RATIO = {
+      ...enumRef("aspect_ratio"),
+      default: "1:1",
+      "x-order": 2,
+      description:
+        "Aspect ratio for the generated image. Use 'match_input_image' to match the aspect ratio of the first input image.",
+    };
+    const KLEIN_OUTPUT_MEGAPIXELS = {
+      ...enumRef("output_megapixels"),
+      default: "1",
+      "x-order": 3,
+      description: "Resolution of the output image in megapixels",
+    };
+
+    /**
+     * The enum components all three versions reference. `aspect_ratio` carries
+     * TWELVE members and only eleven of them are shapes: `match_input_image` is
+     * a provider SENTINEL meaning "copy the first reference's proportions", and
+     * `parseAspectValue` drops it, so it never reaches `supportedAspects` and is
+     * never offered as a ratio. It still appears in the `aspect_ratio`
+     * DESCRIPTOR's `enumValues`, because a descriptor describes the provider's
+     * accepted set rather than Vesper's usable subset.
+     */
+    const KLEIN_ENUMS = {
+      aspect_ratio: [
+        "1:1",
+        "16:9",
+        "9:16",
+        "3:2",
+        "2:3",
+        "4:3",
+        "3:4",
+        "5:4",
+        "4:5",
+        "21:9",
+        "9:21",
+        "match_input_image",
+      ],
+      output_format: ["webp", "jpg", "png"],
+      output_megapixels: ["0.25", "0.5", "1", "2", "4"],
+    };
+    /** The eleven members that express a shape, in the order the enum declares them. */
+    const KLEIN_ASPECTS = KLEIN_ENUMS.aspect_ratio.filter((value) => value !== "match_input_image");
+
+    /**
+     * One endpoint's captured schema. The declared `Output` is an ARRAY of URIs
+     * on all three, carried here for fidelity only: `probeReplicateModel` reads
+     * `Input` and nothing else, so the `output` member of every record below is
+     * the capability contract's own `{arity:"single"}` default rather than a
+     * derivation — right for how Vesper consumes these endpoints (one image per
+     * run), but not a fact these schemas proved.
+     */
+    const kleinCapture = (properties: Record<string, unknown>) => {
+      const schema = openapi({ required: ["prompt"], properties, enums: KLEIN_ENUMS });
+      schema.components.schemas.Output = { type: "array", items: { type: "string", format: "uri" }, title: "Output" };
+      return schema;
+    };
+
+    /** The descriptors every klein 4B endpoint shares, in sorted position. */
+    const kleinAspectDescriptor = {
+      field: "aspect_ratio",
+      type: "enum",
+      required: false,
+      default: "1:1",
+      enumValues: KLEIN_ENUMS.aspect_ratio,
+      description:
+        "Aspect ratio for the generated image. Use 'match_input_image' to match the aspect ratio of the first input image.",
+      // The aspect key the detected mode owns — the render path writes it.
+      reserved: true,
+    };
+    const kleinImagesDescriptor = {
+      field: "images",
+      type: "uri",
+      required: false,
+      default: [],
+      description:
+        "List of input images for image-to-image generation. Maximum 5 images. Must be jpeg, png, gif, or webp.",
+      reserved: true,
+    };
+    const kleinOutputFormatDescriptor = {
+      field: "output_format",
+      type: "enum",
+      required: false,
+      // The PROVIDER's default. Vesper's own choice is the `webp` in the
+      // `outputFormat` column, which the payload builder writes — the two are
+      // deliberately different values and this one is not Vesper's.
+      default: "jpg",
+      enumValues: ["webp", "jpg", "png"],
+      description: "Format of the output images",
+      reserved: false,
+    };
+    const kleinOutputMegapixelsDescriptor = {
+      field: "output_megapixels",
+      type: "enum",
+      required: false,
+      default: "1",
+      enumValues: ["0.25", "0.5", "1", "2", "4"],
+      description: "Resolution of the output image in megapixels",
+      // NOT a control. `resolutionTier` derives from a `size` enum bearing
+      // tier names, and these endpoints declare no `size` at all, so this
+      // stays a raw Advanced input an admin may set to a declared member.
+      reserved: false,
+    };
+    const kleinOutputQualityDescriptor = {
+      field: "output_quality",
+      type: "integer",
+      required: false,
+      default: 95,
+      minimum: 0,
+      maximum: 100,
+      description:
+        "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs.",
+      // Reserved because `deriveExtraInput` pins it — a raw bag value naming it
+      // would overlay a reviewed pin.
+      reserved: true,
+    };
+    const kleinPromptDescriptor = {
+      field: "prompt",
+      type: "string",
+      required: true,
+      description: "Text prompt for image generation.",
+      reserved: true,
+    };
+    const kleinSafetyDescriptor = {
+      field: "disable_safety_checker",
+      type: "boolean",
+      required: false,
+      default: false,
+      description: "Disable safety checker for generated images.",
+      // Reserved twice over: the runtime reserved list names it unconditionally
+      // and `extraInput` pins it. The deployment's `disableSafetyChecker()`
+      // setting decides the value at render time; no per-run bypass exists.
+      reserved: true,
+    };
+    const kleinSeedDescriptor = {
+      field: "seed",
+      type: "integer",
+      required: false,
+      // Nullable with no declared bounds — the binding carries no range either.
+      description: "Random seed. Set for reproducible generation",
+      reserved: true,
+    };
+    const kleinGoFastDescriptor = {
+      field: "go_fast",
+      type: "boolean",
+      required: false,
+      default: false,
+      description: "Run faster predictions with additional optimizations.",
+      reserved: true,
+    };
+
+    it("derives the FLUX.2 klein 4B row and capability record that migration 0136 seeds", async () => {
+      // `black-forest-labs/flux-2-klein-4b` at version 8e9c42d7…, the DISTILLED
+      // endpoint: it declares `go_fast` and NO `guidance`, which is the one
+      // schema difference that separates it from `-base` below. Asserted whole
+      // and as a literal because drizzle/0136_flux-2-klein-4b.sql seeds exactly
+      // these columns and exactly this `advanced_capabilities` JSON, and the
+      // admin version card diffs the stored record against a fresh probe — a
+      // hand-typed row that disagreed would show as a phantom version diff on a
+      // row nobody touched.
+      stubFetch(() => ({
+        name: "flux-2-klein-4b",
+        owner: "black-forest-labs",
+        // Official, so the row keeps the BARE slug and the pin lives in
+        // `probed_version_id`: the bare-slug prediction endpoint is
+        // official-models-only.
+        is_official: true,
+        latest_version: {
+          id: "8e9c42d77b10a2a41af823ac4500f7545be6ebc4e745830fc3f3de10de200542",
+          openapi_schema: kleinCapture({
+            seed: {
+              type: "integer",
+              title: "Seed",
+              "x-order": 4,
+              nullable: true,
+              description: "Random seed. Set for reproducible generation",
+            },
+            images: KLEIN_IMAGES,
+            prompt: KLEIN_PROMPT,
+            go_fast: {
+              type: "boolean",
+              title: "Go Fast",
+              default: false,
+              "x-order": 5,
+              description: "Run faster predictions with additional optimizations.",
+            },
+            aspect_ratio: KLEIN_ASPECT_RATIO,
+            output_format: {
+              ...enumRef("output_format"),
+              default: "jpg",
+              "x-order": 6,
+              description: "Format of the output images",
+            },
+            output_quality: {
+              type: "integer",
+              title: "Output Quality",
+              default: 95,
+              maximum: 100,
+              minimum: 0,
+              "x-order": 7,
+              description:
+                "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs.",
+            },
+            output_megapixels: KLEIN_OUTPUT_MEGAPIXELS,
+            disable_safety_checker: {
+              type: "boolean",
+              title: "Disable Safety Checker",
+              default: false,
+              "x-order": 8,
+              description: "Disable safety checker for generated images.",
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("black-forest-labs/flux-2-klein-4b");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe).toEqual({
+        slug: "black-forest-labs/flux-2-klein-4b",
+        isOfficial: true,
+        // The DERIVED label. Migration 0136 seeds the curated "FLUX.2 klein 4B"
+        // instead, which creates no version diff: `label` is outside
+        // `imageModelReprobeFields`, so a re-probe never rewrites it.
+        label: "Flux 2 Klein 4b",
+        versionId: "8e9c42d77b10a2a41af823ac4500f7545be6ebc4e745830fc3f3de10de200542",
+        // Only `prompt` is required, so it generates; `images` exists, so it edits.
+        canGenerate: true,
+        canEdit: true,
+        referenceField: "images",
+        referenceArity: "array",
+        // From "Maximum 5 images" in the field description. No schema here
+        // declares `maxItems`, so without that prose pattern this is 3.
+        maxReferences: 5,
+        aspectMode: "aspect_ratio",
+        // The sentinel is gone: eleven shapes, in schema order, and a native 3:4.
+        supportedAspects: KLEIN_ASPECTS,
+        // Vesper's preference over the provider's `jpg` default.
+        outputFormat: "webp",
+        extraInput: { disable_safety_checker: true, output_quality: 95, go_fast: true },
+        advancedCapabilities: {
+          controls: {
+            seed: { field: "seed", type: "integer" },
+            fastMode: { field: "go_fast", type: "boolean" },
+          },
+          additionalImageInputs: [],
+          output: { arity: "single", supportsMultiple: false },
+          knownInputFields: [
+            "aspect_ratio",
+            "disable_safety_checker",
+            "go_fast",
+            "images",
+            "output_format",
+            "output_megapixels",
+            "output_quality",
+            "prompt",
+            "seed",
+          ],
+          providerInputs: [
+            kleinAspectDescriptor,
+            kleinSafetyDescriptor,
+            kleinGoFastDescriptor,
+            kleinImagesDescriptor,
+            kleinOutputFormatDescriptor,
+            kleinOutputMegapixelsDescriptor,
+            kleinOutputQualityDescriptor,
+            kleinPromptDescriptor,
+            kleinSeedDescriptor,
+          ],
+        },
+      });
+      // Called out on their own because they are the checklist items: five
+      // references from prose, the sentinel excluded from the usable shapes but
+      // kept in the descriptor's accepted set, and no guidance control on the
+      // distilled endpoint.
+      expect(result.probe.maxReferences).toBe(5);
+      expect(result.probe.supportedAspects).not.toContain("match_input_image");
+      expect(result.probe.advancedCapabilities.controls.guidance).toBeUndefined();
+      expect(result.probe.advancedCapabilities.controls.resolutionTier).toBeUndefined();
+    });
+
+    it("derives the FLUX.2 klein 4B Base row and capability record that migration 0136 seeds", async () => {
+      // `black-forest-labs/flux-2-klein-4b-base` at version 2289efa5…. The only
+      // endpoint of the three that declares `guidance`, and the only one whose
+      // capability record therefore binds the normalized guidance control —
+      // asking the other two for a guidance value is refused before spend.
+      stubFetch(() => ({
+        name: "flux-2-klein-4b-base",
+        owner: "black-forest-labs",
+        is_official: true,
+        latest_version: {
+          id: "2289efa5ebba21f5322ba1b73ac92bb6fec9f34bafc08e0c26f465dac6f8b465",
+          openapi_schema: kleinCapture({
+            seed: {
+              type: "integer",
+              title: "Seed",
+              "x-order": 6,
+              nullable: true,
+              description: "Random seed. Set for reproducible generation",
+            },
+            images: KLEIN_IMAGES,
+            prompt: KLEIN_PROMPT,
+            go_fast: {
+              type: "boolean",
+              title: "Go Fast",
+              default: false,
+              "x-order": 5,
+              description: "Run faster predictions with additional optimizations.",
+            },
+            guidance: {
+              type: "number",
+              title: "Guidance",
+              default: 4,
+              maximum: 10,
+              minimum: 1,
+              "x-order": 4,
+              description:
+                "Classifier-free guidance scale. Higher values produce images more closely related to the prompt.",
+            },
+            aspect_ratio: KLEIN_ASPECT_RATIO,
+            output_format: {
+              ...enumRef("output_format"),
+              default: "jpg",
+              "x-order": 7,
+              description: "Format of the output images",
+            },
+            output_quality: {
+              type: "integer",
+              title: "Output Quality",
+              default: 95,
+              maximum: 100,
+              minimum: 0,
+              "x-order": 8,
+              description:
+                "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs.",
+            },
+            output_megapixels: KLEIN_OUTPUT_MEGAPIXELS,
+            disable_safety_checker: {
+              type: "boolean",
+              title: "Disable Safety Checker",
+              default: false,
+              "x-order": 9,
+              description: "Disable safety checker for generated images.",
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("black-forest-labs/flux-2-klein-4b-base");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe).toEqual({
+        slug: "black-forest-labs/flux-2-klein-4b-base",
+        isOfficial: true,
+        label: "Flux 2 Klein 4b Base",
+        versionId: "2289efa5ebba21f5322ba1b73ac92bb6fec9f34bafc08e0c26f465dac6f8b465",
+        canGenerate: true,
+        canEdit: true,
+        referenceField: "images",
+        referenceArity: "array",
+        maxReferences: 5,
+        aspectMode: "aspect_ratio",
+        supportedAspects: KLEIN_ASPECTS,
+        outputFormat: "webp",
+        extraInput: { disable_safety_checker: true, output_quality: 95, go_fast: true },
+        advancedCapabilities: {
+          controls: {
+            seed: { field: "seed", type: "integer" },
+            // The declared range, carried verbatim — the first guidance alias
+            // in the chain, so no `guidance_scale`/`cfg` fallback is consulted.
+            guidance: { field: "guidance", type: "number", minimum: 1, maximum: 10 },
+            fastMode: { field: "go_fast", type: "boolean" },
+          },
+          additionalImageInputs: [],
+          output: { arity: "single", supportsMultiple: false },
+          knownInputFields: [
+            "aspect_ratio",
+            "disable_safety_checker",
+            "go_fast",
+            "guidance",
+            "images",
+            "output_format",
+            "output_megapixels",
+            "output_quality",
+            "prompt",
+            "seed",
+          ],
+          providerInputs: [
+            kleinAspectDescriptor,
+            kleinSafetyDescriptor,
+            kleinGoFastDescriptor,
+            {
+              field: "guidance",
+              type: "number",
+              required: false,
+              default: 4,
+              minimum: 1,
+              maximum: 10,
+              description:
+                "Classifier-free guidance scale. Higher values produce images more closely related to the prompt.",
+              // Control-bound, so the raw bag may not reach it.
+              reserved: true,
+            },
+            kleinImagesDescriptor,
+            kleinOutputFormatDescriptor,
+            kleinOutputMegapixelsDescriptor,
+            kleinOutputQualityDescriptor,
+            kleinPromptDescriptor,
+            kleinSeedDescriptor,
+          ],
+        },
+      });
+      expect(result.probe.maxReferences).toBe(5);
+      expect(result.probe.supportedAspects).not.toContain("match_input_image");
+    });
+
+    it("derives the FLUX.2 klein 4B Base LoRA row and capability record that migration 0136 seeds", async () => {
+      // `black-forest-labs/flux-2-klein-4b-base-lora` at version c8ca755d…, the
+      // FULL captured schema. It replaces an earlier partial fixture that
+      // carried this real version id while transcribing only four of the ten
+      // declared properties: a fixture labelled with a version id has to be that
+      // version's whole Input, or the record it "proves" is not the record the
+      // migration seeds. The general array-LoRA shape case above keeps its
+      // synthetic `v1` id precisely because it is shape-only.
+      //
+      // This endpoint declares NEITHER `go_fast` NOR `guidance`, so its
+      // `extra_input` is two keys rather than three and it binds no fast-mode
+      // control — the difference a shared "klein" fixture would have erased.
+      stubFetch(() => ({
+        name: "flux-2-klein-4b-base-lora",
+        owner: "black-forest-labs",
+        is_official: true,
+        latest_version: {
+          id: "c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc",
+          openapi_schema: kleinCapture({
+            seed: {
+              type: "integer",
+              title: "Seed",
+              "x-order": 4,
+              nullable: true,
+              description: "Random seed. Set for reproducible generation",
+            },
+            images: KLEIN_IMAGES,
+            prompt: KLEIN_PROMPT,
+            lora_scales: {
+              type: "array",
+              items: { type: "number" },
+              title: "Lora Scales",
+              "x-order": 6,
+              nullable: true,
+              description:
+                "Scales for each LoRA as a list of floats. Must match the number of lora_weights. Defaults to 1.0 for each if not provided.",
+            },
+            aspect_ratio: KLEIN_ASPECT_RATIO,
+            lora_weights: {
+              type: "array",
+              items: { type: "string" },
+              title: "Lora Weights",
+              "x-order": 5,
+              nullable: true,
+              description:
+                "LoRA weights as a list of URLs. Supports ComfyUI and native Flux Klein format LoRAs. ComfyUI LoRAs are automatically converted.",
+            },
+            output_format: {
+              ...enumRef("output_format"),
+              default: "jpg",
+              "x-order": 7,
+              description: "Format of the output images",
+            },
+            output_quality: {
+              type: "integer",
+              title: "Output Quality",
+              default: 95,
+              maximum: 100,
+              minimum: 0,
+              "x-order": 8,
+              description:
+                "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs.",
+            },
+            output_megapixels: KLEIN_OUTPUT_MEGAPIXELS,
+            disable_safety_checker: {
+              type: "boolean",
+              title: "Disable Safety Checker",
+              default: false,
+              "x-order": 9,
+              description: "Disable safety checker for generated images.",
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("black-forest-labs/flux-2-klein-4b-base-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe).toEqual({
+        slug: "black-forest-labs/flux-2-klein-4b-base-lora",
+        isOfficial: true,
+        label: "Flux 2 Klein 4b Base Lora",
+        versionId: "c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc",
+        canGenerate: true,
+        canEdit: true,
+        referenceField: "images",
+        referenceArity: "array",
+        maxReferences: 5,
+        aspectMode: "aspect_ratio",
+        supportedAspects: KLEIN_ASPECTS,
+        outputFormat: "webp",
+        // Two keys, not three: no `go_fast` is declared, and pinning a key this
+        // version does not own would fail every render on an unknown input.
+        extraInput: { disable_safety_checker: true, output_quality: 95 },
+        advancedCapabilities: {
+          controls: {
+            seed: { field: "seed", type: "integer" },
+            // The ARRAY pair (#563): both sides `arity: "array"`, `type` naming
+            // the ELEMENT type. No range — "Defaults to 1.0 for each" is prose,
+            // and a bound is only ever read from `items.minimum`/`maximum`.
+            loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+            loraScale: { field: "lora_scales", type: "number", arity: "array" },
+          },
+          additionalImageInputs: [],
+          output: { arity: "single", supportsMultiple: false },
+          knownInputFields: [
+            "aspect_ratio",
+            "disable_safety_checker",
+            "images",
+            "lora_scales",
+            "lora_weights",
+            "output_format",
+            "output_megapixels",
+            "output_quality",
+            "prompt",
+            "seed",
+          ],
+          providerInputs: [
+            kleinAspectDescriptor,
+            kleinSafetyDescriptor,
+            kleinImagesDescriptor,
+            {
+              field: "lora_scales",
+              // A list of NUMBERS, so `referenceArityOf` does not claim it and
+              // the descriptor type is `array` rather than `uri`.
+              type: "array",
+              required: false,
+              description:
+                "Scales for each LoRA as a list of floats. Must match the number of lora_weights. Defaults to 1.0 for each if not provided.",
+              reserved: true,
+            },
+            {
+              field: "lora_weights",
+              // A list of plain strings — `items.format` is absent, so this is
+              // not a URI input either, and the raw bag has no scalar spelling
+              // for it. The curated LoRA library is the only path to these.
+              type: "array",
+              required: false,
+              description:
+                "LoRA weights as a list of URLs. Supports ComfyUI and native Flux Klein format LoRAs. ComfyUI LoRAs are automatically converted.",
+              reserved: true,
+            },
+            kleinOutputFormatDescriptor,
+            kleinOutputMegapixelsDescriptor,
+            kleinOutputQualityDescriptor,
+            kleinPromptDescriptor,
+            kleinSeedDescriptor,
+          ],
+        },
+      });
+      expect(result.probe.maxReferences).toBe(5);
+      // The two controls the sibling endpoints have and this one does not.
+      expect(result.probe.advancedCapabilities.controls.fastMode).toBeUndefined();
+      expect(result.probe.advancedCapabilities.controls.guidance).toBeUndefined();
     });
   });
 

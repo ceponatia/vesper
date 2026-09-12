@@ -9,6 +9,7 @@ import {
 } from "../models/image-model-profiles";
 import {
   compileProfileRenderPlan,
+  loraWireFieldBreach,
   MAX_TRIAL_PREDICTION_MS,
   pinnedImageModelVersion,
   TRIAL_FALLBACK_PREDICTION_MS,
@@ -794,6 +795,149 @@ describe("a resolved LoRA", () => {
         reason: "reserved",
       });
     });
+  });
+
+  /**
+   * The array wire shape, mirrored end to end: a `-base-lora` endpoint's
+   * `lora_weights`/`lora_scales` fields. Same claims as the scalar suite
+   * above — a resolved LoRA owns its two bound fields, an override cannot
+   * replace them, and a version missing (or only half-exposing) the pair
+   * sends nothing — proven again because the mapper takes a different branch
+   * for `arity: "array"` and a defect there would not show up in the scalar
+   * cases.
+   */
+  describe("the array wire shape (a FLUX.2 klein -base-lora endpoint)", () => {
+    const ARRAY_LORA_CAPABILITIES = {
+      controls: {
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" as const },
+        loraScale: { field: "lora_scales", type: "number", arity: "array" as const },
+      },
+      knownInputFields: ["lora_weights", "lora_scales"],
+    };
+
+    function arrayLoraPlan(over: Partial<CompileProfileRenderPlanInput> = {}): ProfileRenderPlan {
+      return compiledPlan({
+        model: model({ advancedCapabilities: ARRAY_LORA_CAPABILITIES }),
+        profile: profile(),
+        basePrompt: "change the outfit",
+        baseNegativePrompt: null,
+        safetyCheckerDisabled: true,
+        references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+        ...over,
+      });
+    }
+
+    it("sends the locator and the scale as singleton arrays on the fields this version declared", () => {
+      const compiled = arrayLoraPlan({ resolvedLora: binding });
+      expect(compiled.controlInput).toEqual({ lora_weights: ["owner/ink-wash-lora"], lora_scales: [0.8] });
+      expect(compiled.appliedControls.lora).toEqual({ id: "lora-1", scale: 0.8 });
+    });
+
+    it("drops an override colliding with a resolved array LoRA's own fields, and sends the binding verbatim", () => {
+      const compiled = arrayLoraPlan({
+        profile: profile({ providerOverrides: { lora_weights: "owner/other-lora", lora_scales: [4] } }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput.lora_weights).toEqual(["owner/ink-wash-lora"]);
+      expect(compiled.controlInput.lora_scales).toEqual([0.8]);
+      expect(compiled.appliedControls.lora).toEqual({ id: "lora-1", scale: 0.8 });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_weights", reason: "reserved" });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_scales", reason: "reserved" });
+
+      // The fields stay ordinary advanced inputs when no LoRA is resolved.
+      const unresolved = arrayLoraPlan({ profile: profile({ providerOverrides: { lora_weights: ["owner/other-lora"] } }) });
+      expect(unresolved.controlInput.lora_weights).toEqual(["owner/other-lora"]);
+    });
+
+    it("does not record an array LoRA the version's two fields disagree on", () => {
+      // An array `lora_weights` beside a SCALAR `lora_scale` (the mismatched-arity
+      // shape, not simply a missing field) is not a pair `resolveImageLoraBindingPair`
+      // recognizes, so the plan must not claim the LoRA at all.
+      const compiled = arrayLoraPlan({
+        model: model({
+          advancedCapabilities: {
+            controls: {
+              loraWeights: { field: "lora_weights", type: "string", arity: "array" as const },
+              loraScale: { field: "lora_scale", type: "number" },
+            },
+            knownInputFields: ["lora_weights", "lora_scale"],
+          },
+        }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput).toEqual({});
+      expect(compiled.appliedControls.lora).toBeUndefined();
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora", reason: "no_binding" });
+    });
+
+    it("does not record an array LoRA whose mapped field the reserved filter removed", () => {
+      const compiled = arrayLoraPlan({
+        model: model({ referenceField: "lora_weights", advancedCapabilities: ARRAY_LORA_CAPABILITIES }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput).toEqual({ lora_scales: [0.8] });
+      expect(compiled.appliedControls.lora).toBeUndefined();
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({
+        control: "lora_weights",
+        reason: "reserved",
+      });
+    });
+  });
+});
+
+/**
+ * `loraWireFieldBreach` directly, exported `@internal` for exactly this
+ * purpose. It exists because `compileProfileRenderPlan` cannot reach it in a
+ * broken state: the mapper and this invariant read the SAME resolved model
+ * binding, so a payload the mapper actually built can never disagree with
+ * what this function expects — every case below has to be constructed by
+ * hand, standing in for a future regression (a mapper that stops wrapping
+ * correctly, an override that reaches a LoRA field some other way) rather
+ * than a request `compileProfileRenderPlan` could receive today.
+ */
+describe("loraWireFieldBreach", () => {
+  const EXPECTED = "owner/style-lora";
+
+  it.each([
+    ["undefined", undefined, "carries no array"],
+    ["null", null, "carries no array"],
+    ["a bare scalar instead of an array", EXPECTED, "carries no array"],
+    // The defect this row kills: inverting `value.length !== 1` to
+    // `=== 1` (or dropping the length check entirely) would let an EMPTY
+    // array — no LoRA at all — pass as a correctly applied one.
+    ["an empty array", [], "carries an array of 0 entries, not exactly one"],
+    // The mirror defect: the same inverted or missing length check would also
+    // let a STACKED array — more than the one curated LoRA this render
+    // resolved — pass silently.
+    ["an array of two entries", [EXPECTED, EXPECTED], "carries an array of 2 entries, not exactly one"],
+    ["a singleton array holding an empty string", [""], "carries a non-finite or empty entry"],
+    ["a singleton array holding NaN", [Number.NaN], "carries a non-finite or empty entry"],
+    ["a singleton array holding Infinity", [Number.POSITIVE_INFINITY], "carries a non-finite or empty entry"],
+    [
+      "a singleton array holding a different value than resolved",
+      ["owner/some-other-lora"],
+      "carries a different value than the resolved binding's own",
+    ],
+  ])("refuses an array-shaped field that is %s", (_description, value, expectedBreach) => {
+    expect(loraWireFieldBreach("array", value, EXPECTED)).toBe(expectedBreach);
+  });
+
+  it("accepts a singleton array holding exactly the resolved value", () => {
+    expect(loraWireFieldBreach("array", [EXPECTED], EXPECTED)).toBeNull();
+  });
+
+  it.each([
+    ["undefined", undefined, "carries no usable value"],
+    ["null", null, "carries no usable value"],
+    ["an empty string", "", "carries no usable value"],
+    ["NaN", Number.NaN, "carries no usable value"],
+    ["a different value than resolved", "owner/some-other-lora", "carries a different value than the resolved binding's own"],
+  ])("refuses a scalar-shaped field that is %s", (_description, value, expectedBreach) => {
+    expect(loraWireFieldBreach("single", value, EXPECTED)).toBe(expectedBreach);
+  });
+
+  it("accepts a scalar field holding exactly the resolved value", () => {
+    expect(loraWireFieldBreach("single", EXPECTED, EXPECTED)).toBeNull();
   });
 });
 

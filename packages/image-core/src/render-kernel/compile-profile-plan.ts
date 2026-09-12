@@ -3,6 +3,7 @@ import {
   mapImageRenderControls,
   validateProviderOverrides,
 } from "../capabilities/image-control-mapping";
+import { resolveImageLoraBindingPair, type ImageLoraBindingPair } from "../capabilities/image-model-capabilities";
 import { reservedImageInputFields } from "../capabilities/reserved-image-input-fields";
 import type { IdentityReferenceRole } from "../identity/identity-pack";
 import type { TrialResolvedControls } from "../identity/identity-pack-trial";
@@ -781,10 +782,12 @@ type LoraWireRefusal = Extract<CompileProfileRenderPlanResult, { reason: "lora_b
  * and the reserved filter takes its `appliedControls` entry with it), and this
  * gate is what makes that removal load-bearing rather than incidental.
  *
- * `missingField` names the PROVIDER field when the version declares one and the
- * binding name when it declares none at all — those are the two different fixes:
- * find out why the payload lost a field it had, or stop expecting a LoRA from a
- * version that has nowhere to put one.
+ * `missingField` names the PROVIDER field when the version declares one, the
+ * binding slot (`"loraWeights"`/`"loraScale"`) when it declares none at all,
+ * and `"loraPair"` when both bindings exist but disagree in shape — three
+ * different fixes: find out why the payload lost a field it had, stop
+ * expecting a LoRA from a version that has nowhere to put one, or re-probe a
+ * version whose two LoRA fields no longer agree on arity or element type.
  *
  * Presence is not the invariant — IDENTITY is (owner ruling 2026-08-24): the
  * payload's values must EQUAL the resolved binding's own locator and scale,
@@ -808,66 +811,116 @@ function loraWireInvariantBreach(
   if (applied === undefined) return null;
 
   const bindings = model.advancedCapabilities.controls;
-  const missingField = missingLoraWireField(bindings.loraWeights?.field, bindings.loraScale?.field, controlInput);
-  if (missingField !== null) {
+  // The one shared reading of a usable pair: both fields present, matching
+  // arity, right element types (`@vesper/image-core`'s capability module). A
+  // plan can only have recorded `appliedControls.lora` by way of a mapper that
+  // already required this same pair to exist, so a null pair HERE is not a
+  // configuration this render could have reached honestly — it means the model
+  // record changed out from under an already-mapped plan.
+  const pair = resolveImageLoraBindingPair(bindings.loraWeights, bindings.loraScale);
+  if (!pair) {
+    // A genuinely ABSENT side is named by its own slot; when both bindings
+    // exist but disagree in shape (mismatched arity, or the wrong element
+    // type on either side), neither `loraWeights` nor `loraScale` is
+    // "missing" — the pair itself is unusable, and `"loraPair"` says so
+    // rather than pointing at whichever field this ternary happened to check
+    // second.
+    const missingField =
+      bindings.loraWeights === undefined ? "loraWeights" : bindings.loraScale === undefined ? "loraScale" : "loraPair";
     return {
       ok: false,
       reason: "lora_binding_not_sent",
       missingField,
-      message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload carries no ${missingField}`,
+      message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the active version declares no usable LoRA weights/scale pair`,
     };
   }
-  if (resolvedLora !== undefined) {
-    const weightsField = bindings.loraWeights?.field;
-    const scaleField = bindings.loraScale?.field;
-    const mismatched =
-      weightsField !== undefined && controlInput[weightsField] !== resolvedLora.locator
-        ? weightsField
-        : scaleField !== undefined && controlInput[scaleField] !== resolvedLora.scale
-          ? scaleField
-          : null;
-    if (mismatched !== null) {
-      return {
-        ok: false,
-        reason: "lora_binding_not_sent",
-        missingField: mismatched,
-        message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload carries a different ${mismatched} than the resolved binding's own value`,
-      };
-    }
+
+  const weightsBreach = loraWireFieldBreach(pair.shape, controlInput[pair.weights.field], resolvedLora?.locator);
+  if (weightsBreach !== null) {
+    return {
+      ok: false,
+      reason: "lora_binding_not_sent",
+      missingField: pair.weights.field,
+      message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload's ${pair.weights.field} ${weightsBreach}`,
+    };
+  }
+  const scaleBreach = loraWireFieldBreach(pair.shape, controlInput[pair.scale.field], resolvedLora?.scale);
+  if (scaleBreach !== null) {
+    return {
+      ok: false,
+      reason: "lora_binding_not_sent",
+      missingField: pair.scale.field,
+      message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload's ${pair.scale.field} ${scaleBreach}`,
+    };
   }
   return null;
 }
 
 /**
- * Which half of the binding is missing from the payload, or null when both are
- * really there. `undefined` for a field name means the version declares no such
- * binding, which is reported under the binding's own name.
+ * Whether one LoRA field's payload value fails the final-wire invariant, and
+ * why — or null when it is exactly the correctly-shaped, correctly-valued send.
+ *
+ * `shape` decides what "correctly shaped" means: a `scalar` binding must carry
+ * the value itself, verbatim; an `array` binding must carry a length-exactly-1
+ * array whose single element is that value — a `-base-lora` endpoint's
+ * singleton `lora_weights`/`lora_scales` lists, never a stack. `expected` is
+ * `undefined` exactly when {@link CompileProfileRenderPlanInput.resolvedLora}
+ * was not supplied to this compile (a defensive path with no independent value
+ * to compare against); presence and shape still apply.
+ *
+ * Every one of these is a payload the provider would not read as "this LoRA,
+ * at this strength": an empty array reads as no LoRA, two entries stack a
+ * second one nothing curated, a scalar where the version declares an array (or
+ * the reverse) is a shape the provider will reject or silently coerce, and
+ * `NaN`/`Infinity` is not a strength any provider blends at.
+ *
+ * `compileProfileRenderPlan` can only reach the array branches here through a
+ * mapper that already required the SAME resolved pair to exist, so a
+ * deliberately malformed payload never reaches this function through the
+ * public compile path — the mapper and this invariant read the same model
+ * record and cannot honestly disagree. That makes the table below the only
+ * place these branches are exercised directly.
+ *
+ * @internal — exported for its table test only, not part of the package's
+ * public API (not re-exported from `index.ts`).
  */
-function missingLoraWireField(
-  weightsField: string | undefined,
-  scaleField: string | undefined,
-  controlInput: Record<string, unknown>,
+export function loraWireFieldBreach(
+  shape: ImageLoraBindingPair["shape"],
+  value: unknown,
+  expected: string | number | undefined,
 ): string | null {
-  if (weightsField === undefined) return "loraWeights";
-  if (scaleField === undefined) return "loraScale";
-  if (!carriesLoraWireValue(controlInput, weightsField)) return weightsField;
-  if (!carriesLoraWireValue(controlInput, scaleField)) return scaleField;
+  if (shape === "array") {
+    if (!Array.isArray(value)) return "carries no array";
+    if (value.length !== 1) return `carries an array of ${String(value.length)} entries, not exactly one`;
+    // `Array.isArray` narrows `unknown` to `any[]`, and destructuring an `any`
+    // element is an unsafe assignment under type-aware lint. Read the sole
+    // element explicitly typed `unknown` instead — the length check above
+    // already guarantees it exists.
+    const entry: unknown = (value as unknown[])[0];
+    if (!isSendableLoraValue(entry)) return "carries a non-finite or empty entry";
+    if (expected !== undefined && entry !== expected) {
+      return "carries a different value than the resolved binding's own";
+    }
+    return null;
+  }
+  if (!isSendableLoraValue(value)) return "carries no usable value";
+  if (expected !== undefined && value !== expected) {
+    return "carries a different value than the resolved binding's own";
+  }
   return null;
 }
 
 /**
- * Whether the payload really carries this field — present AND holding a value.
- *
- * A key set to null or undefined is not a weaker version of "sent", it is the
- * same as absent: the provider is handed nothing to fetch and no strength to
- * blend, and the render comes back as if no LoRA existed. The route that
- * produces it is a profile's `providerOverrides` writing over a mapped value
- * (overrides merge last, by design), which is exactly the case where the record
- * and the payload part company without anything else noticing.
+ * A value the provider can actually use: a non-empty string, or a finite
+ * number — never `null`/`undefined`/`NaN`/`±Infinity`, and never `""`. A
+ * resolved locator is schema-guaranteed non-empty (`imageLoraRenderBindingSchema`'s
+ * `locator: z.string().min(1)`), so an empty string here can only be a
+ * replaced or corrupted value, and the "non-finite or empty entry" message
+ * above is exactly what this check must make true.
  */
-function carriesLoraWireValue(controlInput: Record<string, unknown>, field: string): boolean {
-  const value = controlInput[field];
-  return value !== undefined && value !== null;
+function isSendableLoraValue(value: unknown): value is string | number {
+  if (typeof value === "string") return value.length > 0;
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 /**

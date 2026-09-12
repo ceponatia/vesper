@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { qwenImage2512, qwenImage3Edit, qwenImage3TextToImage, qwenImageEdit2511 } from "./families";
+import {
+  fluxKleinBase,
+  fluxKleinBaseLora,
+  fluxKleinDistilled,
+  qwenImage2512,
+  qwenImage3Edit,
+  qwenImage3TextToImage,
+  qwenImageEdit2511,
+} from "./families";
 import { adapterForImageModel } from "./registry";
 import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG, imageModelProvider } from "./provider";
 
@@ -10,6 +18,10 @@ import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG, imageModelProvider } from "./
  * exact operation endpoints with a third path segment. The registry must resolve
  * both forms without prefix inheritance: similarly named siblings are separate
  * endpoints and a retired Replicate Qwen 3 slug must not inherit fal behavior.
+ *
+ * The klein block below (#567) protects the companion requirement: six EXACT
+ * base slugs resolve, `black-forest-labs/flux-2-klein-` is never matched as a
+ * prefix, and the unrelated production Flux checkpoints keep answering null.
  */
 describe("adapterForImageModel", () => {
   it("resolves every registered Qwen endpoint", () => {
@@ -45,9 +57,44 @@ describe("adapterForImageModel", () => {
     // Retired Replicate Qwen Image 3 identities must not inherit the fal endpoint adapters.
     "alibaba/qwen-image-3",
     "alibaba/qwen-image-3-pro",
+    // The production Flux checkpoints are a separate, unmigrated family (#340):
+    // sharing the word "flux" with klein must not resolve any adapter for them.
+    "flux-dev",
+    "flux-2-dev",
+    "flux-2-pro",
+    "aisha-ai-official/nsfw-flux-dev",
     "",
   ])("answers null for %s, which is the ordinary no-special-behavior case", (slug) => {
     expect(adapterForImageModel(slug)).toBeNull();
+  });
+});
+
+describe("adapterForImageModel: FLUX.2 klein (#567)", () => {
+  it("resolves all six exact bare klein slugs, with 4B/9B twins sharing one variant object", () => {
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b")).toBe(fluxKleinDistilled);
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein-9b")).toBe(fluxKleinDistilled);
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b-base")).toBe(fluxKleinBase);
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein-9b-base")).toBe(fluxKleinBase);
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b-base-lora")).toBe(fluxKleinBaseLora);
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein-9b-base-lora")).toBe(fluxKleinBaseLora);
+  });
+
+  it("resolves pinned owner/name:version forms through the existing base-slug helper, with no new code", () => {
+    expect(
+      adapterForImageModel(
+        "black-forest-labs/flux-2-klein-4b:9f1c6c9c9a2a4e2fa6b6a4e6c9c1c6c9c9a2a4e2fa6b6a4e6c9c1c6c9c9a2a4e",
+      ),
+    ).toBe(fluxKleinDistilled);
+    expect(
+      adapterForImageModel(
+        "black-forest-labs/flux-2-klein-9b-base-lora:9f1c6c9c9a2a4e2fa6b6a4e6c9c1c6c9c9a2a4e2fa6b6a4e6c9c1c6c9c9a2a4e",
+      ),
+    ).toBe(fluxKleinBaseLora);
+  });
+
+  it("does not resolve any adapter for a broad flux- prefix, only the six exact klein slugs", () => {
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein")).toBeNull();
+    expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b-turbo")).toBeNull();
   });
 });
 

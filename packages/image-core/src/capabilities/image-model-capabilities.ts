@@ -184,16 +184,84 @@ export type ImageBindingArity = (typeof imageBindingArities)[number];
  * schemas state their range only in prose. Absent means "the provider did not
  * declare one", never "unbounded" — an out-of-range profile value is rejected at
  * save time rather than clamped into something the operator did not ask for.
+ *
+ * `arity` is ABSENT for every binding that is not the LoRA pair, and absent
+ * means `single` — the reading every stored capability record without the
+ * column already means, and the only reading `bindingAccepts`'s generic
+ * scalar transport can send. Only the probe's `loraWeights`/`loraScale`
+ * derivation ever writes `"array"`, for a version whose `-base-lora` endpoint
+ * declares `lora_weights`/`lora_scales` as singleton-list inputs
+ * (FLUX.2 klein) rather than the two scalar fields Qwen's edit endpoints
+ * declare. `type` still names the ELEMENT type in that case — `string` for
+ * weights, `number` for scale — never a new "array of X" primitive, so the
+ * rest of this contract (`bindingAccepts`, range checks) keeps judging one
+ * value per field and the mapper decides whether to wrap it.
  */
 export const imageInputBindingSchema = z.object({
   field: z.string().min(1),
   type: imageInputBindingTypeSchema,
+  arity: imageBindingAritySchema.optional(),
   required: z.boolean().optional(),
   minimum: z.number().optional(),
   maximum: z.number().optional(),
   enumValues: z.array(z.string()).optional(),
 });
 export type ImageInputBinding = z.infer<typeof imageInputBindingSchema>;
+
+/**
+ * The one shared reading of what makes a LoRA weights/scale pair usable — a
+ * fact this module owns because {@link imageInputBindingSchema} is where
+ * `arity` and the element `type` are defined, and because
+ * `@vesper/image-replicate` (the probe) and `@vesper/image-models` (the
+ * `lora` feature) both already depend on this package without depending on
+ * each other.
+ *
+ * Four callers consult this and must never grow a second, divergent
+ * definition: the control mapper (`image-control-mapping.ts`, deciding
+ * whether to wrap a resolved LoRA's values in singleton arrays), the
+ * final-wire invariant (`render-kernel/compile-profile-plan.ts`, deciding
+ * what a correctly-sent payload looks like), the library's mechanical
+ * compatibility check (`loras/image-loras.ts`'s `unreachable_configuration`
+ * branch), and `loraFeature()` in `@vesper/image-models`.
+ *
+ * A pair is usable in exactly two shapes, and nothing else:
+ *
+ * - **scalar** — both bindings absent-or-`"single"` arity, `loraWeights.type
+ *   === "string"`, `loraScale.type === "number"`. This is every LoRA-bound
+ *   row that exists today (Qwen's edit endpoints), and every row saved
+ *   before `arity` existed reads back exactly this shape.
+ * - **array** — both bindings `arity: "array"`, same two element types. This
+ *   is what a FLUX.2 klein `-base-lora` endpoint's singleton
+ *   `lora_weights`/`lora_scales` lists probe to.
+ *
+ * Anything else — one side missing, the two sides disagreeing on arity, or
+ * either side's element type wrong — is not a pair this contract can send,
+ * and the caller must treat the LoRA as unbound rather than sending half of
+ * it or guessing which shape was meant.
+ */
+export interface ImageLoraBindingPair {
+  /** `"single"` sends the resolved locator/scale verbatim; `"array"` wraps each in a one-element list. */
+  shape: ImageBindingArity;
+  weights: ImageInputBinding;
+  scale: ImageInputBinding;
+}
+
+export function resolveImageLoraBindingPair(
+  // `| null` alongside `| undefined` because the probe's own per-field
+  // readers (`stringBinding`, `numericBinding`, an array-element reader) each
+  // return `ImageInputBinding | null` for "this field is not that binding" —
+  // accepting both means every caller can pass its binding lookup straight
+  // through instead of normalizing `null` to `undefined` first.
+  weights: ImageInputBinding | null | undefined,
+  scale: ImageInputBinding | null | undefined,
+): ImageLoraBindingPair | null {
+  if (!weights || !scale) return null;
+  if (weights.type !== "string" || scale.type !== "number") return null;
+  const weightsArity: ImageBindingArity = weights.arity ?? "single";
+  const scaleArity: ImageBindingArity = scale.arity ?? "single";
+  if (weightsArity !== scaleArity) return null;
+  return { shape: weightsArity, weights, scale };
+}
 
 /**
  * One image-like input beyond the primary reference field. `required` is NOT

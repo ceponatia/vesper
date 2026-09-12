@@ -3,6 +3,7 @@ import {
   type ImageAdditionalImageInput,
   type ImageAspectMode,
   type ImageInputBinding,
+  type ImageLoraBindingPair,
   type ImageModelAdvancedCapabilities,
   imageModelAdvancedCapabilitiesSchema,
   type ImageModelControlBindings,
@@ -11,6 +12,7 @@ import {
   type ImageReferenceRole,
   type ImageUriBinding,
   parseAspectValue,
+  resolveImageLoraBindingPair,
 } from "@vesper/image-core";
 import { PROBE_TIMEOUT_MS } from "./config";
 import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
@@ -95,7 +97,15 @@ const propertySchema = z
     /** Inline enum members. Replicate usually routes enums through `allOf` + `$ref`
      * instead, so both spellings are read ({@link strictEnumValues}). */
     enum: z.array(z.unknown()).nullish(),
-    items: z.object({ type: z.string().nullish(), format: z.string().nullish() }).nullish(),
+    items: z
+      .object({
+        type: z.string().nullish(),
+        format: z.string().nullish(),
+        /** Element-level bounds, when the array schema declares them on `items` rather than only on the array itself. */
+        minimum: z.number().nullish(),
+        maximum: z.number().nullish(),
+      })
+      .nullish(),
     allOf: z.array(z.object({ $ref: z.string().nullish() })).nullish(),
   });
 
@@ -394,8 +404,11 @@ function deriveAdvancedCapabilities(
   const height = numericBinding(properties, "height");
   if (height?.type === "integer") controls.customHeight = height;
 
-  assign("loraWeights", stringBinding(properties, "lora_weights"));
-  assign("loraScale", numericBinding(properties, "lora_scale"));
+  const loraPair = deriveLoraBindingPair(properties);
+  if (loraPair) {
+    controls.loraWeights = loraPair.weights;
+    controls.loraScale = loraPair.scale;
+  }
 
   const additionalImageInputs = deriveAdditionalImageInputs(properties, required, referenceField);
 
@@ -479,6 +492,18 @@ function deriveProviderInputs(
     context.aspectField,
     "version",
     "disable_safety_checker",
+    // The three LoRA field names, UNCONDITIONALLY — never derived from
+    // `context.controls`, which only carries a field once a full, correctly
+    // shaped pair resolves (`resolveImageLoraBindingPair`). A version
+    // declaring `lora_weights` alone, or a mismatched scalar/array pair,
+    // binds NEITHER control, and before this fix that left the half pair's
+    // descriptor `reserved: false` — editable in the Generator's Advanced
+    // section, accepted by `validateProviderOverrides` (it is still in
+    // `knownInputFields`), and posted verbatim by an admin-typed value. The
+    // curated LoRA library is the only path to these fields, bound or not.
+    "lora_weights",
+    "lora_scale",
+    "lora_scales",
     // A generate-only model stores the fallback name "image" as its reference
     // field, and the runtime reserved list reserves it unconditionally — a
     // declared non-URI `image` property must not read as an editable input the
@@ -587,6 +612,56 @@ function booleanBinding(properties: Record<string, unknown>, field: string): Ima
 }
 
 /**
+ * A declared ARRAY input whose `items` are exactly `elementType`, as an
+ * `arity: "array"` binding carrying that element type — never a new "array of
+ * X" primitive of its own (`imageInputBindingTypes` stays the four scalar
+ * kinds plus enum). Element `minimum`/`maximum` are read only when the schema
+ * states them on `items` itself; a range mentioned only in `description` prose
+ * is not a declared bound, exactly like the scalar bindings above.
+ */
+function arrayElementBinding(
+  properties: Record<string, unknown>,
+  field: string,
+  elementType: "string" | "number",
+): ImageInputBinding | null {
+  const parsed = propertySchema.safeParse(properties[field]);
+  if (!parsed.success) return null;
+  const p = parsed.data;
+  const items = p.items;
+  if (p.type !== "array" || !items || items.type !== elementType) return null;
+  const binding: ImageInputBinding = { field, type: elementType, arity: "array" };
+  if (items.minimum != null) binding.minimum = items.minimum;
+  if (items.maximum != null) binding.maximum = items.maximum;
+  return binding;
+}
+
+/**
+ * The LoRA weights/scale pair this version declares, in whichever of the two
+ * shapes {@link resolveImageLoraBindingPair} recognizes — reusing that shared
+ * definition rather than a second local one, per the pair-shape rule the
+ * mapper and the final-wire invariant also follow.
+ *
+ * Field-name discovery stays here, in the probe, as it does for every other
+ * alias: the scalar pair is `lora_weights`/`lora_scale`, exactly as every
+ * Qwen edit endpoint declares it today. The array pair is
+ * `lora_weights`/`lora_scales` (plural) — a FLUX.2 klein `-base-lora`
+ * endpoint's singleton-list LoRA input — and the plural scale field name is
+ * itself part of what keeps the two shapes from being confused: a schema
+ * that pairs an array `lora_weights` with a SCALAR `lora_scale` matches
+ * neither reading (the scalar reading fails on `lora_weights`'s shape, the
+ * array reading finds no `lora_scales`), so it binds neither field — never a
+ * half-sent LoRA.
+ */
+function deriveLoraBindingPair(properties: Record<string, unknown>): ImageLoraBindingPair | null {
+  const scalar = resolveImageLoraBindingPair(stringBinding(properties, "lora_weights"), numericBinding(properties, "lora_scale"));
+  if (scalar) return scalar;
+  return resolveImageLoraBindingPair(
+    arrayElementBinding(properties, "lora_weights", "string"),
+    arrayElementBinding(properties, "lora_scales", "number"),
+  );
+}
+
+/**
  * An enum binding when the field's members resolve, a string binding when the
  * field is a plain string, absent otherwise. An `enum` binding always carries
  * its values: `bindingAccepts` fails a value-less enum closed, so recording one
@@ -666,8 +741,19 @@ function findReferenceField(properties: Record<string, unknown>): ReferenceField
 /**
  * How many references the model takes. `maxItems` is honoured when present, but
  * no model in the seeded set declares it — the caps live in prose ("List of
- * 1-14 images", "up to 9 images"), so those two phrasings are read here. The
- * result is a starting value the admin page can correct, never a guarantee.
+ * 1-14 images", "up to 9 images", "Maximum 5 images"), so those three
+ * phrasings are read here. The result is a starting value the admin page can
+ * correct, never a guarantee.
+ *
+ * The patterns are tried most specific first, each one whole rather than
+ * merged into one alternation: a description stating both a range and a
+ * maximum means two different things, and the range is the one describing the
+ * input. Nothing here is model-specific — a cap phrasing is a property of how
+ * a provider writes field descriptions, not of a slug, so `Maximum N images`
+ * reads the same on any schema using it. Without it the FLUX.2 klein 4B
+ * endpoints, whose `images` description says exactly that, fall to the
+ * conservative default of 3 and silently refuse the fourth and fifth
+ * reference the provider accepts.
  */
 function referenceCap(reference: ReferenceField): number {
   if (reference.arity === "single") return 1;
@@ -676,6 +762,8 @@ function referenceCap(reference: ReferenceField): number {
   if (range?.[2]) return clampCap(Number(range[2]));
   const upTo = /up to (\d+)\s+images/i.exec(reference.description);
   if (upTo?.[1]) return clampCap(Number(upTo[1]));
+  const maximum = /maximum (\d+)\s+images/i.exec(reference.description);
+  if (maximum?.[1]) return clampCap(Number(maximum[1]));
   return 3;
 }
 
