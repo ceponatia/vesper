@@ -20,11 +20,11 @@ Vesper registers no row for them (see [Not the 9B siblings](#not-the-9b-siblings
 Replicate publishes the 4B model as three endpoints. They share a prompt/reference shape and
 differ exactly where a payload has to get it right:
 
-| Endpoint                                     | Guidance          | Accelerated sampling | Runtime LoRA                        |
-| -------------------------------------------- | ----------------- | -------------------- | ----------------------------------- |
-| `black-forest-labs/flux-2-klein-4b`          | **none declared** | `go_fast`            | none declared                       |
-| `black-forest-labs/flux-2-klein-4b-base`     | `guidance`, 1–10  | `go_fast`            | none declared                       |
-| `black-forest-labs/flux-2-klein-4b-base-lora`| **none declared** | **none declared**    | `lora_weights` / `lora_scales` lists |
+| Endpoint                                      | Guidance          | Accelerated sampling | Runtime LoRA                         |
+| --------------------------------------------- | ----------------- | -------------------- | ------------------------------------ |
+| `black-forest-labs/flux-2-klein-4b`           | **none declared** | `go_fast`            | none declared                        |
+| `black-forest-labs/flux-2-klein-4b-base`      | `guidance`, 1–10  | `go_fast`            | none declared                        |
+| `black-forest-labs/flux-2-klein-4b-base-lora` | **none declared** | **none declared**    | `lora_weights` / `lora_scales` lists |
 
 This page is the middle row, and it is **the only one of the three that declares a guidance
 input**. That is the whole reason it is a separate registry row from the distilled

@@ -50,11 +50,11 @@ The edit adapter composes `lora`. Composing it states that the endpoint family c
 
 klein ships three DISTINCT endpoint variants per parameter size rather than one schema with optional fields, backed by the captured OpenAPI schemas ([#566](https://github.com/ceponatia/vesper/issues/566#issuecomment-5646491048)). 4B and 9B are parameter-count twins: for a given variant the schema and composed feature set are identical, so the registry maps both twin slugs to the same variant object (`packages/image-models/src/families/flux/klein.ts`) instead of duplicating the definition.
 
-| Variant | Twin slugs | Composed features | Family behavior |
-| --- | --- | --- | --- |
-| Distilled | `black-forest-labs/flux-2-klein-4b`, `black-forest-labs/flux-2-klein-9b` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle` | none |
-| Base | `black-forest-labs/flux-2-klein-4b-base`, `black-forest-labs/flux-2-klein-9b-base` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle` | none |
-| Base-LoRA | `black-forest-labs/flux-2-klein-4b-base-lora`, `black-forest-labs/flux-2-klein-9b-base-lora` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | none |
+| Variant   | Twin slugs                                                                                   | Composed features                                                                                                          | Family behavior |
+| --------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Distilled | `black-forest-labs/flux-2-klein-4b`, `black-forest-labs/flux-2-klein-9b`                     | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle`             | none            |
+| Base      | `black-forest-labs/flux-2-klein-4b-base`, `black-forest-labs/flux-2-klein-9b-base`           | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle` | none            |
+| Base-LoRA | `black-forest-labs/flux-2-klein-4b-base-lora`, `black-forest-labs/flux-2-klein-9b-base-lora` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle`                 | none            |
 
 No klein variant composes `negativePrompt`: none of the three captured schemas declares a negative-prompt input. The base-lora variant's `lora` binding is the ARRAY pair shape (`lora_weights`/`lora_scales` as matched singleton lists), the second shape `resolveImageLoraBindingPair` recognizes alongside the Qwen edit endpoints' scalar pair ([Features → LoRA](features/README.md#lora)).
 

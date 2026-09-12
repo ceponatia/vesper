@@ -267,18 +267,18 @@ variant object instead of duplicating the definition ([package README → regist
 adapters](../README.md#registered-flux2-klein-adapters)).
 
 | Feature          | Distilled (`4b`/`9b`) | Base (`4b-base`/`9b-base`) | Base-LoRA (`4b-base-lora`/`9b-base-lora`) |
-| ---------------- | :--------------------: | :-------------------------: | :-----------------------------------------: |
-| `prompt`         |          yes           |             yes              |                     yes                      |
-| `multiReference` |          yes           |             yes              |                     yes                      |
-| `aspectRatio`    |          yes           |             yes              |                     yes                      |
-| `seed`           |          yes           |             yes              |                     yes                      |
-| `fastMode`       |          yes           |             yes              |                      no                      |
-| `guidance`       |           no           |             yes              |                      no                      |
-| `lora`           |           no           |              no              |                     yes                      |
-| `outputFormat`   |          yes           |             yes              |                     yes                      |
-| `outputQuality`  |          yes           |             yes              |                     yes                      |
-| `safetyToggle`   |          yes           |             yes              |                     yes                      |
-| `negativePrompt` |           no           |              no              |                      no                      |
+| ---------------- | :-------------------: | :------------------------: | :---------------------------------------: |
+| `prompt`         |          yes          |            yes             |                    yes                    |
+| `multiReference` |          yes          |            yes             |                    yes                    |
+| `aspectRatio`    |          yes          |            yes             |                    yes                    |
+| `seed`           |          yes          |            yes             |                    yes                    |
+| `fastMode`       |          yes          |            yes             |                    no                     |
+| `guidance`       |          no           |            yes             |                    no                     |
+| `lora`           |          no           |             no             |                    yes                    |
+| `outputFormat`   |          yes          |            yes             |                    yes                    |
+| `outputQuality`  |          yes          |            yes             |                    yes                    |
+| `safetyToggle`   |          yes          |            yes             |                    yes                    |
+| `negativePrompt` |          no           |             no             |                    no                     |
 
 These are declared capabilities read from the captured schemas, not measured render quality and not a
 guarantee that every safety checker can be fully disabled. The base-lora variant's `lora` binding is the
@@ -287,12 +287,12 @@ ARRAY pair shape — `lora_weights`/`lora_scales` as matched singleton lists —
 above). No klein variant composes `preparePrompt`: the family is a bench-only onboarding with no
 source-backed prompt finding, and it does not reuse the production Flux checkpoints'
 `flux_dev_positive_replacement` dialect merely because both share the word FLUX. No variant composes an
-execution hint either, pending an actual measurement of the endpoint.
+execution hint; a hint requires a measurement of the actual endpoint.
 
 **Adapter lookup is not the same fact as an enabled database row.** Registering a klein slug in
 `IMAGE_MODEL_ADAPTERS` is code support for the behavior above; it does not itself register, enable, or
-authorize any model. No 9B `image_models` row exists today, and this composition does not add one —
-database registration is [#564](https://github.com/ceponatia/vesper/issues/564)'s decision. Only a
+authorize any model. No 9B `image_models` row is seeded; database registration is
+[#564](https://github.com/ceponatia/vesper/issues/564)'s decision, and this composition does not add one. Only a
 registered, enabled row actually renders, whatever adapters the lookup can resolve for its slug.
 
 [Back to `@vesper/image-models`](../README.md).

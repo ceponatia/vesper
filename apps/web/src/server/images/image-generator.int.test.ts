@@ -1413,6 +1413,8 @@ const KLEIN_DISTILLED_VERSION = "8e9c42d77b10a2a41af823ac4500f7545be6ebc4e745830
 const KLEIN_BASE_LORA_VERSION = "c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc";
 /** A curated LoRA for the klein LoRA arm — the bench fixture above names another model. */
 const KLEIN_LORA_ID = "imglorakleinbaseloraaaaa";
+/** A second curated LoRA, carrying a trigger word, for the prompt-addition case (#567). */
+const KLEIN_LORA_TRIGGER_ID = "imglorakleintriggeraaaaa";
 
 describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", () => {
   /**
@@ -1462,27 +1464,46 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
 
     // Curated for the LoRA arm specifically. Planted delete-first like every
     // other global registry fixture in this suite.
-    await db().delete(imageLoras).where(eq(imageLoras.id, KLEIN_LORA_ID));
+    await db().delete(imageLoras).where(inArray(imageLoras.id, [KLEIN_LORA_ID, KLEIN_LORA_TRIGGER_ID]));
     await db()
       .insert(imageLoras)
-      .values({
-        id: KLEIN_LORA_ID,
-        label: "Klein Base LoRA Fixture",
-        locatorType: "https_url",
-        locator: "https://example.test/klein-style.safetensors",
-        compatibleModelSlugs: [KLEIN_BASE_LORA_SLUG],
-        // Empty means "any version of a compatible slug", which is what keeps
-        // this fixture from pinning the assertion to today's version id.
-        compatibleVersionIds: [],
-        defaultScale: 1,
-        minimumScale: 0.5,
-        maximumScale: 1.5,
-        allowedTasks: ["scene"],
-      });
+      .values([
+        {
+          id: KLEIN_LORA_ID,
+          label: "Klein Base LoRA Fixture",
+          locatorType: "https_url",
+          locator: "https://example.test/klein-style.safetensors",
+          compatibleModelSlugs: [KLEIN_BASE_LORA_SLUG],
+          // Empty means "any version of a compatible slug", which is what keeps
+          // this fixture from pinning the assertion to today's version id.
+          compatibleVersionIds: [],
+          defaultScale: 1,
+          minimumScale: 0.5,
+          maximumScale: 1.5,
+          allowedTasks: ["scene"],
+        },
+        {
+          // A second row, carrying a trigger word the existing fixture leaves
+          // empty, so the prompt-addition mechanism
+          // (`applyImageLoraPromptAdditions`, packages/image-core/src/loras/image-loras.ts)
+          // has something to weave. A synthetic HTTPS locator like its sibling.
+          id: KLEIN_LORA_TRIGGER_ID,
+          label: "Klein Base LoRA Trigger Fixture",
+          locatorType: "https_url",
+          locator: "https://example.test/klein-trigger.safetensors",
+          compatibleModelSlugs: [KLEIN_BASE_LORA_SLUG],
+          compatibleVersionIds: [],
+          defaultScale: 1,
+          minimumScale: 0.5,
+          maximumScale: 1.5,
+          triggerWords: ["kleinsig"],
+          allowedTasks: ["scene"],
+        },
+      ]);
   });
 
   afterAll(async () => {
-    if (ready) await db().delete(imageLoras).where(eq(imageLoras.id, KLEIN_LORA_ID));
+    if (ready) await db().delete(imageLoras).where(inArray(imageLoras.id, [KLEIN_LORA_ID, KLEIN_LORA_TRIGGER_ID]));
   });
 
   it("runs the seeded row because its stored probed_version_id is the pin", async () => {
@@ -1723,5 +1744,89 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
     // Never a trim: the admin asked for six, and a refusal is what comes back.
     expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("capacity_exceeded"));
     expect(captured).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------
+  // Generator cross-stack, adapter half (#567)
+  // ---------------------------------------------------------------------
+
+  it("passes the authored prompt through untouched, references in caller order under the neutral role, the row's pin, and the bench's own execution policy", async () => {
+    // `captured[0].intent.prompt` is the RAW text `prepareGeneratorRequest`
+    // builds from the run row, before any compile step runs — it is what the
+    // (stubbed) render seam would have been handed regardless of adapter, so
+    // what this proves is that nothing in the Generator's own request
+    // construction rewrites it. The klein adapter composes no `preparePrompt`
+    // (packages/image-models/src/families/flux/klein.ts), so nothing deeper
+    // has a hook to rewrite it either; the literal wire-level guarantee —
+    // that the fully compiled prompt reaches the provider unchanged — is
+    // proven end to end in packages/image-replicate/src/render.test.ts,
+    // which runs the real transport against a stubbed `fetch` rather than a
+    // stubbed renderer.
+    stubVersionEchoingRenderer();
+    const first = await seedReadyImage();
+    const second = await seedReadyImage();
+    const prompt = "A pair of twin lighthouses at dusk, storm rolling in from the north.";
+    const { id, sink } = await createRun({
+      modelId: KLEIN_DISTILLED_ID,
+      prompt,
+      inputs: {
+        primary: [
+          { imageId: first, purpose: "location" },
+          { imageId: second, purpose: "identity" },
+        ],
+        dedicated: [],
+      },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const request = captured[0];
+    expect(request?.intent.prompt).toBe(prompt);
+    // The purpose never routes: the planner sees `reference`, in caller order,
+    // for both — not the roles the admin recorded as provenance.
+    expect(request?.intent.references.map((reference) => reference.role)).toEqual(["reference", "reference"]);
+    expect(request?.intent.versionId).toBe(KLEIN_DISTILLED_VERSION);
+    // No adapter execution hint exists for any klein variant, so the bench's
+    // own numbers govern untouched — the fallback `benchExecutionPolicy`
+    // (apps/web/src/server/images/model-adapters.ts) returns when
+    // `adapterForImageModel(...).executionHints` is absent.
+    expect(request?.intent.executionPolicy).toEqual({
+      startupBudgetMs: 8 * 60_000,
+      renderBudgetMs: 3 * 60_000,
+      maxStartupRetries: 1,
+    });
+
+    // The stored record keeps the purposes the admin chose, in the same order.
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.inputs.primary.map((entry) => entry.purpose)).toEqual(["location", "identity"]);
+  });
+
+  it("weaves a LoRA's trigger word into the compiled prompt, leaving the authored text otherwise unchanged", async () => {
+    // `runImageGeneratorRun` calls `prepareGeneratorRequest`, which runs the
+    // REAL `planImageRender` → `compileProfileRenderPlan` before the render
+    // seam is ever reached — stubbing the renderer only replaces the provider
+    // call, not the compile step. `finalPrompt` is therefore the real output
+    // of `applyImageLoraPromptAdditions`
+    // (packages/image-core/src/loras/image-loras.ts), the library's existing
+    // prompt-addition mechanism, not something this test recomputes.
+    stubVersionEchoingRenderer();
+    const prompt = "A lighthouse keeper's cottage on a wind-scoured cliff.";
+    const { id, sink } = await createRun({
+      modelId: KLEIN_BASE_LORA_ID,
+      prompt,
+      controls: { lora: { id: KLEIN_LORA_TRIGGER_ID } },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.failureCode).toBeNull();
+    // The authored text survives byte for byte, and the trigger word is
+    // appended after it — never merged into, replacing, or reworded around it.
+    expect(run?.prompt).toBe(prompt);
+    expect(run?.finalPrompt).toBe(`${prompt}\n\nkleinsig`);
+    expect(captured[0]?.intent.resolvedLora).toMatchObject({ id: KLEIN_LORA_TRIGGER_ID, scale: 1 });
   });
 });

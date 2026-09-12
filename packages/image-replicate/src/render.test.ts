@@ -893,6 +893,117 @@ describe("runRegistryImageModel", () => {
   });
 });
 
+/**
+ * The transport half of the #567 acceptance: the LITERAL payload a registered
+ * klein request posts, on `black-forest-labs/flux-2-klein-4b-base` — the one
+ * klein 4B endpoint that binds guidance. The row below is transcribed from the
+ * golden migration `drizzle/0136_flux-2-klein-4b.sql` seeds and
+ * `probe.test.ts` pins for this exact version — not re-derived from the raw
+ * schema — so this case and that literal move together rather than drift
+ * apart.
+ *
+ * The strict-request arm already has coverage above ("refuses a URI-shaped
+ * field the raw overlay wrote rather than a typed transport", "refuses an
+ * array-shaped LoRA field the raw overlay wrote rather than a typed
+ * transport" — the second is the array-LoRA analogue on a klein `-base-lora`
+ * endpoint's own fields) proving an unsupported explicit control is refused
+ * before spend. This case is the positive half: what a SUPPORTED request
+ * actually sends, adding no adapter validator of its own.
+ */
+describe("runRegistryImageModel: FLUX.2 klein 4B Base literal payload (#567)", () => {
+  const KLEIN_BASE_VERSION = "2289efa5ebba21f5322ba1b73ac92bb6fec9f34bafc08e0c26f465dac6f8b465";
+
+  it("posts the pin, the verbatim prompt, ordered references, guidance/seed, extraInput and webp — with no LoRA/negative/step fields", async () => {
+    const kleinBase = model({
+      slug: "black-forest-labs/flux-2-klein-4b-base",
+      referenceField: "images",
+      referenceArity: "array",
+      referenceTransport: "file",
+      maxReferences: 5,
+      aspectMode: "aspect_ratio",
+      supportedAspects: ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "21:9", "9:21"],
+      outputFormat: "webp",
+      // The three keys migration 0136 pins on this row; `disable_safety_checker`
+      // is overridden by the deployment's own posture at send time regardless
+      // of the stored placeholder — `client()` below configures that posture
+      // true, which is what the assertion checks.
+      extraInput: { disable_safety_checker: true, output_quality: 95, go_fast: true },
+      probedVersionId: KLEIN_BASE_VERSION,
+      advancedCapabilities: {
+        ...emptyImageModelAdvancedCapabilities(),
+        controls: {
+          seed: { field: "seed", type: "integer" },
+          guidance: { field: "guidance", type: "number", minimum: 1, maximum: 10 },
+          fastMode: { field: "go_fast", type: "boolean" },
+        },
+      },
+    });
+
+    let uploadNumber = 0;
+    let predictionBody: { version?: string; input: Record<string, unknown> } | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/v1/files") && method === "POST") {
+          uploadNumber += 1;
+          return Response.json({
+            id: `file-${uploadNumber}`,
+            urls: { get: `https://api.replicate.com/v1/files/file-${uploadNumber}` },
+          });
+        }
+        if (url.includes("/predictions")) {
+          predictionBody = JSON.parse(String(init?.body)) as { version?: string; input: Record<string, unknown> };
+          return Response.json({
+            id: "pred-klein-base",
+            status: "succeeded",
+            output: ["https://replicate.delivery/klein-base.webp"],
+          });
+        }
+        if (url === "https://replicate.delivery/klein-base.webp") {
+          return new Response(Buffer.from("klein-base-image"), { status: 200 });
+        }
+        if (url.includes("/v1/files/file-") && method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }),
+    );
+
+    const prompt = "A pair of twin lighthouses at dusk, storm rolling in from the north.";
+    const result = await client().runRegistryImageModel(kleinBase, {
+      prompt,
+      references: [prepared("ref-a"), prepared("ref-b")],
+      // What the application would have resolved from `model.probedVersionId`
+      // through `pinnedImageModelVersion` and threaded onto the intent — this
+      // package reads only what the caller hands it, never the row's column.
+      versionId: KLEIN_BASE_VERSION,
+      // Already-mapped provider fields, exactly as the real control mapper
+      // would resolve them for this version's own field names.
+      controlInput: { seed: 7, guidance: 4 },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(predictionBody?.version).toBe(KLEIN_BASE_VERSION);
+    // The literal, EXACT posted body — no extra keys of any kind, which is
+    // what rules out lora_weights, lora_scales, negative_prompt and
+    // num_inference_steps without naming each absence separately: none of
+    // them was ever written, because nothing in this request or this row
+    // asked for one.
+    expect(predictionBody?.input).toEqual({
+      prompt,
+      images: ["https://api.replicate.com/v1/files/file-1", "https://api.replicate.com/v1/files/file-2"],
+      output_format: "webp",
+      disable_safety_checker: true,
+      output_quality: 95,
+      go_fast: true,
+      seed: 7,
+      guidance: 4,
+    });
+  });
+});
+
 describe("output download", () => {
   it("refuses to fetch an output URL from a host outside the allow-list", async () => {
     // A provider that echoed an attacker-supplied URL would otherwise have this
