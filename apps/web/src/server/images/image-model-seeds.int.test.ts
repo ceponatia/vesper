@@ -342,6 +342,20 @@ afterAll(async () => {
   // And for the row 0133 seeds and 0138 corrects: the guard cases below delete
   // it outright, and a suite that follows would otherwise find the endpoint
   // missing from the registry entirely.
+  //
+  // Note what this net restores: the POST-0138 state, replayed from the shipped
+  // files. On CI that is harmless — the workflow migrates a fresh database from
+  // zero for every run and tears it down after. Against a long-lived local
+  // database that never had 0138 applied, a first run fails correctly and this
+  // net then writes `data_url`, so a second run would pass on state this file
+  // created rather than state the migration produced. Re-run `pnpm db:migrate`
+  // rather than trusting a green second run on a database of unknown vintage.
+  //
+  // There is deliberately no matching `beforeAll` restore for this row, unlike
+  // the klein block above: a restore that ran BEFORE the assertions would mask
+  // the un-migrated case outright, which is the one case worth failing on. The
+  // cost is that a run killed between `restoreQwenImage2Row`'s DELETE and its
+  // re-INSERT leaves the next run reporting a missing row instead of healing.
   if (ready && !(await qwenImage2Intact())) await restoreQwenImage2Row();
   await endTestPool();
 });
