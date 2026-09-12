@@ -1389,3 +1389,339 @@ describe.skipIf(!ready)("image generator multi-image runs", () => {
     expect(codes(sink)).toContain(imageGeneratorDiagnosticCode("control_refused"));
   });
 });
+// ---------------------------------------------------------------------------
+// The seeded FLUX.2 klein 4B rows, as the Generator sees them
+// ---------------------------------------------------------------------------
+
+/**
+ * These three rows are NOT planted by this suite. They are what migration 0136
+ * seeded into the migrated database, read by id — which is the point: the
+ * acceptance question is whether a fresh or upgraded database's own rows are
+ * selectable and runnable in the admin bench, and a fixture copy of them would
+ * answer a different question.
+ *
+ * `image-model-seeds.int.test.ts` owns the other half — that each seeded row's
+ * probe-owned columns equal what `probeReplicateModel` derives from the
+ * captured schema. Together: the columns are the probe's, and these are the
+ * controls the Generator builds from them.
+ */
+const KLEIN_DISTILLED_ID = "imgmdlklein4baaaaaaaaaaa";
+const KLEIN_BASE_ID = "imgmdlklein4bbaseaaaaaaa";
+const KLEIN_BASE_LORA_ID = "imgmdlklein4bbaseloraaaa";
+const KLEIN_BASE_LORA_SLUG = "black-forest-labs/flux-2-klein-4b-base-lora";
+const KLEIN_DISTILLED_VERSION = "8e9c42d77b10a2a41af823ac4500f7545be6ebc4e745830fc3f3de10de200542";
+const KLEIN_BASE_LORA_VERSION = "c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc";
+/** A curated LoRA for the klein LoRA arm — the bench fixture above names another model. */
+const KLEIN_LORA_ID = "imglorakleinbaseloraaaaa";
+
+describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", () => {
+  /**
+   * A renderer that answers with the version it was ASKED for, the way the
+   * provider does on a successful prediction. The suite's shared stub returns a
+   * constant, which cannot tell a recorded pin apart from a recorded answer.
+   */
+  function stubVersionEchoingRenderer(): void {
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      const requested = request.intent.versionId;
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_klein_1",
+        executedVersionId: requested,
+        attempt: {
+          modelId: KLEIN_DISTILLED_ID,
+          modelSlug: "black-forest-labs/flux-2-klein-4b",
+          profileId: "image-generator/run",
+          task: "item",
+          promptStrategy: "text_to_image_description",
+          requestedVersionId: requested,
+          seed: null,
+          appliedControls: {},
+          droppedControls: [],
+          sentReferenceRoles: [],
+          predictionId: "pred_klein_1",
+          executedVersionId: requested,
+        },
+      };
+    });
+  }
+
+  beforeAll(async () => {
+    if (!ready) return;
+    // Fail here rather than through a confusing refusal in each case: the rows
+    // come from migration 0136, so a database that lacks them is unmigrated.
+    const rows = await db()
+      .select({ id: imageModels.id })
+      .from(imageModels)
+      .where(inArray(imageModels.id, [KLEIN_DISTILLED_ID, KLEIN_BASE_ID, KLEIN_BASE_LORA_ID]));
+    expect(
+      rows,
+      "migration 0136 must have seeded the three FLUX.2 klein 4B rows — re-run pnpm db:migrate",
+    ).toHaveLength(3);
+
+    // Curated for the LoRA arm specifically. Planted delete-first like every
+    // other global registry fixture in this suite.
+    await db().delete(imageLoras).where(eq(imageLoras.id, KLEIN_LORA_ID));
+    await db()
+      .insert(imageLoras)
+      .values({
+        id: KLEIN_LORA_ID,
+        label: "Klein Base LoRA Fixture",
+        locatorType: "https_url",
+        locator: "https://example.test/klein-style.safetensors",
+        compatibleModelSlugs: [KLEIN_BASE_LORA_SLUG],
+        // Empty means "any version of a compatible slug", which is what keeps
+        // this fixture from pinning the assertion to today's version id.
+        compatibleVersionIds: [],
+        defaultScale: 1,
+        minimumScale: 0.5,
+        maximumScale: 1.5,
+        allowedTasks: ["scene"],
+      });
+  });
+
+  afterAll(async () => {
+    if (ready) await db().delete(imageLoras).where(eq(imageLoras.id, KLEIN_LORA_ID));
+  });
+
+  it("runs the seeded row because its stored probed_version_id is the pin", async () => {
+    // The "runnable" gate the model select reads is `pinnedImageModelVersion`,
+    // which returns `probed_version_id` when the slug carries no `:version`.
+    // These rows carry BARE slugs — the bare-slug prediction endpoint is
+    // official-models-only — so without that column they would be offered
+    // disabled as "no pinned version".
+    stubVersionEchoingRenderer();
+    const { id, sink } = await createRun({ modelId: KLEIN_DISTILLED_ID });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    // The pin travels INSIDE the intent, and it is this row's probed version.
+    expect(captured[0]?.intent.versionId).toBe(KLEIN_DISTILLED_VERSION);
+    expect(run?.requestedVersionId).toBe(KLEIN_DISTILLED_VERSION);
+    // And what is RECORDED as executed is the provider's answer, recorded
+    // separately from the request. A stored `probed_version_id` makes THIS run
+    // explicit; it is not evidence that some other bare-slug request elsewhere
+    // resolved to the same version. The re-probed fixture case above covers the
+    // two diverging.
+    expect(run?.executedVersionId).toBe(KLEIN_DISTILLED_VERSION);
+  });
+
+  it("records the provider's executed version rather than echoing the pin", async () => {
+    // The stored pin says what the request ASKED for. What ran is a separate
+    // fact, and only the provider states it — a bare `owner/name` slug resolves
+    // `latest_version` server-side, so a row carrying `probed_version_id` is not
+    // proof that every bare-slug request anywhere resolved to that version.
+    // Here the provider answers with a different id, and the row must keep both.
+    const provider = "0000000000000000000000000000000000000000000000000000000000000042";
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_klein_moved",
+        executedVersionId: provider,
+        attempt: {
+          modelId: KLEIN_DISTILLED_ID,
+          modelSlug: "black-forest-labs/flux-2-klein-4b",
+          profileId: "image-generator/run",
+          task: "item",
+          promptStrategy: "text_to_image_description",
+          requestedVersionId: request.intent.versionId,
+          seed: null,
+          appliedControls: {},
+          droppedControls: [],
+          sentReferenceRoles: [],
+          predictionId: "pred_klein_moved",
+          executedVersionId: provider,
+        },
+      };
+    });
+    const { id, sink } = await createRun({ modelId: KLEIN_DISTILLED_ID });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.requestedVersionId).toBe(KLEIN_DISTILLED_VERSION);
+    expect(run?.executedVersionId).toBe(provider);
+  });
+
+  it("offers guidance on -base and refuses it on -base-lora, before any spend", async () => {
+    // The whole reason the three endpoints are three rows. `-base` declares a
+    // `guidance` input and binds the normalized control; `-base-lora` declares
+    // none, so asking for one has to refuse here rather than be posted to a
+    // field that version does not own.
+    stubVersionEchoingRenderer();
+    const accepted = await createRun({ modelId: KLEIN_BASE_ID, controls: { guidance: 4 } });
+    const payload = await runImageGeneratorRun(accepted.id, ownerId, accepted.sink);
+    expect(payload.status).toBe("succeeded");
+    expect(captured).toHaveLength(1);
+
+    captured = [];
+    const refused = await createRun({ modelId: KLEIN_BASE_LORA_ID, controls: { guidance: 4 } });
+    await runImageGeneratorRun(refused.id, ownerId, refused.sink);
+
+    const row = await storedRow(refused.id);
+    expect(row?.status).toBe("failed");
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("control_refused"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("sends a curated LoRA through the -base-lora array pair", async () => {
+    // The #563 join: this version declares `lora_weights`/`lora_scales` as
+    // LISTS, so the pair resolves with `arity: "array"` and the mapper wraps
+    // each resolved value in a singleton. The literal wire shape is proven in
+    // packages/image-replicate/src/lora-final-wire.test.ts; what this asserts is
+    // that the seeded row's stored bindings are enough to resolve the LoRA at
+    // all, on the one klein endpoint that has them.
+    stubVersionEchoingRenderer();
+    const { id, sink } = await createRun({
+      modelId: KLEIN_BASE_LORA_ID,
+      controls: { lora: { id: KLEIN_LORA_ID } },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.failureCode).toBeNull();
+    expect(captured[0]?.intent.resolvedLora).toMatchObject({ id: KLEIN_LORA_ID, scale: 1 });
+  });
+
+  it("refuses a LoRA on the two endpoints that declare no LoRA input", async () => {
+    // Same curated row, a sibling that has nowhere to put it: `-base` declares
+    // no LoRA input AND the row is curated for the LoRA arm's slug alone, so
+    // either rule may settle it first. Which one is not the point — that the
+    // refusal happens before any spend is.
+    stubVersionEchoingRenderer();
+    const { id, sink } = await createRun({ modelId: KLEIN_BASE_ID, controls: { lora: { id: KLEIN_LORA_ID } } });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("failed");
+    expect(captured).toHaveLength(0);
+  });
+
+  it("accepts a declared output_megapixels member and refuses an undeclared one", async () => {
+    // `output_megapixels` is a STRING enum and deliberately not a control: it
+    // is a raw Advanced input, validated against the members the probe recorded.
+    // A numeric reading of it — or a `resolutionTier` binding — would send a
+    // value this version rejects.
+    stubVersionEchoingRenderer();
+    const accepted = await createRun({
+      modelId: KLEIN_DISTILLED_ID,
+      providerInputs: { output_megapixels: "2" },
+    });
+    const payload = await runImageGeneratorRun(accepted.id, ownerId, accepted.sink);
+    expect(payload.status).toBe("succeeded");
+    expect(captured[0]?.intent.profile.profile.providerOverrides).toMatchObject({ output_megapixels: "2" });
+
+    captured = [];
+    const refused = await createRun({
+      modelId: KLEIN_DISTILLED_ID,
+      // Not a member: the enum is 0.25/0.5/1/2/4.
+      providerInputs: { output_megapixels: "3" },
+    });
+    await runImageGeneratorRun(refused.id, ownerId, refused.sink);
+
+    const row = await storedRow(refused.id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+    expect(row?.error).toContain("must be one of");
+    expect(captured).toHaveLength(0);
+  });
+
+  const reservedBagCases: {
+    rejects: string;
+    modelId: string;
+    providerInputs: Record<string, string | number | boolean>;
+    detail: string;
+  }[] = [
+    {
+      // The safety toggle is application-owned in two ways at once: the
+      // transport overwrites it with the deployment's own posture, and the row
+      // pins it. Neither makes it settable per run.
+      rejects: "the safety toggle",
+      modelId: KLEIN_DISTILLED_ID,
+      providerInputs: { disable_safety_checker: false },
+      detail: "pinned by the model's reviewed configuration",
+    },
+    {
+      rejects: "the pinned accelerated-sampling flag",
+      modelId: KLEIN_BASE_ID,
+      providerInputs: { go_fast: false },
+      detail: "pinned by the model's reviewed configuration",
+    },
+    {
+      rejects: "the LoRA weights list",
+      modelId: KLEIN_BASE_LORA_ID,
+      providerInputs: { lora_weights: "https://example.test/other.safetensors" },
+      detail: "curated LoRA library",
+    },
+    {
+      rejects: "the LoRA scales list",
+      modelId: KLEIN_BASE_LORA_ID,
+      providerInputs: { lora_scales: 1 },
+      detail: "curated LoRA library",
+    },
+    {
+      rejects: "the aspect key the render path writes",
+      modelId: KLEIN_DISTILLED_ID,
+      providerInputs: { aspect_ratio: "3:4" },
+      detail: "owned by the render path",
+    },
+    {
+      rejects: "the reference array",
+      modelId: KLEIN_DISTILLED_ID,
+      providerInputs: { images: "https://elsewhere.invalid/face.png" },
+      detail: "owned by the render path",
+    },
+  ];
+  it.each(reservedBagCases)(
+    "refuses $rejects as a raw advanced value, before spend",
+    async ({ modelId, providerInputs, detail }) => {
+      stubVersionEchoingRenderer();
+      const { id, sink } = await createRun({ modelId, providerInputs });
+
+      await runImageGeneratorRun(id, ownerId, sink);
+
+      const row = await storedRow(id);
+      expect(row?.status).toBe("failed");
+      expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+      expect(row?.error).toContain(detail);
+      expect(captured).toHaveLength(0);
+    },
+  );
+
+  it("takes five references on a seeded row, and refuses the sixth", async () => {
+    // The cap the `Maximum N images` prose pattern produced. Before it the same
+    // schema derived 3, and references four and five would have been refused
+    // here on a model that accepts them.
+    stubVersionEchoingRenderer();
+    const sources: string[] = [];
+    for (let index = 0; index < 5; index += 1) sources.push(await seedReadyImage());
+    const { id, sink } = await createRun({
+      modelId: KLEIN_BASE_LORA_ID,
+      inputs: { primary: sources.map((imageId) => ({ imageId })), dedicated: [] },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    expect(captured[0]?.intent.references).toHaveLength(5);
+    expect(captured[0]?.intent.versionId).toBe(KLEIN_BASE_LORA_VERSION);
+
+    captured = [];
+    const sixth = await seedReadyImage();
+    const over = await createRun({
+      modelId: KLEIN_BASE_LORA_ID,
+      inputs: { primary: [...sources, sixth].map((imageId) => ({ imageId })), dedicated: [] },
+    });
+    await runImageGeneratorRun(over.id, ownerId, over.sink);
+
+    const row = await storedRow(over.id);
+    // Never a trim: the admin asked for six, and a refusal is what comes back.
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("capacity_exceeded"));
+    expect(captured).toHaveLength(0);
+  });
+});

@@ -35,9 +35,15 @@ flagging it.
 is a rejected save, because a half-known row would move the failure to render time where it
 costs a player-visible image instead of a form error.
 
-The one thing the probe cannot derive is `maxReferences` — no model declares `maxItems` on its
-array input, the caps are stated in prose — so it is stored per row and editable on the settings
-page.
+The one thing the probe cannot derive from a declared bound is `maxReferences` — no model
+declares `maxItems` on its array input, the caps are stated in prose — so it is stored per row and
+editable on the settings page. Three phrasings are read out of the field description, most
+specific first: a range ("List of 1-14 images"), "up to 9 images", and "Maximum 5 images". Each is
+tried whole rather than folded into one alternation, because a description stating both a range
+and a maximum means two different things and the range is the one describing the input. None of
+them is model-specific: a cap phrasing is a property of how a provider writes field descriptions,
+not of a slug. An unrecognized phrasing falls to a conservative 3, which an operator corrects on
+the settings page — a starting value, never a guarantee.
 
 ## Which input is the reference is a priority order
 

@@ -381,6 +381,60 @@ describe("runRegistryImageModel", () => {
     expect(body.input).toMatchObject({ prompt: "a portrait", aspect_ratio: "3:4", output_format: "webp" });
   });
 
+  it("takes the FIRST url of a multi-image array output, on a model that advertises single output", async () => {
+    // Every other array-output case in this file returns a ONE-element list, so
+    // "the transport reads an array" is covered but "which element" is not.
+    // The FLUX.2 klein 4B endpoints declare `Output` as an array of URIs while
+    // their probed capability record carries the contract's `{arity:"single"}`
+    // default — nothing in that schema promises exactly one member. If the
+    // provider ever answers with several, one image is still what this
+    // single-image transport must produce, and it must be the first: picking
+    // any other member would make a seeded run irreproducible for no reason.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        calls.push(url);
+        if (url.includes("/predictions")) {
+          return Response.json({
+            id: "pred-klein",
+            status: "succeeded",
+            output: [
+              "https://replicate.delivery/first.webp",
+              "https://replicate.delivery/second.webp",
+              "https://replicate.delivery/third.webp",
+            ],
+          });
+        }
+        if (url === "https://replicate.delivery/first.webp") {
+          return new Response(Buffer.from("first-image"), {
+            status: 200,
+            headers: { "content-type": "image/webp" },
+          });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+
+    const klein = model({
+      slug: "black-forest-labs/flux-2-klein-4b",
+      referenceField: "images",
+      referenceArity: "array",
+      maxReferences: 5,
+      outputFormat: "webp",
+      probedVersionId: "8e9c42d77b10a2a41af823ac4500f7545be6ebc4e745830fc3f3de10de200542",
+    });
+    const result = await client().runRegistryImageModel(klein, { prompt: "a lighthouse" });
+
+    expect(result.ok).toBe(true);
+    expect(result.image?.toString()).toBe("first-image");
+    // Proven by what was fetched, not only by the bytes: the two later members
+    // were never downloaded, so no second image was produced and discarded.
+    expect(calls).not.toContain("https://replicate.delivery/second.webp");
+    expect(calls).not.toContain("https://replicate.delivery/third.webp");
+  });
+
   it("uploads references, runs the model, downloads output, and removes temporary files", async () => {
     const calls: Array<{ url: string; method: string }> = [];
     let uploadNumber = 0;

@@ -13,7 +13,12 @@ import {
   type ImageGeneratorPrefill,
 } from "./image-generator-form/prefill";
 import { useState } from "react";
-import { baseImageModelSlug, pinnedImageModelVersion, type ImageResolutionTier } from "@vesper/image-core";
+import {
+  baseImageModelSlug,
+  pinnedImageModelVersion,
+  resolveImageLoraBindingPair,
+  type ImageResolutionTier,
+} from "@vesper/image-core";
 import {
   IMAGE_GENERATOR_MAX_IMAGE_COUNT,
   IMAGE_GENERATOR_PROMPT_MAX,
@@ -227,7 +232,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // bench can genuinely render, which is the opposite of the honesty every
   // other rail on this screen keeps: offer only what can run, and warn about
   // exactly what would refuse.
-  const loraBound = bindings.loraWeights !== undefined && bindings.loraScale !== undefined;
+  const loraBound = resolveImageLoraBindingPair(bindings.loraWeights, bindings.loraScale) !== null;
   const enabledLoras = (loras.data ?? []).filter((lora) => lora.enabled);
   const selectedLora = loraId === "" ? null : (enabledLoras.find((lora) => lora.id === loraId) ?? null);
   const [prevLoraId, setPrevLoraId] = useState(loraId);

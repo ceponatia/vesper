@@ -267,7 +267,7 @@ describe("validateImageProfileForCandidate", () => {
     expect(validateImageProfileForCandidate(profile(), candidate())).toEqual([]);
   });
 
-  it("blocks a LoRA default unless the candidate exposes BOTH LoRA bindings", () => {
+  it("blocks a LoRA default unless the candidate exposes a usable LoRA weights/scale pair", () => {
     const withLora = profile({ controlDefaults: { seedPolicy: "random", lora: { id: "lora_house" } } });
     const weights = { field: "lora_weights", type: "string" as const };
     const scale = { field: "lora_scale", type: "number" as const };
@@ -285,6 +285,30 @@ describe("validateImageProfileForCandidate", () => {
       validateImageProfileForCandidate(
         withLora,
         candidate({ advancedCapabilities: advanced({ controls: { loraWeights: weights, loraScale: scale } }) }),
+      ),
+    ).toEqual([]);
+
+    // Both fields present but disagreeing on shape — an array `lora_weights`
+    // beside a scalar `lora_scale` — is exactly as unusable as a missing side:
+    // `resolveImageLoraBindingPair` refuses it, and this candidate check must
+    // block promotion for the same reason, not silently accept two fields
+    // that do not form a pair.
+    const arrayWeights = { field: "lora_weights", type: "string" as const, arity: "array" as const };
+    expect(
+      validateImageProfileForCandidate(
+        withLora,
+        candidate({ advancedCapabilities: advanced({ controls: { loraWeights: arrayWeights, loraScale: scale } }) }),
+      ),
+    ).toEqual([expect.objectContaining({ level: "blocking", code: "lora_binding_missing" })]);
+
+    // A valid ARRAY pair — a FLUX.2 klein `-base-lora` endpoint's shape — is a
+    // usable pair too, and must not block promotion just because it is not
+    // the scalar shape Qwen's edit endpoints declare.
+    const arrayScale = { field: "lora_scales", type: "number" as const, arity: "array" as const };
+    expect(
+      validateImageProfileForCandidate(
+        withLora,
+        candidate({ advancedCapabilities: advanced({ controls: { loraWeights: arrayWeights, loraScale: arrayScale } }) }),
       ),
     ).toEqual([]);
   });

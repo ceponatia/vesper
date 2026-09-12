@@ -953,6 +953,13 @@
       "when": 1789140500000,
       "tag": "0135_fal-qwen-image-3",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1789236000000,
+      "tag": "0136_flux-2-klein-4b",
+      "breakpoints": true
     }
   ]
 }

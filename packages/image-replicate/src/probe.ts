@@ -729,8 +729,19 @@ function findReferenceField(properties: Record<string, unknown>): ReferenceField
 /**
  * How many references the model takes. `maxItems` is honoured when present, but
  * no model in the seeded set declares it — the caps live in prose ("List of
- * 1-14 images", "up to 9 images"), so those two phrasings are read here. The
- * result is a starting value the admin page can correct, never a guarantee.
+ * 1-14 images", "up to 9 images", "Maximum 5 images"), so those three
+ * phrasings are read here. The result is a starting value the admin page can
+ * correct, never a guarantee.
+ *
+ * The patterns are tried most specific first, each one whole rather than
+ * merged into one alternation: a description stating both a range and a
+ * maximum means two different things, and the range is the one describing the
+ * input. Nothing here is model-specific — a cap phrasing is a property of how
+ * a provider writes field descriptions, not of a slug, so `Maximum N images`
+ * reads the same on any schema using it. Without it the FLUX.2 klein 4B
+ * endpoints, whose `images` description says exactly that, fall to the
+ * conservative default of 3 and silently refuse the fourth and fifth
+ * reference the provider accepts.
  */
 function referenceCap(reference: ReferenceField): number {
   if (reference.arity === "single") return 1;
@@ -739,6 +750,8 @@ function referenceCap(reference: ReferenceField): number {
   if (range?.[2]) return clampCap(Number(range[2]));
   const upTo = /up to (\d+)\s+images/i.exec(reference.description);
   if (upTo?.[1]) return clampCap(Number(upTo[1]));
+  const maximum = /maximum (\d+)\s+images/i.exec(reference.description);
+  if (maximum?.[1]) return clampCap(Number(maximum[1]));
   return 3;
 }
 
