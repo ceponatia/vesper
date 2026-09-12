@@ -12,14 +12,18 @@ import { type ImageLoraResolution, listImageLoras, loadImageLora, resolveImageLo
 import { loadImageModels } from "./models";
 
 /**
- * What migrations 0136 and 0137 actually put in a migrated database, and what
- * they do beside a row an operator already added.
+ * What the hand-written image-registry migrations actually put in a migrated
+ * database, and what they do beside a row an operator already added.
  *
  * 0136 seeds the three FLUX.2 klein 4B model rows; 0137 seeds the one curated
  * `image_loras` row that names the third of them. They are asserted in one file
  * because the claim that matters spans both: the LoRA row's compatible version
  * id has to be the version the model row is actually pinned to, and nothing but
  * a migrated database can say whether those two hand-written literals agree.
+ * 0138 then corrects one column on a row 0133 seeded — the `qwen/qwen-image-2`
+ * reference transport — which belongs here for the same reason: whether a
+ * catalog UPDATE reached the row it names, left every other row alone, and
+ * honoured a deletion is a question only a migrated database answers.
  *
  * Two jobs, and the first is the one the migration exists for:
  *
@@ -242,18 +246,27 @@ async function probeCaptured(endpoint: KleinEndpoint): Promise<ProbeResult> {
 }
 
 /**
- * The INSERT statements one migration file ships, in file order.
+ * The statements one migration file ships whose text contains `keyword`, in file
+ * order — `INSERT INTO` for a seed, `UPDATE "image_models"` for a catalog
+ * correction.
  *
  * Read from the file rather than restated here, which is the whole point: what
  * is under test is the SQL that ships, so a test that re-typed the statement
- * would pass against a migration it does not describe.
+ * would pass against a migration it does not describe. A returned chunk carries
+ * its leading `--` comment block as well; Postgres ignores it, and what ships is
+ * what runs.
  */
-async function insertStatements(file: string): Promise<string[]> {
+async function migrationStatements(file: string, keyword: string): Promise<string[]> {
   const sqlText = await readFile(path.join(process.cwd(), file), "utf8");
   return sqlText
     .split("--> statement-breakpoint")
     .map((statement) => statement.trim())
-    .filter((statement) => statement.toUpperCase().includes("INSERT INTO "));
+    .filter((statement) => statement.toUpperCase().includes(keyword.toUpperCase()));
+}
+
+/** The INSERT statements one migration file ships, in file order. */
+function insertStatements(file: string): Promise<string[]> {
+  return migrationStatements(file, "INSERT INTO ");
 }
 
 /** 0136's shipped INSERT statements. */
@@ -326,6 +339,10 @@ afterAll(async () => {
   // The same net for 0137's row: the retune case below leaves the band changed
   // if it dies partway, and the next run would then assert against it.
   if (ready && !(await seededLoraIntact())) await restoreSeededLora();
+  // And for the row 0133 seeds and 0138 corrects: the guard cases below delete
+  // it outright, and a suite that follows would otherwise find the endpoint
+  // missing from the registry entirely.
+  if (ready && !(await qwenImage2Intact())) await restoreQwenImage2Row();
   await endTestPool();
 });
 
@@ -858,8 +875,11 @@ describe.skipIf(!ready)("migration 0137 — the klein 4B RefControl depth LoRA r
     // predecessor would seed this row against a database 0136 had not reached —
     // and the model row it names would not exist yet.
     expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
+    // A duplicate 137 from a concurrent branch is the merge accident this
+    // catches. Which index sits at the HEAD is asserted by the newest
+    // migration's own suite instead, so this case does not have to be edited
+    // every time a later migration lands.
     expect(journal.entries.filter((candidate) => candidate.idx === 137)).toHaveLength(1);
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(137);
 
     // Data migrations 0132–0136 ship no snapshot either; one here would claim a
     // `schema.ts` change this file does not make.
@@ -916,5 +936,283 @@ describe.skipIf(!ready)("migration 0137 — the guard over an admin's curation",
 
     await restoreSeededLora();
     expect(await loadImageLora(DEPTH_LORA_ID)).toEqual(DEPTH_LORA_ROW);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 0138 — the Qwen Image 2 reference transport
+// ---------------------------------------------------------------------------
+
+const TRANSPORT_MIGRATION_TAG = "0138_qwen-image-2-data-url-transport";
+const TRANSPORT_MIGRATION_FILE = `drizzle/${TRANSPORT_MIGRATION_TAG}.sql`;
+const QWEN_IMAGE_2_SEED_FILE = "drizzle/0133_qwen-image-2.sql";
+
+/**
+ * The row 0133 seeded and 0138 corrects.
+ *
+ * `qwen/qwen-image-2` rejects Replicate's own uploaded-file URLs — it validates
+ * the file extension of what reaches the model container, and an upload arrives
+ * there without one — so every reference-bearing render on the `file` transport
+ * fails with `ValueError: Invalid image format ''` while prompt-only generation
+ * works. The transport is the ONLY column that separates a dead edit path from a
+ * working one, and no probe can discover it: `reference_transport` is owner-set
+ * and outside every probe write set, so nothing but a migration converges it.
+ */
+const QWEN_IMAGE_2 = {
+  id: "imgmdlqwenimage2aaaaaaaa",
+  slug: "qwen/qwen-image-2",
+  versionId: "266e594fa007032292c211586354fe193d7aa4e675a1eeb0aef0c6a424468ddd",
+} as const;
+
+/**
+ * The registered Qwen rows that render from the SAME uploaded-file URLs without
+ * complaint. This is a per-wrapper validation quirk of one endpoint rather than a
+ * Replicate-wide or Qwen-wide fact, and a migration that blurred it — a
+ * `LIKE 'qwen/qwen-image-2%'`, a prefix match — would move both of these onto
+ * inlined bytes as well, paying a larger request body on every render to fix a
+ * failure neither has.
+ */
+const FILE_TRANSPORT_SIBLINGS = ["qwen/qwen-image-edit-2511", "qwen/qwen-image-2512"] as const;
+
+/** 0138's shipped statement. It is an UPDATE, so it ships no INSERT at all. */
+function transportStatements(): Promise<string[]> {
+  return migrationStatements(TRANSPORT_MIGRATION_FILE, 'UPDATE "image_models"');
+}
+
+/** Re-run 0138's own statement. Idempotent by construction — that is what is under test. */
+async function reapplyTransportFix(): Promise<void> {
+  const statements = await transportStatements();
+  expect(statements, `${TRANSPORT_MIGRATION_FILE} must carry exactly one image_models UPDATE`).toHaveLength(1);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+/** The stored transport for this endpoint's provider path, however its slug is spelled. */
+async function transportFor(slug: string): Promise<string | undefined> {
+  const [row] = await db()
+    .select({ transport: imageModels.referenceTransport })
+    .from(imageModels)
+    .where(sql`split_part(${imageModels.slug}, ':', 1) = ${slug}`);
+  return row?.transport;
+}
+
+/**
+ * Put the migrated state back by replaying BOTH shipped statements in order:
+ * 0133 inserts the row at `file`, 0138 corrects it. Restoring from literals typed
+ * here would restore whatever this file believes, and the composition is itself
+ * the deploy path — 0138 has no row to correct unless 0133 ran first.
+ *
+ * Deleting by provider path rather than by id is what makes the re-seed possible
+ * at all: 0133's guard is `WHERE NOT EXISTS` on that path, so an operator-style
+ * row left behind under a different id would suppress it.
+ */
+async function restoreQwenImage2Row(): Promise<void> {
+  // Read and validate both files BEFORE deleting: an unreadable migration must
+  // fail the suite, not strip a registry row the rest of the run expects to find.
+  const seed = await insertStatements(QWEN_IMAGE_2_SEED_FILE);
+  expect(seed, `${QWEN_IMAGE_2_SEED_FILE} must carry exactly one INSERT statement`).toHaveLength(1);
+  expect(await transportStatements(), `${TRANSPORT_MIGRATION_FILE} must carry one UPDATE`).toHaveLength(1);
+  await db().delete(imageModels).where(sql`split_part(${imageModels.slug}, ':', 1) = ${QWEN_IMAGE_2.slug}`);
+  for (const statement of seed) await db().execute(sql.raw(statement));
+  await reapplyTransportFix();
+}
+
+/** True when the migrated state is already in place: the row exists, corrected. */
+async function qwenImage2Intact(): Promise<boolean> {
+  const [row] = await db()
+    .select({ transport: imageModels.referenceTransport })
+    .from(imageModels)
+    .where(eq(imageModels.id, QWEN_IMAGE_2.id));
+  return row?.transport === "data_url";
+}
+
+describe.skipIf(!ready)("migration 0138 — the Qwen Image 2 reference transport", () => {
+  it("leaves the seeded row on the inlined data: transport", async () => {
+    const sink = new DiagnosticCollector();
+    const models = await loadImageModels(sink);
+    const model = models.find((candidate) => candidate.id === QWEN_IMAGE_2.id);
+
+    expect(model, `${QWEN_IMAGE_2.slug} must be seeded by 0133`).toBeDefined();
+    // `loadImageModels` DROPS an unparseable row with a diagnostic rather than
+    // throwing, so "it came back" and "nothing was skipped" are two assertions.
+    expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
+    // The checklist item this suite exists for: a row that regressed to `file`
+    // renders `ValueError: Invalid image format ''` on every reference-bearing
+    // run, and nothing in a schema, a probe or a typecheck would say so.
+    expect(model?.referenceTransport).toBe("data_url");
+  });
+
+  it("changes nothing else about the row 0133 seeded", async () => {
+    const models = await loadImageModels();
+    const model = models.find((candidate) => candidate.id === QWEN_IMAGE_2.id);
+    expect(model).toBeDefined();
+    if (!model) return;
+
+    // Making an endpoint REACHABLE is not grading it. A migration that quietly
+    // took the opportunity to flip a surface flag or write a rating would put an
+    // untried endpoint in a player-facing picker, which is the failure this
+    // asserts against rather than the transport itself.
+    expect({
+      slug: model.slug,
+      canGenerate: model.canGenerate,
+      canEdit: model.canEdit,
+      referenceField: model.referenceField,
+      referenceArity: model.referenceArity,
+      maxReferences: model.maxReferences,
+      aspectMode: model.aspectMode,
+      outputFormat: model.outputFormat,
+      extraInput: model.extraInput,
+      probedVersionId: model.probedVersionId,
+      editKind: model.editKind,
+      identityPreservation: model.identityPreservation,
+      forPortrait: model.forPortrait,
+      forVariant: model.forVariant,
+      forScene: model.forScene,
+      builtin: model.builtin,
+      sort: model.sort,
+    }).toEqual({
+      slug: QWEN_IMAGE_2.slug,
+      canGenerate: true,
+      canEdit: true,
+      referenceField: "image",
+      // A single URI string, not 2511's array: the field NAME matching is a
+      // coincidence of provider naming, not a shared shape.
+      referenceArity: "single",
+      maxReferences: 1,
+      aspectMode: "aspect_ratio",
+      outputFormat: null,
+      extraInput: {},
+      probedVersionId: QWEN_IMAGE_2.versionId,
+      editKind: "unknown",
+      identityPreservation: "unknown",
+      forPortrait: false,
+      forVariant: false,
+      forScene: false,
+      builtin: true,
+      sort: 100,
+    });
+
+    // And still no profile row, so no production picker can reach it either.
+    const profiles = await db()
+      .select({ id: imageModelProfiles.id })
+      .from(imageModelProfiles)
+      .where(eq(imageModelProfiles.imageModelId, QWEN_IMAGE_2.id));
+    expect(profiles).toEqual([]);
+  });
+
+  it("moves no sibling that works on the uploaded-file transport", async () => {
+    const models = await loadImageModels();
+    for (const slug of FILE_TRANSPORT_SIBLINGS) {
+      const sibling = models.find((candidate) => candidate.slug === slug);
+      expect(sibling, `${slug} must still be registered`).toBeDefined();
+      expect(sibling?.referenceTransport, `${slug} runs fine on uploaded files`).toBe("file");
+    }
+  });
+
+  it("follows 0137 in the journal, as a data migration with no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === TRANSPORT_MIGRATION_TAG);
+    expect(entry).toBeDefined();
+    expect(entry?.idx).toBe(138);
+
+    const previous = journal.entries.find((candidate) => candidate.idx === 137);
+    expect(previous?.tag).toBe(LORA_MIGRATION_TAG);
+    // The migrator applies in `when` order, so an entry timestamped before its
+    // predecessor would run this correction against a database that had not
+    // reached 0137 — and, further back, not reached the row it corrects.
+    expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
+    expect(journal.entries.filter((candidate) => candidate.idx === 138)).toHaveLength(1);
+    // The HEAD assertion lives with the newest migration, so exactly one suite
+    // has to move when the next one lands. A duplicate index from a concurrent
+    // branch is what it catches.
+    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(138);
+
+    // Data migrations 0132–0137 ship no snapshot either; one here would claim a
+    // `schema.ts` change this file does not make.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0138_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0138's predicate, beside an operator's own row
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!ready)("migration 0138 — the predicate", () => {
+  const OPERATOR_ID = "imgmdlqwen2operatoraaaaa";
+
+  afterAll(async () => {
+    if (!ready) return;
+    await db().delete(imageModels).where(eq(imageModels.id, OPERATOR_ID));
+    await restoreQwenImage2Row();
+  });
+
+  it("re-executing the shipped statement changes nothing, timestamps included", async () => {
+    // `updated_at` is INSIDE the comparison, and that is the point of matching
+    // the known prior value `file`: replayed against its own result the
+    // statement matches no row, so even the bookkeeping column is untouched. A
+    // predicate that named only the slug would rewrite the row on every replay
+    // and make the admin card claim the model had just been changed.
+    const snapshot = () => db().select().from(imageModels).where(eq(imageModels.id, QWEN_IMAGE_2.id));
+
+    const before = await snapshot();
+    expect(before).toHaveLength(1);
+    await reapplyTransportFix();
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("corrects an endpoint an operator added under a version-suffixed slug", async () => {
+    // The admin add path auto-pins, so a hand-added official row can be stored
+    // as `owner/name:<version>` — and it arrives with the same broken default
+    // transport, because the add path writes `file` for every new row. Only a
+    // provider-path predicate reaches it; an id-equality one would leave that
+    // operator's edit path dead after a deploy that claimed to fix it.
+    await db().delete(imageModels).where(eq(imageModels.id, QWEN_IMAGE_2.id));
+    await db()
+      .insert(imageModels)
+      .values({
+        id: OPERATOR_ID,
+        slug: `${QWEN_IMAGE_2.slug}:${QWEN_IMAGE_2.versionId}`,
+        label: "Operator's Qwen Image 2",
+        canGenerate: true,
+        canEdit: true,
+        referenceField: "image",
+        referenceArity: "single",
+        referenceTransport: "file",
+        maxReferences: 1,
+        probedVersionId: QWEN_IMAGE_2.versionId,
+      });
+
+    await reapplyTransportFix();
+
+    expect(await transportFor(QWEN_IMAGE_2.slug)).toBe("data_url");
+    // The predicate compares provider paths for EQUALITY, so the sibling that
+    // merely starts with the same characters is not swept along.
+    for (const slug of FILE_TRANSPORT_SIBLINGS) {
+      expect(await transportFor(slug), `${slug} must keep the uploaded-file transport`).toBe("file");
+    }
+
+    await db().delete(imageModels).where(eq(imageModels.id, OPERATOR_ID));
+    await restoreQwenImage2Row();
+  });
+
+  it("resurrects nothing an owner deleted", async () => {
+    // Seeded rows are ordinary rows: an owner may remove this endpoint from the
+    // registry, and a correction to a row that no longer exists must stay a
+    // no-op rather than reintroducing it. An UPDATE gets that for free, which is
+    // exactly why the fix is one and not a re-seed.
+    await db().delete(imageModels).where(sql`split_part(${imageModels.slug}, ':', 1) = ${QWEN_IMAGE_2.slug}`);
+
+    await reapplyTransportFix();
+
+    expect(await transportFor(QWEN_IMAGE_2.slug)).toBeUndefined();
+
+    await restoreQwenImage2Row();
+    expect(await qwenImage2Intact()).toBe(true);
   });
 });

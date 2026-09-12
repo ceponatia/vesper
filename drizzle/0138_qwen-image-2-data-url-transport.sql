@@ -1,0 +1,84 @@
+-- Flip `qwen/qwen-image-2` to the inlined `data:` reference transport, because
+-- the endpoint rejects Replicate's own uploaded-file URLs and its entire edit
+-- path is therefore dead in production (issue #571).
+--
+-- OBSERVED, not inferred. On Fly release v249 (commit e621c128), 2026-09-12, a
+-- reference-bearing run through the admin Image Generator failed at the
+-- provider:
+--
+--     failureCode: image_generator.render_failed
+--     error: replicate failed: Invalid image format ''.
+--            Supported formats: .png, .bmp, .webp, .jpg, .jpeg
+--
+-- The payload was correct — it matched the pinned version's schema — and the URL
+-- Vesper sent ENDED IN `.webp`
+-- (`https://api.replicate.com/v1/files/NGM5YTgz….webp`), so the wrapper is not
+-- reading the extension off the URL path. A direct control probe sent the
+-- BYTE-IDENTICAL input object with the reference as a `data:image/webp;base64,…`
+-- URI and succeeded in 6.8 s, returning a correct edit. Transport is the only
+-- variable between the two requests.
+--
+-- THE THIRD RECORDING OF ONE FAILURE MODE, and the row this table already had
+-- evidence about. 0099 flipped `wan-video/wan-2.7-image-pro` for the same
+-- `ValueError: Invalid image format ''`, recording that the wrapper validates the
+-- file extension of what it is handed and that an upload arrives at the model
+-- container without one. 0134 then seeded BOTH Qwen Image 3 rows `data_url`
+-- explicitly "because" a Qwen Image 2 trial had exposed that failure — it
+-- protected the siblings and left the row that produced the evidence at `file`.
+-- This file closes that gap. 0133's own comment ("nothing observed here says
+-- this endpoint rejects Replicate's uploaded-file URLs") was accurate when it was
+-- written and is now contradicted; it is left standing, because the migration
+-- history is the record of what was known when, and this file is that record.
+--
+-- NOT A REPLICATE-WIDE FACT AND NOT A QWEN-WIDE ONE. `qwen/qwen-image-edit-2511`
+-- and `qwen/qwen-image-2512` are registered here on the `file` transport and
+-- render from the same uploaded-file URLs without complaint. This is a
+-- per-wrapper validation quirk of ONE endpoint, so the predicate below names that
+-- endpoint's provider path and nothing else, and no other row is swept along.
+-- A prefix match would have been the expensive mistake available here: it would
+-- have moved `qwen/qwen-image-2512` onto inlined bytes as well, paying a larger
+-- request body on every render to fix a failure that row does not have.
+--
+-- WHY A DATA MIGRATION. `pnpm db:migrate` is what the Fly deploy runs, and
+-- `pnpm db:seed` never touches this catalog. A fresh database comes up with
+-- 0133's row carrying `file`, so a migration is the only thing that converges
+-- every environment — the same reason 0098, 0104, 0107, 0110, 0119, 0132, 0133,
+-- 0134, 0136 and 0137 seed and patch this catalog by hand. drizzle-kit has no
+-- schema change to diff here, so this migration carries no snapshot.
+--
+-- ONE COLUMN, AND DELIBERATELY ONLY ONE. `for_portrait`/`for_variant`/`for_scene`
+-- stay false, no `image_model_profiles` row is written, and the reviewed
+-- `edit_kind` / `identity_preservation` stay `unknown`: making an endpoint
+-- reachable is not grading it, and nothing below claims a rendered output has
+-- been looked at. `reference_transport` is owner-set and never probed
+-- (`imageModelReprobeFields`, and the admin PATCH route that accepts it), so a
+-- later re-probe of an unchanged schema cannot undo this.
+--
+-- THE PREDICATE ANSWERS THREE QUESTIONS:
+--
+--   1. `split_part` on ':' compares the PROVIDER PATH, so an administrator who
+--      added this endpoint through the admin page — where the add path auto-pins
+--      and may have stored it as `qwen/qwen-image-2:<version>` — gets the fix
+--      too. That row has the same broken transport and the same dead edit path;
+--      an id-equality predicate would have left it failing. The comparison is
+--      EQUALITY, so the sibling `qwen/qwen-image-2512` is not matched.
+--   2. `reference_transport = 'file'` is the known prior value. An operator who
+--      already worked around this by hand — the transport is a select on the
+--      admin card — is not rewritten, and no `updated_at` is churned on a row
+--      that already carries the right value. Replayed against its own result the
+--      statement matches nothing, so it is idempotent rather than merely
+--      repeatable.
+--   3. A DELETION IS NOT RESURRECTED, and an UPDATE gets that for free: a row an
+--      owner removed matches no predicate, and there is nothing here that could
+--      insert it. Seeded rows are ordinary rows (owner ruling 4, recorded on
+--      0108), and `pnpm db:migrate` applies this file exactly once per database
+--      and records it in `drizzle.__drizzle_migrations`, so a deletion made after
+--      it stays deleted.
+--
+-- What this file CANNOT establish is that the endpoint now renders well. It
+-- makes the reference path reachable; the row's reviewed columns, untouched
+-- here, are what still say the output is ungraded.
+UPDATE "image_models"
+SET "reference_transport" = 'data_url', "updated_at" = now()
+WHERE split_part("slug", ':', 1) = 'qwen/qwen-image-2'
+  AND "reference_transport" = 'file';
