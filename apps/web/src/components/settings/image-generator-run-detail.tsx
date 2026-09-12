@@ -224,6 +224,7 @@ function controlEntries(controls: ImageRenderControls): string[] {
   if (controls.outputCount !== undefined) entries.push(`output count ${String(controls.outputCount)}`);
   if (controls.coherentSet !== undefined) entries.push(`coherent set ${String(controls.coherentSet)}`);
   if (controls.thinkingMode !== undefined) entries.push(`thinking mode ${String(controls.thinkingMode)}`);
+  if (controls.fastMode !== undefined) entries.push(`fast mode ${String(controls.fastMode)}`);
   if (controls.resolution !== undefined) entries.push(`resolution ${controls.resolution}`);
   if (controls.width !== undefined) entries.push(`width ${String(controls.width)}`);
   if (controls.height !== undefined) entries.push(`height ${String(controls.height)}`);

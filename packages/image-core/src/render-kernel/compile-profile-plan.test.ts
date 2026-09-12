@@ -6,6 +6,7 @@ import {
   imagePromptStrategies,
   type ImageModelProfile,
   type ImagePromptStrategy,
+  type ImageRenderControls,
 } from "../models/image-model-profiles";
 import {
   compileProfileRenderPlan,
@@ -446,6 +447,242 @@ describe("compileProfileRenderPlan", () => {
     // reviewed seam corrects it, and the plan must describe the corrected model.
     const compiled = plan({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } });
     expect(compiled.effectiveModel.extraInput).toEqual({ go_fast: false });
+  });
+});
+
+/**
+ * The whole control vocabulary, held against the merge — the structural claim
+ * `fastMode` was the counterexample to.
+ *
+ * `compileProfileRenderPlan` assembles its `ImageRenderControls` member by
+ * member, and a member left off that list does not fail: it reaches
+ * `mapImageRenderControls` as `undefined`, which the mapper reads as "not
+ * requested". The value then appears in neither `appliedControls` nor
+ * `droppedControls`, so nothing in a stored run, a diagnostic or a fingerprint
+ * says the request was ignored — the one outcome this step's whole drop
+ * vocabulary exists to prevent.
+ *
+ * Two alarms, deliberately: `Required<ImageRenderControls>` fails to COMPILE
+ * when a control is added to the schema without a value here, and the case
+ * itself fails when a control that has a value is not carried. Either way the
+ * next control cannot repeat `fastMode`'s two years of silence.
+ *
+ * Being NAMED is the claim, not being applied — `outputCount`, `coherentSet`
+ * and an unresolved `lora` are all legitimately refused, and the cases above
+ * own each refusal's reason. What no control may do is vanish.
+ */
+describe("the declared control vocabulary", () => {
+  /** One schema-legal value per member, and the compile-time half of the alarm. */
+  const EVERY_CONTROL: Required<ImageRenderControls> = {
+    seed: 7,
+    negativePrompt: "no fog",
+    guidance: 3.5,
+    steps: 20,
+    editStrength: 0.5,
+    outputCount: 2,
+    coherentSet: true,
+    thinkingMode: true,
+    fastMode: false,
+    resolution: "2K",
+    width: 512,
+    height: 768,
+    lora: { id: "loraaaaaaaaaaaaaaaaaaaaa", scale: 1 },
+  };
+
+  /** A version that binds everything bindable, so nothing is named only because it had nowhere to go. */
+  const EVERY_BINDING = {
+    controls: {
+      seed: { field: "seed", type: "integer", minimum: 0, maximum: 2147483647 },
+      negativePrompt: { field: "negative_prompt", type: "string" },
+      guidance: { field: "guidance_scale", type: "number", minimum: 0, maximum: 20 },
+      steps: { field: "num_inference_steps", type: "integer", minimum: 1, maximum: 50 },
+      editStrength: { field: "strength", type: "number", minimum: 0, maximum: 1 },
+      outputCount: { field: "num_outputs", type: "integer", minimum: 1, maximum: 4 },
+      thinkingMode: { field: "thinking_mode", type: "boolean" },
+      fastMode: { field: "go_fast", type: "boolean" },
+      resolutionTier: { field: "resolution_tier", type: "enum", enumValues: ["1K", "2K"] },
+      customWidth: { field: "width", type: "integer", minimum: 64, maximum: 8192 },
+      customHeight: { field: "height", type: "integer", minimum: 64, maximum: 8192 },
+      loraWeights: { field: "lora_weights", type: "string" },
+      loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+    },
+    knownInputFields: [
+      "go_fast",
+      "guidance_scale",
+      "height",
+      "lora_scale",
+      "lora_weights",
+      "negative_prompt",
+      "num_inference_steps",
+      "num_outputs",
+      "resolution_tier",
+      "seed",
+      "strength",
+      "thinking_mode",
+      "width",
+    ],
+  };
+
+  it("names every control the caller requested in either applied or dropped", () => {
+    const compiled = compiledPlan({
+      model: model({ advancedCapabilities: EVERY_BINDING }),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: EVERY_CONTROL,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    const named = new Set([
+      ...Object.keys(compiled.appliedControls),
+      ...compiled.resolvedControls.droppedControls.map((entry) => entry.control),
+    ]);
+    expect(Object.keys(EVERY_CONTROL).filter((control) => !named.has(control))).toEqual([]);
+  });
+});
+
+/**
+ * `fastMode` through the merge — the control this step forgot to carry.
+ *
+ * It was declared on `imageRenderControlsSchema`, mapped correctly by
+ * `mapImageRenderControls`, and bound to `go_fast` by the probe, but it was not
+ * one of the members {@link compileProfileRenderPlan} assembles its
+ * `ImageRenderControls` from. A caller's value therefore reached the mapper as
+ * `undefined`, which the mapper reads as "not requested" — so the request
+ * appeared in NEITHER `appliedControls` nor `droppedControls`, and the row's
+ * `extra_input` pin decided the run with nothing recorded to contradict it.
+ * (klein 4B on Fly v249, 2026-09-12: Fast-OFF runs recorded
+ * `appliedControls: {seed, guidance}` and `droppedControls: []` beside a
+ * payload carrying `go_fast: true`, and Fast-OFF/Fast-ON pairs came back
+ * byte-identical.)
+ *
+ * The fixture is the klein shape the evidence came from: a `go_fast` binding
+ * beside an `extra_input` that pins the accelerated path ON. The payload half
+ * of the claim — that the mapped field beats that pin in the body actually
+ * POSTed — is `@vesper/image-replicate`'s `fast-mode-final-wire.test.ts`, for
+ * the same reason the LoRA wire suite lives there: this package cannot see the
+ * builder.
+ */
+describe("the fastMode control", () => {
+  /** The klein 4B row's own shape: `go_fast` bound, the accelerated path pinned on. */
+  const FAST_MODEL = {
+    extraInput: { go_fast: true },
+    advancedCapabilities: {
+      controls: {
+        guidance: { field: "guidance", type: "number", minimum: 1, maximum: 10 },
+        fastMode: { field: "go_fast", type: "boolean" },
+      },
+      knownInputFields: ["go_fast", "guidance"],
+    },
+  };
+
+  function compiledWith(controls: ImageRenderControls, modelOver: Record<string, unknown> = FAST_MODEL) {
+    return compiledPlan({
+      model: model(modelOver),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: controls,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+  }
+
+  it("maps an explicit false onto the version's go_fast binding and records it as applied", () => {
+    // FALSE, not absent: the defect's whole shape is a real request that left
+    // no trace, so the record has to name it as applied rather than merely
+    // leaving the payload right by accident.
+    const compiled = compiledWith({ fastMode: false });
+    expect(compiled.controlInput).toEqual({ go_fast: false });
+    expect(compiled.appliedControls).toEqual({ fastMode: false });
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+  });
+
+  it("maps an explicit true the same way", () => {
+    const compiled = compiledWith({ fastMode: true });
+    expect(compiled.controlInput).toEqual({ go_fast: true });
+    expect(compiled.appliedControls).toEqual({ fastMode: true });
+  });
+
+  it("sends nothing when no layer asks, leaving the row's own pin standing", () => {
+    // The control that separates "requested off" from "not requested": absent
+    // must still write no key, which is what leaves `extra_input.go_fast` —
+    // and every provider default behind it — exactly as it was.
+    const compiled = compiledWith({});
+    expect("go_fast" in compiled.controlInput).toBe(false);
+    expect(compiled.appliedControls).toEqual({});
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+  });
+
+  it("lets a request's false override a profile default of true", () => {
+    // `??` and not `||`: under `||` the false would fall through to the
+    // profile's `true` and the request would be inverted rather than dropped.
+    const compiled = compiledPlan({
+      model: model(FAST_MODEL),
+      profile: profile({ controlDefaults: { fastMode: true, seedPolicy: "random" } }),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: { fastMode: false },
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(compiled.controlInput).toEqual({ go_fast: false });
+    expect(compiled.appliedControls).toEqual({ fastMode: false });
+  });
+
+  it("carries a profile default when the request is silent", () => {
+    const compiled = compiledPlan({
+      model: model(FAST_MODEL),
+      profile: profile({ controlDefaults: { fastMode: false, seedPolicy: "random" } }),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(compiled.controlInput).toEqual({ go_fast: false });
+    expect(compiled.appliedControls).toEqual({ fastMode: false });
+  });
+
+  it("lets a profile's provider override outrank the request, and reports what actually went", () => {
+    // The interaction that masked the defect on the one model most likely to be
+    // exercised. `qwen/qwen-image-edit-2511`'s reviewed ruling is carried by its
+    // task profiles as `provider_overrides: {"go_fast": false}` (migration
+    // 0110), and overrides merge LAST — so an identity-critical production
+    // render stays unaccelerated beside a caller asking for speed. The applied
+    // record reads the value back out of the FINAL payload rather than echoing
+    // the request, so it reports what travelled.
+    const compiled = compiledPlan({
+      model: model(FAST_MODEL),
+      profile: profile({ providerOverrides: { go_fast: false } }),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: { fastMode: true },
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(compiled.controlInput).toEqual({ go_fast: false });
+    expect(compiled.appliedControls).toEqual({ fastMode: false });
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+  });
+
+  it("records a no_binding drop on a version with no fastMode field, rather than silence", () => {
+    // The other half of the defect. A model with nowhere to put the control
+    // must REFUSE it visibly — "this run was not de-accelerated" is a fact the
+    // comparison fingerprint carries — where before the request vanished and
+    // the record claimed the run was configured exactly as an unrequested one.
+    const compiled = compiledWith({ fastMode: false }, { extraInput: { go_fast: true } });
+    expect("go_fast" in compiled.controlInput).toBe(false);
+    expect(compiled.appliedControls).toEqual({});
+    expect(compiled.resolvedControls.droppedControls).toEqual([{ control: "fastMode", reason: "no_binding" }]);
+  });
+
+  it("fingerprints the two accelerations differently", () => {
+    // Two cells that differ only in `fastMode` must not hash alike — which they
+    // did while the merge dropped the control, and which is why the live
+    // Fast-OFF/Fast-ON pairs were indistinguishable in the record as well as in
+    // the image.
+    expect(fingerprintOf(compiledWith({ fastMode: false }))).not.toBe(fingerprintOf(compiledWith({ fastMode: true })));
+    expect(fingerprintOf(compiledWith({ fastMode: false }))).not.toBe(fingerprintOf(compiledWith({})));
   });
 });
 
