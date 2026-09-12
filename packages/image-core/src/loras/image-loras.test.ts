@@ -526,6 +526,19 @@ describe("applyImageLoraPromptAdditions", () => {
     expect(woven).toBe("a Sumi-E study of a warm room\n\nink wash");
   });
 
+  it("is a no-op when applied again to its own already-prepared output (a trigger-only binding, no prefix/suffix)", () => {
+    // The klein depth row's shape (#568): one trigger word, no prompt prefix
+    // or suffix (docs/images/providers/loras.md §RefControl depth row).
+    // Applying the additions once weaves the missing trigger; re-applying the
+    // SAME binding to that result must add nothing more — repeated
+    // preparation (a duplicate render, a retried plan) must not keep
+    // growing the prompt.
+    const triggerOnly = { ...binding, triggerWords: ["refcontrol"] };
+    const once = applyImageLoraPromptAdditions("a bench render", triggerOnly);
+    expect(once).toBe("a bench render\n\nrefcontrol");
+    expect(applyImageLoraPromptAdditions(once, triggerOnly)).toBe(once);
+  });
+
   it("finds a trigger word supplied by the prefix, not only by the prompt", () => {
     const woven = applyImageLoraPromptAdditions("a warm room", {
       ...binding,
@@ -608,5 +621,124 @@ describe("admin request schemas", () => {
     expect(imageLoraUpdateRequestSchema.safeParse({ locatorType: "https_url", locator: HF_LOCATOR }).success).toBe(
       false,
     );
+  });
+});
+
+/**
+ * The klein 4B RefControl depth row (#568 pilot): a curated depth-conditioning
+ * LoRA for the exact `-base-lora` endpoint, checked against its OWN real
+ * values rather than the generic Qwen fixture above. The checklist this row
+ * exists to satisfy is itself about not confusing similarly-named endpoints
+ * (`docs/images/providers/loras.md` §RefControl depth row (klein 4B, pilot)),
+ * so a mechanically correct evaluator proved only against the Qwen fixture
+ * says nothing about whether the array-shaped `-base-lora` binding, the
+ * pinned #566 fixture version, and the 0.8–1.0 pilot band actually refuse the
+ * near-miss endpoints the checklist names.
+ */
+const KLEIN_DEPTH_MODEL_SLUG = "black-forest-labs/flux-2-klein-4b-base-lora";
+const KLEIN_DEPTH_VERSION = "c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc";
+
+function depthLora(over: Record<string, unknown> = {}): ImageLora {
+  return imageLoraSchema.parse({
+    id: "lora-klein-depth",
+    label: "FLUX.2 klein 4B RefControl depth (pilot)",
+    locatorType: "https_url",
+    locator: "https://example.test/lora/klein-depth.safetensors",
+    compatibleModelSlugs: [KLEIN_DEPTH_MODEL_SLUG],
+    compatibleVersionIds: [KLEIN_DEPTH_VERSION],
+    defaultScale: 0.9,
+    minimumScale: 0.8,
+    maximumScale: 1.0,
+    triggerWords: ["refcontrol"],
+    allowedTasks: [],
+    ...over,
+  });
+}
+
+/** The array-shaped `lora_weights`/`lora_scales` pair the `-base-lora` endpoint's probed schema declares. */
+function klein4bBaseLoraBindings(over: Partial<ImageModelControlBindings> = {}): ImageModelControlBindings {
+  return {
+    loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+    loraScale: { field: "lora_scales", type: "number", arity: "array" },
+    ...over,
+  };
+}
+
+function evaluateDepth(over: Partial<EvaluateImageLoraForRenderInput> = {}) {
+  return evaluateImageLoraForRender({
+    lora: depthLora(),
+    modelSlug: KLEIN_DEPTH_MODEL_SLUG,
+    versionId: KLEIN_DEPTH_VERSION,
+    context: { kind: "generator_bench" },
+    bindings: klein4bBaseLoraBindings(),
+    ...over,
+  });
+}
+
+describe("the klein 4B RefControl depth row (#568 pilot)", () => {
+  it("resolves mechanically on the generator bench at the compatible version, despite an empty allowedTasks", () => {
+    const result = evaluateDepth();
+    expect(result).toEqual({
+      ok: true,
+      binding: {
+        id: "lora-klein-depth",
+        label: "FLUX.2 klein 4B RefControl depth (pilot)",
+        locator: "https://example.test/lora/klein-depth.safetensors",
+        scale: 0.9,
+        promptPrefix: null,
+        promptSuffix: null,
+        triggerWords: ["refcontrol"],
+      },
+    });
+  });
+
+  it.each([
+    ["black-forest-labs/flux-2-klein-4b", "the distilled endpoint"],
+    ["black-forest-labs/flux-2-klein-4b-base", "the ordinary base endpoint (guidance, no LoRA)"],
+    ["black-forest-labs/flux-2-klein-9b-base-lora", "the non-commercial 9B sibling"],
+    ["qwen/qwen-image-edit-2511", "an unrelated Qwen endpoint"],
+  ])("refuses %s (%s) despite the resembling name", (modelSlug) => {
+    expect(evaluateDepth({ modelSlug })).toMatchObject({ ok: false, code: "image_lora.incompatible" });
+  });
+
+  it("refuses a version id the row does not list", () => {
+    expect(evaluateDepth({ versionId: "a-different-version" })).toMatchObject({
+      ok: false,
+      code: "image_lora.incompatible",
+    });
+  });
+
+  it.each([0.7, 1.1])("refuses a requested scale of %s outside the curated 0.8–1.0 pilot band", (requestedScale) => {
+    expect(evaluateDepth({ requestedScale })).toMatchObject({ ok: false, code: "image_lora.incompatible" });
+  });
+
+  it("refuses scale 0 rather than reading it as the no-LoRA comparison arm", () => {
+    // Clearing the selection entirely (no `controls.lora`) is how a render asks
+    // for the no-LoRA comparison arm. Asking THIS row for scale 0 is still a
+    // request to send a scale outside its curated band, not a synonym for
+    // "send nothing" — the two must not collapse into the same behavior.
+    expect(evaluateDepth({ requestedScale: 0 })).toMatchObject({ ok: false, code: "image_lora.incompatible" });
+  });
+
+  it("refuses a production task under its empty allowedTasks", () => {
+    expect(evaluateDepth({ context: { kind: "production", task: "scene" } })).toMatchObject({
+      ok: false,
+      code: "image_lora.incompatible",
+    });
+    expect(evaluateDepth({ context: { kind: "production", task: "portrait" } })).toMatchObject({
+      ok: false,
+      code: "image_lora.incompatible",
+    });
+  });
+
+  it("grants the Lab nothing either — its own context kind is judged by the same empty allowedTasks", () => {
+    // The Lab reproduces production and is judged by production's rules
+    // (execution-context.ts), so an empty allowedTasks refuses it exactly as
+    // it refuses production — the row does not become eligible just because
+    // Generator-only curation stops at the bench.
+    expect(evaluateDepth({ context: { kind: "image_lab", task: "scene" } })).toMatchObject({
+      ok: false,
+      code: "image_lora.incompatible",
+    });
   });
 });
