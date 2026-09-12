@@ -110,7 +110,7 @@
 -- and nothing else does. Every existing default is untouched.
 --
 -- THE 9B SIBLINGS ARE NOT REGISTERED HERE. `black-forest-labs/flux-2-klein-9b`
--- and its variants are published under a non-commercial licence (ruling #564),
+-- and its variants are published under a non-commercial licence (licence terms recorded in #564, an open owner decision),
 -- while the 4B endpoints are Apache-2.0. Registering 9B is out of this
 -- migration's scope and is not implied by these rows existing.
 --
