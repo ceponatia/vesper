@@ -20,11 +20,11 @@ Vesper registers no row for them (see [Not the 9B siblings](#not-the-9b-siblings
 Replicate publishes the 4B model as three endpoints. They share a prompt/reference shape and
 differ exactly where a payload has to get it right:
 
-| Endpoint                                     | Guidance          | Accelerated sampling | Runtime LoRA                        |
-| -------------------------------------------- | ----------------- | -------------------- | ----------------------------------- |
-| `black-forest-labs/flux-2-klein-4b`          | **none declared** | `go_fast`            | none declared                       |
-| `black-forest-labs/flux-2-klein-4b-base`     | `guidance`, 1–10  | `go_fast`            | none declared                       |
-| `black-forest-labs/flux-2-klein-4b-base-lora`| **none declared** | **none declared**    | `lora_weights` / `lora_scales` lists |
+| Endpoint                                      | Guidance          | Accelerated sampling | Runtime LoRA                         |
+| --------------------------------------------- | ----------------- | -------------------- | ------------------------------------ |
+| `black-forest-labs/flux-2-klein-4b`           | **none declared** | `go_fast`            | none declared                        |
+| `black-forest-labs/flux-2-klein-4b-base`      | `guidance`, 1–10  | `go_fast`            | none declared                        |
+| `black-forest-labs/flux-2-klein-4b-base-lora` | **none declared** | **none declared**    | `lora_weights` / `lora_scales` lists |
 
 This page is the third row, and it is **the only one of the three that accepts LoRA weights**. It
 is also the only one that declares neither `guidance` nor `go_fast`: taking runtime weights costs
@@ -54,10 +54,10 @@ This is the fact most likely to be assumed wrong here. Every other LoRA-bound ro
 the Qwen edit endpoints — declares two **scalar** fields, `lora_weights` (a string) and
 `lora_scale` (a number). This endpoint declares two **arrays**:
 
-| Field          | Declared shape                         | Vesper binding                                            |
-| -------------- | -------------------------------------- | --------------------------------------------------------- |
-| `lora_weights` | array of strings, nullable             | `loraWeights`, element type `string`, `arity: "array"`     |
-| `lora_scales`  | array of numbers, nullable             | `loraScale`, element type `number`, `arity: "array"`       |
+| Field          | Declared shape             | Vesper binding                                         |
+| -------------- | -------------------------- | ------------------------------------------------------ |
+| `lora_weights` | array of strings, nullable | `loraWeights`, element type `string`, `arity: "array"` |
+| `lora_scales`  | array of numbers, nullable | `loraScale`, element type `number`, `arity: "array"`   |
 
 Note the plural `lora_scales`. The pair is usable in exactly two shapes and nothing else: both
 sides scalar, or both sides arrays with the same two element types. A schema pairing an array
@@ -233,3 +233,89 @@ shape — a Generator run asks for no shape at all by default
 two LoRA keys appear together or not at all, each as a one-element list, and only when a curated
 LoRA is selected. `disable_safety_checker` carries the deployment's posture, not the row's stored
 placeholder. No other key is written unless an admin sets one of the two Advanced inputs.
+
+## RefControl depth recipe
+
+A published third-party LoRA trains this endpoint's runtime weights to read its first reference
+image as a depth map and its second as the identity to preserve, with the trigger word
+`refcontrol`. [loras.md](../../images/providers/loras.md) §RefControl depth row (klein 4B, pilot)
+owns the curated row's exact field values and the artifact's provenance; this section owns the
+operator recipe and the wire shape it produces.
+
+### Producing the depth map
+
+The depth map is an owner-scoped `lab_control` image with `controlKind: depth`
+([depth-fixture.md](../../image-lab/depth-fixture.md)), reached one of two ways:
+
+- **Hand-authored** — an operator uploads a depth map they already have
+  ([depth-fixture.md](../../image-lab/depth-fixture.md) §Hand-authored depth fixtures).
+- **Extracted** — the Image Lab's depth extraction runs a reference image through the pinned
+  `chenxwh/depth-anything-v2` model and stores the result as the same `lab_control` kind
+  ([depth-fixture.md](../../image-lab/depth-fixture.md) §Automatic extraction).
+
+Either path needs a review before an experiment relies on the fixture
+([depth-fixture.md](../../image-lab/depth-fixture.md) §Review requirement), and either way the
+result is an owner-scoped image the Generator's existing owned-image picker
+([form.md](../../image-generator/form.md) §Sources) selects like any other reference — this recipe
+adds no ingestion path, no Generator/Lab coupling, and no depth-specific UI.
+
+### Running the recipe
+
+1. Open the [Image Generator](../../image-generator/README.md) and select
+   `black-forest-labs/flux-2-klein-4b-base-lora`.
+2. Set primary image 1 to the reviewed depth map and primary image 2 to the identity reference the
+   render preserves. Both travel as ordinary primary references under the neutral `reference` role
+   in the order selected; an optional per-reference purpose is provenance only and never changes
+   which provider field either one lands on.
+3. Author a prompt that states each image's role in plain language, since nothing about the
+   request itself tells the model which numbered image is which — for example, "follow the first
+   image as depth structure and preserve the second image's face and identity".
+4. Pick the curated depth LoRA row at its default scale. The row's one trigger word joins the
+   prompt through the existing prompt-addition mechanism when the authored prompt does not already
+   carry it, and the run record's final prompt shows the woven result.
+5. For the no-LoRA comparison arm, clear the LoRA selection entirely rather than asking the row for
+   a scale outside its curated band — an out-of-band scale refuses before spend, it is not a
+   substitute for "no LoRA".
+6. Record each arm's run id, since a run id is what the comparison below reads.
+
+### The wire shape
+
+```json
+{
+  "prompt": "<authored prompt, with the trigger woven in if it was missing>",
+  "images": ["<depth map url>", "<identity reference url>"],
+  "lora_weights": ["<the row's verified S3 locator>"],
+  "lora_scales": [0.9],
+  "output_format": "webp",
+  "output_quality": 95,
+  "disable_safety_checker": false
+}
+```
+
+`images` carries the depth map first and the identity reference second because that is the order
+the admin selected them in — the planner and transport preserve reference order end to end and add
+no routing based on purpose
+([render-intents.md](../../images/providers/render-intents.md) §Which references survive is the
+profile's policy). The two LoRA keys are the row's own resolved locator and scale, each as the
+one-element list this endpoint's array-shaped pair requires
+([loras.md](../../images/providers/loras.md) §Scalar and array bindings) — never a second entry,
+and never a raw locator an admin typed in directly.
+
+### What the record proves, and what it does not
+
+The run record proves the exact request sent: which two images occupied `images` and in which
+order, which locator and scale reached `lora_weights` / `lora_scales`, and the exact final prompt
+the trigger word landed in. It is provenance, not a verdict — the Image Generator carries no
+evidence rule and no human-verdict vocabulary
+([image-generator/README.md](../../image-generator/README.md) §The boundary against the Advanced
+Image Lab). A stored run record does not establish that the depth map actually shaped the output or
+that the identity survived; only a rendered image an operator inspects says that.
+
+### The comparison this recipe feeds
+
+The recipe's inputs feed a three-arm comparison against one held seed and one held depth/identity
+pair: no LoRA, the row at its curated minimum (0.8), and the row at its curated maximum (1.0) — the
+only variable between arms is the LoRA's own scale. This page's recipe produces the inputs and the
+run ids; grading the three arms against each other is
+[#569](https://github.com/ceponatia/vesper/issues/569)'s authorized comparison, never a claim this
+page makes on its own.
