@@ -288,7 +288,7 @@ adds no ingestion path, no Generator/Lab coupling, and no depth-specific UI.
   "lora_scales": [0.9],
   "output_format": "webp",
   "output_quality": 95,
-  "disable_safety_checker": false
+  "disable_safety_checker": "<the deployment's safety setting; true under the default REPLICATE_SAFE_MODE>"
 }
 ```
 
@@ -299,7 +299,9 @@ no routing based on purpose
 profile's policy). The two LoRA keys are the row's own resolved locator and scale, each as the
 one-element list this endpoint's array-shaped pair requires
 ([loras.md](../../images/providers/loras.md) §Scalar and array bindings) — never a second entry,
-and never a raw locator an admin typed in directly.
+and never a raw locator an admin typed in directly. `disable_safety_checker` is the deployment's
+own `REPLICATE_SAFE_MODE` setting (`replicate-runtime.ts`'s `resolveReplicateConfig`), which
+overwrites the row's `extra_input` pin at send time on every run, this recipe included.
 
 ### What the record proves, and what it does not
 
@@ -316,6 +318,5 @@ that the identity survived; only a rendered image an operator inspects says that
 The recipe's inputs feed a three-arm comparison against one held seed and one held depth/identity
 pair: no LoRA, the row at its curated minimum (0.8), and the row at its curated maximum (1.0) — the
 only variable between arms is the LoRA's own scale. This page's recipe produces the inputs and the
-run ids; grading the three arms against each other is
-[#569](https://github.com/ceponatia/vesper/issues/569)'s authorized comparison, never a claim this
-page makes on its own.
+run ids; the authorized comparison that grades the three arms against each other is a separate,
+owner-authorized step, never a claim this page makes on its own.

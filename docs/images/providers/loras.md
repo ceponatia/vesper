@@ -64,15 +64,16 @@ work.
 
 ## RefControl depth row (klein 4B, pilot)
 
-The curated `image_loras` row for
+An operator creates one curated `image_loras` row for
 [`black-forest-labs/flux-2-klein-4b-base-lora`](../../image-models/models/flux-2-klein-4b-base-lora.md)'s
-RefControl depth recipe: `label` "FLUX.2 klein 4B RefControl depth (pilot)", `locatorType`
-`https_url`, `compatibleModelSlugs` naming that one endpoint slug, `compatibleVersionIds` naming
-the fixture version its capability record was probed against, `triggerWords: ["refcontrol"]` with
-no prompt prefix or suffix, and `allowedTasks: []` — Generator-only, so the row runs mechanically in
-the bench while granting itself no production or Image Lab eligibility until an operator curates a
-task for it. Its scale band, 0.8–1.0 around a default of 0.9, is a pilot choice informed by the
-model card's recommended weight range, not a provider-declared limit or a measured optimum.
+RefControl depth recipe, through the admin LoRA library, with these exact values: `label` "FLUX.2
+klein 4B RefControl depth (pilot)", `locatorType` `https_url`, `compatibleModelSlugs` naming that
+one endpoint slug, `compatibleVersionIds` naming the fixture version its capability record was
+probed against, `triggerWords: ["refcontrol"]` with no prompt prefix or suffix, and
+`allowedTasks: []` — Generator-only, so the row runs mechanically in the bench while granting
+itself no production or Image Lab eligibility until an operator curates a task for it. Its scale
+band, 0.8–1.0 around a default of 0.9, is a pilot choice informed by the model card's recommended
+weight range, not a provider-declared limit or a measured optimum.
 
 **Provenance:** read from the Hugging Face API on 2026-09-12, repository
 `thedeoxen/refcontrol-FLUX.2-klein-4B-reference-depth-lora`, revision
