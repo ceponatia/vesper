@@ -170,10 +170,22 @@ describe("resolveImageLoraBindingPair", () => {
     });
   });
 
-  it("refuses when either side is absent", () => {
+  it("refuses when either side is absent, spelled undefined OR null", () => {
     expect(resolveImageLoraBindingPair(undefined, scalarScale)).toBeNull();
     expect(resolveImageLoraBindingPair(scalarWeights, undefined)).toBeNull();
     expect(resolveImageLoraBindingPair(undefined, undefined)).toBeNull();
+
+    // `null` is the probe's own spelling of "this field is not that binding"
+    // — `stringBinding`/`numericBinding`/the array-element reader each return
+    // `ImageInputBinding | null`, and `deriveLoraBindingPair` passes those
+    // straight through rather than normalizing first. The two absences must
+    // therefore mean the same thing here. A guard rewritten as an explicit
+    // `=== undefined` comparison would read a probe's `null` as a present
+    // binding and resolve a pair out of half a version's schema; this row is
+    // what stops that.
+    expect(resolveImageLoraBindingPair(null, scalarScale)).toBeNull();
+    expect(resolveImageLoraBindingPair(scalarWeights, null)).toBeNull();
+    expect(resolveImageLoraBindingPair(null, null)).toBeNull();
   });
 
   it("refuses when the two sides disagree on arity", () => {
