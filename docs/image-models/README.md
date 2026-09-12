@@ -28,7 +28,7 @@ Source: [`packages/image-models`](../../packages/image-models/README.md).
 
 The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers import from `@vesper/image-models`, not from `src/*` subpaths.
 
-Only the **Qwen Image family** is implemented in the adapter registry. Models without an adapter, including Flux, Wan, SDXL, and Seedream families, use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
+The **Qwen Image family** and the **FLUX.2 klein** bench-onboarding endpoints (#567) are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan, SDXL, and Seedream families — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
 The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
 
@@ -45,6 +45,20 @@ Two absences are deliberate:
 - **`qwen/qwen-image-2` has no adapter at all.** Replicate's unified Qwen Image 2 endpoint is a registered row, but the package has no family-specific behavior to encode for it, so `adapterForImageModel("qwen/qwen-image-2")` returns `null` and the generic path runs it. The registry keys on the exact base slug, so the shared `qwen/qwen-image-` prefix hands it nothing from the two adapters above; its schema, controls and reviewed ratings are owned by [its model page](models/qwen-image-2.md).
 
 The edit adapter composes `lora`. Composing it states that the endpoint family can load a custom LoRA; the probed model record remains authoritative for whether the version Vesper actually runs exposes the provider bindings. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
+
+### Registered FLUX.2 klein adapters
+
+klein ships three DISTINCT endpoint variants per parameter size rather than one schema with optional fields, backed by the captured OpenAPI schemas ([#566](https://github.com/ceponatia/vesper/issues/566#issuecomment-5646491048)). 4B and 9B are parameter-count twins: for a given variant the schema and composed feature set are identical, so the registry maps both twin slugs to the same variant object (`packages/image-models/src/families/flux/klein.ts`) instead of duplicating the definition.
+
+| Variant | Twin slugs | Composed features | Family behavior |
+| --- | --- | --- | --- |
+| Distilled | `black-forest-labs/flux-2-klein-4b`, `black-forest-labs/flux-2-klein-9b` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle` | none |
+| Base | `black-forest-labs/flux-2-klein-4b-base`, `black-forest-labs/flux-2-klein-9b-base` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle` | none |
+| Base-LoRA | `black-forest-labs/flux-2-klein-4b-base-lora`, `black-forest-labs/flux-2-klein-9b-base-lora` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | none |
+
+No klein variant composes `negativePrompt`: none of the three captured schemas declares a negative-prompt input. The base-lora variant's `lora` binding is the ARRAY pair shape (`lora_weights`/`lora_scales` as matched singleton lists), the second shape `resolveImageLoraBindingPair` recognizes alongside the Qwen edit endpoints' scalar pair ([Features → LoRA](features/README.md#lora)).
+
+**Adapter lookup is not the same fact as an enabled database row.** Registering a slug in `IMAGE_MODEL_ADAPTERS` gives Vesper behavior to apply the moment a row for that slug is probed and enabled; it does not itself register, enable, or authorize a model. No 9B `image_models` row exists, and this registry entry does not add one — the 9B keys exist purely so a future 9B row (a decision [#564](https://github.com/ceponatia/vesper/issues/564) governs) inherits the correct variant immediately rather than the generic path. Only a registered, enabled database row actually renders.
 
 ## Features
 
