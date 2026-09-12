@@ -139,6 +139,54 @@ describe("probeReplicateModel", () => {
     expect(result.probe.maxReferences).toBe(9);
   });
 
+  it("reads a standalone 'Maximum N images' cap", async () => {
+    // The third of the three prose phrasings `referenceCap` reads
+    // (`docs/images/providers/registry.md`'s reference-cap section): a range
+    // and "up to N" both have their own standalone case above, and until now
+    // nothing pinned "Maximum N images" on its own — only through the FLUX.2
+    // klein goldens, which also carry several other properties.
+    stubFetch(() => ({
+      name: "maximum-phrasing",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: { prompt: { type: "string" }, images: uriArray("Maximum 5 images") },
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("acme/maximum-phrasing");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.maxReferences).toBe(5);
+  });
+
+  it("prefers a stated range over a maximum in the same description", async () => {
+    // The patterns are tried MOST SPECIFIC FIRST and each whole, never merged
+    // into one alternation: a description naming both a range and a maximum
+    // means two different things, and the range is the one describing the
+    // input this field actually accepts. A regression that tried "maximum"
+    // before the range, or matched whichever came first in the text, would
+    // read this contradictory-by-construction fixture as 10 instead of 5.
+    stubFetch(() => ({
+      name: "range-and-maximum",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: {
+            prompt: { type: "string" },
+            images: uriArray("List of 1-5 images. Maximum 10 images for a batched request."),
+          },
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("acme/range-and-maximum");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.maxReferences).toBe(5);
+  });
+
   it("pins extraInput only to keys the model actually declares", async () => {
     // Replicate rejects unknown inputs, so a safety toggle must never be
     // introduced on a model that has no such field.
@@ -637,7 +685,7 @@ describe("probeReplicateModel", () => {
       });
     });
 
-    it("binds neither LoRA field when the two sides declare different shapes", async () => {
+    it("binds neither LoRA field when the two sides declare different shapes, and keeps both descriptors reserved", async () => {
       // `lora_weights` here is an ARRAY and `lora_scale` is a plain scalar — the
       // shared pair-shape reading (`resolveImageLoraBindingPair`) refuses this
       // combination on BOTH readings: as a scalar pair, `lora_weights` is the
@@ -645,6 +693,15 @@ describe("probeReplicateModel", () => {
       // to pair it with. A locator with no matching scale runs at whatever the
       // model defaults to, which is a different render from the one recorded —
       // so half a pair must never bind.
+      //
+      // Kills the regression where an unbound (or mismatched) LoRA field's
+      // provider-input descriptor read `reserved: false`: `context.controls`
+      // carries a field only once a full pair resolves, so before the fix a
+      // half or mismatched pair's field looked like any other open advanced
+      // input — offered in the Generator's Advanced section, accepted by
+      // `validateProviderOverrides` (it is still in `knownInputFields`), and
+      // posted verbatim by an admin-typed value. The curated LoRA library must
+      // stay the only path to these fields whether or not they end up bound.
       stubFetch(() => ({
         name: "odd-lora",
         latest_version: {
@@ -663,9 +720,15 @@ describe("probeReplicateModel", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.probe.advancedCapabilities.controls).toEqual({});
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_weights")).toMatchObject({
+        reserved: true,
+      });
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_scale")).toMatchObject({
+        reserved: true,
+      });
     });
 
-    it("binds neither LoRA field when only one side of the array pair is declared", async () => {
+    it("binds neither LoRA field when only one side of the array pair is declared, and keeps the descriptor reserved", async () => {
       // `lora_weights` is a well-formed array-of-string binding, but nothing
       // named `lora_scales` exists to pair it with — the scalar `lora_scale`
       // name would still leave the array side unmatched, so this is "missing",
@@ -687,6 +750,36 @@ describe("probeReplicateModel", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.probe.advancedCapabilities.controls).toEqual({});
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_weights")).toMatchObject({
+        reserved: true,
+      });
+    });
+
+    it("binds no LoRA field when only a scalar lora_weights is declared, and keeps the descriptor reserved", async () => {
+      // The scalar analogue of the two cases above: `lora_weights` alone,
+      // string-typed, with no `lora_scale` at all. Same relaxation this whole
+      // slice exists to close — a weights-only field must never read as an
+      // ordinary open advanced input just because it failed to pair.
+      stubFetch(() => ({
+        name: "weights-only-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "string" },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/weights-only-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({});
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "lora_weights")).toMatchObject({
+        reserved: true,
+      });
     });
 
     it("derives the array LoRA pair, with per-element constraints when the schema declares them", async () => {

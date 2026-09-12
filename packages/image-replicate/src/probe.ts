@@ -492,6 +492,18 @@ function deriveProviderInputs(
     context.aspectField,
     "version",
     "disable_safety_checker",
+    // The three LoRA field names, UNCONDITIONALLY — never derived from
+    // `context.controls`, which only carries a field once a full, correctly
+    // shaped pair resolves (`resolveImageLoraBindingPair`). A version
+    // declaring `lora_weights` alone, or a mismatched scalar/array pair,
+    // binds NEITHER control, and before this fix that left the half pair's
+    // descriptor `reserved: false` — editable in the Generator's Advanced
+    // section, accepted by `validateProviderOverrides` (it is still in
+    // `knownInputFields`), and posted verbatim by an admin-typed value. The
+    // curated LoRA library is the only path to these fields, bound or not.
+    "lora_weights",
+    "lora_scale",
+    "lora_scales",
     // A generate-only model stores the fallback name "image" as its reference
     // field, and the runtime reserved list reserves it unconditionally — a
     // declared non-URI `image` property must not read as an editable input the

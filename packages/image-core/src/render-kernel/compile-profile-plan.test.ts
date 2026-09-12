@@ -9,6 +9,7 @@ import {
 } from "../models/image-model-profiles";
 import {
   compileProfileRenderPlan,
+  loraWireFieldBreach,
   MAX_TRIAL_PREDICTION_MS,
   pinnedImageModelVersion,
   TRIAL_FALLBACK_PREDICTION_MS,
@@ -881,6 +882,62 @@ describe("a resolved LoRA", () => {
         reason: "reserved",
       });
     });
+  });
+});
+
+/**
+ * `loraWireFieldBreach` directly, exported `@internal` for exactly this
+ * purpose. It exists because `compileProfileRenderPlan` cannot reach it in a
+ * broken state: the mapper and this invariant read the SAME resolved model
+ * binding, so a payload the mapper actually built can never disagree with
+ * what this function expects — every case below has to be constructed by
+ * hand, standing in for a future regression (a mapper that stops wrapping
+ * correctly, an override that reaches a LoRA field some other way) rather
+ * than a request `compileProfileRenderPlan` could receive today.
+ */
+describe("loraWireFieldBreach", () => {
+  const EXPECTED = "owner/style-lora";
+
+  it.each([
+    ["undefined", undefined, "carries no array"],
+    ["null", null, "carries no array"],
+    ["a bare scalar instead of an array", EXPECTED, "carries no array"],
+    // The defect this row kills: inverting `value.length !== 1` to
+    // `=== 1` (or dropping the length check entirely) would let an EMPTY
+    // array — no LoRA at all — pass as a correctly applied one.
+    ["an empty array", [], "carries an array of 0 entries, not exactly one"],
+    // The mirror defect: the same inverted or missing length check would also
+    // let a STACKED array — more than the one curated LoRA this render
+    // resolved — pass silently.
+    ["an array of two entries", [EXPECTED, EXPECTED], "carries an array of 2 entries, not exactly one"],
+    ["a singleton array holding an empty string", [""], "carries a non-finite or empty entry"],
+    ["a singleton array holding NaN", [Number.NaN], "carries a non-finite or empty entry"],
+    ["a singleton array holding Infinity", [Number.POSITIVE_INFINITY], "carries a non-finite or empty entry"],
+    [
+      "a singleton array holding a different value than resolved",
+      ["owner/some-other-lora"],
+      "carries a different value than the resolved binding's own",
+    ],
+  ])("refuses an array-shaped field that is %s", (_description, value, expectedBreach) => {
+    expect(loraWireFieldBreach("array", value, EXPECTED)).toBe(expectedBreach);
+  });
+
+  it("accepts a singleton array holding exactly the resolved value", () => {
+    expect(loraWireFieldBreach("array", [EXPECTED], EXPECTED)).toBeNull();
+  });
+
+  it.each([
+    ["undefined", undefined, "carries no usable value"],
+    ["null", null, "carries no usable value"],
+    ["an empty string", "", "carries no usable value"],
+    ["NaN", Number.NaN, "carries no usable value"],
+    ["a different value than resolved", "owner/some-other-lora", "carries a different value than the resolved binding's own"],
+  ])("refuses a scalar-shaped field that is %s", (_description, value, expectedBreach) => {
+    expect(loraWireFieldBreach("single", value, EXPECTED)).toBe(expectedBreach);
+  });
+
+  it("accepts a scalar field holding exactly the resolved value", () => {
+    expect(loraWireFieldBreach("single", EXPECTED, EXPECTED)).toBeNull();
   });
 });
 

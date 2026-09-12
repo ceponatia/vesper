@@ -782,10 +782,12 @@ type LoraWireRefusal = Extract<CompileProfileRenderPlanResult, { reason: "lora_b
  * and the reserved filter takes its `appliedControls` entry with it), and this
  * gate is what makes that removal load-bearing rather than incidental.
  *
- * `missingField` names the PROVIDER field when the version declares one and the
- * binding name when it declares none at all — those are the two different fixes:
- * find out why the payload lost a field it had, or stop expecting a LoRA from a
- * version that has nowhere to put one.
+ * `missingField` names the PROVIDER field when the version declares one, the
+ * binding slot (`"loraWeights"`/`"loraScale"`) when it declares none at all,
+ * and `"loraPair"` when both bindings exist but disagree in shape — three
+ * different fixes: find out why the payload lost a field it had, stop
+ * expecting a LoRA from a version that has nowhere to put one, or re-probe a
+ * version whose two LoRA fields no longer agree on arity or element type.
  *
  * Presence is not the invariant — IDENTITY is (owner ruling 2026-08-24): the
  * payload's values must EQUAL the resolved binding's own locator and scale,
@@ -817,10 +819,18 @@ function loraWireInvariantBreach(
   // record changed out from under an already-mapped plan.
   const pair = resolveImageLoraBindingPair(bindings.loraWeights, bindings.loraScale);
   if (!pair) {
+    // A genuinely ABSENT side is named by its own slot; when both bindings
+    // exist but disagree in shape (mismatched arity, or the wrong element
+    // type on either side), neither `loraWeights` nor `loraScale` is
+    // "missing" — the pair itself is unusable, and `"loraPair"` says so
+    // rather than pointing at whichever field this ternary happened to check
+    // second.
+    const missingField =
+      bindings.loraWeights === undefined ? "loraWeights" : bindings.loraScale === undefined ? "loraScale" : "loraPair";
     return {
       ok: false,
       reason: "lora_binding_not_sent",
-      missingField: bindings.loraWeights === undefined ? "loraWeights" : "loraScale",
+      missingField,
       message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the active version declares no usable LoRA weights/scale pair`,
     };
   }
@@ -863,8 +873,18 @@ function loraWireInvariantBreach(
  * second one nothing curated, a scalar where the version declares an array (or
  * the reverse) is a shape the provider will reject or silently coerce, and
  * `NaN`/`Infinity` is not a strength any provider blends at.
+ *
+ * `compileProfileRenderPlan` can only reach the array branches here through a
+ * mapper that already required the SAME resolved pair to exist, so a
+ * deliberately malformed payload never reaches this function through the
+ * public compile path — the mapper and this invariant read the same model
+ * record and cannot honestly disagree. That makes the table below the only
+ * place these branches are exercised directly.
+ *
+ * @internal — exported for its table test only, not part of the package's
+ * public API (not re-exported from `index.ts`).
  */
-function loraWireFieldBreach(
+export function loraWireFieldBreach(
   shape: ImageLoraBindingPair["shape"],
   value: unknown,
   expected: string | number | undefined,
@@ -886,9 +906,16 @@ function loraWireFieldBreach(
   return null;
 }
 
-/** A value the provider can actually use: a real string, or a finite number — never `null`/`undefined`/`NaN`/`±Infinity`. */
+/**
+ * A value the provider can actually use: a non-empty string, or a finite
+ * number — never `null`/`undefined`/`NaN`/`±Infinity`, and never `""`. A
+ * resolved locator is schema-guaranteed non-empty (`imageLoraRenderBindingSchema`'s
+ * `locator: z.string().min(1)`), so an empty string here can only be a
+ * replaced or corrupted value, and the "non-finite or empty entry" message
+ * above is exactly what this check must make true.
+ */
 function isSendableLoraValue(value: unknown): value is string | number {
-  if (typeof value === "string") return true;
+  if (typeof value === "string") return value.length > 0;
   return typeof value === "number" && Number.isFinite(value);
 }
 
