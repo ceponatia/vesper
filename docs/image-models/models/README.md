@@ -71,10 +71,12 @@ over with one shared mapping:
   are stated in prose in the field description ("List of 1-14 images", "up to 9
   images", "Maximum 5 images"), so they are recorded here and stored per row —
   they cannot be read from a declared schema bound.
-- **One model rejects Replicate's own uploaded-file URLs.** Wan 2.7 reads the
-  file extension off what it is handed, and an upload arrives without one, so
-  its references must be inlined as `data:` URIs (`reference_transport` on the
-  row). Nothing in a schema reveals this; it is learned by running the model.
+- **Two models reject Replicate's own uploaded-file URLs.** Wan 2.7 and Qwen
+  Image 2 read the file extension off what they are handed, and an upload
+  arrives without one, so their references must be inlined as `data:` URIs
+  (`reference_transport` on the row). It is a per-wrapper quirk and not a family
+  trait — the other Qwen endpoints on Replicate take uploads fine. Nothing in a
+  schema reveals this; it is learned by running the model.
 
 ## The models
 

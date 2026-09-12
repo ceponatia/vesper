@@ -39,6 +39,13 @@ addressable and exceed the data-URL guidance — trimmed to the model's capacity
 failure every successful upload is deleted best-effort before the failure returns), and deleted
 best-effort as soon as the prediction settles.
 
+A row whose `reference_transport` is `data_url` takes the other branch: its references are inlined
+as `data:` URIs carrying their own media type, and nothing is uploaded or cleaned up. That is for a
+wrapper that validates the file extension of what reaches the model container, where an uploaded
+file arrives without one and the render fails before the model runs
+([../../image-models/models/README.md](../../image-models/models/README.md) names the rows). The
+inlined body is larger, so it is stored per row on evidence rather than chosen by default.
+
 Outputs are downloaded only from `replicate.delivery` / `api.replicate.com` and land in the same
 immutable pipeline as every other asset ([../asset-registry.md](../asset-registry.md)). Nothing
 throws — a failure degrades to an error string the caller turns into a failed row.

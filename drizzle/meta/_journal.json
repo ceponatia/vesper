@@ -967,6 +967,13 @@
       "when": 1789243200000,
       "tag": "0137_klein-4b-refcontrol-depth-lora",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1789250400000,
+      "tag": "0138_qwen-image-2-data-url-transport",
+      "breakpoints": true
     }
   ]
 }

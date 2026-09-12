@@ -22,9 +22,12 @@ import {
  *   because Vesper's stored images are not publicly addressable and can exceed
  *   the data-URL recommendation; the uploads are deleted best-effort as soon as
  *   the prediction settles.
- * - `data_url` inlines them. Wan 2.7 rejects the uploaded-file URL outright
- *   (`Invalid image format ''` — see `imageReferenceTransports`), so for that
- *   model "smaller payload" is not a trade worth having.
+ * - `data_url` inlines them, for a wrapper that validates the file extension of
+ *   what reaches the model container and rejects the uploaded-file URL outright
+ *   (`Invalid image format ''` — see `imageReferenceTransports`). The upload URL
+ *   does carry the extension; it is lost on the way in, so naming it differently
+ *   fixes nothing and "smaller payload" stops being a trade worth having. Which
+ *   rows those are is a per-row stored fact, learned by running the model.
  *
  * References are trimmed through `fitReferences` rather than a fixed cap, so a
  * single-reference model stops being handed three and silently ignoring two.

@@ -7,10 +7,10 @@
 > output, thinking mode, text-to-image, multi-image editing, and image set
 > generation.
 
-A multi-reference alternative for scenes. Not a Vesper default. Two things make
-it unlike every other model in the set: it will not accept Replicate's own
-uploaded-file URLs (see below), and its upstream moderation cannot be turned
-off.
+A multi-reference alternative for scenes. Not a Vesper default. Two things set it
+apart: it is one of the two Replicate rows that will not accept Replicate's own
+uploaded-file URLs (see below), and — this one it does hold alone — its upstream
+moderation cannot be turned off.
 
 ## References must be inlined, not uploaded
 
@@ -34,8 +34,11 @@ everything else constant:
 Note the upload URL *does* end in `.webp` — the extension is lost somewhere
 between Replicate's file store and the model container, so no amount of naming
 the upload fixes it. Vesper therefore stores `reference_transport = 'data_url'`
-for this row and inlines the bytes (`@vesper/image-replicate`). Every other model
-in the set resolves the upload URL fine and keeps the smaller payload.
+for this row and inlines the bytes (`@vesper/image-replicate`). One other Replicate
+row needs the same treatment for the same reason —
+[Qwen Image 2](qwen-image-2.md) — and every other model in the set resolves the
+upload URL fine and keeps the smaller payload. It is a per-wrapper quirk, so a row
+earns the inlined transport by failing a render, never by family resemblance.
 
 ## Moderation cannot be disabled
 

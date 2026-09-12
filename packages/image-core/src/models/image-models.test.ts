@@ -56,8 +56,9 @@ describe("imageModelSchema", () => {
 
   it("defaults the reference transport to an uploaded file", () => {
     // The column arrived after the seeded rows (drizzle/0099); a payload that
-    // predates it must parse to the transport every model but Wan wants rather
-    // than failing the picker.
+    // predates it must parse to the ordinary uploaded-file transport rather than
+    // failing the picker. The rows needing the inlined one are the exception and
+    // carry it explicitly.
     expect(imageModelSchema.parse(priorRow).referenceTransport).toBe("file");
   });
 

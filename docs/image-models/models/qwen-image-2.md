@@ -13,7 +13,45 @@ One endpoint that both generates and edits. `prompt` is its only required input,
 supplying the optional single `image` turns the same call into an edit. `is_official` is
 true, so the row is registered under the bare slug and its version pin lives in
 `probed_version_id` rather than in the slug. Every claim below is **documented** — read
-from the provider's published schema and model page — rather than measured in Vesper.
+from the provider's published schema and model page — rather than measured in Vesper, with
+one exception: the reference transport immediately below, which no schema states and only a
+run reveals.
+
+## References must be inlined, not uploaded
+
+This endpoint does **not** accept Replicate's own uploaded-file URLs. Its wrapper validates
+the **file extension** of whatever reaches the model container, and a files-API upload
+arrives there without one, so a reference-bearing prediction fails before the model runs:
+
+```
+ValueError: Invalid image format ''. Supported formats: .png, .bmp, .webp, .jpg, .jpeg
+```
+
+The payload is not malformed — it matches the pinned version's schema exactly — and the URL
+Vesper sends *does* end in `.webp`, so naming the upload fixes nothing: the extension is
+lost between Replicate's file store and the model container. Reproduced against the live
+model at the pinned version, holding the whole input object constant and varying only how
+the single reference travels:
+
+- `https://api.replicate.com/v1/files/<id>.webp` — fails with `Invalid image format ''`.
+- `data:image/webp;base64,…` — accepted, and the edit comes back.
+
+The row therefore stores `reference_transport = 'data_url'` and `@vesper/image-replicate`
+inlines the bytes ([transport.md](../../images/providers/transport.md)). Prompt-only
+generation is unaffected either way — with no reference there is nothing to transport, which
+is why the row can look healthy while its entire edit path is dead.
+
+`reference_transport` is **owner-set and never probed**: it sits outside the probe's write
+set on both the add and re-probe paths, so a re-probe of an unchanged schema cannot move it
+back, and no published schema would reveal the right value in the first place.
+
+**This is one wrapper's quirk, not a Qwen fact and not a Replicate fact.**
+[Qwen Image Edit 2511](qwen-image-edit-2511.md) and [Qwen Image 2512](qwen-image-2512.md)
+are registered on the ordinary `file` transport and render from the same uploaded-file URLs
+without complaint. Exactly one other Replicate row fails this way for the same reason —
+[Wan 2.7 Image Pro](wan-2-7-image-pro.md) — and every other Replicate row resolves an upload
+fine. Inlining costs a larger request body, so a row switches to it on evidence, never by
+default.
 
 ## Not the Qwen-Image-Edit family
 
@@ -61,6 +99,8 @@ see Offered surfaces below.
 - **Edit from a reference:** yes, through the optional `image` input.
 - **Reference field:** `image`, a single URI string.
 - **Reference cap:** 1.
+- **Reference transport:** `data_url`. Uploaded-file URLs are rejected by this endpoint
+  (§References must be inlined, not uploaded).
 - **Aspect handling:** `aspect_ratio` enum, provider default `1:1`, and it includes `3:4` —
   Vesper's portrait target is native here. `match_input_image` overrides the enum when a
   reference is supplied.
@@ -165,13 +205,14 @@ Nothing else is declared. There is no `disable_safety_checker`, `go_fast`, `outp
 ```json
 {
   "prompt": "<built prompt>",
-  "image": "<single url>",
+  "image": "data:image/webp;base64,<inlined reference>",
   "aspect_ratio": "3:4",
   "seed": 1234
 }
 ```
 
-`image` appears only when a reference is supplied, `aspect_ratio` only when the caller names a
+`image` carries the reference bytes inline rather than an uploaded-file URL, for the reason
+above. It appears only when a reference is supplied, `aspect_ratio` only when the caller names a
 shape — a Generator run asks for no shape at all by default
 ([form.md](../../image-generator/form.md) §Output shape) — and `seed` only when one is set. No
 other key is written unless an admin sets one of the two Advanced inputs.
