@@ -2,6 +2,7 @@ import { z } from "zod";
 import { stableJson } from "../render-kernel/stable-json";
 import type { ImageControlDefaults, ImageModelProfile } from "../models/image-model-profiles";
 import {
+  resolveImageLoraBindingPair,
   type ImageModelAdvancedCapabilities,
   type ImageModelControlBindings,
   imageModelControlBindingsSchema,
@@ -328,8 +329,9 @@ const CONTROL_DEFAULT_BINDINGS: ReadonlyArray<{
  *   permitted — the same rule `validateProviderOverrides` applies at render
  *   time, promoted from a drop to a refusal because activation is the moment
  *   the operator can still fix the profile before a render silently loses it;
- * - a `controlDefaults.lora` selection while the candidate lacks either LoRA
- *   binding (`loraWeights` AND `loraScale` are both required to send one).
+ * - a `controlDefaults.lora` selection while the candidate exposes no usable
+ *   LoRA weights/scale pair (`resolveImageLoraBindingPair`) — missing, or the
+ *   two fields disagreeing on shape.
  *
  * WARNING (allowed, reported): a tuned control default whose binding the
  * candidate does not declare ({@link CONTROL_DEFAULT_BINDINGS}) — it degrades
@@ -374,11 +376,14 @@ export function validateImageProfileForCandidate(
     });
   }
 
-  if (profile.controlDefaults.lora && (!controls.loraWeights || !controls.loraScale)) {
+  if (
+    profile.controlDefaults.lora &&
+    resolveImageLoraBindingPair(controls.loraWeights, controls.loraScale) === null
+  ) {
     findings.push({
       level: "blocking",
       code: "lora_binding_missing",
-      message: "this profile names a LoRA but the candidate version does not expose both LoRA bindings",
+      message: "this profile names a LoRA but the candidate version exposes no usable LoRA weights/scale pair",
       context: {
         loraId: profile.controlDefaults.lora.id,
         loraWeights: controls.loraWeights !== undefined,
