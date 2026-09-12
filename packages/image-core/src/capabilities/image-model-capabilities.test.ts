@@ -5,6 +5,8 @@ import {
   imageModelAdvancedCapabilitiesSchema,
   imageProviderInputDescriptorSchema,
   imageUriBindingSchema,
+  resolveImageLoraBindingPair,
+  type ImageInputBinding,
 } from "./image-model-capabilities";
 
 describe("imageModelAdvancedCapabilitiesSchema", () => {
@@ -138,5 +140,56 @@ describe("imageUriBindingSchema", () => {
       acceptedFormats: ["png"],
     });
     expect(parsed.acceptedFormats).toEqual(["png"]);
+  });
+});
+
+describe("resolveImageLoraBindingPair", () => {
+  // The one shared reading of a usable LoRA weights/scale pair, consulted by
+  // the mapper, the final-wire invariant, the library's mechanical check and
+  // `loraFeature()` — every consumer of `ImageModelControlBindings.loraWeights`
+  // / `loraScale`. A wrong answer here is wrong everywhere at once, which is
+  // the point of having exactly one definition.
+  const scalarWeights: ImageInputBinding = { field: "lora_weights", type: "string" };
+  const scalarScale: ImageInputBinding = { field: "lora_scale", type: "number", minimum: 0, maximum: 4 };
+  const arrayWeights: ImageInputBinding = { field: "lora_weights", type: "string", arity: "array" };
+  const arrayScale: ImageInputBinding = { field: "lora_scales", type: "number", arity: "array" };
+
+  it("resolves the scalar pair Qwen's edit endpoints declare, arity absent on both sides", () => {
+    expect(resolveImageLoraBindingPair(scalarWeights, scalarScale)).toEqual({
+      shape: "single",
+      weights: scalarWeights,
+      scale: scalarScale,
+    });
+  });
+
+  it("resolves the array pair a FLUX.2 klein -base-lora endpoint declares", () => {
+    expect(resolveImageLoraBindingPair(arrayWeights, arrayScale)).toEqual({
+      shape: "array",
+      weights: arrayWeights,
+      scale: arrayScale,
+    });
+  });
+
+  it("refuses when either side is absent", () => {
+    expect(resolveImageLoraBindingPair(undefined, scalarScale)).toBeNull();
+    expect(resolveImageLoraBindingPair(scalarWeights, undefined)).toBeNull();
+    expect(resolveImageLoraBindingPair(undefined, undefined)).toBeNull();
+  });
+
+  it("refuses when the two sides disagree on arity", () => {
+    // The exact shape a mismatched provider schema, or a hand-edited capability
+    // record, could produce — an array `lora_weights` beside a scalar
+    // `lora_scale`, or the reverse.
+    expect(resolveImageLoraBindingPair(arrayWeights, scalarScale)).toBeNull();
+    expect(resolveImageLoraBindingPair(scalarWeights, arrayScale)).toBeNull();
+  });
+
+  it("refuses when an element's type is wrong, matching arity notwithstanding", () => {
+    const wrongWeightsType: ImageInputBinding = { field: "lora_weights", type: "number" };
+    const wrongScaleType: ImageInputBinding = { field: "lora_scale", type: "string" };
+    expect(resolveImageLoraBindingPair(wrongWeightsType, scalarScale)).toBeNull();
+    expect(resolveImageLoraBindingPair(scalarWeights, wrongScaleType)).toBeNull();
+    const wrongArrayWeightsType: ImageInputBinding = { field: "lora_weights", type: "number", arity: "array" };
+    expect(resolveImageLoraBindingPair(wrongArrayWeightsType, arrayScale)).toBeNull();
   });
 });

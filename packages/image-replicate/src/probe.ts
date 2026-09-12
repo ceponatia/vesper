@@ -3,6 +3,7 @@ import {
   type ImageAdditionalImageInput,
   type ImageAspectMode,
   type ImageInputBinding,
+  type ImageLoraBindingPair,
   type ImageModelAdvancedCapabilities,
   imageModelAdvancedCapabilitiesSchema,
   type ImageModelControlBindings,
@@ -11,6 +12,7 @@ import {
   type ImageReferenceRole,
   type ImageUriBinding,
   parseAspectValue,
+  resolveImageLoraBindingPair,
 } from "@vesper/image-core";
 import { PROBE_TIMEOUT_MS } from "./config";
 import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
@@ -95,7 +97,15 @@ const propertySchema = z
     /** Inline enum members. Replicate usually routes enums through `allOf` + `$ref`
      * instead, so both spellings are read ({@link strictEnumValues}). */
     enum: z.array(z.unknown()).nullish(),
-    items: z.object({ type: z.string().nullish(), format: z.string().nullish() }).nullish(),
+    items: z
+      .object({
+        type: z.string().nullish(),
+        format: z.string().nullish(),
+        /** Element-level bounds, when the array schema declares them on `items` rather than only on the array itself. */
+        minimum: z.number().nullish(),
+        maximum: z.number().nullish(),
+      })
+      .nullish(),
     allOf: z.array(z.object({ $ref: z.string().nullish() })).nullish(),
   });
 
@@ -394,8 +404,11 @@ function deriveAdvancedCapabilities(
   const height = numericBinding(properties, "height");
   if (height?.type === "integer") controls.customHeight = height;
 
-  assign("loraWeights", stringBinding(properties, "lora_weights"));
-  assign("loraScale", numericBinding(properties, "lora_scale"));
+  const loraPair = deriveLoraBindingPair(properties);
+  if (loraPair) {
+    controls.loraWeights = loraPair.weights;
+    controls.loraScale = loraPair.scale;
+  }
 
   const additionalImageInputs = deriveAdditionalImageInputs(properties, required, referenceField);
 
@@ -584,6 +597,56 @@ function stringBinding(properties: Record<string, unknown>, field: string): Imag
 function booleanBinding(properties: Record<string, unknown>, field: string): ImageInputBinding | null {
   const parsed = propertySchema.safeParse(properties[field]);
   return parsed.success && parsed.data.type === "boolean" ? { field, type: "boolean" } : null;
+}
+
+/**
+ * A declared ARRAY input whose `items` are exactly `elementType`, as an
+ * `arity: "array"` binding carrying that element type — never a new "array of
+ * X" primitive of its own (`imageInputBindingTypes` stays the four scalar
+ * kinds plus enum). Element `minimum`/`maximum` are read only when the schema
+ * states them on `items` itself; a range mentioned only in `description` prose
+ * is not a declared bound, exactly like the scalar bindings above.
+ */
+function arrayElementBinding(
+  properties: Record<string, unknown>,
+  field: string,
+  elementType: "string" | "number",
+): ImageInputBinding | null {
+  const parsed = propertySchema.safeParse(properties[field]);
+  if (!parsed.success) return null;
+  const p = parsed.data;
+  const items = p.items;
+  if (p.type !== "array" || !items || items.type !== elementType) return null;
+  const binding: ImageInputBinding = { field, type: elementType, arity: "array" };
+  if (items.minimum != null) binding.minimum = items.minimum;
+  if (items.maximum != null) binding.maximum = items.maximum;
+  return binding;
+}
+
+/**
+ * The LoRA weights/scale pair this version declares, in whichever of the two
+ * shapes {@link resolveImageLoraBindingPair} recognizes — reusing that shared
+ * definition rather than a second local one, per the pair-shape rule the
+ * mapper and the final-wire invariant also follow.
+ *
+ * Field-name discovery stays here, in the probe, as it does for every other
+ * alias: the scalar pair is `lora_weights`/`lora_scale`, exactly as every
+ * Qwen edit endpoint declares it today. The array pair is
+ * `lora_weights`/`lora_scales` (plural) — a FLUX.2 klein `-base-lora`
+ * endpoint's singleton-list LoRA input — and the plural scale field name is
+ * itself part of what keeps the two shapes from being confused: a schema
+ * that pairs an array `lora_weights` with a SCALAR `lora_scale` matches
+ * neither reading (the scalar reading fails on `lora_weights`'s shape, the
+ * array reading finds no `lora_scales`), so it binds neither field — never a
+ * half-sent LoRA.
+ */
+function deriveLoraBindingPair(properties: Record<string, unknown>): ImageLoraBindingPair | null {
+  const scalar = resolveImageLoraBindingPair(stringBinding(properties, "lora_weights"), numericBinding(properties, "lora_scale"));
+  if (scalar) return scalar;
+  return resolveImageLoraBindingPair(
+    arrayElementBinding(properties, "lora_weights", "string"),
+    arrayElementBinding(properties, "lora_scales", "number"),
+  );
 }
 
 /**

@@ -425,6 +425,42 @@ describe("evaluateImageLoraForRender", () => {
     });
   });
 
+  it("refuses a version whose two LoRA fields disagree on arity or element type", () => {
+    // The shared pair-shape reading (`resolveImageLoraBindingPair`) refuses an
+    // array `lora_weights` beside a scalar `lora_scale`, the reverse, and a
+    // matching-arity pair with the wrong element type on either side — every
+    // one of these is exactly as unreachable as a version missing a field
+    // outright: a locator with no correctly-shaped scale beside it cannot be
+    // sent as the row was reviewed.
+    expect(
+      evaluate({ bindings: bindings({ loraWeights: { field: "lora_weights", type: "string", arity: "array" } }) }),
+    ).toMatchObject({ ok: false, code: "image_lora.unreachable_configuration" });
+    expect(
+      evaluate({ bindings: bindings({ loraScale: { field: "lora_scales", type: "number", arity: "array" } }) }),
+    ).toMatchObject({ ok: false, code: "image_lora.unreachable_configuration" });
+    expect(
+      evaluate({ bindings: bindings({ loraWeights: { field: "lora_weights", type: "number" } }) }),
+    ).toMatchObject({ ok: false, code: "image_lora.unreachable_configuration" });
+  });
+
+  it("resolves against a version whose LoRA pair is array-shaped (a FLUX.2 klein -base-lora endpoint)", () => {
+    // Mechanical compatibility does not care about wire shape — a row reviewed
+    // for the model still resolves, and the ARRAY WRAPPING happens later, in
+    // the control mapper. `ImageLoraRenderBinding` carries the scalar locator
+    // and scale either way.
+    const result = evaluate({
+      bindings: bindings({
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+        loraScale: { field: "lora_scales", type: "number", arity: "array", minimum: 0, maximum: 2 },
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.binding.locator).toBe(HF_LOCATOR);
+      expect(result.binding.scale).toBe(1);
+    }
+  });
+
   it("refuses a curated scale the version's own binding will not accept", () => {
     // The curated band is a rail on the CONFIGURATION; the authoritative range is
     // whatever the active version declared, and a value outside it is a provider

@@ -1,8 +1,9 @@
 import type { ImageRenderControls } from "../models/image-model-profiles";
-import type {
-  ImageInputBinding,
-  ImageModelAdvancedCapabilities,
-  ImageModelControlBindings,
+import {
+  resolveImageLoraBindingPair,
+  type ImageInputBinding,
+  type ImageModelAdvancedCapabilities,
+  type ImageModelControlBindings,
 } from "./image-model-capabilities";
 
 /**
@@ -191,6 +192,16 @@ export function mapImageRenderControls(input: MapImageRenderControlsInput): Mapp
       result.dropped.push({ control: entry.control, reason: "no_binding" });
       continue;
     }
+    if (entry.binding.arity === "array") {
+      // Only the LoRA pair may declare an array-shaped binding
+      // (`resolveImageLoraBindingPair`'s contract), and only `mapResolvedLora`
+      // below knows how to wrap a value for one. This generic transport writes
+      // `entry.value` verbatim to `entry.binding.field`, so an array-arity
+      // binding here would send a bare scalar under a field the provider
+      // expects a list for — refused, never silently sent single-valued.
+      result.dropped.push({ control: entry.control, reason: "invalid" });
+      continue;
+    }
     if (!bindingAccepts(entry.binding, entry.value)) {
       result.dropped.push({ control: entry.control, reason: "invalid" });
       continue;
@@ -222,18 +233,33 @@ function mapResolvedLora(
   lora: ResolvedImageLoraControl,
   bindings: ImageModelControlBindings,
 ): void {
-  const weights = bindings.loraWeights;
-  const scale = bindings.loraScale;
-  if (!weights || !scale) {
+  // The one shared reading of a usable pair (`@vesper/image-core`'s capability
+  // module): both fields present, matching arity, weights a string element and
+  // scale a number one. A pair the shared definition refuses is exactly as
+  // unreachable as a version missing both fields — the render is not sent at
+  // this version's declared strength, so it must not be sent at all.
+  const pair = resolveImageLoraBindingPair(bindings.loraWeights, bindings.loraScale);
+  if (!pair) {
     result.dropped.push({ control: "lora", reason: "no_binding" });
     return;
   }
+  const { weights, scale, shape } = pair;
   if (!bindingAccepts(weights, lora.locator) || !bindingAccepts(scale, lora.scale)) {
     result.dropped.push({ control: "lora", reason: "invalid" });
     return;
   }
-  result.input[weights.field] = lora.locator;
-  result.input[scale.field] = lora.scale;
+  // `bindingAccepts` above judged the ELEMENT value against the binding's own
+  // element type and range, regardless of arity — correct for both shapes.
+  // Only the WIRE shape differs: a `-base-lora` endpoint's singleton
+  // `lora_weights`/`lora_scales` arrays carry exactly the one curated LoRA
+  // this render resolved, never a stack.
+  if (shape === "array") {
+    result.input[weights.field] = [lora.locator];
+    result.input[scale.field] = [lora.scale];
+  } else {
+    result.input[weights.field] = lora.locator;
+    result.input[scale.field] = lora.scale;
+  }
   result.applied.lora = { id: lora.id, scale: lora.scale };
   result.appliedFields.lora = [weights.field, scale.field];
 }

@@ -57,7 +57,8 @@ feature.
 
 Only two feature modules validate requests: `multiReference` rejects an intended reference
 count above `referenceCapacity(model).max`, and `lora` rejects a LoRA-bearing request when
-the active model record lacks either the LoRA weights or LoRA scale binding.
+the active model record carries no usable LoRA weights/scale pair — missing, or the two
+fields disagreeing on shape.
 
 These are model/request compatibility checks. They do not replace `@vesper/image-core`'s
 final-wire invariants, which verify the payload that is actually going to the provider.
@@ -167,23 +168,36 @@ so the feature layer never needs to know whether a provider spells guidance `gui
 
 **Semantic:** the model can load one external LoRA for a render and apply it at a chosen
 strength. The feature treats the weights locator and strength as a pair; a version exposing
-only one is not considered capable of carrying a curated LoRA binding correctly. Each edit
-adapter represents **one LoRA per prediction** — both endpoints expose a single
-weights/scale pair, not a repeated or multi-LoRA input.
+only one, or exposing the two in different shapes, is not considered capable of carrying a
+curated LoRA binding correctly. Each adapter that composes this feature represents **one
+LoRA per prediction** — never a repeated or multi-LoRA input.
 
-**Binding:** true only when both normalized controls exist on the active probed model
-record: `advancedCapabilities.controls.loraWeights` and
-`advancedCapabilities.controls.loraScale`. Family composition and active-version capability
-are separate facts — an adapter may claim LoRA support while a stale or drifted probed row
-still fails the binding check.
+A bound pair comes in exactly two shapes, over `advancedCapabilities.controls.loraWeights`
+and `.loraScale`: **scalar**, where the active version's schema declares
+`lora_weights`/`lora_scale` as two plain fields (every Qwen edit endpoint), and **array**,
+where it declares `lora_weights`/`lora_scales` as two singleton-capable lists (a FLUX.2
+klein `-base-lora` endpoint). Which shape a version uses is a probed fact, never an adapter
+choice — see [providers/loras.md](../../images/providers/loras.md) for how the probe tells
+the two apart and [`@vesper/image-core`'s capabilities module](../../../packages/image-core/src/capabilities/image-model-capabilities.ts)
+for `resolveImageLoraBindingPair`, the one shared reading of a usable pair that this feature,
+the render-side control mapper, the final-wire invariant, and the library's mechanical
+compatibility check all consult — a version whose two fields disagree on shape is exactly as
+unbound as a version missing one of them.
+
+**Binding:** true only when `resolveImageLoraBindingPair` resolves a pair from the active
+probed model record — both fields present and agreeing on shape. Family composition and
+active-version capability are separate facts — an adapter may claim LoRA support while a
+stale or drifted probed row still fails the binding check.
 
 **Validation:** when `ImageModelRequestFacts.usesLora` is false the feature has nothing to
-refuse. When `usesLora` is true and either normalized binding is missing, validation returns
-a pre-spend refusal explaining that the active version cannot carry the LoRA and should be
-re-probed or replaced with a model that exposes both fields. This is the cheap model/request
-compatibility check; it does not replace `@vesper/image-core`'s final-wire LoRA invariant,
-which verifies that the resolved LoRA locator and scale actually reach the payload
-unchanged.
+refuse. When `usesLora` is true and the pair does not resolve, validation returns a pre-spend
+refusal naming the specific problem — the missing side, or the shape mismatch (an array
+`lora_weights` beside a scalar `lora_scale`, say) — rather than one generic sentence, and
+says the active version should be re-probed or replaced with a model that exposes a matching
+pair. This is the cheap model/request compatibility check; it does not replace
+`@vesper/image-core`'s final-wire LoRA invariant, which verifies that the resolved LoRA
+locator and scale actually reach the payload unchanged — as a scalar value for a scalar
+binding, or as the single element of a one-item list for an array one.
 
 ## Output
 

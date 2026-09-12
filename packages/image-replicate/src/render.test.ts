@@ -657,6 +657,43 @@ describe("runRegistryImageModel", () => {
     expect(refused.providerInputViolations?.[0]).toMatchObject({ field: "extra_image", reason: "unsupported_shape" });
   });
 
+  it("refuses an array-shaped LoRA field the raw overlay wrote rather than a typed transport", async () => {
+    // The array-LoRA analogue of the URI-smuggling case above: a `-base-lora`
+    // endpoint's `lora_scales` field takes a list, and only a resolved curated
+    // LoRA (via the mapper's `typedControlFields`) may supply one. Nothing
+    // resolved a LoRA on THIS render, so `lora_scales` is not in
+    // `typedControlFields`, and the raw advanced value must fail closed exactly
+    // like the URI case — never acquire typed-transport privileges just
+    // because the model happens to declare the field.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+      }),
+    );
+    const withArrayLora = model({
+      advancedCapabilities: {
+        ...emptyImageModelAdvancedCapabilities(),
+        knownInputFields: ["prompt", "lora_weights", "lora_scales"],
+        providerInputs: [
+          { field: "prompt", type: "string", required: true, reserved: true },
+          { field: "lora_weights", type: "array", required: false, reserved: true },
+          { field: "lora_scales", type: "array", required: false, reserved: true },
+        ],
+      },
+    });
+    const refused = await client().runRegistryImageModel(withArrayLora, {
+      prompt: "p",
+      controlInput: { lora_scales: [4] },
+      policy: { providerInputs: "strict" },
+    });
+    expect(refused.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(refused.providerInputViolations?.[0]).toMatchObject({ field: "lora_scales", reason: "unsupported_shape" });
+  });
+
   it("leaves a required field with a declared provider default unset", async () => {
     // Provider defaults are not Vesper defaults: demanding the caller restate
     // one would turn "leave it alone" into "copy whatever another lane used".

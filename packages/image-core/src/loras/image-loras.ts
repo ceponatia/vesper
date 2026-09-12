@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { ImageInputBinding, ImageModelControlBindings } from "../capabilities/image-model-capabilities";
+import {
+  resolveImageLoraBindingPair,
+  type ImageInputBinding,
+  type ImageModelControlBindings,
+} from "../capabilities/image-model-capabilities";
 import {
   imageControlDefaultsSchema,
   imageProfileTaskSchema,
@@ -570,16 +574,20 @@ function mechanicalLoraRefusal(input: EvaluateImageLoraForRenderInput, scale: nu
     );
   }
 
-  const weightsBinding = bindings.loraWeights;
-  const scaleBinding = bindings.loraScale;
-  if (!weightsBinding || !scaleBinding) {
-    // Both or neither: a locator with no scale field runs at the model's own
-    // default strength, which is a different render from the one recorded.
-    return unreachable(`${slug} exposes no LoRA weights and scale inputs, so ${lora.label} cannot be sent`);
+  // The one shared reading of a usable pair (`@vesper/image-core`'s capability
+  // module) — both fields present, matching arity, and the right element types.
+  // A version that only has one field, or whose two fields disagree on shape
+  // (a `-base-lora` endpoint's array `lora_weights` beside a scalar
+  // `lora_scale`, say), is exactly as unreachable as a version with neither: a
+  // locator sent with no matching scale runs at the model's own default
+  // strength, which is a different render from the one recorded.
+  const pair = resolveImageLoraBindingPair(bindings.loraWeights, bindings.loraScale);
+  if (!pair) {
+    return unreachable(`${slug} exposes no usable LoRA weights/scale pair, so ${lora.label} cannot be sent`);
   }
-  if (!withinBindingRange(scaleBinding, scale)) {
+  if (!withinBindingRange(pair.scale, scale)) {
     return unreachable(
-      `scale ${String(scale)} is outside the range ${slug} declares for ${scaleBinding.field}`,
+      `scale ${String(scale)} is outside the range ${slug} declares for ${pair.scale.field}`,
     );
   }
 

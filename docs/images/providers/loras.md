@@ -41,6 +41,27 @@ provider payload and nowhere else, with URL query strings redacted from diagnost
 endpoints, prefer a Hugging Face repo slug (or a documented direct `.safetensors` URL) over
 credential-bearing or expiring download URLs.
 
+### Scalar and array bindings
+
+A version's two LoRA fields declare one of two shapes, both scoped to that one LoRA — never
+several stacked at once:
+
+- **scalar** — a `lora_weights` string field paired with a `lora_scale` number field. Every
+  Qwen edit endpoint declares this shape, and it is the shape every row saved before the array
+  shape existed still reads as: absent arity means scalar.
+- **array** — a `lora_weights` field paired with a plural `lora_scales` field, both declared as
+  lists. A FLUX.2 klein `-base-lora` endpoint declares this shape; the resolved locator and
+  scale still describe exactly one LoRA, sent as the single element of a one-item list on each
+  field (`lora_weights: [locator]`, `lora_scales: [scale]`) — never a second entry, and never an
+  empty list.
+
+Which shape a version uses is read from its schema by the probe
+([registry.md](registry.md) §Probe-owned columns), never chosen by an adapter or a stored row.
+A version whose two fields disagree on shape — an array `lora_weights` beside a scalar
+`lora_scale`, say — is treated the same as a version missing one of the two fields: no LoRA can
+be sent, and resolution refuses with `image_lora.unreachable_configuration` before any provider
+work.
+
 ## Identity-LoRA bindings
 
 A character LoRA additionally records which identity pack it was trained from.

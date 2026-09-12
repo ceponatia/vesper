@@ -611,10 +611,40 @@ describe("probeReplicateModel", () => {
       expect(result.probe.advancedCapabilities.controls.sequentialMode).toBeUndefined();
     });
 
-    it("omits a range the schema did not declare, and ignores a LoRA field of the wrong type", async () => {
+    it("omits a range the scalar LoRA pair did not declare", async () => {
       // Absent bounds mean "the provider declared none", never "unbounded" — writing
-      // a made-up range would refuse values the model accepts. And a `lora_weights`
-      // that is not a string is not the binding this derivation knows how to send.
+      // a made-up range would refuse values the model accepts.
+      stubFetch(() => ({
+        name: "unranged-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "string" },
+              lora_scale: { type: "number" },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/unranged-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({
+        loraWeights: { field: "lora_weights", type: "string" },
+        loraScale: { field: "lora_scale", type: "number" },
+      });
+    });
+
+    it("binds neither LoRA field when the two sides declare different shapes", async () => {
+      // `lora_weights` here is an ARRAY and `lora_scale` is a plain scalar — the
+      // shared pair-shape reading (`resolveImageLoraBindingPair`) refuses this
+      // combination on BOTH readings: as a scalar pair, `lora_weights` is the
+      // wrong shape; as an array pair, there is no `lora_scales` (plural) field
+      // to pair it with. A locator with no matching scale runs at whatever the
+      // model defaults to, which is a different render from the one recorded —
+      // so half a pair must never bind.
       stubFetch(() => ({
         name: "odd-lora",
         latest_version: {
@@ -632,9 +662,120 @@ describe("probeReplicateModel", () => {
       const result = await probeReplicateModel("acme/odd-lora");
       expect(result.ok).toBe(true);
       if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({});
+    });
+
+    it("binds neither LoRA field when only one side of the array pair is declared", async () => {
+      // `lora_weights` is a well-formed array-of-string binding, but nothing
+      // named `lora_scales` exists to pair it with — the scalar `lora_scale`
+      // name would still leave the array side unmatched, so this is "missing",
+      // not "mismatched", and the outcome is the same: bind neither.
+      stubFetch(() => ({
+        name: "half-array-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "array", items: { type: "string" } },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/half-array-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({});
+    });
+
+    it("derives the array LoRA pair, with per-element constraints when the schema declares them", async () => {
+      // The general shape a FLUX.2 klein `-base-lora` endpoint declares:
+      // `lora_weights`/`lora_scales` as singleton-capable lists rather than the
+      // two Qwen scalar fields. This fixture adds an element range neither real
+      // klein schema declares, specifically to prove the derivation reads
+      // `items.minimum`/`items.maximum` when a future array-LoRA endpoint does.
+      stubFetch(() => ({
+        name: "array-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "array", items: { type: "string" } },
+              lora_scales: { type: "array", items: { type: "number", minimum: 0, maximum: 2 } },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/array-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
       expect(result.probe.advancedCapabilities.controls).toEqual({
-        loraScale: { field: "lora_scale", type: "number" },
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+        loraScale: { field: "lora_scales", type: "number", arity: "array", minimum: 0, maximum: 2 },
       });
+      expect(result.probe.advancedCapabilities.knownInputFields).toEqual(["lora_scales", "lora_weights", "prompt"]);
+    });
+
+    it("derives the FLUX.2 klein 4B -base-lora array LoRA pair from the captured schema", async () => {
+      // Transcribed from the live Replicate schema for
+      // `black-forest-labs/flux-2-klein-4b-base-lora`, version
+      // c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc
+      // (issue #566 comment, evidence state `documented`, captured 2026-09-12).
+      // Both LoRA fields are `nullable: true` singleton-capable lists, no
+      // `items` bounds declared, and the endpoint declares neither `guidance`
+      // nor `go_fast` — trimmed here to the properties this case is about.
+      stubFetch(() => ({
+        name: "flux-2-klein-4b-base-lora",
+        owner: "black-forest-labs",
+        is_official: true,
+        latest_version: {
+          id: "c8ca755d41dd4a19b8fe1f50247bc6b37c73ac5321af8277d97c5e66e803ecdc",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              images: uriArray(),
+              lora_weights: {
+                type: "array",
+                items: { type: "string" },
+                nullable: true,
+                description:
+                  "LoRA weights as a list of URLs. Supports ComfyUI and native Flux Klein format LoRAs. ComfyUI LoRAs are automatically converted.",
+              },
+              lora_scales: {
+                type: "array",
+                items: { type: "number" },
+                nullable: true,
+                description:
+                  "Scales for each LoRA as a list of floats. Must match the number of lora_weights. Defaults to 1.0 for each if not provided.",
+              },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("black-forest-labs/flux-2-klein-4b-base-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // The two array bindings — the checklist item this fixture exists for.
+      // No range: the description's "Defaults to 1.0" is not a declared bound,
+      // and manufacturing one from prose is exactly what this derivation must
+      // never do.
+      expect(result.probe.advancedCapabilities.controls.loraWeights).toEqual({
+        field: "lora_weights",
+        type: "string",
+        arity: "array",
+      });
+      expect(result.probe.advancedCapabilities.controls.loraScale).toEqual({
+        field: "lora_scales",
+        type: "number",
+        arity: "array",
+      });
+      expect(result.probe.advancedCapabilities.knownInputFields).toEqual(
+        ["images", "lora_scales", "lora_weights", "prompt"].sort(),
+      );
     });
 
     it("derives dedicated inputs and reserved descriptors for the Vesper SDXL renderer's shape", async () => {

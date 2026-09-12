@@ -46,6 +46,7 @@ export {
   isImageControlReferenceRole,
   mapImageRenderControls,
   reservedImageInputFields,
+  resolveImageLoraBindingPair,
   validateImageProfileForCandidate,
   validateProviderOverrides,
 } from "./capabilities";
@@ -59,6 +60,7 @@ export type {
   ImageEditKind,
   ImageIdentityPreservation,
   ImageInputBinding,
+  ImageLoraBindingPair,
   ImageModelAdvancedCapabilities,
   ImageModelCapabilitySnapshot,
   ImageModelControlBindings,

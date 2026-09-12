@@ -795,6 +795,93 @@ describe("a resolved LoRA", () => {
       });
     });
   });
+
+  /**
+   * The array wire shape, mirrored end to end: a `-base-lora` endpoint's
+   * `lora_weights`/`lora_scales` fields. Same claims as the scalar suite
+   * above — a resolved LoRA owns its two bound fields, an override cannot
+   * replace them, and a version missing (or only half-exposing) the pair
+   * sends nothing — proven again because the mapper takes a different branch
+   * for `arity: "array"` and a defect there would not show up in the scalar
+   * cases.
+   */
+  describe("the array wire shape (a FLUX.2 klein -base-lora endpoint)", () => {
+    const ARRAY_LORA_CAPABILITIES = {
+      controls: {
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" as const },
+        loraScale: { field: "lora_scales", type: "number", arity: "array" as const },
+      },
+      knownInputFields: ["lora_weights", "lora_scales"],
+    };
+
+    function arrayLoraPlan(over: Partial<CompileProfileRenderPlanInput> = {}): ProfileRenderPlan {
+      return compiledPlan({
+        model: model({ advancedCapabilities: ARRAY_LORA_CAPABILITIES }),
+        profile: profile(),
+        basePrompt: "change the outfit",
+        baseNegativePrompt: null,
+        safetyCheckerDisabled: true,
+        references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+        ...over,
+      });
+    }
+
+    it("sends the locator and the scale as singleton arrays on the fields this version declared", () => {
+      const compiled = arrayLoraPlan({ resolvedLora: binding });
+      expect(compiled.controlInput).toEqual({ lora_weights: ["owner/ink-wash-lora"], lora_scales: [0.8] });
+      expect(compiled.appliedControls.lora).toEqual({ id: "lora-1", scale: 0.8 });
+    });
+
+    it("drops an override colliding with a resolved array LoRA's own fields, and sends the binding verbatim", () => {
+      const compiled = arrayLoraPlan({
+        profile: profile({ providerOverrides: { lora_weights: "owner/other-lora", lora_scales: [4] } }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput.lora_weights).toEqual(["owner/ink-wash-lora"]);
+      expect(compiled.controlInput.lora_scales).toEqual([0.8]);
+      expect(compiled.appliedControls.lora).toEqual({ id: "lora-1", scale: 0.8 });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_weights", reason: "reserved" });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_scales", reason: "reserved" });
+
+      // The fields stay ordinary advanced inputs when no LoRA is resolved.
+      const unresolved = arrayLoraPlan({ profile: profile({ providerOverrides: { lora_weights: ["owner/other-lora"] } }) });
+      expect(unresolved.controlInput.lora_weights).toEqual(["owner/other-lora"]);
+    });
+
+    it("does not record an array LoRA the version's two fields disagree on", () => {
+      // An array `lora_weights` beside a SCALAR `lora_scale` (the mismatched-arity
+      // shape, not simply a missing field) is not a pair `resolveImageLoraBindingPair`
+      // recognizes, so the plan must not claim the LoRA at all.
+      const compiled = arrayLoraPlan({
+        model: model({
+          advancedCapabilities: {
+            controls: {
+              loraWeights: { field: "lora_weights", type: "string", arity: "array" as const },
+              loraScale: { field: "lora_scale", type: "number" },
+            },
+            knownInputFields: ["lora_weights", "lora_scale"],
+          },
+        }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput).toEqual({});
+      expect(compiled.appliedControls.lora).toBeUndefined();
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora", reason: "no_binding" });
+    });
+
+    it("does not record an array LoRA whose mapped field the reserved filter removed", () => {
+      const compiled = arrayLoraPlan({
+        model: model({ referenceField: "lora_weights", advancedCapabilities: ARRAY_LORA_CAPABILITIES }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput).toEqual({ lora_scales: [0.8] });
+      expect(compiled.appliedControls.lora).toBeUndefined();
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({
+        control: "lora_weights",
+        reason: "reserved",
+      });
+    });
+  });
 });
 
 describe("the injected prompt preparer", () => {

@@ -283,3 +283,150 @@ describe("a curated LoRA row reaching the Replicate payload", () => {
     expect(payload.lora_scale).toBe(row.defaultScale);
   });
 });
+
+/**
+ * The array wire shape: a FLUX.2 klein `-base-lora` endpoint's
+ * `lora_weights`/`lora_scales` fields, each a singleton-capable list rather
+ * than the two Qwen scalar fields. Same chain, same claim — one library row
+ * still reaches the payload as itself — but the two provider fields are now
+ * one-element ARRAYS, and the final-wire invariant that catches "recorded but
+ * never sent" must catch "sent as the wrong shape" too.
+ */
+describe("a curated LoRA row reaching an array-shaped Replicate payload", () => {
+  /** A `-base-lora` endpoint's array LoRA pair, otherwise shaped like the edit row above. */
+  const KLEIN_BASE_LORA: ImageModel = imageModelSchema.parse({
+    id: "imgmdlfluxklein4bbaselora",
+    slug: "black-forest-labs/flux-2-klein-4b-base-lora",
+    label: "FLUX.2 Klein 4B (base, LoRA)",
+    canGenerate: true,
+    canEdit: true,
+    editKind: "img2img",
+    referenceField: "images",
+    referenceArity: "array",
+    maxReferences: 5,
+    advancedCapabilities: {
+      controls: {
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+        loraScale: { field: "lora_scales", type: "number", arity: "array" },
+      },
+      knownInputFields: ["lora_weights", "lora_scales"],
+    },
+  });
+
+  const KLEIN_PROFILE: ImageModelProfile = imageModelProfileSchema.parse({
+    id: "image-generator/run-klein",
+    imageModelId: KLEIN_BASE_LORA.id,
+    key: "image-generator",
+    label: "Image Generator",
+    task: "item",
+    operation: "edit",
+    promptStrategy: "instruction_edit",
+    referencePolicy: { allowedRoles: [], requiredRoles: [], roleOrder: [], identityStrategy: "canonical_only" },
+    controlDefaults: { seedPolicy: "caller" },
+  });
+
+  const KLEIN_LORA_ROW: ImageLora = imageLoraSchema.parse({
+    id: "imglorkleinstylev1",
+    label: "Klein Style v1",
+    locatorType: "https_url",
+    locator: "https://cdn.example.invalid/loras/klein-style.safetensors",
+    compatibleModelSlugs: ["black-forest-labs/flux-2-klein-4b-base-lora"],
+    compatibleVersionIds: [],
+    defaultScale: 1,
+    minimumScale: 0,
+    maximumScale: 2,
+    allowedTasks: ["scene", "variant", "item"],
+    enabled: true,
+    builtin: false,
+  });
+
+  function resolveKleinBinding(): ImageLoraRenderBinding {
+    const evaluation = evaluateImageLoraForRender({
+      lora: KLEIN_LORA_ROW,
+      modelSlug: KLEIN_BASE_LORA.slug,
+      versionId: null,
+      context: { kind: "generator_bench" },
+      bindings: KLEIN_BASE_LORA.advancedCapabilities.controls,
+    });
+    if (!evaluation.ok) {
+      throw new Error(`[lora-final-wire] the klein row was refused: ${evaluation.code} — ${evaluation.message}`);
+    }
+    return evaluation.binding;
+  }
+
+  function kleinPlanned(binding?: ImageLoraRenderBinding): PlannedImageRender {
+    const intent: ImageRenderIntent = {
+      profile: { model: KLEIN_BASE_LORA, profile: KLEIN_PROFILE },
+      prompt: "a bench render",
+      references: [{ role: "reference", buffer: Buffer.from("bench-reference"), required: true }],
+      target: { aspectRatio: null },
+      ...(binding ? { resolvedLora: binding } : {}),
+    };
+    const result = planImageRender(intent, { safetyCheckerDisabled: SAFETY_CHECKER_DISABLED });
+    if (!result.ok) {
+      throw new Error(`[lora-final-wire] the klein plan was refused: ${result.refusal.code} — ${result.refusal.message}`);
+    }
+    return result.plan;
+  }
+
+  it("sends the row's locator and scale as singleton arrays on a bench render", () => {
+    const plan = kleinPlanned(resolveKleinBinding());
+    const payload = sentPayload(plan);
+    expect(payload.lora_weights).toEqual([KLEIN_LORA_ROW.locator]);
+    expect(payload.lora_scales).toEqual([KLEIN_LORA_ROW.defaultScale]);
+    // The Generator's stored pre-spend record must agree with what is actually sent.
+    const recorded = recordedPayload(plan);
+    expect(recorded.lora_weights).toEqual(payload.lora_weights);
+    expect(recorded.lora_scales).toEqual(payload.lora_scales);
+  });
+
+  it("writes neither array field when the render resolved no LoRA", () => {
+    const payload = sentPayload(kleinPlanned());
+    expect("lora_weights" in payload).toBe(false);
+    expect("lora_scales" in payload).toBe(false);
+  });
+
+  it("posts the row's locator and scale as singleton arrays in the real prediction request body", async () => {
+    const plan = kleinPlanned(resolveKleinBinding());
+    const posted: { input?: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "POST" && url.endsWith("/files")) {
+          return Response.json({ id: "file-1", urls: { get: "https://replicate.delivery/f/bench-reference.webp" } });
+        }
+        if (init?.method === "POST" && url.includes("/predictions")) {
+          posted.push(JSON.parse(String(init.body)) as { input?: Record<string, unknown> });
+          return Response.json({
+            id: "pred-wire-klein",
+            status: "succeeded",
+            output: ["https://replicate.delivery/o/out.webp"],
+          });
+        }
+        return new Response(Buffer.from("image-bytes"), { status: 200 });
+      }),
+    );
+
+    const result = await createReplicateClient({
+      apiToken: "test-token",
+      safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
+      predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
+    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+      prompt: plan.prompt,
+      references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
+      aspect: null,
+      controlInput: plan.controlInput,
+      typedControlFields: plan.typedControlFields,
+      policy: plan.policy,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.input?.lora_weights).toEqual([KLEIN_LORA_ROW.locator]);
+    expect(posted[0]?.input?.lora_scales).toEqual([KLEIN_LORA_ROW.defaultScale]);
+    // Unrelated fields travel unchanged — the array shape is confined to the
+    // two LoRA fields, never a general "wrap everything" transport change.
+    expect(posted[0]?.input?.prompt).toBe(plan.prompt);
+  });
+});
