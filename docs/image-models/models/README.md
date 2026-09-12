@@ -59,8 +59,8 @@ over with one shared mapping:
   from the reviewed policy
   (`packages/image-core/src/models/reviewed-profile-controls.ts`), and every render is cropped to shape
   after download regardless.
-- Output is an array of URIs on twelve of fifteen models, and a bare URI string
-  on the other three.
+- Output is an array of URIs on most models, including all three FLUX.2 klein 4B
+  endpoints, and a bare URI string on three of them.
 - One model watermarks by default (`apply_watermark`), which the probe pins off.
 - **Community models can only be run by version id.** The bare-slug endpoint is
   official-models-only, so a community model's registry row is auto-pinned to
@@ -68,8 +68,9 @@ over with one shared mapping:
   pinned for the same reason. That is why the community models below carry a
   version in their stored slug and the official ones do not.
 - **No model declares `maxItems` on its array reference input.** Reference caps
-  are stated in prose in the field description, so they are recorded here and
-  stored per row — they cannot be read from the schema.
+  are stated in prose in the field description ("List of 1-14 images", "up to 9
+  images", "Maximum 5 images"), so they are recorded here and stored per row —
+  they cannot be read from a declared schema bound.
 - **One model rejects Replicate's own uploaded-file URLs.** Wan 2.7 reads the
   file extension off what it is handed, and an upload arrives without one, so
   its references must be inlined as `data:` URIs (`reference_transport` on the
@@ -83,10 +84,11 @@ model can run with no reference image; "edit" means it has a reference input at
 all. Neither promises identity preservation — that is the rating beside it
 (§Reviewed capability).
 
-Only the eleven seeded models carry reviewed ratings. The four below them are
-reference docs for models Vesper *can* run but does not ship a row for: an admin
-adds them from `/settings/image-models`, and they stay unrated until someone has
-looked at their output.
+The seeded models carry reviewed ratings. The four listed under "Documented but
+not seeded" are reference docs for models Vesper *can* run but does not ship a
+row for: an admin adds them from `/settings/image-models`, and they stay unrated
+until someone has looked at their output. The `image_models` table, not this
+list, is the runtime source of truth for which rows exist.
 
 - [Qwen Image 2512](qwen-image-2512.md) — `qwen/qwen-image-2512`. Generate yes,
   edit yes, 1 reference. `img2img` · `weak`. Vesper's new-portrait default.
@@ -117,6 +119,26 @@ looked at their output.
   1 reference. `unknown` · `unknown`, plus an operator warning — untried, with no
   declared safety switch and prompt expansion on by default. On no player surface:
   the admin Image Generator reaches it and nothing else does.
+- [FLUX.2 klein 4B](flux-2-klein-4b.md) — `black-forest-labs/flux-2-klein-4b`.
+  Generate yes, edit yes, 5 references. `unknown` · `unknown`, plus an operator
+  warning — untried, one-megapixel default output, and accelerated sampling pinned
+  on against the provider's default. The guidance-distilled endpoint: no guidance
+  input at all. On no player surface: the admin Image Generator reaches it and
+  nothing else does.
+- [FLUX.2 klein 4B Base](flux-2-klein-4b-base.md) —
+  `black-forest-labs/flux-2-klein-4b-base`. Generate yes, edit yes, 5 references.
+  `unknown` · `unknown`, plus an operator warning — same caveats, and it is the one
+  klein 4B endpoint declaring `guidance` (1–10). On no player surface.
+- [FLUX.2 klein 4B Base LoRA](flux-2-klein-4b-base-lora.md) —
+  `black-forest-labs/flux-2-klein-4b-base-lora`. Generate yes, edit yes, 5
+  references. `unknown` · `unknown`, plus an operator warning — same caveats, and
+  no curated LoRA has been run against it. The only klein 4B endpoint taking
+  runtime LoRA weights, as a PAIR OF LISTS (`lora_weights`/`lora_scales`) rather
+  than the two scalar fields every other LoRA-bound row declares. On no player
+  surface.
+
+The 9B klein siblings are published under a non-commercial licence and Vesper
+registers no row and carries no page for them.
 
 Of the four adult/identity additions above — NSFW FLUX Dev, LikeReality Pony v1,
 SDXL PuLID and Pruna P-Image — only SDXL PuLID takes a reference image, which is
@@ -146,8 +168,9 @@ recommends, so an admin adding one knows what they are getting — but nothing i
 Vesper corrects it on their behalf. The reviewed set is the two Qwen rows the
 production lanes run — [Qwen Image 2512](qwen-image-2512.md) and [Qwen Image Edit
 2511](qwen-image-edit-2511.md) — plus the seeded adult/identity additions. Sharing
-the family name does not join it: [Qwen Image 2](qwen-image-2.md) is seeded and
-carries neither a reviewed correction nor a profile.
+the family name does not join it: [Qwen Image 2](qwen-image-2.md) and the three
+FLUX.2 klein 4B rows are seeded and carry neither a reviewed correction nor a
+profile.
 
 ## Moderation, by hosting model
 
@@ -204,9 +227,10 @@ not the prose here, are the runtime source of truth
 `probed_version_id` — the version the stored bindings came from, and the version named in each
 file's provenance line — is written on rows added through the admin page, on every seeded row
 whose slug names a version, and on the seeded bare-slug rows a migration pins explicitly: Pruna
-P-Image, both Seedream rows, and Qwen Image 2. Four rows are seeded without one — Qwen Image
-2512, Qwen Image Edit 2511, Stable Diffusion 3.5 Large and Wan 2.7 Image Pro — because they
-predate the column; a re-probe or a version activation from the admin page writes it.
+P-Image, both Seedream rows, Qwen Image 2, and the three FLUX.2 klein 4B rows. Four rows are
+seeded without one — Qwen Image 2512, Qwen Image Edit 2511, Stable Diffusion 3.5 Large and Wan
+2.7 Image Pro — because they predate the column; a re-probe or a version activation from the
+admin page writes it.
 `advanced_capabilities` is probe-owned and
 holds optional control bindings plus provider-input descriptors; a row created
 before a capability derivation existed gains those fields on re-probe or version
