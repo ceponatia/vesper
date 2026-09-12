@@ -17,18 +17,18 @@ Source: [`packages/image-models`](../../packages/image-models/README.md).
 
 ## Reading order
 
-| Doc                                                     | What it covers                                                                                    |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [Features](features/README.md)                          | Semantic feature contract, current feature modules, binding rules, and Qwen capability matrix     |
-| [Provider model reference](models/README.md)            | Per-model Replicate/API snapshots, provider drift, reviewed capability, inputs, and payload notes |
-| [Image system overview](../images/README.md)            | Profiles, providers, asset registry, pipelines, identity packs, and the surrounding image system  |
+| Doc                                                            | What it covers                                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Features](features/README.md)                                 | Semantic feature contract, current feature modules, binding rules, and Qwen capability matrix     |
+| [Provider model reference](models/README.md)                   | Per-model Replicate/API snapshots, provider drift, reviewed capability, inputs, and payload notes |
+| [Image system overview](../images/README.md)                   | Profiles, providers, asset registry, pipelines, identity packs, and the surrounding image system  |
 | [Provider probing and registry](../images/providers/README.md) | Provider fields, active versions, probing, profile resolution, and registry truth                 |
 
 ## Current package state
 
 The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers import from `@vesper/image-models`, not from `src/*` subpaths.
 
-The **Qwen Image family** and the **FLUX.2 klein** bench-onboarding endpoints (#567) are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan, SDXL, and Seedream families — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
+The **Qwen Image family** and the **FLUX.2 klein** bench-onboarding endpoints are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan, SDXL, and Seedream families — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
 The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
 
@@ -48,17 +48,17 @@ The edit adapter composes `lora`. Composing it states that the endpoint family c
 
 ### Registered FLUX.2 klein adapters
 
-klein ships three DISTINCT endpoint variants per parameter size rather than one schema with optional fields, backed by the captured OpenAPI schemas ([#566](https://github.com/ceponatia/vesper/issues/566#issuecomment-5646491048)). 4B and 9B are parameter-count twins: for a given variant the schema and composed feature set are identical, so the registry maps both twin slugs to the same variant object (`packages/image-models/src/families/flux/klein.ts`) instead of duplicating the definition.
+klein ships three DISTINCT endpoint variants per parameter size rather than one schema with optional fields — the captured schemas recorded on each endpoint's model page ([FLUX.2 klein 4B](models/flux-2-klein-4b.md), [4B Base](models/flux-2-klein-4b-base.md), [4B Base LoRA](models/flux-2-klein-4b-base-lora.md)). 4B and 9B are parameter-count twins: for a given variant the schema and composed feature set are identical, so the registry maps both twin slugs to the same variant object (`packages/image-models/src/families/flux/klein.ts`) instead of duplicating the definition.
 
-| Variant   | Twin slugs                                                                                   | Composed features                                                                                                          | Family behavior |
-| --------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| Distilled | `black-forest-labs/flux-2-klein-4b`, `black-forest-labs/flux-2-klein-9b`                     | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle`             | none            |
-| Base      | `black-forest-labs/flux-2-klein-4b-base`, `black-forest-labs/flux-2-klein-9b-base`           | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle` | none            |
-| Base-LoRA | `black-forest-labs/flux-2-klein-4b-base-lora`, `black-forest-labs/flux-2-klein-9b-base-lora` | `prompt`, `multiReference`, `aspectRatio`, `seed`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle`                 | none            |
+| Variant   | Twin slugs                                                                                   | Family behavior |
+| --------- | -------------------------------------------------------------------------------------------- | --------------- |
+| Distilled | `black-forest-labs/flux-2-klein-4b`, `black-forest-labs/flux-2-klein-9b`                     | none            |
+| Base      | `black-forest-labs/flux-2-klein-4b-base`, `black-forest-labs/flux-2-klein-9b-base`           | none            |
+| Base-LoRA | `black-forest-labs/flux-2-klein-4b-base-lora`, `black-forest-labs/flux-2-klein-9b-base-lora` | none            |
 
 No klein variant composes `negativePrompt`: none of the three captured schemas declares a negative-prompt input. The base-lora variant's `lora` binding is the ARRAY pair shape (`lora_weights`/`lora_scales` as matched singleton lists), the second shape `resolveImageLoraBindingPair` recognizes alongside the Qwen edit endpoints' scalar pair ([Features → LoRA](features/README.md#lora)).
 
-**Adapter lookup is not the same fact as an enabled database row.** Registering a slug in `IMAGE_MODEL_ADAPTERS` gives Vesper behavior to apply the moment a row for that slug is probed and enabled; it does not itself register, enable, or authorize a model. No 9B `image_models` row exists, and this registry entry does not add one — the 9B keys exist purely so a future 9B row (a decision [#564](https://github.com/ceponatia/vesper/issues/564) governs) inherits the correct variant immediately rather than the generic path. Only a registered, enabled database row actually renders.
+See [Features → FLUX.2 klein composition](features/README.md#flux2-klein-composition) for the full feature matrix and for the rule distinguishing adapter lookup from an enabled database row.
 
 ## Features
 
