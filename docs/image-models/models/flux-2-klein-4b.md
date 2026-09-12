@@ -20,11 +20,11 @@ Vesper registers no row for them (see [Not the 9B siblings](#not-the-9b-siblings
 Replicate publishes the 4B model as three endpoints. They share a prompt/reference shape and
 differ exactly where a payload has to get it right:
 
-| Endpoint                                     | Guidance          | Accelerated sampling | Runtime LoRA                        |
-| -------------------------------------------- | ----------------- | -------------------- | ----------------------------------- |
-| `black-forest-labs/flux-2-klein-4b`          | **none declared** | `go_fast`            | none declared                       |
-| `black-forest-labs/flux-2-klein-4b-base`     | `guidance`, 1–10  | `go_fast`            | none declared                       |
-| `black-forest-labs/flux-2-klein-4b-base-lora`| **none declared** | **none declared**    | `lora_weights` / `lora_scales` lists |
+| Endpoint                                      | Guidance          | Accelerated sampling | Runtime LoRA                         |
+| --------------------------------------------- | ----------------- | -------------------- | ------------------------------------ |
+| `black-forest-labs/flux-2-klein-4b`           | **none declared** | `go_fast`            | none declared                        |
+| `black-forest-labs/flux-2-klein-4b-base`      | `guidance`, 1–10  | `go_fast`            | none declared                        |
+| `black-forest-labs/flux-2-klein-4b-base-lora` | **none declared** | **none declared**    | `lora_weights` / `lora_scales` lists |
 
 This page is the first row. It is guidance-distilled, so it declares no guidance input at all —
 asking it for a guidance scale is refused before spend rather than posted to a field it does not
