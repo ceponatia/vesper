@@ -1,6 +1,14 @@
 import { baseImageModelSlug } from "@vesper/image-core";
 import type { ImageModelAdapter } from "./composer";
-import { qwenImage2512, qwenImage3Edit, qwenImage3TextToImage, qwenImageEdit2511 } from "./families";
+import {
+  fluxKleinBase,
+  fluxKleinBaseLora,
+  fluxKleinDistilled,
+  qwenImage2512,
+  qwenImage3Edit,
+  qwenImage3TextToImage,
+  qwenImageEdit2511,
+} from "./families";
 import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
 
 /**
@@ -20,15 +28,25 @@ import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
  * `owner/name[:version]` grammar belongs to Replicate. The lookup handles those
  * two exact routes first.
  *
- * Only the Qwen family is here. Other families (Flux, Wan, SDXL, Seedream) stay
- * on the legacy path and migrate when their behavior is next touched, which is
- * exactly why the answer below is nullable rather than exhaustive.
+ * The Qwen family and the FLUX.2 klein bench-onboarding endpoints (#567) are
+ * here. Other families (the production Flux checkpoints, Wan, SDXL, Seedream)
+ * stay on the legacy path and migrate when their behavior is next touched,
+ * which is exactly why the answer below is nullable rather than exhaustive.
  */
 const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   "qwen/qwen-image-edit-2511": qwenImageEdit2511,
   "qwen/qwen-image-2512": qwenImage2512,
   [FAL_QWEN3_TEXT_SLUG]: qwenImage3TextToImage,
   [FAL_QWEN3_EDIT_SLUG]: qwenImage3Edit,
+  // FLUX.2 klein (#567): 4B/9B parameter-count twins share one variant object.
+  // Registering the 9B slugs is code support only — no 9B database row exists,
+  // and adding one is #564's decision, not this registry's.
+  "black-forest-labs/flux-2-klein-4b": fluxKleinDistilled,
+  "black-forest-labs/flux-2-klein-4b-base": fluxKleinBase,
+  "black-forest-labs/flux-2-klein-4b-base-lora": fluxKleinBaseLora,
+  "black-forest-labs/flux-2-klein-9b": fluxKleinDistilled,
+  "black-forest-labs/flux-2-klein-9b-base": fluxKleinBase,
+  "black-forest-labs/flux-2-klein-9b-base-lora": fluxKleinBaseLora,
 };
 
 /**
