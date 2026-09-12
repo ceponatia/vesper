@@ -156,8 +156,13 @@ export function effectiveRequestRecord(input: EffectiveRequestInput): Record<str
  * settings: a LoRA's weights field carries a download locator (and, downstream
  * of here, a credential), and any URL or inline data is an ephemeral handle
  * whose stored copy would be both useless and unsafe.
+ *
+ * Exported (rather than kept module-private) so the sanitization rules —
+ * including the array shape a FLUX.2 klein `-base-lora` endpoint's
+ * `lora_weights`/`lora_scales` pair carries — are tested directly at this
+ * pure layer, without assembling a full {@link EffectiveRequestInput}.
  */
-function sanitizedProviderRequest(
+export function sanitizedProviderRequest(
   model: ImageModel,
   request: Record<string, unknown>,
   imageFields: ReadonlySet<string>,
@@ -171,14 +176,33 @@ function sanitizedProviderRequest(
       sanitized[field] = Array.isArray(value) ? `[${String(value.length)} images]` : "[image]";
       continue;
     }
-    sanitized[field] = field === loraField ? "[locator redacted]" : sanitizedControlValue(value);
+    sanitized[field] = field === loraField ? redactedLoraLocatorValue(value) : sanitizedControlValue(value);
   }
   return sanitized;
+}
+
+/**
+ * The LoRA weights field's own redaction, applied the same way whether the
+ * active version's binding is scalar (`lora_weights: "https://…"`, every
+ * Qwen edit endpoint) or array-shaped (`lora_weights: ["https://…"]`, a
+ * FLUX.2 klein `-base-lora` endpoint): one `"[locator redacted]"` marker per
+ * locator. An array keeps its length in the record — the same shape-preserving
+ * rule {@link sanitizedControlValue}'s array branch follows for every other
+ * control — while the address itself never survives either shape.
+ */
+function redactedLoraLocatorValue(value: unknown): unknown {
+  return Array.isArray(value) ? value.map(() => "[locator redacted]") : "[locator redacted]";
 }
 
 function sanitizedControlValue(value: unknown): unknown {
   if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
   if (isImageSize(value)) return { width: value.width, height: value.height };
+  // An array-shaped control (a FLUX.2 klein `-base-lora` endpoint's
+  // `lora_scales: [0.9]`, say) maps each element through this SAME function
+  // rather than falling into the "not a string" catch-all below — which
+  // otherwise stored a real, harmless scale as the literal string
+  // "[omitted]". Nested arrays recurse through the same rule.
+  if (Array.isArray(value)) return value.map((entry) => sanitizedControlValue(entry));
   if (typeof value !== "string") return "[omitted]";
   if (/^data:/i.test(value)) return "[inline image redacted]";
   if (/^https?:\/\//i.test(value)) return "[url redacted]";
