@@ -1620,8 +1620,11 @@ export const imageModels = pgTable(
     referenceArity: text("reference_arity", { enum: imageReferenceArities }).notNull().default("array"),
     /**
      * How reference bytes reach the model: an uploaded file URL (`file`, the
-     * default every model but Wan wants) or an inlined `data:` URI. Not
-     * derivable from the schema — see the contract's `imageReferenceTransports`.
+     * default, and what most wrappers want) or an inlined `data:` URI, which a
+     * wrapper that validates the file extension of what it receives needs
+     * instead. Not derivable from the schema — a wrapper that rejects an upload
+     * says so only by failing a render — see the contract's
+     * `imageReferenceTransports`.
      */
     referenceTransport: text("reference_transport", { enum: imageReferenceTransports })
       .notNull()
