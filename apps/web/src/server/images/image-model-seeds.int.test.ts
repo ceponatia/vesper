@@ -8,7 +8,7 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { endTestPool, probeIntegrationDb } from "@/server/test-support";
 import { db, imageLoras, imageModelProfiles, imageModels } from "../db";
 import { imageModelProbeFields } from "./identity-trial-model-versions";
-import { listImageLoras, loadImageLora, resolveImageLoraForRender } from "./image-loras";
+import { type ImageLoraResolution, listImageLoras, loadImageLora, resolveImageLoraForRender } from "./image-loras";
 import { loadImageModels } from "./models";
 
 /**
@@ -743,7 +743,7 @@ async function seededLoraIntact(): Promise<boolean> {
  * model row's probed bindings really expose the array-shaped pair this endpoint
  * needs.
  */
-async function resolveDepthLora(execution: ImageExecutionContext, scale?: number) {
+async function resolveDepthLora(execution: ImageExecutionContext, scale?: number): Promise<ImageLoraResolution> {
   const models = await loadImageModels();
   const model = models.find((candidate) => candidate.slug === KLEIN_BASE_LORA.slug);
   if (!model) throw new Error(`${KLEIN_BASE_LORA.slug} must be seeded by ${MIGRATION_TAG}`);
