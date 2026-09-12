@@ -270,9 +270,10 @@ adds no ingestion path, no Generator/Lab coupling, and no depth-specific UI.
 3. Author a prompt that states each image's role in plain language, since nothing about the
    request itself tells the model which numbered image is which — for example, "follow the first
    image as depth structure and preserve the second image's face and identity".
-4. Pick the curated depth LoRA row at its default scale. The row's one trigger word joins the
-   prompt through the existing prompt-addition mechanism when the authored prompt does not already
-   carry it, and the run record's final prompt shows the woven result.
+4. Pick the curated LoRA row **FLUX.2 klein 4B RefControl depth (pilot)** — the one the seeded
+   library offers for this endpoint — at its default scale of 0.9. The row's one trigger word joins
+   the prompt through the existing prompt-addition mechanism when the authored prompt does not
+   already carry it, and the run record's final prompt shows the woven result.
 5. For the no-LoRA comparison arm, clear the LoRA selection entirely rather than asking the row for
    a scale outside its curated band — an out-of-band scale refuses before spend, it is not a
    substitute for "no LoRA".

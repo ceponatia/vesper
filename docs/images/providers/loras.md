@@ -64,16 +64,23 @@ work.
 
 ## RefControl depth row (klein 4B, pilot)
 
-An operator creates one curated `image_loras` row for
+Migration `0137` seeds one curated `image_loras` row (`imglorklein4brefdepthaaa`) for
 [`black-forest-labs/flux-2-klein-4b-base-lora`](../../image-models/models/flux-2-klein-4b-base-lora.md)'s
-RefControl depth recipe, through the admin LoRA library, with these exact values: `label` "FLUX.2
-klein 4B RefControl depth (pilot)", `locatorType` `https_url`, `compatibleModelSlugs` naming that
-one endpoint slug, `compatibleVersionIds` naming the fixture version its capability record was
-probed against, `triggerWords: ["refcontrol"]` with no prompt prefix or suffix, and
+RefControl depth recipe, with these exact values: `label` "FLUX.2 klein 4B RefControl depth
+(pilot)", `locatorType` `https_url`, `compatibleModelSlugs` naming that one endpoint slug,
+`compatibleVersionIds` naming the fixture version its capability record was probed against,
+`triggerWords: ["refcontrol"]` with no prompt prefix or suffix, and
 `allowedTasks: []` — Generator-only, so the row runs mechanically in the bench while granting
 itself no production or Image Lab eligibility until an operator curates a task for it. Its scale
 band, 0.8–1.0 around a default of 0.9, is a pilot choice informed by the model card's recommended
 weight range, not a provider-declared limit or a measured optimum.
+
+`compatibleVersionIds` is non-empty here, unlike the intimate-scene row: everything known about
+this recipe was read from that one fixture version's published schema, so a version move is a
+re-curation an operator makes deliberately rather than something the seed pre-authorizes. The row
+is an ordinary row like any other seeded one — an admin may retune its band, switch it off, or
+delete it, and a deletion stays deleted, because the migrator applies each migration once per
+database rather than re-asserting seeded values on every deploy.
 
 **Provenance:** read from the Hugging Face API on 2026-09-12, repository
 `thedeoxen/refcontrol-FLUX.2-klein-4B-reference-depth-lora`, revision
@@ -84,18 +91,26 @@ card documents depth map first and identity reference second, the `refcontrol` t
 recommended weight of 0.8–1.0; its "~50 steps, guidance ~4.0" describes the publisher's own
 pipeline rather than this Replicate endpoint, which declares neither field, so neither is sent or
 inferred. The card's sample pairs (`images/1d.png`…`5d.png` for depth, `images/1ref.png`…`5ref.png`
-for reference) are Apache-2.0 fixtures an operator may use for a first run, and the licence's
-required notices travel with the re-hosted artifact.
+for reference) are Apache-2.0 fixtures an operator may use for a first run. The repository publishes
+no `LICENSE` file: the Apache-2.0 grant is declared in the model card's front matter, so that
+declaration — recorded here and beside the re-hosted artifact — is the notice that travels with the
+copy, and there is no separate notice file to carry.
 
-The row's locator follows the existing re-hosting pattern the Sabrina LoRA established: an operator
-verifies the artifact — download it from Hugging Face at the pinned revision, confirm `sha256sum`
-matches the checksum above, upload it with public-read to `s3://snarebox-pub/lora/` in `us-east-2`
-as `flux2_klein_4b_refcontrol_depth-65ec4c71.safetensors` (the published filename plus the
-checksum's first eight hex characters), then confirm `curl -sI` on the resulting
+**The locator is a re-hosted copy, not the publisher's URL.** The endpoint's `lora_weights` field
+takes a list of URLs, so the Hugging Face repository is a source reference rather than something to
+send: Vesper's `huggingface_repo` resolver passes a slug through unchanged, and a slug is not an
+address this provider can fetch. Following the re-hosting pattern the Sabrina LoRA established, the
+row's `locator` is
 `https://snarebox-pub.s3.us-east-2.amazonaws.com/lora/flux2_klein_4b_refcontrol_depth-65ec4c71.safetensors`
-URL answers 200 with the byte size above —
-before creating the row through the admin LoRA library with that verified URL as its `locator`. No
-placeholder or guessed URL is ever written to that field.
+— the published filename plus the checksum's first eight hex characters, in `s3://snarebox-pub/lora/`
+in `us-east-2`. It carries no credential, no query string and no expiry: nothing is appended to it at
+send time, which is what keeps this table free of the token the Civitai row needs.
+
+**Verified 2026-09-12**, before the URL was written anywhere: the artifact was downloaded at the
+pinned revision above, and its byte size and `sha256sum` both matched the published values before
+upload. The object then served over HTTPS answers 200 at that size, and an unauthenticated fetch of
+it hashes to the same checksum — so the bytes a provider retrieves are the bytes that were checked.
+No placeholder or guessed URL is ever written to that field.
 
 ## Identity-LoRA bindings
 

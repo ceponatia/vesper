@@ -960,6 +960,13 @@
       "when": 1789236000000,
       "tag": "0136_flux-2-klein-4b",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1789243200000,
+      "tag": "0137_klein-4b-refcontrol-depth-lora",
+      "breakpoints": true
     }
   ]
 }
