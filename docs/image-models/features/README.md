@@ -257,13 +257,13 @@ it because both endpoints genuinely offer the accelerated sampling path, and whe
 
 ## FLUX.2 klein composition
 
-klein (`packages/image-models/src/families/flux/klein.ts`, [#567](https://github.com/ceponatia/vesper/issues/567))
-registers three variant compositions from the same captured OpenAPI schemas
-([#566](https://github.com/ceponatia/vesper/issues/566#issuecomment-5646491048)) rather than one union: a
-distilled endpoint, a base endpoint, and a base-lora endpoint, each a genuinely different schema rather than
-one schema read three ways. 4B and 9B are parameter-count twins — the schema and the composed feature set
-are identical between the two sizes for a given variant, so the registry maps both twin slugs to one
-variant object instead of duplicating the definition ([package README → registered klein
+klein (`packages/image-models/src/families/flux/klein.ts`) registers three variant compositions from the
+captured schemas recorded on each endpoint's model page ([FLUX.2 klein 4B](../models/flux-2-klein-4b.md),
+[4B Base](../models/flux-2-klein-4b-base.md), [4B Base LoRA](../models/flux-2-klein-4b-base-lora.md)) rather
+than one union: a distilled endpoint, a base endpoint, and a base-lora endpoint, each a genuinely different
+schema rather than one schema read three ways. 4B and 9B are parameter-count twins — the schema and the
+composed feature set are identical between the two sizes for a given variant, so the registry maps both
+twin slugs to one variant object instead of duplicating the definition ([package README → registered klein
 adapters](../README.md#registered-flux2-klein-adapters)).
 
 | Feature          | Distilled (`4b`/`9b`) | Base (`4b-base`/`9b-base`) | Base-LoRA (`4b-base-lora`/`9b-base-lora`) |
@@ -291,8 +291,8 @@ execution hint; a hint requires a measurement of the actual endpoint.
 
 **Adapter lookup is not the same fact as an enabled database row.** Registering a klein slug in
 `IMAGE_MODEL_ADAPTERS` is code support for the behavior above; it does not itself register, enable, or
-authorize any model. No 9B `image_models` row is seeded; database registration is
-[#564](https://github.com/ceponatia/vesper/issues/564)'s decision, and this composition does not add one. Only a
-registered, enabled row actually renders, whatever adapters the lookup can resolve for its slug.
+authorize any model. No 9B `image_models` row is seeded; database registration of a 9B row is a separate
+owner decision, and this composition does not add one. Only a registered, enabled row actually renders,
+whatever adapters the lookup can resolve for its slug.
 
 [Back to `@vesper/image-models`](../README.md).
