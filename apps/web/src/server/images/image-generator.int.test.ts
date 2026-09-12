@@ -1426,6 +1426,15 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
     setImageGeneratorRendererForTesting(async (request) => {
       captured.push(request);
       const requested = request.intent.versionId;
+      // `ResolvedImageAttempt` spells "this request named no version" as NULL,
+      // never undefined (`render-intent.ts`): a bare-slug request records null
+      // so a reader can tell "no pin was asked for" apart from "the column was
+      // never written". `ImageRenderIntent.versionId` is optional, so the
+      // attempt record has to be narrowed here rather than passed through. The
+      // klein rows below always carry a pin, so `?? null` never fires in these
+      // cases — it is what makes the stub a legal `GeneratorRenderer` instead
+      // of a shape only an untypechecked test could return.
+      const recordedVersionId = requested ?? null;
       return {
         ok: true,
         image: await testPngBuffer(),
@@ -1437,13 +1446,13 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
           profileId: "image-generator/run",
           task: "item",
           promptStrategy: "text_to_image_description",
-          requestedVersionId: requested,
+          requestedVersionId: recordedVersionId,
           seed: null,
           appliedControls: {},
           droppedControls: [],
           sentReferenceRoles: [],
           predictionId: "pred_klein_1",
-          executedVersionId: requested,
+          executedVersionId: recordedVersionId,
         },
       };
     });
@@ -1550,7 +1559,9 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
           profileId: "image-generator/run",
           task: "item",
           promptStrategy: "text_to_image_description",
-          requestedVersionId: request.intent.versionId,
+          // Null, not undefined, when the intent names no version — the
+          // `ResolvedImageAttempt` contract, same as the echoing stub above.
+          requestedVersionId: request.intent.versionId ?? null,
           seed: null,
           appliedControls: {},
           droppedControls: [],

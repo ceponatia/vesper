@@ -1,4 +1,10 @@
-import { imageModelSchema, type ImageModel } from "@vesper/image-core";
+import {
+  emptyImageModelAdvancedCapabilities,
+  imageModelSchema,
+  type ImageModel,
+  type ImageModelAdvancedCapabilities,
+  type ImageModelControlBindings,
+} from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
 import { fluxKleinBase, fluxKleinBaseLora, fluxKleinDistilled } from "./klein";
 
@@ -15,6 +21,20 @@ import { fluxKleinBase, fluxKleinBaseLora, fluxKleinDistilled } from "./klein";
  * feature, exercised here through a composed klein adapter as the issue
  * acceptance requires.
  */
+
+/**
+ * A probed capability record declaring exactly these control bindings and
+ * nothing else. Spelled out rather than passed as a bare `{ controls }` literal
+ * because `ImageModelAdvancedCapabilities` is the schema's OUTPUT type: every
+ * defaulted member (`additionalImageInputs`, `output`, `knownInputFields`,
+ * `providerInputs`) is required on it, so a partial literal is not a record
+ * any row could actually hold — and `kleinRow` keeps its strict
+ * `Partial<ImageModel>` parameter so a fixture that drifts from the row
+ * contract fails the typecheck instead of being parsed into something else.
+ */
+function withControls(controls: ImageModelControlBindings): ImageModelAdvancedCapabilities {
+  return { ...emptyImageModelAdvancedCapabilities(), controls };
+}
 
 function kleinRow(overrides: Partial<ImageModel> = {}): ImageModel {
   return imageModelSchema.parse({
@@ -118,12 +138,10 @@ describe("klein LoRA validation", () => {
 
   it("refuses a LoRA-bearing request on the base-lora variant when the row's pair disagrees on arity", () => {
     const row = kleinRow({
-      advancedCapabilities: {
-        controls: {
-          loraWeights: { field: "lora_weights", type: "string", arity: "array" },
-          loraScale: { field: "lora_scale", type: "number" },
-        },
-      },
+      advancedCapabilities: withControls({
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+        loraScale: { field: "lora_scale", type: "number" },
+      }),
     });
     expect(fluxKleinBaseLora.validateRequest?.(row, { referenceCount: 0, usesLora: true })).toEqual([
       "Klein Fixture declares array lora_weights but scalar lora_scale, so this render's LoRA cannot be sent. Re-probe the model, or run the LoRA on a model that exposes both weights and scale.",
@@ -132,12 +150,10 @@ describe("klein LoRA validation", () => {
 
   it("passes a LoRA-bearing request on the base-lora variant with a valid array pair", () => {
     const row = kleinRow({
-      advancedCapabilities: {
-        controls: {
-          loraWeights: { field: "lora_weights", type: "string", arity: "array" },
-          loraScale: { field: "lora_scales", type: "number", arity: "array" },
-        },
-      },
+      advancedCapabilities: withControls({
+        loraWeights: { field: "lora_weights", type: "string", arity: "array" },
+        loraScale: { field: "lora_scales", type: "number", arity: "array" },
+      }),
     });
     expect(fluxKleinBaseLora.validateRequest?.(row, { referenceCount: 0, usesLora: true })).toEqual([]);
   });
