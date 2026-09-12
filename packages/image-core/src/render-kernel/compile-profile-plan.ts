@@ -556,6 +556,15 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     // `outputCount` is deliberately NOT here — see the drop recorded below.
     coherentSet: requested?.coherentSet ?? defaults.coherentSet,
     thinkingMode: requested?.thinkingMode ?? defaults.thinkingMode,
+    // `??` and never `||`, for the one control where the difference is
+    // load-bearing: `fastMode: false` is a REQUEST — "do not accelerate" — on
+    // wrappers that pin the accelerated path on, and `||` would collapse it
+    // into the profile default and then into silence. It was simply missing
+    // from this merge until 2026-09-12, so a caller's `fastMode` reached
+    // neither `applied` nor `dropped` and the row's `extra_input` pin decided
+    // the run unopposed (klein 4B, Fly v249: two Fast-OFF/Fast-ON pairs came
+    // back byte-identical, with `go_fast: true` in both recorded payloads).
+    fastMode: requested?.fastMode ?? defaults.fastMode,
     resolution: requested?.resolution ?? defaults.resolution,
     width: requested?.width ?? defaults.width,
     height: requested?.height ?? defaults.height,
