@@ -147,3 +147,39 @@ describe("renderWithModel reference roles and sent count", () => {
     expect("sentReferenceCount" in uncounted).toBe(false);
   });
 });
+
+/**
+ * PROTECTS: this wrapper hands the transport the model row AS STORED.
+ *
+ * The defect it kills: `withReviewedImageQuality`, the slug-keyed overlay that
+ * used to run here and merge Vesper's reviewed corrections into `extraInput` on
+ * the way out. With a reviewed setting arriving from two owners, a task profile
+ * that carried none of them still rendered correctly — so the profile was not
+ * load-bearing and nothing could tell the two apart (#244). The profile is the
+ * one owner now (`reviewed-profile-parity.test.ts` reads the settings back off
+ * the final payload), and this wrapper is the other place the rewrite lived.
+ */
+describe("renderWithModel and Vesper's reviewed settings", () => {
+  it("sends a reviewed model's row untouched, rewriting nothing by slug", async () => {
+    const reviewed = imageModelSchema.parse({
+      id: "qwen-edit-1",
+      // A slug the reviewed table names. Pinned, because the retired overlay
+      // matched on the base provider path either way — a bare slug here would
+      // not tell a restored overlay from an absent one.
+      slug: "qwen/qwen-image-edit-2511:abc123",
+      label: "Qwen Image Edit 2511 Fixture",
+      canGenerate: false,
+      canEdit: true,
+      aspectMode: "aspect_ratio",
+      supportedAspects: ["3:4"],
+      // The provider's own speed preset, which this model's reviewed ruling
+      // turns off — as the profile's `fastMode` control, never here. The overlay
+      // rewrote exactly this key.
+      extraInput: { go_fast: true, output_quality: 95 },
+    });
+
+    await renderWithModel({ model: reviewed, prompt: "change the coat" });
+
+    expect(runModel.mock.calls.at(-1)?.[0]?.extraInput).toEqual({ go_fast: true, output_quality: 95 });
+  });
+});

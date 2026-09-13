@@ -436,8 +436,10 @@ describe("compileProfileRenderPlan", () => {
     // no control involved. Reporting null claimed nothing was sent while
     // something was.
     expect(plan({ extraInput: { negative_prompt: "grainy, watermark" } }).negativePrompt).toBe("grainy, watermark");
-    // The reviewed-quality rows clear their wrapper's boilerplate to `""`. That
-    // is "deliberately no negative", and it stays null.
+    // A row whose own constant is the empty string — the shape a wrapper's
+    // boilerplate negative is cleared to — is "deliberately no negative", and it
+    // stays null. (Vesper's own reviewed clearing is a profile CONTROL now, not
+    // an `extraInput` constant; this case is about the row.)
     expect(plan({ extraInput: { negative_prompt: "" } }).negativePrompt).toBeNull();
     expect(plan().negativePrompt).toBeNull();
   });
