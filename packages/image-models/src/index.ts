@@ -52,6 +52,8 @@ export {
   promptFeature,
   safetyToggleFeature,
   seedFeature,
+  sourceImageFeature,
+  stepsFeature,
 } from "./features";
 export type { ImageFeature, ImageModelRequestFacts } from "./features";
 export {

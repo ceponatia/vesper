@@ -45,7 +45,7 @@ Replicate's schemas disagree with each other in ways that cannot be papered
 over with one shared mapping:
 
 - The reference input is called `image` on most models, `image_input` on two,
-  `images` on another, and `reference_image` on two more.
+  `images` on another, `reference_image` on two more, and `input_image` on one.
 - On some models that field is a single URI; on others it is an array.
 - **A URI-typed input is not necessarily a reference.** One model declares a
   ControlNet `depth_image` *before* its `reference_image`, so "the first image
@@ -60,7 +60,7 @@ over with one shared mapping:
   (`packages/image-core/src/models/reviewed-profile-controls.ts`), and every render is cropped to shape
   after download regardless.
 - Output is an array of URIs on most models, including all three FLUX.2 klein 4B
-  endpoints, and a bare URI string on three of them.
+  endpoints, and a bare URI string on four of them.
 - One model watermarks by default (`apply_watermark`), which the probe pins off.
 - **Community models can only be run by version id.** The bare-slug endpoint is
   official-models-only, so a community model's registry row is auto-pinned to
@@ -138,6 +138,13 @@ list, is the runtime source of truth for which rows exist.
   runtime LoRA weights, as a PAIR OF LISTS (`lora_weights`/`lora_scales`) rather
   than the two scalar fields every other LoRA-bound row declares. On no player
   surface.
+- [FLUX.1 Kontext Dev](flux-kontext-dev.md) — `black-forest-labs/flux-kontext-dev`.
+  Generate **no**, edit yes, 1 reference. `unknown` · `unknown`, plus an operator
+  warning — untried, edit-only, and published under a non-commercial weights
+  licence whose hosted-use term is Replicate's rather than Black Forest Labs'. The
+  open-weight Kontext: its single reference is required, so every render is an
+  edit. On no player surface: the admin Image Generator reaches it and nothing
+  else does.
 
 The 9B klein siblings are published under a non-commercial licence and Vesper
 registers no row and carries no page for them.
@@ -229,10 +236,10 @@ not the prose here, are the runtime source of truth
 `probed_version_id` — the version the stored bindings came from, and the version named in each
 file's provenance line — is written on rows added through the admin page, on every seeded row
 whose slug names a version, and on the seeded bare-slug rows a migration pins explicitly: Pruna
-P-Image, both Seedream rows, Qwen Image 2, and the three FLUX.2 klein 4B rows. Four rows are
-seeded without one — Qwen Image 2512, Qwen Image Edit 2511, Stable Diffusion 3.5 Large and Wan
-2.7 Image Pro — because they predate the column; a re-probe or a version activation from the
-admin page writes it.
+P-Image, both Seedream rows, Qwen Image 2, the three FLUX.2 klein 4B rows, and FLUX.1 Kontext
+Dev. Four rows are seeded without one — Qwen Image 2512, Qwen Image Edit 2511, Stable Diffusion
+3.5 Large and Wan 2.7 Image Pro — because they predate the column; a re-probe or a version
+activation from the admin page writes it.
 `advanced_capabilities` is probe-owned and
 holds optional control bindings plus provider-input descriptors; a row created
 before a capability derivation existed gains those fields on re-probe or version

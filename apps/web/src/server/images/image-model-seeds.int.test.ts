@@ -23,7 +23,11 @@ import { loadImageModels } from "./models";
  * 0138 then corrects one column on a row 0133 seeded — the `qwen/qwen-image-2`
  * reference transport — which belongs here for the same reason: whether a
  * catalog UPDATE reached the row it names, left every other row alone, and
- * honoured a deletion is a question only a migrated database answers.
+ * honoured a deletion is a question only a migrated database answers. 0139
+ * seeds the FLUX.1 Kontext Dev row, whose guard has to tell one provider path
+ * from a sibling endpoint whose path EXTENDS it — the difference between an
+ * equality test and a prefix match, and the difference between a fresh database
+ * getting the row and silently not.
  *
  * Two jobs, and the first is the one the migration exists for:
  *
@@ -212,15 +216,30 @@ const SEEDED_IDS = KLEIN_ENDPOINTS.map((endpoint) => endpoint.id);
  * The derivation, through the package's real public entry point. The transport
  * is stubbed at `fetch`, so nothing reaches Replicate and no credential is used
  * beyond the literal below.
+ *
+ * `required`, `enums` and `output` default to the shape the three klein
+ * endpoints share; a capture that differs in any of them passes its own,
+ * because each one changes what the probe derives. A reference listed in
+ * `required` is what makes a row edit-only, and two endpoints' aspect enums are
+ * not interchangeable even when they offer the same count of ratios — order and
+ * membership both reach the stored column.
  */
-async function probeCaptured(endpoint: KleinEndpoint): Promise<ProbeResult> {
+async function probeCaptured(endpoint: {
+  slug: string;
+  versionId: string;
+  properties: Record<string, unknown>;
+  required?: readonly string[];
+  enums?: Record<string, readonly string[]>;
+  output?: Record<string, unknown>;
+}): Promise<ProbeResult> {
+  const enums: Record<string, readonly string[]> = endpoint.enums ?? ENUMS;
   const schemas: Record<string, unknown> = {
-    Input: { properties: endpoint.properties, required: ["prompt"] },
+    Input: { properties: endpoint.properties, required: [...(endpoint.required ?? ["prompt"])] },
     // Carried for fidelity. The probe reads `Input` and nothing else, so the
     // capability record's `output` stays the contract's single-image default.
-    Output: { type: "array", items: { type: "string", format: "uri" } },
+    Output: endpoint.output ?? { type: "array", items: { type: "string", format: "uri" } },
   };
-  for (const [name, values] of Object.entries(ENUMS)) schemas[name] = { enum: values };
+  for (const [name, values] of Object.entries(enums)) schemas[name] = { enum: values };
   vi.stubGlobal(
     "fetch",
     vi.fn(() =>
@@ -357,6 +376,9 @@ afterAll(async () => {
   // cost is that a run killed between `restoreQwenImage2Row`'s DELETE and its
   // re-INSERT leaves the next run reporting a missing row instead of healing.
   if (ready && !(await qwenImage2Intact())) await restoreQwenImage2Row();
+  // And for the row 0139 seeds: its guard cases delete it outright, and
+  // `image-generator.int.test.ts` reads the registry after this file runs.
+  if (ready && !(await kontextIntact())) await restoreKontextRow();
   await endTestPool();
 });
 
@@ -1138,10 +1160,6 @@ describe.skipIf(!ready)("migration 0138 — the Qwen Image 2 reference transport
     // reached 0137 — and, further back, not reached the row it corrects.
     expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
     expect(journal.entries.filter((candidate) => candidate.idx === 138)).toHaveLength(1);
-    // The HEAD assertion lives with the newest migration, so exactly one suite
-    // has to move when the next one lands. A duplicate index from a concurrent
-    // branch is what it catches.
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(138);
 
     // Data migrations 0132–0137 ship no snapshot either; one here would claim a
     // `schema.ts` change this file does not make.
@@ -1228,5 +1246,490 @@ describe.skipIf(!ready)("migration 0138 — the predicate", () => {
 
     await restoreQwenImage2Row();
     expect(await qwenImage2Intact()).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 0139 — the FLUX.1 Kontext Dev seed
+// ---------------------------------------------------------------------------
+
+const KONTEXT_MIGRATION_TAG = "0139_flux-kontext-dev";
+const KONTEXT_MIGRATION_FILE = `drizzle/${KONTEXT_MIGRATION_TAG}.sql`;
+
+/**
+ * The row 0139 seeds. `black-forest-labs/flux-kontext-dev` is the OPEN-WEIGHT
+ * Kontext, and the only one of its family Vesper registers: its reference input
+ * is one required URI named `input_image`, which makes the row edit-only, and it
+ * declares no LoRA pair and no accelerated path.
+ */
+const KONTEXT_DEV = {
+  id: "imgmdlfluxkontextdevaaaa",
+  slug: "black-forest-labs/flux-kontext-dev",
+  /** Curated. Outside `imageModelReprobeFields`, so a re-probe keeps it. */
+  label: "FLUX.1 Kontext Dev",
+  versionId: "85723d503c17da3f9fd9cecfb9987a8bf60ef747fd8f68a25d7636f88260eb59",
+  sort: 104,
+} as const;
+
+/**
+ * Provider paths this migration must NOT reach. The first three are Kontext
+ * endpoints with different schemas — the LoRA arm declares `lora_weights`,
+ * `lora_strength` and `megapixels`, and the two hosted BFL arms expose a
+ * `safety_tolerance` dial instead of a safety-checker switch — and the fourth is
+ * a different model entirely. A prefix match in either guard would fold them
+ * together; the guard compares provider paths for EQUALITY.
+ */
+const KONTEXT_NEIGHBOURS = [
+  "black-forest-labs/flux-kontext-dev-lora",
+  "black-forest-labs/flux-kontext-pro",
+  "black-forest-labs/flux-kontext-max",
+] as const;
+
+/**
+ * This version's Input schema, from `GET /v1/models/black-forest-labs/flux-kontext-dev`
+ * on 2026-09-13 (evidence state `documented`). Rebuilt through the shared
+ * shapes rather than transcribed verbatim, for the same reason the klein
+ * fixtures above are: the verbatim transcription lives in
+ * `packages/image-replicate/src/probe.test.ts`, and a byte-for-byte second copy
+ * here would be a clone that drifts silently.
+ *
+ * The enum is this endpoint's OWN, not the klein one: both offer eleven ratios
+ * plus the `match_input_image` sentinel, and they list them in different orders,
+ * which reaches `supported_aspects` verbatim.
+ */
+const KONTEXT_ENUMS: Record<string, readonly string[]> = {
+  aspect_ratio: ["1:1", "16:9", "21:9", "3:2", "2:3", "4:5", "5:4", "3:4", "4:3", "9:16", "9:21", "match_input_image"],
+  output_format: ["webp", "jpg", "png"],
+};
+
+const KONTEXT_PROPERTIES: Record<string, unknown> = {
+  seed: {
+    type: "integer",
+    // Prose only: the schema declares no bounds, so the binding carries none.
+    description: "Random seed for reproducible generation. Leave blank for random.",
+  },
+  prompt: {
+    type: "string",
+    description:
+      "Text description of what you want to generate, or the instruction on how to edit the given image.",
+  },
+  guidance: { type: "number", default: 2.5, maximum: 10, minimum: 0, description: "Guidance scale for generation" },
+  input_image: {
+    type: "string",
+    format: "uri",
+    description: "Image to use as reference. Must be jpeg, png, gif, or webp.",
+  },
+  aspect_ratio: {
+    ...enumRef("aspect_ratio"),
+    // The provider's own default is the SENTINEL, not a ratio.
+    default: "match_input_image",
+    description:
+      "Aspect ratio of the generated image. Use 'match_input_image' to match the aspect ratio of the input image.",
+  },
+  output_format: { ...enumRef("output_format"), default: "webp", description: "Output image format" },
+  output_quality: {
+    type: "integer",
+    // 80 here, while the row pins 95. The two disagreeing is correct.
+    default: 80,
+    maximum: 100,
+    minimum: 0,
+    description:
+      "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs",
+  },
+  num_inference_steps: {
+    type: "integer",
+    default: 30,
+    maximum: 50,
+    minimum: 4,
+    description: "Number of inference steps",
+  },
+  disable_safety_checker: { type: "boolean", default: false, description: "Disable NSFW safety checker" },
+};
+
+/** The derivation for this endpoint, through the same public probe seam. */
+function probeCapturedKontext(): Promise<ProbeResult> {
+  return probeCaptured({
+    slug: KONTEXT_DEV.slug,
+    versionId: KONTEXT_DEV.versionId,
+    properties: KONTEXT_PROPERTIES,
+    // BOTH required — this is the fact that makes the row edit-only.
+    required: ["prompt", "input_image"],
+    enums: KONTEXT_ENUMS,
+    // A bare URI string, like Qwen Image 2's and unlike the klein arrays.
+    output: { type: "string", format: "uri" },
+  });
+}
+
+/** 0139's shipped INSERT statement. */
+function kontextSeedStatements(): Promise<string[]> {
+  return insertStatements(KONTEXT_MIGRATION_FILE);
+}
+
+/** Re-run 0139's own statement. Idempotent by construction — that is what is under test. */
+async function reapplyKontextSeed(): Promise<void> {
+  const statements = await kontextSeedStatements();
+  expect(statements, `${KONTEXT_MIGRATION_FILE} must carry exactly one INSERT statement`).toHaveLength(1);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+/**
+ * Put the migrated state back. Deleting by provider path rather than by id is
+ * what makes the re-seed possible at all: 0139's guard is `WHERE NOT EXISTS` on
+ * that path, so an operator-style row left behind under a different id would
+ * suppress it.
+ */
+async function restoreKontextRow(): Promise<void> {
+  // Read and validate the statement BEFORE deleting anything: an unreadable
+  // migration file must fail this suite, not strip a registry row the rest of
+  // the run expects to find.
+  expect(await kontextSeedStatements(), `${KONTEXT_MIGRATION_FILE} must carry one INSERT`).toHaveLength(1);
+  await db().delete(imageModels).where(sql`split_part(${imageModels.slug}, ':', 1) = ${KONTEXT_DEV.slug}`);
+  await reapplyKontextSeed();
+}
+
+/** True when the migrated state is already in place, untouched. */
+async function kontextIntact(): Promise<boolean> {
+  const [row] = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, KONTEXT_DEV.id));
+  return row !== undefined;
+}
+
+describe.skipIf(!ready)("migration 0139 — the FLUX.1 Kontext Dev seed", () => {
+  it("seeds one row, and it parses through parseRegistryRows", async () => {
+    const sink = new DiagnosticCollector();
+    const models = await loadImageModels(sink);
+    const model = models.find((candidate) => candidate.id === KONTEXT_DEV.id);
+
+    expect(model, `${KONTEXT_DEV.slug} must be seeded`).toBeDefined();
+    // `loadImageModels` DROPS an unparseable row with a diagnostic rather than
+    // throwing, so "it came back" and "nothing was skipped" are two assertions.
+    expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
+    // The BARE slug: this is an official model, and the bare-slug prediction
+    // endpoint is official-models-only. The pin lives in its own column.
+    expect(model?.slug).toBe(KONTEXT_DEV.slug);
+    expect(model?.slug).not.toContain(":");
+    expect(model?.label).toBe(KONTEXT_DEV.label);
+    expect(model?.sort).toBe(KONTEXT_DEV.sort);
+    // Exactly one row for this provider path, however a slug is spelled.
+    expect(await rowsForEndpoint(KONTEXT_DEV.slug)).toHaveLength(1);
+  });
+
+  // The checklist item this block exists for.
+  it("seeds the row with exactly the columns probeReplicateModel derives for its pinned version", async () => {
+    const result = await probeCapturedKontext();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.versionId).toBe(KONTEXT_DEV.versionId);
+
+    const models = await loadImageModels();
+    const model = models.find((candidate) => candidate.id === KONTEXT_DEV.id);
+    expect(model).toBeDefined();
+    if (!model) return;
+
+    // `imageModelProbeFields` is the CREATE write set the admin add path uses —
+    // every probe-owned column and nothing reviewed or curated. Comparing the
+    // whole set at once is the point: a column the migration typed by hand would
+    // otherwise only be caught if someone thought to assert it.
+    const derived = imageModelProbeFields(result.probe);
+    expect({
+      canGenerate: model.canGenerate,
+      canEdit: model.canEdit,
+      referenceField: model.referenceField,
+      referenceArity: model.referenceArity,
+      aspectMode: model.aspectMode,
+      supportedAspects: model.supportedAspects,
+      outputFormat: model.outputFormat,
+      extraInput: model.extraInput,
+      advancedCapabilities: model.advancedCapabilities,
+      probedVersionId: model.probedVersionId,
+    }).toEqual(derived);
+
+    // `maxReferences` is NOT in that write set — it is a curated column a
+    // re-probe may never rewrite — so the seeded value is checked against the
+    // probe's own starting figure separately. One, because the schema declares a
+    // single URI string rather than a list.
+    expect(model.maxReferences).toBe(result.probe.maxReferences);
+    expect(model.maxReferences).toBe(1);
+
+    // Called out individually because each is a way the row could look right and
+    // render wrong.
+    expect(model.canGenerate).toBe(false);
+    expect(model.referenceField).toBe("input_image");
+    expect(model.referenceArity).toBe("single");
+    expect(model.supportedAspects).not.toContain("match_input_image");
+    expect(model.supportedAspects).toContain("3:4");
+    expect(model.outputFormat).toBe("webp");
+    expect(model.extraInput).toEqual({ disable_safety_checker: true, output_quality: 95 });
+    expect(model.advancedCapabilities.output).toEqual({ arity: "single", supportsMultiple: false });
+    // The controls this version declares, and the two it does not: sending a
+    // control to a field the pinned version does not own is a provider rejection
+    // at spend time, so these absences are load-bearing.
+    expect(model.advancedCapabilities.controls.guidance).toEqual({
+      field: "guidance",
+      type: "number",
+      minimum: 0,
+      maximum: 10,
+    });
+    expect(model.advancedCapabilities.controls.steps).toEqual({
+      field: "num_inference_steps",
+      type: "integer",
+      minimum: 4,
+      maximum: 50,
+    });
+    expect(model.advancedCapabilities.controls.fastMode).toBeUndefined();
+    expect(model.advancedCapabilities.controls.loraWeights).toBeUndefined();
+    // `output_format` is the one input the Generator's Advanced section offers;
+    // everything else this version declares is written by the render path,
+    // control-bound or pinned.
+    const open = model.advancedCapabilities.providerInputs.filter((input) => !input.reserved);
+    expect(open.map((input) => input.field)).toEqual(["output_format"]);
+  });
+
+  it("carries no surface flag and no reviewed rating, so no production surface changes", async () => {
+    const models = await loadImageModels();
+    const model = models.find((candidate) => candidate.id === KONTEXT_DEV.id);
+    expect(model).toBeDefined();
+    if (!model) return;
+
+    // The player-facing pickers offer PROFILES, and this migration writes none;
+    // these three flags are the remaining legacy surface toggles.
+    expect(model.forPortrait).toBe(false);
+    expect(model.forVariant).toBe(false);
+    expect(model.forScene).toBe(false);
+    expect(model.builtin).toBe(true);
+    // Reviewed, never probed. `unknown` is a statement about Vesper's evidence —
+    // no trial has graded this endpoint — and is the permissive default.
+    expect(model.editKind).toBe("unknown");
+    expect(model.identityPreservation).toBe("unknown");
+    // The default, and whether this wrapper accepts Replicate's uploaded-file
+    // URLs is unknown until a run. If it rejects them the way Qwen Image 2 does,
+    // the fix is this owner-set column, never a probe change.
+    expect(model.referenceTransport).toBe("file");
+    // The warning an operator actually sees, and it must not imply a run happened.
+    expect(model.operatorWarning).toContain("Untried in Vesper");
+    expect(model.operatorWarning).toContain("no production surface");
+    expect(model.operatorWarning).toContain("edit-only");
+    expect(model.operatorWarning).toContain("non-commercial licence");
+  });
+
+  it("seeds no image_model_profiles row", async () => {
+    // No profile means no player-facing picker can reach the row at all: the
+    // production pickers offer profiles, and the Image Generator is the one
+    // surface that runs a registered row without one.
+    const profiles = await db()
+      .select({ id: imageModelProfiles.id })
+      .from(imageModelProfiles)
+      .where(eq(imageModelProfiles.imageModelId, KONTEXT_DEV.id));
+    expect(profiles).toEqual([]);
+  });
+
+  it("registers no Kontext sibling", async () => {
+    const models = await loadImageModels();
+    // Three different schemas behind three near-identical names. This migration
+    // seeds one endpoint and implies nothing about the others.
+    for (const slug of KONTEXT_NEIGHBOURS) {
+      expect(
+        models.filter((model) => model.slug.split(":")[0] === slug),
+        `${slug} must not be registered`,
+      ).toEqual([]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0139's history, and its guards beside a row an operator already added
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!ready)("migration 0139 — history and upgrade", () => {
+  it("follows 0138 in the journal, as a data migration with no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === KONTEXT_MIGRATION_TAG);
+    expect(entry).toBeDefined();
+    expect(entry?.idx).toBe(139);
+
+    const previous = journal.entries.find((candidate) => candidate.idx === 138);
+    expect(previous?.tag).toBe(TRANSPORT_MIGRATION_TAG);
+    // The migrator applies in `when` order, so an entry timestamped before its
+    // predecessor would run this seed against a database 0138 had not reached.
+    expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
+    expect(journal.entries.filter((candidate) => candidate.idx === 139)).toHaveLength(1);
+    // The HEAD assertion lives with the newest migration, so exactly one suite
+    // has to move when the next one lands. A duplicate index from a concurrent
+    // branch is what it catches.
+    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(139);
+
+    // Data migrations 0132–0138 ship no snapshot either; one here would claim a
+    // `schema.ts` change this file does not make.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0139_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+
+  it("leaves the row present after the harness's full migrate", async () => {
+    // This database was migrated from the baseline through 0139 by the ordinary
+    // `pnpm db:migrate`, so the row existing here IS the upgrade result — there
+    // is no fresh-versus-upgraded distinction to draw from inside the suite.
+    const rows = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, KONTEXT_DEV.id));
+    expect(rows.map((row) => row.id)).toEqual([KONTEXT_DEV.id]);
+  });
+});
+
+describe.skipIf(!ready)("migration 0139 — guards over an existing row", () => {
+  const OPERATOR_ID = "imgmdlkontextoperatoraaa";
+  const NEIGHBOUR_IDS = ["imgmdlkontextloraaaaaaaa", "imgmdlkontextproaaaaaaaa"];
+
+  afterAll(async () => {
+    if (!ready) return;
+    await db()
+      .delete(imageModels)
+      .where(inArray(imageModels.id, [OPERATOR_ID, ...NEIGHBOUR_IDS]));
+    await restoreKontextRow();
+  });
+
+  it("does not duplicate an endpoint an operator added under a version-suffixed slug", async () => {
+    // The admin add path auto-pins, so a hand-added official row can be stored
+    // as `owner/name:<version>`. That slug is not EQUAL to the bare one, so the
+    // unique index would not catch it — only the `split_part` guard can, and
+    // without it every picker would list this endpoint twice.
+    await db().delete(imageModels).where(eq(imageModels.id, KONTEXT_DEV.id));
+    await db()
+      .insert(imageModels)
+      .values({
+        id: OPERATOR_ID,
+        slug: `${KONTEXT_DEV.slug}:${KONTEXT_DEV.versionId}`,
+        label: "Operator's Kontext Dev",
+        canGenerate: false,
+        canEdit: true,
+        referenceField: "input_image",
+        referenceArity: "single",
+        maxReferences: 1,
+        probedVersionId: KONTEXT_DEV.versionId,
+      });
+
+    await reapplyKontextSeed();
+
+    const rows = await rowsForEndpoint(KONTEXT_DEV.slug);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(OPERATOR_ID);
+    // Untouched, not merely un-duplicated: the guard is `WHERE NOT EXISTS`, so
+    // the statement inserts nothing at all rather than merging anything in.
+    expect(rows[0]?.label).toBe("Operator's Kontext Dev");
+
+    await db().delete(imageModels).where(eq(imageModels.id, OPERATOR_ID));
+    await restoreKontextRow();
+  });
+
+  it("preserves an operator's curation on an existing BARE row rather than overwriting it", async () => {
+    // The second guard's case: same slug, so `ON CONFLICT ("slug") DO NOTHING`
+    // would cover it even if `WHERE NOT EXISTS` did not. Both must be no-ops — a
+    // migration that re-asserted its own values here would silently undo a
+    // reference cap or a label an operator corrected by hand.
+    await db().delete(imageModels).where(eq(imageModels.id, KONTEXT_DEV.id));
+    await db()
+      .insert(imageModels)
+      .values({
+        id: OPERATOR_ID,
+        slug: KONTEXT_DEV.slug,
+        label: "Kontext Dev (operator-tuned)",
+        // Deliberately NOT the seeded values: an operator who decided this row
+        // may generate, and raised its cap, keeps both.
+        canGenerate: true,
+        canEdit: true,
+        referenceField: "input_image",
+        referenceArity: "single",
+        maxReferences: 3,
+        probedVersionId: KONTEXT_DEV.versionId,
+      });
+
+    await reapplyKontextSeed();
+
+    const rows = await rowsForEndpoint(KONTEXT_DEV.slug);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(OPERATOR_ID);
+    expect(rows[0]?.label).toBe("Kontext Dev (operator-tuned)");
+    expect(rows[0]?.maxReferences).toBe(3);
+    // And the seeded id is genuinely absent — the no-op did not write it under a
+    // second row that the endpoint query above happened not to surface.
+    const [seededRow] = await db()
+      .select({ id: imageModels.id })
+      .from(imageModels)
+      .where(eq(imageModels.id, KONTEXT_DEV.id));
+    expect(seededRow).toBeUndefined();
+
+    await db().delete(imageModels).where(eq(imageModels.id, OPERATOR_ID));
+    await restoreKontextRow();
+  });
+
+  it("is not suppressed by a neighbouring endpoint an operator added", async () => {
+    // The guard compares provider paths for EQUALITY, and this is the case that
+    // separates equality from a prefix match:
+    // `black-forest-labs/flux-kontext-dev-lora` EXTENDS the seeded path, so a
+    // `LIKE 'black-forest-labs/flux-kontext-dev%'` would read that operator's row
+    // as "already present" and skip the seed outright — leaving a fresh database
+    // without the row this file exists to write, and no error to say so. It is a
+    // different endpoint: it declares a LoRA pair and a `megapixels` input this
+    // version does not.
+    await db().delete(imageModels).where(eq(imageModels.id, KONTEXT_DEV.id));
+    await db()
+      .insert(imageModels)
+      .values([
+        {
+          id: NEIGHBOUR_IDS[0] as string,
+          slug: "black-forest-labs/flux-kontext-dev-lora",
+          label: "Operator's Kontext Dev LoRA",
+          canGenerate: false,
+          canEdit: true,
+          referenceField: "input_image",
+          referenceArity: "single",
+          maxReferences: 1,
+        },
+        {
+          id: NEIGHBOUR_IDS[1] as string,
+          slug: "black-forest-labs/flux-kontext-pro",
+          label: "Operator's Kontext Pro",
+          canGenerate: false,
+          canEdit: true,
+          referenceField: "input_image",
+          referenceArity: "single",
+          maxReferences: 1,
+        },
+      ]);
+
+    await reapplyKontextSeed();
+
+    const rows = await rowsForEndpoint(KONTEXT_DEV.slug);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(KONTEXT_DEV.id);
+    // And both planted neighbours are still there, untouched — the seed is an
+    // INSERT with no UPDATE anywhere in the file, so nothing could have reached
+    // them.
+    const neighbours = await db()
+      .select({ id: imageModels.id, label: imageModels.label })
+      .from(imageModels)
+      .where(inArray(imageModels.id, NEIGHBOUR_IDS));
+    expect(neighbours.map((row) => row.label).sort()).toEqual([
+      "Operator's Kontext Dev LoRA",
+      "Operator's Kontext Pro",
+    ]);
+
+    await db().delete(imageModels).where(inArray(imageModels.id, NEIGHBOUR_IDS));
+    await restoreKontextRow();
+  });
+
+  it("re-running the shipped statement against the migrated state changes nothing", async () => {
+    // Idempotence stated directly: a deploy that replays this file — or a second
+    // migrator run — must not rewrite a row it already wrote. `updated_at` is
+    // inside the comparison, because a guard that let the INSERT fire would move
+    // it even if every value it wrote happened to match.
+    const snapshot = () => db().select().from(imageModels).where(eq(imageModels.id, KONTEXT_DEV.id));
+
+    const before = await snapshot();
+    expect(before).toHaveLength(1);
+    await reapplyKontextSeed();
+    expect(await snapshot()).toEqual(before);
   });
 });

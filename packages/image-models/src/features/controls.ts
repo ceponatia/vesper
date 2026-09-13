@@ -2,7 +2,7 @@ import type { ImageModel } from "@vesper/image-core";
 import type { ImageFeature } from "./image-feature";
 
 /**
- * The four single-binding normalized controls a family can compose.
+ * The five single-binding normalized controls a family can compose.
  *
  * Each one's `isBound` asks the record's control bindings — the slots the probe
  * filled when it resolved this version's field aliases — so an adapter never
@@ -12,7 +12,7 @@ import type { ImageFeature } from "./image-feature";
  * is the truthful answer, and it matches what the control mapper actually does
  * (it sends nothing).
  *
- * Grouped in one module because they are the same shape of fact asked four
+ * Grouped in one module because they are the same shape of fact asked five
  * times; a control that needed genuine logic (see `./lora`) gets its own file.
  */
 
@@ -34,11 +34,20 @@ export function guidanceFeature(): ImageFeature {
   };
 }
 
+/** How many sampling steps the render runs, trading render time against sampling quality. */
+export function stepsFeature(): ImageFeature {
+  return {
+    id: "steps",
+    semantic: "Accepts an inference-step count, trading render time against sampling quality.",
+    isBound: (model: ImageModel) => model.advancedCapabilities.controls.steps !== undefined,
+  };
+}
+
 /**
  * The endpoint offers an accelerated sampling path, and the caller may choose
  * it or refuse it.
  *
- * Unlike the three controls around it, this one is a QUALITY choice wearing a
+ * Unlike the four controls around it, this one is a QUALITY choice wearing a
  * speed name: the wrappers that expose it turn it on by default, so a family
  * that composes this feature is saying its renders can be asked to slow down,
  * not merely to hurry. Vesper's reviewed policy already refuses it for

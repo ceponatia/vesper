@@ -64,8 +64,10 @@ work rather than the first one somebody happened to list.
 
 `adapterForImageModel(slug)` resolves through the model's **base** slug, so a
 row pinned to `owner/name:version` for reproducibility keeps its family
-behavior. Only the Qwen family is registered today; Flux, Wan, SDXL and Seedream
-stay on the legacy path and migrate when their behavior is next touched.
+behavior. The Qwen family, the FLUX.2 klein bench-onboarding endpoints and the
+FLUX.1 Kontext Dev endpoint are registered today; the production Flux
+checkpoints, Wan, SDXL and Seedream stay on the legacy path and migrate when
+their behavior is next touched.
 
 ## The Qwen family
 

@@ -54,8 +54,8 @@ This model declares two URI-typed inputs — `reference_image` and
 `depth_image` — and `depth_image` comes first in the schema's property order.
 The capability probe's `findReferenceField` (`packages/image-replicate/src/probe.ts`)
 resolves a reference field by checking a preferred-name list first (`image`,
-`image_input`, `images`, `reference_image`, `face_image`), then the model's
-remaining properties in schema order, and only then a deprioritized list of
+`image_input`, `images`, `reference_image`, `face_image`, `input_image`), then
+the model's remaining properties in schema order, and only then a deprioritized list of
 control-style names (`depth_image`, `pose_image`, `mask`, `mask_image`,
 `control_image`) held for last. `reference_image` sits on the preferred list
 and `depth_image` on the deprioritized one, so the probe resolves this

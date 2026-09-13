@@ -50,9 +50,10 @@ the settings page — a starting value, never a guarantee.
 A schema can declare several URI-typed inputs, and they are not interchangeable: a *control*
 image (a depth map, a pose skeleton, a mask) looks identical to an identity reference in the
 schema. So the probe checks the identity names first (`image`, `image_input`, `images`,
-`reference_image`, `face_image`), then anything else URI-typed, and the control names **last** —
-the keys of the dedicated-input alias table (`depth_image`, `pose_image`, `mask`, `mask_image`,
-`control_image`, `edge_image`, `canny_image`), one list so the two cannot drift.
+`reference_image`, `face_image`, `input_image`), then anything else URI-typed, and the control
+names **last** — the keys of the dedicated-input alias table (`depth_image`, `pose_image`,
+`mask`, `mask_image`, `control_image`, `edge_image`, `canny_image`), one list so the two cannot
+drift.
 
 `nsfw-api/sdxl-pulid` is why: it declares `depth_image` before `reference_image`, and plain
 property order resolved its reference field to the depth input — which would have fed a

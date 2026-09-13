@@ -37,11 +37,25 @@ import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
 
 /**
  * Field names checked first, in order, so a model with several image-ish inputs
- * resolves deterministically. The last two are identity inputs on adapter
- * pipelines (InstantID, PuLID), which name their face input rather than calling
- * it `image`.
+ * resolves deterministically. `reference_image` and `face_image` are identity
+ * inputs on adapter pipelines (InstantID, PuLID), which name their face input
+ * rather than calling it `image`; `input_image` is what Black Forest Labs'
+ * Kontext wrappers call the one image they edit from.
+ *
+ * A name here is not merely a tie-break. Without it a schema resolves only
+ * through the fallback scan below, which takes the first URI-typed property it
+ * has no name for — so the reference field would be decided by PROPERTY ORDER,
+ * and a URI input added ahead of it in a later version would silently take over
+ * the reference slot on the next re-probe.
  */
-const PREFERRED_REFERENCE_FIELDS = ["image", "image_input", "images", "reference_image", "face_image"] as const;
+const PREFERRED_REFERENCE_FIELDS = [
+  "image",
+  "image_input",
+  "images",
+  "reference_image",
+  "face_image",
+  "input_image",
+] as const;
 
 /**
  * The dedicated-input field names this probe recognizes, each mapped to the

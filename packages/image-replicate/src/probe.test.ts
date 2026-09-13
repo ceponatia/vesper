@@ -310,6 +310,43 @@ describe("probeReplicateModel", () => {
     expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([]);
   });
 
+  it("prefers a named source image over an unrecognized URI input declared before it", async () => {
+    // `input_image` is what BFL's Kontext wrappers call the image they edit
+    // from, and it is a PREFERRED name rather than a fallback match. The
+    // difference only shows when something else URI-typed is declared first:
+    // `style_reference` is in neither the preferred list nor the control-alias
+    // table, so nothing deprioritizes it and the unnamed-field scan would take
+    // it on property order alone — handing the source image to whatever that
+    // input does, with nothing in the payload looking wrong.
+    stubFetch(() => ({
+      name: "kontext-shaped",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: {
+            prompt: { type: "string" },
+            style_reference: { ...uri, description: "an unrelated style image" },
+            input_image: { ...uri, description: "Image to use as reference. Must be jpeg, png, gif, or webp." },
+          },
+          required: ["prompt", "input_image"],
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("someone/kontext-shaped");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.referenceField).toBe("input_image");
+    expect(result.probe.referenceArity).toBe("single");
+    expect(result.probe.maxReferences).toBe(1);
+    // The reference is REQUIRED, so there is no prompt-only mode to offer.
+    expect(result.probe.canGenerate).toBe(false);
+    expect(result.probe.canEdit).toBe(true);
+    // `style_reference` names no alias-table role, so it is never classified as
+    // a dedicated image input — an unknown URI field gets no structural meaning.
+    expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([]);
+  });
+
   it("switches off a watermark the model would otherwise apply", async () => {
     // SDXL-family community wrappers commonly default `apply_watermark` to true,
     // which would mark every image Vesper renders on one.
@@ -1811,6 +1848,305 @@ describe("probeReplicateModel", () => {
       // The two controls the sibling endpoints have and this one does not.
       expect(result.probe.advancedCapabilities.controls.fastMode).toBeUndefined();
       expect(result.probe.advancedCapabilities.controls.guidance).toBeUndefined();
+    });
+
+    // -----------------------------------------------------------------------
+    // FLUX.1 Kontext Dev — the endpoint migration 0139 seeds
+    // -----------------------------------------------------------------------
+
+    it("derives the FLUX.1 Kontext Dev row and capability record that migration 0139 seeds", async () => {
+      // `black-forest-labs/flux-kontext-dev` at version 85723d50…, transcribed
+      // from the published schema captured on 2026-09-13. It is the OPEN-WEIGHT
+      // Kontext, and it is none of its three neighbours: `flux-kontext-dev-lora`
+      // declares `lora_weights`/`lora_strength`/`megapixels` on a separate
+      // endpoint, `flux-kontext-pro` and `-max` are hosted BFL calls whose only
+      // moderation input is a `safety_tolerance` dial, and `flux-dev` is a
+      // different model whose reference is strength-based repainting. Nothing
+      // below is shared with any of them.
+      const schema = openapi({
+        // BOTH are required, which is the fact that makes the row edit-only.
+        required: ["prompt", "input_image"],
+        properties: {
+          seed: {
+            type: "integer",
+            title: "Seed",
+            "x-order": 5,
+            // No `minimum`/`maximum`: the schema states no bounds, so the
+            // binding carries none.
+            description: "Random seed for reproducible generation. Leave blank for random.",
+          },
+          prompt: {
+            type: "string",
+            title: "Prompt",
+            "x-order": 0,
+            description: "Text description of what you want to generate, or the instruction on how to edit the given image.",
+          },
+          guidance: {
+            type: "number",
+            title: "Guidance",
+            default: 2.5,
+            maximum: 10,
+            minimum: 0,
+            "x-order": 4,
+            description: "Guidance scale for generation",
+          },
+          input_image: {
+            ...uri,
+            title: "Input Image",
+            "x-order": 1,
+            description: "Image to use as reference. Must be jpeg, png, gif, or webp.",
+          },
+          aspect_ratio: {
+            ...enumRef("aspect_ratio"),
+            // The provider's own default is the SENTINEL, not a ratio.
+            default: "match_input_image",
+            "x-order": 2,
+            description:
+              "Aspect ratio of the generated image. Use 'match_input_image' to match the aspect ratio of the input image.",
+          },
+          output_format: {
+            ...enumRef("output_format"),
+            default: "webp",
+            "x-order": 6,
+            description: "Output image format",
+          },
+          output_quality: {
+            type: "integer",
+            title: "Output Quality",
+            default: 80,
+            maximum: 100,
+            minimum: 0,
+            "x-order": 7,
+            description:
+              "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs",
+          },
+          num_inference_steps: {
+            type: "integer",
+            title: "Num Inference Steps",
+            default: 30,
+            maximum: 50,
+            minimum: 4,
+            "x-order": 3,
+            description: "Number of inference steps",
+          },
+          disable_safety_checker: {
+            type: "boolean",
+            title: "Disable Safety Checker",
+            default: false,
+            "x-order": 8,
+            description: "Disable NSFW safety checker",
+          },
+        },
+        enums: {
+          aspect_ratio: [
+            "1:1",
+            "16:9",
+            "21:9",
+            "3:2",
+            "2:3",
+            "4:5",
+            "5:4",
+            "3:4",
+            "4:3",
+            "9:16",
+            "9:21",
+            "match_input_image",
+          ],
+          output_format: ["webp", "jpg", "png"],
+        },
+      });
+      // The declared Output is a BARE URI STRING, like Qwen Image 2's and unlike
+      // the klein endpoints' array. Carried for fidelity only: the probe reads
+      // `Input` and nothing else, so the `output` member below is the capability
+      // contract's own default rather than a derivation — right for this
+      // endpoint, but not a fact this schema proved.
+      schema.components.schemas.Output = { type: "string", title: "Output", format: "uri" };
+
+      stubFetch(() => ({
+        name: "flux-kontext-dev",
+        owner: "black-forest-labs",
+        // Official, so the row keeps the BARE slug and the pin lives in
+        // `probed_version_id` — the bare-slug prediction endpoint is
+        // official-models-only.
+        is_official: true,
+        latest_version: {
+          id: "85723d503c17da3f9fd9cecfb9987a8bf60ef747fd8f68a25d7636f88260eb59",
+          openapi_schema: schema,
+        },
+      }));
+
+      const result = await probeReplicateModel("black-forest-labs/flux-kontext-dev");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Asserted WHOLE, and as a literal, because this is a migration
+      // compatibility value: drizzle/0139_flux-kontext-dev.sql seeds exactly
+      // these columns and exactly this `advanced_capabilities` JSON, and the
+      // admin version card diffs the stored record against a fresh probe. A
+      // hand-typed row that disagreed with the derivation — a guidance range
+      // copied off the wrong sibling, `output_format` marked reserved, a
+      // `match_input_image` left in the usable shapes — shows up either as a
+      // phantom version diff on a row nobody touched, or as an advanced control
+      // sent to a field this version does not own. The migration and this
+      // literal move together.
+      expect(result.probe).toEqual({
+        slug: "black-forest-labs/flux-kontext-dev",
+        isOfficial: true,
+        // The probe's own label. The seeded row carries the curated
+        // "FLUX.1 Kontext Dev" instead, which creates no version diff because
+        // `label` sits outside `imageModelReprobeFields`.
+        label: "Flux Kontext Dev",
+        versionId: "85723d503c17da3f9fd9cecfb9987a8bf60ef747fd8f68a25d7636f88260eb59",
+        // `input_image` is REQUIRED, so there is no prompt-only mode: this row
+        // can never enter the new-portrait picker, and nobody had to flag it.
+        canGenerate: false,
+        canEdit: true,
+        referenceField: "input_image",
+        referenceArity: "single",
+        maxReferences: 1,
+        aspectMode: "aspect_ratio",
+        // Eleven shapes in schema order; the twelfth enum member is the
+        // `match_input_image` sentinel, which expresses no ratio.
+        supportedAspects: ["1:1", "16:9", "21:9", "3:2", "2:3", "4:5", "5:4", "3:4", "4:3", "9:16", "9:21"],
+        outputFormat: "webp",
+        // Only keys this schema declares. No `go_fast` exists here, so none is
+        // pinned — posting one would be an input the endpoint rejects.
+        extraInput: { disable_safety_checker: true, output_quality: 95 },
+        advancedCapabilities: {
+          controls: {
+            seed: { field: "seed", type: "integer" },
+            guidance: { field: "guidance", type: "number", minimum: 0, maximum: 10 },
+            steps: { field: "num_inference_steps", type: "integer", minimum: 4, maximum: 50 },
+          },
+          additionalImageInputs: [],
+          output: { arity: "single", supportsMultiple: false },
+          knownInputFields: [
+            "aspect_ratio",
+            "disable_safety_checker",
+            "guidance",
+            "input_image",
+            "num_inference_steps",
+            "output_format",
+            "output_quality",
+            "prompt",
+            "seed",
+          ],
+          providerInputs: [
+            {
+              field: "aspect_ratio",
+              type: "enum",
+              required: false,
+              default: "match_input_image",
+              // All TWELVE members, sentinel included: a descriptor records what
+              // the provider accepts, not the subset Vesper can choose from.
+              enumValues: [
+                "1:1",
+                "16:9",
+                "21:9",
+                "3:2",
+                "2:3",
+                "4:5",
+                "5:4",
+                "3:4",
+                "4:3",
+                "9:16",
+                "9:21",
+                "match_input_image",
+              ],
+              description:
+                "Aspect ratio of the generated image. Use 'match_input_image' to match the aspect ratio of the input image.",
+              reserved: true,
+            },
+            {
+              field: "disable_safety_checker",
+              type: "boolean",
+              required: false,
+              default: false,
+              description: "Disable NSFW safety checker",
+              reserved: true,
+            },
+            {
+              field: "guidance",
+              type: "number",
+              required: false,
+              default: 2.5,
+              minimum: 0,
+              maximum: 10,
+              description: "Guidance scale for generation",
+              reserved: true,
+            },
+            {
+              field: "input_image",
+              type: "uri",
+              // The only descriptor on this endpoint besides `prompt` that the
+              // schema lists as required.
+              required: true,
+              description: "Image to use as reference. Must be jpeg, png, gif, or webp.",
+              reserved: true,
+            },
+            {
+              field: "num_inference_steps",
+              type: "integer",
+              required: false,
+              default: 30,
+              minimum: 4,
+              maximum: 50,
+              description: "Number of inference steps",
+              reserved: true,
+            },
+            // The ONE open descriptor: everything else this version declares is
+            // written by the render path, control-bound or pinned.
+            {
+              field: "output_format",
+              type: "enum",
+              required: false,
+              default: "webp",
+              enumValues: ["webp", "jpg", "png"],
+              description: "Output image format",
+              reserved: false,
+            },
+            {
+              field: "output_quality",
+              type: "integer",
+              required: false,
+              // The PROVIDER's default, 80, while `extraInput` pins 95. The two
+              // disagreeing is correct: a descriptor records the schema.
+              default: 80,
+              minimum: 0,
+              maximum: 100,
+              description:
+                "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs",
+              reserved: true,
+            },
+            {
+              field: "prompt",
+              type: "string",
+              required: true,
+              description:
+                "Text description of what you want to generate, or the instruction on how to edit the given image.",
+              reserved: true,
+            },
+            {
+              field: "seed",
+              type: "integer",
+              required: false,
+              description: "Random seed for reproducible generation. Leave blank for random.",
+              reserved: true,
+            },
+          ],
+        },
+      });
+      // Called out on their own because they are the checklist items: the
+      // reference resolves BY NAME rather than by property order, a required
+      // reference is what makes the row edit-only, and this endpoint declares
+      // neither an accelerated path nor a LoRA pair — asking it for either is
+      // refused before spend instead of posted to a field it does not own.
+      expect(result.probe.referenceField).toBe("input_image");
+      expect(result.probe.canGenerate).toBe(false);
+      expect(result.probe.supportedAspects).not.toContain("match_input_image");
+      expect(result.probe.supportedAspects).toContain("3:4");
+      expect(result.probe.advancedCapabilities.controls.fastMode).toBeUndefined();
+      expect(result.probe.advancedCapabilities.controls.loraWeights).toBeUndefined();
+      expect(result.probe.advancedCapabilities.controls.editStrength).toBeUndefined();
     });
   });
 
