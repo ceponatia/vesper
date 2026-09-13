@@ -79,6 +79,7 @@ export {
   REPLICATE_VERSION_UNDISCLOSED,
   baseImageModelSlug,
   chooseAspect,
+  chooseCropPlacement,
   chooseDimensions,
   fitReferences,
   imageAspectInputField,
@@ -122,10 +123,15 @@ export {
   withReviewedProfileDefaults,
 } from "./models";
 export type {
+  ChooseCropPlacementInput,
+  CropPlacement,
+  CropRect,
   DimensionChoice,
   ImageAspectMode,
   ImageControlDefaults,
   ImageDimensionRequest,
+  ImageFocalBox,
+  ImageFocalSource,
   ImageLoraSelection,
   ImageModel,
   ImageModelProfile,
@@ -401,6 +407,7 @@ export {
   fitImagePromptSegments,
   reportImagePromptFitting,
   identityCandidateReferenceSpecs,
+  IMAGE_TASK_TARGET_ASPECTS,
   imagePromptBudgetFromBinding,
   imagePromptSegmentKinds,
   imageEmptyPromptPolicies,
@@ -414,7 +421,9 @@ export {
   orderImagePromptSegments,
   planImageRender,
   planIntentReferences,
+  renderTargetSources,
   resolveImageRenderPolicy,
+  resolveRenderTarget,
 } from "./render-intent";
 export type {
   ControlReferenceTransport,
@@ -438,7 +447,12 @@ export type {
   PlanImageRenderResult,
   PlannedControlReference,
   PlannedImageRender,
+  RenderTargetSource,
+  ResolveRenderTargetInput,
   ResolvedImageAttempt,
+  ResolvedImageAttemptCrop,
+  ResolvedImageAttemptShape,
+  ResolvedRenderTarget,
 } from "./render-intent";
 export {
   MAX_TRIAL_PREDICTION_MS,

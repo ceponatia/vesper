@@ -130,6 +130,13 @@ record is what a retry of the same composition reads. The character-fact lanes f
 sibling provenance key beside it — `images.meta.visualState`, the visual-digest record
 ([../pipelines/README.md](../pipelines/README.md)).
 
+Alongside it sits `shape` — the render's own answer to "was the frame cut, where, and why"
+([shape.md](shape.md)): the resolved target ratio and which precedence rung it came from, the
+provider field and value actually sent, the ratio the provider was expected to return, the returned
+image's own pixel size, and the crop actually performed (`null` when none was needed, else the
+target ratio, the placement, the exact rect, and where the focal box came from — `"none"` on every
+render today).
+
 **"Same composition" is a reproducibility REQUEST, never a pixel guarantee.** Replaying a stored
 `controls.seed` is honest reuse of the settings that produced a prior row — it is not a promise
 that the provider returns identical bytes. The portrait lane (issue #248) is the first caller of

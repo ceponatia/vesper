@@ -8,6 +8,7 @@ import {
   planImageRender,
   type PlannedImageRender,
   type ResolvedImageAttempt,
+  type ResolvedImageAttemptShape,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveImageLoraForRender } from "./image-loras";
@@ -173,6 +174,31 @@ export interface RenderImageIntentResult extends RenderWithModelResult {
   attempt?: ResolvedImageAttempt;
 }
 
+/**
+ * Build `meta.render.shape` from the plan's own target resolution and the
+ * transport's shape outcome — the two halves neither side can produce alone:
+ * the plan knows WHY this render wants the ratio it does (`targetSource`), and
+ * the transport knows what actually reached the provider and came back.
+ *
+ * Null only when the transport reports no shape outcome at all, which a real
+ * render never does — every `renderWithModel` return path builds one. A test
+ * double that skips it is the only caller this ever protects.
+ */
+function resolvedAttemptShape(plan: PlannedImageRender, result: RenderWithModelResult): ResolvedImageAttemptShape | null {
+  const shape = result.shape;
+  if (!shape) return null;
+  return {
+    mode: shape.mode,
+    requestedAspect: plan.targetRatio,
+    targetSource: plan.targetSource,
+    sentField: shape.field,
+    sentValue: shape.value,
+    expectedAspect: shape.expectedAspect,
+    returned: result.outputDimensions ?? null,
+    crop: shape.crop,
+  };
+}
+
 /** Assemble the provenance record from the plan, the resolved seed, and the provider's echo. */
 function resolvedAttempt(
   intent: ImageRenderIntent,
@@ -200,6 +226,7 @@ function resolvedAttempt(
       result.sentReferenceCount !== undefined ? plannedRoles.slice(0, result.sentReferenceCount) : plannedRoles,
     predictionId: result.predictionId ?? null,
     executedVersionId: result.executedVersionId ?? null,
+    shape: resolvedAttemptShape(plan, result),
   };
 }
 
@@ -286,6 +313,12 @@ export async function renderImageIntent(
       referenceRoles: roleNames(plan.sentReferences),
       controlReferences: plan.controlReferences,
       targetRatio: plan.targetRatio,
+      // The one fact `chooseCropPlacement` needs beyond the pixels themselves:
+      // whether a too-tall trim should anchor to the top. `focal` is left
+      // unset — no caller has a subject location to offer yet (the identity
+      // pipeline's detector seam is a deliberate null), and `renderWithModel`
+      // treats an absent one exactly like an explicit `null`.
+      task: intent.profile.profile.task,
       dimensionFacts: plan.dimensionFacts,
       controlInput: plan.controlInput,
       typedControlFields: plan.typedControlFields,

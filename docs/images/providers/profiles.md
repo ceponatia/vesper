@@ -16,7 +16,9 @@ and a slow 4K location model in another.
 - `referencePolicy` — allowed roles, required roles, role order, optional per-role caps, drawn
   from the `identity`/`location`/`style`/`object`/… role vocabulary;
 - `controlDefaults` — the normalized control names plus a seed **policy** (`random` /
-  `reuse_source` / `caller`, because a stored numeric seed is a pin, not a default);
+  `reuse_source` / `caller`, because a stored numeric seed is a pin, not a default) and an
+  optional `aspectRatio` (a `W:H` string, e.g. `"3:4"`) — the profile's own intended shape, which
+  [shape.md](shape.md) gives precedence over a lane's own hard-coded target;
 - `providerOverrides`, `timeoutMs` (null, or 30s–15min), `enabled` / `isDefault` / `builtin`, and
   `sort`.
 

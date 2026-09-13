@@ -195,5 +195,31 @@ function provenanceLines(meta: ImageRecord["meta"] | null | undefined): string[]
     const parts = [view.angle, view.wardrobe, view.substitutedAnchor ? "replaced anchor" : "extra reference"];
     lines.push(`View: ${parts.filter(Boolean).join(" · ")}`);
   }
+  const cropLine = renderCropLine(meta.render);
+  if (cropLine) lines.push(cropLine);
   return lines;
+}
+
+/**
+ * "Cropped to 3:4, top-anchored" from `meta.render.shape.crop`, when the row
+ * carries one. `meta.render` is a loose `Record<string, unknown>` — a newer
+ * deploy's shape must degrade to "no crop line" here, never to a thrown render.
+ */
+function renderCropLine(render: Record<string, unknown> | undefined): string | null {
+  const shape = render && typeof render === "object" ? (render as Record<string, unknown>).shape : undefined;
+  const crop = shape && typeof shape === "object" ? (shape as Record<string, unknown>).crop : undefined;
+  if (!crop || typeof crop !== "object") return null;
+  const { targetRatio, placement } = crop as Record<string, unknown>;
+  if (typeof placement !== "string") return null;
+  const anchor = placement === "focal" ? "focal crop" : placement === "top" ? "top-anchored" : "centered";
+  const ratio = typeof targetRatio === "number" ? `${ratioLabel(targetRatio)}, ` : "";
+  return `Cropped to ${ratio}${anchor}`;
+}
+
+/** `0.75` as `"3:4"` for the three ratios this app actually asks for; otherwise a plain decimal. */
+function ratioLabel(ratio: number): string {
+  if (Math.abs(ratio - 0.75) < 0.001) return "3:4";
+  if (Math.abs(ratio - 1.5) < 0.001) return "3:2";
+  if (Math.abs(ratio - 1) < 0.001) return "1:1";
+  return ratio.toFixed(2);
 }

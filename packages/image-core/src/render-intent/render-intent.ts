@@ -11,6 +11,8 @@ import type {
   ImageReferencePolicy,
   ImageRenderControls,
 } from "../models/image-model-profiles";
+import type { CropRect, ImageFocalSource } from "../models/crop-placement";
+import type { RenderTargetSource } from "./render-target";
 
 /**
  * The normalized render request every image lane speaks.
@@ -185,7 +187,18 @@ export interface ImageRenderIntentCore {
    * there is no second channel for the two to disagree with.
    */
   prompt: string;
-  target: ImageRenderTarget;
+  /**
+   * The shape this lane wants, or absent when it names none at all.
+   *
+   * Absent is NOT the same request as `{ aspectRatio: null }`: an explicit
+   * `null` is the raw-exploration request (see {@link ImageRenderTarget}) and
+   * always wins. Leaving `target` off entirely lets `resolveRenderTarget`
+   * (`render-target.ts`) fall through to the profile's own declared shape, and
+   * past that to the task's default — the seam a lane with no shape opinion of
+   * its own can rely on instead of hard-coding one. Every lane today still sets
+   * this explicitly; the field is optional for the callers that do not.
+   */
+  target?: ImageRenderTarget;
   /**
    * How strictly this render treats what it was asked to send
    * ({@link ImageRenderPolicy}). Absent is the production answer — trim on
@@ -261,6 +274,49 @@ export interface ResolvedImageAttempt {
   predictionId: string | null;
   /** The version the provider says it executed, when it echoes one. */
   executedVersionId: string | null;
+  /**
+   * The shape decision this render actually made — was the frame cut, where,
+   * and why. Null only when the transport returned no shape outcome at all
+   * (a mocked or otherwise incomplete `RenderWithModelResult`); a real render
+   * always produces one, on success and on failure alike.
+   */
+  shape: ResolvedImageAttemptShape | null;
+}
+
+/** One crop this render actually performed, as recorded on `meta.render.shape`. */
+export interface ResolvedImageAttemptCrop {
+  /** The ratio the crop was trying to reach — the same number as `requestedAspect`. */
+  targetRatio: number;
+  /** `"focal"` when a known subject location drove the placement, else the anchor used. */
+  placement: "focal" | "top" | "center";
+  /** The exact window that was extracted, in the pre-crop image's own pixel space. */
+  rect: CropRect;
+  /** Where the focal box came from — `"none"` on every render today (no detector runs yet). */
+  focalSource: ImageFocalSource;
+}
+
+/**
+ * `meta.render.shape` — whatever a stored render should be able to answer about
+ * its own shape, independent of whether the answer is interesting: a render
+ * that asked for the model's own default records that too, with `crop: null`.
+ */
+export interface ResolvedImageAttemptShape {
+  /** `"provider_default"` for the raw-exploration request, else `"target_ratio"`. */
+  mode: "provider_default" | "target_ratio";
+  /** `resolveRenderTarget`'s own answer for this render — the ratio it decided to want. */
+  requestedAspect: number | null;
+  /** Which precedence rung `requestedAspect` came from. */
+  targetSource: RenderTargetSource;
+  /** The provider input the shape was written to, or null when none was written. */
+  sentField: string | null;
+  /** The value written to that field, or null when the payload carried no shape. */
+  sentValue: unknown;
+  /** The ratio the provider was expected to return, or null when nothing could say. */
+  expectedAspect: number | null;
+  /** The returned image's own pixel size, or null when it could not be read. */
+  returned: { width: number; height: number } | null;
+  /** The crop actually performed, or null when the render needed none. */
+  crop: ResolvedImageAttemptCrop | null;
 }
 
 /**
