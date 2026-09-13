@@ -981,6 +981,13 @@
       "when": 1789336800000,
       "tag": "0139_flux-kontext-dev",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1789423200000,
+      "tag": "0140_qwen-2511-fast-mode-control",
+      "breakpoints": true
     }
   ]
 }
