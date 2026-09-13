@@ -68,13 +68,14 @@ Owner ruling 2026-08-25: the digest contributes the body-shape anchors — speci
 and anatomy departures, the horns/wings/tail an edit model "corrects" away — and the cataloged
 distinctive marks, and nothing else.
 
-Hair, eye and skin color stay **unstated**: they come off the identity reference,
-pixel-perfect, and a text anchor beside the picture only competes with it. The subject named
-by the required identity reference carries the seam's synthesized **identity anchor** instead,
-and the bound endpoint's dialect words the lock
+Hair and eye colour are **reinforced in text** beside the reference: on an instruction editor
+the text owns hair, build, wardrobe and pose, and the reference is authoritative only for what
+the bound endpoint declares — face, skin tone and apparent age on Qwen Image Edit 2511 — so the
+request-aware selection drops those optional facts for the referenced subject and keeps the rest
 ([../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored render).
-The apparent-age claim is the adapter's, required and text-authoritative
-([avatars.md](avatars.md) §Apparent age).
+The subject named by the required identity reference carries the seam's synthesized **identity
+anchor**, and the bound endpoint's dialect words the lock. The apparent-age claim is the
+adapter's, required and text-authoritative ([avatars.md](avatars.md) §Apparent age).
 
 ## The change contract
 
