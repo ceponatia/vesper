@@ -89,3 +89,12 @@ export const VISUAL_STATE_EXTRACTION_PROPOSAL_INVALID = "visual_state.extraction
 export const VISUAL_STATE_EXTRACTION_CONFLICT = "visual_state.extraction.conflict";
 /** An accepted proposal's target owner has no canonical write path yet; the ruling is kept, nothing is written. */
 export const VISUAL_STATE_EXTRACTION_OWNER_UNAVAILABLE = "visual_state.extraction.owner_unavailable";
+/**
+ * A meter's ruled visible effect was withheld because an active condition on
+ * the same subject already states it (issue #427) — e.g. the catalog's own
+ * `unwashed` condition (`contracts/conditions/catalog.ts`) already claims the
+ * hygiene meter's `unwashed` band. The meter feature is skipped rather than
+ * minted beside the condition's; this is a design de-duplication, not a
+ * degradation.
+ */
+export const VISUAL_STATE_METER_EFFECT_ALREADY_STATED = "visual_state.meter.effect_already_stated";
