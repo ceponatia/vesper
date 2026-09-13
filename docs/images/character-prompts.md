@@ -460,6 +460,48 @@ editor those are the facts the prompt states and the render is asked to change,
 and a preserve clause claiming them leaves every later hair or build sentence
 ambiguous between a reminder and an override.
 
+**The lock's own preserve set is also what makes an optional reinforcement of
+the same fact redundant** (issue #450) — reference authority is
+OPERATION-SPECIFIC, never "a subject-bound reference replaces all stable
+appearance text". The character seam runs one request-aware selection step,
+after reference planning and before the digest compiles: for a subject a
+required identity reference actually names, an OPTIONAL `subject.appearance`
+fact sourced from the attribute registry ([§Registry-backed image
+appearance](#registry-backed-image-appearance)) is omitted when its ASPECT is
+one the resolved dialect declares its reference authoritative for. The aspect
+vocabulary is closed and small — `face`, `hair`, `skin_tone`, `build`,
+`apparent_age` — and each `subject.appearance` fact's aspect is derived from
+the attribute registry's own category, never a hand list of attribute ids in
+the seam. The Qwen edit dialect declares `face`, `skin_tone` and
+`apparent_age` (`QWEN_2511_REFERENCE_AUTHORITY_ASPECTS`,
+`server/images/packs-qwen-2511.ts`) — the exact set its lock preserves above —
+so a reference-anchored render states an oval or heart-shaped face shape and a
+brown or ashen skin tone nowhere in text, while hair, build, wardrobe and pose
+stay exactly as reinforced as they were before this policy existed, matching
+what the lock leaves to the text. `apparent_age` is declared for headroom: no
+`subject.appearance` fact carries it today, because the apparent-age anchor is
+a separate concept a lane's own text-authoritative policy already owns
+([§Apparent age per lane](#apparent-age-per-lane)), so this policy has nothing
+to omit there yet. A dialect this table does not name declares no aspect
+authoritative, so its subjects compile exactly as they always have.
+
+This is selection, never fitting: it decides whether a fact is useful for THIS
+request, before the existing budget fitter separately decides which useful
+optional facts fit, and neither step bypasses the other — no new
+character-count limiter, and every required fact, the identity anchor,
+exposure, morphology, current state, wardrobe, pose and the requested change
+itself are untouched by construction. A subject with no required identity
+reference is untouched too, and several references of one subject are one
+entry in the anchored set and cost one pass, never several. The omission is
+recorded as a suppression under its own reason,
+`character.appearance.reference_redundant`
+(`IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT`), distinguishable from the
+projection's own `out_of_frame`/`hidden`/`replaced` judgments — decided before
+this policy ever runs, on a fact that therefore never reaches it to reconsider
+— and from a fitter's drop, decided after. A mixed ensemble decides separately
+per subject: a cast member with a reference gets this treatment, one with none
+keeps the full reference-free description a render of them still needs.
+
 **No lock asks the reference to restore hair the headwear hides.** A subject at
 the `full` hair-occlusion band carries a `subject.hair_concealment` claim
 ([§Hair the headwear conceals](#hair-the-headwear-conceals)), and a dialect reads

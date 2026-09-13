@@ -14,6 +14,7 @@ import {
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT } from "@/contracts/images/character-adapter";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { expectDiagnostic } from "@/test/diagnostics";
 import {
@@ -514,6 +515,76 @@ describe("what a variant render actually sends", () => {
   });
 
   /**
+   * ISSUE #450 checklist item 2: the 2511 identity reference is authoritative
+   * for FACE and skin tone (docs/images/character-prompts.md §Identity on a
+   * reference-anchored render), so the probe sheet's oval `face.shape` — an
+   * OPTIONAL reinforcement the reference already shows pixel-perfect once a
+   * subject is reference-anchored — is dropped as redundant, while the SAME
+   * dialect leaves hair, build, wardrobe and pose text-authoritative: the
+   * platinum hair the sibling test above pins, and the requested outfit
+   * change this render IS, both still compile untouched.
+   */
+  it("drops the redundant face-shape reinforcement a reference-authoritative face already shows, without losing text-controlled hair or the requested change", () => {
+    const result = program();
+
+    // The documented redundant fact: never reaches the prompt once the
+    // subject is anchored to a 2511 identity reference.
+    expect(result.prompt).not.toMatch(/\boval\b/i);
+
+    // Recorded as a suppression with its OWN reason — distinguishable from an
+    // out-of-frame or hidden judgment, and from a fitter's drop.
+    const suppressions =
+      parseImageWorldStateProvenance(result.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const redundant = suppressions.filter(
+      (entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
+    );
+    expect(redundant.some((entry) => entry.key.endsWith("appearance.face.shape"))).toBe(true);
+
+    // Text-controlled facts on this dialect are UNTOUCHED: hair stays
+    // reinforced (the sibling test's own claim, restated here beside the
+    // fact it must not be confused with)…
+    expect(result.prompt).toMatch(/platinum hair/i);
+    // …and so is the requested change itself.
+    expect(result.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+  });
+
+  /**
+   * ISSUE #450 checklist item 4: several identity references of ONE person
+   * are several VIEWS of that one subject, never several people. The
+   * request-aware selection reads the same per-subject anchored set the
+   * digest's own identity anchor already uses (`referenceAnchoredSubjects`, a
+   * Set keyed on subject ref) — so a second image of the same person costs
+   * this policy nothing extra: still one subject, the redundant fact
+   * suppressed exactly once, never once per reference.
+   */
+  it("keeps several identity references of one person bound to that one subject, not two", () => {
+    const result = compiled(
+      buildCharacterPromptProgram(programInput({ references: [reference("identity"), reference("identity")] })),
+    );
+
+    // Still ONE subject and ONE identity anchor, whichever way the references
+    // arrived — several views, never several people.
+    expect(result.subjects).toHaveLength(1);
+    const anchors = result.subjects
+      .flatMap((subject) => subject.facts)
+      .filter((fact) => fact.concept === "subject.identity");
+    expect(anchors).toHaveLength(1);
+    // Both images still travel to the provider — a view, not a drop.
+    expect(result.sentReferences).toHaveLength(2);
+
+    // The redundant face-shape fact is suppressed exactly once for the one
+    // subject it names.
+    const suppressions =
+      parseImageWorldStateProvenance(result.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const redundant = suppressions.filter(
+      (entry) =>
+        entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT &&
+        entry.key.endsWith("appearance.face.shape"),
+    );
+    expect(redundant).toHaveLength(1);
+  });
+
+  /**
    * The identity lock must come from the WORLD.
    *
    * The digest of an edit lane states no identity descriptors — the reference
@@ -684,6 +755,45 @@ describe("hair the headwear fully hides", () => {
     expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
     expect(program.prompt.includes(VARIANT_CONCEALED)).toBe(concealed);
   });
+
+  /**
+   * ISSUE #450 checklist item 5: a fact the existing projection already
+   * suppressed — here, hair the headwear fully hides — cannot re-enter
+   * through the new request-aware selection. The withholding happens before
+   * this policy ever runs, so the concealed hair facts never reach
+   * `subject.facts` for it to consider; this pins that the suppression stays
+   * recorded under its OWN reason and is never relabelled as reference
+   * redundancy.
+   */
+  it("does not let request-aware selection recover hair the headwear already concealed", () => {
+    const cut = laneProbeVariantCut([...laneProbeWardrobe(), { ...HIJAB, hairOcclusion: "full" }]);
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          cuts: [
+            {
+              subjectId: LANE_PROBE_SUBJECT_ID,
+              name: LANE_PROBE_NAME,
+              digest: cut.digest,
+              attributes: cut.resolved,
+              exposure: cut.exposure,
+              hairOcclusion: cut.hairOcclusion,
+              realizedBody: cut.realizedBody,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(program.prompt).not.toMatch(/platinum/i);
+    const suppressions =
+      parseImageWorldStateProvenance(program.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const hairSuppressions = suppressions.filter((entry) => entry.key.includes("hair"));
+    expect(hairSuppressions.length).toBeGreaterThan(0);
+    for (const entry of hairSuppressions) {
+      expect(entry.reason).not.toBe(IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT);
+    }
+  });
 });
 
 /**
@@ -803,6 +913,43 @@ describe("the lane's subject-naming policy", () => {
     expect(labelOf(program, LANE_PROBE_SUBJECT_ID)).toBe(LANE_PROBE_NAME);
     expect(program.prompt).toContain(LANE_PROBE_NAME);
   });
+
+  /**
+   * ISSUE #450 checklist item 3: a mixed ensemble decides separately PER
+   * SUBJECT. This rung's only identity image is Ilsa's, so her
+   * reference-authoritative face shape and skin tone are redundant and
+   * dropped, while Nyx — the unreferenced bystander, never in
+   * `anchoredSubjects` — keeps the full reference-free description a render
+   * of her still needs. The two fixtures' disjoint words
+   * (`image-lane-probe.ts`'s module header) are what let this be checked
+   * without a per-subject parser: "heart-shaped" and "ashen" can only be
+   * Ilsa's, "oval" and "brown" only Nyx's.
+   */
+  it("selects reference-aware detail per subject in a mixed ensemble, never for the whole cast", () => {
+    const program = sceneProgram((subjectId) => subjectId !== LANE_PROBE_SUBJECT_ID);
+
+    // Ilsa (referenced): her face shape and skin tone are redundant against
+    // her own reference and do not reach the prompt.
+    expect(program.prompt).not.toMatch(/heart-shaped/i);
+    expect(program.prompt).not.toMatch(/\bashen\b/i);
+
+    // Nyx (unreferenced): the same two facts are still reference-free-required
+    // for HER render and remain stated.
+    expect(program.prompt).toMatch(/\boval\b/i);
+    expect(program.prompt).toMatch(/\bbrown\b/i);
+
+    const suppressions =
+      parseImageWorldStateProvenance(program.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const redundant = suppressions.filter(
+      (entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
+    );
+    const nyxRedundant = redundant.filter((entry) => entry.key.startsWith(`subject.${LANE_PROBE_SUBJECT_ID}.appearance`));
+    const ilsaRedundant = redundant.filter((entry) =>
+      entry.key.startsWith(`subject.${LANE_PROBE_SECOND_SUBJECT_ID}.appearance`),
+    );
+    expect(ilsaRedundant.length).toBeGreaterThan(0);
+    expect(nyxRedundant).toEqual([]);
+  });
 });
 
 /**
@@ -836,6 +983,36 @@ describe("the lanes beside the scene", () => {
 
     expect(program.prompt).toContain(`${LANE_PROBE_NAME} appears`);
     expect(program.prompt).toMatch(/late twenties/);
+  });
+
+  /**
+   * ISSUE #450 checklist item 1: a reference-free render carries no identity
+   * reference, so it is never in `anchoredSubjects` and the request-aware
+   * selection this issue adds must be a complete no-op for it — #426's
+   * reference-free completeness rules, unchanged. Kills a selection that
+   * applied a dialect's reference authority regardless of whether a reference
+   * was actually sent.
+   */
+  it("keeps a reference-free portrait's applicable required core description, and still refuses a missing one", () => {
+    const full = compiled(laneProbeAvatarProgram({ wardrobe: laneProbeWardrobe() }));
+
+    // No identity reference exists on this lane: every reference-free-required
+    // core value stays stated exactly as #426 requires, INCLUDING the face
+    // shape and skin tone a reference-anchored render would treat as
+    // redundant (the sibling variant-lane test below).
+    expect(full.prompt).toMatch(/\boval\b/i);
+    expect(full.prompt).toMatch(/platinum hair/i);
+    expect(full.prompt).toMatch(/blue eyes/i);
+    expect(full.missingRequired).toEqual([]);
+
+    // Strip one required core value this suite otherwise always supplies. The
+    // avatar lane refuses on it exactly as before this change — a
+    // reference-free subject was never a candidate for the new selection step.
+    const withoutFaceShape = laneProbeProfile({
+      attributes: laneProbeProfile().attributes.filter((value) => value.id !== "face.shape"),
+    });
+    const degraded = laneProbeAvatarProgram({ profile: withoutFaceShape, wardrobe: laneProbeWardrobe() });
+    expect(degraded.kind).toBe("refused");
   });
 
   /**
@@ -1026,5 +1203,62 @@ describe("the prompt budget the seam fits a variant edit to", () => {
     expect(fitted.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
     expect(fitted.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
     expect(fitted.prompt).toMatch(/\bKeep\b[^.]*\bunchanged from the source\./);
+  });
+
+  /**
+   * ISSUE #450 checklist item 6: selection stays a SEPARATE question from
+   * fitting. The redundant face-shape fact is removed by the request-aware
+   * selection before the digest ever reaches the fitter, so it can never
+   * appear as either a kept claim or a fitter-recorded drop — only as a
+   * world-state suppression under its own reason. Required facts and the
+   * requested change survive the same squeeze regardless, exactly as the
+   * sibling test above already pins for every optional claim.
+   */
+  it("removes a redundant optional fact before fitting, distinct from the fitter's own drops", () => {
+    const fitted = program(200);
+
+    const worldState = parseImageWorldStateProvenance(fitted.meta[IMAGE_WORLD_STATE_META_KEY]);
+    const redundant = (worldState?.suppressions ?? []).filter(
+      (entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
+    );
+    expect(redundant.length).toBeGreaterThan(0);
+
+    const promptProvenance = parseImagePromptProgramProvenance(fitted.meta[IMAGE_PROMPT_PROGRAM_META_KEY]);
+    for (const entry of redundant) {
+      // Never offered to the fitter at all: neither kept nor among its own
+      // recorded drops.
+      expect(fitted.keptClaimIds).not.toContain(entry.key);
+      expect(promptProvenance?.droppedClaimIds ?? []).not.toContain(entry.key);
+    }
+
+    // The requested change and the identity lock survive the same squeeze.
+    expect(fitted.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+    expect(fitted.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+  });
+});
+
+/**
+ * ISSUE #450 checklist item 7: identical resolved inputs select the same
+ * facts in the same order and compile to the same prompt.
+ *
+ * The request-aware selection is a pure filter over already-ordered arrays
+ * (`Array.prototype.map`/`filter`, no `Set` iteration order and nothing
+ * time- or randomness-dependent), so two builds from the same
+ * `CharacterPromptProgramInput` must be indistinguishable — not merely
+ * text-equal, but equal in the subjects, the suppressions and the kept-claim
+ * order a developer inspector reads.
+ */
+describe("determinism of the request-aware selection", () => {
+  it("selects the same facts in the same order from identical resolved inputs", () => {
+    const first = compiled(buildCharacterPromptProgram(programInput()));
+    const second = compiled(buildCharacterPromptProgram(programInput()));
+
+    expect(second.prompt).toBe(first.prompt);
+    expect(second.negativePrompt).toBe(first.negativePrompt);
+    expect(second.keptClaimIds).toEqual(first.keptClaimIds);
+    expect(second.subjects).toEqual(first.subjects);
+    expect(
+      parseImageWorldStateProvenance(second.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions,
+    ).toEqual(parseImageWorldStateProvenance(first.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions);
   });
 });

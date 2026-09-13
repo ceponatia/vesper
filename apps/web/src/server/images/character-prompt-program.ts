@@ -21,6 +21,7 @@ import {
   type ImageRenderReference,
   type ImageSubjectDigest,
   type ImageWorldFact,
+  type ImageWorldSuppression,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import type { AttributeValue, HairOcclusion, RealizedBody, RegionExposure, VisualImageDigest } from "@/contracts";
@@ -28,7 +29,14 @@ import {
   mergeVisualImageCastDigests,
   type VisualImageCastMergeRefusal,
 } from "@/contracts/images/visual-digest";
-import type { CharacterApparentAgePolicy, CharacterSubjectSources } from "@/contracts/images/character-adapter";
+import {
+  characterAppearanceAspect,
+  IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
+  IMAGE_CHARACTER_ATTRIBUTE_OWNER,
+  type CharacterApparentAgePolicy,
+  type CharacterAppearanceAspect,
+  type CharacterSubjectSources,
+} from "@/contracts/images/character-adapter";
 import { subjectIntimateRevealFacts } from "@/contracts/images/subject-reveal";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -49,7 +57,7 @@ import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 // whole character surface: the two Qwen endpoints, and every other model the
 // profile picker offers (#256).
 import "./packs-character-endpoints";
-import "./packs-qwen-2511";
+import { qwenImageEdit2511PositivePack, QWEN_2511_REFERENCE_AUTHORITY_ASPECTS } from "./packs-qwen-2511";
 import "./packs-qwen-2512-portrait";
 
 /**
@@ -568,6 +576,91 @@ function castAssembly(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Request-aware appearance selection (issue #450)
+// ---------------------------------------------------------------------------
+
+/**
+ * The resolved render contract's declared reference authority, by dialect id.
+ *
+ * Read once the binding resolves, in the one place this seam already knows
+ * both the FINAL dialect and the final reference plan — never a lane-keyed
+ * rule (a route cannot opt itself out of an endpoint's own authority) and
+ * never a caller input. A dialect this table does not name declares no aspect
+ * authoritative — the empty-set default below — so its subjects' optional
+ * appearance detail compiles exactly as it always has. Populated only where a
+ * pack states its own set beside its other reviewed evidence
+ * (`QWEN_2511_REFERENCE_AUTHORITY_ASPECTS`, `packs-qwen-2511.ts`); this table
+ * wires that declaration to the dialect id, it invents none of its own.
+ */
+const CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT: Readonly<Record<string, ReadonlySet<CharacterAppearanceAspect>>> = {
+  [qwenImageEdit2511PositivePack.dialectId]: QWEN_2511_REFERENCE_AUTHORITY_ASPECTS,
+};
+
+/** No pack has declared a dialect's reference authority — the honest default, not a guess. */
+const EMPTY_CHARACTER_REFERENCE_AUTHORITY: ReadonlySet<CharacterAppearanceAspect> = new Set();
+
+/**
+ * Drop the OPTIONAL `subject.appearance` facts a resolved render contract's
+ * identity reference already makes redundant, for each subject the payload
+ * actually anchors (issue #450).
+ *
+ * This is SELECTION, not fitting: it answers "is this fact useful for THIS
+ * request", decided once the final reference plan and the final dialect are
+ * both known and before the digest ever reaches the budget fitter, which
+ * separately answers "which useful optional facts fit" — neither step
+ * bypasses the other, and this one never limits by character count.
+ *
+ * Scoped narrowly, by construction:
+ * - only a subject in `anchoredSubjects` is touched — a subject with no
+ *   required identity reference is returned untouched, several references of
+ *   one subject are one entry in that set and cost one pass, never several;
+ * - only a `subject.appearance` fact sourced from the attribute-registry
+ *   projection (`IMAGE_CHARACTER_ATTRIBUTE_OWNER`,
+ *   docs/images/character-prompts.md §Registry-backed image appearance) is a
+ *   candidate — the narrow observer-recognition catalog is untouched;
+ * - only an `optional_visual` fact can be dropped — a required fact (the
+ *   completeness anchor a lane's own rules still refuse on), the identity
+ *   anchor, exposure, morphology, `subject.current_state`, wardrobe, pose and
+ *   every requested-change claim are never inspected, let alone removed;
+ * - a fact the projection already suppressed (hidden, out-of-frame, replaced,
+ *   concealed) never reached `subject.facts` in the first place, so it cannot
+ *   re-enter through this policy — this function only ever REMOVES from what
+ *   it is handed, never adds.
+ *
+ * Deterministic and order-preserving over its inputs: the same subjects, the
+ * same anchored set and the same authority always drop the same keys in the
+ * same order (issue #450 checklist item 7).
+ */
+function selectRequestAwareAppearance(
+  subjects: readonly ImageSubjectDigest[],
+  suppressions: readonly ImageWorldSuppression[],
+  anchoredSubjects: ReadonlySet<string>,
+  authority: ReadonlySet<CharacterAppearanceAspect>,
+): { readonly subjects: readonly ImageSubjectDigest[]; readonly suppressions: readonly ImageWorldSuppression[] } {
+  if (authority.size === 0 || anchoredSubjects.size === 0) return { subjects, suppressions };
+  const dropped: ImageWorldSuppression[] = [];
+  const nextSubjects = subjects.map((subject) => {
+    if (!anchoredSubjects.has(subject.ref)) return subject;
+    const facts = subject.facts.filter((fact) => {
+      if (
+        fact.concept !== "subject.appearance" ||
+        fact.disposition !== "optional_visual" ||
+        fact.source.owner !== IMAGE_CHARACTER_ATTRIBUTE_OWNER
+      ) {
+        return true;
+      }
+      const aspect = characterAppearanceAspect(fact.source.key);
+      if (aspect === undefined || !authority.has(aspect)) return true;
+      dropped.push({ key: fact.key, owner: fact.source.owner, reason: IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT });
+      return false;
+    });
+    return facts.length === subject.facts.length ? subject : { ...subject, facts };
+  });
+  if (dropped.length === 0) return { subjects, suppressions };
+  return { subjects: nextSubjects, suppressions: [...suppressions, ...dropped] };
+}
+
 /**
  * Resolve, assemble, compile — the whole semantic path, once.
  *
@@ -665,6 +758,11 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // named depends on whether the payload carries an image of them — a question
   // only the planned send list can answer.
   const references = referenceFacts(lane, subjectOf, sentReferences);
+  // Computed once and reused below: the request-aware appearance selection
+  // (issue #450) asks the identical question `castAssembly`'s naming policy
+  // and the digest's own identity anchor already ask — which subjects the
+  // planned send list actually names — and the three must never disagree.
+  const anchoredSubjects = referenceAnchoredSubjects(references);
   const cast = castAssembly(
     input.cuts,
     input.read,
@@ -675,7 +773,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     },
     input.intimateReveal === true,
     CHARACTER_LANE_SUBJECT_NAMING[lane],
-    referenceAnchoredSubjects(references),
+    anchoredSubjects,
   );
   if ("code" in cast) {
     sink?.push(
@@ -702,8 +800,24 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     references,
   };
   const preview = assembleCharacterWorldDigest({ ...assembly, operation: characterPortraitImageOperation() });
-  const subjects = preview.input.subjects ?? [];
-  const built = buildImageWorldDigest({ ...preview.input, operation: input.operation(subjects) });
+  // The resolved dialect's own declared reference authority — never the lane,
+  // never a caller input (issue #450). Read here because `binding` (step 1)
+  // and `anchoredSubjects` (step 3) are both finally known.
+  const referenceAuthority =
+    CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT[binding.promptDialectId] ?? EMPTY_CHARACTER_REFERENCE_AUTHORITY;
+  const selected = selectRequestAwareAppearance(
+    preview.input.subjects ?? [],
+    preview.input.suppressions ?? [],
+    anchoredSubjects,
+    referenceAuthority,
+  );
+  const subjects = selected.subjects;
+  const built = buildImageWorldDigest({
+    ...preview.input,
+    subjects,
+    suppressions: selected.suppressions,
+    operation: input.operation(subjects),
+  });
   for (const issue of built.issues) {
     sink?.push(
       diag("info", issue.code, "a character world digest dropped a fact it could not carry", {
