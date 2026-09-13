@@ -28,7 +28,7 @@ Source: [`packages/image-models`](../../packages/image-models/README.md).
 
 The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers import from `@vesper/image-models`, not from `src/*` subpaths.
 
-The **Qwen Image family** and the **FLUX.2 klein** bench-onboarding endpoints are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan, SDXL, and Seedream families — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
+The **Qwen Image family**, the **FLUX.2 klein** bench-onboarding endpoints, and the **FLUX.1 Kontext Dev** endpoint are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan, SDXL, and Seedream families — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
 The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
 
@@ -60,19 +60,29 @@ No klein variant composes `negativePrompt`: none of the three captured schemas d
 
 See [Features → FLUX.2 klein composition](features/README.md#flux2-klein-composition) for the full feature matrix and for the rule distinguishing adapter lookup from an enabled database row.
 
+### Registered FLUX.1 Kontext adapter
+
+The **FLUX.1 Kontext Dev** endpoint (`black-forest-labs/flux-kontext-dev`) is registered directly from its captured schema — see [its model page](models/flux-kontext-dev.md) for the full capture. It composes `prompt`, `sourceImage`, `aspectRatio`, `seed`, `guidance`, `steps`, `outputFormat`, `outputQuality`, and `safetyToggle`. Family behavior: none.
+
+`black-forest-labs/flux-kontext-dev-lora`, `black-forest-labs/flux-kontext-pro`, `black-forest-labs/flux-kontext-max`, and the production `flux-dev` checkpoint are different endpoints with their own schemas, and resolve nothing from this adapter.
+
+See [Features → FLUX.1 Kontext composition](features/README.md#flux1-kontext-composition) for the full feature matrix.
+
 ## Features
 
 A feature answers a semantic question such as "can this render carry several references?" or "can the caller select guidance strength?" It does not answer "which provider field carries that value?" The latter belongs to the probed model record.
 
-The package exports eleven feature constructors:
+The package exports thirteen feature constructors:
 
 | Feature id       | Meaning                                              | Documentation                                      |
 | ---------------- | ---------------------------------------------------- | -------------------------------------------------- |
 | `prompt`         | authored text prompt                                 | [Prompt](features/README.md#prompt)                |
 | `multiReference` | several role-bearing reference images                | [References](features/README.md#references)        |
+| `sourceImage`    | one required source/edit reference image             | [References](features/README.md#references)        |
 | `aspectRatio`    | caller-selected output shape                         | [Aspect ratio](features/README.md#aspect-ratio)    |
 | `seed`           | reproducible seeded generation                       | [Controls](features/README.md#generation-controls) |
 | `guidance`       | prompt-guidance strength                             | [Controls](features/README.md#generation-controls) |
+| `steps`          | caller-selected inference-step count                 | [Controls](features/README.md#generation-controls) |
 | `fastMode`       | accelerated sampling the caller may choose or refuse | [Controls](features/README.md#generation-controls) |
 | `negativePrompt` | a negative prompt that actually affects output       | [Controls](features/README.md#generation-controls) |
 | `lora`           | one external LoRA with a chosen strength             | [LoRA](features/README.md#lora)                    |
@@ -112,6 +122,7 @@ No registered adapter claims a `preparePrompt` hook. Prompt wording — includin
 The validating features are:
 
 - `multiReference`, which refuses a request whose intended reference count exceeds the probed model capacity rather than silently dropping references;
+- `sourceImage`, which refuses a request that carries no reference image when the model cannot generate from nothing, and refuses one whose reference count exceeds the probed model capacity; and
 - `lora`, which refuses a LoRA request unless both LoRA weights and LoRA scale are bound on the active probed model version.
 
 The application runs adapter request validation in the **Image Generator bench pre-spend path**, where the request facts are final. Production lanes do not run this validator because their `allow_trim` reference policy can legally reduce the pre-plan reference count; validating the untrimmed count would reject renders the planner can make valid.

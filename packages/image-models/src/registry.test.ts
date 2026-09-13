@@ -3,6 +3,7 @@ import {
   fluxKleinBase,
   fluxKleinBaseLora,
   fluxKleinDistilled,
+  fluxKontextDev,
   qwenImage2512,
   qwenImage3Edit,
   qwenImage3TextToImage,
@@ -95,6 +96,43 @@ describe("adapterForImageModel: FLUX.2 klein (#567)", () => {
   it("does not resolve any adapter for a broad flux- prefix, only the six exact klein slugs", () => {
     expect(adapterForImageModel("black-forest-labs/flux-2-klein")).toBeNull();
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b-turbo")).toBeNull();
+  });
+});
+
+/**
+ * FLUX.1 Kontext Dev (#574): a single new endpoint, its own family, sharing
+ * no behavior with klein. Protects the same two requirements as the klein
+ * block above — the bare and pinned slugs resolve, and the closest-named
+ * siblings (the LoRA endpoint, the Pro/Max tiers, the bare family name, and
+ * `flux-dev`) resolve nothing.
+ */
+describe("adapterForImageModel: FLUX.1 Kontext Dev (#574)", () => {
+  it("resolves the bare dev slug", () => {
+    expect(adapterForImageModel("black-forest-labs/flux-kontext-dev")).toBe(fluxKontextDev);
+  });
+
+  it("resolves the pinned owner/name:version form through the existing base-slug helper, with no new code", () => {
+    expect(
+      adapterForImageModel(
+        "black-forest-labs/flux-kontext-dev:85723d503c17da3f9fd9cecfb9987a8bf60ef747fd8f68a25d7636f88260eb59",
+      ),
+    ).toBe(fluxKontextDev);
+  });
+
+  it.each([
+    "black-forest-labs/flux-kontext-dev-lora",
+    "black-forest-labs/flux-kontext-pro",
+    "black-forest-labs/flux-kontext-max",
+    "black-forest-labs/flux-kontext",
+    "black-forest-labs/flux-dev",
+  ])("answers null for the sibling endpoint %s", (slug) => {
+    expect(adapterForImageModel(slug)).toBeNull();
+  });
+
+  it("is a different object from every klein variant", () => {
+    expect(fluxKontextDev).not.toBe(fluxKleinDistilled);
+    expect(fluxKontextDev).not.toBe(fluxKleinBase);
+    expect(fluxKontextDev).not.toBe(fluxKleinBaseLora);
   });
 });
 

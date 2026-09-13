@@ -4,6 +4,7 @@ import {
   fluxKleinBase,
   fluxKleinBaseLora,
   fluxKleinDistilled,
+  fluxKontextDev,
   qwenImage2512,
   qwenImage3Edit,
   qwenImage3TextToImage,
@@ -28,10 +29,11 @@ import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
  * `owner/name[:version]` grammar belongs to Replicate. The lookup handles those
  * two exact routes first.
  *
- * The Qwen family and the FLUX.2 klein bench-onboarding endpoints (#567) are
- * here. Other families (the production Flux checkpoints, Wan, SDXL, Seedream)
- * stay on the legacy path and migrate when their behavior is next touched,
- * which is exactly why the answer below is nullable rather than exhaustive.
+ * The Qwen family, the FLUX.2 klein bench-onboarding endpoints (#567), and the
+ * FLUX.1 Kontext Dev endpoint (#574) are here. Other families (the production
+ * Flux checkpoints, Wan, SDXL, Seedream) stay on the legacy path and migrate
+ * when their behavior is next touched, which is exactly why the answer below
+ * is nullable rather than exhaustive.
  */
 const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   "qwen/qwen-image-edit-2511": qwenImageEdit2511,
@@ -47,6 +49,9 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   "black-forest-labs/flux-2-klein-9b": fluxKleinDistilled,
   "black-forest-labs/flux-2-klein-9b-base": fluxKleinBase,
   "black-forest-labs/flux-2-klein-9b-base-lora": fluxKleinBaseLora,
+  // FLUX.1 Kontext Dev (#574): the bare and pinned dev slug only — the pro/max
+  // and dev-lora siblings, and flux-dev, resolve nothing here.
+  "black-forest-labs/flux-kontext-dev": fluxKontextDev,
 };
 
 /**

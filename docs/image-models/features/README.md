@@ -5,13 +5,13 @@ Features are the semantic vocabulary used by `@vesper/image-models` adapters. Th
 authoritative for **which provider input fields carry it**.
 
 Source: [`packages/image-models/src/features`](../../../packages/image-models/src/features).
-The eleven feature constructors exported from the package root are documented below, one
+The thirteen feature constructors exported from the package root are documented below, one
 `##` section per `src/features/` module.
 
 ## Owns / does not own
 
 - **Owns:** the feature vocabulary, each feature's semantic claim, its `isBound` rule, its
-  pre-spend validation, and the Qwen and FLUX.2 klein composition matrices.
+  pre-spend validation, and the Qwen, FLUX.2 klein, and FLUX.1 Kontext composition matrices.
 - **Does not own:** which provider field carries a capability, or what a specific pinned
   version measured — that is the probed record and
   [the model pages](../models/README.md). Nor the final-wire invariants, which are
@@ -55,10 +55,11 @@ Feature validators accumulate when `defineImageModel` composes an adapter. A req
 therefore receive more than one refusal reason instead of stopping at the first failed
 feature.
 
-Only two feature modules validate requests: `multiReference` rejects an intended reference
-count above `referenceCapacity(model).max`, and `lora` rejects a LoRA-bearing request when
-the active model record carries no usable LoRA weights/scale pair — missing, or the two
-fields disagreeing on shape.
+Only three feature modules validate requests: `multiReference` rejects an intended reference
+count above `referenceCapacity(model).max`; `sourceImage` rejects a request that carries no
+reference image on a model that cannot generate from nothing, and rejects one above the same
+normalized maximum; and `lora` rejects a LoRA-bearing request when the active model record
+carries no usable LoRA weights/scale pair — missing, or the two fields disagreeing on shape.
 
 These are model/request compatibility checks. They do not replace `@vesper/image-core`'s
 final-wire invariants, which verify the payload that is actually going to the provider.
@@ -111,6 +112,30 @@ maximum and requested count.
 single strength-based image-to-image reference, not the numbered multi-reference
 instruction-edit mechanism used by the editors.
 
+### `sourceImage`
+
+`sourceImageFeature()` (`src/features/references.ts`) contributes capability id
+`sourceImage`.
+
+**Semantic:** the model requires exactly one reference image — the source the render works
+from — and carries no more than one. This is a different semantic claim from
+`multiReference`, not a capacity-1 reading of it: `multiReference`'s claim is that several
+images can each carry a distinct, named role, which is false at a cap of one, while
+`sourceImage`'s claim is that the render has nothing to work from without that single image.
+`qwen/qwen-image-2512`'s single reference input is a different case again — an OPTIONAL
+strength-based image-to-image slot, not a required source — so that endpoint composes
+neither feature.
+
+**Binding:** true when the model can edit and its normalized reference capacity
+(`referenceCapacity(model)`) is at least one. A generation-only row cannot bind this feature
+regardless of what its stored `maxReferences` says.
+
+**Validation:** the feature refuses a request that carries no reference image when the model
+cannot generate from nothing (`!model.canGenerate`), and refuses one whose reference count
+exceeds the model's capacity — the same over-capacity sentence `multiReference` produces.
+The two features share that wording through one helper in `references.ts` rather than
+carrying two slightly different phrasings of the same fact.
+
 ## Aspect ratio
 
 `aspectRatioFeature()` (`src/features/aspect-ratio.ts`) contributes capability id
@@ -130,7 +155,7 @@ that the probe did not establish.
 
 ## Generation controls
 
-`src/features/controls.ts` defines four normalized single-binding controls. Each binding
+`src/features/controls.ts` defines five normalized single-binding controls. Each binding
 check reads `model.advancedCapabilities.controls`, which is populated by provider probing,
 so the feature layer never needs to know whether a provider spells guidance `guidance`,
 `guidance_scale`, `cfg`, or something else.
@@ -143,6 +168,9 @@ so the feature layer never needs to know whether a provider spells guidance `gui
   this one control, in that order. It deliberately does **not** resolve `true_cfg_scale`: on
   a CFG-distilled checkpoint that is a different quantity from the embedded guidance, so
   binding both to one name would leave a run record unable to say which value moved.
+- **`steps`** — `stepsFeature()`. The model accepts an inference-step count, trading render
+  time against sampling quality. Bound when the active record has a normalized `steps`
+  control binding.
 - **`fastMode`** — `fastModeFeature()`. The endpoint offers an accelerated sampling path, and
   the caller may choose it or refuse it. Bound when the active record has a normalized
   `fastMode` control binding. This is a quality choice wearing a speed name: the wrappers
@@ -294,5 +322,33 @@ execution hint; a hint requires a measurement of the actual endpoint.
 authorize any model. No 9B `image_models` row is seeded; database registration of a 9B row is a separate
 owner decision, and this composition does not add one. Only a registered, enabled row actually renders,
 whatever adapters the lookup can resolve for its slug.
+
+## FLUX.1 Kontext composition
+
+The FLUX.1 Kontext family (`packages/image-models/src/families/flux/kontext.ts`) registers one endpoint,
+the DEV tier, composed directly from its captured Input schema
+([model page](../models/flux-kontext-dev.md)):
+
+| Feature          | Dev |
+| ---------------- | :-: |
+| `prompt`         | yes |
+| `multiReference` | no  |
+| `sourceImage`    | yes |
+| `aspectRatio`    | yes |
+| `seed`           | yes |
+| `guidance`       | yes |
+| `steps`          | yes |
+| `fastMode`       | no  |
+| `negativePrompt` | no  |
+| `lora`           | no  |
+| `outputFormat`   | yes |
+| `outputQuality`  | yes |
+| `safetyToggle`   | yes |
+
+These are declared schema capabilities read from the captured endpoint, not measured render quality, and
+not a guarantee that the safety checker can be fully disabled. No adapter in this family composes
+`preparePrompt` or an execution hint: no prompt-rewriting finding and no measured timing back either hook
+for this endpoint. The Qwen and FLUX.2 klein compositions above are unchanged by this addition and compose
+neither `sourceImage` nor `steps`.
 
 [Back to `@vesper/image-models`](../README.md).
