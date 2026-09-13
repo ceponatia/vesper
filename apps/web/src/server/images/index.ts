@@ -282,6 +282,11 @@ export {
   type GeneratorRenderRequest,
   setImageGeneratorRendererForTesting,
 } from "./image-generator-render";
+// Issue #246 — the flagged owner-admin face-repair action, over the Generator
+// run path above. `face-repair-flag.ts` is the env gate; `face-repair.ts` is
+// the pure decision logic plus the owner-scoped loads the route composes.
+export { imageFaceRepairEnabled } from "./face-repair-flag";
+export * from "./face-repair";
 export {
   createImageLabExperiment,
   type CreateImageLabExperimentInput,

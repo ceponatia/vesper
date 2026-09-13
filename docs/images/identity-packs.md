@@ -203,6 +203,12 @@ which is the preservation contract every reference-anchored render had before
 this ([character-prompts.md](character-prompts.md) §Identity on a
 reference-anchored render).
 
+The flagged owner-admin face-repair action (issue #246,
+[../image-generator/face-repair.md](../image-generator/face-repair.md)) is a fourth consumer,
+reached through the same `identityPackRenderReferences` entry point with the same refusal
+vocabulary — it pairs its resolved profile with `canonical_then_face_detail` in memory rather than
+adding a fifth stored `referencePolicy.identityStrategy` value.
+
 ## The fixed-trial harness
 
 Admin-only infrastructure for the reference trial: four tables (migrations
