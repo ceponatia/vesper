@@ -14,6 +14,7 @@ import {
   type ImageModelProfile,
   type ImageProfileIneligibility,
 } from "./image-model-profiles";
+import { reviewedUnboundControls } from "./reviewed-profile-controls";
 
 /**
  * The profile registry's admin contract: what the create and edit routes accept,
@@ -104,14 +105,16 @@ export type ImageModelProfileUpdateRequest = z.infer<typeof imageModelProfileUpd
 /**
  * One reason a profile configuration may not be stored against its model.
  *
- * Two kinds rather than one bucket because they send an operator to different
+ * Three kinds rather than one bucket because they send an operator to different
  * fixes: `ineligible` means the task/operation pair is wrong for this model
  * (pick another model, or another operation), `override_rejected` names the
- * specific provider key the escape hatch refused.
+ * specific provider key the escape hatch refused, and `reviewed_control_unbound`
+ * names a reviewed setting this version cannot carry — a re-probe, not an edit.
  */
 export type ImageProfileConfigurationIssue =
   | { kind: "ineligible"; reason: ImageProfileIneligibility; message: string }
-  | { kind: "override_rejected"; field: string; reason: "reserved" | "unknown_field"; message: string };
+  | { kind: "override_rejected"; field: string; reason: "reserved" | "unknown_field"; message: string }
+  | { kind: "reviewed_control_unbound"; control: string; message: string };
 
 /** The eligibility refusals, in an operator's words rather than the enum's. */
 function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<ImageModelProfile, "task" | "operation">): string {
@@ -147,6 +150,15 @@ function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<I
  *    CLOSED when overrides exist, the same rule the render path and candidate
  *    activation apply. Empty means the probe recorded nothing, not that
  *    everything is permitted; the fix is a re-probe, and the message says so.
+ * 3. **Reviewed controls** ({@link reviewedUnboundControls}): on a REVIEWED
+ *    model, a reviewed setting this row carries that the version declares no
+ *    binding for is refused. A control is otherwise a render-time question —
+ *    the mapper drops it with a recorded reason — and that is still the right
+ *    answer for an ordinary curated profile, which may legitimately state a
+ *    control a later version stops binding. It is the wrong answer for a
+ *    REVIEWED setting: the task profile is now the only thing carrying it, so a
+ *    row saved with one that reaches nothing renders on exactly the provider
+ *    default the reviewed judgment exists to correct, quietly, forever.
  *
  * What it deliberately does NOT check: `enabled`, `isDefault`, the timeout
  * (schema-bounded), and the LoRA selection. Disabling a task's only default is
@@ -155,7 +167,7 @@ function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<I
  * will actually run is known.
  */
 export function validateImageProfileConfiguration(
-  profile: Pick<ImageModelProfile, "task" | "operation" | "providerOverrides">,
+  profile: Pick<ImageModelProfile, "task" | "operation" | "providerOverrides" | "controlDefaults">,
   model: ImageModel,
 ): ImageProfileConfigurationIssue[] {
   const issues: ImageProfileConfigurationIssue[] = [];
@@ -186,6 +198,15 @@ export function validateImageProfileConfiguration(
             : `providerOverrides key “${drop.control}” is not an input this model's probed version declares`,
       });
     }
+  }
+
+  const unbound = reviewedUnboundControls(model.slug, model.advancedCapabilities.controls, profile.controlDefaults);
+  for (const control of unbound) {
+    issues.push({
+      kind: "reviewed_control_unbound",
+      control,
+      message: `the reviewed “${control}” setting has no binding on this model's probed version, so every render would drop it — re-probe it first`,
+    });
   }
 
   return issues;

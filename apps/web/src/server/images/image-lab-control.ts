@@ -106,7 +106,19 @@ export async function runControlProbe(row: ImageLabExperimentRow, sink?: Diagnos
   // occur.
   const reviewed = reviewedImageProfileControls(baseImageModelSlug(model.slug));
   const mapped = mapImageRenderControls({
-    controls: { ...(reviewed?.controlDefaults ?? {}), ...settings.controls },
+    controls: {
+      ...(reviewed?.controlDefaults ?? {}),
+      ...settings.controls,
+      // The reviewed `resolution` is deliberately NOT spread. It is the profile
+      // vocabulary's GATE for a width/height pair rather than a value anything
+      // sends, and `compileProfileRenderPlan` is what reads it — withholding it
+      // from the mapper on a size-mode model, and gating the pair on it
+      // everywhere else. This path has no compile step to do either, so handing
+      // the tier to the mapper would post it through a binding the render path
+      // withholds. The reviewed PAIR still travels; only the admin's own tier
+      // does.
+      resolution: settings.controls.resolution,
+    },
     capabilities: model.advancedCapabilities,
   });
   if (mapped.dropped.length > 0) {
