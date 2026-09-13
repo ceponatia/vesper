@@ -117,6 +117,21 @@ describe("sourceImage isBound", () => {
     expect(sourceImageFeature().isBound?.(row)).toBe(false);
   });
 
+  it("is false on an EDITABLE row whose curated capacity is zero", () => {
+    // The second half of the claim, and the only case that separates the real
+    // rule from a `model.canEdit`-only reading: `referenceCapacity` already
+    // answers 0 for a row that cannot edit, so the case above passes either
+    // way. `maxReferences` is a CURATED column — `imageModelProbeFields`
+    // (apps/web/src/server/images/identity-trial-model-versions.ts) never
+    // rewrites it on a re-probe — so an operator can leave an editable row
+    // with no reference slot at all, and a feature whose whole claim is "this
+    // render has nothing to work from without one source image" is not bound
+    // on it.
+    const row = kontextRow({ maxReferences: 0 });
+    expect(row.canEdit).toBe(true);
+    expect(sourceImageFeature().isBound?.(row)).toBe(false);
+  });
+
   it("is true on the fixture row", () => {
     const row = kontextRow();
     expect(sourceImageFeature().isBound?.(row)).toBe(true);
