@@ -130,6 +130,17 @@ record is what a retry of the same composition reads. The character-fact lanes f
 sibling provenance key beside it — `images.meta.visualState`, the visual-digest record
 ([../pipelines/README.md](../pipelines/README.md)).
 
+**"Same composition" is a reproducibility REQUEST, never a pixel guarantee.** Replaying a stored
+`controls.seed` is honest reuse of the settings that produced a prior row — it is not a promise
+that the provider returns identical bytes. The portrait lane (issue #248) is the first caller of
+this: a same-composition retry reads the source row's `meta.render.seed` and sends it back as an
+explicit `controls.seed`, but only when the eligibility table in
+[../pipelines/avatars.md](../pipelines/avatars.md) §Same-composition eligibility holds — an
+unrecorded seed, a changed model or version, or a world that moved since the source rendered must
+never pass silently as "the same composition"; each fails the row before provider spend, naming
+why. Portraits send no references at all (every portrait profile's reference policy allows none),
+so a "reference went missing" refusal cannot arise on this lane — there is nothing to go missing.
+
 ## Selection stays fail-visible
 
 `routeSceneAttempts` (`packages/image-core/src/provider-interface/attempts.ts`) orders one model's

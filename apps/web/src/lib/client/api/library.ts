@@ -32,7 +32,7 @@ import {
   type AuthoredEdgeRecord,
   libraryRelationshipsSchema,
 } from "./chat-schemas";
-import { imageRecordSchema } from "./images";
+import { avatarReplayMapSchema, imageRecordSchema } from "./images";
 
 import {
   arrayOf,
@@ -414,8 +414,26 @@ export const charactersApi = {
       `/api/characters/${id}/attributes/from-portrait`,
       source,
     ),
-  generateAvatar: (id: string, body: { authoringRevision?: number; modelId?: string } = {}) =>
-    apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
+  /**
+   * `candidates` requests best-of-two portrait candidates (issue #248) — the
+   * player ceiling; the server clamps anything else to one. `retry` states
+   * explicit retry semantics for a regeneration; absent for a first-ever
+   * generation. Reuse a source's exact settings with `retry: { mode:
+   * "same_composition", sourceImageId }` (refused beside `candidates: 2` — a
+   * replay is one render by definition), or ask for a fresh, differently
+   * seeded attempt with `retry: { mode: "new_variation", sourceImageId? }`.
+   */
+  generateAvatar: (
+    id: string,
+    body: {
+      authoringRevision?: number;
+      modelId?: string;
+      candidates?: 1 | 2;
+      retry?:
+        | { mode: "new_variation"; sourceImageId?: string }
+        | { mode: "same_composition"; sourceImageId: string };
+    } = {},
+  ) => apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>
     apiPost(
       z.object({ avatarImageId: idSchema }),
@@ -433,8 +451,10 @@ export const charactersApi = {
         .object({
           portraits: arrayOf(imageRecordSchema),
           rendering: z.boolean().catch(false),
+          /** The cheap per-row same-composition hint (issue #248) — keyed by image id. */
+          replay: avatarReplayMapSchema,
         })
-        .catch({ portraits: [], rendering: false }),
+        .catch({ portraits: [], rendering: false, replay: {} }),
       `/api/characters/${id}/portraits`,
     ),
   createPortrait: (

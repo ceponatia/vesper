@@ -367,6 +367,7 @@ export {
   type CharacterPromptTask,
 } from "./character-prompt-program";
 export * from "./avatar";
+export * from "./avatar-replay";
 export {
   buildStandaloneLaneCut,
   buildStandaloneSubjectCut,

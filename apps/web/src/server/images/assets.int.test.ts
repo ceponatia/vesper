@@ -185,7 +185,7 @@ describe.skipIf(!ready)("demo-mode pipelines (AI_FAKE=1)", () => {
       .returning();
     if (!character) throw new Error("failed to create character");
 
-    const imageId = await generateAvatar({ characterId: character.id, userId });
+    const { imageId } = await generateAvatar({ characterId: character.id, userId });
     const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
     expect(row?.status).toBe("ready");
     expect(row?.kind).toBe("avatar");
@@ -216,7 +216,7 @@ describe.skipIf(!ready)("demo-mode pipelines (AI_FAKE=1)", () => {
   });
 
   it("generateAvatar for a missing character returns a failed image id, never throws", async () => {
-    const imageId = await generateAvatar({ characterId: "missing-character", userId });
+    const { imageId } = await generateAvatar({ characterId: "missing-character", userId });
     const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
     expect(row?.status).toBe("failed");
   });
@@ -382,7 +382,7 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
     const characterId = await seedCharacter("Diagnostic Subject");
     const sink = new DiagnosticCollector();
 
-    const imageId = await outsideDemoMode(() => generateAvatar({ characterId, userId, sink }));
+    const { imageId } = await outsideDemoMode(() => generateAvatar({ characterId, userId, sink }));
 
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");

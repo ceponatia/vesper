@@ -75,6 +75,12 @@ const payloadSchema = z
   .object({
     kind: z.string().max(80).optional(),
     imageId: z.string().min(1).max(128).optional(),
+    /** Every candidate an avatar job produced (issue #248's best-of-two), in
+     * generation order — `imageId` above stays the first/primary one, so a
+     * projection written before this field existed keeps reading the same
+     * pointer. Unused by the projection today; carried for a future
+     * candidate-aware job view. */
+    imageIds: z.array(z.string().min(1).max(128)).max(2).optional(),
     code: z.string().min(1).max(100).optional(),
     outcome: z.string().min(1).max(100).optional(),
     status: z

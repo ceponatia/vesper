@@ -92,6 +92,40 @@ function portraitKindLabel(image: ImageRecord): string {
   return variant ? portraitVariantKindLabel(variant) : image.kind.replaceAll("_", " ");
 }
 
+/** Short copy for a disabled "Same composition" menu item (issue #248) — the
+ * full sentence lives server-side; this is the label-length version. */
+const REPLAY_REASON_LABEL: Record<string, string> = {
+  no_recorded_seed: "no seed was recorded",
+  model_changed: "the model changed",
+  version_changed: "the model version changed",
+  world_changed: "the character changed",
+  source_unavailable: "unavailable",
+};
+
+/** This row's position in a best-of-two candidate group (issue #248), or null
+ * for an ordinary single-candidate row. */
+function candidateLabel(image: ImageRecord): string | null {
+  const candidates = image.meta?.candidates;
+  return candidates ? `Candidate ${candidates.index} of ${candidates.of}` : null;
+}
+
+/** "Unseeded variation" or the recorded seed, for an avatar-kind row — null
+ * when the row carries no render provenance at all (issue #248). */
+function seedCaption(image: ImageRecord): string | null {
+  if (image.kind !== "avatar") return null;
+  const seed = image.meta?.render?.seed;
+  if (seed === null) return "Unseeded variation";
+  return typeof seed === "number" ? `Seed ${seed}` : null;
+}
+
+/** The Portrait history tile's caption: candidate position and seed status
+ * take priority over the (often IDENTICAL, since two candidates share one
+ * compiled program) prompt text. */
+function tileCaption(image: ImageRecord): string {
+  const parts = [candidateLabel(image), seedCaption(image)].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" \u00b7 ") : image.prompt || image.kind;
+}
+
 /**
  * Avatar + variant studio (docs/images/pipelines/avatars.md §The job and the
  * studio): generate the canonical avatar from
@@ -129,6 +163,10 @@ export function PortraitStudio({
   const variantProfiles = useAsyncData(() => imageProfilesApi.list("variant"), []);
   const [avatarProfileId, setAvatarProfileId] = useState<string>("");
   const [variantProfileId, setVariantProfileId] = useState<string>("");
+  // "One portrait" (default, byte-for-byte today's behavior) or "two
+  // candidates" (issue #248) — the player ceiling; a same-composition retry
+  // always forces one regardless of this picker.
+  const [candidateCount, setCandidateCount] = useState<1 | 2>(1);
   const [instruction, setInstruction] = useState("");
   const [avatarPhase, setAvatarPhase] = useState<"saving" | "generating" | null>(null);
   const avatarActionRef = useRef(false);
@@ -200,7 +238,15 @@ export function PortraitStudio({
     }
   }, [portraits.data, avatarPhase, toast]);
 
-  const generateAvatar = async () => {
+  /**
+   * `retry` states explicit semantics for a REGENERATION (issue #248) —
+   * absent for the first-ever "Generate portrait". A same-composition retry
+   * always renders exactly one image, whatever the candidates picker says;
+   * only a plain generation or an explicit "new variation" reads it.
+   */
+  const generateAvatar = async (
+    retry?: { mode: "new_variation"; sourceImageId?: string } | { mode: "same_composition"; sourceImageId: string },
+  ) => {
     if (avatarActionRef.current || generationDisabled || pendingProposalCount > 0) return;
     avatarActionRef.current = true;
     genBaselineRef.current = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar")?.id ?? null;
@@ -212,12 +258,23 @@ export function PortraitStudio({
       return;
     }
     setAvatarPhase("generating");
+    const requestedCandidates = retry?.mode === "same_composition" ? 1 : candidateCount;
     const result = await charactersApi.generateAvatar(characterId, {
       authoringRevision: source.authoringRevision,
       modelId: pickedProfileId(avatarProfileId),
+      candidates: requestedCandidates,
+      ...(retry ? { retry } : {}),
     });
     if (result.ok) {
-      toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
+      toast.push({
+        title: retry?.mode === "same_composition" ? "Replaying the same composition" : "Avatar queued",
+        description:
+          retry?.mode === "same_composition"
+            ? "Reusing this portrait's settings — a reproducibility request, not a pixel guarantee."
+            : requestedCandidates === 2
+              ? "Building two candidates to choose between."
+              : "Built from this character's attributes.",
+      });
     } else {
       toast.push({ title: "Avatar generation failed", description: result.error.message, tone: "error" });
       setAvatarPhase(null);
@@ -225,6 +282,19 @@ export function PortraitStudio({
     }
     portraits.reload({ silent: true });
   };
+
+  /**
+   * The cheap per-row same-composition hint (issue #248) — seed recorded,
+   * model/profile/version still current. A world-state change is only
+   * detectable at request time, so "Same composition" can still be refused
+   * even when this said nothing was wrong; the failure toast explains why.
+   * Only consulted from the ActionMenu branch below, which renders only once
+   * `avatarImageId` exists — there is always a candidate portrait to reason
+   * about here.
+   */
+  const currentReplay = avatarImageId ? portraits.data?.replay?.[avatarImageId] : undefined;
+  const sameCompositionDisabledReason =
+    currentReplay && !currentReplay.ok ? (REPLAY_REASON_LABEL[currentReplay.reason] ?? "not available") : null;
 
   // Row count when the variant was queued — clears the queued flag even when a
   // demo-fast job settles before the first refetch (no pending row, `rendering`
@@ -444,16 +514,51 @@ export function PortraitStudio({
               />
             )}
           </Field>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={avatarImageId && !acceptance.isCurrent ? "ghost" : "primary"}
-              onClick={generateAvatar}
-              busy={generatingAvatar}
-              disabled={generationDisabled || pendingProposalCount > 0}
-              title={pendingProposalCount > 0 ? "Review pending character suggestions before generating a portrait" : undefined}
-            >
-              {avatarPhase === "saving" ? "Saving…" : avatarImageId ? "Regenerate portrait" : "Generate portrait"}
-            </Button>
+          <Field label="Candidates" hint="Two lets you pick the better one; a same-composition retry always renders one.">
+            {(id) => (
+              <Select
+                id={id}
+                value={String(candidateCount)}
+                onChange={(e) => setCandidateCount(e.target.value === "2" ? 2 : 1)}
+              >
+                <option value="1">One portrait</option>
+                <option value="2">Two candidates</option>
+              </Select>
+            )}
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
+            {avatarImageId ? (
+              <ActionMenu
+                label={avatarPhase === "saving" ? "Saving…" : avatarPhase === "generating" ? "Working…" : "Regenerate portrait"}
+                ariaLabel="Regenerate portrait"
+                items={[
+                  {
+                    label: "New variation",
+                    onSelect: () => void generateAvatar({ mode: "new_variation", sourceImageId: avatarImageId }),
+                    disabled: generationDisabled || pendingProposalCount > 0,
+                    busy: generatingAvatar,
+                  },
+                  {
+                    label: sameCompositionDisabledReason
+                      ? `Same composition (${sameCompositionDisabledReason})`
+                      : "Same composition",
+                    onSelect: () => void generateAvatar({ mode: "same_composition", sourceImageId: avatarImageId }),
+                    disabled: generationDisabled || pendingProposalCount > 0 || !!sameCompositionDisabledReason,
+                    busy: generatingAvatar,
+                  },
+                ]}
+              />
+            ) : (
+              <Button
+                variant="primary"
+                onClick={() => void generateAvatar()}
+                busy={generatingAvatar}
+                disabled={generationDisabled || pendingProposalCount > 0}
+                title={pendingProposalCount > 0 ? "Review pending character suggestions before generating a portrait" : undefined}
+              >
+                {avatarPhase === "saving" ? "Saving…" : "Generate portrait"}
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setUploadOpen(true)}>
               Upload image
             </Button>
@@ -568,6 +673,12 @@ export function PortraitStudio({
       {hasPortrait || portraits.loading || portraits.error || variants.length > 0 || showPainting ? (
         <div className="flex flex-col gap-3">
           <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Portrait history</h3>
+          {variants.some((img) => candidateLabel(img) !== null) ? (
+            <p className="text-sm text-paper-400">
+              Two candidates were generated from the same settings — pick the one you like with{" "}
+              <span className="font-medium text-paper-200">Use this one</span>.
+            </p>
+          ) : null}
           {portraits.loading ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {Array.from({ length: 4 }, (_, i) => (
@@ -625,7 +736,7 @@ export function PortraitStudio({
                         </span>
                       ) : (
                         <span className="truncate" title={img.prompt}>
-                          {img.prompt || img.kind}
+                          {tileCaption(img)}
                         </span>
                       )}
                       <span className="hover-reveal ml-auto flex gap-1">
@@ -636,7 +747,7 @@ export function PortraitStudio({
                             busy={busyImageId === img.id}
                             onClick={() => promote(img.id)}
                           >
-                            Promote
+                            {candidateLabel(img) ? "Use this one" : "Promote"}
                           </Button>
                         ) : null}
                         <Button

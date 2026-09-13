@@ -5,7 +5,7 @@ import { generateVariant } from "@/server/images";
 import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withAuthorizedResource } from "@/server/api";
 import { hasLiveCharacterJob } from "@/server/db";
 import { findOwnedCharacter } from "../owned";
-import { listOwnedPortraits } from "./owned";
+import { avatarReplayMapForPortraits, listOwnedPortraits } from "./owned";
 
 type Params = { id: string };
 
@@ -46,7 +46,11 @@ export const GET = withAuthorizedResource<Params, OwnedCharacter>(
       hasLiveCharacterJob("avatar", id),
       hasLiveCharacterJob("portrait_variant", id),
     ]);
-    return jsonOk({ portraits, rendering: avatarLive || variantLive });
+    // The cheap same-composition hint per row (issue #248) — seed recorded,
+    // model/profile/version still current. A world-state change is only
+    // detectable at request time, so it never shows up here.
+    const replay = await avatarReplayMapForPortraits(portraits, user.id, id);
+    return jsonOk({ portraits, rendering: avatarLive || variantLive, replay });
   },
 );
 

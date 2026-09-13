@@ -219,3 +219,61 @@ Failed non-canonical avatar attempts stay in the Portrait history grid with
 read-only box between the generation controls and the variant form, sourced from
 `images.prompt` and updated when a variant is promoted — null when there is no avatar or it is
 an uploaded image (`meta.source: "upload"`, which carries no generation prompt).
+
+## Best-of-two candidates and explicit retries
+
+A player may ask for **one portrait** (the default) or **two candidates**
+(issue #248) — the player ceiling; three or more stays admin-only, and
+best-of-N never runs automatically for scenes. Two candidates compile the
+program **once** and run `runImagePipeline` **twice, sequentially** (so a
+failed first render never orphans a group), each reserving its own row with
+`meta.candidates: { group, index, of: 2 }` under one freshly minted group id.
+Neither candidate's `onReady` claims `characters.avatarImageId`: a
+two-candidate request claims **nothing**, and the player chooses between the
+two through the studio's existing **promote** action, exactly the way a
+variant is promoted to canonical. A single-candidate generation — the common
+case, including every plain "Generate portrait" and "New variation" retry —
+keeps today's auto-claim byte for byte.
+
+**Regenerating** offers two explicit semantics, never a silent default. **New
+variation** asks for a fresh sampling attempt (an optional lineage pointer
+in `images.sourceImageId` and `meta.retry.sourceImageId`, no seed replay).
+**Same composition** asks to reuse a specific prior portrait's exact
+settings, including its seed when the eligibility table below allows it — a
+**reproducibility request, never a pixel guarantee**
+([../providers/render-intents.md](../providers/render-intents.md) §Seeds and
+the render record). A same-composition request always renders exactly one
+image; asking for two candidates of the same composition is refused
+(`avatar.replay_single`) before anything is reserved, because a replay is one
+render by definition.
+
+Every retry records its lineage and which semantics it used on the row's
+`meta.retry: { mode, sourceImageId?, seed? }`, regardless of whether the
+render that follows succeeds. `meta.render.seed` stays the render's own
+effective seed — `null` when the endpoint has no seed binding for this
+model, which the studio's tile caption states as **"Unseeded variation"**
+rather than implying a seed was silently dropped.
+
+### Same-composition eligibility
+
+A same-composition retry is refused, before any provider spend, unless every
+row of this table holds (`server/images/avatar-replay.ts`):
+
+| condition                                                                                                                                                          | refusal (if not met) |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| the source is a ready `avatar`-kind row of this character, owned by this caller                                                                                    | `source_unavailable` |
+| its `meta.render.seed` is a recorded number                                                                                                                        | `no_recorded_seed`   |
+| its `meta.render.modelSlug` and `.profileId` equal the currently resolved model and profile                                                                        | `model_changed`      |
+| its `meta.render.executedVersionId` equals the current model's pinned/probed version (both null counts as equal)                                                   | `version_changed`    |
+| the freshly compiled program's fingerprint equals the source's `meta.promptProgram.programFingerprint` (appearance, wardrobe, world state or prompt has not moved) | `world_changed`      |
+
+A refusal fails the row with the reason's sentence and records
+`images.avatar.replay_refused` — never a silent fallback to a new variation.
+The portrait studio's `GET /api/characters/:id/portraits` reports the CHEAP
+half of this table per row as `replay` (seed recorded; model, profile and
+version still current), so the Regenerate menu can disable "Same
+composition" with a reason before the player even asks; a world-state change
+is only detectable once a program actually compiles, so it surfaces solely
+as the request's own refusal. Portraits send no references at all (every
+portrait profile's reference policy allows none), so the issue's "missing
+reference" refusal arm is structurally impossible on this lane.
