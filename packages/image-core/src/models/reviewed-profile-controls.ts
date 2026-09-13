@@ -1,29 +1,39 @@
 import type { ImageControlDefaults } from "./image-model-profiles";
+import { baseImageModelSlug, type ImageModel } from "./image-models";
 
 /**
- * The reviewed quality policy, said ONCE in both vocabularies it has to exist in
- * during the migration off the transitional overlay.
+ * The reviewed quality policy: the settings Vesper has judged a known model must
+ * run with, said once, in the vocabulary a TASK PROFILE stores.
  *
- * The transitional policy says a reviewed setting as a RAW PROVIDER FIELD, merged
- * into the model row's `extraInput` (`withReviewedImageQuality`). A task profile
- * says the same setting as a NORMALIZED CONTROL, mapped through the version's own
- * probed binding — or, for a setting no normalized control covers, as a
- * `providerOverrides` entry validated against the version's field list.
+ * The registry's raw probe defaults describe what a provider ACCEPTS, not what
+ * Vesper wants — a wrapper that optimizes speed where fidelity matters, a hidden
+ * negative prompt that suppresses exactly the output this app produces, a
+ * 512-square default on a portrait model. Those corrections are reviewed
+ * judgments, and this module is where they are stated.
  *
- * Both spellings have to be live at once, because step 4 removes an override only
- * after parity is demonstrated for it. Two hand-maintained copies of the same
- * numbers is exactly how a "parity" migration ships a silent difference, so this
- * module is the single table and the overlay is DERIVED from it. A value can no
- * longer move in one representation without moving in the other: the table is
- * checked at module load for the two shapes in which it still could
- * ({@link reviewedImageQualityPolicyDefects}), and
- * `reviewed-profile-controls.test.ts` pins the equivalence besides.
+ * They reach a render through ONE owner: the task profile. A profile row carries
+ * them as its own `control_defaults` and `provider_overrides` — the seed
+ * migrations 0110/0122 wrote them onto the built-in rows, admin creation seeds
+ * them onto a new one ({@link withReviewedProfileDefaults}), and from there they
+ * are mapped and validated like any other profile setting. There is no
+ * slug-keyed rewrite of `extraInput` at the render boundary any more, and that
+ * is the point: a reviewed value now travels the same path, through the same
+ * probed binding, with the same recorded drop when a version cannot carry it, as
+ * every other setting a profile states.
  *
  * What lives here is the reviewed judgment only. Which provider field a control
- * reaches on a model whose version has been probed is the PROBE's answer, read
- * from `advancedCapabilities.controls`; `controlFields` below records the field
- * the transitional overlay writes today, which is what makes the two
- * representations comparable at all.
+ * reaches on a version is the PROBE's answer, read from
+ * `advancedCapabilities.controls` — never asserted here. `controlFields` records
+ * the field each reviewed control is EXPECTED to land on, which is what lets a
+ * fixture state the expectation out loud rather than synthesizing a probe that
+ * agrees with whatever the table happens to say.
+ *
+ * There is deliberately no universal negative block. Text, logos, blur,
+ * low-resolution media, unusual appendages and absent body parts can all be
+ * intentional; contextual negatives belong to individual task profiles.
+ *
+ * Exact provider slugs are intentional: an operator-added model never receives a
+ * guessed field, and a pinned `owner/name:version` is matched on `owner/name`.
  */
 
 /**
@@ -36,35 +46,48 @@ import type { ImageControlDefaults } from "./image-model-profiles";
  * this vocabulary was kept wide for. `steps` remains expressible and unused —
  * the sampler corrections that needed it belonged to models the 2026-08-16
  * ruling dropped, and it stays for the same reason `guidance` paid off.
+ *
+ * A setting the vocabulary HAS a word for must be stated as the control, never
+ * as a raw override, and `fastMode` is why the rule is written down. A profile's
+ * `providerOverrides` merge LAST in `compileProfileRenderPlan`, over the mapped
+ * controls — so a reviewed setting spelled as a raw field outranks the CALLER's
+ * own request for the same thing, and a run that explicitly asked for the
+ * accelerated path would render unaccelerated with nothing refused. Spelled as a
+ * control it merges where a default belongs, beneath the request
+ * (`requested?.fastMode ?? defaults.fastMode`).
  */
 export type ReviewedImageControlDefaults = Pick<
   ImageControlDefaults,
-  "steps" | "guidance" | "negativePrompt" | "resolution" | "width" | "height"
+  "steps" | "guidance" | "negativePrompt" | "fastMode" | "resolution" | "width" | "height"
 >;
 
-/** One model's reviewed policy in both vocabularies. */
+/** One model's reviewed policy, in the two columns a profile row stores. */
 export interface ReviewedImageQualityPolicy {
   /** The reviewed settings a task profile carries as `control_defaults`. */
   controlDefaults: Readonly<ReviewedImageControlDefaults>;
   /**
    * Reviewed settings NO normalized control covers, carried as a profile's
    * `provider_overrides` — the escape hatch, used only where the control
-   * vocabulary genuinely has no word for the setting (`go_fast`, `scheduler`,
-   * PuLID's `method`).
+   * vocabulary genuinely has no word for the setting (PuLID's `method` and
+   * `face_weight`). A setting that HAS a word belongs in `controlDefaults`
+   * instead: overrides merge last, so a raw spelling would outrank the caller's
+   * own request for the same thing.
    */
   providerOverrides: Readonly<Record<string, unknown>>;
   /**
-   * The provider field each normalized control above corresponds to on THIS
-   * model — what the transitional overlay writes directly into `extraInput`.
+   * The provider field each normalized control above is expected to reach on
+   * THIS model.
    *
-   * Every control set in `controlDefaults` has an entry here, with ONE
-   * exception the load-time check knows about: `resolution: "custom"` is the
-   * GATE that makes `width`/`height` a request rather than a leftover
-   * (`compileProfileRenderPlan`), not a field anything sends. Any other default
-   * without a mapping is live in the profile representation and invisible to the
-   * overlay — the drift this module exists to make impossible — and a mapping
-   * naming a field `providerOverrides` also claims would lose its value to the
-   * override spread. Both refuse to load.
+   * It is a STATEMENT OF EXPECTATION, not a transport: nothing reads it to build
+   * a payload, because which field a control reaches is the version's own probed
+   * binding. It exists so the parity fixture can say "the reviewed 832 must
+   * arrive as `width`" in the reviewed table's own words, and so the two defects
+   * below can be refused at load.
+   *
+   * Every control set in `controlDefaults` has an entry here, with ONE exception
+   * the load-time check knows about: `resolution: "custom"` is the GATE that
+   * makes `width`/`height` a request rather than a leftover
+   * (`compileProfileRenderPlan`), not a field anything sends.
    */
   controlFields: Readonly<Partial<Record<keyof ReviewedImageControlDefaults, string>>>;
 }
@@ -73,15 +96,16 @@ export interface ReviewedImageQualityPolicy {
  * One way a reviewed row can contradict itself.
  *
  * - `unmapped_default` — a `controlDefaults` entry other than `resolution` with
- *   no `controlFields` mapping. The profile carries the value and the overlay
- *   never writes it. The parity test cannot see this one: its probe is
- *   synthesized FROM `controlFields`, so a control missing there is missing on
- *   both arms and they agree.
+ *   no `controlFields` mapping. The profile carries the value and no fixture
+ *   states where it must land: the parity test's probe is synthesized FROM
+ *   `controlFields`, so a control missing there is missing from the fixture too
+ *   and the payload comparison passes while the setting reaches nothing.
  * - `field_collision` — a `controlFields` mapping naming a provider field that a
- *   `providerOverrides` entry also claims. {@link reviewedImageQualityProviderInputs}
- *   spreads the overrides last, so the mapped value would be silently replaced,
- *   and the effective-values fixture would still match whichever number the
- *   override held.
+ *   `providerOverrides` entry also claims. `compileProfileRenderPlan` merges a
+ *   profile's overrides LAST, over the mapped controls, so the reviewed control's
+ *   value would be silently replaced by the reviewed override's — one reviewed
+ *   setting quietly cancelling another, in the live render as much as in a
+ *   fixture.
  */
 export type ReviewedImageQualityPolicyDefect =
   | { kind: "unmapped_default"; control: string }
@@ -117,9 +141,10 @@ export function reviewedImageQualityPolicyDefects(
  *
  * A throw rather than a diagnostic because this is a programmer error in a
  * hand-maintained constant (docs/resilience.md: exceptions are for those, and
- * nothing else): no render-time fallback could make the two spellings agree,
- * and the only fix is an edit to this file. Failing the import is what keeps a
- * contradictory row from being discovered as a silently different payload.
+ * nothing else): no render-time fallback could reconcile a row that cancels its
+ * own setting, and the only fix is an edit to this file. Failing the import is
+ * what keeps a contradictory row from being discovered as a silently different
+ * payload.
  */
 function assertReviewedImageQualityTable(table: Readonly<Record<string, ReviewedImageQualityPolicy>>): void {
   for (const [slug, policy] of Object.entries(table)) {
@@ -157,11 +182,17 @@ const REVIEWED_IMAGE_QUALITY: Readonly<Record<string, ReviewedImageQualityPolicy
   "qwen/qwen-image-edit-2511": {
     // This model currently serves only identity-critical variants/scenes. Its
     // provider default optimizes speed on the surface where fidelity matters.
-    // `go_fast` has no normalized control, so the profile says it as the raw
-    // field — the same shape 0107 already uses for Qwen 2512's quality row.
-    controlDefaults: {},
-    providerOverrides: { go_fast: false },
-    controlFields: {},
+    //
+    // Stated as the `fastMode` CONTROL, because the vocabulary has a word for it
+    // and the probed row binds that word to `go_fast`. As a raw override it
+    // merged last and beat the caller: an Image Generator run that asked this
+    // model for the accelerated path — the one surface allowed to ask — compiled
+    // `go_fast: true` from the request and then had it replaced by the reviewed
+    // `false`, with nothing dropped and nothing refused to show for it. That is
+    // the klein 4B defect (#569/#573) reached from the other side.
+    controlDefaults: { fastMode: false },
+    providerOverrides: {},
+    controlFields: { fastMode: "go_fast" },
   },
   "aisha-ai-official/nsfw-flux-dev": {
     // The wrapper defaults to a 1024×1024 square, so every render would be
@@ -214,56 +245,28 @@ export function reviewedImageQualityPolicy(baseSlug: string): ReviewedImageQuali
 }
 
 /**
- * The reviewed policy as the RAW PROVIDER FIELDS the transitional overlay merges
- * into a model row's `extraInput`.
+ * The provider fields this policy's NORMALIZED controls are expected to reach.
  *
- * Derived rather than stored, so the overlay and the profile representation
- * cannot drift: every field here is either a normalized control written to the
- * field `controlFields` names, or a `providerOverrides` entry that had no
- * normalized control to begin with.
- *
- * Written control by control rather than through a generic loop because the
- * control names are a closed set with different value types, and a loop over them
- * would need a cast the type-aware lint rules refuse — the explicit version is
- * both safer and a readable statement of which settings the reviewed table knows
- * how to express.
- */
-export function reviewedImageQualityProviderInputs(policy: ReviewedImageQualityPolicy): Record<string, unknown> {
-  const input: Record<string, unknown> = {};
-  const controls = policy.controlDefaults;
-  const fields = policy.controlFields;
-  if (controls.steps !== undefined && fields.steps !== undefined) input[fields.steps] = controls.steps;
-  if (controls.guidance !== undefined && fields.guidance !== undefined) input[fields.guidance] = controls.guidance;
-  if (controls.negativePrompt !== undefined && fields.negativePrompt !== undefined) {
-    input[fields.negativePrompt] = controls.negativePrompt;
-  }
-  if (controls.width !== undefined && fields.width !== undefined) input[fields.width] = controls.width;
-  if (controls.height !== undefined && fields.height !== undefined) input[fields.height] = controls.height;
-  // `resolution` is deliberately unmapped — see `controlFields`.
-  return { ...input, ...policy.providerOverrides };
-}
-
-/**
- * The provider fields this policy's NORMALIZED controls reach — the overlay's
- * fields minus the raw overrides.
- *
- * Derived from {@link reviewedImageQualityProviderInputs} rather than read off
- * `controlFields` directly, because `Object.values` of a partial record widens to
- * `any` under this repo's lint rules and a cast to work around that would be a
- * silent hole in exactly the table the parity tests are checking.
+ * Written out control by control rather than through `Object.values`, which
+ * widens a partial record to `any` under this repo's lint rules — and a cast to
+ * work around that would be a silent hole in exactly the table the parity
+ * fixture is checking. `resolution` is deliberately absent: it is the gate, not
+ * a field (see `controlFields`).
  */
 export function reviewedImageQualityControlFields(policy: ReviewedImageQualityPolicy): string[] {
-  return Object.keys(reviewedImageQualityProviderInputs(policy)).filter(
-    (field) => !Object.hasOwn(policy.providerOverrides, field),
+  const fields = policy.controlFields;
+  return [fields.steps, fields.guidance, fields.negativePrompt, fields.fastMode, fields.width, fields.height].filter(
+    (field): field is string => field !== undefined,
   );
 }
 
 /**
  * The reviewed policy as the two jsonb columns a task profile row stores.
  *
- * The shape the seed migration writes and the parity tests compile, so "what the
- * profile carries" has one definition rather than one in SQL and another in a
- * test fixture that agrees with it until somebody edits one.
+ * The shape the seed migrations write, the shape admin creation seeds, and the
+ * shape the parity fixture compiles — so "what the profile carries" has one
+ * definition rather than one in SQL and another in a test that agrees with it
+ * until somebody edits one.
  */
 export function reviewedImageProfileControls(baseSlug: string): {
   controlDefaults: Readonly<ReviewedImageControlDefaults>;
@@ -274,15 +277,110 @@ export function reviewedImageProfileControls(baseSlug: string): {
   return { controlDefaults: policy.controlDefaults, providerOverrides: policy.providerOverrides };
 }
 
+/** The two configuration columns {@link withReviewedProfileDefaults} merges. */
+export interface ReviewedProfileConfiguration {
+  controlDefaults: ImageControlDefaults;
+  providerOverrides: Record<string, unknown>;
+}
+
 /**
- * The overlay's whole table, keyed by base slug — the value
- * `withReviewedImageQuality` merges over a row's `extraInput`.
+ * One configuration's own settings with this model's reviewed defaults beneath
+ * them — the seam every profile-shaped configuration built in CODE passes
+ * through.
  *
- * Built once at module load rather than per render: the policy is a constant, and
- * a render path that rebuilt six objects per call would be paying for the
- * indirection this refactor exists to remove.
+ * Three callers build such a configuration against a model instead of reading a
+ * seeded row: admin profile creation, the Image Generator's synthetic bench
+ * profile, and the image lab's recipe profiles. Each of them would otherwise
+ * render a reviewed model with none of its reviewed settings — a bench whose
+ * evidence is about a configuration production never runs.
+ *
+ * The CONFIGURATION wins on a key collision, which is the same direction
+ * migration 0110 wrote (`reviewed || existing`) and the same direction the render
+ * path already resolves in: a profile's own stated control outranks a default it
+ * did not state. Seeding is therefore only ever additive — it can supply a
+ * reviewed setting nobody mentioned, never overwrite one somebody chose.
+ *
+ * Returns the two columns rather than the whole configuration so the caller
+ * spreads them into its own concrete type: `{ ...request, ...withReviewedProfileDefaults(model, request) }`.
  */
-export const reviewedImageQualityInputs: Readonly<Record<string, Readonly<Record<string, unknown>>>> =
-  Object.fromEntries(
-    Object.entries(REVIEWED_IMAGE_QUALITY).map(([slug, policy]) => [slug, reviewedImageQualityProviderInputs(policy)]),
-  );
+export function withReviewedProfileDefaults(
+  model: ImageModel,
+  configuration: ReviewedProfileConfiguration,
+): ReviewedProfileConfiguration {
+  const { controlDefaults, providerOverrides } = configuration;
+  const reviewed = reviewedImageProfileControls(baseImageModelSlug(model.slug));
+  if (!reviewed) return { controlDefaults, providerOverrides };
+  return {
+    controlDefaults: withReviewedControlDefaults(reviewed.controlDefaults, controlDefaults),
+    // Raw keys, so an ordinary spread says it: the configuration's own value for
+    // a key the reviewed policy also names is the one that stands.
+    providerOverrides: { ...reviewed.providerOverrides, ...providerOverrides },
+  };
+}
+
+/**
+ * The control merge, written member by member for `compileProfileRenderPlan`'s
+ * own reason: a key present with an explicit `undefined` and a key absent are
+ * the SAME request to the control mapper, so a plain `{ ...reviewed,
+ * ...configured }` spread would let the first silently erase a reviewed value —
+ * and a reviewed setting that vanishes without a drop record is precisely the
+ * failure this module exists to prevent.
+ *
+ * The test is `=== undefined` and never falsiness: the Pony ruling's reviewed
+ * negative IS the empty string, and reading `""` as "unset" would restore the
+ * wrapper's hidden `"nsfw, naked"` — the exact default the ruling removed.
+ */
+function withReviewedControlDefaults(
+  reviewed: Readonly<ReviewedImageControlDefaults>,
+  configured: ImageControlDefaults,
+): ImageControlDefaults {
+  const merged: ImageControlDefaults = { ...configured };
+  if (merged.steps === undefined && reviewed.steps !== undefined) merged.steps = reviewed.steps;
+  if (merged.guidance === undefined && reviewed.guidance !== undefined) merged.guidance = reviewed.guidance;
+  if (merged.negativePrompt === undefined && reviewed.negativePrompt !== undefined) {
+    merged.negativePrompt = reviewed.negativePrompt;
+  }
+  // `=== undefined` earns its keep twice over here: the reviewed value IS
+  // `false`, and so is a caller's "do not accelerate", so falsiness on either
+  // side of this test would collapse a real request into the default.
+  if (merged.fastMode === undefined && reviewed.fastMode !== undefined) merged.fastMode = reviewed.fastMode;
+  if (merged.resolution === undefined && reviewed.resolution !== undefined) merged.resolution = reviewed.resolution;
+  if (merged.width === undefined && reviewed.width !== undefined) merged.width = reviewed.width;
+  if (merged.height === undefined && reviewed.height !== undefined) merged.height = reviewed.height;
+  return merged;
+}
+
+/**
+ * The provider fields this model's reviewed settings occupy on THIS version — a
+ * raw provider key that would land on one of them undoes a reviewed correction.
+ *
+ * Read off the version's OWN probed bindings rather than the table's
+ * `controlFields`, because the probe is what decides where a control lands; a
+ * production gate answering from a slug-keyed table would be the transitional
+ * overlay wearing a different name. A reviewed control the version declares no
+ * binding for occupies no field at all, and is correctly absent here: it is
+ * dropped at compile with a recorded reason, and nothing can collide with a
+ * value that was never sent.
+ *
+ * `resolution` contributes nothing for the same reason it maps to no field: it
+ * is the gate that makes the width/height pair a request.
+ */
+export function reviewedImageProfilePinnedFields(model: ImageModel): string[] {
+  const reviewed = reviewedImageProfileControls(baseImageModelSlug(model.slug));
+  if (!reviewed) return [];
+  const defaults = reviewed.controlDefaults;
+  const bindings = model.advancedCapabilities.controls;
+  const fields = new Set<string>(Object.keys(reviewed.providerOverrides));
+  const mapped = [
+    defaults.steps === undefined ? undefined : bindings.steps?.field,
+    defaults.guidance === undefined ? undefined : bindings.guidance?.field,
+    defaults.negativePrompt === undefined ? undefined : bindings.negativePrompt?.field,
+    defaults.fastMode === undefined ? undefined : bindings.fastMode?.field,
+    defaults.width === undefined ? undefined : bindings.customWidth?.field,
+    defaults.height === undefined ? undefined : bindings.customHeight?.field,
+  ];
+  for (const field of mapped) {
+    if (field !== undefined) fields.add(field);
+  }
+  return [...fields];
+}

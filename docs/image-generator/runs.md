@@ -100,8 +100,9 @@ stopped it.
 
 The recorded request is the **whole** payload, assembled by the same builder the transport uses, not
 just the controls the run set. The model row's own pinned fields, the output format, and the
-reviewed quality corrections Vesper applies to a few known models all reach the provider too, and a
-record that omitted them would be describing a request nobody sent.
+reviewed settings a known model runs with — seeded onto the run's bench profile so the bench sends
+what production sends — all reach the provider too, and a record that omitted them would be
+describing a request nobody sent.
 
 The reason for all of it is drift. Vesper keeps one capability record per registered model and
 replaces it wholesale on re-probe, so a row saying `guidance = 4` cannot by itself say whether the
@@ -135,9 +136,13 @@ asks which version to run:
   `version_replay_unsafe` rather than pointing today's field bindings at yesterday's weights. The
   current version is never substituted for a replay the admin asked for.
 
-One limit worth knowing: Vesper's reviewed quality corrections for a handful of known models live in
-code rather than in the capability record, so a replay picks up whatever those corrections say
-today. That is deliberate — they exist to correct harmful provider defaults, and dropping them for a
-replay would make it less like a real Vesper render, not more.
+One limit worth knowing: the reviewed settings a handful of known models run with are stated in code
+and seeded onto each run's bench profile, not frozen in the capability record, so a replay picks up
+whatever the reviewed policy says today. That is deliberate — they exist to correct harmful provider
+defaults, and dropping them for a replay would make it less like a real Vesper render, not more.
+
+A raw advanced value may not land on a field one of those settings occupies on the probed version:
+the bag is written last, so the run refuses pre-spend rather than letting an advanced key quietly
+undo a reviewed correction while the record still names it.
 
 The run detail likewise surfaces a requested-versus-executed version disagreement on any single run.

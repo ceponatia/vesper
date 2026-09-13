@@ -3,8 +3,10 @@ import {
   imageModelProfileCreateRequestSchema,
   imageModelProfileUpdateRequestSchema,
   validateImageProfileConfiguration,
+  type ImageModelProfileCreateRequest,
   type ImageProfileConfigurationIssue,
 } from "./image-model-profile-admin";
+import { withReviewedProfileDefaults } from "./reviewed-profile-controls";
 import { imageModelAdvancedCapabilitiesSchema } from "../capabilities/image-model-capabilities";
 import { emptyImageReferencePolicy, type ImageModelProfile } from "./image-model-profiles";
 import { imageModelSchema, type ImageModel } from "./image-models";
@@ -185,5 +187,70 @@ describe("validateImageProfileConfiguration", () => {
 
   it("empty overrides never fail, whatever the probe state — the fail-closed rule needs an override to close on", () => {
     expect(validateImageProfileConfiguration(profile(), model())).toEqual([]);
+  });
+});
+
+/**
+ * The two pure steps `createImageModelProfile` runs, in its order: seed the
+ * model's reviewed settings onto the request, then judge the SEEDED row.
+ *
+ * The defect the order kills: seeding after validation — or not seeding at all —
+ * stores a profile for a reviewed model whose reviewed override the version
+ * cannot validate. Nothing refuses it, every render silently drops the setting
+ * with a reason nobody reads, and the admin sees a saved profile that quietly
+ * runs the wrapper's own preset. Seeding first turns that into the existing
+ * save-time refusal, which names the field and the fix.
+ */
+describe("a created profile's reviewed settings, as the save path composes them", () => {
+  const request = (overrides: Record<string, unknown> = {}): ImageModelProfileCreateRequest =>
+    imageModelProfileCreateRequestSchema.parse({
+      key: "scene-standard",
+      label: "Scene Standard",
+      task: "scene",
+      operation: "edit",
+      promptStrategy: "instruction_edit",
+      ...overrides,
+    });
+
+  const saved = (subject: ImageModel, created: ImageModelProfileCreateRequest) => {
+    const seeded = { ...created, ...withReviewedProfileDefaults(subject, created) };
+    return { seeded, issues: validateImageProfileConfiguration(seeded, subject) };
+  };
+
+  it("carries the reviewed settings of a probed reviewed model, with no issues", () => {
+    const { seeded, issues } = saved(
+      model({ slug: "nsfw-api/sdxl-pulid:83bea6", advancedCapabilities: probedFields(["method", "face_weight"]) }),
+      request(),
+    );
+    expect(seeded.providerOverrides).toEqual({ method: "fidelity", face_weight: 1 });
+    expect(seeded.controlDefaults).toMatchObject({ guidance: 7, resolution: "custom", width: 832, height: 1216 });
+    expect(issues).toEqual([]);
+  });
+
+  it("carries Qwen Edit's accelerated-path ruling as a control, never as an override", () => {
+    // A raw override would outrank the caller's own `fastMode` request at the
+    // compile step's final merge, so the ruling is a control — and a control is
+    // judged at render time against the version's binding, not here. The save
+    // therefore passes even unprobed, which is the same answer this validator
+    // already gives for every other reviewed control.
+    const { seeded, issues } = saved(model({ slug: "qwen/qwen-image-edit-2511" }), request());
+    expect(seeded.controlDefaults).toMatchObject({ fastMode: false });
+    expect(seeded.providerOverrides).toEqual({});
+    expect(issues).toEqual([]);
+  });
+
+  it("refuses an unprobed reviewed model's raw override, and says to re-probe", () => {
+    // Acceptance 3: an unprobed configuration fails the EXISTING validation
+    // rather than being stored with settings every render would drop.
+    const { issues } = saved(model({ slug: "nsfw-api/sdxl-pulid:83bea6" }), request());
+    expect(kinds(issues)).toEqual(["override_rejected", "override_rejected"]);
+    expect(issues[0]?.message).toContain("re-probe it first");
+  });
+
+  it("adds nothing to a request for an unreviewed model", () => {
+    const { seeded, issues } = saved(model({ slug: "operator/added-yesterday" }), request());
+    expect(seeded.providerOverrides).toEqual({});
+    expect(seeded.controlDefaults).toEqual({ seedPolicy: "random" });
+    expect(issues).toEqual([]);
   });
 });

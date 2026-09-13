@@ -62,8 +62,9 @@ It is also the one control that may deliberately contradict a reviewed productio
 can ask `qwen/qwen-image-edit-2511` for the accelerated path every production lane refuses
 ([its model page](../image-models/models/qwen-image-edit-2511.md) owns that ruling), because a bench
 whose controls only ever agreed with production could not investigate the setting it exists to
-question. Production is untouched — the reviewed policy carries `go_fast` as a provider override,
-and overrides merge last.
+question. The ruling is the `fastMode` control, and a run that names it wins: a profile's controls
+are defaults, and a request outranks a default. Production is untouched because no player-facing
+lane offers the request — not because a merge order forbids it.
 
 ## A bound control is not a promise the endpoint acts on it
 

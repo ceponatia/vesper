@@ -134,10 +134,11 @@ export interface ImageRenderRuntimeFacts {
 /** Exactly what the provider will be handed, and what capacity left behind. */
 export interface PlannedImageRender {
   /**
-   * The model row as stored. The transport applies the reviewed-quality seam
-   * itself, so handing it the raw row reproduces today's payload byte for byte;
-   * the compile step's `effectiveModel` is the same object after that seam, and
-   * passing it would apply the seam twice for no difference.
+   * The model row as stored, which is what the transport sends. Nothing rewrites
+   * a row on the way out: a profile's settings — Vesper's reviewed corrections
+   * included (#244) — travel as `controlInput`, and the compile step's
+   * `effectiveModel` differs from this one only by the caller's resolved safety
+   * fact, which the transport applies itself.
    */
   model: ImageModel;
   /** The strategy-compiled, model-dialect-prepared prompt. */

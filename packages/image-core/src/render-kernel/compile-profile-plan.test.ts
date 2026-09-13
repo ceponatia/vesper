@@ -442,11 +442,16 @@ describe("compileProfileRenderPlan", () => {
     expect(plan().negativePrompt).toBeNull();
   });
 
-  it("compiles against the reviewed-quality model, not the raw row", () => {
-    // Qwen Edit's provider default optimizes speed where fidelity matters; the
-    // reviewed seam corrects it, and the plan must describe the corrected model.
+  it("compiles a reviewed model's row exactly as stored, rewriting nothing by slug", () => {
+    // A transitional overlay used to rewrite `extraInput` here for four known
+    // slugs, which made a profile carrying the same settings unnecessary and
+    // therefore untested. The task profile is now their one owner — the case
+    // below on `provider_overrides: {"go_fast": false}` is that owner working —
+    // and this is what keeps a second one from growing back: the effective model
+    // differs from the row by the caller's safety fact and nothing else.
     const compiled = plan({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } });
-    expect(compiled.effectiveModel.extraInput).toEqual({ go_fast: false });
+    expect(compiled.effectiveModel.extraInput).toEqual({ go_fast: true });
+    expect(compiled.controlInput).toEqual({});
   });
 });
 
@@ -644,13 +649,17 @@ describe("the fastMode control", () => {
   });
 
   it("lets a profile's provider override outrank the request, and reports what actually went", () => {
-    // The interaction that masked the defect on the one model most likely to be
-    // exercised. `qwen/qwen-image-edit-2511`'s reviewed ruling is carried by its
-    // task profiles as `provider_overrides: {"go_fast": false}` (migration
-    // 0110), and overrides merge LAST — so an identity-critical production
-    // render stays unaccelerated beside a caller asking for speed. The applied
+    // Overrides merge LAST, over the mapped controls, so a raw provider field
+    // beats the caller's own request for the same setting — and the applied
     // record reads the value back out of the FINAL payload rather than echoing
-    // the request, so it reports what travelled.
+    // the request, so it reports what travelled rather than what was asked.
+    //
+    // That precedence is why a reviewed setting the control vocabulary has a
+    // word for is never spelled as an override (#244):
+    // `qwen/qwen-image-edit-2511`'s ruling is the `fastMode` CONTROL, so the one
+    // surface allowed to ask it for the accelerated path actually gets it. What
+    // this case pins is the mechanism itself, which the escape hatch still needs
+    // for settings no control can say.
     const compiled = compiledPlan({
       model: model(FAST_MODEL),
       profile: profile({ providerOverrides: { go_fast: false } }),

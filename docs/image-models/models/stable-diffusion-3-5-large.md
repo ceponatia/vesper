@@ -3,7 +3,7 @@
 **Slug:** `stability-ai/stable-diffusion-3.5-large`
 **Provenance:** probed 2026-08-05 against pinned version `2fdf9488b53c1e0fd3aef7b477def1c00d1856a38466733711f9c769942598f5`.
 
-**Quality ruling:** no transitional runtime override
+**Quality ruling:** no reviewed correction
 
 > A text-to-image model that generates high-resolution images with fine details.
 > It supports varied artistic styles and diverse outputs.
@@ -79,7 +79,7 @@ choose the stylized profile.
 
 ## Negative-prompt ruling
 
-The transitional render policy adds no `negative_prompt` field. Even on a
+The reviewed quality policy adds no `negative_prompt` field. Even on a
 portrait surface, a generic cleanup block can conflict with requested printed
 clothing, logos, blur, pixel-art media, unusual anatomy, or authored absences.
 

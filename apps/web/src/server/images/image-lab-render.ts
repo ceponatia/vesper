@@ -78,7 +78,7 @@ import {
 export type ImageLabRenderRequest =
   | {
       mode: "direct";
-      /** Post reviewed-quality overlay — what the provider really sees. */
+      /** The row as stored — what the provider really sees; a probe sends no profile. */
       model: ImageModel;
       prompt: string;
       references: Buffer[];

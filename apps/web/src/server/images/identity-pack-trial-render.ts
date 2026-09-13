@@ -69,7 +69,7 @@ const RESERVED_FIELD_IGNORED_DIAGNOSTIC = "image_model.reserved_field_ignored";
  * for must be stated here or the seam would hide part of the payload.
  */
 export interface TrialCellRenderInput {
-  /** The EFFECTIVE model — post reviewed-quality seam, as the provider sees it. */
+  /** The EFFECTIVE model — post safety resolution, as the provider sees it. */
   model: ImageModel;
   /** The final compiled text, role preamble included. Hashed as `positivePromptHash`. */
   prompt: string;

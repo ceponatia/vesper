@@ -12,7 +12,6 @@ import {
   type PlannedControlReference,
   providerDefaultDimensions,
   type ProviderExecutionPolicy,
-  withReviewedImageQuality,
 } from "@vesper/image-core";
 import type {
   ProviderInputViolation,
@@ -261,13 +260,14 @@ export interface RenderShapeOutcome {
 /**
  * Run one model and hand back a buffer in the shape the lane asked for.
  *
- * The model first crosses the reviewed-quality seam, which corrects known
- * harmful provider defaults. It is intentionally small and dissolves into
- * profile controls as those controls gain transports — the profiles now reach
- * this path, but the controls they would carry (guidance, steps, negatives)
- * still have no probed bindings.
+ * The model row travels as stored. Vesper's reviewed corrections for a known
+ * model are not applied here and are not this wrapper's to know about: they are
+ * the task profile's own controls and overrides, compiled into `controlInput`
+ * upstream, so what reaches the provider is what one owner decided and one
+ * record can name. A caller that hands this wrapper a bare model gets exactly
+ * the model as registered.
  *
- * This wrapper also owns shape negotiation. A lane says what ratio it wants —
+ * This wrapper owns shape negotiation. A lane says what ratio it wants —
  * and, when it compiled a profile plan, what dimensions the profile asked for —
  * and `chooseDimensions` finds the closest thing the model offers; anything
  * short of exact is centre-cropped here, toward the lane's ratio. That is what
@@ -307,7 +307,7 @@ export async function renderWithModel(
   // Absent means 3:4 (every production lane); an explicit `null` means the
   // model's own default shape, which is a different request from "unset".
   const targetRatio = input.targetRatio === undefined ? IMAGE_TARGET_ASPECT : input.targetRatio;
-  const model = withReviewedImageQuality(input.model);
+  const model = input.model;
   const prompt = prepareModelPrompt(model, input.prompt, input.references?.length ?? 0);
   // Absent facts spread to nothing, and a factless request resolves to the pure
   // `chooseAspect` answer — the direct callers keep exactly their old shapes. A

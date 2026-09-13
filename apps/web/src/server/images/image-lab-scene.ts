@@ -6,7 +6,7 @@ import {
   type ImageRenderReference,
   isImageLabControlRole,
   referenceCapacity,
-  withReviewedImageQuality,
+  withReviewedProfileDefaults,
 } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { db, images } from "../db";
@@ -168,18 +168,13 @@ export async function runTwoCharacterScene(row: ImageLabExperimentRow, sink?: Di
   // and it fires before eligibility, the LoRA read and the recipe compile run at
   // all, so an experiment that was never going to fit settles on its row without
   // any of that work.
-  //
-  // Capacity is read off the EFFECTIVE model for the probe's reason — the quality
-  // overlay only merges `extraInput` today, and reading through it is what keeps
-  // this check about the model the provider is handed if that ever changes.
-  const effectiveModel = withReviewedImageQuality(model);
-  const capacity = referenceCapacity(effectiveModel);
+  const capacity = referenceCapacity(model);
   const requiredCount = identities.length + (recipeControl === null ? 0 : 1);
   if (requiredCount > capacity.max) {
     return await settleFailed(
       row,
       labFailure("capacity_exceeded"),
-      `${effectiveModel.slug} accepts ${String(capacity.max)} reference image(s) and this experiment requires ${String(requiredCount)}; a two-character scene is ineligible rather than dropping a character to fit`,
+      `${model.slug} accepts ${String(capacity.max)} reference image(s) and this experiment requires ${String(requiredCount)}; a two-character scene is ineligible rather than dropping a character to fit`,
       sink,
       { columns },
     );
@@ -210,10 +205,14 @@ export async function runTwoCharacterScene(row: ImageLabExperimentRow, sink?: Di
     ...(input.characterId === undefined ? {} : { subject: named.names.get(input.characterId) ?? input.characterId }),
   }));
 
+  // Seeded with the model's reviewed settings for the controlled runner's reason:
+  // a code-defined recipe states the lane's shape, and a comparison run under a
+  // configuration production does not use compares nothing.
+  const recipe = imageLabTwoCharacterRecipeProfile(model.id, recipeControl);
   return await runRecipeIntent(row, {
     model,
     versionId,
-    recipeProfile: imageLabTwoCharacterRecipeProfile(model.id, recipeControl),
+    recipeProfile: { ...recipe, ...withReviewedProfileDefaults(model, recipe) },
     references,
     prompt: row.instruction,
     controls: settings.controls,

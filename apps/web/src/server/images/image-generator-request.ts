@@ -8,17 +8,19 @@ import {
   type ImageModelProfile,
   type ImageProviderInputDescriptor,
   type ImageReferenceRole,
+  type ImageRenderControls,
   type ImageRenderIntent,
   type ImageRenderReference,
   parseAspectValue,
   pinnedImageModelVersion,
-  withReviewedImageQuality,
   planImageRender,
   type PlannedImageRender,
   profileEligibility,
   providerDefaultDimensions,
   referenceCapacity,
+  reviewedImageProfilePinnedFields,
   TRIAL_FALLBACK_PREDICTION_MS,
+  withReviewedProfileDefaults,
 } from "@vesper/image-core";
 import {
   IMAGE_GENERATOR_MAX_PRIMARY,
@@ -410,22 +412,20 @@ export async function prepareGeneratorRequest(
       { columns },
     );
   }
-  const refusedControl = refusedDroppedControl(plan);
+  const refusedControl = refusedDroppedControl(plan, renderControls);
   if (refusedControl) {
     return await refuse(row, imageGeneratorDiagnosticCode(refusedControl.code), refusedControl.message, sink, {
       columns,
     });
   }
 
-  // THE model the provider will actually be handed. `plan.model` is the row as
-  // stored — the planner says so itself — and the transport wrapper applies the
-  // reviewed-quality seam on the way out, which merges pinned fields
-  // (`width`/`height` on the SDXL rows, `method` on PuLID, `go_fast` on Qwen
-  // Edit) into `extraInput`. A pre-spend view built from the unmerged row would
-  // report a reviewed pin as a missing required field, refuse an advanced value
-  // that collides with one, and — worst — record an effective request that does
-  // not mention values the provider was sent.
-  const sentModel = withReviewedImageQuality(plan.model);
+  // THE model the provider will actually be handed: the row as stored, which is
+  // now the whole of it. Vesper's reviewed corrections for a known model reach
+  // this run through the bench profile's own controls and overrides
+  // (`imageGeneratorProfile`), so they are already inside `plan.controlInput` —
+  // the payload preview below assembles both halves, which is what keeps the
+  // recorded effective request naming every value the provider was sent.
+  const sentModel = plan.model;
   const plannedShape = plannedShapeInput(sentModel, shape, plan);
   // An explicitly chosen shape must be the shape that goes. `chooseAspect`
   // resolves a RATIO, and several declared members can share one — Wan offers
@@ -719,6 +719,13 @@ function plannedShapeInput(
  * - The run's advanced values travel as `providerOverrides`, so
  *   `validateProviderOverrides` (known/reserved, fail-closed on an empty
  *   `knownInputFields`) applies unchanged.
+ * - Vesper's REVIEWED settings for a known model are seeded beneath both
+ *   channels ({@link withReviewedProfileDefaults}), because a bench that renders
+ *   a reviewed model without them answers a question about a configuration
+ *   production never runs. The run's own values win, so an operator can still
+ *   bench against a reviewed default by naming it — and a raw bag key that would
+ *   silently undo one is refused before this profile is ever built
+ *   ({@link rejectedProviderInput}).
  * - The task is NOMINAL: `ImageProfileTask` has no bench member, and this
  *   profile never resolves from production, so the constraint on the choice is
  *   only that it must not be identity-critical (`variant`/`scene`/`chat_look`
@@ -733,7 +740,7 @@ function imageGeneratorProfile(
   operation: "generate" | "edit",
   providerInputs: Record<string, string | number | boolean>,
 ): ImageModelProfile {
-  return {
+  const bench: ImageModelProfile = {
     id: "image-generator/run",
     imageModelId: model.id,
     key: "image-generator",
@@ -750,6 +757,7 @@ function imageGeneratorProfile(
     builtin: false,
     sort: 0,
   };
+  return { ...bench, ...withReviewedProfileDefaults(model, bench) };
 }
 
 /**
@@ -786,6 +794,13 @@ async function readGeneratorReferences(inputs: ImageGeneratorRunInputs, ownerId:
 }
 
 /**
+ * The two controls a profile may carry that never travel as a provider field: a
+ * seed POLICY the caller resolves, and the `custom` resolution tier that gates a
+ * width/height pair.
+ */
+const UNSENT_PROFILE_CONTROLS = new Set(["seedPolicy", "resolution"]);
+
+/**
  * The refusal one dropped control maps to, or null for the profile's own
  * scaffolding. Classified by the DROP REASON, not by name membership in the
  * provider bag: normalized-control drops are named by normalized name
@@ -794,22 +809,43 @@ async function readGeneratorReferences(inputs: ImageGeneratorRunInputs, ownerId:
  * `unknown_field`/`reserved` can only come from `validateProviderOverrides`
  * over the bag; everything else is a normalized control the version cannot
  * represent.
+ *
+ * Two controls are exempt when the RUN did not name them, and only those two:
+ * they are the vocabulary's policies rather than values, so neither ever travels
+ * as a provider field and a drop on either says nothing went wrong.
+ * `seedPolicy: "caller"` is the synthetic profile's own, recording a drop on
+ * every unseeded run; `resolution: "custom"` is the GATE that makes a
+ * width/height pair a request, seeded here with the rest of a reviewed model's
+ * settings so the bench sends what production sends — no probed version binds a
+ * tier field for it, so it drops on every reviewed model there is.
+ *
+ * Everything else still refuses, the reviewed settings included: a bench that
+ * quietly rendered a reviewed model without the 832×1216 pair its version could
+ * not carry would produce exactly the evidence about a different configuration
+ * that seeding those settings exists to prevent. The refusal names the control
+ * and the reason, and the fix is a re-probe.
+ *
+ * The raw bag is judged before that test and never exempted: its keys ARE the
+ * admin's request, spelled as provider fields, and `unknown_field`/`reserved`
+ * can come from nowhere else.
  */
 function refusedDroppedControl(
   plan: PlannedImageRender,
+  requested: ImageRenderControls,
 ): { code: Extract<ImageGeneratorFailureCode, "control_refused" | "provider_input_rejected">; message: string } | null {
+  const asked = new Set(
+    Object.entries(requested)
+      .filter(([, value]) => value !== undefined)
+      .map(([control]) => control),
+  );
   for (const entry of plan.droppedControls) {
-    // The synthetic profile's own `seedPolicy: "caller"` records a drop on
-    // every unseeded run; nobody selected it, so it refuses nothing. The
-    // controls schema cannot express `seedPolicy`, so this can never mask an
-    // admin's choice.
-    if (entry.control === "seedPolicy") continue;
     if (entry.reason === "unknown_field" || entry.reason === "reserved") {
       return {
         code: "provider_input_rejected",
         message: `provider input ${entry.control} was rejected: ${entry.reason}`,
       };
     }
+    if (UNSENT_PROFILE_CONTROLS.has(entry.control) && !asked.has(entry.control)) continue;
     return {
       code: "control_refused",
       message: `the ${entry.control} control cannot be represented on this version: ${entry.reason}`,
@@ -823,9 +859,10 @@ function refusedDroppedControl(
  * derivable without spend:
  *
  * 1. Fields another path owns on EVERY capability record — the curated LoRA
- *    transport, dedicated structural inputs, and reviewed `extraInput` pins.
- *    The transport overlays the bag last, so a collision here would silently
- *    replace the admin's own selection or a reviewed value.
+ *    transport, dedicated structural inputs, the row's own `extraInput` pins,
+ *    and the fields this model's reviewed settings occupy on its probed version.
+ *    The bag is written last, so a collision here would silently replace the
+ *    admin's own selection or a reviewed correction.
  * 2. Descriptor `reserved` flags, when the record carries descriptors — the
  *    same rule the form uses to withhold an editor.
  * 3. Descriptor type/enum/range facts, when declared — a value the probe can
@@ -835,13 +872,9 @@ function refusedDroppedControl(
  * Records probed before descriptors existed simply skip layers 2–3.
  */
 function rejectedProviderInput(
-  registered: ImageModel,
+  model: ImageModel,
   providerInputs: Record<string, string | number | boolean>,
 ): string | null {
-  // The REVIEWED model, because the transport sends that one: the quality seam
-  // merges its pins into `extraInput` on the way out, and a bag key naming one
-  // of them would overlay LAST and quietly undo a reviewed correction.
-  const model = withReviewedImageQuality(registered);
   // No empty-bag early return: the required-descriptor sweep at the bottom
   // must run even when the admin set nothing at all.
   const keys = Object.keys(providerInputs);
@@ -852,7 +885,12 @@ function rejectedProviderInput(
     ),
   );
   const dedicatedFields = new Set(model.advancedCapabilities.additionalImageInputs.map((input) => input.binding.field));
-  const pinnedFields = new Set(Object.keys(model.extraInput));
+  // Two kinds of pin, both written after the bag would be: the row's own
+  // `extraInput` constants, and the fields this model's REVIEWED settings occupy
+  // on its probed version — which the bench profile carries as controls and
+  // overrides, and which the compile step merges over the mapped payload. A bag
+  // key naming either would quietly undo the correction it collides with.
+  const pinnedFields = new Set([...Object.keys(model.extraInput), ...reviewedImageProfilePinnedFields(model)]);
   for (const key of keys) {
     if (loraFields.has(key)) {
       return `${key} belongs to the curated LoRA library — select a library LoRA instead of a raw provider value`;

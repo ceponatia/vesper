@@ -32,10 +32,44 @@ can never claim a capability the model does not expose.
 
 Profiles have a full admin write path — create/edit/delete routes under
 `/api/admin/self/image-models/{modelId}/profiles`, managed from a nested section of each model
-card. A saved configuration is validated against the model (eligibility, provider overrides
-against `knownInputFields`, fail-closed when unprobed) **only while the merged row is enabled**:
-a disabled row accepts any schema-valid patch, which is what makes "disable the broken profile
-and retry" an action that actually works.
+card. An **edit** is validated against the model (eligibility, provider overrides against
+`knownInputFields`, fail-closed when unprobed) **only while the merged row is enabled**: a
+disabled row accepts any schema-valid patch, which is what makes "disable the broken profile and
+retry" an action that actually works. A **creation** is always validated, against the row as
+seeded below.
+
+## Reviewed settings are the profile's own
+
+Vesper's reviewed corrections for a known model — Qwen Edit's speed preset off, SDXL PuLID pinned
+to `fidelity` at full identity strength, the 832×1216 portrait pair on the community wrappers, the
+Pony wrapper's hidden `nsfw, naked` negative cleared — are **profile settings**. They live in
+`control_defaults` and `provider_overrides` on the rows themselves;
+`packages/image-core/src/models/reviewed-profile-controls.ts` states the policy once, and
+migrations 0110 and 0122 wrote it onto the built-in rows. Nothing rewrites a model row by slug on
+the way to a provider, so a reviewed value reaches the payload through the version's own probed
+binding — and is recorded as a drop, with a reason, when the version cannot carry it — exactly like
+every other setting a profile states.
+
+A reviewed setting the normalized control vocabulary has a word for is stated as that **control**,
+never as a raw `providerOverrides` entry — Qwen Edit's accelerated path is the `fastMode` control,
+not a `go_fast` field. Overrides merge last, over the mapped controls, so the raw spelling outranks
+a caller's own request for the same setting: a bench run asking for the accelerated path would
+compile it and then have it replaced, with nothing dropped and nothing refused. The escape hatch is
+for settings the vocabulary genuinely cannot say (PuLID's `method` and `face_weight`). Either way
+the field a reviewed setting occupies is closed to raw advanced values.
+
+Creating a profile for a reviewed model seeds those settings onto the new row, beneath whatever the
+request itself states, so a request that mentions a setting keeps its own value. Seeding runs
+**before** validation: a reviewed override an unprobed version cannot validate is refused at save,
+naming the field and the fix, rather than stored as a row whose reviewed settings every render
+would silently drop. Editing does not seed — an existing row carries its own values, and an admin
+who removes one is choosing.
+
+The profiles built in code judge themselves by the same rule. The
+[Image Generator](../../image-generator/README.md)'s bench profile and the
+[image lab](../../image-lab/README.md)'s recipe profiles are assembled per run rather than read
+from a row, and each is seeded with its model's reviewed settings before it renders: a bench that
+sent a reviewed model anything else would be evidence about a configuration production never runs.
 
 ## Every render resolves a profile, and every picker lists profiles
 
