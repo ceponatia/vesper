@@ -18,6 +18,7 @@ import {
   visualStateScopeKey,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
   VISUAL_STATE_INTIMATE_GATED,
+  VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
   VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
   type VisualStateFeature,
 } from "../visual-state";
@@ -298,6 +299,18 @@ describe("visualImageFactSegmentKind", () => {
         layer: "current",
         kindId: "body_surface.wetness",
         sourceRef: { kind: "body_surface", subjectId: SUBJECT, locationId: "hair" },
+        priors: OPTIONAL_PRIORS,
+      }),
+    ).toBe("current_state");
+    // A meter's ruled visible effect (issue #427) is a current-layer fact
+    // exactly like body-surface wetness, so it classifies the same way — by
+    // construction, since both are `layer: "current"` and neither is a
+    // wardrobe kind.
+    expect(
+      visualImageFactSegmentKind({
+        layer: "current",
+        kindId: VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
+        sourceRef: { kind: "meter", meterId: "intoxication", band: "intoxication:0.7" },
         priors: OPTIONAL_PRIORS,
       }),
     ).toBe("current_state");

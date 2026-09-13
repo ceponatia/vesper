@@ -13,6 +13,7 @@ import {
   projectBodyLanguageFeatures,
   projectBodySurfaceFeatures,
   projectGarmentCurrentState,
+  projectMeterFeatures,
   projectObservationFeatures,
   projectPresentationFeatures,
   projectSpeciesFeatureGroups,
@@ -139,6 +140,13 @@ export interface VisualStateAssemblyInput {
   readonly attributes: readonly AttributeValue[];
   readonly attributeOverlays?: readonly AttributeValue[];
   readonly conditions?: readonly ActiveCondition[];
+  /**
+   * Current meter values (0..1), when this lane tracks them. Projected into
+   * the four owner-ruled visible-effect facts (issue #427); absent is the
+   * recorded lane-unavailable degradation, exactly like every other optional
+   * owner here.
+   */
+  readonly meters?: Readonly<Record<string, number>>;
   /** The realized-body inputs (species, heritage, body plan, features). */
   readonly realize?: RealizeBodyInput;
   readonly presentation?: CharacterPresentationState;
@@ -174,6 +182,7 @@ export const visualStateLaneOwners = [
   "wardrobe",
   "body_surface",
   "condition",
+  "meter",
   "scene_relation",
   "affordance_observation",
 ] as const;
@@ -388,6 +397,17 @@ export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): Vi
     );
   } else {
     currentSuppressions.push(laneUnavailable(input.subjectId, "condition", sink));
+  }
+  if (input.meters !== undefined) {
+    currentFeatures.push(
+      ...projectMeterFeatures({
+        subjectId: input.subjectId,
+        meters: input.meters,
+        ...(sink === undefined ? {} : { sink }),
+      }),
+    );
+  } else {
+    currentSuppressions.push(laneUnavailable(input.subjectId, "meter", sink));
   }
   currentSuppressions.push(...unsupportedCurrentStateSuppressions(input.subjectId, sink));
   composed.push(...currentFeatures);

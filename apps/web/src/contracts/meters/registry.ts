@@ -6,6 +6,15 @@ export const meterThresholdSchema = z.object({
   promptHint: z.string().min(1),
   /** Short chip label for UI strips ("tipsy", "on edge") — part of the band vocabulary, so a registry edit moves the UI with it. */
   pipLabel: z.string().optional(),
+  /**
+   * The paintable effects an image may state for this band — absent means the
+   * band is silent in images. Declared ONLY on the owner-ruled deepest bands
+   * (issue #427): each string is a literal current-state clause an image
+   * prompt may carry, never a raw meter number or a narrator-only word. The
+   * owner's flush/blush ruling applies here specifically — no phrase in this
+   * array may use that word or a synonym, whatever `promptHint` says.
+   */
+  visibleEffects: z.array(z.string().min(1)).readonly().optional(),
 });
 
 export const meterDefinitionSchema = z.object({
@@ -42,7 +51,12 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     perHour: -0.04,
     thresholds: [
       { below: 0.55, promptHint: "Noticeably lived-in at close range: faint sweat and warm skin.", pipLabel: "lived-in" },
-      { below: 0.3, promptHint: "Clearly unwashed: damp fabric, sour sweat, hair gone lank.", pipLabel: "unwashed" },
+      {
+        below: 0.3,
+        promptHint: "Clearly unwashed: damp fabric, sour sweat, hair gone lank.",
+        pipLabel: "unwashed",
+        visibleEffects: ["lank, greasy hair", "grimy skin"],
+      },
     ],
   },
   {
@@ -53,7 +67,12 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     perHour: -0.05,
     thresholds: [
       { below: 0.45, promptHint: "Tired: slower replies, longer blinks, small stretches and yawns.", pipLabel: "tired" },
-      { below: 0.2, promptHint: "Exhausted: drifting attention, heavy eyes, leaning on furniture.", pipLabel: "exhausted" },
+      {
+        below: 0.2,
+        promptHint: "Exhausted: drifting attention, heavy eyes, leaning on furniture.",
+        pipLabel: "exhausted",
+        visibleEffects: ["heavy-lidded eyes", "dark circles under the eyes"],
+      },
     ],
   },
   {
@@ -74,7 +93,12 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     initial: 0,
     perHour: -0.1,
     thresholds: [
-      { above: 0.55, promptHint: "Visibly affected: flushed skin, shallow breath, lingering eye contact.", pipLabel: "flushed" },
+      {
+        above: 0.55,
+        promptHint: "Visibly affected: flushed skin, shallow breath, lingering eye contact.",
+        pipLabel: "flushed",
+        visibleEffects: ["parted lips"],
+      },
     ],
   },
   {
@@ -85,7 +109,12 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     perHour: -0.12,
     thresholds: [
       { above: 0.35, promptHint: "Tipsy: looser posture, warmer laughter, slightly imprecise gestures.", pipLabel: "tipsy" },
-      { above: 0.7, promptHint: "Drunk: slurred edges on words, unsteady balance, poor judgement.", pipLabel: "drunk" },
+      {
+        above: 0.7,
+        promptHint: "Drunk: slurred edges on words, unsteady balance, poor judgement.",
+        pipLabel: "drunk",
+        visibleEffects: ["glassy, unfocused eyes"],
+      },
     ],
   },
   {
@@ -217,6 +246,8 @@ export interface MeterCue {
   pipLabel?: string;
   /** 0–1: depth past the crossed bound (0 = just over the line, 1 = at the pole). */
   intensity: number;
+  /** The crossed threshold's paintable image effects, copied verbatim; absent when the band is silent in images. */
+  visibleEffects?: readonly string[];
 }
 
 export function meterStateCue(
@@ -229,7 +260,14 @@ export function meterStateCue(
   // The most-severe crossed band is the threshold whose bound is *closest* to the current
   // value (smallest gap) — the one most recently crossed going deeper. True for both
   // below-meters (lower bound = worse) and above-meters (higher bound = worse).
-  let chosen: { bound: number; dir: "below" | "above"; hint: string; pipLabel?: string; gap: number } | null = null;
+  let chosen: {
+    bound: number;
+    dir: "below" | "above";
+    hint: string;
+    pipLabel?: string;
+    visibleEffects?: readonly string[];
+    gap: number;
+  } | null = null;
   for (const t of def.thresholds) {
     let bound: number | undefined;
     let dir: "below" | "above" | undefined;
@@ -242,7 +280,8 @@ export function meterStateCue(
     }
     if (bound === undefined || dir === undefined) continue;
     const gap = Math.abs(value - bound);
-    if (!chosen || gap < chosen.gap) chosen = { bound, dir, hint: t.promptHint, pipLabel: t.pipLabel, gap };
+    if (!chosen || gap < chosen.gap)
+      chosen = { bound, dir, hint: t.promptHint, pipLabel: t.pipLabel, visibleEffects: t.visibleEffects, gap };
   }
   if (!chosen) return null;
   const intensity =
@@ -254,6 +293,7 @@ export function meterStateCue(
     band: `${meterId}:${chosen.bound}`,
     hint: chosen.hint,
     pipLabel: chosen.pipLabel,
+    ...(chosen.visibleEffects === undefined ? {} : { visibleEffects: chosen.visibleEffects }),
     intensity: Math.min(1, Math.max(0, intensity)),
   };
 }

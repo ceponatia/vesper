@@ -182,6 +182,46 @@ describe("meterStateCue", () => {
   });
 });
 
+describe("visibleEffects (issue #427)", () => {
+  /** Every (meterId, bound) pair the registry declares `visibleEffects` on. */
+  function visibleEffectBands(): Array<{ meterId: string; bound: number }> {
+    const bands: Array<{ meterId: string; bound: number }> = [];
+    for (const def of meterDefinitions) {
+      for (const t of def.thresholds) {
+        if (t.visibleEffects === undefined) continue;
+        const bound = t.below ?? t.above;
+        if (bound !== undefined) bands.push({ meterId: def.id, bound });
+      }
+    }
+    return bands;
+  }
+
+  it("declares visibleEffects on exactly the four owner-ruled deepest bands", () => {
+    expect(visibleEffectBands()).toEqual([
+      { meterId: "hygiene", bound: 0.3 },
+      { meterId: "energy", bound: 0.2 },
+      { meterId: "arousal", bound: 0.55 },
+      { meterId: "intoxication", bound: 0.7 },
+    ]);
+  });
+
+  it("never states a flush/blush word or synonym in an image-bound visibleEffects phrase (owner ruling, #427)", () => {
+    const FLUSH_WORDS = /flush|blush|reddened|rosy|crimson/i;
+    for (const def of meterDefinitions) {
+      for (const t of def.thresholds) {
+        for (const effect of t.visibleEffects ?? []) {
+          expect(effect, `${def.id} visibleEffects`).not.toMatch(FLUSH_WORDS);
+        }
+      }
+    }
+    // The tripwire is scoped to `visibleEffects` alone: arousal's own narrator
+    // `promptHint` may keep "flushed skin" — that word never reaches an image,
+    // because only `visibleEffects` is read there.
+    const arousalHint = meterById("arousal")?.thresholds.find((t) => t.above === 0.55)?.promptHint ?? "";
+    expect(arousalHint).toMatch(FLUSH_WORDS);
+  });
+});
+
 describe("splitStateCues", () => {
   it("foregrounds a newly-crossed band and reports it in nextBands", () => {
     const split = splitStateCues({ intoxication: 0.8 }, {});

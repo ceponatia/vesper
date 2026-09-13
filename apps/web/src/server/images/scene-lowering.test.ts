@@ -386,6 +386,47 @@ describe("the shared appearance owners in a scene", () => {
   });
 });
 
+describe("a ruled meter effect in a scene (issue #427)", () => {
+  /**
+   * The focal's committed cut with the given intoxication reading, the
+   * bystander unchanged — the same cast the shared-owners suite above reads,
+   * with one meter value threaded through the shadow input `assemble.ts`
+   * already projects meters from.
+   */
+  function castAtIntoxication(intoxication: number): LaneProbeCastSubject[] {
+    return laneProbeCastSubjects().map((subject, index) =>
+      index === 0 ? { ...subject, shadow: { ...subject.shadow, meters: { intoxication } } } : subject,
+    );
+  }
+
+  const plan = laneProbeCastScenePlan(laneProbeCastSubjects().map((subject) => subject.member));
+
+  /**
+   * Past the `drunk` band (0.7), the registry's own "glassy, unfocused eyes"
+   * reaches the compiled prompt as a `subject.current_state` fact — the same
+   * concept a wet cut or an active condition uses, and the one the chat-look
+   * pack (unlike the scene lane) suppresses. Below the ruled band, at the
+   * shallower `tipsy` band (0.35) and sober, nothing is projected at all
+   * (`meterStateCue` itself returns no band or a band with no `visibleEffects`),
+   * so the word never reaches the prompt.
+   */
+  it("states the ruled effect past the band and stays silent below it", () => {
+    const { program: drunk } = compileScene(plan, false, undefined, () => true, castAtIntoxication(0.8));
+    expect(drunk.prompt).toMatch(/glassy/i);
+    const focal = drunk.subjects.find((subject) => subject.entityId === LANE_PROBE_SUBJECT_ID);
+    const effectFact = focal?.facts.find(
+      (fact) => fact.concept === "subject.current_state" && String(fact.value).includes("glassy"),
+    );
+    expect(effectFact).toBeDefined();
+
+    const { program: sober } = compileScene(plan, false, undefined, () => true, castAtIntoxication(0.2));
+    expect(sober.prompt).not.toMatch(/glassy/i);
+
+    const { program: tipsy } = compileScene(plan, false, undefined, () => true, castAtIntoxication(0.5));
+    expect(tipsy.prompt).not.toMatch(/glassy/i);
+  });
+});
+
 describe("production chat cuts are narrowed to the scene cast", () => {
   /**
    * The shared chat factory carries three visual owners in one cut: the cast

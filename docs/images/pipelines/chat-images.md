@@ -58,11 +58,12 @@ seam's identity anchor, while hair, eye and skin color come off the reference ph
 
 **For a fixed look key the compiled prompt is a function of the key's inputs alone.** The
 committed cut carries more than `chatLookKey` hashes — the current layer (body-surface wetness,
-garment condition and arrangement, active conditions) and body language — and a program that
-stated them would send two prompts under one key: the cached anchor goes stale for a fact that
-never moved the key, or a transient state (wet hair, a slouch) is baked into the reference every
-later scene composes from. The omission is a **pack suppression, not a lane-side filter**: the
-chat-look binding (`binding-qwen-2511-chat-look-v1`) compiles through its own positive pack,
+garment condition and arrangement, active conditions, a ruled meter's visible effect) and body
+language — and a program that stated them would send two prompts under one key: the cached
+anchor goes stale for a fact that never moved the key, or a transient state (wet hair, a slouch)
+is baked into the reference every later scene composes from. The omission is a **pack
+suppression, not a lane-side filter**: the chat-look binding
+(`binding-qwen-2511-chat-look-v1`) compiles through its own positive pack,
 `pack-qwen-2511-positive-chat-look-v1`, which is the endpoint's shared pack with
 `subject.current_state` and `subject.body_language` suppressed and nothing else changed, so the
 row's `promptProgram.positivePackVersionId` names what the anchor was compiled without. The

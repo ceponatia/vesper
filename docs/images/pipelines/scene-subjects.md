@@ -175,22 +175,41 @@ attribute.
 `buildCharacterSceneContext` folds the chat's live state into the shot. Active conditions
 overlay attributes via `conditionAttributeOverlays` inside each member's cut, so a
 "disheveled" or "unwashed" condition renders that way with the same inherent-attribute guard
-as the narrator prompt; mood and affect ride the identity reference. Meters are not a
-visual-state owner: no committed cut carries a meter reading and no compiled scene states one,
-so a meter's physiology reaches a prompt only if it is lowered as a typed scene fact.
+as the narrator prompt; mood and affect ride the identity reference.
+
+**Meters ARE a visual-state owner, for four ruled effects at their deepest band only**
+(issue #427). The meter registry (`contracts/meters/registry.ts`) declares an optional
+`visibleEffects` list on a threshold — the paintable phrases an image may state for that band,
+absent everywhere else — and authors it on exactly four: `intoxication` past `drunk`
+("glassy, unfocused eyes"), `hygiene` past `unwashed` ("lank, greasy hair", "grimy skin"),
+`energy` past `exhausted` ("heavy-lidded eyes", "dark circles under the eyes"), and `arousal`
+past `flushed` ("parted lips" only). `contracts/visual-state/meters.ts`'s `projectMeterFeatures`
+asks `meterStateCue` for the same single deepest crossed band the chat strip and the narrator
+cue split read, and mints one `meter.visible_effect` current-layer fact only when that band
+declares `visibleEffects` — every shallower band (`tipsy`, `lived-in`, `tired`) and every meter
+with no ruled band at all (`stress`, `mood`) stays silent, and the raw scalar never reaches the
+fact. Threaded in from `ChatState.meters` at the shadow-assembly seam
+(`chat-visual-state-cut.ts`, `visual-state/assemble.ts`), it is a `current`-layer fact exactly
+like a wet cut or an active condition: a scene states it, and the chat-look pack
+(`images/packs-qwen-2511.ts`'s `suppressedConcepts`) excludes it from the stable look anchor the
+same way it excludes a soaked condition — current, scene-scoped state must never move the
+cached anchor.
 
 **No skin-colour words anywhere in an image prompt.** "Flushed", "blushing" and "rosy" render
 as *stage blusher* — a clown-makeup face, not a body state — so a body state is stated as
-physiology the model paints as physiology (eyes, lips, breath, sweat, posture, hair). The one
-leak path is the **composer echo**: the narrator's own arousal threshold hint says "flushed
-skin" (`contracts/meters/registry.ts`), and the composer reads it in the recent narration and
-hands it back in `pose` or `mood`. `SCENE_COMPOSER_SYSTEM` rules against colour words *and*
-`scrubBlush` (`images/prompts-scene-plan.ts`, applied to each action field in `characterSpec`
-and to `mood` in `resolveScenePlan`) drops any surviving clause whole — the rule alone is not
-trustworthy, the same belt-and-braces as `scrubPlayerFromAction`. Deliberately **not**
-scrubbed: `skin.undertone: rosy` is an authored identity attribute (the registry is the
-author's intent, not the composer's slip), and the narrator's hint itself stays, because
-narration isn't rendered.
+physiology the model paints as physiology (eyes, lips, breath, sweat, posture, hair). None of
+the four ruled `visibleEffects` phrases uses that wording (a registry test tripwires against
+it), and the arousal meter's own narrator `promptHint` may keep "flushed skin" — that phrase
+is narrator-only and never reaches `visibleEffects`, so it never reaches an image prompt at
+all. The one leak path for narration-derived wording is the **composer echo**: the composer
+reads the recent narration and hands a threshold's prose hint back in `pose` or `mood`.
+`SCENE_COMPOSER_SYSTEM` rules against colour words *and* `scrubBlush`
+(`images/prompts-scene-plan.ts`, applied to each action field in `characterSpec` and to `mood`
+in `resolveScenePlan`) drops any surviving clause whole — the rule alone is not trustworthy,
+the same belt-and-braces as `scrubPlayerFromAction`. Deliberately **not** scrubbed:
+`skin.undertone: rosy` is an authored identity attribute (the registry is the author's intent,
+not the composer's slip), and the narrator's hint itself stays, because narration isn't
+rendered.
 
 ## Identity anchors and the setting
 

@@ -33,13 +33,13 @@ Character subjects reach the digest through a two-module seam in
 `apps/web/src/contracts/images/`, and the split is an ownership boundary, not a
 convenience:
 
-| Layer                          | Owns                                                               |
-| ------------------------------ | ------------------------------------------------------------------ |
-| observer recognition           | the deliberately narrow catalog of distinctive recognizable cues   |
-| attribute registry             | image-description eligibility, class and canonical readable value  |
-| visual state                   | current presentation, camera-visible truth and transient state     |
-| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth                           |
-| `character-adapter.ts`         | render visibility, replacement and completeness over those owners  |
+| Layer                          | Owns                                                                                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| observer recognition           | the deliberately narrow catalog of distinctive recognizable cues                                                                         |
+| attribute registry             | image-description eligibility, class and canonical readable value                                                                        |
+| visual state                   | current presentation, camera-visible truth and transient state (body-surface wetness, active conditions, a ruled meter's visible effect) |
+| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth                                                                                                 |
+| `character-adapter.ts`         | render visibility, replacement and completeness over those owners                                                                        |
 
 `projectSubjectDigests` translates the visual digest's classification into
 concepts and dispositions, verbatim. `projectCharacterWorldSlices` consumes it

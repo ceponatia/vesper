@@ -105,6 +105,10 @@ export function chatVisualStateShadowInput(input: {
     attributes: cut.profile.attributes,
     attributeOverlays: cut.state.attributeOverlays,
     conditions: cut.state.conditions,
+    // `ChatState.meters` is always a record (never absent), but an empty one
+    // degrades to the same silence `projectMeterFeatures` already gives an
+    // empty input — no ternary needed, unlike the truly optional owners below.
+    meters: cut.state.meters,
     realize: {
       ...(cut.profile.speciesId === undefined ? {} : { speciesId: cut.profile.speciesId }),
       ...(cut.profile.heritageId === undefined ? {} : { heritageId: cut.profile.heritageId }),
