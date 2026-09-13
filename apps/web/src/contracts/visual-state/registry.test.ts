@@ -97,6 +97,7 @@ describe("visualStateKindRegistry", () => {
       "garment.damage",
       "garment.material_effect",
       "condition.active",
+      "meter.visible_effect",
       "affordance.observation",
       "body_language.posture",
       "body_language.support",

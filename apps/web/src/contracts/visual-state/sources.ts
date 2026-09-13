@@ -58,6 +58,13 @@ export const visualStateSourceRefSchema = z.discriminatedUnion("kind", [
    * reader chasing the provenance would look in the wrong store.
    */
   z.object({ kind: z.literal("contact"), contactId: z.string().min(1) }),
+  /**
+   * A meter's registry-declared visible effect at its current band (issue
+   * #427) — the meter id and the crossed band key
+   * (`meterStateCue`'s `band`, e.g. `"intoxication:0.7"`), never the raw
+   * scalar value: the meter owner states a state, not a number.
+   */
+  z.object({ kind: z.literal("meter"), meterId: z.string().min(1), band: z.string().min(1) }),
 ]);
 
 export type VisualStateSourceRef = z.infer<typeof visualStateSourceRefSchema>;
@@ -106,5 +113,7 @@ export function visualStateSourceKey(ref: VisualStateSourceRef): string {
       return `affordance:${ref.observationKey}`;
     case "contact":
       return `contact:${ref.contactId}`;
+    case "meter":
+      return `meter:${ref.meterId}:${ref.band}`;
   }
 }

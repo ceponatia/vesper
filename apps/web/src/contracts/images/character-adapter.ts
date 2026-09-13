@@ -45,6 +45,7 @@ import {
   visualStateGroomingValueSchema,
   visualStateHairstyleValueSchema,
   visualStateMakeupValueSchema,
+  visualStateMeterVisibleEffectValueSchema,
   visualStateNailFinishValueSchema,
   visualStateSpeciesFeatureGroupValueSchema,
   visualStateWardrobeValueSchema,
@@ -67,6 +68,7 @@ import {
   VISUAL_STATE_GARMENT_DEPOSIT_KIND_ID,
   VISUAL_STATE_GARMENT_MATERIAL_EFFECT_KIND_ID,
   VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
+  VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
   VISUAL_STATE_PRESENTATION_COSMETIC_MARK_KIND_ID,
   VISUAL_STATE_PRESENTATION_GROOMING_KIND_ID,
   VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID,
@@ -1028,6 +1030,19 @@ const activeConditionValue: CharacterKindRenderer = (input) => {
 };
 
 /**
+ * A meter's ruled visible effect (issue #427), stated as one current-state
+ * clause. `effects` already carries the registry's own words — "glassy,
+ * unfocused eyes", "lank, greasy hair" — so the renderer only joins them; it
+ * never re-derives wording from the band or the meter id, and the value's
+ * schema (`min(1)`) guarantees at least one phrase to join.
+ */
+const meterVisibleEffectValue: CharacterKindRenderer = (input) => {
+  const parsed = visualStateMeterVisibleEffectValueSchema.safeParse(input.value);
+  if (!parsed.success) return null;
+  return parsed.data.effects.join(", ");
+};
+
+/**
  * The posture word, and nothing else. The dialect dedupes it against the
  * composer's own pose text (#544 F10); this adapter states the committed truth
  * and does not guess what the composer wrote.
@@ -1118,6 +1133,7 @@ export const imageCharacterKindPromptDecisions: Readonly<Record<string, Characte
   [VISUAL_STATE_GARMENT_DAMAGE_KIND_ID]: garmentDamageValue,
   [VISUAL_STATE_GARMENT_MATERIAL_EFFECT_KIND_ID]: garmentMaterialEffectValue,
   [VISUAL_STATE_CONDITION_ACTIVE_KIND_ID]: activeConditionValue,
+  [VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID]: meterVisibleEffectValue,
   // The value's `phenomenon` is an affordance registry id (`hair.strand_adhesion`)
   // and no owner anywhere ships prompt words for one. Humanizing the id would put
   // a registry token in a provider payload — the exact leak F1 removes — so an

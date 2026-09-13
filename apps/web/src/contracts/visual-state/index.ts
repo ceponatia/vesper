@@ -42,6 +42,7 @@ export * from "./presentation";
 export * from "./body-surface";
 export * from "./garment-state";
 export * from "./conditions";
+export * from "./meters";
 export * from "./observations";
 export * from "./current-suppressions";
 export * from "./fixtures";

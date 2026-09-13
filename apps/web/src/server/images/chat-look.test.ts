@@ -242,6 +242,22 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
   });
 
   /**
+   * The same exclusion, for a ruled meter effect (issue #427): intoxication
+   * past the `drunk` band is a `current`-layer fact exactly like the soaked
+   * condition above, so the chat-look pack suppresses it the same way. The
+   * control repeats the soaked case's shape — the fact DID reach the compiled
+   * slice, only there.
+   */
+  it("two cuts that differ only in a ruled meter effect compile the same prompt", () => {
+    const sober = compile({ ...laneProbeShadowInput(), meters: { intoxication: 0.1 } });
+    const drunk = compile({ ...laneProbeShadowInput(), meters: { intoxication: 0.9 } });
+    expect(statesCurrent(drunk.subjects[0]?.facts ?? [])).toBe(true);
+    expect(statesCurrent(sober.subjects[0]?.facts ?? [])).toBe(false);
+    expect(drunk.prompt).toBe(sober.prompt);
+    expect(drunk.negativePrompt).toBe(sober.negativePrompt);
+  });
+
+  /**
    * A garment left at a scene locus files under the shared factory's scene
    * subject, and the player's recorded posture under the player subject. Each
    * is a digest subject with nobody's owners behind it, so the compile refuses
