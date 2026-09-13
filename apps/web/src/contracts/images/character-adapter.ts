@@ -25,6 +25,7 @@ import {
   formatAttributeValue,
   humanizeVocabularyValue,
   isNonVisualAttribute,
+  type AttributeCategory,
   type AttributeValue,
 } from "../attributes";
 import { bodyLocationRegistry, isIntimateAttributeCategory } from "../body/locations";
@@ -234,6 +235,80 @@ export const IMAGE_CHARACTER_APPEARANCE_HIDDEN = "character.appearance.hidden";
 export const IMAGE_CHARACTER_APPEARANCE_REPLACED = "character.appearance.replaced";
 /** A required reference-free appearance owner had no usable canonical value. */
 export const IMAGE_CHARACTER_APPEARANCE_UNRESOLVED = "character.appearance.unresolved";
+
+// ---------------------------------------------------------------------------
+// Reference-authority aspects (issue #450)
+// ---------------------------------------------------------------------------
+
+/**
+ * The closed vocabulary a resolved render contract may declare its identity
+ * reference authoritative for.
+ *
+ * Reference authority is OPERATION-SPECIFIC (owner ruling, issue #450): never
+ * "a subject-bound reference replaces all stable appearance text". On the Qwen
+ * edit 2511 dialect the identity image is authoritative for face, skin tone
+ * and apparent age alone; text stays authoritative for hair, build, wardrobe
+ * and pose (docs/images/character-prompts.md §Identity on a reference-anchored
+ * render). A dialect or pack states WHICH of these aspects it owns — never
+ * this contracts module, and never `ImageModelAdapter` — and the shared
+ * character render path applies that declaration to one subject's OPTIONAL
+ * `subject.appearance` facts.
+ *
+ * `apparent_age` is declared for headroom even though no `subject.appearance`
+ * fact carries it today: the apparent-age anchor is a separate concept
+ * (`subject.apparent_age`) a lane's own text-authoritative policy already owns
+ * ({@link CharacterApparentAgePolicy}), so a future consumer of the same
+ * vocabulary — a dialect whose lock also decides whether to STATE the age, not
+ * only whether to preserve it — does not need a second one.
+ */
+export type CharacterAppearanceAspect = "face" | "hair" | "skin_tone" | "build" | "apparent_age";
+
+/**
+ * The attribute registry's own category, translated into the aspect
+ * vocabulary above. A category with no entry here (eyes, wardrobe- and
+ * intimate-anatomy categories, voice, presentation, movement, …) has no
+ * aspect: a fact from it is never a reference-authority candidate, whatever a
+ * resolved contract declares.
+ */
+const APPEARANCE_ASPECT_BY_CATEGORY: Partial<Record<AttributeCategory, CharacterAppearanceAspect>> = {
+  face: "face",
+  hair: "hair",
+  skin: "skin_tone",
+  build: "build",
+};
+
+/**
+ * The appearance aspect one attribute-registry-backed `subject.appearance`
+ * fact belongs to, derived from the registry's own category — never a hand
+ * list of attribute ids in the seam that decides whether a request's
+ * reference makes the fact redundant. `undefined` for an unknown id or a
+ * category the vocabulary above has no aspect for (eye color, wardrobe,
+ * intimate anatomy, …): such a fact is never a reference-authority candidate.
+ */
+export function characterAppearanceAspect(attributeId: string): CharacterAppearanceAspect | undefined {
+  const category = attributeRegistry.byId(attributeId)?.category;
+  return category === undefined ? undefined : APPEARANCE_ASPECT_BY_CATEGORY[category];
+}
+
+/**
+ * An OPTIONAL `subject.appearance` fact the request-aware selection omitted
+ * because the resolved render contract's identity reference is authoritative
+ * for its aspect (issue #450) — the reference already shows it pixel-perfect,
+ * so restating it in text is redundant rather than protective.
+ *
+ * Distinct from `IMAGE_CHARACTER_APPEARANCE_OUT_OF_FRAME` /
+ * `IMAGE_CHARACTER_APPEARANCE_HIDDEN` (the projection's own visibility
+ * judgment, decided before this policy ever runs — a fact suppressed for
+ * either reason never reaches the set this policy can even consider) and from
+ * a budget fitter's drop (`image_prompt_program.*`, decided after it, on a
+ * fact this policy left alone): this fact was never hidden or squeezed for
+ * space, it was judged redundant against THIS request's own reference. A
+ * required fact, the identity anchor, exposure, morphology,
+ * `subject.current_state`, wardrobe, pose and every requested-change claim are
+ * never reachable through this reason — only an `optional_visual`
+ * `subject.appearance` fact can carry it.
+ */
+export const IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT = "character.appearance.reference_redundant";
 
 // ---------------------------------------------------------------------------
 // The image age vocabulary (owner ruling 2026-07-29)

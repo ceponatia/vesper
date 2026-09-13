@@ -9,6 +9,7 @@ import {
   type ImagePositivePackVersion,
   type ImagePromptEvidence,
 } from "@vesper/image-core";
+import type { CharacterAppearanceAspect } from "@/contracts/images/character-adapter";
 
 /**
  * The seeded packs and bindings for `qwen/qwen-image-edit-2511` — version 1 of
@@ -36,6 +37,26 @@ import {
 
 const MODEL_SLUG = "qwen/qwen-image-edit-2511";
 const DIALECT_ID = "qwen_2511_delta_edit" as const;
+
+/**
+ * The appearance aspects this dialect's identity reference is authoritative
+ * for (issue #450, docs/images/character-prompts.md §Identity on a
+ * reference-anchored render): the reference shows the face, the skin tone and
+ * the apparent age pixel-perfect, so a render that already sends one need not
+ * restate those facts in text. Hair, build, wardrobe and pose stay
+ * text-authoritative — this dialect's own identity-lock preserve clauses
+ * (`QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK` and its grouped/multi siblings,
+ * `@vesper/image-models`) never claim them, and dropping them would remove
+ * instructions the render contract deliberately expects. Declared here,
+ * beside this endpoint's other reviewed evidence, rather than in the seam that
+ * applies it (`character-prompt-program.ts`) or in `ImageModelAdapter`, which
+ * owns provider transport fields and no Vesper attribute vocabulary.
+ */
+export const QWEN_2511_REFERENCE_AUTHORITY_ASPECTS: ReadonlySet<CharacterAppearanceAspect> = new Set([
+  "face",
+  "skin_tone",
+  "apparent_age",
+]);
 
 /**
  * What is known about this endpoint, from Vesper's own probe and review
