@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { validateProviderOverrides } from "../capabilities/image-control-mapping";
 import { reservedImageInputFields } from "../capabilities/reserved-image-input-fields";
-import type { ImageModel } from "./image-models";
+import { baseImageModelSlug, type ImageModel } from "./image-models";
 import {
   emptyImageControlDefaults,
   emptyImageReferencePolicy,
@@ -11,9 +11,11 @@ import {
   imagePromptStrategySchema,
   imageReferencePolicySchema,
   profileEligibility,
+  type ImageControlDefaults,
   type ImageModelProfile,
   type ImageProfileIneligibility,
 } from "./image-model-profiles";
+import { reviewedImageProfileControls, type ReviewedImageControlDefaults } from "./reviewed-profile-controls";
 
 /**
  * The profile registry's admin contract: what the create and edit routes accept,
@@ -104,14 +106,16 @@ export type ImageModelProfileUpdateRequest = z.infer<typeof imageModelProfileUpd
 /**
  * One reason a profile configuration may not be stored against its model.
  *
- * Two kinds rather than one bucket because they send an operator to different
+ * Three kinds rather than one bucket because they send an operator to different
  * fixes: `ineligible` means the task/operation pair is wrong for this model
  * (pick another model, or another operation), `override_rejected` names the
- * specific provider key the escape hatch refused.
+ * specific provider key the escape hatch refused, and `reviewed_control_unbound`
+ * names a reviewed setting this version cannot carry — a re-probe, not an edit.
  */
 export type ImageProfileConfigurationIssue =
   | { kind: "ineligible"; reason: ImageProfileIneligibility; message: string }
-  | { kind: "override_rejected"; field: string; reason: "reserved" | "unknown_field"; message: string };
+  | { kind: "override_rejected"; field: string; reason: "reserved" | "unknown_field"; message: string }
+  | { kind: "reviewed_control_unbound"; control: string; message: string };
 
 /** The eligibility refusals, in an operator's words rather than the enum's. */
 function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<ImageModelProfile, "task" | "operation">): string {
@@ -147,6 +151,15 @@ function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<I
  *    CLOSED when overrides exist, the same rule the render path and candidate
  *    activation apply. Empty means the probe recorded nothing, not that
  *    everything is permitted; the fix is a re-probe, and the message says so.
+ * 3. **Reviewed controls** ({@link reviewedUnboundControls}): on a REVIEWED
+ *    model, a reviewed setting this row carries that the version declares no
+ *    binding for is refused. A control is otherwise a render-time question —
+ *    the mapper drops it with a recorded reason — and that is still the right
+ *    answer for an ordinary curated profile, which may legitimately state a
+ *    control a later version stops binding. It is the wrong answer for a
+ *    REVIEWED setting: the task profile is now the only thing carrying it, so a
+ *    row saved with one that reaches nothing renders on exactly the provider
+ *    default the reviewed judgment exists to correct, quietly, forever.
  *
  * What it deliberately does NOT check: `enabled`, `isDefault`, the timeout
  * (schema-bounded), and the LoRA selection. Disabling a task's only default is
@@ -155,7 +168,7 @@ function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<I
  * will actually run is known.
  */
 export function validateImageProfileConfiguration(
-  profile: Pick<ImageModelProfile, "task" | "operation" | "providerOverrides">,
+  profile: Pick<ImageModelProfile, "task" | "operation" | "providerOverrides" | "controlDefaults">,
   model: ImageModel,
 ): ImageProfileConfigurationIssue[] {
   const issues: ImageProfileConfigurationIssue[] = [];
@@ -188,5 +201,73 @@ export function validateImageProfileConfiguration(
     }
   }
 
+  for (const control of reviewedUnboundControls(profile.controlDefaults, model)) {
+    issues.push({
+      kind: "reviewed_control_unbound",
+      control,
+      message: `the reviewed “${control}” setting has no binding on this model's probed version, so every render would drop it — re-probe it first`,
+    });
+  }
+
   return issues;
+}
+
+/**
+ * The reviewed controls this row states that the version cannot carry.
+ *
+ * Scoped twice over, and both narrowings are the point. Only a REVIEWED model is
+ * asked — an operator's own profile may say whatever the control vocabulary can
+ * say, and a control the version drops is an ordinary recorded drop there. And
+ * only the controls that model's reviewed policy actually names are checked, so
+ * a curated profile's own `steps` on the same row is nobody's business here.
+ *
+ * `resolution` is never among them: it sends no field at all, it is the GATE
+ * that makes a width/height pair a request, and it is dropped with a reason on
+ * every version that binds no tier — including all four reviewed models today.
+ *
+ * Written member by member over the reviewed vocabulary rather than looping a
+ * name map, for the reason the reviewed table itself is: a control added to that
+ * vocabulary must be a compile error here, not a setting this check silently
+ * stops covering.
+ */
+function reviewedUnboundControls(stated: ImageControlDefaults, model: ImageModel): string[] {
+  const reviewed: Readonly<ReviewedImageControlDefaults> | undefined = reviewedImageProfileControls(
+    baseImageModelSlug(model.slug),
+  )?.controlDefaults;
+  if (!reviewed) return [];
+  const bindings = model.advancedCapabilities.controls;
+  const checks: { control: string; carried: boolean; bound: boolean }[] = [
+    { control: "steps", carried: carries(stated.steps, reviewed.steps), bound: bindings.steps !== undefined },
+    {
+      control: "guidance",
+      carried: carries(stated.guidance, reviewed.guidance),
+      bound: bindings.guidance !== undefined,
+    },
+    {
+      control: "negativePrompt",
+      carried: carries(stated.negativePrompt, reviewed.negativePrompt),
+      bound: bindings.negativePrompt !== undefined,
+    },
+    {
+      control: "fastMode",
+      carried: carries(stated.fastMode, reviewed.fastMode),
+      bound: bindings.fastMode !== undefined,
+    },
+    { control: "width", carried: carries(stated.width, reviewed.width), bound: bindings.customWidth !== undefined },
+    { control: "height", carried: carries(stated.height, reviewed.height), bound: bindings.customHeight !== undefined },
+  ];
+  return checks.filter((check) => check.carried && !check.bound).map((check) => check.control);
+}
+
+/**
+ * Whether this row states a control the reviewed policy also names.
+ *
+ * `!== undefined` on both sides and never falsiness: the reviewed values include
+ * `fastMode: false` and the Pony ruling's empty `negativePrompt`, and either
+ * would read as "not carried" under a truthiness test — skipping the check on
+ * exactly the two settings whose whole purpose is to contradict a provider
+ * default.
+ */
+function carries(stated: unknown, reviewed: unknown): boolean {
+  return stated !== undefined && reviewed !== undefined;
 }

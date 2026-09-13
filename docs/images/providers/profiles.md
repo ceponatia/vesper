@@ -60,10 +60,15 @@ the field a reviewed setting occupies is closed to raw advanced values.
 
 Creating a profile for a reviewed model seeds those settings onto the new row, beneath whatever the
 request itself states, so a request that mentions a setting keeps its own value. Seeding runs
-**before** validation: a reviewed override an unprobed version cannot validate is refused at save,
-naming the field and the fix, rather than stored as a row whose reviewed settings every render
-would silently drop. Editing does not seed — an existing row carries its own values, and an admin
-who removes one is choosing.
+**before** validation, and validation covers both channels on a reviewed model: a raw override the
+version's probed field list cannot validate, and a reviewed **control** the version declares no
+binding for, are each refused at save — naming the setting and the fix ("re-probe it first") rather
+than storing a row whose reviewed settings every render would silently drop. The control half is
+scoped to reviewed models and their own reviewed settings: an ordinary curated profile may still
+state a control a version does not bind, and the render path drops it with a recorded reason.
+`resolution` is never among them — it is the gate that makes a width/height pair a request, and no
+version binds a field for it. Editing does not seed — an existing row carries its own values, and
+an admin who removes one is choosing.
 
 The profiles built in code judge themselves by the same rule. The
 [Image Generator](../../image-generator/README.md)'s bench profile and the

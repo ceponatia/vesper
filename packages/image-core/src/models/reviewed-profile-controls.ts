@@ -96,10 +96,14 @@ export interface ReviewedImageQualityPolicy {
  * One way a reviewed row can contradict itself.
  *
  * - `unmapped_default` — a `controlDefaults` entry other than `resolution` with
- *   no `controlFields` mapping. The profile carries the value and no fixture
- *   states where it must land: the parity test's probe is synthesized FROM
- *   `controlFields`, so a control missing there is missing from the fixture too
- *   and the payload comparison passes while the setting reaches nothing.
+ *   no `controlFields` mapping. The profile carries the value and nothing states
+ *   which provider field it must arrive on, so the parity suite has no field to
+ *   look for: its payload assertions are driven by this mapping, and a control
+ *   missing here is a control the fixture never asks about. (The suite's PROBE
+ *   is hand-written from the production registry — `PRODUCTION_BINDINGS` in
+ *   `reviewed-profile-parity.test.ts` — and cross-checked against these
+ *   mappings, which is what makes a missing one visible as a gap rather than as
+ *   agreement.)
  * - `field_collision` — a `controlFields` mapping naming a provider field that a
  *   `providerOverrides` entry also claims. `compileProfileRenderPlan` merges a
  *   profile's overrides LAST, over the mapped controls, so the reviewed control's
