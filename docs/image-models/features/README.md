@@ -5,8 +5,8 @@ Features are the semantic vocabulary used by `@vesper/image-models` adapters. Th
 authoritative for **which provider input fields carry it**.
 
 Source: [`packages/image-models/src/features`](../../../packages/image-models/src/features).
-The thirteen feature constructors exported from the package root are documented below, one
-`##` section per `src/features/` module.
+The thirteen feature constructors under `src/features/` are documented below, one `##` section
+per module.
 
 ## Owns / does not own
 
@@ -62,7 +62,10 @@ normalized maximum; and `lora` rejects a LoRA-bearing request when the active mo
 carries no usable LoRA weights/scale pair — missing, or the two fields disagreeing on shape.
 
 These are model/request compatibility checks. They do not replace `@vesper/image-core`'s
-final-wire invariants, which verify the payload that is actually going to the provider.
+final-wire invariants, which verify the payload that is actually going to the provider. Nor are
+they the first line: the Image Generator's own operation and capacity gates settle a missing or
+excess reference before the adapter is asked, so the reference validators are the family-level
+backstop for any caller that wires `validateRequest`.
 
 ## Prompt
 
@@ -117,8 +120,9 @@ instruction-edit mechanism used by the editors.
 `sourceImageFeature()` (`src/features/references.ts`) contributes capability id
 `sourceImage`.
 
-**Semantic:** the model requires exactly one reference image — the source the render works
-from — and carries no more than one. This is a different semantic claim from
+**Semantic:** the model requires a reference image — the source the render works from —
+rather than rendering from a prompt alone; how many it may carry is the row's normalized
+capacity (one, on the endpoint that composes it). This is a different semantic claim from
 `multiReference`, not a capacity-1 reading of it: `multiReference`'s claim is that several
 images can each carry a distinct, named role, which is false at a cap of one, while
 `sourceImage`'s claim is that the render has nothing to work from without that single image.

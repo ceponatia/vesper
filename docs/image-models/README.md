@@ -72,7 +72,7 @@ See [Features → FLUX.1 Kontext composition](features/README.md#flux1-kontext-c
 
 A feature answers a semantic question such as "can this render carry several references?" or "can the caller select guidance strength?" It does not answer "which provider field carries that value?" The latter belongs to the probed model record.
 
-The package exports thirteen feature constructors:
+The package defines thirteen feature constructors:
 
 | Feature id       | Meaning                                              | Documentation                                      |
 | ---------------- | ---------------------------------------------------- | -------------------------------------------------- |

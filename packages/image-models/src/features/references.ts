@@ -46,25 +46,27 @@ export function multiReferenceFeature(): ImageFeature {
 }
 
 /**
- * The model REQUIRES exactly one reference image — the source the render
- * works from — and carries no more than one. This is a different semantic
- * claim from `multiReferenceFeature`, not a capacity-1 special case of it:
- * `multiReference`'s claim is that several images can each carry a distinct
- * role (identity, location, …), which is false at a cap of one, while
- * `sourceImage`'s claim is that the render has nothing to work from without
- * that single image. The two are also not opposite ends of one spectrum —
- * `qwen/qwen-image-2512`'s single reference input is OPTIONAL strength-based
- * img2img, not a required source, so that endpoint composes neither feature.
+ * The model REQUIRES a reference image — the source the render works from —
+ * rather than rendering from a prompt alone. How many it may carry is the
+ * row's normalized capacity (one, on the endpoint that composes it today).
+ * This is a different semantic claim from `multiReferenceFeature`, not a
+ * capacity-1 special case of it: `multiReference`'s claim is that several
+ * images can each carry a distinct role (identity, location, …), which is
+ * false at a cap of one, while `sourceImage`'s claim is that the render has
+ * nothing to work from without that source image. The two are also not
+ * opposite ends of one spectrum — `qwen/qwen-image-2512`'s single reference
+ * input is OPTIONAL strength-based img2img, not a required source, so that
+ * endpoint composes neither feature.
  *
- * `isBound` asks both halves of the claim: the row must be able to edit at
- * all, and its normalized capacity must allow at least one reference. A
+ * `isBound` asks two things of the row: it must be able to edit at all, and
+ * its normalized capacity must allow at least one reference. A
  * generation-only row (no `canEdit`) cannot bind this feature no matter what
  * `maxReferences` says.
  */
 export function sourceImageFeature(): ImageFeature {
   return {
     id: "sourceImage",
-    semantic: "Requires one reference image to work from, and carries at most one.",
+    semantic: "Requires a reference image to work from, rather than rendering from a prompt alone.",
     isBound: (model: ImageModel) => model.canEdit && referenceCapacity(model).max >= 1,
     validate: (model: ImageModel, request: ImageModelRequestFacts): readonly string[] => {
       if (!model.canGenerate && request.referenceCount === 0) {
