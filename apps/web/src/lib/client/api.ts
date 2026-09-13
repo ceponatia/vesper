@@ -102,6 +102,8 @@ export type {
   IdentityPackWriteGuard,
 } from "./api/identity-packs";
 export { imageGeneratorApi } from "./api/image-generator";
+export { faceRepairApi, faceRepairStatusSchema } from "./api/face-repair";
+export type { FaceRepairCreateRequest, FaceRepairStatus } from "./api/face-repair";
 export { imageLabApi } from "./api/image-lab";
 export { characterMediaJobsApi, characterMediaJobsClientResponseSchema } from "./api/character-media";
 export type {
