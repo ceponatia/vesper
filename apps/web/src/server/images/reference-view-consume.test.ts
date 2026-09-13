@@ -34,7 +34,7 @@ import { loadConsumableReferenceView, REFERENCE_VIEW_UNAVAILABLE } from "./refer
 const VIEW = { angle: "back_full", wardrobe: "clothed" } as const;
 const PORTRAIT = "img-portrait";
 const VIEW_ASSET = "img-back-clothed";
-const readReadyBytes = vi.fn<(imageId: string) => Promise<Buffer | null>>();
+const readReadyAsset = vi.fn<(imageId: string) => Promise<{ buffer: Buffer; meta: unknown } | null>>();
 
 /** The sheet as the store projects it, with this one slot forced into a state. */
 function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): ReferenceViewSetSummary {
@@ -66,13 +66,13 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
 
 beforeEach(() => {
   vi.resetAllMocks();
-  readReadyBytes.mockResolvedValue(Buffer.from("view-bytes"));
+  readReadyAsset.mockResolvedValue({ buffer: Buffer.from("view-bytes"), meta: {} });
 });
 
 function project(set: ReferenceViewSetSummary) {
   vi.mocked(withLockedReferenceViewSet).mockImplementation(
     (async (_characterId, _ownerId, _sink, operation) =>
-      operation({ set, readReadyBytes })) as typeof withLockedReferenceViewSet,
+      operation({ set, readReadyAsset })) as typeof withLockedReferenceViewSet,
   );
 }
 
@@ -119,13 +119,13 @@ describe("loadConsumableReferenceView", () => {
     expect(loaded).toEqual({ ok: false, reason });
     // The bytes are never even read: a slot that may not be sent is not an
     // asset this render is allowed to open.
-    expect(readReadyBytes).not.toHaveBeenCalled();
+    expect(readReadyAsset).not.toHaveBeenCalled();
     expectDiagnostic(sink, REFERENCE_VIEW_UNAVAILABLE);
   });
 
   it("degrades when an approved view's bytes will not read", async () => {
     project(sheet("approved"));
-    readReadyBytes.mockResolvedValue(null);
+    readReadyAsset.mockResolvedValue(null);
     const sink = new DiagnosticCollector();
 
     const loaded = await loadConsumableReferenceView({ ownerId: "user1", characterId: "chr1", view: VIEW, sink });

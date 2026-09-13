@@ -361,7 +361,12 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
             characters: [{ characterId, revision: context.revision }],
             extraRevisions: [...context.wardrobe.revisions],
           },
-          references: packSelection.references.map((entry) => ({ reference: entry.reference, subjectId: characterId })),
+          references: packSelection.references.map((entry) => ({
+            reference: entry.reference,
+            subjectId: characterId,
+            // The accepted portrait's own stamp (issue #551).
+            appearanceRevision: entry.appearanceRevision,
+          })),
           operation: (subjects) =>
             characterVariantImageOperation({
               change: characterChangeContract(

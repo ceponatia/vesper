@@ -56,6 +56,14 @@ Like its sibling edit lane ([portrait-variants.md](portrait-variants.md)) the mi
 identity descriptors: it gains the digest's body-shape anchors — horns, wings, tail — and the
 seam's identity anchor, while hair, eye and skin color come off the reference photograph.
 
+**The minted row records the appearance it drew.** The compiled program's meta carries the cut's
+appearance revision, so the anchor every later scene in the conversation composes from can say
+what it shows, and a scene anchored on it preserves that hair and build from the image instead of
+restating them ([../character-prompts.md](../character-prompts.md) §Identity on a
+reference-anchored render). The look loader hands the stamp to the scene beside the bytes, because
+`chatLookKey` does not hash it: a look whose key still matches can predate an appearance change
+the key's own inputs never saw, and the stamp is what tells the two apart.
+
 **For a fixed look key the compiled prompt is a function of the key's inputs alone.** The
 committed cut carries more than `chatLookKey` hashes — the current layer (body-surface wetness,
 garment condition and arrangement, active conditions) and body language — and a program that

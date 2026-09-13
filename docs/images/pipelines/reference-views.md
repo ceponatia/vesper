@@ -250,6 +250,13 @@ the owner-scoped asset read. No lane queries the `reference_view` kind by hand.
   reported: a three-quarter turn, a medium front shot and every other unmatched shot are the
   ordinary case, and a line on each would bury the misses that are worth reading. Only a view
   that was WANTED and could not be sent is diagnosed.
+- **A consumable view still says which appearance it depicts.** The load hands back the
+  appearance revision stamped on the view's own asset row, from the same locked read that
+  produced its bytes, and the render's prompt seam decides from it how much of the person that
+  image is authoritative for ([../character-prompts.md](../character-prompts.md) §Identity on a
+  reference-anchored render). Consumability is a different question: it asks whether the view
+  was rendered from the portrait the character has accepted right now, and the accepted portrait
+  is exactly the thing that can be out of date.
 
 Every scene render that sent one records `images.meta.referenceViews` at reserve time, beside
 the camera and staging that asked for it: one entry per view carrying `characterId`, `angle`,

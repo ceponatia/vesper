@@ -215,6 +215,10 @@ function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProg
     references: packSelection.references.map((entry) => ({
       reference: entry.reference,
       subjectId: input.characterId,
+      // What the accepted portrait behind this pack depicts (issue #551) — the
+      // seam compares it with the cut being drawn and decides whether the
+      // reference is still authoritative for hair and build.
+      appearanceRevision: entry.appearanceRevision,
     })),
     operation: variantChangeOperation(input.kind, input.instruction),
     // An identity-critical lane refuses on a lost anchor rather than rendering a

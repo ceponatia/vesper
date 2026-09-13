@@ -10,6 +10,7 @@ import {
   type SceneReferenceSource,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { readAppearanceRevision } from "@/contracts/images/appearance-revision";
 import { db, images } from "../db";
 import { imageMeta, readImageBytes } from "./asset-storage";
 import { evaluateIdentityPackForProfile } from "./identity-pack-references";
@@ -43,6 +44,18 @@ export interface IdentityPackRenderReference {
   candidate: IdentityReferenceCandidate;
   /** How the scene lane tags an anchor: whether the stored row began as an upload. */
   source: SceneReferenceSource;
+  /**
+   * What the CANONICAL PORTRAIT this pack was derived from depicts — its
+   * appearance revision (issue #551, `contracts/images/appearance-revision.ts`).
+   *
+   * The portrait's own, not the crop's: a face crop is a rectangle cut out of it
+   * by local derivation, which renders nothing and so stamps nothing, and every
+   * role in one pack shows the same person at the same moment. Null for an
+   * uploaded portrait, for one rendered before this contract existed, and
+   * whenever the source row cannot be read — all of which compare as `unknown`
+   * and compile what the lane compiled before the stamp existed.
+   */
+  appearanceRevision: string | null;
 }
 
 export type IdentityPackRenderReferencesResult =
@@ -94,6 +107,14 @@ export async function identityPackRenderReferences(
     return { ok: false, code: evaluated.code, error: `identity references unavailable (${evaluated.messageKey})` };
   }
 
+  // One read for the whole selection: every candidate in one evaluation comes
+  // from one pack revision, so they all name the same accepted portrait and its
+  // stamp is one fact rather than one per role.
+  const appearanceRevision = await readSourceAppearanceRevision(
+    evaluated.candidates[0]?.sourceImageId ?? null,
+    ownerId,
+    characterId,
+  );
   const specs = identityCandidateReferenceSpecs(evaluated.candidates);
   const references: IdentityPackRenderReference[] = [];
   const provenance: IdentityReferenceProvenance[] = [];
@@ -121,6 +142,7 @@ export async function identityPackRenderReferences(
       provenance: record,
       candidate,
       source: loaded.uploaded ? "uploaded" : "generated",
+      appearanceRevision,
     });
     provenance.push(record);
   }
@@ -131,6 +153,33 @@ export async function identityPackRenderReferences(
   // Through the schema on the way out so what a lane persists is exactly the
   // degraded-safe shape `meta.identityReferences` readers will parse.
   return { ok: true, references, provenance: identityReferenceProvenanceListSchema.parse(provenance) };
+}
+
+/**
+ * The appearance the pack's canonical portrait DEPICTS, read off that row's own
+ * meta under the owner (issue #551).
+ *
+ * Read from the image rather than copied onto the pack row when the pack is
+ * derived, because the two answers differ exactly where it matters: derivation
+ * runs at acceptance, and an owner who accepts an older portrait after a haircut
+ * would have the pack claim the haircut it does not show. The image is the only
+ * thing that knows what it shows, and it was stamped when it was drawn.
+ *
+ * Every failure — no row, not this owner's, no stamp, a stamp for somebody else
+ * — reads null, which compares as `unknown`.
+ */
+async function readSourceAppearanceRevision(
+  sourceImageId: string | null,
+  ownerId: string,
+  characterId: string,
+): Promise<string | null> {
+  if (sourceImageId === null) return null;
+  const [row] = await db()
+    .select({ meta: images.meta })
+    .from(images)
+    .where(and(eq(images.id, sourceImageId), eq(images.ownerId, ownerId)))
+    .limit(1);
+  return row === undefined ? null : readAppearanceRevision(row.meta, characterId);
 }
 
 /** Bytes + origin for one owned, ready image; null for missing, foreign, unready or file-less. */

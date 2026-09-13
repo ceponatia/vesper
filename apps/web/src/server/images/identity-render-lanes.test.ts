@@ -119,6 +119,7 @@ const packOk = (): Extract<IdentityPackRenderReferencesResult, { ok: true }> => 
       provenance: record("canonical_identity", "imgportrait"),
       candidate: candidate("canonical_identity", true, "imgportrait"),
       source: "uploaded",
+      appearanceRevision: null,
     },
   ],
   provenance: [record("canonical_identity", "imgportrait")],
@@ -322,7 +323,7 @@ describe("scene (chat cast) lane", () => {
   it("a minted chat look STAYS the identity reference — the pack is not asked (5B ruling)", async () => {
     mockResolve.mockResolvedValue(resolved("scene"));
     const lookBytes = Buffer.from("look");
-    mockLook.mockResolvedValue({ imageId: "imglook", buffer: lookBytes });
+    mockLook.mockResolvedValue({ imageId: "imglook", buffer: lookBytes, appearanceRevision: null });
 
     await run([member({ lookKey: "fresh" })]);
     expect(mockConsume).not.toHaveBeenCalled();

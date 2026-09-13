@@ -27,8 +27,10 @@ import {
   compileDialectClaims,
   selectImageNegativeConstraints,
   selectImagePositiveClaims,
+  QWEN_2511_APPEARANCE_MOVED_NOTICE,
   QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   type CompileImagePromptProgramInput,
   type ImageCameraFact,
@@ -1004,6 +1006,52 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     // The person count CLOSES the instruction (D10): it used to sit third, which
     // is the one place a "nobody else is here" assertion cannot do its job.
     expect(text.endsWith("Wren is the only person in the picture; the foreground is clear.")).toBe(true);
+  });
+
+  /**
+   * THE PRESERVE SET FOLLOWS THE REFERENCE'S PROVENANCE (issue #551).
+   *
+   * One slot, three verdicts, three sentences. The application compares the
+   * reference's appearance stamp with the cut being drawn and states the answer
+   * on the slot; this dialect's whole job is to word it — the preserve set it
+   * asks for has to differ, because a photograph taken from today's appearance
+   * carries hair and build and one of unknown age does not.
+   *
+   * `unknown` is pinned against the UNSTATED spelling rather than against a
+   * literal, because the contract is that a render nothing is known about
+   * compiles what it compiled before this field existed.
+   */
+  it("words the preserve set from the reference's appearance verdict", () => {
+    const say = (preservation: "matches" | "differs" | "unknown" | undefined): string => {
+      const result = compile2511(editWorld(), {
+        references: [{ position: 1, role: "identity", subjectRef: "s1", ...(preservation === undefined ? {} : { preservation }) }],
+      });
+      if (!result.ok) throw new Error("unexpected refusal");
+      return result.compiled.positiveText;
+    };
+
+    // A reference drawn from this very appearance: the wider preserve set, and
+    // no correction after it — there is nothing for the text to be authoritative
+    // for that the photograph does not already carry.
+    const current = say("matches");
+    expect(current).toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(current).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(current).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+
+    // A reference the appearance has moved past: the ordinary preserve set, plus
+    // the sentence that stops the image and the text competing over hair. The
+    // correction is its OWN sentence, after the lock rather than inside it.
+    const moved = say("differs");
+    expect(moved).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(moved).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(moved.indexOf(QWEN_2511_APPEARANCE_MOVED_NOTICE)).toBeGreaterThan(
+      moved.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
+    );
+
+    // Nothing known, and nothing said: byte-identical to the sentence this
+    // dialect compiled before the field existed.
+    expect(say("unknown")).toBe(say(undefined));
+    expect(say("unknown")).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
   });
 
   /**

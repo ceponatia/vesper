@@ -30,6 +30,12 @@ import {
   type VisualImageCastMergeRefusal,
 } from "@/contracts/images/visual-digest";
 import {
+  APPEARANCE_REVISION_META_KEY,
+  appearanceRevisionOf,
+  compareAppearanceRevision,
+  type AppearancePreservationMode,
+} from "@/contracts/images/appearance-revision";
+import {
   characterAppearanceAspect,
   IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
   IMAGE_CHARACTER_ATTRIBUTE_OWNER,
@@ -57,7 +63,11 @@ import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 // whole character surface: the two Qwen endpoints, and every other model the
 // profile picker offers (#256).
 import "./packs-character-endpoints";
-import { qwenImageEdit2511PositivePack, QWEN_2511_REFERENCE_AUTHORITY_ASPECTS } from "./packs-qwen-2511";
+import {
+  qwenImageEdit2511PositivePack,
+  QWEN_2511_CURRENT_LOOK_AUTHORITY_ASPECTS,
+  QWEN_2511_REFERENCE_AUTHORITY_ASPECTS,
+} from "./packs-qwen-2511";
 import "./packs-qwen-2512-portrait";
 
 /**
@@ -224,6 +234,22 @@ export interface CharacterPromptReference {
    * leaves it unset and compiles byte-identically.
    */
   readonly description?: string;
+  /**
+   * The APPEARANCE REVISION this image depicts — what the character looked like
+   * when it was drawn (issue #551, `contracts/images/appearance-revision.ts`).
+   *
+   * Read by the lane from the stored reference it is sending, never computed
+   * here: the seam knows what the character looks like NOW, and only the thing
+   * that holds the image knows what it showed then. A chat-look anchor takes it
+   * from the look row, a pack candidate from the accepted portrait it was
+   * derived from, a reference view from its own asset row.
+   *
+   * Absent or null is the ordinary answer for an uploaded portrait and for
+   * every reference minted before this contract existed. It compares as
+   * `unknown` and compiles exactly what this seam compiled before the field
+   * existed.
+   */
+  readonly appearanceRevision?: string | null;
 }
 
 export interface CharacterPromptProgramInput {
@@ -494,18 +520,40 @@ function referenceAnchoredSubjects(references: readonly ImageReferenceFact[]): R
 function dialectReferences(
   subjectOf: (reference: ImageRenderReference) => string | undefined,
   describe: (reference: ImageRenderReference) => string | undefined,
+  preserve: (reference: ImageRenderReference) => AppearancePreservationMode | undefined,
   references: readonly ImageRenderReference[],
 ): ImageDialectReference[] {
   return references.map((reference, index) => {
     const subjectId = reference.role === "identity" ? subjectOf(reference) : undefined;
     const description = describe(reference);
+    const preservation = preserve(reference);
     return {
       position: index + 1,
       role: reference.role,
       ...(subjectId === undefined ? {} : { subjectRef: `subject.${subjectId}` }),
       ...(description === undefined ? {} : { description }),
+      ...(preservation === undefined ? {} : { preservation }),
     };
   });
+}
+
+/**
+ * How much of the character's appearance ONE identity slot is authoritative
+ * for, and the same question asked of a subject's whole set of slots.
+ *
+ * The set answer is the weakest of its members, and only an all-`matches` set
+ * is `matches`: two images of one person are two claims about when she was
+ * photographed, and extending the reference's authority over hair and build on
+ * the strength of the fresher one would ask the model to copy hair from an image
+ * that does not have today's.
+ */
+function weakestPreservation(
+  left: AppearancePreservationMode,
+  right: AppearancePreservationMode,
+): AppearancePreservationMode {
+  if (left === "differs" || right === "differs") return "differs";
+  if (left === "unknown" || right === "unknown") return "unknown";
+  return "matches";
 }
 
 /**
@@ -593,12 +641,35 @@ function castAssembly(
  * (`QWEN_2511_REFERENCE_AUTHORITY_ASPECTS`, `packs-qwen-2511.ts`); this table
  * wires that declaration to the dialect id, it invents none of its own.
  */
-const CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT: Readonly<Record<string, ReadonlySet<CharacterAppearanceAspect>>> = {
-  [qwenImageEdit2511PositivePack.dialectId]: QWEN_2511_REFERENCE_AUTHORITY_ASPECTS,
+const CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT: Readonly<Record<string, CharacterReferenceAuthority>> = {
+  [qwenImageEdit2511PositivePack.dialectId]: {
+    base: QWEN_2511_REFERENCE_AUTHORITY_ASPECTS,
+    whenAppearanceMatches: QWEN_2511_CURRENT_LOOK_AUTHORITY_ASPECTS,
+  },
 };
 
+/**
+ * A dialect's two declared authority sets: what its identity reference owns
+ * whatever it shows, and what it owns once the reference's own stamp says it
+ * shows the appearance this render is drawing (issue #551).
+ *
+ * BOTH come from the pack, beside that endpoint's other reviewed evidence, for
+ * the reason #450's single set did: an aspect vocabulary is Vesper's, but which
+ * aspects an endpoint's lock preserves is that endpoint's finding. This module
+ * wires the declarations to a dialect id and invents neither — in particular it
+ * never derives the matched set by adding hair and build to the base one, which
+ * would silently give the extension to a dialect that never reviewed it.
+ */
+interface CharacterReferenceAuthority {
+  readonly base: ReadonlySet<CharacterAppearanceAspect>;
+  readonly whenAppearanceMatches: ReadonlySet<CharacterAppearanceAspect>;
+}
+
 /** No pack has declared a dialect's reference authority — the honest default, not a guess. */
-const EMPTY_CHARACTER_REFERENCE_AUTHORITY: ReadonlySet<CharacterAppearanceAspect> = new Set();
+const NO_CHARACTER_REFERENCE_AUTHORITY: CharacterReferenceAuthority = {
+  base: new Set(),
+  whenAppearanceMatches: new Set(),
+};
 
 /**
  * Drop the OPTIONAL `subject.appearance` facts a resolved render contract's
@@ -612,9 +683,9 @@ const EMPTY_CHARACTER_REFERENCE_AUTHORITY: ReadonlySet<CharacterAppearanceAspect
  * bypasses the other, and this one never limits by character count.
  *
  * Scoped narrowly, by construction:
- * - only a subject in `anchoredSubjects` is touched — a subject with no
- *   required identity reference is returned untouched, several references of
- *   one subject are one entry in that set and cost one pass, never several;
+ * - only a subject `authorityBySubject` carries an entry for is touched — a
+ *   subject with no required identity reference has none, several references of
+ *   one subject are one entry and cost one pass, never several;
  * - only a `subject.appearance` fact sourced from the attribute-registry
  *   projection (`IMAGE_CHARACTER_ATTRIBUTE_OWNER`,
  *   docs/images/character-prompts.md §Registry-backed image appearance) is a
@@ -628,20 +699,22 @@ const EMPTY_CHARACTER_REFERENCE_AUTHORITY: ReadonlySet<CharacterAppearanceAspect
  *   re-enter through this policy — this function only ever REMOVES from what
  *   it is handed, never adds.
  *
- * Deterministic and order-preserving over its inputs: the same subjects, the
- * same anchored set and the same authority always drop the same keys in the
- * same order (issue #450 checklist item 7).
+ * Deterministic and order-preserving over its inputs: the same subjects and the
+ * same per-subject authority always drop the same keys in the same order
+ * (issue #450 checklist item 7).
  */
 function selectRequestAwareAppearance(
   subjects: readonly ImageSubjectDigest[],
   suppressions: readonly ImageWorldSuppression[],
-  anchoredSubjects: ReadonlySet<string>,
-  authority: ReadonlySet<CharacterAppearanceAspect>,
+  authorityBySubject: ReadonlyMap<string, ReadonlySet<CharacterAppearanceAspect>>,
 ): { readonly subjects: readonly ImageSubjectDigest[]; readonly suppressions: readonly ImageWorldSuppression[] } {
-  if (authority.size === 0 || anchoredSubjects.size === 0) return { subjects, suppressions };
+  if (authorityBySubject.size === 0) return { subjects, suppressions };
   const dropped: ImageWorldSuppression[] = [];
   const nextSubjects = subjects.map((subject) => {
-    if (!anchoredSubjects.has(subject.ref)) return subject;
+    // PER SUBJECT (issue #551): one cast member's anchor may show today's hair
+    // while another's does not, and the set that decides is that subject's own.
+    const authority = authorityBySubject.get(subject.ref);
+    if (authority === undefined) return subject;
     const facts = subject.facts.filter((fact) => {
       if (
         fact.concept !== "subject.appearance" ||
@@ -721,9 +794,11 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // render is exactly the guess that binds the wrong face to the wrong person.
   const subjectByReference = new Map<ImageRenderReference, string>();
   const descriptionByReference = new Map<ImageRenderReference, string>();
+  const revisionByReference = new Map<ImageRenderReference, string>();
   for (const entry of input.references) {
     if (entry.subjectId !== undefined) subjectByReference.set(entry.reference, entry.subjectId);
     if (entry.description !== undefined) descriptionByReference.set(entry.reference, entry.description);
+    if (entry.appearanceRevision) revisionByReference.set(entry.reference, entry.appearanceRevision);
   }
   const subjectOf = (reference: ImageRenderReference): string | undefined => subjectByReference.get(reference);
   // Recovered by object identity for the same reason the subject is: planning
@@ -763,6 +838,39 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // and the digest's own identity anchor already ask — which subjects the
   // planned send list actually names — and the three must never disagree.
   const anchoredSubjects = referenceAnchoredSubjects(references);
+
+  // --- 3a. What each identity slot still shows (issue #551) -----------------
+  // The revision of the cut this render is drawing, per person, against the
+  // revision each identity image was drawn from. One comparison per slot, and
+  // one aggregate per subject, both taken over `planned.primary` — the exact
+  // list the dialect is handed below — so the sentence the dialect words and the
+  // text this seam drops can never be answers to different questions.
+  const currentRevisionBySubject = new Map(
+    input.cuts.map((cut) => [cut.subjectId, appearanceRevisionOf(cut.attributes)] as const),
+  );
+  const preservationOf = (reference: ImageRenderReference): AppearancePreservationMode | undefined => {
+    if (reference.role !== "identity") return undefined;
+    const subjectId = subjectOf(reference);
+    // An unattributed identity slot shows somebody this compile cannot name, so
+    // there is no current appearance to compare it against and no honest claim
+    // to make about it. The dialect gets no mode and words its lock as it always
+    // has.
+    if (subjectId === undefined) return undefined;
+    return compareAppearanceRevision(
+      revisionByReference.get(reference) ?? null,
+      currentRevisionBySubject.get(subjectId) ?? null,
+    );
+  };
+  const preservationBySubject = new Map<string, AppearancePreservationMode>();
+  for (const reference of planned.primary) {
+    const mode = preservationOf(reference);
+    const subjectId = subjectOf(reference);
+    if (mode === undefined || subjectId === undefined) continue;
+    const ref = `subject.${subjectId}`;
+    if (!anchoredSubjects.has(ref)) continue;
+    const seen = preservationBySubject.get(ref);
+    preservationBySubject.set(ref, seen === undefined ? mode : weakestPreservation(seen, mode));
+  }
   const cast = castAssembly(
     input.cuts,
     input.read,
@@ -803,13 +911,26 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // The resolved dialect's own declared reference authority — never the lane,
   // never a caller input (issue #450). Read here because `binding` (step 1)
   // and `anchoredSubjects` (step 3) are both finally known.
+  //
+  // Which of the dialect's two declared sets a subject gets is that subject's
+  // own reference provenance (issue #551): the wider set only where every
+  // identity slot bound to them was drawn from the very appearance this render
+  // is drawing, and the base set everywhere else — including every `unknown`,
+  // which is what an uploaded portrait and every pre-#551 reference read as.
   const referenceAuthority =
-    CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT[binding.promptDialectId] ?? EMPTY_CHARACTER_REFERENCE_AUTHORITY;
+    CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT[binding.promptDialectId] ?? NO_CHARACTER_REFERENCE_AUTHORITY;
+  const authorityBySubject = new Map<string, ReadonlySet<CharacterAppearanceAspect>>();
+  for (const ref of anchoredSubjects) {
+    const aspects =
+      preservationBySubject.get(ref) === "matches"
+        ? referenceAuthority.whenAppearanceMatches
+        : referenceAuthority.base;
+    if (aspects.size > 0) authorityBySubject.set(ref, aspects);
+  }
   const selected = selectRequestAwareAppearance(
     preview.input.subjects ?? [],
     preview.input.suppressions ?? [],
-    anchoredSubjects,
-    referenceAuthority,
+    authorityBySubject,
   );
   const subjects = selected.subjects;
   const built = buildImageWorldDigest({
@@ -833,7 +954,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     binding,
     positivePack,
     negativePack,
-    references: dialectReferences(subjectOf, describe, planned.primary),
+    references: dialectReferences(subjectOf, describe, preservationOf, planned.primary),
     ...(input.register === undefined ? {} : { register: input.register }),
     budget: imagePromptBudgetFromBinding(profile.model.advancedCapabilities.prompt),
     // The probed negative binding is the only honest source for whether this
@@ -866,6 +987,13 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     meta: {
       [IMAGE_PROMPT_PROGRAM_META_KEY]: compiled.compiled.promptProgramProvenance,
       [IMAGE_WORLD_STATE_META_KEY]: compiled.compiled.worldStateProvenance,
+      // What this render's own output DEPICTS, per person (issue #551). Every
+      // lane already merges this meta onto the row it reserves, so the one
+      // image that can become somebody's identity reference later is stamped
+      // here, once, from the cut it was actually drawn from — rather than by
+      // each lane re-reading the character at some later moment and recording
+      // an appearance the picture never had.
+      [APPEARANCE_REVISION_META_KEY]: Object.fromEntries(currentRevisionBySubject),
     },
     binding,
     sentReferences,

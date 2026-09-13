@@ -9,11 +9,15 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import {
+  QWEN_2511_APPEARANCE_MOVED_NOTICE,
+  QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { APPEARANCE_REVISION_META_KEY, appearanceRevisionOf } from "@/contracts/images/appearance-revision";
 import { IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT } from "@/contracts/images/character-adapter";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { expectDiagnostic } from "@/test/diagnostics";
@@ -1260,5 +1264,173 @@ describe("determinism of the request-aware selection", () => {
     expect(
       parseImageWorldStateProvenance(second.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions,
     ).toEqual(parseImageWorldStateProvenance(first.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the reference still shows (issue #551)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE PRESERVATION CONTRACT, DERIVED FROM THE REFERENCE'S OWN PROVENANCE
+ * (issue #551, owner direction on the PR #545 review).
+ *
+ * Issue #450 gave this dialect ONE split: the reference owns face, skin tone and
+ * apparent age, the text owns hair and build. That split is right for a
+ * photograph of unknown age and wrong for a reference minted from the very
+ * appearance the render is drawing — on an instruction editor, restating hair
+ * the image already carries is an instruction to repaint it. So the reference's
+ * stamp decides, and the defects are both silent in the output:
+ *
+ * - a reference that IS current still having its hair restated (the contract
+ *   does nothing, and the edit keeps fighting its own anchor);
+ * - a reference that is NOT current being trusted for hair anyway, which
+ *   deletes the only description of it from the prompt and renders last
+ *   month's haircut.
+ *
+ * Both scenarios are the issue's own acceptance criteria, and nothing else in
+ * the suite can see either one: the dialect owns the wording, this seam owns
+ * which contract a render compiles under.
+ */
+describe("the preservation contract the reference's own stamp decides", () => {
+  /** The appearance this render is drawing — what a freshly minted look depicts. */
+  const CURRENT_APPEARANCE = appearanceRevisionOf(VARIANT_CUT.resolved);
+  /**
+   * The same character before the haircut — what an older accepted portrait
+   * depicts. Derived from the same resolved attributes so the two revisions
+   * differ in exactly one registry fact and nothing else.
+   */
+  const BEFORE_THE_HAIRCUT = appearanceRevisionOf(
+    VARIANT_CUT.resolved.map((entry) =>
+      entry.id === "hair.length" ? { ...entry, value: "chin_length" } : entry,
+    ),
+  );
+
+  const anchoredOn = (appearanceRevision: string | null): CharacterPromptProgram =>
+    compiled(
+      buildCharacterPromptProgram(
+        programInput({ references: [{ ...reference("identity"), appearanceRevision }] }),
+      ),
+    );
+
+  const redundantKeys = (result: CharacterPromptProgram): string[] =>
+    (parseImageWorldStateProvenance(result.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [])
+      .filter((entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT)
+      .map((entry) => entry.key);
+
+  /**
+   * ACCEPTANCE (issue #551): a render anchored on a reference minted from the
+   * current appearance compiles no hair or build sentence and a binding that
+   * preserves them from the image.
+   */
+  it("drops hair and build from the text and preserves them from a reference that depicts this very appearance", () => {
+    const result = anchoredOn(CURRENT_APPEARANCE);
+
+    // The wider preserve clause, and NOT the ordinary one — the two are
+    // deliberately non-overlapping strings so which contract a render compiled
+    // under stays assertable from the text.
+    expect(result.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(result.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    // Nothing tells the model to repaint the hair the photograph already has.
+    expect(result.prompt).not.toMatch(/platinum hair/i);
+    // Recorded under the SAME reason #450 records, because it is the same
+    // judgment over a wider set: this fact is redundant beside this reference.
+    const redundant = redundantKeys(result);
+    expect(redundant.some((key) => key.includes("appearance.hair."))).toBe(true);
+    expect(redundant.some((key) => key.includes("appearance.build."))).toBe(true);
+    // The requested change is untouched — this policy removes reinforcement,
+    // never the instruction the render IS.
+    expect(result.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+    // And the provenance says which verdict the slot compiled under, so a
+    // finished render can still explain why it said nothing about hair.
+    const references = parseImagePromptProgramProvenance(result.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["matches"]);
+  });
+
+  /**
+   * ACCEPTANCE (issue #551): a render anchored on an older base portrait after a
+   * haircut compiles an explicit hair change.
+   *
+   * "Explicit" is as explicit as a digest can honestly be. The stamp says the
+   * appearance moved; it cannot say which fact moved, so the prompt states
+   * today's hair as text (which it always did) and adds the one thing the old
+   * prompt lacked — that the photograph is no longer the authority for it.
+   */
+  it("keeps hair in the text and says the photograph is out of date when the reference predates the change", () => {
+    // Control: the fixture really does carry the fact this case moves, so a
+    // green test cannot mean "the two revisions happened to be identical".
+    expect(BEFORE_THE_HAIRCUT).not.toBe(CURRENT_APPEARANCE);
+    const result = anchoredOn(BEFORE_THE_HAIRCUT);
+
+    expect(result.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(result.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    // Today's hair, still stated — the render draws the haircut it has now.
+    expect(result.prompt).toMatch(/platinum hair/i);
+    // …and the sentence that stops the reference and the text competing.
+    expect(result.prompt).toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+    // Nothing was dropped as redundant: an out-of-date image is authoritative
+    // for exactly the aspects #450 already gave it.
+    expect(redundantKeys(result).some((key) => key.includes("appearance.hair."))).toBe(false);
+    const references = parseImagePromptProgramProvenance(result.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["differs"]);
+  });
+
+  /**
+   * The fallback that every reference minted before this contract, and every
+   * uploaded portrait, takes. It must be the program the seam compiled before
+   * the stamp existed — byte-identical, because a silent wording change to every
+   * unstamped render is exactly what a forward-only contract must not do.
+   */
+  it("compiles an unstamped reference exactly as it did before the stamp existed", () => {
+    const unstamped = compiled(buildCharacterPromptProgram(programInput()));
+    const explicitlyUnknown = anchoredOn(null);
+
+    expect(explicitlyUnknown.prompt).toBe(unstamped.prompt);
+    expect(unstamped.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(unstamped.prompt).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+    expect(unstamped.prompt).toMatch(/platinum hair/i);
+    const references = parseImagePromptProgramProvenance(unstamped.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["unknown"]);
+  });
+
+  /**
+   * THE STAMP THIS RENDER'S OWN OUTPUT CARRIES.
+   *
+   * Every character lane merges the program's meta onto the row it reserves, so
+   * this one line is what makes a rendered image able to say later what it
+   * depicts — and it is taken from the cut that was drawn, never from a second
+   * read of the character at some later moment. A row stamped from a later read
+   * would claim a portrait shows a haircut it predates, which is the one failure
+   * this contract exists to prevent.
+   */
+  it("stamps its own output with the appearance it drew, per subject", () => {
+    const result = anchoredOn(CURRENT_APPEARANCE);
+
+    expect(result.meta[APPEARANCE_REVISION_META_KEY]).toEqual({ [LANE_PROBE_SUBJECT_ID]: CURRENT_APPEARANCE });
+  });
+
+  /**
+   * Two images of one person are two claims about when she was photographed.
+   * Taking the wider preserve set on the strength of the fresher one would ask
+   * the model to keep hair "exactly as shown" across a pair of photographs where
+   * only one of them shows today's.
+   */
+  it("refuses the wider preserve set when one of a subject's references is out of date", () => {
+    const result = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          references: [
+            { ...reference("identity"), appearanceRevision: CURRENT_APPEARANCE },
+            { ...reference("identity"), appearanceRevision: BEFORE_THE_HAIRCUT },
+          ],
+        }),
+      ),
+    );
+
+    expect(result.sentReferences).toHaveLength(2);
+    expect(result.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(result.prompt).not.toContain(QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(result.prompt).toMatch(/platinum hair/i);
+    expect(redundantKeys(result).some((key) => key.includes("appearance.hair."))).toBe(false);
   });
 });

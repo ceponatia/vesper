@@ -230,6 +230,18 @@ export interface RenderResolvedSceneInput {
   plan: SceneRenderPlan;
   references: SceneVisualReference[];
   referenceBuffers: Map<string, Buffer>;
+  /**
+   * What each stored reference image DEPICTS — its appearance revision, keyed by
+   * the same image id the buffers are (issue #551,
+   * `contracts/images/appearance-revision.ts`).
+   *
+   * Supplied by the caller that resolved the references, because only it knows
+   * whether a cast member anchored on a freshly minted look or on an older
+   * accepted portrait. A missing entry — every caller before this field existed,
+   * every uploaded portrait — compares as `unknown` and compiles the prompt this
+   * lane compiled then.
+   */
+  referenceAppearanceRevisions?: ReadonlyMap<string, string>;
   linkage: SceneAssetLinkage;
   mode?: SceneReferenceMode;
   /** The resolved scene profile and its model; null when none is offered. */
@@ -744,10 +756,17 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         // identity images bound to one subject say "this is Mira" twice, and a
         // model reading two photographs of one person as two people paints two.
         const description = describeByReference.get(reference);
+        // Recovered from the stored image id the reference already carries, so
+        // nothing has to re-derive which slot came from which row (issue #551).
+        const appearanceRevision =
+          reference.sourceImageId === undefined
+            ? undefined
+            : input.referenceAppearanceRevisions?.get(reference.sourceImageId);
         return {
           reference,
           ...(subjectId === undefined ? {} : { subjectId }),
           ...(description === undefined ? {} : { description }),
+          ...(appearanceRevision === undefined ? {} : { appearanceRevision }),
         };
       }),
       // The cast size the render ASSERTS — what arms the single-subject
