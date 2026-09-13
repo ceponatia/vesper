@@ -159,8 +159,11 @@ actions on the model card (`/settings/image-models`):
   latest-id equality check for official models, which expose no per-version endpoint — refuses
   with the blocking findings when an enabled profile would break (an impossible operation, a
   provider override outside the candidate's `knownInputFields`, a LoRA profile losing its
-  bindings), and otherwise atomically pins the slug to `owner/name:version` and swaps in the
-  candidate's probed capabilities.
+  bindings, or `reviewed_control_unbound`: a REVIEWED model's own reviewed setting that the
+  candidate binds nowhere, which blocks rather than warns because the task profile is the only
+  thing carrying that correction), and otherwise atomically pins the slug to `owner/name:version`
+  and swaps in the candidate's probed capabilities. An ordinary profile's tuned control losing its
+  binding stays a warning.
 
 A re-probe of a pinned row probes only its pin and never moves it to latest. Ordinary renders
 follow whatever the slug resolves to, so pinning the slug is what pins production.

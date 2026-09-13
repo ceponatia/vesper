@@ -114,6 +114,42 @@ describe("the profile editor's control fields", () => {
     expect(untouchedSave({ seedPolicy: "random", fastMode: true }).fastMode).toBe(true);
   });
 
+  it("round-trips the Pony ruling's empty negative through an untouched save", () => {
+    // The second instance of the same defect: `negativePrompt: ""` is a VALUE —
+    // it clears the wrapper's hidden `"nsfw, naked"` default — and a form whose
+    // blank box meant "unset" dropped it on a Save nobody thought was an edit,
+    // with nothing left to re-apply it (#244).
+    const stored: ImageControlDefaults = {
+      seedPolicy: "random",
+      negativePrompt: "",
+      resolution: "custom",
+      width: 832,
+      height: 1216,
+    };
+    expect(untouchedSave(stored)).toEqual(stored);
+  });
+
+  it("tells a deliberate empty negative from an unset one, and both from text", () => {
+    expect(imageProfileControlForm({ seedPolicy: "random", negativePrompt: "" }).clearNegativePrompt).toBe(true);
+    expect(imageProfileControlForm({ seedPolicy: "random" }).clearNegativePrompt).toBe(false);
+    expect(imageProfileControlForm({ seedPolicy: "random", negativePrompt: "blurry" }).clearNegativePrompt).toBe(false);
+    expect(untouchedSave({ seedPolicy: "random", negativePrompt: "" }).negativePrompt).toBe("");
+    expect(untouchedSave({ seedPolicy: "random" }).negativePrompt).toBeUndefined();
+    expect(untouchedSave({ seedPolicy: "random", negativePrompt: "blurry" }).negativePrompt).toBe("blurry");
+  });
+
+  it("lets typed text outrank a flag left over from the row the form was seeded from", () => {
+    const form = { ...imageProfileControlForm({ seedPolicy: "random", negativePrompt: "" }) };
+    form.negativePrompt = "blurry, watermark";
+    expect(imageProfileControlDefaults(form, numbersOf(form)).negativePrompt).toBe("blurry, watermark");
+  });
+
+  it("unsets the negative when an admin empties the box and unticks the flag", () => {
+    const form = { ...imageProfileControlForm({ seedPolicy: "random", negativePrompt: "" }) };
+    form.clearNegativePrompt = false;
+    expect(imageProfileControlDefaults(form, numbersOf(form))).toEqual({ seedPolicy: "random" });
+  });
+
   it("clears a control whose field an admin blanks", () => {
     // The other half of the contract, and why this is not a blanket spread of
     // the stored row: blanking a field is how an admin REMOVES a default, so a

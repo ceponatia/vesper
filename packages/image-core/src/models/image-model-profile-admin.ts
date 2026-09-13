@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { validateProviderOverrides } from "../capabilities/image-control-mapping";
 import { reservedImageInputFields } from "../capabilities/reserved-image-input-fields";
-import { baseImageModelSlug, type ImageModel } from "./image-models";
+import type { ImageModel } from "./image-models";
 import {
   emptyImageControlDefaults,
   emptyImageReferencePolicy,
@@ -11,11 +11,10 @@ import {
   imagePromptStrategySchema,
   imageReferencePolicySchema,
   profileEligibility,
-  type ImageControlDefaults,
   type ImageModelProfile,
   type ImageProfileIneligibility,
 } from "./image-model-profiles";
-import { reviewedImageProfileControls, type ReviewedImageControlDefaults } from "./reviewed-profile-controls";
+import { reviewedUnboundControls } from "./reviewed-profile-controls";
 
 /**
  * The profile registry's admin contract: what the create and edit routes accept,
@@ -201,7 +200,8 @@ export function validateImageProfileConfiguration(
     }
   }
 
-  for (const control of reviewedUnboundControls(profile.controlDefaults, model)) {
+  const unbound = reviewedUnboundControls(model.slug, model.advancedCapabilities.controls, profile.controlDefaults);
+  for (const control of unbound) {
     issues.push({
       kind: "reviewed_control_unbound",
       control,
@@ -210,64 +210,4 @@ export function validateImageProfileConfiguration(
   }
 
   return issues;
-}
-
-/**
- * The reviewed controls this row states that the version cannot carry.
- *
- * Scoped twice over, and both narrowings are the point. Only a REVIEWED model is
- * asked — an operator's own profile may say whatever the control vocabulary can
- * say, and a control the version drops is an ordinary recorded drop there. And
- * only the controls that model's reviewed policy actually names are checked, so
- * a curated profile's own `steps` on the same row is nobody's business here.
- *
- * `resolution` is never among them: it sends no field at all, it is the GATE
- * that makes a width/height pair a request, and it is dropped with a reason on
- * every version that binds no tier — including all four reviewed models today.
- *
- * Written member by member over the reviewed vocabulary rather than looping a
- * name map, for the reason the reviewed table itself is: a control added to that
- * vocabulary must be a compile error here, not a setting this check silently
- * stops covering.
- */
-function reviewedUnboundControls(stated: ImageControlDefaults, model: ImageModel): string[] {
-  const reviewed: Readonly<ReviewedImageControlDefaults> | undefined = reviewedImageProfileControls(
-    baseImageModelSlug(model.slug),
-  )?.controlDefaults;
-  if (!reviewed) return [];
-  const bindings = model.advancedCapabilities.controls;
-  const checks: { control: string; carried: boolean; bound: boolean }[] = [
-    { control: "steps", carried: carries(stated.steps, reviewed.steps), bound: bindings.steps !== undefined },
-    {
-      control: "guidance",
-      carried: carries(stated.guidance, reviewed.guidance),
-      bound: bindings.guidance !== undefined,
-    },
-    {
-      control: "negativePrompt",
-      carried: carries(stated.negativePrompt, reviewed.negativePrompt),
-      bound: bindings.negativePrompt !== undefined,
-    },
-    {
-      control: "fastMode",
-      carried: carries(stated.fastMode, reviewed.fastMode),
-      bound: bindings.fastMode !== undefined,
-    },
-    { control: "width", carried: carries(stated.width, reviewed.width), bound: bindings.customWidth !== undefined },
-    { control: "height", carried: carries(stated.height, reviewed.height), bound: bindings.customHeight !== undefined },
-  ];
-  return checks.filter((check) => check.carried && !check.bound).map((check) => check.control);
-}
-
-/**
- * Whether this row states a control the reviewed policy also names.
- *
- * `!== undefined` on both sides and never falsiness: the reviewed values include
- * `fastMode: false` and the Pony ruling's empty `negativePrompt`, and either
- * would read as "not carried" under a truthiness test — skipping the check on
- * exactly the two settings whose whole purpose is to contradict a provider
- * default.
- */
-function carries(stated: unknown, reviewed: unknown): boolean {
-  return stated !== undefined && reviewed !== undefined;
 }

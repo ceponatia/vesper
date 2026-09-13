@@ -18,10 +18,12 @@ import type { ImageControlDefaults, ImageResolutionTier, ImageSeedPolicy } from 
  * `image-profile-form-state.test.ts` round-trips every member the form supports.
  *
  * One property to know: a blank field CLEARS its control, which is what makes
- * "unset this" expressible at all. The cost is that a deliberate EMPTY STRING is
- * not — `negativePrompt: ""` (the Pony wrapper's hidden `"nsfw, naked"` default,
- * cleared by reviewed ruling) reads back as blank and saves as absent. Telling
- * those two apart needs a control the field does not have today.
+ * "unset this" expressible at all. That leaves "send an empty value" with no
+ * spelling of its own, and one control genuinely needs it — `negativePrompt: ""`
+ * is how the Pony wrapper's hidden `"nsfw, naked"` default is cleared, and a
+ * reviewed ruling is stored in exactly that value. So the negative prompt has a
+ * companion flag: blank text plus the flag is the empty string, blank text
+ * without it is unset, and any text at all is the text.
  */
 
 /** A tri-state boolean field: blank leaves the control unset. */
@@ -33,6 +35,8 @@ export interface ImageProfileControlForm {
   guidance: string;
   steps: string;
   negativePrompt: string;
+  /** Blank text plus this flag sends an empty string, rather than leaving the control unset. */
+  clearNegativePrompt: boolean;
   editStrength: string;
   resolution: "" | ImageResolutionTier;
   width: string;
@@ -60,6 +64,7 @@ export function imageProfileControlForm(defaults: ImageControlDefaults | undefin
     guidance: numberField(defaults?.guidance),
     steps: numberField(defaults?.steps),
     negativePrompt: defaults?.negativePrompt ?? "",
+    clearNegativePrompt: defaults?.negativePrompt === "",
     editStrength: numberField(defaults?.editStrength),
     resolution: defaults?.resolution ?? "",
     width: numberField(defaults?.width),
@@ -87,7 +92,7 @@ export function imageProfileControlDefaults(
     seedPolicy: form.seedPolicy,
     ...(numbers.guidance === undefined ? {} : { guidance: numbers.guidance }),
     ...(numbers.steps === undefined ? {} : { steps: numbers.steps }),
-    ...(form.negativePrompt.trim() === "" ? {} : { negativePrompt: form.negativePrompt.trim() }),
+    ...negativePromptDefault(form),
     ...(numbers.editStrength === undefined ? {} : { editStrength: numbers.editStrength }),
     ...(form.resolution === "" ? {} : { resolution: form.resolution }),
     ...(numbers.width === undefined ? {} : { width: numbers.width }),
@@ -101,6 +106,22 @@ export function imageProfileControlDefaults(
       ? {}
       : { lora: { id: form.loraId, ...(numbers.loraScale === undefined ? {} : { scale: numbers.loraScale }) } }),
   };
+}
+
+/**
+ * The negative prompt's three states, in precedence order: any text is the
+ * value, blank text with the flag is the deliberate empty string, and blank
+ * text alone leaves the control unset.
+ *
+ * Text wins over the flag rather than refusing the pair, because the two can
+ * only disagree while an admin is mid-edit — typing into a field whose flag was
+ * set for the row it was seeded from — and the text in front of them is the
+ * clearer statement of intent.
+ */
+function negativePromptDefault(form: ImageProfileControlForm): { negativePrompt?: string } {
+  const text = form.negativePrompt.trim();
+  if (text !== "") return { negativePrompt: text };
+  return form.clearNegativePrompt ? { negativePrompt: "" } : {};
 }
 
 function numberField(value: number | undefined): string {

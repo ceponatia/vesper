@@ -245,6 +245,7 @@ function ImageModelProfileForm({
   const [guidance, setGuidance] = useState(initialControls.guidance);
   const [steps, setSteps] = useState(initialControls.steps);
   const [negativePrompt, setNegativePrompt] = useState(initialControls.negativePrompt);
+  const [clearNegativePrompt, setClearNegativePrompt] = useState(initialControls.clearNegativePrompt);
   const [editStrength, setEditStrength] = useState(initialControls.editStrength);
   const [resolution, setResolution] = useState<"" | ImageResolutionTier>(initialControls.resolution);
   const [width, setWidth] = useState(initialControls.width);
@@ -321,6 +322,7 @@ function ImageModelProfileForm({
         guidance,
         steps,
         negativePrompt,
+        clearNegativePrompt,
         editStrength,
         resolution,
         width,
@@ -560,17 +562,25 @@ function ImageModelProfileForm({
           />
         </div>
 
-        <Field label="Negative prompt" hint="Stored default; sent only where the model binds one.">
-          {(id) => (
-            <Textarea
-              id={id}
-              rows={2}
-              maxLength={2000}
-              value={negativePrompt}
-              onChange={(e) => setNegativePrompt(e.target.value)}
-            />
-          )}
-        </Field>
+        <div className="space-y-2">
+          <Field label="Negative prompt" hint="Stored default; sent only where the model binds one.">
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={2}
+                maxLength={2000}
+                value={negativePrompt}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+              />
+            )}
+          </Field>
+          <CheckOption
+            label="Send an empty negative prompt"
+            checked={clearNegativePrompt}
+            title="Applies when the box above is empty: sends an empty value, which CLEARS a wrapper's own negative default, instead of leaving the control unset"
+            onToggle={() => setClearNegativePrompt(!clearNegativePrompt)}
+          />
+        </div>
 
         <Field
           label="Provider overrides (JSON, advanced)"

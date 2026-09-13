@@ -1,3 +1,4 @@
+import type { ImageModelControlBindings } from "../capabilities/image-model-capabilities";
 import type { ImageControlDefaults } from "./image-model-profiles";
 import { baseImageModelSlug, type ImageModel } from "./image-models";
 
@@ -387,4 +388,72 @@ export function reviewedImageProfilePinnedFields(model: ImageModel): string[] {
     if (field !== undefined) fields.add(field);
   }
   return [...fields];
+}
+
+/**
+ * The reviewed controls a configuration states that ONE version cannot carry.
+ *
+ * Asked at both moments a version and a profile are judged together: saving a
+ * profile ({@link import("./image-model-profile-admin").validateImageProfileConfiguration})
+ * and promoting a probed candidate (`validateImageProfileForCandidate`). One
+ * implementation rather than two lists, because the two answers must never
+ * disagree about the same row — a save refusing what an activation waves
+ * through is how a reviewed correction goes missing between them.
+ *
+ * Scoped twice over, and both narrowings are the point. Only a REVIEWED model is
+ * asked — an operator's own profile may say whatever the control vocabulary can
+ * say, and a control the version drops is an ordinary recorded drop there. And
+ * only the controls that model's reviewed policy actually names are checked, so
+ * a curated profile's own `steps` on the same row is nobody's business here.
+ *
+ * `resolution` is never among them: it sends no field at all, it is the GATE
+ * that makes a width/height pair a request, and it is dropped with a reason on
+ * every version that binds no tier — including all four reviewed models today.
+ *
+ * Written member by member over the reviewed vocabulary rather than looping a
+ * name map, for the reason the reviewed table itself is: a control added to that
+ * vocabulary must be a compile error here, not a setting this check silently
+ * stops covering.
+ */
+export function reviewedUnboundControls(
+  slug: string,
+  bindings: ImageModelControlBindings,
+  stated: ImageControlDefaults,
+): string[] {
+  const reviewed = reviewedImageProfileControls(baseImageModelSlug(slug))?.controlDefaults;
+  if (!reviewed) return [];
+  const checks: { control: string; carried: boolean; bound: boolean }[] = [
+    { control: "steps", carried: carries(stated.steps, reviewed.steps), bound: bindings.steps !== undefined },
+    {
+      control: "guidance",
+      carried: carries(stated.guidance, reviewed.guidance),
+      bound: bindings.guidance !== undefined,
+    },
+    {
+      control: "negativePrompt",
+      carried: carries(stated.negativePrompt, reviewed.negativePrompt),
+      bound: bindings.negativePrompt !== undefined,
+    },
+    {
+      control: "fastMode",
+      carried: carries(stated.fastMode, reviewed.fastMode),
+      bound: bindings.fastMode !== undefined,
+    },
+    { control: "width", carried: carries(stated.width, reviewed.width), bound: bindings.customWidth !== undefined },
+    { control: "height", carried: carries(stated.height, reviewed.height), bound: bindings.customHeight !== undefined },
+  ];
+  return checks.filter((check) => check.carried && !check.bound).map((check) => check.control);
+}
+
+/**
+ * Whether a row states a control the reviewed policy also names.
+ *
+ * `!== undefined` on both sides and never falsiness: the reviewed values include
+ * `fastMode: false` and the Pony ruling's empty `negativePrompt`, and either
+ * would read as "not carried" under a truthiness test — skipping the check on
+ * exactly the two settings whose whole purpose is to contradict a provider
+ * default.
+ */
+function carries(stated: unknown, reviewed: unknown): boolean {
+  return stated !== undefined && reviewed !== undefined;
 }
