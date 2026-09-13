@@ -46,10 +46,19 @@ import { baseImageModelSlug, type ImageModel } from "./image-models";
  * this vocabulary was kept wide for. `steps` remains expressible and unused —
  * the sampler corrections that needed it belonged to models the 2026-08-16
  * ruling dropped, and it stays for the same reason `guidance` paid off.
+ *
+ * A setting the vocabulary HAS a word for must be stated as the control, never
+ * as a raw override, and `fastMode` is why the rule is written down. A profile's
+ * `providerOverrides` merge LAST in `compileProfileRenderPlan`, over the mapped
+ * controls — so a reviewed setting spelled as a raw field outranks the CALLER's
+ * own request for the same thing, and a run that explicitly asked for the
+ * accelerated path would render unaccelerated with nothing refused. Spelled as a
+ * control it merges where a default belongs, beneath the request
+ * (`requested?.fastMode ?? defaults.fastMode`).
  */
 export type ReviewedImageControlDefaults = Pick<
   ImageControlDefaults,
-  "steps" | "guidance" | "negativePrompt" | "resolution" | "width" | "height"
+  "steps" | "guidance" | "negativePrompt" | "fastMode" | "resolution" | "width" | "height"
 >;
 
 /** One model's reviewed policy, in the two columns a profile row stores. */
@@ -59,8 +68,10 @@ export interface ReviewedImageQualityPolicy {
   /**
    * Reviewed settings NO normalized control covers, carried as a profile's
    * `provider_overrides` — the escape hatch, used only where the control
-   * vocabulary genuinely has no word for the setting (`go_fast`, `scheduler`,
-   * PuLID's `method`).
+   * vocabulary genuinely has no word for the setting (PuLID's `method` and
+   * `face_weight`). A setting that HAS a word belongs in `controlDefaults`
+   * instead: overrides merge last, so a raw spelling would outrank the caller's
+   * own request for the same thing.
    */
   providerOverrides: Readonly<Record<string, unknown>>;
   /**
@@ -171,11 +182,17 @@ const REVIEWED_IMAGE_QUALITY: Readonly<Record<string, ReviewedImageQualityPolicy
   "qwen/qwen-image-edit-2511": {
     // This model currently serves only identity-critical variants/scenes. Its
     // provider default optimizes speed on the surface where fidelity matters.
-    // `go_fast` has no normalized control, so the profile says it as the raw
-    // field — the same shape 0107 already uses for Qwen 2512's quality row.
-    controlDefaults: {},
-    providerOverrides: { go_fast: false },
-    controlFields: {},
+    //
+    // Stated as the `fastMode` CONTROL, because the vocabulary has a word for it
+    // and the probed row binds that word to `go_fast`. As a raw override it
+    // merged last and beat the caller: an Image Generator run that asked this
+    // model for the accelerated path — the one surface allowed to ask — compiled
+    // `go_fast: true` from the request and then had it replaced by the reviewed
+    // `false`, with nothing dropped and nothing refused to show for it. That is
+    // the klein 4B defect (#569/#573) reached from the other side.
+    controlDefaults: { fastMode: false },
+    providerOverrides: {},
+    controlFields: { fastMode: "go_fast" },
   },
   "aisha-ai-official/nsfw-flux-dev": {
     // The wrapper defaults to a 1024×1024 square, so every render would be
@@ -238,7 +255,7 @@ export function reviewedImageQualityPolicy(baseSlug: string): ReviewedImageQuali
  */
 export function reviewedImageQualityControlFields(policy: ReviewedImageQualityPolicy): string[] {
   const fields = policy.controlFields;
-  return [fields.steps, fields.guidance, fields.negativePrompt, fields.width, fields.height].filter(
+  return [fields.steps, fields.guidance, fields.negativePrompt, fields.fastMode, fields.width, fields.height].filter(
     (field): field is string => field !== undefined,
   );
 }
@@ -323,6 +340,10 @@ function withReviewedControlDefaults(
   if (merged.negativePrompt === undefined && reviewed.negativePrompt !== undefined) {
     merged.negativePrompt = reviewed.negativePrompt;
   }
+  // `=== undefined` earns its keep twice over here: the reviewed value IS
+  // `false`, and so is a caller's "do not accelerate", so falsiness on either
+  // side of this test would collapse a real request into the default.
+  if (merged.fastMode === undefined && reviewed.fastMode !== undefined) merged.fastMode = reviewed.fastMode;
   if (merged.resolution === undefined && reviewed.resolution !== undefined) merged.resolution = reviewed.resolution;
   if (merged.width === undefined && reviewed.width !== undefined) merged.width = reviewed.width;
   if (merged.height === undefined && reviewed.height !== undefined) merged.height = reviewed.height;
@@ -354,6 +375,7 @@ export function reviewedImageProfilePinnedFields(model: ImageModel): string[] {
     defaults.steps === undefined ? undefined : bindings.steps?.field,
     defaults.guidance === undefined ? undefined : bindings.guidance?.field,
     defaults.negativePrompt === undefined ? undefined : bindings.negativePrompt?.field,
+    defaults.fastMode === undefined ? undefined : bindings.fastMode?.field,
     defaults.width === undefined ? undefined : bindings.customWidth?.field,
     defaults.height === undefined ? undefined : bindings.customHeight?.field,
   ];

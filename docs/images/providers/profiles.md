@@ -50,6 +50,14 @@ the way to a provider, so a reviewed value reaches the payload through the versi
 binding — and is recorded as a drop, with a reason, when the version cannot carry it — exactly like
 every other setting a profile states.
 
+A reviewed setting the normalized control vocabulary has a word for is stated as that **control**,
+never as a raw `providerOverrides` entry — Qwen Edit's accelerated path is the `fastMode` control,
+not a `go_fast` field. Overrides merge last, over the mapped controls, so the raw spelling outranks
+a caller's own request for the same setting: a bench run asking for the accelerated path would
+compile it and then have it replaced, with nothing dropped and nothing refused. The escape hatch is
+for settings the vocabulary genuinely cannot say (PuLID's `method` and `face_weight`). Either way
+the field a reviewed setting occupies is closed to raw advanced values.
+
 Creating a profile for a reviewed model seeds those settings onto the new row, beneath whatever the
 request itself states, so a request that mentions a setting keeps its own value. Seeding runs
 **before** validation: a reviewed override an unprobed version cannot validate is refused at save,

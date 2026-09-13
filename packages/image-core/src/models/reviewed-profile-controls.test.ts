@@ -31,6 +31,7 @@ function effectiveValues(policy: ReviewedImageQualityPolicy): Record<string, unk
   if (controls.negativePrompt !== undefined && fields.negativePrompt !== undefined) {
     input[fields.negativePrompt] = controls.negativePrompt;
   }
+  if (controls.fastMode !== undefined && fields.fastMode !== undefined) input[fields.fastMode] = controls.fastMode;
   if (controls.width !== undefined && fields.width !== undefined) input[fields.width] = controls.width;
   if (controls.height !== undefined && fields.height !== undefined) input[fields.height] = controls.height;
   return { ...input, ...policy.providerOverrides };
@@ -178,15 +179,25 @@ describe("the reviewed policy in both vocabularies", () => {
   });
 
   it("puts a setting with no normalized control in provider overrides", () => {
-    // The two that genuinely have no word in the control vocabulary.
-    expect(reviewedImageProfileControls("qwen/qwen-image-edit-2511")?.providerOverrides).toEqual({ go_fast: false });
-    // `face_weight` joins `method` here for the same reason: the control
-    // vocabulary has no word for the strength of an identity adapter, and
-    // inventing one for a single model would be a type change to say a number.
+    // `face_weight` joins `method` here because the control vocabulary has no
+    // word for the strength of an identity adapter, and inventing one for a
+    // single model would be a type change to say a number.
     expect(reviewedImageProfileControls("nsfw-api/sdxl-pulid")?.providerOverrides).toEqual({
       method: "fidelity",
       face_weight: 1,
     });
+  });
+
+  it("states the accelerated path as a control, so a run that asks for it is not outranked", () => {
+    // The defect that made this a rule: `providerOverrides` merge LAST in
+    // `compileProfileRenderPlan`, over the mapped controls, so a reviewed setting
+    // spelled as a raw provider field beats the CALLER's own request for the same
+    // thing. Qwen Edit's ruling used to be `providerOverrides: {go_fast: false}`,
+    // and an Image Generator run asking this model for the accelerated path
+    // compiled `go_fast: true` and then had it silently replaced.
+    const qwen = reviewedImageProfileControls("qwen/qwen-image-edit-2511");
+    expect(qwen?.controlDefaults).toEqual({ fastMode: false });
+    expect(qwen?.providerOverrides).toEqual({});
   });
 
   it("prefers a normalized control wherever the vocabulary has one", () => {
@@ -310,6 +321,20 @@ describe("reviewedImageProfilePinnedFields", () => {
       expect(fields, slug).not.toContain("resolution");
       expect(fields, slug).not.toContain("size");
     }
+  });
+
+  it("still pins the accelerated path's field now that the ruling is a control", () => {
+    // The Image Generator's raw-bag gate refuses a key that names one of these.
+    // Moving Qwen Edit's ruling out of `providerOverrides` must not quietly
+    // reopen `go_fast` to an advanced value: the field is pinned either way, and
+    // the legitimate way to ask for it is the `fastMode` control.
+    const fields = reviewedImageProfilePinnedFields(
+      model("qwen/qwen-image-edit-2511", {
+        controls: { fastMode: { field: "go_fast", type: "boolean" } },
+        knownInputFields: ["go_fast"],
+      }),
+    );
+    expect(fields).toEqual(["go_fast"]);
   });
 
   it("names no field for a reviewed control this version declares no binding for", () => {

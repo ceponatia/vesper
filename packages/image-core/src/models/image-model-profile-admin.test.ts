@@ -219,18 +219,31 @@ describe("a created profile's reviewed settings, as the save path composes them"
 
   it("carries the reviewed settings of a probed reviewed model, with no issues", () => {
     const { seeded, issues } = saved(
-      model({ slug: "qwen/qwen-image-edit-2511", advancedCapabilities: probedFields(["go_fast"]) }),
+      model({ slug: "nsfw-api/sdxl-pulid:83bea6", advancedCapabilities: probedFields(["method", "face_weight"]) }),
       request(),
     );
-    expect(seeded.providerOverrides).toEqual({ go_fast: false });
+    expect(seeded.providerOverrides).toEqual({ method: "fidelity", face_weight: 1 });
+    expect(seeded.controlDefaults).toMatchObject({ guidance: 7, resolution: "custom", width: 832, height: 1216 });
     expect(issues).toEqual([]);
   });
 
-  it("refuses the same request on an unprobed reviewed model, and says to re-probe", () => {
+  it("carries Qwen Edit's accelerated-path ruling as a control, never as an override", () => {
+    // A raw override would outrank the caller's own `fastMode` request at the
+    // compile step's final merge, so the ruling is a control — and a control is
+    // judged at render time against the version's binding, not here. The save
+    // therefore passes even unprobed, which is the same answer this validator
+    // already gives for every other reviewed control.
+    const { seeded, issues } = saved(model({ slug: "qwen/qwen-image-edit-2511" }), request());
+    expect(seeded.controlDefaults).toMatchObject({ fastMode: false });
+    expect(seeded.providerOverrides).toEqual({});
+    expect(issues).toEqual([]);
+  });
+
+  it("refuses an unprobed reviewed model's raw override, and says to re-probe", () => {
     // Acceptance 3: an unprobed configuration fails the EXISTING validation
     // rather than being stored with settings every render would drop.
-    const { issues } = saved(model({ slug: "qwen/qwen-image-edit-2511" }), request());
-    expect(kinds(issues)).toEqual(["override_rejected"]);
+    const { issues } = saved(model({ slug: "nsfw-api/sdxl-pulid:83bea6" }), request());
+    expect(kinds(issues)).toEqual(["override_rejected", "override_rejected"]);
     expect(issues[0]?.message).toContain("re-probe it first");
   });
 

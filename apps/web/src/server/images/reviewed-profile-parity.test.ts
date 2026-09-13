@@ -2,6 +2,7 @@ import {
   compileProfileRenderPlan,
   type ImageModel,
   type ImageModelProfile,
+  type ImageRenderControls,
   imageModelProfileSchema,
   imageModelSchema,
   reviewedImageProfileControls,
@@ -129,8 +130,12 @@ function reviewedProfile(slug: string): ImageModelProfile {
   return profile({ ...controls?.controlDefaults }, { ...controls?.providerOverrides });
 }
 
-/** The exact provider payload one configuration produces. */
-function payload(subject: ImageModel, configuration: ImageModelProfile): Record<string, unknown> {
+/** The exact provider payload one configuration produces, for one request. */
+function payload(
+  subject: ImageModel,
+  configuration: ImageModelProfile,
+  controlOverrides?: ImageRenderControls,
+): Record<string, unknown> {
   const compiled = compileProfileRenderPlan({
     model: subject,
     profile: configuration,
@@ -138,6 +143,7 @@ function payload(subject: ImageModel, configuration: ImageModelProfile): Record<
     baseNegativePrompt: null,
     safetyCheckerDisabled: false,
     references: { vocabulary: "render_intent", references: [] },
+    ...(controlOverrides ? { controlOverrides } : {}),
   });
   if (!compiled.ok) throw new Error(`compile refused: ${compiled.reason}`);
   const built = buildRegistryModelInput(
@@ -206,6 +212,38 @@ describe("the reviewed settings a task profile carries, on the final payload", (
       }
     });
   }
+
+  it("spells no reviewed setting as a raw override of a field a control already reaches", () => {
+    // The rule a raw `go_fast` override broke: a profile's `providerOverrides`
+    // merge LAST, over the mapped controls, so a reviewed setting written as a
+    // raw field outranks the CALLER's own request for the same thing. Asked
+    // against each model's PROBED bindings, because they decide which fields the
+    // normalized controls reach — the reviewed table alone cannot see the
+    // overlap, which is why it went unnoticed.
+    for (const slug of reviewedImageQualitySlugs) {
+      const policy = reviewedImageQualityPolicy(slug);
+      const fixture = PRODUCTION_BINDINGS[slug];
+      if (!policy || !fixture) continue;
+      const boundByControl = new Set(Object.values(fixture.controls).map((binding) => binding.field));
+      for (const field of Object.keys(policy.providerOverrides)) {
+        expect(boundByControl, `${slug}.${field}`).not.toContain(field);
+      }
+    }
+  });
+
+  it("lets a run that asks Qwen Edit for the accelerated path have it", () => {
+    // THE regression this spelling exists for. The admin Image Generator is the
+    // one surface allowed to ask 2511 for `go_fast: true`, and it asks by
+    // sending `fastMode` as a per-render control. While the reviewed ruling was a
+    // raw override it compiled the request to `go_fast: true` and then replaced
+    // it with `false` — no drop, no refusal, and a Fast-ON/Fast-OFF pair that
+    // came back byte-identical (the klein 4B defect, #569/#573).
+    const slug = "qwen/qwen-image-edit-2511";
+    const off = payload(reviewedModel(slug), reviewedProfile(slug));
+    const on = payload(reviewedModel(slug), reviewedProfile(slug), { fastMode: true });
+    expect(off.go_fast).toBe(false);
+    expect(on.go_fast).toBe(true);
+  });
 
   it("lets a stale probe default lose to the reviewed value", () => {
     // Qwen Edit's stored row still says `go_fast: true` — the registry's probe

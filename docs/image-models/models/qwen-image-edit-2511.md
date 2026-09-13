@@ -92,14 +92,19 @@ trial results and future post-render identity checks are a separate concern.
 
 The provider defaults `go_fast` to `true`. The reviewed policy
 (`packages/image-core/src/models/reviewed-profile-controls.ts`) pins it off, and
-this model's task profiles are what carry it — one provider override per row,
-validated against the probed version like any other:
+this model's task profiles are what carry it — as the normalized **`fastMode`
+control**, which the probed row binds to `go_fast`:
 
 ```json
 {
-  "go_fast": false
+  "controlDefaults": { "fastMode": false }
 }
 ```
+
+The spelling is load-bearing. A profile's `providerOverrides` merge last, over
+the mapped controls, so a reviewed setting written as a raw `go_fast` field would
+outrank the caller's own request for the same thing; as a control it merges where
+a default belongs — beneath the request.
 
 All current production Qwen Edit jobs are identity-critical. Quality therefore
 wins over the provider's speed preset. This model carries no curated fast/quality
@@ -107,13 +112,13 @@ profile variants; a non-identity task on it would need its own profile carrying
 different settings before fast and quality work could diverge.
 
 **The admin [Image Generator](../../image-generator/README.md) is the one
-surface allowed to say otherwise.** The probed row binds `go_fast` as the
-normalized `fastMode` control, so a bench run can ask this model for the
-accelerated path — which is what a bench is for, since a control that only ever
-agreed with production could not investigate the ruling it runs under.
-Production is unaffected: the reviewed policy keeps `go_fast` as a
-`providerOverrides` entry and overrides merge last, so no player-facing render
-can pick up a bench setting.
+surface allowed to say otherwise.** A run that names `fastMode` gets what it
+asked for — which is what a bench is for, since a control that only ever agreed
+with production could not investigate the ruling it runs under. No player-facing
+lane offers that request, so production renders on the reviewed default; that
+isolation comes from what production asks for, not from a merge order. A raw
+`go_fast` advanced value is still refused pre-spend: the field is one the
+reviewed setting occupies, and naming the control is the way to ask.
 
 The effective value differs from the raw `image_models.extra_input` row.
 Diagnostics and provenance report the final payload, not infer it from the row.
