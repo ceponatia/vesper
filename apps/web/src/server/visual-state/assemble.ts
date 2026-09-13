@@ -398,19 +398,25 @@ export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): Vi
   } else {
     currentSuppressions.push(laneUnavailable(input.subjectId, "condition", sink));
   }
+  // Body-surface and conditions join `composed` here, ahead of the meter read:
+  // a meter's ruled effect may already be stated by an active condition on the
+  // same subject (issue #427 finding, e.g. the catalog's own `unwashed`
+  // condition), and the meter adapter can only see that by reading `composed`.
+  composed.push(...currentFeatures);
   if (input.meters !== undefined) {
-    currentFeatures.push(
-      ...projectMeterFeatures({
-        subjectId: input.subjectId,
-        meters: input.meters,
-        ...(sink === undefined ? {} : { sink }),
-      }),
-    );
+    const meters = projectMeterFeatures({
+      subjectId: input.subjectId,
+      meters: input.meters,
+      composeAgainst: composed,
+      ...(sink === undefined ? {} : { sink }),
+    });
+    currentFeatures.push(...meters.features);
+    currentSuppressions.push(...meters.suppressions);
+    composed.push(...meters.features);
   } else {
     currentSuppressions.push(laneUnavailable(input.subjectId, "meter", sink));
   }
   currentSuppressions.push(...unsupportedCurrentStateSuppressions(input.subjectId, sink));
-  composed.push(...currentFeatures);
   contributions.push({ adapterId: "condition", features: currentFeatures, suppressions: currentSuppressions });
 
   // Body language from the scene / body-relations owner.

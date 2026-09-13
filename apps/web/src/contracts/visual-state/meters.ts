@@ -1,16 +1,25 @@
 import { affordanceEvidence } from "../affordances/core";
 import { diag, type DiagnosticSink } from "../diagnostics";
 import { meterStateCue, type MeterDefinition } from "../meters/registry";
-import { VISUAL_STATE_KIND_UNKNOWN, VISUAL_STATE_VALUE_INVALID } from "./diagnostics";
+import {
+  VISUAL_STATE_KIND_UNKNOWN,
+  VISUAL_STATE_METER_EFFECT_ALREADY_STATED,
+  VISUAL_STATE_VALUE_INVALID,
+} from "./diagnostics";
 import {
   validateVisualStateFeature,
   visualStateFeatureKey,
   visualStateFingerprint,
   type VisualStateFeature,
 } from "./feature";
-import { VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID, type VisualStateMeterVisibleEffectValue } from "./kinds";
+import {
+  VISUAL_STATE_CONDITION_ACTIVE_KIND_ID,
+  VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
+  type VisualStateMeterVisibleEffectValue,
+} from "./kinds";
 import type { VisualStateLocusRef } from "./locus";
 import { visualStateKindRegistry } from "./registry";
+import type { VisualStateSuppression } from "./suppression";
 
 /**
  * A meter's ruled visible effect as a current-layer feature (issue #427).
@@ -36,8 +45,21 @@ export interface VisualStateMeterProjectionInput {
   /** Current meter values, 0..1. An id the registry does not know is silent. */
   readonly meters: Readonly<Record<string, number>>;
   readonly definitions?: readonly MeterDefinition[];
+  /**
+   * Features earlier adapters produced. Read ONLY to de-duplicate against an
+   * active condition that already states the same real-world effect (issue
+   * #427 finding) — a meter never composes a relationship edge onto anything
+   * here, unlike `projectBodySurfaceFeatures`'s `modifies` edges.
+   */
+  readonly composeAgainst?: readonly VisualStateFeature[];
   readonly sink?: DiagnosticSink;
   readonly path?: string;
+}
+
+/** Features plus what this adapter chose to withhold, for the snapshot. */
+export interface VisualStateMeterProjection {
+  readonly features: readonly VisualStateFeature[];
+  readonly suppressions: readonly VisualStateSuppression[];
 }
 
 /** Whether a meter value is a usable [0,1] reading — anything else degrades with a diagnostic. */
@@ -46,10 +68,41 @@ function isUsableMeterValue(value: number): boolean {
 }
 
 /**
+ * Meter id → the catalog condition labels (`contracts/conditions/catalog.ts`,
+ * already-normalized keys) that state the SAME real-world effect the meter's
+ * ruled band would add.
+ *
+ * Evidenced against the catalog as it stands, not a general theory of
+ * overlap: only the catalog's own `unwashed` condition currently claims one
+ * of the four ruled bands' effect (hygiene's `unwashed` band). No catalog
+ * entry is named `drunk`, `exhausted`, or a flushed/aroused label, so those
+ * three meters have no row here — the day one is added, this table gains one
+ * more entry, never a broader heuristic.
+ */
+const METER_EFFECT_OVERLAPPING_CONDITIONS: Readonly<Record<string, readonly string[]>> = {
+  hygiene: ["unwashed"],
+};
+
+/** The active condition labels this subject already carries, from `composeAgainst`. */
+function activeConditionLabelsOf(subjectId: string, composeAgainst: readonly VisualStateFeature[]): Set<string> {
+  const labels = new Set<string>();
+  for (const feature of composeAgainst) {
+    if (feature.subjectId !== subjectId) continue;
+    if (feature.kindId !== VISUAL_STATE_CONDITION_ACTIVE_KIND_ID) continue;
+    const value = feature.value;
+    if (typeof value === "object" && value !== null && "condition" in value) {
+      const condition = (value as { condition: unknown }).condition;
+      if (typeof condition === "string") labels.add(condition);
+    }
+  }
+  return labels;
+}
+
+/**
  * One subject's meters as visual-state features, in meter-id order (stable —
  * a feature's key ends in the meter id, so this is also key order).
  */
-export function projectMeterFeatures(input: VisualStateMeterProjectionInput): readonly VisualStateFeature[] {
+export function projectMeterFeatures(input: VisualStateMeterProjectionInput): VisualStateMeterProjection {
   const path = input.path ?? "visual_state.meter";
   const kind = visualStateKindRegistry.byId(VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID);
   if (!kind) {
@@ -59,11 +112,13 @@ export function projectMeterFeatures(input: VisualStateMeterProjectionInput): re
         context: { subjectId: input.subjectId },
       }),
     );
-    return [];
+    return { features: [], suppressions: [] };
   }
 
+  const activeConditionLabels = activeConditionLabelsOf(input.subjectId, input.composeAgainst ?? []);
   const meterIds = Object.keys(input.meters).sort();
   const projected: VisualStateFeature[] = [];
+  const suppressions: VisualStateSuppression[] = [];
   for (const meterId of meterIds) {
     const value = input.meters[meterId];
     if (value === undefined) continue;
@@ -86,6 +141,22 @@ export function projectMeterFeatures(input: VisualStateMeterProjectionInput): re
     if (cue.visibleEffects === undefined || cue.visibleEffects.length === 0) continue;
 
     const locus: VisualStateLocusRef = { kind: "subject", subjectId: input.subjectId };
+    const key = visualStateFeatureKey(input.subjectId, locus, `${VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID}:${meterId}`);
+
+    // An active condition already states this exact effect under its own
+    // label (issue #427 finding) — mint nothing, so the compiled prompt never
+    // restates one real-world fact twice in two vocabularies.
+    const overlappingLabels = METER_EFFECT_OVERLAPPING_CONDITIONS[meterId];
+    const matchedLabel = overlappingLabels?.find((label) => activeConditionLabels.has(label));
+    if (matchedLabel !== undefined) {
+      suppressions.push({
+        key,
+        code: VISUAL_STATE_METER_EFFECT_ALREADY_STATED,
+        detail: `condition:${matchedLabel}`,
+      });
+      continue;
+    }
+
     const bandLabel = cue.pipLabel ?? cue.band;
     const meterValue: VisualStateMeterVisibleEffectValue = {
       meter: meterId,
@@ -94,7 +165,7 @@ export function projectMeterFeatures(input: VisualStateMeterProjectionInput): re
     };
     const candidate: VisualStateFeature = {
       version: 1,
-      key: visualStateFeatureKey(input.subjectId, locus, `${VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID}:${meterId}`),
+      key,
       subjectId: input.subjectId,
       kindId: VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
       layer: kind.layer,
@@ -116,5 +187,5 @@ export function projectMeterFeatures(input: VisualStateMeterProjectionInput): re
     const accepted = validateVisualStateFeature(candidate, input.sink, path);
     if (accepted !== null) projected.push(accepted);
   }
-  return projected;
+  return { features: projected, suppressions };
 }

@@ -18,6 +18,7 @@ import {
   VISUAL_STATE_SCENE_PLAYER,
   type ChatGarmentStore,
 } from "@/contracts";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
@@ -424,6 +425,38 @@ describe("a ruled meter effect in a scene (issue #427)", () => {
 
     const { program: tipsy } = compileScene(plan, false, undefined, () => true, castAtIntoxication(0.5));
     expect(tipsy.prompt).not.toMatch(/glassy/i);
+  });
+
+  /**
+   * A condition and a meter can both claim the SAME real-world state: the
+   * catalog's own `unwashed` condition (`contracts/conditions/catalog.ts`)
+   * and the hygiene meter's `unwashed` band. The assembly composes the meter
+   * against already-produced conditions (`assemble.ts`) and withholds the
+   * meter's effect when an active condition already states it, so the
+   * compiled prompt says "unwashed" exactly once rather than restating the
+   * same fact in two vocabularies ("unwashed" AND "lank, greasy hair, grimy
+   * skin").
+   */
+  it("states an overlapping condition-and-meter pair once, never both", () => {
+    const unwashed: ActiveCondition = {
+      id: "cond_unwashed",
+      label: "unwashed",
+      startedAtMinutes: 0,
+      attributeEffects: [],
+    };
+    const cast = laneProbeCastSubjects().map((subject, index) =>
+      index === 0
+        ? { ...subject, shadow: { ...subject.shadow, conditions: [unwashed], meters: { hygiene: 0.2 } } }
+        : subject,
+    );
+    const { program } = compileScene(plan, false, undefined, () => true, cast);
+    expect(program.prompt).toMatch(/unwashed/i);
+    expect(program.prompt).not.toMatch(/lank, greasy hair/i);
+    expect(program.prompt).not.toMatch(/grimy skin/i);
+    const focal = program.subjects.find((subject) => subject.entityId === LANE_PROBE_SUBJECT_ID);
+    const currentStateFacts = focal?.facts.filter((fact) => fact.concept === "subject.current_state") ?? [];
+    const unwashedFacts = currentStateFacts.filter((fact) => String(fact.value).includes("unwashed"));
+    expect(unwashedFacts).toHaveLength(1);
   });
 });
 

@@ -196,13 +196,23 @@ describe("visibleEffects (issue #427)", () => {
     return bands;
   }
 
+  /** Stable sort so a harmless declaration reorder in `meterDefinitions` cannot fail this test. */
+  function byMeterThenBound(
+    left: { meterId: string; bound: number },
+    right: { meterId: string; bound: number },
+  ): number {
+    return left.meterId === right.meterId ? left.bound - right.bound : left.meterId < right.meterId ? -1 : 1;
+  }
+
   it("declares visibleEffects on exactly the four owner-ruled deepest bands", () => {
-    expect(visibleEffectBands()).toEqual([
-      { meterId: "hygiene", bound: 0.3 },
-      { meterId: "energy", bound: 0.2 },
-      { meterId: "arousal", bound: 0.55 },
-      { meterId: "intoxication", bound: 0.7 },
-    ]);
+    expect([...visibleEffectBands()].sort(byMeterThenBound)).toEqual(
+      [
+        { meterId: "hygiene", bound: 0.3 },
+        { meterId: "energy", bound: 0.2 },
+        { meterId: "arousal", bound: 0.55 },
+        { meterId: "intoxication", bound: 0.7 },
+      ].sort(byMeterThenBound),
+    );
   });
 
   it("never states a flush/blush word or synonym in an image-bound visibleEffects phrase (owner ruling, #427)", () => {
@@ -214,11 +224,10 @@ describe("visibleEffects (issue #427)", () => {
         }
       }
     }
-    // The tripwire is scoped to `visibleEffects` alone: arousal's own narrator
-    // `promptHint` may keep "flushed skin" — that word never reaches an image,
-    // because only `visibleEffects` is read there.
-    const arousalHint = meterById("arousal")?.thresholds.find((t) => t.above === 0.55)?.promptHint ?? "";
-    expect(arousalHint).toMatch(FLUSH_WORDS);
+    // The tripwire is scoped to `visibleEffects` alone. The arousal meter's own
+    // narrator `promptHint` deliberately keeps its own wording (it is never
+    // read for an image) and is not pinned here — that would pin narrator
+    // prose in an image-scoped test.
   });
 });
 

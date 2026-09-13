@@ -193,7 +193,12 @@ fact. Threaded in from `ChatState.meters` at the shadow-assembly seam
 like a wet cut or an active condition: a scene states it, and the chat-look pack
 (`images/packs-qwen-2511.ts`'s `suppressedConcepts`) excludes it from the stable look anchor the
 same way it excludes a soaked condition — current, scene-scoped state must never move the
-cached anchor.
+cached anchor. A condition and a meter can claim the same real-world state under different
+words — the catalog's own `unwashed` condition (`contracts/conditions/catalog.ts`) and the
+hygiene meter's `unwashed` band both exist — so the meter adapter composes against the
+subject's already-produced `condition.active` features (`assemble.ts`'s `composeAgainst`) and
+withholds its effect when an active condition already states it, recording why on the
+snapshot's suppressions rather than restating one fact twice.
 
 **No skin-colour words anywhere in an image prompt.** "Flushed", "blushing" and "rosy" render
 as *stage blusher* — a clown-makeup face, not a body state — so a body state is stated as
