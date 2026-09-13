@@ -12,6 +12,7 @@ import {
   toApiError,
   withQuery,
 } from "./api";
+import { avatarReplayHintSchema, avatarReplayMapSchema } from "./api/images";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -87,6 +88,55 @@ describe("imageRecordSchema", () => {
     expect(parsed.meta.render).toEqual(render);
     // Degraded shapes miss cleanly rather than failing the record.
     expect(imageRecordSchema.parse({ id: "img-2", meta: { render: "not-an-object" } }).meta.render).toBeUndefined();
+  });
+
+  // Kills the defect a strict shape here would cause: a NEW row written by a
+  // newer deploy (issue #248's `retry`/`candidates` meta keys) must never fail
+  // an older client's parse of the whole record.
+  it("carries the retry and candidates provenance (issue #248) through the parse", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-retry",
+      kind: "avatar",
+      status: "ready",
+      prompt: "portrait prompt",
+      meta: {
+        retry: { mode: "same_composition", sourceImageId: "img-source", seed: 777 },
+        candidates: { group: "grp-1", index: 1, of: 2 },
+      },
+    });
+    expect(parsed.meta.retry).toEqual({ mode: "same_composition", sourceImageId: "img-source", seed: 777 });
+    expect(parsed.meta.candidates).toEqual({ group: "grp-1", index: 1, of: 2 });
+  });
+
+  it("degrades a malformed retry or candidates value to absent, never a failed parse", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-malformed",
+      kind: "avatar",
+      status: "ready",
+      prompt: "",
+      meta: { retry: "not-an-object", candidates: 42 },
+    });
+    expect(parsed.meta.retry).toBeUndefined();
+    expect(parsed.meta.candidates).toBeUndefined();
+  });
+});
+
+describe("avatarReplayHintSchema / avatarReplayMapSchema (issue #248)", () => {
+  it("parses an eligible and a refused hint", () => {
+    expect(avatarReplayHintSchema.parse({ ok: true })).toEqual({ ok: true });
+    expect(avatarReplayHintSchema.parse({ ok: false, reason: "no_recorded_seed" })).toEqual({
+      ok: false,
+      reason: "no_recorded_seed",
+    });
+  });
+
+  it("a map keys hints by image id and degrades a malformed map to empty", () => {
+    const map = avatarReplayMapSchema.parse({
+      "img-1": { ok: true },
+      "img-2": { ok: false, reason: "model_changed" },
+    });
+    expect(map).toEqual({ "img-1": { ok: true }, "img-2": { ok: false, reason: "model_changed" } });
+    expect(avatarReplayMapSchema.parse("not-an-object")).toEqual({});
   });
 });
 

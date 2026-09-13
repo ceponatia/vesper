@@ -8,6 +8,19 @@ import { findOwnedCharacter } from "../owned";
 
 type Params = { id: string };
 
+/**
+ * Explicit retry semantics (issue #248): `new_variation` asks for a fresh
+ * sampling attempt — an optional lineage pointer, no seed replay — and
+ * `same_composition` asks to reuse a specific prior portrait's exact
+ * settings, including its seed when the eligibility table
+ * (`server/images/avatar-replay.ts`) allows it. Absent for an ordinary
+ * generation.
+ */
+const avatarRetryBodySchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("new_variation"), sourceImageId: z.string().trim().min(1).max(128).optional() }),
+  z.object({ mode: z.literal("same_composition"), sourceImageId: z.string().trim().min(1).max(128) }),
+]);
+
 const avatarBodySchema = z.object({
   style: z.enum(["realistic", "stylized"]).default("realistic"),
   /**
@@ -19,6 +32,12 @@ const avatarBodySchema = z.object({
   modelId: z.string().trim().max(64).optional(),
   /** The saved editor revision the owner chose to render. */
   authoringRevision: z.number().int().positive().max(2_147_483_647).optional(),
+  /**
+   * The player ceiling is two (issue #248); three or more stays admin-only.
+   * Defaults to one, which is every existing caller, byte-for-byte unchanged.
+   */
+  candidates: z.union([z.literal(1), z.literal(2)]).default(1),
+  retry: avatarRetryBodySchema.optional(),
 });
 
 /**
@@ -40,6 +59,12 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
     const { id } = await ctx.params;
     const body = await readBody(req, avatarBodySchema);
     if (!body.ok) return body.response;
+    // A replay is one render by definition — two candidates asking to reuse
+    // the same settings would just be the same frame twice, never "two
+    // options to choose from".
+    if (body.value.retry?.mode === "same_composition" && body.value.candidates === 2) {
+      return jsonError("avatar.replay_single", "a same-composition replay renders exactly one image", 400);
+    }
 
     // Reserve the immutable source before the guard consumes daily budget. The
     // transaction releases its row lock before the provider job can start.
@@ -79,6 +104,8 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
         },
         style: body.value.style,
         modelId: body.value.modelId,
+        candidates: body.value.candidates,
+        ...(body.value.retry ? { retry: body.value.retry } : {}),
       },
       run: async () => {
         // Detached job, no route sink to answer to: the lane's degradation
@@ -88,7 +115,7 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
         // the thrown-failure path too — a failed render still reports why.
         const collected = new DiagnosticCollector();
         try {
-          const imageId = await generateAvatar({
+          const { imageId, imageIds } = await generateAvatar({
             characterId: id,
             userId: user.id,
             style: body.value.style,
@@ -98,14 +125,16 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
               revision: String(source.authoringRevision),
             },
             sink: collected,
+            candidates: body.value.candidates,
             ...(body.value.modelId ? { modelId: body.value.modelId } : {}),
+            ...(body.value.retry ? { retry: body.value.retry } : {}),
           });
-          return { imageId };
+          return { imageId, imageIds };
         } finally {
           logDiagnostics("images.avatar", collected.items, { characterId: id });
         }
       },
-    }, async () => imageRenderRejection(user, req));
+    }, async () => imageRenderRejection(user, req, { count: body.value.candidates }));
     if (!job.ok) {
       if ("admission" in job) return job.admission;
       if ("admissionPending" in job) return jsonError("admission_pending", "this portrait request is still being admitted; retry shortly", 409);

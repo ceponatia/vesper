@@ -68,6 +68,27 @@ export const imageRowMetaSchema = z
       )
       .optional()
       .catch(undefined),
+    /** Which explicit retry semantics produced this row, and from which source
+     * (issue #248) — absent for an ordinary generation. Kept loose: a new mode
+     * a future deploy adds must not fail an older client's parse. */
+    retry: z
+      .object({
+        mode: z.string().catch(""),
+        sourceImageId: z.string().optional().catch(undefined),
+        seed: z.number().optional().catch(undefined),
+      })
+      .optional()
+      .catch(undefined),
+    /** This row's position in a best-of-two candidate group (issue #248) —
+     * absent for a single-candidate generation. */
+    candidates: z
+      .object({
+        group: z.string().catch(""),
+        index: z.number().catch(1),
+        of: z.number().catch(1),
+      })
+      .optional()
+      .catch(undefined),
   })
   .catch({});
 
@@ -118,6 +139,22 @@ export type ImageRecord = z.infer<typeof imageRecordSchema>;
 export function imageUrl(imageId: string): string {
   return `/api/images/${imageId}/file`;
 }
+
+/**
+ * The portraits list's per-row same-composition hint (issue #248): whether
+ * "Same composition" is offered for that row's retry menu, and why not when
+ * it isn't. Cheap and advisory — the server re-verifies everything against the
+ * request's own resolution regardless of what this said, so a stale hint
+ * degrades to a refused request with its own explanation, never a silently
+ * wrong render.
+ */
+export const avatarReplayHintSchema = z.union([
+  z.object({ ok: z.literal(true) }),
+  z.object({ ok: z.literal(false), reason: z.string().catch("unavailable") }),
+]);
+export type AvatarReplayHint = z.infer<typeof avatarReplayHintSchema>;
+export const avatarReplayMapSchema = z.record(z.string(), avatarReplayHintSchema).catch({});
+export type AvatarReplayMap = z.infer<typeof avatarReplayMapSchema>;
 
 // The variant kinds are a pure contract (`contracts/images/portrait-variant`) —
 // the studio dropdown, the POST body schema and the prompt builder all read that
