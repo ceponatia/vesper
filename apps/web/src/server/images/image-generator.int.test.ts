@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it } from
 import { eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
+  type ImageGeneratorControls,
   type ImageGeneratorCreateRunRequest,
   imageGeneratorDiagnosticCode,
 } from "@/contracts/images/image-generator";
@@ -1839,5 +1840,419 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
     expect(run?.prompt).toBe(prompt);
     expect(run?.finalPrompt).toBe(`${prompt}\n\nkleinsig`);
     expect(captured[0]?.intent.resolvedLora).toMatchObject({ id: KLEIN_LORA_TRIGGER_ID, scale: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Generator-to-provider coverage: the seeded FLUX.1 Kontext Dev row (#574)
+// ---------------------------------------------------------------------------
+
+const KONTEXT_ID = "imgmdlfluxkontextdevaaaa";
+const KONTEXT_SLUG = "black-forest-labs/flux-kontext-dev";
+const KONTEXT_VERSION = "85723d503c17da3f9fd9cecfb9987a8bf60ef747fd8f68a25d7636f88260eb59";
+/**
+ * Compatible with the Kontext slug, so the LoRA library's own mechanical
+ * checks (model, version, scale) all pass — the refusal this fixture proves
+ * comes from the version declaring no LoRA input at all, never from the
+ * library row itself being a bad fit.
+ */
+const KONTEXT_LORA_ID = "imgloraforkontextaaaaaaa";
+
+describe.skipIf(!ready)("image generator over the seeded FLUX.1 Kontext Dev row", () => {
+  /**
+   * A renderer that answers with the version it was ASKED for, the same
+   * pattern the klein block's own `stubVersionEchoingRenderer` uses — the
+   * suite's shared stub returns a constant, which cannot tell a recorded pin
+   * apart from a recorded answer.
+   */
+  function stubKontextRenderer(): void {
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      const requested = request.intent.versionId;
+      const recordedVersionId = requested ?? null;
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_kontext_1",
+        executedVersionId: requested,
+        attempt: {
+          modelId: KONTEXT_ID,
+          modelSlug: KONTEXT_SLUG,
+          profileId: "image-generator/run",
+          task: "item",
+          promptStrategy: "text_to_image_description",
+          requestedVersionId: recordedVersionId,
+          seed: null,
+          appliedControls: {},
+          droppedControls: [],
+          sentReferenceRoles: [],
+          predictionId: "pred_kontext_1",
+          executedVersionId: recordedVersionId,
+        },
+      };
+    });
+  }
+
+  /**
+   * Read the `providerRequest` sub-record out of a stored run's effective
+   * request, typed enough for a key-presence check `toMatchObject` cannot
+   * express (proving a key is ABSENT, not merely undefined).
+   */
+  function providerRequestOf(meta: Record<string, unknown>): Record<string, unknown> {
+    const effectiveRequest = meta["effectiveRequest"] as { providerRequest?: unknown } | undefined;
+    const record = effectiveRequest?.providerRequest;
+    return typeof record === "object" && record !== null ? (record as Record<string, unknown>) : {};
+  }
+
+  beforeAll(async () => {
+    if (!ready) return;
+    // Fail here rather than through a confusing refusal in each case: the row
+    // comes from migration 0139, so a database that lacks it is unmigrated.
+    const rows = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, KONTEXT_ID));
+    expect(rows, "migration 0139 must have seeded the FLUX.1 Kontext Dev row — re-run pnpm db:migrate").toHaveLength(
+      1,
+    );
+
+    // Curated for the LoRA-refusal case. Planted delete-first like every other
+    // global registry fixture in this suite.
+    await db().delete(imageLoras).where(eq(imageLoras.id, KONTEXT_LORA_ID));
+    await db()
+      .insert(imageLoras)
+      .values({
+        id: KONTEXT_LORA_ID,
+        label: "Kontext Fixture LoRA",
+        locatorType: "https_url",
+        locator: "https://example.test/kontext-style.safetensors",
+        compatibleModelSlugs: [KONTEXT_SLUG],
+        // Empty means "any version of a compatible slug" — the mechanical
+        // checks all pass, so the refusal below is proven to come from the
+        // version declaring no LoRA input, not from this fixture.
+        compatibleVersionIds: [],
+        defaultScale: 1,
+        minimumScale: 0.5,
+        maximumScale: 1.5,
+        allowedTasks: ["scene"],
+      });
+  });
+
+  afterAll(async () => {
+    // Only the LoRA fixture — the seeded model row is migration 0139's, never
+    // this suite's to remove.
+    if (ready) await db().delete(imageLoras).where(eq(imageLoras.id, KONTEXT_LORA_ID));
+  });
+
+  it("runs on the seeded pin with one primary reference, sending a single-string input_image and the row's pinned advanced values", async () => {
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    // The pin travels INSIDE the intent, and it is this row's probed version.
+    expect(captured[0]?.intent.versionId).toBe(KONTEXT_VERSION);
+    expect(run?.requestedVersionId).toBe(KONTEXT_VERSION);
+    expect(captured[0]?.intent.references.map((reference) => reference.role)).toEqual(["reference"]);
+    // No adapter execution hint exists for this family
+    // (packages/image-models/src/families/flux/kontext.ts), so the bench's own
+    // numbers govern untouched.
+    expect(captured[0]?.intent.executionPolicy).toEqual({
+      startupBudgetMs: 8 * 60_000,
+      renderBudgetMs: 3 * 60_000,
+      maxStartupRetries: 1,
+    });
+
+    const row = await storedRow(id);
+    const meta = imageMeta(row?.meta);
+    expect(meta["effectiveRequest"]).toMatchObject({
+      providerRequest: {
+        // A SINGLE string, never the array phrasing `sanitizedProviderRequest`
+        // (image-generator-provenance.ts) writes for a list-shaped reference
+        // field — `input_image` is `reference_arity: "single"`, cap 1
+        // (drizzle/0139_flux-kontext-dev.sql).
+        input_image: "[image]",
+        output_format: "webp",
+        output_quality: 95,
+        prompt: expect.stringContaining("lighthouse") as unknown as string,
+      },
+      shape: { mode: "provider_default" },
+    });
+    // No shape key at all: the provider's own `match_input_image` default
+    // decides (docs/image-models/models/flux-kontext-dev.md §`match_input_image`
+    // is a sentinel, not a ratio).
+    expect(Object.hasOwn(providerRequestOf(meta), "aspect_ratio")).toBe(false);
+  });
+
+  it("sends explicit zero control values literally, proving zero travels distinctly from unset", async () => {
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+      // Explicit zeros and the declared minimum step count — none of these
+      // are `undefined`, so none may be silently dropped as unset.
+      controls: { guidance: 0, steps: 4, seed: 0 },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      providerRequest: { guidance: 0, num_inference_steps: 4, seed: 0 },
+    });
+  });
+
+  it("sends an explicitly chosen shape as its own ratio through the version's aspect_ratio field", async () => {
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+      controls: { aspect: "3:4" },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      shape: { mode: "explicit", requestedAspect: "3:4", field: "aspect_ratio", value: "3:4" },
+      providerRequest: { aspect_ratio: "3:4" },
+    });
+  });
+
+  it("refuses prompt-only, before spend: this row can never generate without its required reference", async () => {
+    stubKontextRenderer();
+    const { id, sink } = await createRun({ modelId: KONTEXT_ID });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("failed");
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("operation_unsupported"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses two primary references over the row's capacity of one, before spend", async () => {
+    stubKontextRenderer();
+    const first = await seedReadyImage();
+    const second = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: first }, { imageId: second }], dedicated: [] },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("failed");
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("capacity_exceeded"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses an out-of-range control before spend", async () => {
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+      // Below the declared minimum of 4 (drizzle/0139_flux-kontext-dev.sql).
+      controls: { steps: 3 },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("failed");
+    // NOT the strict final gate (`providerInputViolations`,
+    // packages/image-replicate/src/strict-request.ts), which never sees this
+    // value at all: the `steps` CONTROL binds `num_inference_steps` with the
+    // same declared minimum, and `mapImageRenderControls`
+    // (packages/image-core/src/capabilities/image-control-mapping.ts) drops an
+    // out-of-range control as `invalid` before the payload is even built — its
+    // own "drops an out-of-range value instead of clamping it" case pins
+    // exactly this. `refusedDroppedControl` (image-generator-request.ts) turns
+    // that drop into `control_refused`, naming the CONTROL Vesper knows it as
+    // ("steps") rather than the provider field the strict gate would have
+    // named ("num_inference_steps") had the value ever reached it.
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("control_refused"));
+    expect(row?.error).toContain("steps");
+    expect(captured).toHaveLength(0);
+  });
+
+  const unboundControlCases: { label: string; controls: ImageGeneratorControls }[] = [
+    { label: "fast mode", controls: { fastMode: false } },
+    { label: "a negative prompt", controls: { negativePrompt: "blurry" } },
+    { label: "edit strength", controls: { editStrength: 0.5 } },
+  ];
+  it.each(unboundControlCases)(
+    "refuses $label, which this version binds no field for, before spend",
+    async ({ controls }) => {
+      stubKontextRenderer();
+      const referenceId = await seedReadyImage();
+      const { id, sink } = await createRun({
+        modelId: KONTEXT_ID,
+        inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+        controls,
+      });
+
+      await runImageGeneratorRun(id, ownerId, sink);
+
+      const row = await storedRow(id);
+      expect(row?.status).toBe("failed");
+      expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("control_refused"));
+      expect(captured).toHaveLength(0);
+    },
+  );
+
+  it("accepts a declared non-reserved advanced input, replacing the row's stored default for this run", async () => {
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+      providerInputs: { output_format: "png" },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    // `output_format` is the one non-reserved Advanced input this row declares
+    // (drizzle/0139_flux-kontext-dev.sql); an admin value REPLACES the row's
+    // stored `webp` default for this run — documented behavior, not a defect
+    // (docs/image-models/models/flux-kontext-dev.md §Controls and raw
+    // provider inputs).
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      providerRequest: { output_format: "png" },
+    });
+  });
+
+  it("refuses an advanced value outside the declared output_format enum, before spend", async () => {
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+      providerInputs: { output_format: "gif" },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+    expect(row?.error).toContain("must be one of");
+    expect(captured).toHaveLength(0);
+  });
+
+  const reservedBagCases: { rejects: string; providerInputs: Record<string, string | number | boolean>; detail: string }[] = [
+    {
+      // The safety toggle is application-owned in two ways at once: the
+      // transport overwrites it with the deployment's own posture, and the
+      // row pins it. Neither makes it settable per run.
+      rejects: "the safety toggle",
+      providerInputs: { disable_safety_checker: false },
+      detail: "pinned by the model's reviewed configuration",
+    },
+    {
+      rejects: "the pinned output quality",
+      providerInputs: { output_quality: 50 },
+      detail: "pinned by the model's reviewed configuration",
+    },
+    {
+      // `input_image` is required and reserved on this version's own probed
+      // descriptor — the owner-scoped picker is the only path to it.
+      rejects: "the reference field",
+      providerInputs: { input_image: "https://elsewhere.invalid/face.png" },
+      detail: "owned by the render path",
+    },
+    {
+      // `guidance` is both a normalized control binding and a reserved
+      // descriptor on this version, so the raw bag may not reach it either.
+      rejects: "the guidance control field",
+      providerInputs: { guidance: 2 },
+      detail: "owned by the render path",
+    },
+  ];
+  it.each(reservedBagCases)(
+    "refuses $rejects as a raw advanced value, before spend",
+    async ({ providerInputs, detail }) => {
+      stubKontextRenderer();
+      const referenceId = await seedReadyImage();
+      const { id, sink } = await createRun({
+        modelId: KONTEXT_ID,
+        inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+        providerInputs,
+      });
+
+      await runImageGeneratorRun(id, ownerId, sink);
+
+      const row = await storedRow(id);
+      expect(row?.status).toBe("failed");
+      expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+      expect(row?.error).toContain(detail);
+      expect(captured).toHaveLength(0);
+    },
+  );
+
+  it("refuses a raw advanced value naming a field this version does not declare at all, before spend", async () => {
+    // `lora_weights` belongs to the separate `flux-kontext-dev-lora` endpoint
+    // and is absent from this version's `knownInputFields` and probed
+    // provider-input descriptors alike, so the raw-bag gate
+    // (`rejectedProviderInput`, image-generator-request.ts) defers it — an
+    // unknown field is "validateProviderOverrides' refusal" by its own
+    // comment — and the compile step drops it as `unknown_field`, which
+    // `refusedDroppedControl` turns into `provider_input_rejected`. Asserted
+    // by code only: which layer names the refusal is not the point.
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+      providerInputs: { lora_weights: "https://example.test/x.safetensors" },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("failed");
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a curated LoRA selection before spend, on a version with no LoRA input at all", async () => {
+    // The adapter composes no `loraFeature`
+    // (packages/image-models/src/families/flux/kontext.ts), so this version
+    // binds neither a weights nor a scale field. Which layer settles the
+    // refusal — the mechanical LoRA evaluator's own `image_lora.*`
+    // vocabulary, ahead of the render, or a later `image_generator.*` gate —
+    // is deliberately not asserted here, only that nothing was spent.
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+      controls: { lora: { id: KONTEXT_LORA_ID } },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("failed");
+    expect(captured).toHaveLength(0);
+  });
+
+  it("passes the authored prompt through untouched — the adapter composes no preparePrompt", async () => {
+    stubKontextRenderer();
+    const referenceId = await seedReadyImage();
+    const prompt = "Replace the overcast sky with a clear sunset; keep everything else unchanged.";
+    const { id, sink } = await createRun({
+      modelId: KONTEXT_ID,
+      prompt,
+      inputs: { primary: [{ imageId: referenceId }], dedicated: [] },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    expect(captured[0]?.intent.prompt).toBe(prompt);
   });
 });
