@@ -204,7 +204,11 @@ beforeEach(() => {
   // No failed row by default: a selfie's first attempt succeeded and nothing retries.
   stubDb([]);
   vi.mocked(resolveImageProfileForTask).mockResolvedValue(stockProfile);
-  vi.mocked(latestChatLook).mockResolvedValue({ imageId: "img-look", buffer: Buffer.from("look") });
+  vi.mocked(latestChatLook).mockResolvedValue({
+    imageId: "img-look",
+    buffer: Buffer.from("look"),
+    appearanceRevision: null,
+  });
   mockCompose.mockResolvedValue(plan("lying_beneath_viewer"));
   mockRender.mockResolvedValue("img-scene");
   mockModels.mockResolvedValue([intimateModel()]);

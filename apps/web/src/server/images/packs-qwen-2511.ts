@@ -59,6 +59,39 @@ export const QWEN_2511_REFERENCE_AUTHORITY_ASPECTS: ReadonlySet<CharacterAppeara
 ]);
 
 /**
+ * The aspects this dialect's identity reference is authoritative for when the
+ * reference's own APPEARANCE REVISION says it depicts the very appearance this
+ * render is drawing (issue #551, docs/images/character-prompts.md §Identity on a
+ * reference-anchored render).
+ *
+ * The set above is the honest answer for a photograph of unknown age: hair and
+ * build are exactly the facts that move between a portrait and today, so text
+ * has to own them. That reasoning stops applying the moment the reference is
+ * provably current — a chat look minted from this render's own cut carries
+ * today's hair and today's build pixel-perfect — and on an instruction editor
+ * restating them then is not protection but an instruction to repaint surfaces
+ * the model should be copying, with nothing in the prompt to tell a reminder
+ * from an override.
+ *
+ * Face, skin tone and apparent age are unchanged members: a current reference
+ * is authoritative for MORE than an old one, never for less. Wardrobe and pose
+ * stay text-owned at every revision, because they are what the edit is asking
+ * to change.
+ *
+ * The two sets are declared as data rather than derived from one another —
+ * nothing adds hair and build to the base set on its own — so a dialect that
+ * has not reviewed this extension cannot inherit it, and promoting a finding
+ * about either set stays one edit in one place.
+ */
+export const QWEN_2511_CURRENT_LOOK_AUTHORITY_ASPECTS: ReadonlySet<CharacterAppearanceAspect> = new Set([
+  "face",
+  "skin_tone",
+  "apparent_age",
+  "hair",
+  "build",
+]);
+
+/**
  * What is known about this endpoint, from Vesper's own probe and review
  * (docs/image-models/models/qwen-image-edit-2511.md). Both entries are endpoint
  * facts rather than wording findings — v1 makes no wording claim to evidence.

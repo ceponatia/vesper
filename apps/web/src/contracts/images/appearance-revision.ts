@@ -1,0 +1,182 @@
+import { fnv1aHex } from "@/lib/hash";
+import type { AttributeValue } from "../attributes";
+import { projectImageAppearanceAttributes } from "../appearance-features/image-projection";
+
+/**
+ * THE APPEARANCE REVISION (issue #551) — eight hex characters that answer one
+ * question about a stored reference image: does this photograph still show what
+ * the character looks like now?
+ *
+ * A reference-anchored render has two authorities for the same person — the
+ * image it edits and the text it states — and the split between them was, until
+ * this contract, fixed per dialect (issue #450: the Qwen edit reference owns
+ * face, skin tone and apparent age; text owns hair, build, wardrobe and pose).
+ * That split is right for an OLD reference and wrong for a fresh one: a chat
+ * look minted minutes ago from the character's current appearance already
+ * carries today's hair and today's build pixel-perfect, and restating them in
+ * text tells an instruction editor to repaint surfaces it should copy. The
+ * owner's direction (PR #545 review) is that the reference's own provenance
+ * decides the contract instead of one fixed rule.
+ *
+ * So a render that produces a reusable reference STAMPS the revision of the cut
+ * it drew, the compile seam computes the same function over the cut it is
+ * drawing now, and the two are compared ({@link compareAppearanceRevision}).
+ *
+ * ## What it is a revision OF
+ *
+ * The whole registry-backed image-appearance surface — every attribute
+ * `projectImageAppearanceAttributes` emits (issue #426), by id and by canonical
+ * value fingerprint, sorted. Not hair and build alone, even though hair and
+ * build are the aspects the preservation contract moves.
+ *
+ * That is deliberate, and it is the conservative choice in the direction that
+ * matters. `matches` DROPS text — it hands the image authority over facts the
+ * prompt would otherwise state — so it must be hard to earn: a revision over
+ * the whole appearance says `matches` only when nothing at all about the
+ * character's appearance has moved since the image was drawn, and any drift
+ * whatsoever falls back to `differs`, which is today's behaviour plus a
+ * sentence. A revision over hair and build alone would earn `matches` more
+ * often and would therefore be wrong more often, and being wrong there means
+ * silently deleting a person's hair description from the prompt.
+ *
+ * ## What it cannot do
+ *
+ * It is a hash, not a snapshot. It can say that something moved; it can never
+ * say WHICH fact moved, and no comparison of two revisions can reconstruct a
+ * delta. That is why `differs` does not compile "change her hair from X to Y":
+ * the only wording a dialect may honestly use is that the image is no longer
+ * authoritative for the aspects the text owns, and the text — which states
+ * today's hair and build anyway — is what the render follows. Naming the moved
+ * fact would need a stored projection of the appearance rather than a digest of
+ * it, which is a durable copy of a character's body kept beside every reference
+ * image; that is a separate decision with its own retention question.
+ *
+ * ## Determinism
+ *
+ * Pure, and a pure function of the attribute list alone — no realized body, no
+ * exposure, no camera. A mint site and the compile seam must agree, and they do
+ * not always hold the same render context: a revision that varied with anything
+ * but the attributes would compare two different questions and answer
+ * confidently.
+ */
+
+/**
+ * The revision FAMILY — which input set the digest was taken over.
+ *
+ * It is a prefix rather than a comment because the comparison has to be able to
+ * refuse: a stamp from another family answers a different question, and reading
+ * it as a mismatch would tell every render anchored on an existing reference
+ * that the character's appearance had changed. Widening or narrowing the input
+ * set above means a new family here, and every stamp written under the old one
+ * degrades to `unknown` — today's split — instead of lying in either direction.
+ */
+export const APPEARANCE_REVISION_FAMILY = "v1";
+
+/**
+ * Digest separators — control characters, so no attribute id and no canonical
+ * fingerprint can contain one and two different appearances cannot flatten to
+ * the same digest input. The device and the reasoning are
+ * `visualStateFeaturesFingerprint`'s (`contracts/visual-state/feature.ts`).
+ */
+const FIELD_SEPARATOR = "\u0000";
+const RECORD_SEPARATOR = "\u001f";
+
+/**
+ * The revision of one resolved appearance — `v1:<8 hex>`.
+ *
+ * `isAttributeApplicable` answers `true` for every definition on purpose. The
+ * projection's own realized-body filter asks whether a fact is renderable on
+ * THIS body in THIS shot, which is a render question; this is a question about
+ * the character, asked at two moments that hold different render context.
+ * Everything else the projection decides — which attributes carry image
+ * appearance at all, which values are elided, which are non-visual — is
+ * registry law and answers identically at both moments.
+ */
+export function appearanceRevisionOf(attributes: readonly AttributeValue[]): string {
+  const projected = projectImageAppearanceAttributes({ attributes, isAttributeApplicable: () => true });
+  const parts = projected.map((fact) => `${fact.attributeId}${FIELD_SEPARATOR}${fact.truthFingerprint}`);
+  return `${APPEARANCE_REVISION_FAMILY}:${fnv1aHex(parts.join(RECORD_SEPARATOR))}`;
+}
+
+/**
+ * How much of the character's appearance one reference image is authoritative
+ * for, decided from its stamp (issue #551).
+ *
+ * - `matches` — the image was drawn from exactly the appearance this render is
+ *   drawing, so it carries hair and build as well as the face, and the dialect
+ *   preserves them from the image instead of restating them.
+ * - `differs` — the appearance moved after the image was drawn. The image keeps
+ *   the aspects a photograph of a person always carries (face, skin tone,
+ *   apparent age); the text is authoritative for the rest, and the dialect says
+ *   so rather than leaving the two sources silently competing.
+ * - `unknown` — no stamp, or one from another revision family. The honest
+ *   answer for every reference minted before this contract existed and for
+ *   every uploaded portrait, and it compiles exactly what the render compiled
+ *   before this policy: today's split, and no extra sentence.
+ */
+export type AppearancePreservationMode = "matches" | "differs" | "unknown";
+
+/**
+ * Compare a reference's stamp with the revision of the cut being rendered.
+ *
+ * A missing stamp on either side, and a stamp from a family this build does not
+ * write, are all `unknown` — never `differs`. A cross-family comparison has no
+ * meaning, and reporting it as a change would put an "her appearance has moved"
+ * clause on every render anchored on an older reference the moment the input set
+ * is ever revised.
+ */
+export function compareAppearanceRevision(
+  reference: string | null | undefined,
+  current: string | null | undefined,
+): AppearancePreservationMode {
+  if (!reference || !current) return "unknown";
+  if (!isCurrentFamily(reference) || !isCurrentFamily(current)) return "unknown";
+  return reference === current ? "matches" : "differs";
+}
+
+function isCurrentFamily(revision: string): boolean {
+  return revision.startsWith(`${APPEARANCE_REVISION_FAMILY}:`);
+}
+
+// ---------------------------------------------------------------------------
+// The stamp on a rendered image row
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a rendered image row records the appearance it DEPICTS:
+ * `meta.appearanceRevisions`, keyed by the subject id the compiled cut carried.
+ *
+ * One home, on the image itself, and no durable copy anywhere else. A reference
+ * image is the only thing that knows what it shows, and every table that points
+ * at one — the identity pack's source, a reference-view slot, a chat look —
+ * would be storing a second answer to a question the image has already
+ * answered. That is precisely how a stamp goes wrong: the copy gets written
+ * from the character's appearance at COPY time rather than at draw time, and a
+ * portrait accepted after a haircut would then claim to show the haircut.
+ *
+ * **The stamp is always the revision of the cut the image was drawn from, never
+ * the character's appearance when something later read the row.** That is the
+ * whole correctness rule of this contract.
+ *
+ * Keyed by subject because the seam that writes it compiles a cast: a scene
+ * carries one entry per person. The single-subject lanes — the avatar, the
+ * variant, the chat look, the reference view, which are the only images that
+ * ever become references — carry exactly one.
+ */
+export const APPEARANCE_REVISION_META_KEY = "appearanceRevisions";
+
+/**
+ * Read one subject's stamp off a stored `images.meta`, defensively.
+ *
+ * Image metadata is a trust boundary like any other (docs/resilience.md §1):
+ * the rows are older than this contract and were written by code that has since
+ * changed, so anything unexpected reads as "no stamp" — which is `unknown`,
+ * which is what the render compiled before this contract existed.
+ */
+export function readAppearanceRevision(meta: unknown, subjectId: string): string | null {
+  if (typeof meta !== "object" || meta === null || Array.isArray(meta)) return null;
+  const revisions = (meta as Record<string, unknown>)[APPEARANCE_REVISION_META_KEY];
+  if (typeof revisions !== "object" || revisions === null || Array.isArray(revisions)) return null;
+  const value = (revisions as Record<string, unknown>)[subjectId];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}

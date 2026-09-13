@@ -122,6 +122,24 @@ export interface ImageDialectReference {
    * compiles byte-identically to what it did before this field existed.
    */
   readonly description?: string;
+  /**
+   * How much of the subject's appearance THIS image is still authoritative for
+   * — the preservation contract derived from the reference's own provenance
+   * (issue #551).
+   *
+   * A dialect's identity lock names a preserve set, and which facts belong in it
+   * is not a constant: a photograph taken before a haircut carries the face but
+   * not the hair, while one drawn from the appearance this render is drawing
+   * carries both. `matches` says the image depicts the current appearance,
+   * `differs` says it provably does not, and `unknown` says nobody can tell.
+   *
+   * Supplied by the application, which is the only side that can compare a
+   * stored reference with a character's current state; a dialect reads it and
+   * words it. Unset — every non-identity slot, every reference nothing is known
+   * about — compiles byte-identically to what the dialect compiled before this
+   * field existed, which is also what `unknown` compiles.
+   */
+  readonly preservation?: "matches" | "differs" | "unknown";
 }
 
 /**

@@ -120,10 +120,28 @@ export const imagePromptProgramProvenanceSchema = z.object({
    */
   positivePromptHash: z.string().min(1),
   negativePromptHash: z.string().nullable().default(null),
-  /** Final reference bindings, after planning and capacity trimming. */
+  /**
+   * Final reference bindings, after planning and capacity trimming.
+   *
+   * `preservation` is the appearance-revision verdict this slot was compiled
+   * under (issue #551) — whether the image still showed the appearance the
+   * render was drawing. It is the one thing about a finished render that
+   * explains why the prompt did or did not restate a person's hair, and a
+   * record written before the field existed simply carries none.
+   */
   references: z
-    .array(z.object({ position: z.number().int().positive(), role: z.string(), subjectRef: z.string().optional() }))
-    .default((): { position: number; role: string; subjectRef?: string }[] => []),
+    .array(
+      z.object({
+        position: z.number().int().positive(),
+        role: z.string(),
+        subjectRef: z.string().optional(),
+        preservation: z.enum(["matches", "differs", "unknown"]).optional(),
+      }),
+    )
+    .default(
+      (): { position: number; role: string; subjectRef?: string; preservation?: "matches" | "differs" | "unknown" }[] =>
+        [],
+    ),
 });
 export type ImagePromptProgramProvenance = z.infer<typeof imagePromptProgramProvenanceSchema>;
 
