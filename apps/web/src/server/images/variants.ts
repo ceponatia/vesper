@@ -185,8 +185,17 @@ interface VariantProgramInputs {
  * falls back to the picked profile, which the ordinary variant binding does
  * match — but the row is already doomed to refuse in `produce`, and compiling
  * would store a program describing a render nobody made. So it is skipped.
+ *
+ * A SUCCESSFUL bench route also passes `intimateReveal: true` to the shared
+ * seam (#430): the cut's own `intimateAllowed` stays `false` either way (a
+ * route-level projection beside the digest, not a change to what the digest
+ * itself may carry), but the seam projects the cut's applicable exposed
+ * anatomy as typed `subject.intimate_anatomy` facts through the same
+ * `subjectIntimateRevealFacts` projection the scene lane and the staged
+ * bench already use — covered or inapplicable anatomy stays out by the
+ * projection's own rule. An ordinary variant kind states nothing new.
  */
-function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProgramResult | null {
+export function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProgramResult | null {
   const { character, resolved, cut, packSelection, input } = inputs;
   if (!character || resolved === null || cut === null) return null;
   // The bench route's own failure — see above.
@@ -221,6 +230,10 @@ function activeVariantProgram(inputs: VariantProgramInputs): CharacterPromptProg
     // stranger: the adapter's join-level check fails the row before provider
     // spend.
     refuseOnMissingRequired: true,
+    // A SUCCESSFULLY paired bench route projects the cut's exposed anatomy
+    // through the seam (#430); an ordinary variant spreads nothing, so its
+    // input object stays byte-identical to before this field existed.
+    ...(inputs.nsfwRoute?.ok ? { intimateReveal: true } : {}),
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
 }
