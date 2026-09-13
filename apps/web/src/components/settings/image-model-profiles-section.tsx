@@ -8,6 +8,7 @@ import {
   imageReferencePolicySchema,
   imageResolutionTiers,
   imageSeedPolicies,
+  parseAspectValue,
   type ImageControlDefaults,
   type ImageModelProfileCreateRequest,
   type ImageProfileOperation,
@@ -58,6 +59,46 @@ import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-
  */
 
 const TIMEOUT_HINT = "Blank uses the environment budget. 30–900 seconds, the table's own bounds.";
+
+/** One `supportedAspects` entry's width/height pair — both spellings (`3:4`, `1536*2048`). */
+function widthHeightOf(value: string): { width: number; height: number } | null {
+  const match = /^(\d+)\s*[:*]\s*(\d+)$/.exec(value.trim());
+  const width = Number(match?.[1]);
+  const height = Number(match?.[2]);
+  return match && width > 0 && height > 0 ? { width, height } : null;
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+  return b === 0 ? a : greatestCommonDivisor(b, a % b);
+}
+
+/** `"1536*2048"` shown as its reduced ratio, `"3:4"`; a ratio spelling reduces to itself. */
+function reducedRatioLabel(value: string): string | null {
+  const pair = widthHeightOf(value);
+  if (!pair) return null;
+  const divisor = greatestCommonDivisor(pair.width, pair.height);
+  return `${pair.width / divisor}:${pair.height / divisor}`;
+}
+
+/**
+ * The model's own ratio-shaped `supportedAspects` members, for the profile
+ * editor's "Output shape" picker — every entry that carries a shape at all
+ * (`parseAspectValue`'s job, same rule the render path uses), deduplicated by
+ * its actual ratio so Wan's three exactly-3:4 pixel pairs offer one "3:4"
+ * option rather than three identical-looking ones.
+ */
+function ratioShapeOptions(model: ImageModel): { value: string; label: string }[] {
+  const seen = new Set<number>();
+  const options: { value: string; label: string }[] = [];
+  for (const raw of model.supportedAspects) {
+    const ratio = parseAspectValue(raw);
+    if (ratio === null || seen.has(ratio)) continue;
+    seen.add(ratio);
+    const label = reducedRatioLabel(raw) ?? raw;
+    options.push({ value: label, label });
+  }
+  return options;
+}
 
 /** One profile row's summary line: task, operation, prompt strategy, timeout. */
 function profileSummary(profile: ImageModelProfile): string {
@@ -243,6 +284,10 @@ function ImageModelProfileForm({
   const [resolution, setResolution] = useState<"" | ImageResolutionTier>(defaults?.resolution ?? "");
   const [width, setWidth] = useState(defaults?.width === undefined ? "" : String(defaults.width));
   const [height, setHeight] = useState(defaults?.height === undefined ? "" : String(defaults.height));
+  // Absent (`""`) means "the lane decides" — the field never sees a numeric
+  // ratio, only the `W:H` spelling `resolveRenderTarget` parses back.
+  const [aspectRatio, setAspectRatio] = useState(defaults?.aspectRatio ?? "");
+  const ratioOptions = ratioShapeOptions(model);
   const [thinkingMode, setThinkingMode] = useState<"" | "on" | "off">(
     defaults?.thinkingMode === undefined ? "" : defaults.thinkingMode ? "on" : "off",
   );
@@ -320,6 +365,7 @@ function ImageModelProfileForm({
       ...(resolution === "" ? {} : { resolution }),
       ...(numbers.width.value === undefined ? {} : { width: numbers.width.value }),
       ...(numbers.height.value === undefined ? {} : { height: numbers.height.value }),
+      ...(aspectRatio === "" ? {} : { aspectRatio }),
       ...(thinkingMode === "" ? {} : { thinkingMode: thinkingMode === "on" }),
       ...(loraId === ""
         ? {}
@@ -492,6 +538,25 @@ function ImageModelProfileForm({
           </Field>
           <NumberField label="Width" value={width} placeholder="unset" onChange={setWidth} />
           <NumberField label="Height" value={height} placeholder="unset" onChange={setHeight} />
+          <Field
+            label="Output shape"
+            hint={
+              ratioOptions.length === 0
+                ? "This model offers no ratio-shaped enum, so only the lane default applies."
+                : "Wins over the render's own task default — set this when the profile's own width/height pair is the intended shape."
+            }
+          >
+            {(id) => (
+              <Select id={id} value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)}>
+                <option value="">Lane default</option>
+                {ratioOptions.map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">

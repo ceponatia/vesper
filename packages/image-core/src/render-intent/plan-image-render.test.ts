@@ -1,6 +1,6 @@
 import { DiagnosticCollector } from "@vesper/contracts";
 import { describe, expect, it } from "vitest";
-import { imageModelSchema, type ImageModel } from "../models/image-models";
+import { IMAGE_TARGET_ASPECT, imageModelSchema, type ImageModel } from "../models/image-models";
 import {
   imageModelProfileSchema,
   type ImageModelProfile,
@@ -532,11 +532,44 @@ describe("controls and budget", () => {
 });
 
 describe("target shape", () => {
-  it("carries the lane's requested ratio through untouched", () => {
+  it("carries the lane's requested ratio through untouched, sourced as \"lane\"", () => {
     // The entity and place lanes are the reason this is not a constant: items are
     // square and establishing shots are 3:2.
-    expect(planned(intent({ target: { aspectRatio: 1 } })).targetRatio).toBe(1);
-    expect(planned(intent({ target: { aspectRatio: 3 / 2 } })).targetRatio).toBe(3 / 2);
+    const item = planned(intent({ target: { aspectRatio: 1 } }));
+    expect(item.targetRatio).toBe(1);
+    expect(item.targetSource).toBe("lane");
+    const location = planned(intent({ target: { aspectRatio: 3 / 2 } }));
+    expect(location.targetRatio).toBe(3 / 2);
+    expect(location.targetSource).toBe("lane");
+  });
+
+  it("keeps the raw no-shape request untouched, sourced as \"raw\"", () => {
+    const raw = planned(intent({ target: { aspectRatio: null } }));
+    expect(raw.targetRatio).toBeNull();
+    expect(raw.targetSource).toBe("raw");
+  });
+
+  it("falls to the task's default when the lane names no target at all", () => {
+    // `intent()`'s own fixture profile is task "scene" — 3:4, same as every
+    // production lane's own hard-coded number, so this changes nothing about
+    // what gets sent; it only gives an omitted target somewhere to land.
+    const noTarget = planned(intent({ target: undefined }));
+    expect(noTarget.targetRatio).toBe(IMAGE_TARGET_ASPECT);
+    expect(noTarget.targetSource).toBe("task_default");
+  });
+
+  it("lets a profile's declared shape win over the lane's own explicit request", () => {
+    // Acceptance 1: a profile can request its own intended shape through the
+    // one shared planner, and that request outranks the generic number the
+    // lane itself would have asked for.
+    const withProfileShape = planned(
+      intent({
+        target: { aspectRatio: 1 },
+        profile: resolved({}, { controlDefaults: { aspectRatio: "3:2" } }),
+      }),
+    );
+    expect(withProfileShape.targetRatio).toBe(3 / 2);
+    expect(withProfileShape.targetSource).toBe("profile");
   });
 
   it("hands the compile step's dimension facts to the transport wrapper", () => {

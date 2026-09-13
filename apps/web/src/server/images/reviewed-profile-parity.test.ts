@@ -1,5 +1,7 @@
 import {
+  chooseDimensions,
   compileProfileRenderPlan,
+  IMAGE_TARGET_ASPECT,
   type ImageModel,
   type ImageModelProfile,
   type ImageRenderControls,
@@ -299,4 +301,62 @@ describe("a reviewed model whose version is not probed", () => {
       reason: "unknown_field",
     });
   });
+});
+
+describe("acceptance 4: a reviewed portrait bucket does not render at a square default", () => {
+  // The three reviewed models sharing the 832×1216 custom pair — the
+  // architecture's own portrait bucket, chosen because the wrapper's OWN
+  // default is a 1024×1024 square (see `reviewed-profile-controls.ts`'s
+  // comment on each of these rows).
+  const PORTRAIT_BUCKET_SLUGS = [
+    "aisha-ai-official/nsfw-flux-dev",
+    "aisha-ai-official/likereality-pony-v1",
+    "nsfw-api/sdxl-pulid",
+  ] as const;
+
+  for (const slug of PORTRAIT_BUCKET_SLUGS) {
+    it(`compiles ${slug}'s reviewed 832×1216 pair through to the dimension resolver's facts`, () => {
+      const compiled = compileProfileRenderPlan({
+        model: reviewedModel(slug),
+        profile: reviewedProfile(slug),
+        basePrompt: "a portrait of Mira",
+        baseNegativePrompt: null,
+        safetyCheckerDisabled: false,
+        references: { vocabulary: "render_intent", references: [] },
+      });
+      expect(compiled.ok).toBe(true);
+      if (!compiled.ok) return;
+      // The override actually mapped — not dropped, not left on some leftover
+      // default — which is the fact acceptance 4 depends on: a profile whose
+      // custom width/height never reached this record would render at
+      // whatever the provider defaults to.
+      expect(compiled.plan.dimensionFacts.mappedCustomSize).toEqual({ width: 832, height: 1216 });
+
+      const dimensions = chooseDimensions(reviewedModel(slug), {
+        targetRatio: IMAGE_TARGET_ASPECT,
+        ...compiled.plan.dimensionFacts,
+      });
+      // None of these models declares an `aspect_ratio` enum (all three send
+      // free width/height), so nothing here is a square: the resolver reports
+      // the REAL 832×1216 ratio, not `1` (a square) and not `null` (unknown).
+      expect(dimensions.expectedAspect).toBeCloseTo(832 / 1216);
+      expect(dimensions.expectedAspect).not.toBe(1);
+
+      // 832×1216 (0.684) is not an exact 3:4 (0.75) — this table's own comment
+      // says it is the architecture's TRAINED bucket, not a spelling of 3:4 —
+      // so `renderWithModel` still trims a small strip off the HEIGHT to reach
+      // Vesper's 3:4 target: 1216 → round(832 / 0.75) = 1109, a 107px (8.8%)
+      // trim. What acceptance 4 actually guards against is the alternative:
+      // the wrapper's own 1024×1024 square default cropped to 3:4 would trim
+      // 1024 → 768 off the WIDTH, a 256px (25%, "a quarter of the frame")
+      // loss. The reviewed override does not eliminate cropping outright; it
+      // is the difference between an 8.8% trim and a 25% one.
+      expect(dimensions.needsCrop).toBe(true);
+      const reviewedTrimFraction = 1 - Math.round(832 / IMAGE_TARGET_ASPECT) / 1216;
+      const squareDefaultTrimFraction = 1 - 768 / 1024;
+      expect(reviewedTrimFraction).toBeLessThan(0.1);
+      expect(squareDefaultTrimFraction).toBeCloseTo(0.25);
+      expect(reviewedTrimFraction).toBeLessThan(squareDefaultTrimFraction);
+    });
+  }
 });

@@ -130,6 +130,13 @@ record is what a retry of the same composition reads. The character-fact lanes f
 sibling provenance key beside it — `images.meta.visualState`, the visual-digest record
 ([../pipelines/README.md](../pipelines/README.md)).
 
+Alongside it sits `shape` — the render's own answer to "was the frame cut, where, and why"
+([shape.md](shape.md)): the resolved target ratio and which precedence rung it came from, the
+provider field and value actually sent, the ratio the provider was expected to return, the returned
+image's own pixel size, and the crop actually performed (`null` when none was needed, else the
+target ratio, the placement, the exact rect, and where the focal box came from — `"none"` on every
+render today).
+
 ## Selection stays fail-visible
 
 `routeSceneAttempts` (`packages/image-core/src/provider-interface/attempts.ts`) orders one model's

@@ -164,6 +164,57 @@ describe("attempt provenance", () => {
       sentReferenceRoles: ["identity"],
       predictionId: "pred-1",
       executedVersionId: "v-exec",
+      // The mocked transport in this suite never returns a `shape` outcome —
+      // real renders always do (`renderWithModel`'s own tests own that shape).
+      shape: null,
+    });
+  });
+
+  it("records \"raw\" as the target source for the Generator's deliberate no-shape mode", async () => {
+    // The layer beside `models.test.ts`'s own "sends no shape at all and crops
+    // nothing" case (acceptance 5): that test proves `renderWithModel` never
+    // buckets or crops a native request; this one proves the reason travels
+    // all the way to `meta.render.shape.targetSource` as "raw".
+    mockRender.mockResolvedValue({
+      ok: true,
+      image: Buffer.from("img"),
+      predictionId: "pred-1",
+      executedVersionId: "v-exec",
+      shape: { mode: "provider_default", field: null, value: null, expectedAspect: null, cropTarget: null, crop: null },
+    } satisfies RenderWithModelResult);
+    const result = await renderImageIntent(intent({ target: { aspectRatio: null } }));
+    expect(result.attempt?.shape?.requestedAspect).toBeNull();
+    expect(result.attempt?.shape?.targetSource).toBe("raw");
+    const call = mockRender.mock.calls.at(-1)?.[0] as RenderWithModelInput | undefined;
+    expect(call?.targetRatio).toBeNull();
+  });
+
+  it("builds the shape record from the plan's target resolution and the transport's own echo", async () => {
+    mockRender.mockResolvedValue({
+      ok: true,
+      image: Buffer.from("img"),
+      predictionId: "pred-1",
+      executedVersionId: "v-exec",
+      outputDimensions: { width: 768, height: 1024 },
+      shape: {
+        mode: "target_ratio",
+        field: "aspect_ratio",
+        value: "3:4",
+        expectedAspect: 3 / 4,
+        cropTarget: null,
+        crop: null,
+      },
+    } satisfies RenderWithModelResult);
+    const result = await renderImageIntent(intent());
+    expect(result.attempt?.shape).toEqual({
+      mode: "target_ratio",
+      requestedAspect: 3 / 4,
+      targetSource: "lane",
+      sentField: "aspect_ratio",
+      sentValue: "3:4",
+      expectedAspect: 3 / 4,
+      returned: { width: 768, height: 1024 },
+      crop: null,
     });
   });
 

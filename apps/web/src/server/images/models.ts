@@ -2,11 +2,17 @@ import { asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import type { output as ZodOutput, ZodType } from "zod";
 import {
+  chooseCropPlacement,
   chooseDimensions,
   IMAGE_TARGET_ASPECT,
   imageAspectInputField,
+  type CropPlacement,
+  type CropRect,
+  type ImageFocalBox,
+  type ImageFocalSource,
   type ImageModel,
   imageModelSchema,
+  type ImageProfileTask,
   type ImageRenderDimensionFacts,
   type ImageRenderPolicy,
   type PlannedControlReference,
@@ -146,6 +152,23 @@ export interface RenderWithModelInput {
    */
   dimensionFacts?: ImageRenderDimensionFacts;
   /**
+   * The profile task this render is for, when the caller resolved one
+   * (`renderImageIntent`). Absent for a direct caller with no profile — the
+   * trial, the lab. The ONLY thing it decides is crop anchoring: a too-tall
+   * trim on a subject-bearing task (`portrait | variant | scene | chat_look`)
+   * anchors to the top instead of centering (`chooseCropPlacement`).
+   */
+  task?: ImageProfileTask;
+  /**
+   * A known subject location within the RETURNED image, in pixels — what a
+   * future face/subject detector would supply. Absent or `null` on every
+   * caller today: the identity pipeline's own detector seam is a deliberate
+   * null (a privacy stance), so this is wiring for a detector this codebase
+   * does not run yet. When present, a crop's window shifts to keep it in
+   * frame instead of centering or top-anchoring (`chooseCropPlacement`).
+   */
+  focal?: ImageFocalBox | null;
+  /**
    * Provider-shaped control fields, already mapped against this version's
    * bindings (`compileProfileRenderPlan`). Passed straight through — this
    * wrapper deliberately knows nothing about control names, so the compile step
@@ -243,6 +266,18 @@ export interface RenderWithModelResult {
   attempts?: ReplicatePredictionAttempt[];
 }
 
+/** The crop this render actually performed, or null when it needed none. */
+export interface RenderCropOutcome {
+  /** The ratio the crop was trying to reach — the same number as `cropTarget`. */
+  targetRatio: number;
+  /** `"focal"` when a known subject location drove the placement, else the anchor used. */
+  placement: "focal" | "top" | "center";
+  /** The exact window that was extracted, in the pre-crop image's own pixel space. */
+  rect: CropRect;
+  /** Where the focal box came from — `"none"` on every render today (no detector runs yet). */
+  focalSource: ImageFocalSource;
+}
+
 /** What one render asked the provider for, shape-wise, and what it did afterwards. */
 export interface RenderShapeOutcome {
   /** `provider_default` when the caller asked for no shape at all. */
@@ -255,6 +290,8 @@ export interface RenderShapeOutcome {
   expectedAspect: number | null;
   /** The ratio the result was cropped to, or null when no crop was performed. */
   cropTarget: number | null;
+  /** The crop actually performed — the same fact as `cropTarget`, in full. */
+  crop: RenderCropOutcome | null;
 }
 
 /**
@@ -369,12 +406,13 @@ export async function renderWithModel(
   // reports no field at all instead of an explicit undefined. The count is
   // compared against undefined, not truthiness: zero references sent is a real
   // count, absence means the transport never said.
-  const shape = (cropTarget: number | null): RenderShapeOutcome => ({
+  const shape = (crop: RenderCropOutcome | null): RenderShapeOutcome => ({
     mode: targetRatio === null ? "provider_default" : "target_ratio",
     field: sentShape.field,
     value: sentShape.value,
     expectedAspect: dimensions.expectedAspect,
-    cropTarget,
+    cropTarget: crop ? crop.targetRatio : null,
+    crop,
   });
   const provenance = {
     ...(result.predictionId ? { predictionId: result.predictionId } : {}),
@@ -399,11 +437,33 @@ export async function renderWithModel(
     return { ok: true, ...provenance, shape: shape(null), ...(await outputDimensionsOf(result.image)), image: result.image };
   }
   try {
-    const cropped = await cropToTargetAspect(result.image, targetRatio);
+    const outputDims = await readImageDimensions(result.image);
+    if (!outputDims) throw new Error("could not read image dimensions");
+    const placement = chooseCropPlacement({
+      task: input.task,
+      outputWidth: outputDims.width,
+      outputHeight: outputDims.height,
+      targetRatio,
+      focal: input.focal ?? null,
+    });
+    const cropped = await cropToTargetAspect(result.image, targetRatio, placement);
+    // `cropToTargetAspect` hands back the SAME buffer, untouched, when the
+    // image's own shape already matched — a fact this wrapper could not know
+    // before reading its dimensions. Recording a crop that was never actually
+    // performed would tell an operator a frame was cut when nothing was.
+    const crop: RenderCropOutcome | null =
+      cropped === result.image
+        ? null
+        : {
+            targetRatio,
+            placement: placement.kind === "focal" ? "focal" : placement.gravity,
+            rect: placement.rect,
+            focalSource: input.focal ? "detector" : "none",
+          };
     return {
       ok: true,
       ...provenance,
-      shape: shape(targetRatio),
+      shape: shape(crop),
       ...(await outputDimensionsOf(cropped)),
       image: cropped,
     };
@@ -418,6 +478,16 @@ export async function renderWithModel(
   }
 }
 
+/** The returned buffer's own pixel size, or null when it could not be read. */
+async function readImageDimensions(buffer: Buffer): Promise<{ width: number; height: number } | null> {
+  try {
+    const { width, height } = await sharp(buffer, { limitInputPixels: 40_000_000, failOn: "error" }).metadata();
+    return width && height ? { width, height } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The returned image's own pixel size, for the provenance record — spread into
  * the result, so an unreadable buffer contributes no field rather than a lie.
@@ -427,41 +497,35 @@ export async function renderWithModel(
  * likes, and "what came back" is the only way a bench run can show it.
  */
 async function outputDimensionsOf(buffer: Buffer): Promise<{ outputDimensions?: { width: number; height: number } }> {
-  try {
-    const { width, height } = await sharp(buffer, { limitInputPixels: 40_000_000, failOn: "error" }).metadata();
-    return width && height ? { outputDimensions: { width, height } } : {};
-  } catch {
-    return {};
-  }
+  const dimensions = await readImageDimensions(buffer);
+  return dimensions ? { outputDimensions: dimensions } : {};
 }
 
 /**
- * Centre-crop a buffer to a target ratio, trimming whichever axis is long.
- * Sharp's `extract` needs integers, so the offsets are floored — a one-pixel
+ * Crop a buffer to a target ratio at an already-chosen placement
+ * (`chooseCropPlacement`). Sharp's `extract` needs integers and a window
+ * inside the image, so the rect is floored and clamped here — a one-pixel
  * bias toward the top-left that no viewer can see.
  *
  * Cropping only ever removes: an image already at the target comes back
- * untouched, and nothing is ever padded, since padding would introduce bars.
+ * untouched — the placement is not even read in that case, so a caller never
+ * has to special-case "no crop needed" before calling this — and nothing is
+ * ever padded, since padding would introduce bars.
  */
-export async function cropToTargetAspect(buffer: Buffer, targetRatio: number = IMAGE_TARGET_ASPECT): Promise<Buffer> {
+export async function cropToTargetAspect(buffer: Buffer, targetRatio: number, placement: CropPlacement): Promise<Buffer> {
   const image = sharp(buffer, { limitInputPixels: 40_000_000, failOn: "error", animated: false });
   const { width, height } = await image.metadata();
   if (!width || !height) throw new Error("could not read image dimensions");
 
-  const currentAspect = width / height;
-  if (Math.abs(currentAspect - targetRatio) < 0.001) return buffer;
+  if (Math.abs(width / height - targetRatio) < 0.001) return buffer;
 
-  const [cropWidth, cropHeight] =
-    currentAspect > targetRatio
-      ? [Math.round(height * targetRatio), height] // too wide — trim the sides
-      : [width, Math.round(width / targetRatio)]; // too tall — trim top and bottom
-
+  const { rect } = placement;
   return image
     .extract({
-      left: Math.floor((width - cropWidth) / 2),
-      top: Math.floor((height - cropHeight) / 2),
-      width: Math.min(cropWidth, width),
-      height: Math.min(cropHeight, height),
+      left: Math.max(0, Math.floor(rect.left)),
+      top: Math.max(0, Math.floor(rect.top)),
+      width: Math.min(Math.round(rect.width), width),
+      height: Math.min(Math.round(rect.height), height),
     })
     .toBuffer();
 }

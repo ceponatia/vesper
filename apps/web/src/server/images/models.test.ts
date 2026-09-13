@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { imageModelSchema } from "@vesper/image-core";
+import sharp from "sharp";
+import { chooseCropPlacement, imageModelSchema } from "@vesper/image-core";
 import type { ReplicateClient, ReplicateImageResult } from "@vesper/image-replicate";
 
 /**
@@ -15,7 +16,7 @@ vi.mock("../ai", () => ({ replicateClient: vi.fn(), imageModelSentShape: vi.fn()
 vi.mock("../db", () => ({ db: vi.fn(), imageModels: {} }));
 
 import { imageModelSentShape, replicateClient } from "../ai";
-import { renderWithModel } from "./models";
+import { cropToTargetAspect, renderWithModel } from "./models";
 
 const runModel = vi.fn<ReplicateClient["runRegistryImageModel"]>();
 
@@ -42,6 +43,33 @@ function wan() {
     aspectMode: "size",
     supportedAspects: ["768*1024", "1536*2048", "3072*4096"],
   });
+}
+
+/** A model with no usable shape at all — every render through it always
+ * negotiates `expectedAspect: null`, which forces `renderWithModel` to attempt
+ * a crop regardless of `needsCrop`. That is what lets these fixtures force the
+ * crop path with a REAL image, rather than only exercising it when the crop
+ * happens to fail on undecodable stub bytes. */
+function noAspectModel() {
+  return imageModelSchema.parse({
+    id: "no-aspect-1",
+    slug: "vesper-test/no-aspect",
+    label: "No Aspect Fixture",
+    canGenerate: true,
+    canEdit: true,
+    aspectMode: "aspect_ratio",
+    supportedAspects: [],
+  });
+}
+
+async function solidImage(width: number, height: number, background: { r: number; g: number; b: number }): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background } }).png().toBuffer();
+}
+
+async function pixelAt(buffer: Buffer, x: number, y: number): Promise<{ r: number; g: number; b: number }> {
+  const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
+  const index = (y * info.width + x) * info.channels;
+  return { r: data[index], g: data[index + 1], b: data[index + 2] };
 }
 
 beforeEach(() => {
@@ -145,5 +173,126 @@ describe("renderWithModel reference roles and sent count", () => {
     runModel.mockResolvedValue({ ok: true, image: Buffer.from("img") });
     const uncounted = await renderWithModel({ model: wan(), prompt: "p" });
     expect("sentReferenceCount" in uncounted).toBe(false);
+  });
+});
+
+describe("cropToTargetAspect", () => {
+  it("returns the buffer unchanged when the ratio already matches", async () => {
+    const image = await solidImage(900, 1200, { r: 10, g: 20, b: 30 });
+    const placement = chooseCropPlacement({ outputWidth: 900, outputHeight: 1200, targetRatio: 3 / 4, focal: null });
+    const result = await cropToTargetAspect(image, 3 / 4, placement);
+    expect(result).toBe(image);
+  });
+
+  it("centers a too-wide trim", async () => {
+    const image = await solidImage(1600, 800, { r: 200, g: 0, b: 0 });
+    const placement = chooseCropPlacement({ outputWidth: 1600, outputHeight: 800, targetRatio: 3 / 4, focal: null });
+    const cropped = await cropToTargetAspect(image, 3 / 4, placement);
+    const meta = await sharp(cropped).metadata();
+    expect(meta.width).toBe(600);
+    expect(meta.height).toBe(800);
+  });
+
+  it("top-anchors a too-tall trim for a subject-bearing task", async () => {
+    // Red on top, blue on the bottom half. A top-anchored crop keeps original
+    // row 600 (still red); a centered crop would have landed on row 866 (blue).
+    const top = await solidImage(800, 800, { r: 255, g: 0, b: 0 });
+    const bottom = await solidImage(800, 800, { r: 0, g: 0, b: 255 });
+    const image = await sharp({ create: { width: 800, height: 1600, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+      .composite([
+        { input: top, left: 0, top: 0 },
+        { input: bottom, left: 0, top: 800 },
+      ])
+      .png()
+      .toBuffer();
+    const placement = chooseCropPlacement({ task: "portrait", outputWidth: 800, outputHeight: 1600, targetRatio: 3 / 4, focal: null });
+    const cropped = await cropToTargetAspect(image, 3 / 4, placement);
+    const meta = await sharp(cropped).metadata();
+    expect(meta.height).toBe(1067);
+    expect(await pixelAt(cropped, 10, 600)).toEqual({ r: 255, g: 0, b: 0 });
+  });
+
+  it("centers a too-tall trim for a non-subject task", async () => {
+    // Same fixture as above, `task: "item"` instead: row 600 of the crop must
+    // now be blue (original row 866), proving the anchor actually moved.
+    const top = await solidImage(800, 800, { r: 255, g: 0, b: 0 });
+    const bottom = await solidImage(800, 800, { r: 0, g: 0, b: 255 });
+    const image = await sharp({ create: { width: 800, height: 1600, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+      .composite([
+        { input: top, left: 0, top: 0 },
+        { input: bottom, left: 0, top: 800 },
+      ])
+      .png()
+      .toBuffer();
+    const placement = chooseCropPlacement({ task: "item", outputWidth: 800, outputHeight: 1600, targetRatio: 3 / 4, focal: null });
+    const cropped = await cropToTargetAspect(image, 3 / 4, placement);
+    expect(await pixelAt(cropped, 10, 600)).toEqual({ r: 0, g: 0, b: 255 });
+  });
+
+  it("shifts the crop window to keep an off-centre focal box in frame", async () => {
+    const background = await solidImage(1000, 1000, { r: 10, g: 20, b: 30 });
+    const marker = await solidImage(100, 100, { r: 250, g: 250, b: 0 });
+    const image = await sharp(background)
+      .composite([{ input: marker, left: 800, top: 400 }])
+      .png()
+      .toBuffer();
+    const placement = chooseCropPlacement({
+      outputWidth: 1000,
+      outputHeight: 1000,
+      targetRatio: 3 / 4,
+      focal: { left: 800, top: 400, width: 100, height: 100 },
+    });
+    const cropped = await cropToTargetAspect(image, 3 / 4, placement);
+    // The marker's original span [800, 900) lands at [550, 650) in the 750-wide crop.
+    expect(await pixelAt(cropped, 600, 450)).toEqual({ r: 250, g: 250, b: 0 });
+    expect(await pixelAt(cropped, 50, 450)).toEqual({ r: 10, g: 20, b: 30 });
+  });
+});
+
+describe("renderWithModel crop placement", () => {
+  it("anchors a too-tall crop to the top for a subject-bearing task and records the crop", async () => {
+    const image = await solidImage(800, 1600, { r: 10, g: 20, b: 30 });
+    runModel.mockResolvedValue({ ok: true, image });
+    const result = await renderWithModel({ model: noAspectModel(), prompt: "a portrait", targetRatio: 3 / 4, task: "portrait" });
+    expect(result.ok).toBe(true);
+    expect(result.outputDimensions).toEqual({ width: 800, height: 1067 });
+    expect(result.shape?.cropTarget).toBe(3 / 4);
+    expect(result.shape?.crop).toMatchObject({
+      targetRatio: 3 / 4,
+      placement: "top",
+      focalSource: "none",
+      rect: { left: 0, top: 0, width: 800, height: 1067 },
+    });
+  });
+
+  it("centers a too-tall crop for a non-subject task", async () => {
+    const image = await solidImage(800, 1600, { r: 10, g: 20, b: 30 });
+    runModel.mockResolvedValue({ ok: true, image });
+    const result = await renderWithModel({ model: noAspectModel(), prompt: "an item", targetRatio: 3 / 4, task: "item" });
+    expect(result.shape?.crop).toMatchObject({ placement: "center" });
+  });
+
+  it("shifts the crop to a supplied focal box and records where it came from", async () => {
+    const image = await solidImage(1000, 1000, { r: 10, g: 20, b: 30 });
+    runModel.mockResolvedValue({ ok: true, image });
+    const result = await renderWithModel({
+      model: noAspectModel(),
+      prompt: "a portrait",
+      targetRatio: 3 / 4,
+      focal: { left: 800, top: 400, width: 100, height: 100 },
+    });
+    expect(result.shape?.crop).toMatchObject({
+      placement: "focal",
+      focalSource: "detector",
+      rect: { left: 250, top: 0, width: 750, height: 1000 },
+    });
+  });
+
+  it("records no crop at all when the returned shape already matches the target", async () => {
+    const image = await solidImage(900, 1200, { r: 10, g: 20, b: 30 });
+    runModel.mockResolvedValue({ ok: true, image });
+    const result = await renderWithModel({ model: noAspectModel(), prompt: "a portrait", targetRatio: 3 / 4, task: "portrait" });
+    expect(result.shape?.cropTarget).toBeNull();
+    expect(result.shape?.crop).toBeNull();
   });
 });

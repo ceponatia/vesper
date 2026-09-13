@@ -144,6 +144,23 @@ describe("imageControlDefaultsSchema", () => {
   it("rejects an edit strength outside the 0-1 scale every seeded model uses", () => {
     expect(imageControlDefaultsSchema.safeParse({ editStrength: 1.4 }).success).toBe(false);
   });
+
+  it("leaves the profile's intended shape unset by default", () => {
+    // Absent means "the lane decides" — the same precedent `seedPolicy` set for
+    // a defaults-only member the control mapper never sees.
+    expect(imageControlDefaultsSchema.parse({}).aspectRatio).toBeUndefined();
+  });
+
+  it("accepts a parseable W:H shape", () => {
+    expect(imageControlDefaultsSchema.parse({ aspectRatio: "3:4" }).aspectRatio).toBe("3:4");
+    expect(imageControlDefaultsSchema.parse({ aspectRatio: "2:3" }).aspectRatio).toBe("2:3");
+  });
+
+  it("refuses a shape parseAspectValue cannot read", () => {
+    expect(imageControlDefaultsSchema.safeParse({ aspectRatio: "square" }).success).toBe(false);
+    expect(imageControlDefaultsSchema.safeParse({ aspectRatio: "4K" }).success).toBe(false);
+    expect(imageControlDefaultsSchema.safeParse({ aspectRatio: "" }).success).toBe(false);
+  });
 });
 
 describe("imageModelProfileListSchema", () => {
