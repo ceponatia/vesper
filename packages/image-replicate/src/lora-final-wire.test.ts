@@ -10,7 +10,6 @@ import {
   type ImageRenderIntent,
   planImageRender,
   type PlannedImageRender,
-  withReviewedImageQuality,
 } from "@vesper/image-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createReplicateClient } from "./client";
@@ -170,12 +169,12 @@ function planned(binding?: ImageLoraRenderBinding): PlannedImageRender {
 
 /**
  * Step 3: the body `runRegistryImageModel` posts for this plan — the same
- * builder, the same reviewed-quality seam `renderWithModel` applies, and the
- * reference standing where its uploaded URL would.
+ * builder `renderWithModel` uses, the row as stored exactly as it hands it over,
+ * and the reference standing where its uploaded URL would.
  */
 function sentPayload(plan: PlannedImageRender): Record<string, unknown> {
   return buildPayload(
-    withReviewedImageQuality(plan.model),
+    plan.model,
     { prompt: plan.prompt, aspect: null, controlInput: plan.controlInput, policy: plan.policy },
     plan.references.map(() => REFERENCE_URI),
     [],
@@ -186,7 +185,7 @@ function sentPayload(plan: PlannedImageRender): Record<string, unknown> {
 /** The same payload as the Generator RECORDS it before spending (`image-generator-provenance.ts` effective request record). */
 function recordedPayload(plan: PlannedImageRender): Record<string, unknown> {
   return previewRegistryModelInput({
-    model: withReviewedImageQuality(plan.model),
+    model: plan.model,
     prompt: plan.prompt,
     referenceCount: plan.references.length,
     aspect: null,
@@ -257,7 +256,7 @@ describe("a curated LoRA row reaching the Replicate payload", () => {
       apiToken: "test-token",
       safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
       predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
-    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+    }).runRegistryImageModel(plan.model, {
       prompt: plan.prompt,
       references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
       aspect: null,
@@ -425,7 +424,7 @@ describe("a curated LoRA row reaching an array-shaped Replicate payload", () => 
       apiToken: "test-token",
       safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
       predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
-    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+    }).runRegistryImageModel(plan.model, {
       prompt: plan.prompt,
       references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
       aspect: null,
@@ -592,7 +591,7 @@ describe("the klein 4B RefControl depth recipe (bench primary-reference order)",
       apiToken: "test-token",
       safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
       predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
-    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+    }).runRegistryImageModel(plan.model, {
       prompt: plan.prompt,
       references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
       aspect: null,
@@ -670,7 +669,7 @@ describe("the klein 4B RefControl depth recipe (bench primary-reference order)",
       apiToken: "test-token",
       safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
       predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
-    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+    }).runRegistryImageModel(plan.model, {
       prompt: plan.prompt,
       references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
       aspect: null,

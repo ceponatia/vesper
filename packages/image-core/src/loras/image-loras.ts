@@ -12,7 +12,7 @@ import {
   type ImageProfileTask,
   type ImageRenderControls,
 } from "../models/image-model-profiles";
-import { baseImageModelSlug } from "../models/quality-presets";
+import { baseImageModelSlug } from "../models/image-models";
 import { imageExecutionContextTask, type ImageExecutionContext } from "./execution-context";
 
 /**

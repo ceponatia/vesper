@@ -113,13 +113,13 @@ export {
   referenceCapacity,
   resolveImageProfile,
   reviewedImageProfileControls,
+  reviewedImageProfilePinnedFields,
   reviewedImageQualityControlFields,
-  reviewedImageQualityInputs,
   reviewedImageQualityPolicy,
   reviewedImageQualityPolicyDefects,
   reviewedImageQualitySlugs,
   validateImageProfileConfiguration,
-  withReviewedImageQuality,
+  withReviewedProfileDefaults,
 } from "./models";
 export type {
   DimensionChoice,

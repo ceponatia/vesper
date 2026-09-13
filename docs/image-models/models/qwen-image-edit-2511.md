@@ -88,12 +88,12 @@ The `strong` rating keeps Qwen eligible for identity-critical tasks. It does not
 mean every output is the exact same face. The rating is an eligibility rail;
 trial results and future post-render identity checks are a separate concern.
 
-## Quality policy at the render seam
+## Quality policy in the task profiles
 
 The provider defaults `go_fast` to `true`. The reviewed policy
-(`packages/image-core/src/models/reviewed-profile-controls.ts`) pins it off,
-carried both by this model's task profiles (as a provider override) and by the
-transitional overlay at the shared render seam:
+(`packages/image-core/src/models/reviewed-profile-controls.ts`) pins it off, and
+this model's task profiles are what carry it — one provider override per row,
+validated against the probed version like any other:
 
 ```json
 {
@@ -103,8 +103,8 @@ transitional overlay at the shared render seam:
 
 All current production Qwen Edit jobs are identity-critical. Quality therefore
 wins over the provider's speed preset. This model carries no curated fast/quality
-profile variants; a non-identity task on it would need profile-level settings in
-place of this global override before fast and quality work could diverge.
+profile variants; a non-identity task on it would need its own profile carrying
+different settings before fast and quality work could diverge.
 
 **The admin [Image Generator](../../image-generator/README.md) is the one
 surface allowed to say otherwise.** The probed row binds `go_fast` as the
@@ -452,8 +452,8 @@ strategy, and each is its task's global default
   chain is empty and the scene route refuses rather than inventing a stranger;
 - `chat-look-standard` — task `chat_look`; identity required, style optional.
 
-All three carry empty control defaults. This model has no curated profiles
-beyond them; the `go_fast` override stays at the quality seam above.
+All three carry empty control defaults and the one provider override above.
+This model has no curated profiles beyond them.
 
 ## Identity references
 

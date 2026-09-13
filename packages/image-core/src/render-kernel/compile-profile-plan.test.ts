@@ -442,11 +442,16 @@ describe("compileProfileRenderPlan", () => {
     expect(plan().negativePrompt).toBeNull();
   });
 
-  it("compiles against the reviewed-quality model, not the raw row", () => {
-    // Qwen Edit's provider default optimizes speed where fidelity matters; the
-    // reviewed seam corrects it, and the plan must describe the corrected model.
+  it("compiles a reviewed model's row exactly as stored, rewriting nothing by slug", () => {
+    // A transitional overlay used to rewrite `extraInput` here for four known
+    // slugs, which made a profile carrying the same settings unnecessary and
+    // therefore untested. The task profile is now their one owner — the case
+    // below on `provider_overrides: {"go_fast": false}` is that owner working —
+    // and this is what keeps a second one from growing back: the effective model
+    // differs from the row by the caller's safety fact and nothing else.
     const compiled = plan({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } });
-    expect(compiled.effectiveModel.extraInput).toEqual({ go_fast: false });
+    expect(compiled.effectiveModel.extraInput).toEqual({ go_fast: true });
+    expect(compiled.controlInput).toEqual({});
   });
 });
 

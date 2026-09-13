@@ -16,7 +16,6 @@ import type {
   ImageRenderControls,
   ImageResolutionTier,
 } from "../models/image-model-profiles";
-import { withReviewedImageQuality } from "../models/quality-presets";
 import { compileIdentityReferencePrompt } from "../references/identity-reference-prompt";
 import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../references/reference-role-prompt";
 
@@ -38,11 +37,15 @@ import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../ref
  *    plan this same call produced, so a field cannot enter the fingerprint
  *    unless it entered the payload. The old trial hash was assembled
  *    independently of the render call and drifted from it immediately.
- * 2. **The EFFECTIVE model is what counts.** `withReviewedImageQuality` rewrites
- *    `extraInput` at the render boundary (Qwen Edit's `go_fast`, PuLID's
- *    `method` pin). Hashing the raw row let that table change the
- *    provider payload with no `cell_conflict` to show for it — a silent change
- *    to what a pinned comparison sends.
+ * 2. **The EFFECTIVE model is what counts.** What the provider is handed is not
+ *    always the row as stored: the caller's safety fact is resolved into
+ *    `extraInput` here ({@link withResolvedSafetyChecker}), so the plan and its
+ *    fingerprint describe the model that runs. Vesper's reviewed corrections
+ *    (Qwen Edit's `go_fast`, PuLID's `method` pin) are NOT a second rewrite of
+ *    the row: they arrive as the profile's own controls and overrides, mapped
+ *    and validated like every other setting, which is what lets a pinned
+ *    comparison record them field by field instead of inheriting them from a
+ *    slug-keyed table that could move underneath it.
  * 3. **Nothing is guessed and nothing is silently dropped.** Controls map only
  *    through the version's probed bindings, and every omission is recorded in
  *    `resolvedControls.droppedControls`, which is itself fingerprinted.
@@ -276,7 +279,7 @@ export interface CompileProfileRenderPlanInput {
  * will be sent, and the provider-shaped controls that will accompany it.
  */
 export interface ProfileRenderPlan {
-  /** The model AFTER the reviewed-quality seam — what the provider really sees. */
+  /** The model AFTER the safety resolution — what the provider really sees. */
   effectiveModel: ImageModel;
   /** The final prompt text, strategy-compiled preamble and model-dialect rewrite included. */
   finalPrompt: string;
@@ -286,7 +289,7 @@ export interface ProfileRenderPlan {
    * model row's own `extraInput` constant, which the payload builder copies
    * through with no binding involved ({@link resolvedNegativePrompt}). Null
    * covers "no negative was configured", "this version exposes no
-   * negative-prompt field", and the reviewed-quality rows' deliberate `""`,
+   * negative-prompt field", and a row whose own constant is a deliberate `""`,
    * because from the render's point of view those are one fact: nothing goes.
    * Which of them applied survives in `resolvedControls.droppedControls`.
    */
@@ -482,7 +485,7 @@ function compileRenderIntentPrompt(
  * Compile one profile against one model and prompt.
  *
  * The pipeline follows one resolution order, for the steps a single-image
- * render needs: reviewed-quality model, strategy-compiled prompt, model-dialect
+ * render needs: safety-resolved model, strategy-compiled prompt, model-dialect
  * prompt preparation, negative resolution, control mapping, override
  * validation, aspect choice, version pin.
  *
@@ -509,7 +512,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   if (!strategyPrompt.ok) {
     return { ok: false, reason: "unsupported_prompt_strategy", promptStrategy: profile.promptStrategy };
   }
-  const effectiveModel = withResolvedSafetyChecker(withReviewedImageQuality(model), input.safetyCheckerDisabled);
+  const effectiveModel = withResolvedSafetyChecker(model, input.safetyCheckerDisabled);
   // The LoRA's prompt additions are woven HERE — after the strategy has produced
   // its text, before the model-dialect rewrite and before anything is
   // fingerprinted — so `finalPrompt` is the whole truth about what the provider
@@ -956,9 +959,9 @@ function appliedLoraId(applied: unknown): string {
  * `extraInput`: the payload builder copies those constants into the payload
  * verbatim, so a row carrying `negative_prompt: "blurry"` sends it with no
  * binding and no control involved. Reporting null there claimed no negative was
- * sent while one was — the reviewed-quality rows that set it to `""` are the
- * case that keeps this honest in the other direction, since an empty string is
- * "deliberately no negative" and stays null.
+ * sent while one was — a row whose own constant is `""` is the case that keeps
+ * this honest in the other direction, since an empty string is "deliberately no
+ * negative" and stays null.
  */
 function resolvedNegativePrompt(model: ImageModel, controlInput: Record<string, unknown>): string | null {
   const negativeField = model.advancedCapabilities.controls.negativePrompt?.field;

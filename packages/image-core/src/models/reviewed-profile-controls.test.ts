@@ -1,13 +1,52 @@
 import { describe, expect, it } from "vitest";
+import { imageModelSchema, type ImageModel } from "./image-models";
 import {
   reviewedImageProfileControls,
+  reviewedImageProfilePinnedFields,
   reviewedImageQualityControlFields,
-  reviewedImageQualityInputs,
   reviewedImageQualityPolicy,
   reviewedImageQualityPolicyDefects,
   reviewedImageQualitySlugs,
+  withReviewedProfileDefaults,
   type ReviewedImageQualityPolicy,
 } from "./reviewed-profile-controls";
+
+/**
+ * The policy rendered into the provider fields and values it is EXPECTED to
+ * produce: the table's own `controlFields` mapping applied to its own control
+ * values, then its raw overrides.
+ *
+ * Local to this file on purpose. Nothing in `src/` turns the reviewed policy
+ * into a slug-keyed bag of raw provider fields any more — that was the
+ * transitional overlay, and a copy of it living in production code would be the
+ * same seam wearing a different name. Here it is fixture arithmetic, and its
+ * only job is to be compared against the hand-written table below.
+ */
+function effectiveValues(policy: ReviewedImageQualityPolicy): Record<string, unknown> {
+  const controls = policy.controlDefaults;
+  const fields = policy.controlFields;
+  const input: Record<string, unknown> = {};
+  if (controls.steps !== undefined && fields.steps !== undefined) input[fields.steps] = controls.steps;
+  if (controls.guidance !== undefined && fields.guidance !== undefined) input[fields.guidance] = controls.guidance;
+  if (controls.negativePrompt !== undefined && fields.negativePrompt !== undefined) {
+    input[fields.negativePrompt] = controls.negativePrompt;
+  }
+  if (controls.width !== undefined && fields.width !== undefined) input[fields.width] = controls.width;
+  if (controls.height !== undefined && fields.height !== undefined) input[fields.height] = controls.height;
+  return { ...input, ...policy.providerOverrides };
+}
+
+/** A model row, optionally carrying the probed bindings a reviewed control needs. */
+function model(slug: string, advancedCapabilities: Record<string, unknown> = {}): ImageModel {
+  return imageModelSchema.parse({
+    id: `model-${slug}`,
+    slug,
+    label: slug,
+    canGenerate: true,
+    canEdit: true,
+    advancedCapabilities,
+  });
+}
 
 /**
  * The reviewed effective values, per model, written out as literal provider
@@ -40,9 +79,12 @@ describe("the reviewed policy in both vocabularies", () => {
     expect([...reviewedImageQualitySlugs].sort()).toEqual(Object.keys(SPEC_EFFECTIVE_VALUES).sort());
   });
 
-  it("derives the transitional overlay's provider fields from the one table", () => {
+  it("states each reviewed setting as the exact provider value it must produce", () => {
     for (const [slug, expected] of Object.entries(SPEC_EFFECTIVE_VALUES)) {
-      expect(reviewedImageQualityInputs[slug], slug).toEqual(expected);
+      const policy = reviewedImageQualityPolicy(slug);
+      expect(policy, slug).not.toBeNull();
+      if (!policy) continue;
+      expect(effectiveValues(policy), slug).toEqual(expected);
     }
   });
 
@@ -106,9 +148,11 @@ describe("the reviewed policy in both vocabularies", () => {
     // The tier is the profile vocabulary's gate, not a field any reviewed wrapper
     // declares. Sending it would be a guessed key on models Replicate rejects
     // unknown inputs for.
-    for (const inputs of Object.values(reviewedImageQualityInputs)) {
-      expect(Object.keys(inputs)).not.toContain("resolution");
-      expect(Object.keys(inputs)).not.toContain("size");
+    for (const slug of reviewedImageQualitySlugs) {
+      const policy = reviewedImageQualityPolicy(slug);
+      if (!policy) continue;
+      expect(Object.keys(effectiveValues(policy)), slug).not.toContain("resolution");
+      expect(Object.keys(effectiveValues(policy)), slug).not.toContain("size");
     }
   });
 
@@ -120,7 +164,7 @@ describe("the reviewed policy in both vocabularies", () => {
   it("says nothing about a demoted model, which now runs on wrapper defaults", () => {
     for (const slug of DEMOTED_SLUGS) {
       expect(reviewedImageQualityPolicy(slug), slug).toBeNull();
-      expect(reviewedImageQualityInputs[slug], slug).toBeUndefined();
+      expect(reviewedImageProfileControls(slug), slug).toBeNull();
     }
   });
 
@@ -158,5 +202,125 @@ describe("the reviewed policy in both vocabularies", () => {
     // empty string rather than being omitted.
     expect(pony?.controlDefaults.negativePrompt).toBe("");
     expect(pony?.providerOverrides).toEqual({});
+  });
+});
+
+/**
+ * The seam every profile-shaped configuration built in CODE passes through —
+ * admin creation, the Image Generator's bench profile, the image lab's recipes.
+ *
+ * The defect it kills: the reviewed settings used to be merged into the model
+ * row at the render boundary, so a configuration nobody seeded still rendered
+ * with them. With the profile as their one owner, a configuration that omits
+ * them renders the wrapper defaults the reviewed judgment exists to correct —
+ * Qwen Edit back on its speed preset, PuLID back to a 512 square at four-fifths
+ * identity strength — and nothing downstream says a word about it.
+ */
+describe("withReviewedProfileDefaults", () => {
+  const pulid = model("nsfw-api/sdxl-pulid:83bea6");
+  const inert = { controlDefaults: { seedPolicy: "random" as const }, providerOverrides: {} };
+
+  it("seeds both channels of a reviewed model's policy onto a configuration that states none", () => {
+    const seeded = withReviewedProfileDefaults(pulid, inert);
+    expect(seeded.controlDefaults).toEqual({
+      seedPolicy: "random",
+      guidance: 7,
+      resolution: "custom",
+      width: 832,
+      height: 1216,
+    });
+    expect(seeded.providerOverrides).toEqual({ method: "fidelity", face_weight: 1 });
+  });
+
+  it("leaves an unreviewed model's configuration exactly as it stands", () => {
+    const configuration = {
+      controlDefaults: { seedPolicy: "caller" as const, guidance: 3 },
+      providerOverrides: { x: 1 },
+    };
+    const seeded = withReviewedProfileDefaults(model("operator/added-yesterday"), configuration);
+    expect(seeded.controlDefaults).toEqual({ seedPolicy: "caller", guidance: 3 });
+    expect(seeded.providerOverrides).toEqual({ x: 1 });
+  });
+
+  it("lets the configuration win every key it states, on both channels", () => {
+    // The direction migration 0110 wrote (`reviewed || existing`) and the one the
+    // render path already resolves in: a stated value outranks a default. Seeding
+    // may only supply what nobody mentioned.
+    const seeded = withReviewedProfileDefaults(pulid, {
+      controlDefaults: { seedPolicy: "random", guidance: 3, width: 1024 },
+      providerOverrides: { method: "style" },
+    });
+    expect(seeded.controlDefaults).toMatchObject({ guidance: 3, width: 1024, height: 1216 });
+    expect(seeded.providerOverrides).toEqual({ method: "style", face_weight: 1 });
+  });
+
+  it("carries the Pony ruling's empty negative rather than reading it as unset", () => {
+    // `""` IS the reviewed value — it clears the wrapper's hidden `"nsfw, naked"`
+    // — so a falsiness test anywhere in the merge would restore exactly the
+    // default the ruling removed.
+    const seeded = withReviewedProfileDefaults(model("aisha-ai-official/likereality-pony-v1:f777e1"), inert);
+    expect(seeded.controlDefaults.negativePrompt).toBe("");
+  });
+
+  it("does not let a key present with an explicit undefined erase a reviewed value", () => {
+    // To the control mapper an `undefined` member and an absent one are the same
+    // request, so a plain `{ ...reviewed, ...configured }` spread would drop the
+    // reviewed value here and leave no drop record anywhere: the setting would
+    // simply never have existed.
+    const seeded = withReviewedProfileDefaults(pulid, {
+      controlDefaults: { seedPolicy: "random", guidance: undefined, width: undefined },
+      providerOverrides: {},
+    });
+    expect(seeded.controlDefaults.guidance).toBe(7);
+    expect(seeded.controlDefaults.width).toBe(832);
+  });
+});
+
+/**
+ * Which provider fields a reviewed correction occupies on one version — the
+ * answer the Image Generator's pre-spend gate refuses a raw advanced key
+ * against.
+ *
+ * The defect it kills: that gate used to read `Object.keys(model.extraInput)`,
+ * which the overlay had already merged the reviewed pins into. With the pins
+ * living on the profile, a gate left reading the row alone would accept a bag
+ * key for `cfg` or `method` and let it overwrite the reviewed value on the way
+ * out, with the run's own record naming the admin's number as though the
+ * reviewed one had never applied.
+ */
+describe("reviewedImageProfilePinnedFields", () => {
+  /** SDXL PuLID's production bindings: guidance on `cfg`, the pair on width/height. */
+  const probed = {
+    controls: {
+      guidance: { field: "cfg", type: "number" as const },
+      customWidth: { field: "width", type: "integer" as const },
+      customHeight: { field: "height", type: "integer" as const },
+    },
+    knownInputFields: ["cfg", "face_weight", "method", "width", "height"],
+  };
+
+  it("names the probed field of every reviewed control and every raw override key", () => {
+    const fields = reviewedImageProfilePinnedFields(model("nsfw-api/sdxl-pulid:83bea6", probed));
+    expect([...fields].sort()).toEqual(["cfg", "face_weight", "height", "method", "width"]);
+  });
+
+  it("never names the resolution gate, which no reviewed setting sends", () => {
+    for (const slug of reviewedImageQualitySlugs) {
+      const fields = reviewedImageProfilePinnedFields(model(slug, probed));
+      expect(fields, slug).not.toContain("resolution");
+      expect(fields, slug).not.toContain("size");
+    }
+  });
+
+  it("names no field for a reviewed control this version declares no binding for", () => {
+    // An unprobed version carries the reviewed controls nowhere: they are dropped
+    // at compile with a recorded reason, and nothing can collide with a value
+    // that was never sent. Only the raw override keys remain.
+    const fields = reviewedImageProfilePinnedFields(model("nsfw-api/sdxl-pulid:83bea6"));
+    expect([...fields].sort()).toEqual(["face_weight", "method"]);
+  });
+
+  it("says nothing about an unreviewed model", () => {
+    expect(reviewedImageProfilePinnedFields(model("operator/added-yesterday", probed))).toEqual([]);
   });
 });

@@ -3,8 +3,10 @@ import {
   imageModelProfileCreateRequestSchema,
   imageModelProfileUpdateRequestSchema,
   validateImageProfileConfiguration,
+  type ImageModelProfileCreateRequest,
   type ImageProfileConfigurationIssue,
 } from "./image-model-profile-admin";
+import { withReviewedProfileDefaults } from "./reviewed-profile-controls";
 import { imageModelAdvancedCapabilitiesSchema } from "../capabilities/image-model-capabilities";
 import { emptyImageReferencePolicy, type ImageModelProfile } from "./image-model-profiles";
 import { imageModelSchema, type ImageModel } from "./image-models";
@@ -185,5 +187,57 @@ describe("validateImageProfileConfiguration", () => {
 
   it("empty overrides never fail, whatever the probe state — the fail-closed rule needs an override to close on", () => {
     expect(validateImageProfileConfiguration(profile(), model())).toEqual([]);
+  });
+});
+
+/**
+ * The two pure steps `createImageModelProfile` runs, in its order: seed the
+ * model's reviewed settings onto the request, then judge the SEEDED row.
+ *
+ * The defect the order kills: seeding after validation — or not seeding at all —
+ * stores a profile for a reviewed model whose reviewed override the version
+ * cannot validate. Nothing refuses it, every render silently drops the setting
+ * with a reason nobody reads, and the admin sees a saved profile that quietly
+ * runs the wrapper's own preset. Seeding first turns that into the existing
+ * save-time refusal, which names the field and the fix.
+ */
+describe("a created profile's reviewed settings, as the save path composes them", () => {
+  const request = (overrides: Record<string, unknown> = {}): ImageModelProfileCreateRequest =>
+    imageModelProfileCreateRequestSchema.parse({
+      key: "scene-standard",
+      label: "Scene Standard",
+      task: "scene",
+      operation: "edit",
+      promptStrategy: "instruction_edit",
+      ...overrides,
+    });
+
+  const saved = (subject: ImageModel, created: ImageModelProfileCreateRequest) => {
+    const seeded = { ...created, ...withReviewedProfileDefaults(subject, created) };
+    return { seeded, issues: validateImageProfileConfiguration(seeded, subject) };
+  };
+
+  it("carries the reviewed settings of a probed reviewed model, with no issues", () => {
+    const { seeded, issues } = saved(
+      model({ slug: "qwen/qwen-image-edit-2511", advancedCapabilities: probedFields(["go_fast"]) }),
+      request(),
+    );
+    expect(seeded.providerOverrides).toEqual({ go_fast: false });
+    expect(issues).toEqual([]);
+  });
+
+  it("refuses the same request on an unprobed reviewed model, and says to re-probe", () => {
+    // Acceptance 3: an unprobed configuration fails the EXISTING validation
+    // rather than being stored with settings every render would drop.
+    const { issues } = saved(model({ slug: "qwen/qwen-image-edit-2511" }), request());
+    expect(kinds(issues)).toEqual(["override_rejected"]);
+    expect(issues[0]?.message).toContain("re-probe it first");
+  });
+
+  it("adds nothing to a request for an unreviewed model", () => {
+    const { seeded, issues } = saved(model({ slug: "operator/added-yesterday" }), request());
+    expect(seeded.providerOverrides).toEqual({});
+    expect(seeded.controlDefaults).toEqual({ seedPolicy: "random" });
+    expect(issues).toEqual([]);
   });
 });
