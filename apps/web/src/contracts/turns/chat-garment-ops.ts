@@ -632,14 +632,35 @@ export function applyGarmentProposals(
         { id: ctx.mintId(), blueprint, name: proposal.name, locus, atMinutes: ctx.atMinutes },
         ctx.sink,
       );
+      const instance = result.instance;
+      if (!instance) {
+        // The store refused the graph structurally and pushed the
+        // `garment_blueprint.*` codes itself. `mintGarmentBlueprint` is
+        // code-owned and cannot produce one, so reaching here means the template
+        // vocabulary broke — the garment is dropped rather than minted from a
+        // graph the read side could never trust, and the handle stays unclaimed
+        // so nothing later in this exchange addresses a garment that does not
+        // exist.
+        const issue = result.rejected?.[0];
+        rejectRow(
+          proposal.op,
+          handle,
+          "",
+          reject(
+            issue?.code ?? "garment_blueprint.empty",
+            `"${proposal.name}" could not be minted — ${issue?.message ?? "its blueprint is structurally invalid"}`,
+          ),
+        );
+        continue;
+      }
       store = result.store;
       introduced += 1;
       applied += 1;
       const partIds = blueprint.nodes.map((node) => node.id);
       minted.set(handle, {
         handle,
-        garmentId: result.instance.id,
-        name: result.instance.name,
+        garmentId: instance.id,
+        name: instance.name,
         where: "introduced this exchange",
         locusKind: locus.kind,
         partHandles: partIds,
@@ -648,7 +669,7 @@ export function applyGarmentProposals(
       trace.push({
         op: proposal.op,
         garment: handle,
-        garmentId: result.instance.id,
+        garmentId: instance.id,
         outcome: "applied",
         code: "",
         detail: `minted ${proposal.name}${category ? ` (${category.id})` : ""}`,

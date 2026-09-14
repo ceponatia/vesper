@@ -7,6 +7,11 @@ import {
   isDegradedGarmentBlueprint,
   type GarmentBlueprint,
 } from "./garment-blueprint";
+import {
+  garmentBlueprintDiagnostics,
+  validateGarmentBlueprint,
+  type GarmentBlueprintIssue,
+} from "./garment-blueprint-validation";
 import { GARMENT_MATERIAL_UNKNOWN, type GarmentMaterialProfileId } from "./garment-material";
 import {
   capGarmentInstances,
@@ -39,6 +44,15 @@ import type { HairOcclusion } from "./hair-occlusion";
  *   is transfers rather than a free-text replacement;
  * - **`applyGarmentTransfers`** — the typed `transfer` operation, validated with
  *   stable diagnostics and never a throw (docs/resilience.md).
+ *
+ * Both write paths and the durable read share ONE structural gate. A graph that
+ * fails `validateGarmentBlueprint` never becomes trusted clothing state: it is
+ * not registered and nothing is minted from it on the way IN
+ * (`syncWornGarments`, `instantiateGarment`), and on the way OUT
+ * (`validateGarmentStoreBlueprints`, which every durable/rollback read of the
+ * store runs) a stored entry that fails is replaced by the MARKED degraded root,
+ * so every instance pointing at it resolves `reliable: false` and its wearer
+ * degrades to covered rather than reading bare.
  *
  * PURE: the caller does the item IO and hands seeds in.
  */
@@ -121,6 +135,72 @@ export function resolveGarmentBlueprint(
  */
 export function garmentBlueprintFor(store: ChatGarmentStore, instance: GarmentInstanceState): GarmentBlueprint {
   return resolveGarmentBlueprint(store, instance).blueprint;
+}
+
+/**
+ * The shared structural gate on the way IN. A non-empty result means this graph
+ * is NOT fit to become durable clothing state: the caller must neither register
+ * it nor mint from it. The validator's own codes are pushed verbatim and handed
+ * back (a boundary never invents a parallel "invalid graph" code), carrying the
+ * caller's identifying facts so the bad row can be found.
+ */
+function blueprintIssues(
+  blueprint: GarmentBlueprint,
+  path: string,
+  context: Record<string, unknown>,
+  sink?: DiagnosticSink,
+): readonly GarmentBlueprintIssue[] {
+  const validation = validateGarmentBlueprint(blueprint);
+  if (validation.ok) return [];
+  if (sink) for (const diagnostic of garmentBlueprintDiagnostics(validation, path, context)) sink.push(diagnostic);
+  return validation.issues;
+}
+
+/**
+ * The structural gate on the way OUT — the durable read's half of the rule.
+ *
+ * `chatGarmentStoreSchema` shape-parses each stored blueprint independently, but
+ * a graph can be perfectly shaped and still be structurally impossible: a
+ * `part_of` cycle, a lost root, an orphaned part, a body location that is not in
+ * the registry (the live case — an item definition whose `coverage` named an
+ * unknown id, snapshotted onto the root at mint time). Such an entry parses,
+ * carries no `degraded` mark, and would hand the visibility resolver coverage
+ * that silently drops the regions it cannot place — which is how a clothed body
+ * reads bare.
+ *
+ * So every boundary that parses the store from JSON runs this: an entry that
+ * fails validation is replaced by `degradedGarmentBlueprint()` — the MARKED safe
+ * root — under its existing key, so each instance pointing at it resolves
+ * `reliable: false` and `resolveChatWardrobe` degrades that wearer's exposure to
+ * covered (docs/character-chat/wardrobe.md §"Failure is marked, never bare").
+ *
+ * Per-entry independence is the schema's rule and it is kept here: one bad entry
+ * degrades ALONE, its siblings, the `instances` and `seeded` untouched. An entry
+ * the parse ALREADY marked `degraded` is left exactly as it is — it is already
+ * the marked state this function produces, the parse already recorded the loss,
+ * and re-reporting it would file a warning on every later load of the same
+ * conversation. A store with nothing to replace is returned by IDENTITY, so a
+ * healthy read stays byte-identical through the rollback anchor.
+ */
+export function validateGarmentStoreBlueprints(
+  store: ChatGarmentStore,
+  sink?: DiagnosticSink,
+  path = "chat.garments.blueprints",
+): ChatGarmentStore {
+  let replaced: Record<string, GarmentBlueprint> | undefined;
+  for (const [hash, blueprint] of Object.entries(store.blueprints)) {
+    if (isDegradedGarmentBlueprint(blueprint)) continue;
+    const validation = validateGarmentBlueprint(blueprint);
+    if (validation.ok) continue;
+    replaced ??= { ...store.blueprints };
+    replaced[hash] = degradedGarmentBlueprint();
+    if (sink) {
+      for (const diagnostic of garmentBlueprintDiagnostics(validation, path, { blueprintHash: hash })) {
+        sink.push(diagnostic);
+      }
+    }
+  }
+  return replaced === undefined ? store : { ...store, blueprints: replaced };
 }
 
 /** Every instance an actor currently WEARS, in store order (the projection's order). */
@@ -272,6 +352,16 @@ function blueprintsFullDiag(detail: string): Diagnostic {
  * entry survived GC because an instance references it, and the store schema's
  * parse-time cap trims orphans first, so the over-cap snapshot outlives reload
  * for as long as its instance does.
+ *
+ * The ONE thing it will not do is mint from a structurally invalid graph. The
+ * blueprint is validated before it reaches the map; on a failure the store comes
+ * back UNTOUCHED, `instance` is absent and `rejected` carries the validator's
+ * own issues, so the caller drops the garment — and names the refusal in the
+ * validator's stable vocabulary — rather than registering a graph the read side
+ * could never trust. The in-repo mint (`mintGarmentBlueprint`) is code-owned and
+ * always valid, which makes this the boundary for graphs arriving from anywhere
+ * else — never a reason to skip it, because "no caller can do that today" is not
+ * an invariant.
  */
 export function instantiateGarment(
   store: ChatGarmentStore,
@@ -287,7 +377,14 @@ export function instantiateGarment(
     hairOcclusion?: HairOcclusion;
   },
   sink?: DiagnosticSink,
-): { store: ChatGarmentStore; instance: GarmentInstanceState } {
+): { store: ChatGarmentStore; instance?: GarmentInstanceState; rejected?: readonly GarmentBlueprintIssue[] } {
+  const rejected = blueprintIssues(
+    input.blueprint,
+    "garment_store.instantiate",
+    { garmentId: input.id, name: input.name, ...(input.definitionId ? { definitionId: input.definitionId } : {}) },
+    sink,
+  );
+  if (rejected.length > 0) return { store, rejected };
   const blueprints = { ...store.blueprints };
   const registration = registerBlueprint(blueprints, input.blueprint, store.instances);
   if (!registration.stored) {
@@ -383,6 +480,12 @@ export interface SyncWornGarmentsInput {
  * The pass is idempotent: re-running it with the same list returns an
  * equal store (the projection order is a stable permutation of the slots the
  * actor's worn instances already occupy).
+ *
+ * It is also ALL-OR-NOTHING on a structurally invalid seed: a seed whose
+ * blueprint fails `validateGarmentBlueprint` abandons the pass and returns the
+ * input store by identity, so the bad graph is never registered, no instance is
+ * minted from it, and nothing this actor already wears is doffed on the strength
+ * of a graph nobody could read (see the mint arm).
  */
 export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore {
   const { actorId, atMinutes, mintId, sink } = input;
@@ -446,7 +549,25 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
     // Snapshotted beside the name so an orphaned instance still hides hair.
     let hairOcclusion: HairOcclusion | undefined;
     if (seed) {
-      const registration = registerBlueprint(blueprints, garmentBlueprintForSeed(seed), instances);
+      const seedBlueprint = garmentBlueprintForSeed(seed);
+      // The structural gate. A definition's own `coverage` is the one input here
+      // that is neither code-owned nor registry-checked, so an id that is not a
+      // coverage-relevant body location rides it in and lands on the root node.
+      // That graph must not be registered and must not be minted from — but the
+      // reconcile does not simply drop the garment either, because reconciling
+      // this actor to the readable remainder is what would DOFF whatever the bad
+      // definition covers and persist a modelled-and-emptier wardrobe, i.e. read
+      // the region bare. So the actor's whole pass is abandoned and their store
+      // slice comes back untouched, exactly as `syncChatGarments` treats a
+      // withheld id: a modelled actor keeps the prior outfit, an unmodelled one
+      // keeps the ids in the worn column, and a repaired definition materializes
+      // normally on the next reconcile. The cost is a lost outfit CHANGE, never
+      // a bare body (docs/character-chat/wardrobe.md §"Failure is marked, never
+      // bare").
+      if (blueprintIssues(seedBlueprint, "garment_store.sync", { actorId, definitionId }, sink).length > 0) {
+        return input.store;
+      }
+      const registration = registerBlueprint(blueprints, seedBlueprint, instances);
       if (!registration.stored) {
         sink?.push(blueprintsFullDiag(`"${definitionId}" left un-materialized rather than minted dangling`));
         continue;
