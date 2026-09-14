@@ -109,7 +109,7 @@ import {
 import { insertReplayedKnowledge } from "./knowledge-recorder";
 import { cohortRowInsert } from "./cohort-store";
 import { actorLodRowInsert } from "./lod-store";
-import { holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-rows";
+import { garmentBlueprintColumn, holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-rows";
 import { insertReplayedObservations } from "./observation-store";
 import { insertReplayedSocialLedger } from "./social-recorder";
 import { insertReplayedSoftCanon } from "./soft-canon-recorder";
@@ -265,6 +265,7 @@ export async function assembleBranchState(tx: SimTx, ancestry: BranchAncestry): 
       containerCapacityCount: simItems.containerCapacityCount,
       containerAccess: simItems.containerAccess,
       conditionTracked: simItems.conditionTracked,
+      garmentBlueprint: simItems.garmentBlueprint,
       locusKind: simItemHoldings.locusKind,
       locusActorId: simItemHoldings.actorId,
       slotKey: simItemHoldings.slotKey,
@@ -292,25 +293,32 @@ export async function assembleBranchState(tx: SimTx, ancestry: BranchAncestry): 
     headSequence: branch.headSequence,
     storySecond: branch.storySecond,
     actors: actorRows.map((row) => ({ id: row.characterId, name: row.name })),
-    items: itemRows.map((row) => ({
-      id: row.itemId,
-      name: row.name,
-      ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
-      ownerActorId: row.ownerActorId,
-      ...(row.containerCapacityCount !== null && row.containerAccess !== null
-        ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
-        : {}),
-      /** Whether this item carries item-condition (wear/cleanliness) meters. */
-      conditionTracked: row.conditionTracked,
-      locus: itemLocusFromHoldingRow({
-        locusKind: row.locusKind,
-        actorId: row.locusActorId,
-        slotKey: row.slotKey,
-        containerItemId: row.containerItemId,
-        zoneId: row.zoneId,
-        goneBasis: row.goneBasis,
-      }),
-    })),
+    items: itemRows.map((row) => {
+      const garmentBlueprint = garmentBlueprintColumn(row.garmentBlueprint);
+      return {
+        id: row.itemId,
+        name: row.name,
+        ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
+        ownerActorId: row.ownerActorId,
+        ...(row.containerCapacityCount !== null && row.containerAccess !== null
+          ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
+          : {}),
+        /** Whether this item carries item-condition (wear/cleanliness) meters. */
+        conditionTracked: row.conditionTracked,
+        // Omitted rather than nulled when the column is empty or unreadable, so
+        // a branch with no garments hashes exactly as it did before the column
+        // existed (`garmentBlueprintColumn` explains why a bad value drops).
+        ...(garmentBlueprint === undefined ? {} : { garmentBlueprint }),
+        locus: itemLocusFromHoldingRow({
+          locusKind: row.locusKind,
+          actorId: row.locusActorId,
+          slotKey: row.slotKey,
+          containerItemId: row.containerItemId,
+          zoneId: row.zoneId,
+          goneBasis: row.goneBasis,
+        }),
+      };
+    }),
   });
 
   return { projection, events, ancestry };
@@ -504,8 +512,15 @@ export async function forkBranch(
           containerCapacityCount: item.container?.capacityCount ?? null,
           containerAccess: item.container?.access ?? null,
           conditionTracked: item.conditionTracked,
+          // A STATIC: the child copies the parent's blueprint the way it copies
+          // `name`, so a fork replays the same garment construction rather than
+          // re-deriving one from a library row that may have changed since.
+          garmentBlueprint: item.garmentBlueprint ?? null,
         })),
       );
+      // `sim_item_garment_state` rows are deliberately NOT copied here: the
+      // presentation/condition projection is evented, so a fork child
+      // materializes it by replaying its own events, not by cloning rows.
       await tx.insert(simItemHoldings).values(
         childProjection.items.map((item) => ({
           branchId: input.childBranchId,

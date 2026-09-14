@@ -115,6 +115,67 @@ locus when the crossing is marked noticeable. Raw item-meter values never enter 
 narrative cut directly; a read is perception-gated the same way a body meter's raw
 value is.
 
+## Garments
+
+A worn item is also a **garment**: the same construction model character chat
+uses ([../character-chat/wardrobe.md](../character-chat/wardrobe.md) §The garment store), so both lanes answer
+structural questions — which parts, what is still covered — from one model
+rather than from a list of names. Four owners meet on one worn item and none of
+them writes another's channel:
+
+| Channel                                           | Owner                                                     |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| identity and placement                            | `sim_items` / `sim_item_holdings`                         |
+| construction — parts, behaviors, baseline coverage | the `sim_items.garment_blueprint` static                  |
+| cleanliness and wear                              | `item-condition-v1` meters, integrated on read            |
+| presentation, wetness, crease, deposits, damage   | the `sim_item_garment_state` projection                   |
+
+**The blueprint is a static, not a projection.** It is minted once at world
+seed from the wardrobe definition — the same `garmentBlueprintForSeed` the chat
+lane mints with, so one definition produces identical construction on both
+sides — and thereafter only copied. A fork child copies it exactly as it copies
+`name`, so a retake replays the garment that was there rather than re-deriving
+one from a library row that may have changed since. Nothing rewrites it, and a
+definition with no clothing category still mints: the root-only template
+carrying that definition's own coverage is a coarse garment, not a broken one.
+
+The package that owns the material contract never interprets it. It checks only
+that the value is a JSON object, so the wardrobe vocabulary stays in the
+application and the value still round-trips byte-identically through the
+projection every command replays — which is what keeps fork and snapshot
+checksums stable. An item with no garment omits the field entirely rather than
+carrying a null, so a world with no clothing hashes as it always did.
+
+**Worn slot keys are parsed, never trusted.** `slot_key` is free text in the
+holdings contract, so no consumer may read it as an anatomical or garment
+reference without resolving it against the registries. Two vocabularies exist:
+`<clothing-category-id>-<n>`, which a world seed writes, and
+`<body-location-id>-<n>`, which earlier seeds wrote from the first entry of the
+definition's coverage. Anything else — including the `garment-<n>` a
+category-less definition gets — resolves to `unknown`, and the garment is still
+read, simply without a slot-derived hint.
+
+**Presentation and condition are a lazy projection.** An item with no
+`sim_item_garment_state` row is neutral presentation and pristine condition —
+absence is the default state, never an error. Cleanliness and wear are
+deliberately NOT in that row: they are item-condition meters, integrated
+analytically to the branch clock at read time and copied across unchanged
+(`GARMENT_UNIT_ONE` and `METER_FIXED_POINT_ONE` are the same 10 000, and both
+scales agree that 10 000 is fresh and 0 is pristine wear). Effective coverage
+is derived on read from the blueprint and the presentation, and never stored.
+
+**A garment that cannot be read is covered, never bare.** A missing or
+unreadable blueprint resolves to the marked degraded graph and the read is
+flagged unreliable with a stable diagnostic
+(`sim_garment.blueprint_missing` / `sim_garment.blueprint_unreadable`); an
+unmapped slot reports `sim_garment.slot_unmapped`. In every one of those cases
+the garment is still listed with its name, and a consumer deriving exposure
+must treat an unreliable garment as covered — the slot's own conservative
+coverage where it has one, otherwise covered outright. The reason is the same
+one [../resilience.md](../resilience.md) gives for the chat lane: a graph that covers nothing but
+looks authored is how an unreadable row becomes a nudity claim, so "could not
+read the garment" and "authored to cover nothing" must stay distinguishable.
+
 ## Households and membership
 
 A household is a branch-scoped shared domestic unit: a named group of actors sharing

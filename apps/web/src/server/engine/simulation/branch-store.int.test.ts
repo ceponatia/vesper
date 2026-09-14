@@ -11,6 +11,12 @@ import {
   deriveTriggerCommandId,
   deriveTriggerId,
 } from "@vesper/simulation-core/contracts/scheduler";
+import {
+  garmentBlueprintHash,
+  garmentBlueprintSchema,
+  successorGarmentBlueprint,
+  successorWornSlotKey,
+} from "@/contracts";
 import { newId } from "@/lib/ids";
 import {
   db,
@@ -18,6 +24,7 @@ import {
   simEvents,
   simItemConditionMeters,
   simItemConditionModifiers,
+  simItems,
   simSnapshots,
   simTriggers,
 } from "@/server/db";
@@ -699,5 +706,121 @@ describe.runIf(harness.ready)("E5.3 slice 3 — item condition fork/replay parit
       .from(simTriggers)
       .where(eq(simTriggers.id, pendingAlarm.id));
     expect(parentAlarmAfter?.state).toBe("pending");
+  });
+});
+
+describe.runIf(harness.ready)("#295 — the garment blueprint is a fork-copied static", () => {
+  it("copies the seeded blueprint onto the child byte-identically, and a garment-less item stays null", async () => {
+    const worldId = newId();
+    const branchId = newId();
+    const actorId = newId();
+    const garmentId = newId();
+    const ringId = newId();
+    const locationId = `${worldId}-loc-home`;
+    const zoneId = `${branchId}-zone-room`;
+    harness.trackWorld(worldId);
+
+    const blueprint = successorGarmentBlueprint({
+      id: "def-shirt",
+      name: "linen shirt",
+      category: "top",
+      coverage: ["chest", "shoulders"],
+    });
+
+    await seedSimBranch({
+      worldId,
+      branchId,
+      worldTypeId: "e295-fork-tests",
+      worldSeed: "295aabbccddeeff",
+      rulesetVersion: "e295-fork-test-v1",
+      originStorySecond: SEED_STORY_SECOND,
+      actors: [{ id: actorId, name: "Mara" }],
+      items: [
+        {
+          id: garmentId,
+          name: "linen shirt",
+          garmentBlueprint: blueprint,
+          locus: { kind: "worn", actorId, slotKey: successorWornSlotKey("top", 0) },
+        },
+        // A non-garment item proves the column stays null rather than being
+        // filled in with something that would then read as construction.
+        { id: ringId, name: "gold ring", locus: { kind: "held", actorId } },
+      ],
+      locations: [{ id: locationId, worldId, kind: "home", defaultAccessPolicy: "private" }],
+      zones: [{ id: zoneId, locationId, kind: "room", privacyPolicy: "private" }],
+      links: [],
+      placements: [{ actorId, locationId, zoneId }],
+    });
+
+    const childId = newId();
+    await forkBranch({
+      parentBranchId: branchId,
+      childBranchId: childId,
+      atSequence: 0,
+      principal: { kind: "player", principalId: LEGACY_ENGINE_TEST_PLAYER_ID },
+      reason: "retake",
+    });
+
+    const childRows = await db()
+      .select({ itemId: simItems.itemId, garmentBlueprint: simItems.garmentBlueprint })
+      .from(simItems)
+      .where(eq(simItems.branchId, childId));
+    const childByItem = new Map(childRows.map((row) => [row.itemId, row.garmentBlueprint]));
+    expect(childRows).toHaveLength(2);
+    expect(childByItem.get(ringId)).toBeNull();
+
+    // Byte-identical is the claim that matters: the content hash is what the
+    // chat-lane blueprint map keys on, so a fork that re-derived construction
+    // instead of copying it would resolve to a DIFFERENT garment.
+    const parentHash = garmentBlueprintHash(garmentBlueprintSchema.parse(blueprint));
+    expect(garmentBlueprintHash(garmentBlueprintSchema.parse(childByItem.get(garmentId)))).toBe(parentHash);
+    expect(childByItem.get(garmentId)).toEqual(blueprint);
+
+    // And the child's projection carries it, so its replay and snapshot
+    // checksums are computed over the same construction the parent's were.
+    const childState = await readDurableBranchState(childId);
+    const childItem = childState.projection.items.find((item) => item.id === garmentId);
+    expect(childItem?.garmentBlueprint).toEqual(blueprint);
+    expect(childState.projection.items.find((item) => item.id === ringId)?.garmentBlueprint).toBeUndefined();
+  });
+
+  it("rebuilds a branch carrying blueprints to the same hash as the live projection", async () => {
+    const worldId = newId();
+    const branchId = newId();
+    const actorId = newId();
+    const garmentId = newId();
+    const locationId = `${worldId}-loc-home`;
+    const zoneId = `${branchId}-zone-room`;
+    harness.trackWorld(worldId);
+
+    await seedSimBranch({
+      worldId,
+      branchId,
+      worldTypeId: "e295-rebuild-tests",
+      worldSeed: "295bbccddeeff001",
+      rulesetVersion: "e295-rebuild-test-v1",
+      originStorySecond: SEED_STORY_SECOND,
+      actors: [{ id: actorId, name: "Mara" }],
+      items: [
+        {
+          id: garmentId,
+          name: "denim jacket",
+          garmentBlueprint: successorGarmentBlueprint({
+            id: "def-jacket",
+            name: "denim jacket",
+            category: "outerwear",
+            coverage: ["chest", "upper_arms"],
+          }),
+          locus: { kind: "worn", actorId, slotKey: successorWornSlotKey("outerwear", 0) },
+        },
+      ],
+      locations: [{ id: locationId, worldId, kind: "home", defaultAccessPolicy: "private" }],
+      zones: [{ id: zoneId, locationId, kind: "room", privacyPolicy: "private" }],
+      links: [],
+      placements: [{ actorId, locationId, zoneId }],
+    });
+
+    const rebuild = await rebuildDurableBranchProjection(branchId);
+    expect(rebuild.matches).toBe(true);
   });
 });

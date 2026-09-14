@@ -30,7 +30,7 @@ import {
   submitDurableRecordRelationshipEntry,
   tryKeyedLock,
 } from "@/server/engine";
-import { successorWardrobeSeed } from "./wardrobe-seed";
+import { successorWardrobeSeed, type SuccessorWardrobeSeedGarment } from "./wardrobe-seed";
 
 /**
  * The successor front door (owner ask 2026-07-22) — the Worlds page's API. POST
@@ -483,7 +483,7 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
     // is a MINT input, not a display read: unknown coverage must refuse before
     // `provisionStarterWorld` can persist an empty/partial outfit forever.
     const wornIds = seedChatState(profile).wornItemIds;
-    let primaryGarments: { name: string; slotKey: string }[] = [];
+    let primaryGarments: SuccessorWardrobeSeedGarment[] = [];
     if (reached < STATE_RANK.world_created && wornIds.length > 0) {
       const load = await loadChatWardrobeWithStatus(ownerId, wornIds);
       const seed = successorWardrobeSeed(load);
