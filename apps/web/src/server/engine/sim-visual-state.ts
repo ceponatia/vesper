@@ -6,7 +6,8 @@ import {
   emptyCharacterProfile,
   type AffordanceExposure,
   type RegionCoverage,
-  type RegionExposure,
+  exposureRegionLocations,
+  exposureRegionOrder,
 } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { parseOr } from "@/lib/parse";
@@ -44,22 +45,13 @@ import { readSimChatGarments, type SimChatGarments } from "./sim-surfaces";
  */
 
 /**
- * Representative body-location ids per exposure region — the smallest local
- * echo of the private table `EXPOSURE_REGION_LOCATIONS` in
- * `contracts/items/visibility.ts` (not exported, and outside this slice's
- * owned paths). Bare skin is `visible` to sight, a sheer covering only
- * `hinted`, and an opaque one `hidden` — the same reading the wardrobe
- * garment domain gives for a garment's OWN surface
+ * Region coverage as a body-surface exposure: bare skin is `visible` to sight,
+ * a sheer covering only `hinted`, and an opaque one `hidden` — the same reading
+ * the wardrobe garment domain gives for a garment's OWN surface
  * (`chat-garment-affordances.ts`'s `garmentExposure`), asked here for the
- * BODY instead.
+ * BODY instead. Which body locations a region stands for is the contract's
+ * own table, read through `exposureRegionLocations` rather than copied.
  */
-const REGION_EXPOSURE_LOCATIONS: Readonly<Record<keyof RegionExposure, readonly string[]>> = {
-  torso: ["chest"],
-  pelvis: ["groin", "hips", "buttocks"],
-  legs: ["thighs"],
-  feet: ["feet", "top_of_foot", "sole", "heel", "toes"],
-};
-
 const AFFORDANCE_EXPOSURE_OF_REGION: Readonly<Record<RegionCoverage, AffordanceExposure>> = {
   bare: "visible",
   sheer: "hinted",
@@ -77,9 +69,9 @@ const AFFORDANCE_EXPOSURE_OF_REGION: Readonly<Record<RegionCoverage, AffordanceE
 function bodyExposureFromGarments(garments: SimChatGarments | undefined): Record<string, AffordanceExposure> {
   if (!garments || garments.status !== "structured" || !garments.reliable) return {};
   const exposure: Record<string, AffordanceExposure> = {};
-  for (const region of Object.keys(REGION_EXPOSURE_LOCATIONS) as (keyof RegionExposure)[]) {
+  for (const region of exposureRegionOrder) {
     const band = AFFORDANCE_EXPOSURE_OF_REGION[garments.exposure[region]];
-    for (const locationId of REGION_EXPOSURE_LOCATIONS[region]) exposure[locationId] = band;
+    for (const locationId of exposureRegionLocations(region)) exposure[locationId] = band;
   }
   return exposure;
 }

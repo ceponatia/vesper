@@ -633,6 +633,15 @@ export async function readSimChatGarments(chatId: string): Promise<SimChatGarmen
     );
     const digest = renderGarmentDigest(buildGarmentDigest({ actors: [{ label: primaryName, readouts }] }));
     const reliable = adapter.reliable;
+    if (!reliable) {
+      // Some worn item resolved no trustworthy blueprint: the digest still
+      // renders, but exposure degrades to fully covered, and that degradation
+      // is recorded like the fallback arm's rather than passing silently.
+      log.warn("engine.sim", "garment read partially unreliable — exposure degraded to fully covered", {
+        chatId,
+        adapterCodes: [...new Set(adapter.diagnostics.map((diagnostic) => diagnostic.code))],
+      });
+    }
     const exposure = reliable ? exposedRegions(adapter.garments.map(garmentExposureInput)) : FULLY_COVERED;
     return { status: "structured", digest, readouts, exposure, reliable };
   } catch (error) {
