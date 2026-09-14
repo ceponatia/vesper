@@ -461,7 +461,7 @@ and a preserve clause claiming them leaves every later hair or build sentence
 ambiguous between a reminder and an override.
 
 **The lock's own preserve set is also what makes an optional reinforcement of
-the same fact redundant** (issue #450) — reference authority is
+the same fact redundant** — reference authority is
 OPERATION-SPECIFIC, never "a subject-bound reference replaces all stable
 appearance text". The character seam runs one request-aware selection step,
 after reference planning and before the digest compiles: for a subject a
@@ -548,6 +548,16 @@ carrying a family prefix that says which input set it was taken over.
   registry-sourced hair and build facts are omitted as reference-redundant under
   the same reason the aspect policy above uses, and the dialect asks for the
   wider preserve set.
+- **A covered head is never `matches`.** A subject at the `full` hair-occlusion
+  band ([§Hair the headwear conceals](#hair-the-headwear-conceals)) is downgraded
+  to `unknown` before the verdict is spent. The revision digests attributes and
+  the occlusion comes from the wardrobe this render draws, so a character whose
+  appearance has not moved reads `matches` while wearing a hijab — and the wider
+  clause would then ask for her hair "exactly as shown" in the same prompt as the
+  sentence saying no hair is visible, over text the selection has already
+  withheld. `unknown` rather than `differs`, because nothing about her appearance
+  has changed and there is nothing to announce: the band compiles the ordinary
+  lock and the concealment sentence, exactly as it did before this contract.
 - **`differs` changes nothing about the text and adds one sentence.** Today's
   split stands — hair and build are stated exactly as they were — and the
   dialect says that the appearance has moved since that image and the prompt's
@@ -599,9 +609,12 @@ is one lock for the whole cast, so one covered person drops the clause for
 everyone — a lock that kept "hair" would tell the model to paint that person's
 reference hair back over the hijab, and the uncovered rest of the cast still
 carry their hair in their references. The Qwen edit dialect needs no variant,
-because hair is in none of its three preserve clauses; its `…_HAIR_CONCEALED`
-names are byte-identical deprecated aliases. At `none` and `partial` every measured
-lock ships untouched.
+because hair is in none of the preserve clauses a covered head can reach — its
+`…_HAIR_CONCEALED` names are byte-identical deprecated aliases, and the one
+clause of its that does name hair is the current-appearance lock, which the
+`full` band is downgraded out of before it can be chosen
+([§Identity on a reference-anchored render](#identity-on-a-reference-anchored-render)).
+At `none` and `partial` every measured lock ships untouched.
 
 **A face the shot cannot show adapts the lock, in a sentence of its own and
 never inside the lock string.** The lock says preserve the exact face, and on a

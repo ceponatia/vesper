@@ -839,31 +839,44 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // planned send list actually names — and the three must never disagree.
   const anchoredSubjects = referenceAnchoredSubjects(references);
 
-  // --- 3a. What each identity slot still shows (issue #551) -----------------
-  // The revision of the cut this render is drawing, per person, against the
-  // revision each identity image was drawn from. One comparison per slot, and
-  // one aggregate per subject, both taken over `planned.primary` — the exact
-  // list the dialect is handed below — so the sentence the dialect words and the
-  // text this seam drops can never be answers to different questions.
+  // --- 3a. How much of each person their references still show (issue #551) --
+  // ONE verdict per subject, never per slot. The seam and the dialect answer
+  // two halves of the same question — which text to drop, and which preserve
+  // clause to word — and a per-slot answer on one side and a per-subject answer
+  // on the other is exactly how a prompt comes to preserve hair "exactly as
+  // shown" beside a sentence that states it.
+  //
+  // The resolved dialect's own declared authority is read here rather than
+  // after the assembly, because it now gates the verdict itself: a dialect that
+  // declares no reference authority drops no text, so telling it a verdict
+  // would invite it to word a wider lock over text that still states hair
+  // ({@link CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT} is the one table that
+  // says which dialects reviewed this contract).
+  const referenceAuthority = CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT[binding.promptDialectId];
   const currentRevisionBySubject = new Map(
     input.cuts.map((cut) => [cut.subjectId, appearanceRevisionOf(cut.attributes)] as const),
   );
-  const preservationOf = (reference: ImageRenderReference): AppearancePreservationMode | undefined => {
+  const slotPreservation = (reference: ImageRenderReference): AppearancePreservationMode | undefined => {
     if (reference.role !== "identity") return undefined;
     const subjectId = subjectOf(reference);
     // An unattributed identity slot shows somebody this compile cannot name, so
     // there is no current appearance to compare it against and no honest claim
-    // to make about it. The dialect gets no mode and words its lock as it always
-    // has.
+    // to make about it.
     if (subjectId === undefined) return undefined;
     return compareAppearanceRevision(
       revisionByReference.get(reference) ?? null,
       currentRevisionBySubject.get(subjectId) ?? null,
     );
   };
+  // Aggregated over every SENT identity reference rather than over the numbered
+  // slots alone, so the weakest-wins rule holds over the same set
+  // `anchoredSubjects` is built from. The two lists agree today — reference
+  // planning binds only CONTROL roles to dedicated provider fields, so every
+  // identity image is a numbered slot — and this is what keeps them agreeing if
+  // an endpoint ever gains a dedicated identity field.
   const preservationBySubject = new Map<string, AppearancePreservationMode>();
-  for (const reference of planned.primary) {
-    const mode = preservationOf(reference);
+  for (const reference of sentReferences) {
+    const mode = slotPreservation(reference);
     const subjectId = subjectOf(reference);
     if (mode === undefined || subjectId === undefined) continue;
     const ref = `subject.${subjectId}`;
@@ -871,6 +884,32 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     const seen = preservationBySubject.get(ref);
     preservationBySubject.set(ref, seen === undefined ? mode : weakestPreservation(seen, mode));
   }
+  // A COVERED HEAD is never `matches`, whatever the revision says.
+  //
+  // The revision digests attributes; hair occlusion comes from the wardrobe
+  // this render draws, so a subject whose appearance has not moved an inch
+  // still reads `matches` while wearing a hijab or a helmet. Taken at face
+  // value that compiles the reference's hair into the preserve set AND the
+  // concealment sentence that says no hair is visible, over text the selection
+  // has already dropped — which is the #544 F4 defect this dialect's lock was
+  // narrowed to end, arriving from the other direction (issue #312).
+  //
+  // Downgraded to `unknown` rather than `differs`: nothing about her appearance
+  // has changed, so there is nothing to announce. `unknown` is the band's
+  // pre-existing behaviour — the ordinary lock, the concealment sentence, and
+  // no correction — which is precisely what a covered head should compile.
+  for (const cut of input.cuts) {
+    if (cut.hairOcclusion !== "full") continue;
+    const ref = `subject.${cut.subjectId}`;
+    if (preservationBySubject.get(ref) === "matches") preservationBySubject.set(ref, "unknown");
+  }
+  /** The verdict the dialect is told, which is the subject's and not the slot's. */
+  const preservationOf = (reference: ImageRenderReference): AppearancePreservationMode | undefined => {
+    if (referenceAuthority === undefined || reference.role !== "identity") return undefined;
+    const subjectId = subjectOf(reference);
+    if (subjectId === undefined) return undefined;
+    return preservationBySubject.get(`subject.${subjectId}`);
+  };
   const cast = castAssembly(
     input.cuts,
     input.read,
@@ -908,23 +947,19 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     references,
   };
   const preview = assembleCharacterWorldDigest({ ...assembly, operation: characterPortraitImageOperation() });
-  // The resolved dialect's own declared reference authority — never the lane,
-  // never a caller input (issue #450). Read here because `binding` (step 1)
-  // and `anchoredSubjects` (step 3) are both finally known.
-  //
-  // Which of the dialect's two declared sets a subject gets is that subject's
-  // own reference provenance (issue #551): the wider set only where every
-  // identity slot bound to them was drawn from the very appearance this render
-  // is drawing, and the base set everywhere else — including every `unknown`,
-  // which is what an uploaded portrait and every pre-#551 reference read as.
-  const referenceAuthority =
-    CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT[binding.promptDialectId] ?? NO_CHARACTER_REFERENCE_AUTHORITY;
+  // The declared reference authority applied per subject — never the lane, never
+  // a caller input (issue #450). Which of the dialect's two sets a subject gets
+  // is that subject's own reference provenance (issue #551): the wider set only
+  // where every identity image bound to them was drawn from the very appearance
+  // this render is drawing, and the base set everywhere else — including every
+  // `unknown`, which is what an uploaded portrait, a pre-#551 reference and a
+  // covered head all read as. Resolved in step 3a, where the verdict it selects
+  // is decided.
+  const authority = referenceAuthority ?? NO_CHARACTER_REFERENCE_AUTHORITY;
   const authorityBySubject = new Map<string, ReadonlySet<CharacterAppearanceAspect>>();
   for (const ref of anchoredSubjects) {
     const aspects =
-      preservationBySubject.get(ref) === "matches"
-        ? referenceAuthority.whenAppearanceMatches
-        : referenceAuthority.base;
+      preservationBySubject.get(ref) === "matches" ? authority.whenAppearanceMatches : authority.base;
     if (aspects.size > 0) authorityBySubject.set(ref, aspects);
   }
   const selected = selectRequestAwareAppearance(
