@@ -295,6 +295,12 @@ export {
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
   qwenImageEdit2511Dialect,
+  // The current-look lock scope/coverage predicate (issue #551 Codex finding):
+  // the one question the dialect and `character-prompt-program.ts` must answer
+  // identically about whether the emitted lock preserves a subject's hair and
+  // build.
+  currentLookLockCoversSubject,
+  currentLookLockScope,
   registerImageNegativePack,
   registerImagePositivePack,
   registerImagePromptBinding,
@@ -328,6 +334,7 @@ export type {
   CompileImagePromptProgramInput,
   CompileImagePromptProgramResult,
   CompiledImagePromptProgram,
+  CurrentLookLockScope,
   HiddenPromptSource,
   ImageAngleBand,
   ImageCameraFact,

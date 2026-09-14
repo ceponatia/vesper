@@ -3,6 +3,8 @@ import {
   baseImageModelSlug,
   buildImageWorldDigest,
   compileImagePromptProgram,
+  currentLookLockCoversSubject,
+  currentLookLockScope,
   imageNegativePack,
   imagePositivePack,
   imagePromptBudgetFromBinding,
@@ -949,17 +951,23 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   const preview = assembleCharacterWorldDigest({ ...assembly, operation: characterPortraitImageOperation() });
   // The declared reference authority applied per subject — never the lane, never
   // a caller input (issue #450). Which of the dialect's two sets a subject gets
-  // is that subject's own reference provenance (issue #551): the wider set only
-  // where every identity image bound to them was drawn from the very appearance
-  // this render is drawing, and the base set everywhere else — including every
-  // `unknown`, which is what an uploaded portrait, a pre-#551 reference and a
-  // covered head all read as. Resolved in step 3a, where the verdict it selects
-  // is decided.
+  // is NOT that subject's own verdict alone (issue #551 Codex finding): the
+  // 2511 lock is one clause for the whole bound cast, and it widens to cover
+  // hair and build only when EVERY anchored subject's reference is `matches`
+  // (`currentLookLockScope`, `@vesper/image-core`) — a mixed cast keeps the
+  // ordinary lock for everyone, so a subject whose own reference is current
+  // still needs their hair and build stated in text when a castmate's is stale
+  // or unknown. `currentLookLockCoversSubject` is the exact predicate the
+  // dialect itself reads to choose that sentence, so the two sides can never
+  // disagree about whether a subject's hair and build ended up covered.
   const authority = referenceAuthority ?? NO_CHARACTER_REFERENCE_AUTHORITY;
+  const lockScope = currentLookLockScope(
+    [...anchoredSubjects].map((ref) => preservationBySubject.get(ref) ?? "unknown"),
+  );
   const authorityBySubject = new Map<string, ReadonlySet<CharacterAppearanceAspect>>();
   for (const ref of anchoredSubjects) {
-    const aspects =
-      preservationBySubject.get(ref) === "matches" ? authority.whenAppearanceMatches : authority.base;
+    const verdict = preservationBySubject.get(ref) ?? "unknown";
+    const aspects = currentLookLockCoversSubject(lockScope, verdict) ? authority.whenAppearanceMatches : authority.base;
     if (aspects.size > 0) authorityBySubject.set(ref, aspects);
   }
   const selected = selectRequestAwareAppearance(

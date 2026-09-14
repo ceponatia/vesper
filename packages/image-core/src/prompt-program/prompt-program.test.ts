@@ -29,6 +29,7 @@ import {
   selectImagePositiveClaims,
   QWEN_2511_APPEARANCE_MOVED_NOTICE,
   QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
@@ -1052,6 +1053,107 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     // dialect compiled before the field existed.
     expect(say("unknown")).toBe(say(undefined));
     expect(say("unknown")).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+  });
+
+  /**
+   * A MIXED CAST NEVER SPLITS THE LOCK — IT WIDENS FOR EVERYONE OR NOBODY
+   * (issue #551 Codex finding).
+   *
+   * The several-people lock is one clause naming "each person's face, skin
+   * tone and apparent age" (or the wider set that adds hair and build); it
+   * cannot honestly claim the wider set for one named person and the ordinary
+   * one for another inside that same clause. So a cast where one subject's
+   * reference is drawn from today's appearance and another's is unknown keeps
+   * the ORDINARY lock for both — exactly what an all-`unknown` cast compiles
+   * — rather than widening it because one subject alone earned `matches`.
+   *
+   * This is the dialect's half of the finding: `character-prompt-program.ts`
+   * must read the identical verdict before it decides whether to drop the
+   * matching subject's hair and build TEXT, so that subject's hair and build
+   * are never missing from both the lock and the text at once (see
+   * `character-prompt-program.test.ts` for the seam's half).
+   */
+  it("keeps the narrow lock for a two-person cast where one reference is unknown", () => {
+    const digest = editWorld({
+      operation: { ...editOperation(), subjectCount: 2 },
+      subjects: [
+        wren(),
+        {
+          ...entity("subject", "s2", [
+            fact({
+              key: "s2.identity",
+              concept: "subject.identity",
+              value: "Nyx, a tall archivist",
+              subjectRef: "s2",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+          ]),
+          label: "Nyx",
+        },
+      ],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1", preservation: "matches" },
+        // No `preservation` at all — the honest `unknown` every pre-#551
+        // reference reads as.
+        { position: 2, role: "identity", subjectRef: "s2" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+  });
+
+  /**
+   * The same mixed-cast rule, against a reference the revision positively says
+   * has MOVED rather than one nobody stamped (issue #551 Codex finding). A
+   * `differs` verdict is stronger evidence than `unknown` that the wider lock
+   * would be wrong, so if the narrow lock survives the weaker case above it
+   * must survive this one too.
+   */
+  it("keeps the narrow lock for a two-person cast where one reference has moved", () => {
+    const digest = editWorld({
+      operation: { ...editOperation(), subjectCount: 2 },
+      subjects: [
+        wren(),
+        {
+          ...entity("subject", "s2", [
+            fact({
+              key: "s2.identity",
+              concept: "subject.identity",
+              value: "Nyx, a tall archivist",
+              subjectRef: "s2",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+          ]),
+          label: "Nyx",
+        },
+      ],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1", preservation: "matches" },
+        { position: 2, role: "identity", subjectRef: "s2", preservation: "differs" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
   });
 
   /**
