@@ -173,9 +173,9 @@ export function chatAffordanceCuesEnabled(): boolean {
  * turn, this projects committed truth mostly as prohibitions: what the narrator must
  * not claim about this body (a braid is not streaming loose) plus the high-confidence
  * false premises in the player's own framing that it must not adopt. There is no
- * positive detail in it at all — that is the separately-flagged, change-gated
- * `CHAT_PHYSICAL_TRANSITIONS` experiment, and the two get independent measured
- * ship/park decisions.
+ * positive detail in it at all, by owner ruling (#238): change-gated positive
+ * detail is the visual-state narration lane's, and no `CHAT_PHYSICAL_TRANSITIONS`
+ * flag exists.
  *
  * OFF (the code default, and anything other than `on`) is the pre-feature behavior to
  * the byte: no premise detection, no guidance compile, no block on the narrator prompt,
