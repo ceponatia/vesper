@@ -1,15 +1,15 @@
 # Face repair
 
-A flagged, owner-admin-only action (issue #246): explicitly repair one character's face in one
-selected source image, over the ordinary Image Generator run path
-([runs.md](runs.md)). The source image is never changed — the repair is a new, separate run output
-linked to it by provenance, so an admin can compare the two directly.
+A flagged, owner-admin-only action: explicitly repair one character's face in one selected source
+image, over the ordinary Image Generator run path ([runs.md](runs.md)). The source image is never
+changed — the repair is a new, separate run output linked to it by provenance, so an admin can
+compare the two directly.
 
 Repair is never an automatic fallback after another render fails, and never a silent model
 substitution: the admin picks the character, the source image, and (optionally) the repair model,
-and the whole effective request the run sent is recorded exactly like any other Generator run.
-Whether a repaired image is ever shown to a player is a separate, unimplemented decision — this
-action only produces the comparison pair.
+and the whole effective request the run sent is recorded exactly like any other Generator run. The
+action produces the comparison pair only; deciding whether a repaired image is ever shown to a
+player is a separate concern this action does not touch.
 
 ## The flag
 
@@ -57,7 +57,7 @@ that matters, including settling through the same runner and being visible in th
 
 ## The multi-person check
 
-A multi-person source is refused before any byte is spent (issue #246 acceptance criterion 4).
+A multi-person source is refused before any byte is spent.
 `apps/web/src/server/images/face-repair.ts`'s `planFaceRepair` checks, in order:
 
 | Source                                                                                                                          | Outcome                                                                                                  |
@@ -97,11 +97,10 @@ message.
 
 `resolveFaceRepairMethod` reads the resolved model's probed `advancedCapabilities`:
 `regional_mask` when a `mask` role is bound to a dedicated provider field, otherwise
-`full_frame_identity_edit`. No registered model declares a mask input today, so every run in
-practice resolves to `full_frame_identity_edit` — and deliberately so: mask extraction is not
-implemented, so a model that *did* declare one refuses `face_repair.method_unavailable` rather than
-running full-frame silently under the "regional" label. The chosen method rides the run's
-`purpose.method`.
+`full_frame_identity_edit`. Masked repair has no registered taker — no model declares a mask
+input — so the resolver always returns `full_frame_identity_edit` in practice; a model that DOES
+declare one refuses `face_repair.method_unavailable` rather than running full-frame silently under
+the "regional" label. The chosen method rides the run's `purpose.method`.
 
 ## The request
 
@@ -142,14 +141,15 @@ comparison arm reads.
 
 ## The comparison arms
 
-Acceptance criterion 3 (issue #246) is a paid, owner-run trial after deploy; this action makes the
-arms runnable:
+The action makes three arms runnable against the untouched source, for an owner-run paid trial:
 
-- **Baseline** — the untouched source image, no run at all.
-- **Candidate: full-frame identity edit** — `qwen/qwen-image-edit-2511` with the portrait and face
-  crop, the only method implemented today.
-- **Candidate: single-reference** — a model capped at one identity reference (PuLID is a selectable
+- **Baseline** — the untouched source image; no run.
+- **Full-frame identity edit** — `qwen/qwen-image-edit-2511` with the portrait and face crop, the
+  only method the resolver returns while no model declares a dedicated mask input.
+- **Single-reference** — a model capped at one identity reference (PuLID is a selectable
   candidate; no winner is chosen in advance), which degrades to `canonical_only`.
+
+Grading and a verdict over these arms are owner work this action does not perform.
 
 ## The admin UI
 

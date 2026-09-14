@@ -191,20 +191,8 @@ ambiguous source, an undersized crop) gets its identity-critical renders refused
 crop is fixed; a character with no accepted portrait still renders scenes from text, since there is no identity to
 preserve.
 
-**Every selection carries the accepted portrait's appearance revision.** The
-lane entry reads it once, off the source portrait's own row, and puts it on every
-role in the selection — the face crop is cut locally and renders nothing, so it
-has no stamp of its own and every role in one pack shows the same person at the
-same moment. The pack row stores no copy of it: the portrait is the only thing
-that knows what it shows, and a copy written when the pack is derived would claim
-the appearance at acceptance time rather than the one the picture has. An
-uploaded portrait and one rendered before the stamp existed both read as unknown,
-which is the preservation contract every reference-anchored render had before
-this ([character-prompts.md](character-prompts.md) §Identity on a
-reference-anchored render).
-
-The flagged owner-admin face-repair action (issue #246,
-[../image-generator/face-repair.md](../image-generator/face-repair.md)) is a fourth consumer,
+The flagged owner-admin face-repair action
+([../image-generator/face-repair.md](../image-generator/face-repair.md)) is a fourth consumer,
 reached through the same `identityPackRenderReferences` entry point with the same refusal
 vocabulary — it pairs its resolved profile with `canonical_then_face_detail` in memory rather than
 adding a fifth stored `referencePolicy.identityStrategy` value.
