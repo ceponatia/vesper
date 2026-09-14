@@ -1,4 +1,3 @@
-import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { jsonError, withOwnerAdmin } from "@/server/api";
 import { AdminFilesError, getAdminFileDownload } from "@/server/admin-files";
@@ -18,12 +17,14 @@ function dispositionFilename(name: string): string {
 
 export const GET = withOwnerAdmin(async (_user, req) => {
   const relativePath = req.nextUrl.searchParams.get("path") ?? "";
+  let file: Awaited<ReturnType<typeof getAdminFileDownload>> | null = null;
   try {
-    const file = await getAdminFileDownload(relativePath);
-    // Node and DOM currently publish distinct structural typings for web
-    // streams even though Node's adapter returns the WHATWG stream Response
-    // consumes at runtime. Keep that compatibility cast at this one boundary.
-    const stream = Readable.toWeb(createReadStream(file.absolutePath)) as unknown as ReadableStream<Uint8Array>;
+    // getAdminFileDownload opens first and stats that descriptor. The stream is
+    // created from the same handle, so a concurrent delete/replace after this
+    // point cannot make Content-Length describe one inode while bytes come from
+    // another. FileHandle.createReadStream owns/closes the handle on completion.
+    file = await getAdminFileDownload(relativePath);
+    const stream = Readable.toWeb(file.handle.createReadStream()) as unknown as ReadableStream<Uint8Array>;
     return new Response(stream, {
       headers: {
         "Cache-Control": "private, no-store",
@@ -34,6 +35,7 @@ export const GET = withOwnerAdmin(async (_user, req) => {
       },
     });
   } catch (error) {
+    if (file !== null) await file.handle.close().catch(() => undefined);
     return expectedError(error);
   }
 });
