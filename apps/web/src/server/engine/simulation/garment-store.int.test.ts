@@ -192,7 +192,8 @@ async function applyOperation(
   return submitDurableApplyGarmentOperation(
     simCommand({
       branchId,
-      name,
+      // Command names are whitespace-free tokens (they seed the envelope ids).
+      name: name.replace(/[^A-Za-z0-9_-]+/gu, "-"),
       type: "apply_garment_operation",
       principal: npcPrincipal(ids.actorId),
       payload: { actorId: ids.actorId, itemId, operation },
