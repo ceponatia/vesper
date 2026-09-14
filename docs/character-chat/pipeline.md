@@ -251,17 +251,25 @@ write, the server, the transcript API and the browser all read through, and the 
 place a key is defined.
 
 - **Every field is optional and parses independently.** `parseChatMessageMeta` walks
-  the bag key by key: a value that fails its schema is dropped ALONE and records a
-  `chat_message_meta.field_invalid` warn naming the field in `context.field`, while its
-  siblings — valid or unmodelled — are untouched. A stored value that is not an object
+  the bag key by key: a value that fails its schema is dropped from the typed view
+  ALONE and records a `chat_message_meta.field_invalid` warn naming the field in
+  `context.field`, while its siblings — valid or unmodelled — are untouched. The
+  unreadable value is quarantined rather than deleted (below). A stored value that is not an object
   degrades to the empty bag with `chat_message_meta.bag_invalid`; an absent bag, and a
   JSON `null` on any single key, mean "not set" and record nothing. A dropped field is
   never an exception and never a positive claim: an unreadable `inputMode` is UNKNOWN,
   which every consumer treats as player input exactly as it treats a row that never
   carried the key, and the diagnostic is what makes the loss countable.
-- **Unknown keys are preserved.** Any key the module does not model is carried through
-  parse, merge and serialize untouched, so a field a NEWER deploy wrote survives an
-  older reader's rewrite. A writer never discards what it does not understand.
+- **Unknown and unreadable keys are preserved.** Any key the module does not model is
+  carried through parse, merge and serialize untouched, and a modelled key whose value
+  fails its schema is quarantined the same way — absent from the typed view, still on
+  the row. So a field a NEWER deploy wrote survives an older reader's rewrite, whether
+  it is a new key or an existing key whose shape changed, and a display-only operation
+  like a take switch cannot permanently delete data it merely failed to read. The
+  guarantee covers top-level keys and the two nested objects this contract owns
+  (`attachments` and `worldBeat`); `narratorRun` and `renderDiagnostics` belong to the
+  narrator-provenance and diagnostic contracts and keep their owners' strict shapes, so
+  an unknown key nested inside one is stripped by its owner.
 - **Version.** An optional integer `v` on the bag, where absent means 1. It is a reader
   hint, never a gate — no reader refuses a row over `v`. A v1 reader meeting a v2 row
   keeps the v2 keys it cannot interpret and writes them back; a v2 reader meeting a v1
@@ -274,7 +282,10 @@ place a key is defined.
   what the attachments vision read uses, since it has no read window a concurrent
   writer can slip through) or reads, merges through `mergeChatMessageMeta`, and writes
   the whole bag — the shape a take switch, a regenerate and a successor retake use,
-  because each must also CLEAR a key the fresh render did not produce.
+  because each must also CLEAR a key the fresh render did not produce. A rewrite that
+  replaces a row's prose names the row-TYPE markers its fresh render contradicts, so
+  they are cleared rather than carried: a retaken row is no longer a `worldBeat` trace
+  and no longer `stopped`, and a row the legacy lane rewrote is no longer a `simTurn`.
 - **What rides it.** User lines carry `attachments` (claimed asset ids plus any
   persisted vision read) and `inputMode`; assistant replies carry `actionBeat`,
   `stopped`, and the `narratorRun` provenance for the take currently displayed;

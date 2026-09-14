@@ -25,10 +25,20 @@ import type { CompositionFallbackCode } from "./composition-fallback";
  *   and `simTurn` survive. zod's `.catch()` is deliberately NOT used for this: it
  *   is silent, and a degradation nobody can see is the blindfold that
  *   docs/resilience.md §8 warns about.
- * - **Unknown keys are preserved.** Anything this module does not model is kept
- *   in {@link ChatMessageMeta.extra} and written back out by
- *   {@link serializeChatMessageMeta}, so a key a NEWER deploy wrote survives an
- *   older reader's rewrite. A writer never discards what it does not understand.
+ * - **Unknown keys are preserved**, and so are unreadable ones. Anything this
+ *   module does not model is kept in {@link ChatMessageMeta.extra} and written
+ *   back out by {@link serializeChatMessageMeta}; a modelled key whose value
+ *   fails its schema is QUARANTINED there too, dropped from the typed view but
+ *   never deleted from the row. So a key a NEWER deploy wrote — a new field, or
+ *   an existing field whose shape changed — survives an older reader's rewrite,
+ *   including a display-only one like a take switch. A writer never discards what
+ *   it does not understand.
+ *
+ *   The guarantee reaches TOP-LEVEL keys and the two nested objects this module
+ *   owns (`attachments` and `worldBeat`, both loose). It does NOT reach inside
+ *   `narratorRun` or `renderDiagnostics`: those shapes belong to
+ *   `contracts/narrator-prompts/provenance.ts` and the diagnostic contract, and
+ *   they stay strict, so an unknown key nested in one is stripped by its owner.
  * - **A failed parse is never an exception.** An unreadable bag degrades to
  *   {@link emptyChatMessageMeta} and records a diagnostic. A fallback is never a
  *   positive claim: an unreadable `inputMode` is UNKNOWN, and every consumer
@@ -62,12 +72,19 @@ export const CHAT_MESSAGE_META_FIELD_INVALID = "chat_message_meta.field_invalid"
 /** The stored value was not a usable object; the whole bag degraded to empty. */
 export const CHAT_MESSAGE_META_BAG_INVALID = "chat_message_meta.bag_invalid";
 
-/** Attached photos on a user line: the claimed asset ids and any persisted vision read. */
-export const chatMessageAttachmentsSchema = z.object({
-  ids: z.array(z.string()),
-  /** The batched vision description per id — same length as `ids`, or the reader ignores it. */
-  descriptions: z.array(z.string()).optional(),
-});
+/**
+ * Attached photos on a user line: the claimed asset ids and any persisted vision
+ * read. LOOSE — a field a newer deploy adds here (an alt text, a crop) rides
+ * through an older reader's write-through instead of being stripped, which is the
+ * same promise the top-level bag makes.
+ */
+export const chatMessageAttachmentsSchema = z
+  .object({
+    ids: z.array(z.string()),
+    /** The batched vision description per id — same length as `ids`, or the reader ignores it. */
+    descriptions: z.array(z.string()).optional(),
+  })
+  .loose();
 export type ChatMessageAttachments = z.infer<typeof chatMessageAttachmentsSchema>;
 
 /** How a user line was authored: the player acting, or the storyteller narrating. */
@@ -84,7 +101,7 @@ export type ChatMessageInputMode = z.infer<typeof chatMessageInputModeSchema>;
  * merge — corrupting the row to keep its own types tidy. Every consumer that
  * matters asks only whether the marker is PRESENT.
  */
-export const chatMessageWorldBeatSchema = z.object({ kind: z.string().min(1) });
+export const chatMessageWorldBeatSchema = z.object({ kind: z.string().min(1) }).loose();
 export type ChatMessageWorldBeat = z.infer<typeof chatMessageWorldBeatSchema>;
 
 /**
@@ -149,7 +166,14 @@ const FIELD_SCHEMAS = {
 
 type KnownKey = keyof typeof FIELD_SCHEMAS;
 
-const KNOWN_KEYS = Object.keys(FIELD_SCHEMAS) as readonly KnownKey[];
+/**
+ * Every key this module models, derived from the schema table — the list a test
+ * asserts its inventory against, so adding a field here cannot quietly ship
+ * without coverage.
+ */
+export const CHAT_MESSAGE_META_KEYS = Object.keys(FIELD_SCHEMAS) as readonly KnownKey[];
+
+const KNOWN_KEYS = CHAT_MESSAGE_META_KEYS;
 const KNOWN_KEY_SET: ReadonlySet<string> = new Set<string>(KNOWN_KEYS);
 
 /**
@@ -233,9 +257,12 @@ function coerceBag(raw: unknown): Record<string, unknown> | null {
  *   {@link CHAT_MESSAGE_META_BAG_INVALID}.
  * - A modelled key whose value is JSON `null` is treated as absent, silently —
  *   `null` is how "not set" was written before the key was always omitted.
- * - A modelled key that fails its schema is dropped ALONE and records
- *   {@link CHAT_MESSAGE_META_FIELD_INVALID} with `context.field`. Its siblings,
- *   valid or unknown, are unaffected.
+ * - A modelled key that fails its schema is dropped from the TYPED VIEW alone and
+ *   records {@link CHAT_MESSAGE_META_FIELD_INVALID} with `context.field`. Its
+ *   siblings, valid or unknown, are unaffected. Its raw value is QUARANTINED into
+ *   `extra`, so the consumer degrades to the absent-field default while the row
+ *   keeps the bytes: a reader that cannot understand a value has no business
+ *   deleting it, least of all on a display-only rewrite like a take switch.
  * - Every unmodelled key is carried into `extra` without inspection.
  */
 export function parseChatMessageMeta(
@@ -271,6 +298,8 @@ export function parseChatMessageMeta(
           context: { field: key },
         }),
       );
+      // Quarantined, not deleted: absent from the typed view, still on the row.
+      extra[key] = value;
       continue;
     }
     parsed[key] = result.data;
@@ -283,9 +312,10 @@ export function parseChatMessageMeta(
  * unknown key. `undefined` fields are omitted rather than written as JSON null,
  * so a round trip through parse → serialize is byte-stable.
  *
- * `v` is written only when it exceeds {@link CHAT_MESSAGE_META_VERSION}: absent
- * means 1, so stamping it on today's rows would be noise, while a higher version
- * read off an existing row is carried forward rather than downgraded.
+ * `v` is written back exactly as it was read — absent stays absent, and any stored
+ * value is carried forward rather than downgraded. Nothing stamps it (absent means
+ * 1, so stamping today's rows would be noise), which is what keeps this agreeing
+ * with the `jsonb ||` write path, which also leaves a stored `v` alone.
  */
 export function serializeChatMessageMeta(meta: ChatMessageMeta): Record<string, unknown> {
   // Unknown keys first: a modelled field always wins a name collision.
@@ -293,7 +323,6 @@ export function serializeChatMessageMeta(meta: ChatMessageMeta): Record<string, 
   for (const key of KNOWN_KEYS) {
     const value = meta[key];
     if (value === undefined) continue;
-    if (key === "v" && typeof value === "number" && value <= CHAT_MESSAGE_META_VERSION) continue;
     out[key] = value;
   }
   return out;
@@ -318,6 +347,12 @@ export function mergeChatMessageMeta(existing: ChatMessageMeta, patch: ChatMessa
     if (value !== undefined) merged[key] = value;
   }
   const extra: Record<string, unknown> = { ...existing.extra };
+  // A patch that names a modelled key GOVERNS it: drop any quarantined raw value
+  // for that key, or a later serialize would re-emit the unreadable one beside the
+  // fresh value and a removal would not actually remove anything.
+  for (const key of KNOWN_KEYS) {
+    if (Object.hasOwn(patch, key)) delete extra[key];
+  }
   if (patch.extra !== undefined) {
     for (const [key, value] of Object.entries(patch.extra)) {
       if (value === undefined) delete extra[key];

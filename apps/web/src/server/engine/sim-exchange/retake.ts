@@ -1,3 +1,4 @@
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   mergeChatMessageMeta,
   parseChatMessageMeta,
@@ -60,7 +61,10 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
   // The WHOLE bag: the retake rewrites this row in place, so everything it does not
   // itself re-derive — the beat marker, a `stopped` flag, the opening directive, and
   // any key a newer deploy wrote — has to survive the write below.
-  const priorMeta = parseChatMessageMeta(target.meta);
+  // Collected rather than dropped: a field this row could not parse is a fact the
+  // retake's own diagnostics should carry, since the write below rewrites the row.
+  const metaDiagnostics = new DiagnosticCollector();
+  const priorMeta = parseChatMessageMeta(target.meta, metaDiagnostics);
   const metaCutId = priorMeta.cutId;
   const cutId = metaCutId ?? (await latestCutIdForEngagement(db(), branchId, engagementId));
   if (!cutId) {
@@ -142,6 +146,13 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
           attempts: rendered.attempts,
           narratorRun: rendered.provenance,
           confirmStatus: rendered.confirmStatus,
+          // Row-TYPE markers the fresh render contradicts. Merging is right for
+          // provenance and wrong for these: this row now holds narrated prose, so a
+          // `worldBeat` marker left on it would keep rendering a muted system line
+          // (and keep the narrator's dialogue tail skipping it), and a `stopped`
+          // chip would label a complete render as cut short.
+          worldBeat: undefined,
+          stopped: undefined,
         }),
       ),
     })
@@ -155,6 +166,6 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
     modelId: rendered.modelId,
     attempts: rendered.attempts,
     degraded: rendered.degraded,
-    diagnostics: [...ctx.instructionDiagnostics, ...rendered.diagnostics],
+    diagnostics: [...ctx.instructionDiagnostics, ...metaDiagnostics.items, ...rendered.diagnostics],
   };
 }

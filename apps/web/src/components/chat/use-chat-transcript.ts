@@ -5,23 +5,11 @@ import {
   emptyChatMessageMeta,
   isNarratorInput,
 } from "@/contracts/turns/chat-message-meta";
-import { WORLD_BEAT_KINDS, type WorldBeatKind } from "@/lib/simulation/world-beat";
 import { chatsApi, type ChatMessage, type ChatTranscript } from "@/lib/client/api";
 import type { ChatLine } from "@/components/characters/chat-message";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useToast } from "@/components/ui/toast";
 import { PER_CHAT_DEFAULTS } from "./chat-conversation-state";
-
-/**
- * Narrow a stored beat kind onto the rendered vocabulary.
- *
- * The kind drives no rendering — every beat is the same muted system line and
- * `content` carries its phrased text — so a kind written by a NEWER deploy still
- * renders as a beat instead of reappearing as an ordinary chat bubble. The
- * substituted label is never shown; only the row's beat-ness is.
- */
-const worldBeatKindForDisplay = (kind: string): WorldBeatKind =>
-  (WORLD_BEAT_KINDS as readonly string[]).includes(kind) ? (kind as WorldBeatKind) : "traveled";
 
 /** Project an API transcript row onto the renderable line shape (takes + stopped + attachments ride along). */
 const toLine = (m: ChatMessage): ChatLine => {
@@ -35,7 +23,10 @@ const toLine = (m: ChatMessage): ChatLine => {
     attachmentIds: meta.attachments?.ids.length ? meta.attachments.ids : undefined,
     narrator: isNarratorInput(meta) || undefined,
     // World beat: the muted travel/skip/scene-ended trace.
-    ...(meta.worldBeat === undefined ? {} : { worldBeat: worldBeatKindForDisplay(meta.worldBeat.kind) }),
+    // The kind passes through verbatim — a beat from a NEWER deploy must still
+    // render as a beat, and substituting a known kind for an unknown one would put
+    // a fabricated value in a field the renderer only presence-checks.
+    ...(meta.worldBeat === undefined ? {} : { worldBeat: meta.worldBeat.kind }),
   };
 };
 

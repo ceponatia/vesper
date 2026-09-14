@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../diagnostics";
 import {
   CHAT_MESSAGE_META_BAG_INVALID,
+  CHAT_MESSAGE_META_KEYS,
   CHAT_MESSAGE_META_FIELD_INVALID,
   CHAT_MESSAGE_META_VERSION,
   assistantReplyMeta,
@@ -39,6 +40,7 @@ const provenance = {
  * here is a key nothing proves survives a round trip.
  */
 const INVENTORY: ReadonlyArray<{ role: "user" | "assistant"; key: string; value: unknown }> = [
+  { role: "assistant", key: "v", value: 2 },
   { role: "user", key: "attachments", value: { ids: ["img_1", "img_2"], descriptions: ["a cat", "a hat"] } },
   { role: "user", key: "inputMode", value: "narrator" },
   { role: "user", key: "simTurn", value: true },
@@ -62,6 +64,12 @@ const INVENTORY: ReadonlyArray<{ role: "user" | "assistant"; key: string; value:
 ];
 
 describe("parseChatMessageMeta — the inventory", () => {
+  it("covers every key the contract models", () => {
+    // Derived from the schema table, not hand-copied: a field added to the module
+    // without a row above fails here rather than shipping unproven.
+    expect([...CHAT_MESSAGE_META_KEYS].sort()).toEqual([...new Set(INVENTORY.map((e) => e.key))].sort());
+  });
+
   it.each(INVENTORY)("round-trips $key on a $role row", ({ key, value }) => {
     const parsed = parseChatMessageMeta({ [key]: value });
     expect(parsed[key as keyof typeof parsed]).toEqual(value);
@@ -159,6 +167,15 @@ describe("parseChatMessageMeta — legacy rows", () => {
     expect(serializeChatMessageMeta(parsed)).toEqual({ v: 2, stopped: true });
   });
 
+  it("writes back a stored v: 1 exactly as read, so parse -> serialize is byte-stable", () => {
+    // The `jsonb ||` write path leaves a stored `v` alone; dropping it here would
+    // make the two write paths disagree about the same row.
+    expect(serializeChatMessageMeta(parseChatMessageMeta({ v: 1, stopped: true }))).toEqual({
+      v: 1,
+      stopped: true,
+    });
+  });
+
   const legacy: ReadonlyArray<[string, unknown]> = [
     ["an empty bag", {}],
     ["a null bag", null],
@@ -212,10 +229,52 @@ describe("unknown keys", () => {
     });
   });
 
+  it("carries an unknown key NESTED in an owned object through parse -> merge -> serialize", () => {
+    // `attachments` and `worldBeat` are this module's own shapes, so a field a newer
+    // deploy adds inside one survives an older reader's write-through.
+    const stored = {
+      attachments: { ids: ["img_1"], altText: ["a cat on a mat"] },
+      worldBeat: { kind: "traveled", distanceM: 400 },
+    };
+    const merged = mergeChatMessageMeta(parseChatMessageMeta(stored), { stopped: true });
+    expect(serializeChatMessageMeta(merged)).toEqual({ ...stored, stopped: true });
+  });
+
   it("round-trips an unknown key that happens to be named `extra`", () => {
     const parsed = parseChatMessageMeta({ extra: { nested: true }, stopped: true });
     expect(parsed.extra).toEqual({ extra: { nested: true } });
     expect(serializeChatMessageMeta(parsed)).toEqual({ extra: { nested: true }, stopped: true });
+  });
+});
+
+describe("unreadable fields are quarantined, never deleted", () => {
+  it("keeps an unparseable value on the row while hiding it from the typed view", () => {
+    const sink = new DiagnosticCollector();
+    const parsed = parseChatMessageMeta({ attempts: "two", stopped: true }, sink);
+
+    // The consumer sees the absent-field default...
+    expect(parsed.attempts).toBeUndefined();
+    expect(sink.items.map((d) => d.code)).toEqual([CHAT_MESSAGE_META_FIELD_INVALID]);
+    // ...and the row keeps the bytes.
+    expect(serializeChatMessageMeta(parsed)).toEqual({ attempts: "two", stopped: true });
+  });
+
+  it("survives a display-only rewrite — the take-switch data-loss regression", () => {
+    // `switchReplyTake` parses, merges one key and writes the whole bag back. If an
+    // unreadable field were dropped rather than quarantined, that read-only-looking
+    // operation would permanently delete durable data written by a newer deploy.
+    const stored = { inputMode: "a-register-this-build-does-not-know", narratorRun: provenance };
+    const rewritten = mergeChatMessageMeta(parseChatMessageMeta(stored), { narratorRun: undefined });
+    expect(serializeChatMessageMeta(rewritten)).toEqual({
+      inputMode: "a-register-this-build-does-not-know",
+    });
+  });
+
+  it("lets a patch that names the key replace its quarantined value", () => {
+    const parsed = parseChatMessageMeta({ inputMode: "storyteller" });
+    const merged = mergeChatMessageMeta(parsed, { inputMode: "narrator" });
+    // One value for one key — never the fresh one beside the unreadable one.
+    expect(serializeChatMessageMeta(merged)).toEqual({ inputMode: "narrator" });
   });
 });
 
@@ -256,6 +315,34 @@ describe("mergeChatMessageMeta", () => {
     const existing = parseChatMessageMeta({ keepMe: 1, replaceMe: "old", dropMe: true });
     const merged = mergeChatMessageMeta(existing, { extra: { replaceMe: "new", dropMe: undefined } });
     expect(serializeChatMessageMeta(merged)).toEqual({ keepMe: 1, replaceMe: "new" });
+  });
+
+  it("clears the row-TYPE markers a retake patch names — the sticky-beat regression", () => {
+    // A successor retake targets the newest assistant row, and a world beat IS one.
+    // Merging preserved the marker, so the row carried fresh prose and still rendered
+    // as a muted system line; the patch has to contradict it explicitly.
+    const beatRow = parseChatMessageMeta({ simTurn: true, worldBeat: { kind: "traveled" }, stopped: true });
+    const retaken = mergeChatMessageMeta(beatRow, {
+      simTurn: true,
+      cutId: "cut_1",
+      modelId: "model/test",
+      worldBeat: undefined,
+      stopped: undefined,
+    });
+    expect(serializeChatMessageMeta(retaken)).toEqual({ simTurn: true, cutId: "cut_1", modelId: "model/test" });
+  });
+
+  it("clears the successor markers a legacy regenerate patch names", () => {
+    const simRow = parseChatMessageMeta({ simTurn: true, worldBeat: { kind: "scene_ended" }, cutId: "cut_1" });
+    const regenerated = mergeChatMessageMeta(simRow, {
+      actionBeat: undefined,
+      narratorRun: provenance,
+      stopped: undefined,
+      worldBeat: undefined,
+      simTurn: undefined,
+    });
+    // `cutId` is deliberately NOT named: the legacy patch does not re-derive it.
+    expect(serializeChatMessageMeta(regenerated)).toEqual({ cutId: "cut_1", narratorRun: provenance });
   });
 
   it("does not mutate either input", () => {

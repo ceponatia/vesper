@@ -587,7 +587,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Window + summary ----------------------------------------------------
     const summaryState = await loadChatSummary(chatId);
-    const history = await loadVerbatimWindow(chatId, summaryState?.watermark ?? null);
+    const history = await loadVerbatimWindow(chatId, summaryState?.watermark ?? null, sink);
     // The regenerated reply must not see itself: it is the newest message, so it
     // is the window's last row — drop it (its prompting user line stays).
     if (regenerateTarget && history.length && history.at(-1)?.role === "assistant") history.pop();
@@ -973,6 +973,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 actionBeat: replyMeta.actionBeat,
                 narratorRun: replyMeta.narratorRun,
                 stopped: replyMeta.stopped,
+                // Row-TYPE markers this render contradicts: the legacy lane wrote the
+                // prose now on the row, so it is neither a successor turn nor a world
+                // beat, and leaving either marker would render a normal reply as a
+                // muted system line.
+                worldBeat: undefined,
+                simTurn: undefined,
               }),
             ),
           })

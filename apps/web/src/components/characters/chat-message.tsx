@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { WorldBeatKind } from "@/lib/simulation/world-beat";
 import type { ReplyTakes } from "@/lib/client/api";
 import {
   narratorProvenanceLabel,
@@ -33,7 +32,7 @@ export interface ChatLine {
    * trace on a successor-chat transcript. Set ⇒ the line renders as a muted, compact
    * system line (no portrait, no bubble, no actions) — `content` is the phrased text.
    */
-  worldBeat?: WorldBeatKind;
+  worldBeat?: string;
 }
 
 /**

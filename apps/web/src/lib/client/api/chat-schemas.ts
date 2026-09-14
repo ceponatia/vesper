@@ -86,7 +86,14 @@ export const chatMessageSchema = z.object({
    * Unknown keys survive the parse untouched (`meta.extra`), so a field a newer
    * deploy writes is never lost to an older tab.
    */
-  meta: z.unknown().transform((raw) => parseChatMessageMeta(raw)),
+  meta: z
+    .unknown()
+    // `.optional()` BEFORE the transform: a bare `z.unknown().transform(...)` is a
+    // REQUIRED key in zod 4, and `listOf` flatMaps a failed row away — so a payload
+    // missing `meta` would make the message vanish from the transcript instead of
+    // degrading to an empty bag. The parse itself already treats absent as empty.
+    .optional()
+    .transform((raw) => parseChatMessageMeta(raw)),
   createdAt: optionalText,
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;

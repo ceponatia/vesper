@@ -164,7 +164,12 @@ export function buildNarratorRunProvenance(args: {
  * the row and survives untouched; a target with no provenance removes a stale
  * narrator run from the previously displayed take.
  */
-export async function switchReplyTake(chatId: string, messageId: string, takeId: string): Promise<string | null> {
+export async function switchReplyTake(
+  chatId: string,
+  messageId: string,
+  takeId: string,
+  sink?: DiagnosticSink,
+): Promise<string | null> {
   const [row] = await db()
     .select({ takes: characterChatMessages.takes, meta: characterChatMessages.meta })
     .from(characterChatMessages)
@@ -178,7 +183,7 @@ export async function switchReplyTake(chatId: string, messageId: string, takeId:
   // the previously displayed take's run. Every other key on the row — the beat chip,
   // the stop marker, the successor cut/model, and anything a newer deploy wrote —
   // is carried through untouched.
-  const meta = mergeChatMessageMeta(parseChatMessageMeta(row.meta), { narratorRun: target.provenance });
+  const meta = mergeChatMessageMeta(parseChatMessageMeta(row.meta, sink), { narratorRun: target.provenance });
   await db()
     .update(characterChatMessages)
     .set({
