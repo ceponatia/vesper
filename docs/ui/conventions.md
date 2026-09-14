@@ -103,6 +103,13 @@ backdrop, image scaled to fit, Escape and backdrop close, Tab trapped inside. Ev
 enlarges an image opens the same component, and a page mounts one instance rather than one per
 thumbnail.
 
+A caller that already has a URL rather than an `images` table row — Admin Files' inline preview
+(`docs/admin-files.md`) — passes an explicit `src`, which the internal `LightboxImage` prefers over
+resolving `imageUrl(imageId)`; an optional `media` (`image` default, `video`, or `audio`) swaps the
+`<img>` for a native `<video controls>` or `<audio controls>` element. `imageId` still gates the
+admin-only panels below, so a `src`-only caller renders neither, and must pass `open` explicitly
+since visibility can no longer fall back to `imageId` being set.
+
 Reference review supplies optional comparison, navigation and action content to this viewer.
 Ordinary callers keep the same enlargement behavior. Review controls stay inside the focus trap
 and remain usable on phones; opening or dismissing an image never implies approval.

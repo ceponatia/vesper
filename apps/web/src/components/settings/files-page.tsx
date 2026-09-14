@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import type { MediaPreviewKind } from "@/lib/media-preview";
 import {
   batchUploadLabel,
   conflictMessage,
@@ -20,6 +22,7 @@ import {
   formatDate,
   moveResultToast,
 } from "./files-page-copy";
+import { previewKindForEntry } from "./files-page-preview";
 import {
   ADMIN_FILES_DRAG_TYPE,
   breadcrumbSegments,
@@ -79,6 +82,13 @@ interface PendingConflict {
   resolve: (choice: ConflictChoice) => void;
 }
 
+/** The file currently open in the shared lightbox, and which element plays it. */
+interface OpenFilePreview {
+  path: string;
+  name: string;
+  media: MediaPreviewKind;
+}
+
 export function FilesPage() {
   const me = useAsyncData(() => meApi.get(), []);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -99,6 +109,7 @@ export function FilesPage() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [conflict, setConflict] = useState<PendingConflict | null>(null);
+  const [openPreview, setOpenPreview] = useState<OpenFilePreview | null>(null);
 
   // Desktop-drop overlay: an enter/leave depth counter so crossing a child
   // element's own boundary (every row is one) cannot flicker the overlay off
@@ -124,6 +135,7 @@ export function FilesPage() {
   const navigate = (target: string) => {
     setActionError(null);
     setSelected(new Set());
+    setOpenPreview(null);
     setPathValue(target);
   };
 
@@ -535,6 +547,7 @@ export function FilesPage() {
             entries.map((entry) => {
               const isSelected = selected.has(entry.path);
               const isFolder = entry.kind === "folder";
+              const mediaKind = previewKindForEntry(entry);
               const isDropTarget = isFolder && dragOverTargetPath === entry.path;
               const rowBusy = previewPaths?.includes(entry.path) ?? false;
               return (
@@ -570,6 +583,14 @@ export function FilesPage() {
                         onClick={() => navigate(entry.path)}
                       >
                         {entry.name}/
+                      </button>
+                    ) : mediaKind ? (
+                      <button
+                        type="button"
+                        className="max-w-full truncate text-left text-sm font-medium text-paper-100 hover:text-accent-300"
+                        onClick={() => setOpenPreview({ path: entry.path, name: entry.name, media: mediaKind })}
+                      >
+                        {entry.name}
                       </button>
                     ) : (
                       <a
@@ -608,6 +629,19 @@ export function FilesPage() {
             })
           )}
         </div>
+
+        {openPreview ? (
+          <ImageLightbox
+            imageId={null}
+            open
+            viewKey={openPreview.path}
+            src={adminFilesApi.previewUrl(openPreview.path)}
+            media={openPreview.media}
+            alt={openPreview.name}
+            caption={openPreview.name}
+            onClose={() => setOpenPreview(null)}
+          />
+        ) : null}
 
         {newFolderOpen ? <NewFolderDialog onClose={() => setNewFolderOpen(false)} onCreate={createFolder} /> : null}
 

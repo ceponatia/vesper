@@ -157,4 +157,6 @@ export const adminFilesApi = {
     }),
   upload: uploadAdminFile,
   downloadUrl: (path: string) => withQuery("/api/admin/self/files/download", { path }),
+  /** Same `path` semantics as `downloadUrl`, for the inline preview route (#595) — never a `blob:`/`data:` URL, which the app's CSP blocks. */
+  previewUrl: (path: string) => withQuery("/api/admin/self/files/preview", { path }),
 };
