@@ -3,6 +3,7 @@ import {
   buildActionOutcome,
   DiagnosticCollector,
   emptyNarratorPhysicalGuidance,
+  GUIDANCE_DISCLOSURE_WITHHELD,
   GUIDANCE_MAX_CORRECTIONS,
   hairAttributeFixture,
   hairObserver,
@@ -27,6 +28,8 @@ import {
   detectHairPremises,
   GUIDANCE_CONSTRAINT_IRRELEVANT,
 } from "./chat-physical-guidance";
+import { chatPhysicalGuidanceBlock, renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
+import { chatPermissionStopTransitions, type ChatPermissionStopLedgerRow } from "./chat-permission-guidance";
 import type { ChatCommittedHairState } from "./chat-affordances";
 import type { SensoryFocusHint } from "./chat-intent";
 
@@ -712,5 +715,234 @@ describe("action outcomes", () => {
     expect(sink.items.filter((item) => item.code.startsWith("guidance."))).toEqual([]);
     // An explicitly empty list is the same answer as no list at all.
     expect(stages([]).guidance).toEqual(emptyNarratorPhysicalGuidance());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #209 acceptance — the constraint path end to end, purely
+// ---------------------------------------------------------------------------
+
+/**
+ * Claims 1, 2, 3, and 5 of #209's acceptance record, pinned at the layer that
+ * owns them: the JOIN between this adapter and `renderChatPhysicalGuidance`
+ * on real hair state and real contact outcomes. The candidate-only "compile"
+ * describe above and the render suite's structural tests already own the
+ * compiler and the renderer each in isolation; what neither exercises is the
+ * adapter feeding a real committed cut into the render step and the exact
+ * prose that reaches the prompt.
+ *
+ * Claim 4 (the pending permission stop with `CHAT_PHYSICAL_CONSTRAINTS` off)
+ * is pinned in `chat-turn-guidance.test.ts`, the one file that owns the
+ * two-arm branch it protects.
+ */
+describe("#209 acceptance — the constraint path end to end, purely", () => {
+  const render = (
+    guidance: ReturnType<typeof buildChatPhysicalGuidance>,
+    subjectNames?: Readonly<Record<string, string>>,
+  ) =>
+    renderChatPhysicalGuidance({
+      guidance,
+      characterName: CHARACTER,
+      possessive: `${CHARACTER}'s`,
+      ...(subjectNames === undefined ? {} : { subjectNames }),
+    });
+
+  it("claim 1: a false premise is fenced and the narrator continues from committed state, never voicing the hidden cause or inviting a body detail", () => {
+    // The plan's worked example: rain claimed against a bath-soaked, braided
+    // cut. Two areas contradict (the cause, the style); the braid constraint
+    // rides along because the message names this subject's hair.
+    const guidance = buildChatPhysicalGuidance({
+      read: braidedRead(),
+      perception: hairObserver({ hair: "visible" }),
+      subjectId: "character_wren",
+      characterName: CHARACTER,
+      playerName: PLAYER,
+      message: "The storm drenched your loose hair.",
+      narratorInput: false,
+      committed: committed(),
+    });
+    const lines = render(guidance);
+
+    const premiseLines = lines.filter((line) => line.startsWith("- Premise check:"));
+    const constraintLines = lines.filter((line) => line.startsWith("- Binding constraint:"));
+    // Two premise-check lines: the rain-as-cause claim and the loose-as-style
+    // claim. The full sentences are chat-physical-guidance-render.test.ts's
+    // own pins (:492 the wetness-cause line, :272 the constraint line); this
+    // suite only needs the fragment that distinguishes each area, to prove
+    // the adapter's real detection reached the render step at all.
+    expect(premiseLines).toHaveLength(2);
+    expect(premiseLines.some((line) => line.includes("Do not adopt rain as the cause"))).toBe(true);
+    expect(premiseLines.some((line) => line.includes("Do not adopt loose as how"))).toBe(true);
+    // One binding-constraint line, with the braid truth clause because
+    // perception licensed it (the read's hair locus is visible).
+    expect(constraintLines).toHaveLength(1);
+    expect(constraintLines[0]).toMatch(/^- Binding constraint:/);
+    expect(constraintLines[0]).toContain("it remains secured in a braid");
+    // The committed cause (a bath / immersion) is never voiced — a correction
+    // names only the claim not to adopt, never the truth behind it.
+    expect(lines.join(" ")).not.toMatch(/immersion|bath|soaking in water/iu);
+    // The full invitation vocabulary is chat-physical-guidance-render.test.ts's
+    // own ("a constraint-only turn contains no instruction to mention a body
+    // detail", :310-338); this only needs to prove the join didn't
+    // reintroduce one.
+    expect(chatPhysicalGuidanceBlock(lines).toLowerCase()).not.toMatch(/mention|worth noticing/u);
+  });
+
+  it("claim 2: a rejected out-of-reach contact attempt renders a leading 'Blocked contact' line even when the hair tier is empty", () => {
+    // `chatContactActionOutcome` (`chat-contact/presentation.ts`) needs a full
+    // scene fixture (roster, seeded placement, a `set_proximity` intent) to
+    // produce a real rejected `out_of_reach` outcome — heavier machinery than
+    // this pure suite's other fixtures use. Falling back to `buildActionOutcome`
+    // with the contact lane's own `out_of_reach` code
+    // (`chat-contact/presentation.ts`'s `CHAT_CONTACT_LEXICON`) reproduces the
+    // identical shape `chatContactActionOutcome` builds for a rejected attempt
+    // (`chatContactResultCodes`: `[locus, blockedCode(reason)]`), so the claim
+    // is still pinned against the contact lane's real vocabulary.
+    const outcome = buildActionOutcome({
+      actionId: "contact:msg_1#player:character_wren:shoulders",
+      status: "rejected",
+      resultCodes: ["contact.locus.shoulders", "contact.blocked.out_of_reach"],
+      disclosure: "consistency_only",
+    });
+    const guidance = buildChatPhysicalGuidance({
+      read: null,
+      perception: null,
+      subjectId: "character_wren",
+      characterName: CHARACTER,
+      playerName: PLAYER,
+      message: "Tell me about your day.",
+      narratorInput: false,
+      committed: committed(),
+      actionOutcomes: [outcome],
+    });
+    expect(guidance.actionOutcomes).toHaveLength(1);
+    expect(guidance.actionOutcomes[0]?.narratorMustResolve).toBe(true);
+    // The hair tier is empty — no read, and the turn names no hair — yet the
+    // mandatory action-outcome tier still ships (it has no budget to lose).
+    expect(guidance.constraints).toEqual([]);
+    expect(guidance.corrections).toEqual([]);
+
+    // The producer side — a real rejected `out_of_reach` resolution emitting
+    // exactly these two codes — is pinned at `chat-contact-adapter.test.ts`
+    // lines 1951-1953 ("makes a refusal mandatory for the narrator"); this
+    // case owns only the join from those codes to the rendered prompt line.
+    const lines = render(guidance);
+    expect(lines[0]).toMatch(/^- Blocked contact:/);
+    expect(lines[0]).toContain("too far apart");
+  });
+
+  it("claim 3: a resolver_only action outcome never reaches guidance.actionOutcomes or a rendered line, and files the withheld diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const outcome = buildActionOutcome({
+      actionId: "contact:msg_1#player:character_wren:shoulders",
+      status: "committed",
+      resultCodes: ["contact.locus.shoulders", "contact.gesture.rest"],
+      disclosure: "resolver_only",
+    });
+    const guidance = buildChatPhysicalGuidance({
+      read: null,
+      perception: null,
+      subjectId: "character_wren",
+      characterName: CHARACTER,
+      playerName: PLAYER,
+      message: "Tell me about your day.",
+      narratorInput: false,
+      committed: committed(),
+      actionOutcomes: [outcome],
+      sink,
+    });
+    // Hidden from the compiled guidance the adapter hands the renderer …
+    expect(guidance.actionOutcomes).toEqual([]);
+    // … and the withheld diagnostic is filed, precisely (not merely a
+    // disclosure-shaped code — the exact "correct behaviour" one).
+    expect(sink.items.filter((item) => item.code === GUIDANCE_DISCLOSURE_WITHHELD)).toHaveLength(1);
+    // … and no rendered line exists for it either — the JOIN this compile-only
+    // assertion cannot see on its own.
+    expect(render(guidance)).toEqual([]);
+  });
+
+  /** One `policy_withdrawn` ending on a stated pair, for the claim-5 fixture. */
+  function stopRow(input: { target: string; locus: string; eventRef: string }): ChatPermissionStopLedgerRow {
+    return {
+      eventRef: input.eventRef,
+      contactId: `contact_${input.target}`,
+      guardMessageId: "msg_reply_1",
+      createdAt: new Date("2026-08-04T10:00:00.000Z"),
+      payload: {
+        kind: "contact_ended",
+        contactId: `contact_${input.target}`,
+        eventRef: input.eventRef,
+        reason: "policy_withdrawn",
+        storyTime: 120,
+        contact: {
+          phase: "ended",
+          actorId: "player",
+          source: { kind: "body", subjectId: "player", locationId: "hands" },
+          target: { kind: "body", subjectId: input.target, locationId: input.locus },
+        },
+      },
+    };
+  }
+
+  it("claim 5: regenerating from the same committed cut yields byte-identical guidance, independent of candidate input order", () => {
+    const outcomeA = buildActionOutcome({
+      actionId: "contact:msg_1#player:character_wren:shoulders",
+      status: "committed",
+      resultCodes: ["contact.locus.shoulders", "contact.gesture.rest"],
+      disclosure: "consistency_only",
+    });
+    const outcomeB = buildActionOutcome({
+      actionId: "contact:msg_1#player:character_wren:head",
+      status: "rejected",
+      resultCodes: ["contact.locus.head", "contact.blocked.out_of_reach"],
+      disclosure: "consistency_only",
+    });
+    const transitions = chatPermissionStopTransitions({
+      rows: [
+        stopRow({ target: "character_wren", locus: "shoulders", eventRef: "permission-reply:msg_a" }),
+        stopRow({ target: "character_vaelith", locus: "hands", eventRef: "permission-reply:msg_b" }),
+      ],
+      newestAssistantReply: null,
+    });
+    // Sanity on the fixture: two distinct pairs really did produce two candidates.
+    expect(transitions).toHaveLength(2);
+    const [stopWren, stopVaelith] = transitions;
+    if (stopWren === undefined || stopVaelith === undefined) throw new Error("fixture: both pairs must emit a stop");
+    const subjectNames = { player: "the player", character_wren: CHARACTER, character_vaelith: "Vaelith" };
+
+    const buildAndRender = (
+      actionOutcomes: readonly PhysicalActionOutcome[],
+      stopTransitions: typeof transitions,
+    ) => {
+      const guidance = buildChatPhysicalGuidance({
+        read: braidedRead(),
+        perception: hairObserver({ hair: "visible" }),
+        subjectId: "character_wren",
+        characterName: CHARACTER,
+        playerName: PLAYER,
+        message: "The storm drenched your loose hair.",
+        narratorInput: false,
+        committed: committed(),
+        actionOutcomes,
+        transitions: stopTransitions,
+      });
+      return { guidance, lines: render(guidance, subjectNames) };
+    };
+
+    const first = buildAndRender([outcomeA, outcomeB], [stopWren, stopVaelith]);
+    const second = buildAndRender([outcomeA, outcomeB], [stopWren, stopVaelith]);
+    const reversed = buildAndRender([outcomeB, outcomeA], [stopVaelith, stopWren]);
+
+    expect(second.lines).toEqual(first.lines);
+    expect(reversed.lines).toEqual(first.lines);
+
+    const fingerprintsOf = (guidance: typeof first.guidance) => ({
+      actionOutcomes: guidance.actionOutcomes.map((entry) => entry.fingerprint),
+      transitions: guidance.transitions.map((entry) => entry.fingerprint),
+      corrections: guidance.corrections.map((entry) => entry.fingerprint),
+      constraints: guidance.constraints.map((entry) => entry.fingerprint),
+    });
+    expect(fingerprintsOf(second.guidance)).toEqual(fingerprintsOf(first.guidance));
+    expect(fingerprintsOf(reversed.guidance)).toEqual(fingerprintsOf(first.guidance));
   });
 });
