@@ -107,19 +107,26 @@ describe("planFaceRepair — flag and basic gates", () => {
     if (!result.ok) expect(result.code).toBe("source_unavailable");
   });
 
-  it("refuses source_unavailable for every hidden system kind except reference_view", () => {
-    // The inverse of the reference_view acceptance below: every OTHER
-    // `HIDDEN_IMAGE_KINDS` entry stays refused (issue #246 correction round 2).
+  it("refuses source_unavailable for every kind outside the allowlist, naming the kind", () => {
+    // The positive allowlist's inverse (issue #246 round-2 correction): an
+    // item/location `entity` render and an unrelated player `chat_upload`
+    // are NOT hidden system kinds, so a denylist let them through; the
+    // allowlist refuses them the same way it refuses every hidden kind.
     for (const kind of [
+      "entity",
+      "chat_upload",
       "identity_face_crop",
       "identity_trial_output",
       "lab_control",
       "lab_output",
       "generator_output",
     ] as const) {
-      const result = planFaceRepair(planInput({ source: source({ kind }) }));
+      const result = planFaceRepair(planInput({ source: source({ kind, entityKind: null, entityId: null }) }));
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.code).toBe("source_unavailable");
+      if (!result.ok) {
+        expect(result.code).toBe("source_unavailable");
+        expect(result.message).toContain(kind);
+      }
     }
   });
 });
@@ -175,10 +182,9 @@ describe("planFaceRepair — the multi-person accept/deny table", () => {
   });
 
   // A reference view is a real render of this character — the identity
-  // pack's own accepted view — so it is a legitimate repair source even
-  // though `HIDDEN_IMAGE_KINDS` hides it elsewhere for gallery purposes
-  // (issue #246 correction round 2; the accept table wins over the hidden-
-  // kind refusal for this one kind).
+  // pack's own accepted view — so it is on the allowlist even though
+  // `HIDDEN_IMAGE_KINDS` hides it elsewhere for gallery purposes (issue
+  // #246 correction round 2).
   it("accepts a portrait_variant / chat_look / reference_view the same way", () => {
     for (const kind of ["portrait_variant", "chat_look", "reference_view"] as const) {
       const result = planFaceRepair(planInput({ source: source({ kind }) }));
@@ -190,6 +196,16 @@ describe("planFaceRepair — the multi-person accept/deny table", () => {
     const result = planFaceRepair(
       planInput({
         source: source({ kind: "scene", entityKind: null, entityId: null }),
+        sceneCast: { characterEntityIds: ["char-1"] },
+      }),
+    );
+    expect(result).toEqual({ ok: true, subjectCheck: { method: "reference_cast", subjects: 1 } });
+  });
+
+  it("accepts a single-cast chat_place the same way", () => {
+    const result = planFaceRepair(
+      planInput({
+        source: source({ kind: "chat_place", entityKind: null, entityId: null }),
         sceneCast: { characterEntityIds: ["char-1"] },
       }),
     );
