@@ -1,7 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ChatArchivist } from "@/contracts/turns/chat-archivist";
 import { switchScenePlace } from "@/contracts/turns/chat-scene-memory";
-import { garmentActorForCharacter, garmentsAtScenePlace, wornGarmentDefinitionIds } from "@/contracts/items/garment-store";
+import {
+  garmentActorForCharacter,
+  garmentsAtScenePlace,
+  syncWornGarments,
+  wornGarmentDefinitionIds,
+  type GarmentSeed,
+} from "@/contracts/items/garment-store";
 
 /**
  * Grounded continuity extraction, end to end.
@@ -26,6 +32,7 @@ import { editChatState } from "./chat-state/edit";
 import { loadChatScenario, saveChatScenario } from "./chat-state/store";
 import { loadPreExchangeScenario, rollbackScenario } from "./chat-state/snapshots";
 import { seedChatScenario, type ChatScenario } from "./chat-state";
+import type { FinalizeChatStateInput } from "./chat-state/finalize-types";
 import {
   chatArchivist,
   dropChatFixture,
@@ -98,15 +105,17 @@ async function settle(args: {
   scenario: ChatScenario;
   archivist: Partial<ChatArchivist>;
   wornItemIds?: readonly string[];
+  roster?: FinalizeChatStateInput["roster"];
 }) {
   mock.archivist = { value: chatArchivist(args.archivist), degraded: false };
-  const { scenario, state, sink } = await settleChatExchange(fixture, {
+  const { scenario, state, sink, outcome } = await settleChatExchange(fixture, {
     chat: args.chat,
     scenario: args.scenario,
     wornItemIds: args.wornItemIds ?? [shirtDef(), jacketDef()],
+    ...(args.roster === undefined ? {} : { roster: args.roster }),
   });
   if (!scenario || !state) throw new Error("chat rows missing after finalize");
-  return { scenario, state, sink };
+  return { scenario, state, sink, outcome };
 }
 
 describe.runIf(ready)("the grounded lane mutates the store and its projections in one write", () => {
@@ -319,5 +328,87 @@ describe.runIf(ready)("an unmodelled chat never arms the grounded lane", () => {
     // exchange's prompt does carry handles.
     expect(scenario.garments.seeded).toBe(true);
     expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([shirtDef(), jacketDef()]);
+  });
+});
+
+describe.runIf(ready)("the ensemble roster shares the handle table (design #298)", () => {
+  /**
+   * A synthetic present member — no character row of her own, because
+   * `finalizeChatState` never loads one for a roster entry: the wardrobe fold
+   * reads only the id/name/wornItemIds the caller hands it.
+   */
+  const MARA_ID = "chat-garment-ops-int-mara";
+  const MARA_ACTOR = () => garmentActorForCharacter(MARA_ID);
+  const MARA_SCARF_DEF = "def-mara-scarf";
+
+  /** `dressedChat()`, plus Mara already modelled and wearing a scarf. */
+  async function ensembleChat(): Promise<ChatSeat & { scenario: ChatScenario }> {
+    const chat = await dressedChat();
+    let n = 0;
+    const mintId = () => `mara-int-${(n += 1)}`;
+    const seed: GarmentSeed = {
+      definitionId: MARA_SCARF_DEF,
+      name: "a green scarf",
+      categoryId: "top",
+      coverage: ["shoulders", "chest"],
+    };
+    const garments = syncWornGarments({
+      store: chat.scenario.garments,
+      actorId: MARA_ACTOR(),
+      wornDefinitionIds: [MARA_SCARF_DEF],
+      seeds: new Map([[MARA_SCARF_DEF, seed]]),
+      mintId,
+      atMinutes: chat.scenario.clockMinutes,
+    });
+    const scenario: ChatScenario = { ...chat.scenario, garments };
+    await saveChatScenario(chat.chatId, scenario);
+    return { ...chat, scenario };
+  }
+
+  const rosterWithMara = (maraWornItemIds: readonly string[]): FinalizeChatStateInput["roster"] => [
+    {
+      characterId: fixture.characterId,
+      name: fixture.characterName,
+      presence: "present",
+      wornItemIds: [shirtDef(), jacketDef()],
+    },
+    { characterId: MARA_ID, name: "Mara", presence: "present", wornItemIds: maraWornItemIds },
+  ];
+
+  it("an op on the member's enumerated handle moves HER garment, leaves the primary's untouched, and reports the projection", async () => {
+    const chat = await ensembleChat();
+    const { scenario, state, sink, outcome } = await settle({
+      chat,
+      scenario: chat.scenario,
+      roster: rosterWithMara([MARA_SCARF_DEF]),
+      archivist: withOps([{ op: "move", garment: "mara.scarf", to: "left_here", anchor: "on the desk" }]),
+    });
+
+    // The scarf is located at the SAME place the enumeration used, not destroyed.
+    const left = garmentsAtScenePlace(scenario.garments, "the study");
+    expect(left.map((i) => i.name)).toEqual(["a green scarf"]);
+    expect(wornGarmentDefinitionIds(scenario.garments, MARA_ACTOR())).toEqual([]);
+    // The primary's own wardrobe never moved — one handle, one actor.
+    expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([shirtDef(), jacketDef()]);
+    expect(state.wornItemIds).toEqual([shirtDef(), jacketDef()]);
+
+    expect(sink.items.map((d) => d.code)).not.toContain("chat_garments.legacy_outfit_bridge");
+    expect(outcome.ensembleWardrobe.lane).toBe("operations");
+    expect(outcome.ensembleWardrobe.enumeratedCharacterIds).toContain(MARA_ID);
+    // Her worn projection re-derives from the store, exactly like the primary's.
+    expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([]);
+  });
+
+  it("an unresolvable member handle drops with the EXISTING diagnostic — no new rejection code, nothing touched", async () => {
+    const chat = await ensembleChat();
+    const before = JSON.stringify(chat.scenario.garments);
+    const { scenario, sink } = await settle({
+      chat,
+      scenario: chat.scenario,
+      roster: rosterWithMara([MARA_SCARF_DEF]),
+      archivist: withOps([{ op: "roll", garment: "mara.necklace", part: "root", degree: "slight" }]),
+    });
+    expect(JSON.stringify(scenario.garments)).toBe(before);
+    expect(sink.items.map((d) => d.code)).toContain("garment_op.garment_unresolved");
   });
 });

@@ -50,7 +50,11 @@ A conversation holds up to **4 full characters**. A roster of one is byte-identi
   openLoops / outfit / attributeChanges / driveUpdates) folded into their own row, and
   everyone who **pulsed** gets the deterministic folds (relationship-arc samples,
   milestones, weather via the pulse) through the pure `settleEnsembleMember`. The classic
-  1-on-1 keeps the single combined archivist call — no cost regression.
+  1-on-1 keeps the single combined archivist call — no cost regression. The
+  personal pass's `outfit` rung folds free text only for a member the shared
+  continuity leg's grounded garment lane did not enumerate this exchange; an
+  enumerated member's wardrobe already moved through that lane's typed
+  dispatcher instead ([wardrobe.md](wardrobe.md) §The garment store).
 - **Group perks**: a selfie request routes to the member the message
   **addresses by name** (unaddressed falls to the lead; offers stay lead-gated) — their
   ring burns, their identity renders; the remember-when **callback** draws from ONE

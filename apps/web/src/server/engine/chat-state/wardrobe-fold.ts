@@ -12,7 +12,8 @@ import { newId } from "@/lib/ids";
 import { foldOutfitProposal, foldPlayerOutfitProposal } from "./outfit-fold";
 import { syncGarmentsForExchange, garmentProjectionOr } from "../chat-garments";
 import type { ChatExtractionResult } from "../chat-memory";
-import type { FinalizeChatStateInput } from "./finalize-types";
+import type { EnsembleWardrobeReport, FinalizeChatStateInput } from "./finalize-types";
+import { presentEnsembleMembers } from "./ensemble";
 
 type FoldFinalizationWardrobeInput = Pick<
   FinalizeChatStateInput,
@@ -124,6 +125,12 @@ export async function foldFinalizationWardrobe(
   // unseeded store first materializes from the PRE-fold worn sets, so a garment
   // this exchange took off exists at a locus rather than never having existed.
   const playerStateAfterFold: ChatPlayerState = { ...input.scenario.playerState, ...playerOutfitPatch };
+  // Present ensemble members (design #298 step 3): the same set the shared
+  // continuity leg enumerated into the handle table, materialized into the
+  // store on THIS write with their own roster worn list as both sides of the
+  // change — behavior-neutral for one not yet modelled, an idempotent no-op
+  // for one already modelled, so the NEXT exchange's enumeration finds them.
+  const presentMembers = presentEnsembleMembers(input.roster, input.characterId);
   const garmentSync = await syncGarmentsForExchange({
     scenario: input.scenario,
     ownerId: input.ownerId,
@@ -132,6 +139,14 @@ export async function foldFinalizationWardrobe(
     preWornItemIds: input.driftedState.wornItemIds,
     postWornItemIds: outfitPatch.wornItemIds ?? input.driftedState.wornItemIds,
     playerStateAfterFold,
+    ...(presentMembers.length > 0
+      ? {
+          ensembleMembers: presentMembers.map((member) => ({
+            characterId: member.characterId,
+            wornItemIds: member.wornItemIds,
+          })),
+        }
+      : {}),
     sink: input.sink,
   });
 
@@ -186,7 +201,37 @@ export async function foldFinalizationWardrobe(
       : garmentSync.playerState;
   const garmentTrace: GarmentOperationTraceEntry[] = garmentFold.trace;
 
-  return { outfitChanged, outfitPatch, garmentStore, wornItemIds, playerState, garmentTrace, lane };
+  // Design #298 step 5: report the grounded lane onto the ensemble roster.
+  // `enumeratedCharacterIds` reads the table built BEFORE the fan-out (only
+  // actually-modelled actors appear in it — `buildGarmentHandleTable`'s own
+  // rule), so it names exactly the present members who had a handle to
+  // address this exchange. Each present member's worn projection is
+  // re-derived the same way the primary's is above — the projection once
+  // they are modelled (which, after this write's materialization, they
+  // always are), else their roster worn list.
+  const enumeratedCharacterIds = presentMembers
+    .filter((member) =>
+      garmentHandles.actors.some((actor) => actor.actorId === garmentActorForCharacter(member.characterId)),
+    )
+    .map((member) => member.characterId);
+  const memberWornItemIds: Record<string, readonly string[]> = {};
+  for (const member of presentMembers) {
+    memberWornItemIds[member.characterId] = garmentProjectionOr(
+      garmentStore,
+      garmentActorForCharacter(member.characterId),
+      member.wornItemIds,
+    );
+  }
+  // A 1-on-1 chat (no roster at all) reports the fixed default so existing
+  // callers/tests are unaffected by a lane this exchange never shared with
+  // anyone — `presentMembers` is already `[]` in that case, but `lane` itself
+  // would still read the primary's own mutation lane, which is not a claim
+  // about an ensemble that does not exist here.
+  const ensembleWardrobe: EnsembleWardrobeReport = input.roster
+    ? { lane, enumeratedCharacterIds, wornItemIds: memberWornItemIds }
+    : { lane: "none", enumeratedCharacterIds: [], wornItemIds: {} };
+
+  return { outfitChanged, outfitPatch, garmentStore, wornItemIds, playerState, garmentTrace, lane, ensembleWardrobe };
 }
 
 export type FinalizationWardrobe = Awaited<ReturnType<typeof foldFinalizationWardrobe>>;

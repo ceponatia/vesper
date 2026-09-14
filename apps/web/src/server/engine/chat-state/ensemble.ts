@@ -17,6 +17,7 @@ import {
   outfitChangeEvidenceValidated,
 } from "./outfit-evidence";
 import { foldRelationshipArc, appendSecretMilestones } from "./character-fold";
+import type { EnsembleWardrobeReport, FinalizeChatStateInput } from "./finalize-types";
 
 /**
  * Fold one ensemble member's exchange results into their state (followups rulings
@@ -157,4 +158,97 @@ export function settleEnsembleMember(args: {
   }
 
   return exchangeMilestones.length ? { ...next, milestones: appendMilestones(next.milestones, exchangeMilestones) } : next;
+}
+
+// --- Design #298: threading the shared continuity leg's grounded garment lane ---
+// through the ensemble roster. Two small, PURE decisions (the same "pure with an
+// optional sink" convention `settleEnsembleMember` above already uses) so they
+// are unit-testable without a database: which present members join the handle
+// enumeration + materialization pass, what worn list a member's settle starts
+// from, and whether their personal pass's own free-text outfit fold must sit
+// out this exchange because a typed operation already moved that wardrobe.
+
+/** One roster member as `FinalizeChatStateInput.roster` carries it. */
+export type EnsembleRosterMember = NonNullable<FinalizeChatStateInput["roster"]>[number];
+
+/**
+ * The present members besides the primary — the set the shared continuity leg
+ * enumerates into the garment handle table and the wardrobe fold materializes
+ * on the write. Both reads must agree on exactly this set, so it is computed in
+ * ONE place rather than re-filtered by each caller.
+ */
+export function presentEnsembleMembers(
+  roster: FinalizeChatStateInput["roster"],
+  primaryCharacterId: string,
+): EnsembleRosterMember[] {
+  return (roster ?? []).filter(
+    (member) => member.presence === "present" && member.characterId !== primaryCharacterId,
+  );
+}
+
+/**
+ * The member's pre-settle state, with `wornItemIds` swapped for the shared
+ * continuity leg's post-typed-ops projection when this exchange modelled the
+ * member (an entry present in `ensembleWardrobe.wornItemIds`) — so a typed
+ * garment operation over the member's enumerated handle reaches their settle
+ * exactly like the primary's re-derived projection reaches the primary's
+ * write. Absent (a 1-on-1, or a member this exchange never modelled) ⇒ the
+ * state passes through untouched.
+ */
+export function applyEnsembleWardrobeProjection(
+  state: ChatState,
+  characterId: string,
+  ensembleWardrobe: Pick<EnsembleWardrobeReport, "wornItemIds">,
+): ChatState {
+  const projected = ensembleWardrobe.wornItemIds[characterId];
+  return projected === undefined ? state : { ...state, wornItemIds: [...projected] };
+}
+
+/**
+ * The no-op outfit proposal — `settleEnsembleMember` folds it as "nothing
+ * changed". A factory, not a shared constant: `removed`/`added` are mutable
+ * arrays, and every neutralized member this exchange must get their own,
+ * never one instance aliased across calls.
+ */
+function neutralOutfitProposal(): ChatPersonalNotes["outfit"] {
+  return { description: "", changeEvidence: "", exposed: false, removed: [], added: [] };
+}
+
+/**
+ * The personal pass's notes to settle a member with, once the shared
+ * continuity leg's grounded lane is accounted for: when this exchange's lane
+ * is "operations" AND the member had a handle enumerated (their wardrobe
+ * already moved through the typed dispatcher over the shared handle table),
+ * the personal pass's OWN free-text outfit proposal is neutralized — the same
+ * one-path-per-exchange rule the primary and player already follow, so no
+ * member is ever mutated twice in one exchange. Everything else about the
+ * personal pass (open loops, attribute overlays, drive updates) still folds.
+ *
+ * Files the one info diagnostic the skip earns (`chat_garments.ensemble_outfit_typed_lane`)
+ * when it actually happens — never for a member the lane never enumerated, who
+ * keeps today's free-text bridge unchanged.
+ */
+export function ensembleMemberPersonalNotes(input: {
+  personal: ChatPersonalNotes | null;
+  characterId: string;
+  characterName: string;
+  ensembleWardrobe: Pick<EnsembleWardrobeReport, "lane" | "enumeratedCharacterIds">;
+  sink?: DiagnosticSink;
+}): ChatPersonalNotes | null {
+  const { personal, characterId, characterName, ensembleWardrobe, sink } = input;
+  if (
+    personal === null ||
+    ensembleWardrobe.lane !== "operations" ||
+    !ensembleWardrobe.enumeratedCharacterIds.includes(characterId)
+  ) {
+    return personal;
+  }
+  sink?.push(
+    diag(
+      "info",
+      "chat_garments.ensemble_outfit_typed_lane",
+      characterName + "'s wardrobe moved through the grounded garment lane this exchange — the personal pass's own free-text outfit fold is skipped",
+    ),
+  );
+  return { ...personal, outfit: neutralOutfitProposal() };
 }

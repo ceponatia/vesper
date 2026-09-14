@@ -107,8 +107,10 @@ exchange SAYING the outfit changed replaces — and only for the owner it says i
   loaded worn items + the character's preset pool — a removed garment drops its id, an
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
   turn).
-- The ensemble members' **personal pass** runs the same two description rungs through
-  the pure `settleEnsembleMember` (`chat-state/ensemble.ts`; [multi-character.md](multi-character.md) §Multi-character):
+- A member the shared continuity leg's grounded lane did NOT enumerate this
+  exchange keeps the free-text bridge: their **personal pass** runs the same two
+  description rungs through the pure `settleEnsembleMember`
+  (`chat-state/ensemble.ts`; [multi-character.md](multi-character.md) §Multi-character) —
   a whole-look description naming an authored preset re-seeds their worn list exactly like the
   primary and never reaches the gate, an unmatched one replaces a
   modelled worn list only past validated evidence (scoped to THAT member — on a roster of two
@@ -116,7 +118,10 @@ exchange SAYING the outfit changed replaces — and only for the owner it says i
   is kept with `chat_wardrobe.ensemble_outfit_restatement` — a bare message, since naming the
   description's unworn garments needs an item load and that fold is pure. Garment-level
   `removed`/`added` remain the primary's IO-backed path. Rollback-safe:
-  `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`.
+  `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`. A member the
+  lane DID enumerate skips this personal-pass fold for the exchange instead
+  (`chat_garments.ensemble_outfit_typed_lane`, §The garment store) — their
+  wardrobe already moved through the typed dispatcher.
 
 ## The garment store — instances under the projection
 
@@ -152,12 +157,24 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
 - **`outfit_exposed` demoted.** Authoritative only for unmodelled actors (no instances);
   a modelled actor's exposure always derives from coverage.
 - **The extraction lane**: the archivist proposes typed garment operations
-  over opaque handles the prompt enumerates (`mara.shirt.sleeve_left` — ~200 tokens
-  for a 2-actor scene), resolved and applied through the dispatcher in fiction order;
-  unresolved handles drop with diagnostics, ad-hoc garments mint from category
-  templates, and the free-text fold runs only as a degraded bridge
-  (`chat_garments.legacy_outfit_bridge`) — which remains the path for ensemble
-  members beyond the primary. Per-exchange traces surface in the admin inspector.
+  over opaque handles ONE shared table enumerates — the primary, then the
+  player, then every PRESENT ensemble member (`mara.shirt.sleeve_left`) —
+  resolved and applied through the dispatcher in fiction order; unresolved
+  handles drop with diagnostics, ad-hoc garments mint from category templates.
+  The player sits ahead of the members in that order: the table's per-exchange
+  cap collects every listed actor's worn garments before trimming, so a
+  crowded roster's members must never be able to push the player's own worn
+  garments — and therefore the player's own handles — past the cap. A present
+  member earns handles once they are MODELLED; an unmodelled one is
+  materialized lazily on this exchange's write from their roster worn list (the
+  same clothes, now as instances — behavior-neutral), so they carry handles
+  from the NEXT exchange on. The free-text fold still runs as a degraded bridge
+  (`chat_garments.legacy_outfit_bridge`) for a member the table never
+  enumerates; an enumerated member's own personal pass instead skips its
+  free-text outfit fold for the exchange (`chat_garments.ensemble_outfit_typed_lane`)
+  — the same one-path-per-exchange rule the primary and player already follow
+  ([multi-character.md](multi-character.md) §Multi-character). Per-exchange
+  traces surface in the admin inspector.
 - **Narration** (behind `CHAT_GARMENT_CUES`, default off): an authoritative per-actor
   digest (placement + structural presentation, bands
   only) plus at most two ranked, perception-gated garment cues with repeat-key

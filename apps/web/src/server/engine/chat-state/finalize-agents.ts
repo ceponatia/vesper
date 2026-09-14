@@ -15,6 +15,7 @@ import { lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/lif
 import { runChatPulse } from "./pulse-agent";
 import { runChatExtraction } from "../chat-memory";
 import type { FinalizeChatStateInput } from "./finalize-types";
+import { presentEnsembleMembers } from "./ensemble";
 
 type RunFinalizationAgentsInput = Pick<
   FinalizeChatStateInput,
@@ -82,11 +83,27 @@ export async function runFinalizationAgents(
   // one and the same room, so a garment dropped this exchange is re-findable by
   // exactly the handles the model was just shown.
   const scenePlaceName = currentScenePlace(input.scenario.sceneMemory)?.name;
+  // Present ensemble members join the table AFTER the primary and the player
+  // (design #298 step 2, corrected): `buildGarmentHandleTable` collects EVERY
+  // actor's worn garments before the cap runs, in actor order, so putting
+  // members ahead of the player would let a crowded roster's worn instances
+  // push the player's own worn garments — and therefore the player's own
+  // handles — past the 12-garment cap. The player already has an established
+  // free-text bridge to protect; a newly-enumerated member does not lose
+  // anything by sitting after it, since an unenumerated member already keeps
+  // that bridge (below). Each member gets their own handle prefix
+  // (`garmentActorForCharacter(characterId)`), and — like the primary and the
+  // player — only actually appears once the store has instances for them.
+  const presentMembers = presentEnsembleMembers(input.roster, input.characterId);
   const garmentHandles = buildGarmentHandleTable({
     store: input.scenario.garments,
     actors: [
       { actorId: garmentActorForCharacter(input.characterId), label: input.characterName },
       { actorId: GARMENT_PLAYER_ACTOR, label: input.playerName || "you", slug: "you" },
+      ...presentMembers.map((member) => ({
+        actorId: garmentActorForCharacter(member.characterId),
+        label: member.name,
+      })),
     ],
     ...(scenePlaceName === undefined ? {} : { placeName: scenePlaceName }),
   });
