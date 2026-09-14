@@ -22,6 +22,8 @@ Source: [`packages/text-models`](../../packages/text-models/README.md). The imag
 
 A feature is one semantic decoding knob. Ids are spelled in Vesper's normalized vocabulary — `topK`, never `top_k` — because the same knob is spelled differently on every upstream, and a feature carrying a wire name would have to be duplicated the first time a second host served it. Wire spellings live in the dialects alone.
 
+**A chat-template argument is not a feature.** `chat_template_kwargs` and its kind change how a prompt is RENDERED rather than how tokens are drawn, and they have to reach every call a model receives rather than only the ones an application decided were narration. A model that needs one states it as a quirk's request preparer, which runs at the model boundary for every call; the profile carries sampling and nothing else. Some hosts reject the field outright on some tokenizers, which is a second reason it never rides a profile.
+
 A feature owns its **value band**: the range outside which a number means nothing to any sampler, whatever host is asked. A value outside the band is refused when the adapter is defined. Absence is never the same as a neutral value — a knob a profile omits is one the lane's default governs.
 
 The vocabulary is grown as needed. It is not an enumeration of every sampler a language model could expose, and it deliberately includes knobs no host Vesper reaches serves: an author tunes a model in a local runtime and publishes a whole profile, and the adapter carries the whole profile so the record of how the model was meant to be asked survives in one reviewable place.
@@ -41,7 +43,6 @@ The vocabulary is grown as needed. It is not an enumeration of every sampler a l
 | `stop`                   | Ends the completion at one of these literal strings                | one or more non-blank strings            |
 | `minTokens`              | Refuses to stop before this many tokens                            | whole numbers, 0 or above                |
 | `maxTokens`              | Caps how many tokens the completion may generate                   | whole numbers, 1 or above                |
-| `thinking`               | Turns the chat template's thinking mode on or off                  | `true` or `false`                        |
 | `topNsigma`              | Keeps tokens within this many standard deviations of the top logit | 0 or above                               |
 | `dryMultiplier`          | Scales DRY's penalty on a repeated sequence, and switches DRY on   | 0 or above                               |
 | `dryBase`                | How steeply DRY's penalty grows with sequence length               | 1 or above                               |
@@ -92,7 +93,6 @@ Binding a profile for `self-hosted` nevertheless works, and that is deliberate: 
 | `stop`                   | setting `stopSequences`     | setting `stopSequences`    | body `stop_sequence`         |
 | `minTokens`              | body `min_tokens`           | —                          | body `min_tokens`            |
 | `maxTokens`              | setting `maxOutputTokens`   | setting `maxOutputTokens`  | body `max_length`            |
-| `thinking`               | body `chat_template_kwargs` | —                          | body `chat_template_kwargs`  |
 | `topNsigma`              | —                           | —                          | body `nsigma`                |
 | `dryMultiplier`          | —                           | —                          | body `dry_multiplier`        |
 | `dryBase`                | —                           | —                          | body `dry_base`              |

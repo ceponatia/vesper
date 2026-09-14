@@ -39,14 +39,17 @@ export const darkIdolQwen38V11 = defineTextModel({
       /**
        * The reasoning effort the author recommends, carried as a chat-template
        * keyword because that is where this checkpoint's Jinja template reads
-       * it — it is not the transport's `reasoningEffort` option, and the
-       * vocabulary's own `thinking` toggle cannot say "medium".
+       * it — not the transport's `reasoningEffort` option.
        *
-       * A preparer rather than a feature, and it REPLACES the key rather than
-       * merging into it: that is what keeps it idempotent, which the contract
-       * requires because a caller may prepare a body twice. Nothing else in this
-       * definition composes `thinking`, so there is no second writer of the key
-       * for the replacement to lose.
+       * A chat-template argument is never a profile value in this package: it
+       * changes how the prompt is RENDERED rather than how tokens are drawn, so
+       * it has to reach every call the model receives rather than only the ones
+       * a lane decided were narration. Its neighbour rows suppress their thinking
+       * mode through the same hook for the same reason.
+       *
+       * It REPLACES the key rather than merging into it, which is what keeps it
+       * idempotent — the contract requires that, because a caller may prepare a
+       * body twice. Nothing else in this definition writes the key.
        */
       prepareRequest: (body) => ({ ...body, chat_template_kwargs: { reasoning_effort: "medium" } }),
     },

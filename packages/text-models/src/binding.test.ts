@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { bindTextModelProfile, defineTextModel, type TextModelAdapter } from "./composer";
-import { minPFeature, temperatureFeature, thinkingFeature, topKFeature, topNsigmaFeature } from "./features";
-import { hostsServing } from "./hosts";
+import {
+  bindTextModelProfile,
+  bindTextProfileValues,
+  defineTextModel,
+  type TextModelAdapter,
+} from "./composer";
+// The whole vocabulary as one object, so the completeness check below reads the
+// package's exports instead of a list this file would have to maintain.
+import * as features from "./features";
+import { bindingFor, hostsServing } from "./hosts";
 
 /**
  * Binding a declared profile for the host that will actually carry it.
@@ -29,7 +36,13 @@ const adapter: TextModelAdapter = defineTextModel({
   family: "fixture-24b",
   host: "featherless",
   chatTemplate: "mistral-tekken",
-  features: [temperatureFeature(), topKFeature(), minPFeature(), thinkingFeature(), topNsigmaFeature()],
+  features: [
+    features.temperatureFeature(),
+    features.topKFeature(),
+    features.minPFeature(),
+    features.thinkingFeature(),
+    features.topNsigmaFeature(),
+  ],
   profile: { temperature: 1, topK: 100, minP: 0.1, thinking: false, topNsigma: 1.25 },
 });
 
@@ -80,6 +93,74 @@ describe("bindTextModelProfile", () => {
   });
 });
 
+/**
+ * The same law applied to values that belong to ONE CALL rather than to a
+ * model: the minimum-token floor a lane asks for on a single retry.
+ *
+ * The defect this kills is an application that spells the wire field itself.
+ * Before this function existed the chat lane held `{ featherless: { min_tokens:
+ * 48 } }` as a literal, so "wire spellings live in the dialects alone" was true
+ * of profiles and false of per-call knobs — and the day that model moved hosts,
+ * the profile would have followed and the floor would not.
+ */
+describe("bindTextProfileValues", () => {
+  it("spells a per-call value with the host's own dialect, on the same column split as a profile", () => {
+    // Featherless documents `min_tokens` and the OpenAI-compatible transport has
+    // no argument for it, so the floor rides the raw body — which is the entire
+    // reason the lane may not simply pass it as a call setting.
+    expect(bindTextProfileValues({ minTokens: 48 }, "featherless")).toEqual({
+      settings: {},
+      body: { min_tokens: 48 },
+      withheld: [],
+    });
+  });
+
+  it("withholds a per-call value the host does not serve instead of inventing a field for it", () => {
+    // OpenRouter documents no minimum-generation floor at all. A caller that
+    // asked for one there gets it reported, not silently spelled as something
+    // else — and the call still goes, because a withheld value is never an error.
+    expect(bindTextProfileValues({ minTokens: 48 }, "openrouter")).toEqual({
+      settings: {},
+      body: {},
+      withheld: [
+        { feature: "minTokens", reason: "openrouter does not serve minTokens, so the profile's value for it is not sent." },
+      ],
+    });
+  });
+
+  it("binds nothing from an empty layer, so a lane with no defaults adds no key", () => {
+    expect(bindTextProfileValues({}, "featherless")).toEqual({ settings: {}, body: {}, withheld: [] });
+  });
+});
+
+/**
+ * The placeholder dialect is the vocabulary's completeness check: it names
+ * every knob, including the ones no reachable host serves, so a sampler that is
+ * present in the vocabulary and off everywhere still has one place that spells
+ * it. A feature added without that row breaks the claim silently — everywhere
+ * else it reads as a host that simply refuses the knob.
+ */
+describe("the vocabulary and the placeholder dialect", () => {
+  // Read off the module rather than listed: the feature factories are the
+  // package's zero-argument exports, so a knob added tomorrow is held to this
+  // rule on the day it lands.
+  it("names every knob in the vocabulary, so none of them is spelled nowhere", () => {
+    const vocabulary = Object.values(features)
+      .filter((value): value is () => features.TextModelFeature => typeof value === "function" && value.length === 0)
+      .map((factory) => factory());
+
+    // A sanity floor on the filter itself: if it ever stopped matching the
+    // factories, the loop below would pass by examining nothing.
+    expect(vocabulary.length).toBeGreaterThan(30);
+    for (const feature of vocabulary) {
+      // The placeholder names every knob, so a feature it does NOT name is one
+      // whose dialect key was misspelled or forgotten — which reads, everywhere
+      // else, as a host that simply refuses the knob.
+      expect(bindingFor("self-hosted", feature.id), feature.id).not.toBeNull();
+    }
+  });
+});
+
 describe("hostsServing", () => {
   it("derives availability from the dialect tables, counting only hosts that have a transport", () => {
     expect(hostsServing("temperature")).toEqual(["featherless", "openrouter"]);
@@ -94,6 +175,11 @@ describe("hostsServing", () => {
     // knob as reachable and a lane would be entitled to send it nowhere. A
     // later host turns this answer non-empty by adding one dialect row.
     expect(hostsServing("topNsigma")).toEqual([]);
+    // The two knobs the vocabulary grew for an author who set them and it could
+    // not state. Both are spelled only by the placeholder, which is why a
+    // profile that declares them has them withheld rather than sent.
+    expect(hostsServing("repetitionPenaltySlope")).toEqual([]);
+    expect(hostsServing("dryRange")).toEqual([]);
   });
 
   it("answers with an empty list for a feature id no dialect names", () => {

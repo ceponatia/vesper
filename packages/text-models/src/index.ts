@@ -76,7 +76,6 @@ export {
   stopFeature,
   temperatureFeature,
   tfsFeature,
-  thinkingFeature,
   topAFeature,
   topKFeature,
   topNsigmaFeature,

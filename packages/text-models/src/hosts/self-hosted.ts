@@ -14,7 +14,7 @@ import { bodyBinding, type TextHostDialect } from "./host";
  * profiles this package carries name a field — `rep_pen`, `typical`,
  * `stop_sequence`, `max_length`, `sampler_seed`, `nsigma` — and the
  * OpenAI-compatible spelling for the handful that native API has no name for
- * (`frequency_penalty`, `min_tokens`, `chat_template_kwargs`). They are a
+ * (`frequency_penalty`, `min_tokens`). They are a
  * record of a profile's vocabulary, not a verified wire contract: the lane that
  * adds a transport checks each one against the endpoint it actually targets.
  *
@@ -43,7 +43,6 @@ export const SELF_HOSTED_DIALECT: TextHostDialect = {
     stop: bodyBinding("stop_sequence"),
     minTokens: bodyBinding("min_tokens"),
     maxTokens: bodyBinding("max_length"),
-    thinking: bodyBinding("chat_template_kwargs", (value) => ({ enable_thinking: value === true })),
     topNsigma: bodyBinding("nsigma"),
     dryMultiplier: bodyBinding("dry_multiplier"),
     dryBase: bodyBinding("dry_base"),

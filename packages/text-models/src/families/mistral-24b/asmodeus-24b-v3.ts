@@ -38,8 +38,8 @@ export const ASMODEUS_24B_V3_ID = "DarkArtsForge/Asmodeus-24B-v3";
  *
  * **`chat_template_kwargs` is rejected outright**, with a 400, even when empty:
  * Featherless refuses the field on this model's Mistral tokenizer. That is why
- * no `thinking` feature is composed here even though the vocabulary has one and
- * the two DavidAU rows depend on it — it is a hard host constraint rather than a
+ * this definition carries no request preparer, where the two DavidAU rows on the
+ * same host depend on one — it is a hard host constraint rather than a
  * preference, and it is the concrete reason this registry keys on an exact model
  * id rather than on a provider.
  *

@@ -23,7 +23,10 @@ Model behavior reference: [docs/text-models/](../../docs/text-models/README.md).
 ### Features — what a model is asked for
 
 A feature is one semantic decoding knob, stated once and reused: a temperature,
-a nucleus cutoff, a repetition penalty, a thinking toggle. Ids are spelled in
+a nucleus cutoff, a repetition penalty, an output cap. A chat-template argument
+is not one — it changes how a prompt is rendered rather than how tokens are
+drawn, it must reach every call rather than the ones a lane calls narration, and
+a model that needs one states it as a quirk's request preparer. Ids are spelled in
 Vesper's normalized vocabulary — `topK`, never `top_k` — because the same knob
 is spelled differently on every upstream, and a feature that carried a wire name
 would have to be duplicated the first time a second host served it.

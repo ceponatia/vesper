@@ -9,10 +9,11 @@ import { bodyBinding, settingBinding, type TextHostDialect } from "./host";
  * carries only the four fields OpenRouter documents that have no SDK argument:
  * `min_p`, `top_a`, `repetition_penalty` and `logit_bias`.
  *
- * Everything else in the vocabulary is withheld here, including the thinking
- * toggle: OpenRouter's reasoning controls are its own request shape rather than
- * a chat-template keyword, so binding this feature to them would claim an
- * equivalence nobody has measured.
+ * Everything else in the vocabulary is withheld here. OpenRouter's reasoning
+ * controls are its own request shape rather than a chat-template keyword, and
+ * this dialect claims no equivalence between the two: a model that needs a
+ * template argument states it as a request preparer, which is a wire rewrite
+ * this table has no opinion about.
  */
 export const OPENROUTER_DIALECT: TextHostDialect = {
   host: "openrouter",

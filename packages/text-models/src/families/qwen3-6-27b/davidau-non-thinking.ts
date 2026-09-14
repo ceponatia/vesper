@@ -3,7 +3,6 @@ import {
   presencePenaltyFeature,
   repetitionPenaltyFeature,
   temperatureFeature,
-  thinkingFeature,
   topKFeature,
   topPFeature,
 } from "../../features";
@@ -38,25 +37,12 @@ export const F451_ULTRA_PRO_WRITER_ID =
  * The shared definition. Feature order is the order these fields have always
  * reached Featherless, and it is preserved because a bound profile iterates it.
  *
- * **Thinking off is not a preference.** Measured per model against the live
- * endpoint on 2026-08-17, and identically on both rows: with the template's
- * thinking mode on and a bounded output budget the model spends the whole
- * budget reasoning and returns an EMPTY completion with `finish_reason:
- * "length"` — 298 and 299 completion tokens respectively, zero characters of
- * content — and first prose lands at ~61s, past the chat lane's 50s first-token
- * watchdog. With it off: `stop`, prose, zero reasoning, in seconds. The flag is
- * the difference between a narrator that answers and one that returns nothing.
- *
- * Only the chat template's own keyword works. `reasoning_effort: "none"` and a
- * `/no_think` token in the prompt were both probed on this exact model and both
- * silently ignored, still producing a full chain and no prose — which is why
- * this is a composed FEATURE that the host dialect spells as a template keyword
- * rather than a transport option.
- *
  * The sampler values are the author's recommended non-thinking/instruct
  * baseline, not a Vesper-tuned guess: these merges ask for 0.7 with a tight
  * nucleus and top-k plus presence pressure, where the repo default for every
- * unadapted narrator stays 0.85 and nothing else.
+ * unadapted narrator stays 0.85 and nothing else. They describe how this model
+ * should NARRATE, which is why they are a profile — see the quirk below for the
+ * one thing that is not a preference at all.
  */
 function davidauQwen36NonThinking(id: string): TextModelAdapter {
   return defineTextModel({
@@ -73,7 +59,6 @@ function davidauQwen36NonThinking(id: string): TextModelAdapter {
       topKFeature(),
       presencePenaltyFeature(),
       repetitionPenaltyFeature(),
-      thinkingFeature(),
     ],
     profile: {
       temperature: 0.7,
@@ -83,9 +68,45 @@ function davidauQwen36NonThinking(id: string): TextModelAdapter {
       // Neutral, and stated on purpose: the author's baseline names it, and
       // omitting it would read as "unset" to the next person to touch this.
       repetitionPenalty: 1.0,
-      thinking: false,
     },
     quirks: [
+      {
+        id: "thinking-template-off",
+        /**
+         * **Thinking off is not a preference, and not a sampler.** Measured per
+         * model against the live endpoint on 2026-08-17, identically on both
+         * rows: with the template's thinking mode on and a bounded output budget
+         * the model spends the whole budget reasoning and returns an EMPTY
+         * completion with `finish_reason: "length"` — 298 and 299 completion
+         * tokens, zero characters of content — and first prose lands at ~61s,
+         * past the chat lane's 50s first-token watchdog. With it off: `stop`,
+         * prose, zero reasoning, in seconds.
+         *
+         * It is a **request preparer rather than a profile value** precisely
+         * because of that. A profile says how this model should be sampled when
+         * it narrates, and an application is free to decide a given call is not
+         * narration and ask at its own settings. This is not that: it is a chat
+         * TEMPLATE argument, it changes how the prompt is rendered rather than
+         * how tokens are drawn, and a model that must be told not to think must
+         * be told on every call it receives. A preparer runs at the model
+         * boundary for all of them.
+         *
+         * Only the template's own keyword works. `reasoning_effort: "none"` and
+         * a `/no_think` token in the prompt were both probed on this exact model
+         * and both silently ignored, still producing a full chain and no prose.
+         *
+         * **One key, not three.** The host normalizes `enable_thinking`,
+         * `thinking` and `do_reasoning` to the same switch with `false` winning
+         * any conflict, and all three were probed independently on this exact
+         * model — each alone produced `stop`, prose and zero reasoning. One
+         * confirmed-sufficient key is what ships; sending the other two would be
+         * redundancy against a hazard the evidence says does not exist.
+         *
+         * Replaces the key rather than merging into it, which is what keeps it
+         * idempotent. Nothing else in this definition writes it.
+         */
+        prepareRequest: (body) => ({ ...body, chat_template_kwargs: { enable_thinking: false } }),
+      },
       {
         id: "measured-intermittent-empty",
         /**

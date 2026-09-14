@@ -46,5 +46,9 @@ export const TEXT_MODEL_ADAPTERS: Readonly<Record<string, TextModelAdapter>> = O
  * turn rather than a model asked at lane defaults.
  */
 export function adapterForTextModel(id: string): TextModelAdapter | null {
-  return TEXT_MODEL_ADAPTERS[id] ?? null;
+  // `hasOwn`, not a plain lookup: the table is an ordinary object, so `id` could
+  // otherwise name something off `Object.prototype` and answer a curated-looking
+  // miss with a builtin. Unreachable today — every caller passes an id a resolver
+  // already curated — and one word cheaper than being sure it stays that way.
+  return Object.hasOwn(TEXT_MODEL_ADAPTERS, id) ? (TEXT_MODEL_ADAPTERS[id] ?? null) : null;
 }
