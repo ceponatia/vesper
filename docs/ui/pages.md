@@ -69,9 +69,11 @@ name over a menu of **Settings**, then — for admins only — **Image generator
 
 The five admin entries are standalone owner tools rather than account preferences, so they hang
 off this menu instead of the Settings page, which keeps only the default-persona pick, Identity
-trials, and Face repair — a flagged, explicit per-character face repair over the Image Generator
-run path ([../image-generator/face-repair.md](../image-generator/face-repair.md)). Every one of
-their pages re-checks the role and their APIs are role-gated server-side, so hiding the links is
+trials, Face repair — a flagged, explicit per-character face repair over the Image Generator run
+path ([../image-generator/face-repair.md](../image-generator/face-repair.md)) — and Image
+advisories (`/settings/image-advisories` — the render-advisory comparison record,
+[../images/render-advisories.md](../images/render-advisories.md)). Every one of their pages
+re-checks the role and their APIs are role-gated server-side, so hiding the links is
 tidiness rather than access control.
 
 The menu renders at every width — it is part of the global header, which the immersive

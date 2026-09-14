@@ -292,6 +292,18 @@ export interface RenderShapeOutcome {
   cropTarget: number | null;
   /** The crop actually performed — the same fact as `cropTarget`, in full. */
   crop: RenderCropOutcome | null;
+  /**
+   * The provider's own pixel size before any local crop — read once, on the
+   * crop-attempt path only (`readImageDimensions(result.image)`, before
+   * `cropToTargetAspect` runs). Null when no crop was attempted (a skipped or
+   * refused render never needed the reading) or when the buffer could not be
+   * decoded. This is what makes `evaluateCropLoss`'s "performed" basis
+   * possible: `crop.rect`'s own area is always the POST-crop size, equal to
+   * `outputDimensions`, so a fraction computed from `rect` and
+   * `outputDimensions` alone is always 1 — the trim is only visible against
+   * the size that came before it.
+   */
+  providerSize: { width: number; height: number } | null;
 }
 
 /**
@@ -408,13 +420,22 @@ export async function renderWithModel(
   // reports no field at all instead of an explicit undefined. The count is
   // compared against undefined, not truthiness: zero references sent is a real
   // count, absence means the transport never said.
-  const shape = (crop: RenderCropOutcome | null): RenderShapeOutcome => ({
+  const shape = (
+    crop: RenderCropOutcome | null,
+    providerSize: { width: number; height: number } | null,
+  ): RenderShapeOutcome => ({
     mode: targetRatio === null ? "provider_default" : "target_ratio",
     field: sentShape.field,
     value: sentShape.value,
     expectedAspect: dimensions.expectedAspect,
     cropTarget: crop ? crop.targetRatio : null,
     crop,
+    // The provider's OWN pixel size before any local crop — read once, on the
+    // one path that already reads it to decide whether cropping is even
+    // possible. Null everywhere else: a skipped-crop or refused render never
+    // needed this reading, and inventing one just to fill the field would be
+    // a decode this wrapper does not otherwise perform.
+    providerSize,
   });
   const provenance = {
     ...(result.predictionId ? { predictionId: result.predictionId } : {}),
@@ -428,7 +449,7 @@ export async function renderWithModel(
     ...(result.attempts ? { attempts: result.attempts } : {}),
   };
   if (!result.ok || !result.image) {
-    return { ok: false, ...provenance, shape: shape(null), error: result.error ?? `${model.slug} returned no image` };
+    return { ok: false, ...provenance, shape: shape(null, null), error: result.error ?? `${model.slug} returned no image` };
   }
   // Crop when the expected shape misses the target, and also when nothing can
   // say what shape is coming — a model with no usable shape used its own
@@ -436,7 +457,7 @@ export async function renderWithModel(
   // it named no target, so there is nothing for the result to miss.
   const skipCrop = targetRatio === null || (!dimensions.needsCrop && dimensions.expectedAspect !== null);
   if (skipCrop) {
-    return { ok: true, ...provenance, shape: shape(null), ...(await outputDimensionsOf(result.image)), image: result.image };
+    return { ok: true, ...provenance, shape: shape(null, null), ...(await outputDimensionsOf(result.image)), image: result.image };
   }
   try {
     const outputDims = await readImageDimensions(result.image);
@@ -465,7 +486,7 @@ export async function renderWithModel(
     return {
       ok: true,
       ...provenance,
-      shape: shape(crop),
+      shape: shape(crop, outputDims),
       ...(await outputDimensionsOf(cropped)),
       image: cropped,
     };
@@ -476,7 +497,7 @@ export async function renderWithModel(
         context: { slug: model.slug, targetRatio, error: error instanceof Error ? error.message : String(error) },
       }),
     );
-    return { ok: true, ...provenance, shape: shape(null), ...(await outputDimensionsOf(result.image)), image: result.image };
+    return { ok: true, ...provenance, shape: shape(null, null), ...(await outputDimensionsOf(result.image)), image: result.image };
   }
 }
 

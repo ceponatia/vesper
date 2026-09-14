@@ -493,6 +493,59 @@ describe.skipIf(!ready)("image generator runs", () => {
     expect(output?.chatId).toBeNull();
   });
 
+  it("records advisory annotations on both the run's own meta and the output image row (#249 correction rounds 1-2)", async () => {
+    // The Generator builds its own meta shape rather than calling
+    // `renderAttemptMeta` — this proves `image-generator-settle.ts` threads
+    // `representative.advisories` into it the same way every other lane
+    // threads them through `renderAttemptMeta`'s second argument.
+    const advisory = {
+      version: 1,
+      code: "blank_output",
+      level: "advisory",
+      reason: "flat fill",
+      evidence: { grayVariance: 0, laplacianVariance: 0, measuredWidth: 8, measuredHeight: 12 },
+      offers: ["retry_same", "new_variation"],
+    } as const;
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_generator_1",
+        executedVersionId: EXECUTED_VERSION,
+        attempt: {
+          modelId: PINNED_MODEL_ID,
+          modelSlug: PINNED_SLUG,
+          profileId: "image-generator/run",
+          task: "item",
+          promptStrategy: "text_to_image_description",
+          requestedVersionId: PINNED_VERSION,
+          seed: null,
+          appliedControls: {},
+          droppedControls: [],
+          sentReferenceRoles: [],
+          predictionId: "pred_generator_1",
+          executedVersionId: EXECUTED_VERSION,
+        },
+        advisories: [advisory],
+      };
+    });
+    const { id, sink } = await createRun();
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const row = await storedRow(id);
+    expect(imageMeta(row?.meta).advisories).toEqual([advisory]);
+
+    // The OUTPUT IMAGE row carries its own copy too (#249 correction round
+    // 2) — the run's meta above is a second, independent record, not the
+    // source of truth for the summary route or a lightbox fed from the row.
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const outputId = run?.resultImageId ?? "";
+    const [output] = await db().select().from(images).where(eq(images.id, outputId)).limit(1);
+    expect(imageMeta(output?.meta).advisories).toEqual([advisory]);
+  });
+
   it("sends a primary reference under the neutral role, with purpose as provenance only", async () => {
     stubSuccessfulRenderer();
     const sourceId = await seedReadyImage();

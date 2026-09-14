@@ -111,6 +111,9 @@ describe("renderWithModel dimension negotiation", () => {
     // The undecodable stub bytes would have failed a crop loudly; the point is
     // that no crop is attempted at all.
     expect(result.image).toEqual(Buffer.from("img"));
+    // No crop attempt means no pre-crop reading either — `providerSize` stays
+    // null rather than lying about a decode this path never performs.
+    expect(result.shape?.providerSize).toBeNull();
   });
 
   it("still maps an explicitly chosen shape through the version's own enum", async () => {
@@ -299,6 +302,11 @@ describe("renderWithModel crop placement", () => {
       focalSource: "none",
       rect: { left: 0, top: 0, width: 800, height: 1067 },
     });
+    // The PRE-crop size — 1600 tall, not the 1067 the crop actually kept.
+    // `outputDimensions` above already proves the post-crop size; this proves
+    // the wrapper also kept the one number that lets a caller compute what
+    // the crop removed.
+    expect(result.shape?.providerSize).toEqual({ width: 800, height: 1600 });
   });
 
   it("centers a too-tall crop for a non-subject task", async () => {
@@ -330,5 +338,10 @@ describe("renderWithModel crop placement", () => {
     const result = await renderWithModel({ model: noAspectModel(), prompt: "a portrait", targetRatio: 3 / 4, task: "portrait" });
     expect(result.shape?.cropTarget).toBeNull();
     expect(result.shape?.crop).toBeNull();
+    // A read was taken (the wrapper had to check whether cropping was
+    // needed), but nothing was cropped, so `providerSize` is populated —
+    // exercised here for the case `evaluateCropLoss` will read as
+    // "crop == null, so skip regardless of providerSize".
+    expect(result.shape?.providerSize).toEqual({ width: 900, height: 1200 });
   });
 });

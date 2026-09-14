@@ -148,7 +148,17 @@ export async function settleGeneratorRender(
         prompt: finalPrompt,
         meta: { hidden: true, imageGeneratorRunId: row.id },
       });
-      const saved = await saveImageBuffer(asset.id, rendered.image, sink);
+      // The output row carries its own advisories the same way every other
+      // lane's row does (#249 correction round 2), so the summary
+      // (`images.meta`-scoped) and a lightbox fed from THIS row see them —
+      // the run's own meta copy above is a second, independent record, not
+      // the source of truth for either surface.
+      const saved = await saveImageBuffer(
+        asset.id,
+        rendered.image,
+        sink,
+        rendered.advisories && rendered.advisories.length > 0 ? { advisories: rendered.advisories } : undefined,
+      );
       if (saved?.status !== "ready") {
         await deleteOwnedImage(asset.id, row.ownerId, { kind: "generator_output" });
         outputs.push({
@@ -246,6 +256,12 @@ export async function settleGeneratorRender(
   // stored image, and what stopped the ones that produced none.
   const attemptMeta = {
     ...(representative.attempt ? { attempt: representative.attempt } : {}),
+    // The sibling `advisories` key `renderAttemptMeta` writes for every other
+    // lane (#249) — threaded explicitly here too, since the Generator builds
+    // its own meta shape rather than calling `renderAttemptMeta`.
+    ...(representative.advisories && representative.advisories.length > 0
+      ? { advisories: representative.advisories }
+      : {}),
     ...(attempts.length > 0 ? { providerAttempts: attempts } : {}),
     ...trimmed,
     outputs,

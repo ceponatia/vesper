@@ -78,7 +78,10 @@ target resolution and stores the whole thing as `images.meta.render.shape`:
 
 `mode` (`provider_default` / `target_ratio`), `requestedAspect` and `targetSource` (the resolution
 above), `sentField` / `sentValue` (what actually reached the provider), `expectedAspect`,
-`returned` (the pixel size that came back), and `crop` — `null` when none was needed, else
+`returned` (the pixel size that came back — the FINAL image, after any local crop), `providerSize`
+(the provider's own pixel size BEFORE that crop, or `null` when no crop was attempted or the
+buffer could not be decoded — `returned` alone cannot say what a crop removed, since a crop's own
+`rect` is always the same size as `returned`), and `crop` — `null` when none was needed, else
 `targetRatio`, `placement` (`focal` / `top` / `center`), the exact `rect` extracted, and
 `focalSource`. A stored render can therefore answer "was the frame cut, where, and why" without an
 operator re-deriving it from the prompt or guessing at the model's own default.

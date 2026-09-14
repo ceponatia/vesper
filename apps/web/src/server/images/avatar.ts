@@ -511,7 +511,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
           input.sink,
         );
         if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
-        return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt) };
+        return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt, result.advisories) };
       },
       // The CANDIDATE pointer, and nothing else — and only for a single-candidate
       // request. A two-candidate request claims NOTHING: the player chooses

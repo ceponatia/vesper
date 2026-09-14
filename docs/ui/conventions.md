@@ -102,6 +102,14 @@ carrying neither renders no panel at all. Both travel on the image DTO
 ([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Consumption
 and reference ordering owns what the view entries mean).
 
+A separate **advisory region** shows one quiet line per render-advisory annotation the image
+carries (`meta.advisories`) — the readable reason, its offers as short text, and Agree/Disagree
+buttons, or a reviewed advisory's recorded verdict. It is not part of the provenance panel above:
+a different region of the viewer, gated on the same `useIsAdmin` signal at any width rather than
+the panel's admin-and-desktop-only gate. Agree/Disagree still only succeeds for the image's actual
+owner, whoever can see the line — see
+[../images/render-advisories.md](../images/render-advisories.md).
+
 ## Model dropdowns
 
 Curated model dropdowns (narrator, agent, chat) render through `ModelSelect`

@@ -454,6 +454,31 @@ export type {
   ResolvedImageAttemptShape,
   ResolvedRenderTarget,
 } from "./render-intent";
+/**
+ * Advisory signals recorded beside a render's provenance (issue #249) — a
+ * sibling reading order to `render-intent`, not a member of its barrel: these
+ * evaluators consume a resolved attempt's `shape` and a caller-decoded pixel
+ * buffer, but they judge nothing about whether a render may proceed.
+ */
+export {
+  BLANK_OUTPUT_GRAY_VARIANCE_FLOOR,
+  BLUR_MEASUREMENT_WIDTH,
+  CROP_LOSS_ADVISORY_FRACTION,
+  RENDER_ADVISORY_VERSION,
+  SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR,
+  evaluateCropLoss,
+  evaluateOutputPixels,
+  renderAdvisoryCodes,
+  renderAdvisoryOffers,
+  renderAdvisorySchema,
+} from "./quality/render-advisories";
+export type {
+  CropLossMeasurement,
+  OutputPixelMeasurement,
+  RenderAdvisory,
+  RenderAdvisoryCode,
+  RenderAdvisoryOffer,
+} from "./quality/render-advisories";
 export {
   MAX_TRIAL_PREDICTION_MS,
   TRIAL_FALLBACK_PREDICTION_MS,

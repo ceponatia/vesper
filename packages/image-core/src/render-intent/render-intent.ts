@@ -317,6 +317,14 @@ export interface ResolvedImageAttemptShape {
   returned: { width: number; height: number } | null;
   /** The crop actually performed, or null when the render needed none. */
   crop: ResolvedImageAttemptCrop | null;
+  /**
+   * The provider's own pixel size BEFORE any local crop, or null when no crop
+   * was attempted or the buffer could not be decoded. `returned` above is the
+   * POST-crop size — equal to `crop.rect`'s own area whenever a crop exists —
+   * so a crop-loss fraction needs THIS field to have anything to compare
+   * against; `returned` alone can only ever say "100% kept".
+   */
+  providerSize: { width: number; height: number } | null;
 }
 
 /**

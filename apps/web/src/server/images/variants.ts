@@ -444,9 +444,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         );
         // Provenance rides the failure too — a failed prediction's id is what
         // an operator traces at the provider.
-        return { ok: false, error, ...renderAttemptMeta(edit.attempt) };
+        return { ok: false, error, ...renderAttemptMeta(edit.attempt, edit.advisories) };
       }
-      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
+      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt, edit.advisories) };
     },
     // Every branch past the character check logs — including the two failures,
     // which carry `durationMs` here where avatar/entity's thrown line does not.

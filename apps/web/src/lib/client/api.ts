@@ -158,6 +158,9 @@ export {
   ownedImageSourceSchema,
   ownedImagesApi,
   galleryApi,
+  clientRenderAdvisorySchema,
+  imageAdvisorySummarySchema,
+  imageAdvisoriesApi,
 } from "./api/images";
 export type {
   GalleryTab,
@@ -165,6 +168,8 @@ export type {
   ImageRecord,
   PortraitVariantKind,
   OwnedImageSourceRecord,
+  ClientRenderAdvisory,
+  ImageAdvisorySummary,
 } from "./api/images";
 export {
   visibilitySchema,

@@ -1,5 +1,9 @@
+import sharp from "sharp";
 import {
+  BLUR_MEASUREMENT_WIDTH,
   effectiveImageLoraSelection,
+  evaluateCropLoss,
+  evaluateOutputPixels,
   type ImageInputBinding,
   type ImageReferenceRole,
   type ImageRenderIntent,
@@ -7,10 +11,12 @@ import {
   pinnedImageModelVersion,
   planImageRender,
   type PlannedImageRender,
+  type RenderAdvisory,
   type ResolvedImageAttempt,
   type ResolvedImageAttemptShape,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { SHARP_DECODE_LIMITS } from "./asset-storage";
 import { resolveImageLoraForRender } from "./image-loras";
 import { withLoraDownloadCredential } from "./lora-credentials";
 import { imageRenderRuntimeFacts } from "./model-adapters";
@@ -172,6 +178,16 @@ export interface RenderImageIntentResult extends RenderWithModelResult {
    * resolution, a plan refusal), where there is no attempt to describe.
    */
   attempt?: ResolvedImageAttempt;
+  /**
+   * Advisory annotations measured on this attempt's output (issue #249):
+   * harmful crop loss, a blank or severely blurred image. Present alongside
+   * `attempt` whenever a plan was compiled — empty on a failed render (there
+   * is no output to measure) and on a clean success alike — and absent only
+   * when `attempt` itself is, on a pre-plan refusal. No lane reads this field
+   * to refuse anything; it exists for `renderAttemptMeta` to persist beside
+   * the attempt and for an owner-facing surface to display, never to gate.
+   */
+  advisories?: RenderAdvisory[];
 }
 
 /**
@@ -196,6 +212,7 @@ function resolvedAttemptShape(plan: PlannedImageRender, result: RenderWithModelR
     expectedAspect: shape.expectedAspect,
     returned: result.outputDimensions ?? null,
     crop: shape.crop,
+    providerSize: shape.providerSize,
   };
 }
 
@@ -234,9 +251,61 @@ function resolvedAttempt(
   };
 }
 
-/** The produce-meta fragment recording one attempt under the row's `render` key. */
-export function renderAttemptMeta(attempt: ResolvedImageAttempt | undefined): { meta?: Record<string, unknown> } {
-  return attempt ? { meta: { render: attempt } } : {};
+/**
+ * Advisory signals for one successful render — crop loss from the shape
+ * record already on `attempt`, plus blank/blur read from the returned pixels.
+ *
+ * Decodes the returned buffer exactly once, at a small fixed size, purely to
+ * measure it: nothing here changes what is stored as the image, and nothing
+ * here can fail the render. A decode failure (a transport double that returns
+ * bytes `sharp` cannot read, as every mocked-transport test in this suite
+ * does) reports `images.advisory.unmeasured` and yields no advisories — never
+ * a thrown error. Never a gate: called only after `result.ok` is already
+ * decided, and its answer changes nothing about it.
+ */
+async function measureRenderAdvisories(
+  attempt: ResolvedImageAttempt,
+  result: RenderWithModelResult,
+  sink?: DiagnosticSink,
+): Promise<RenderAdvisory[]> {
+  if (!result.ok || !result.image) return [];
+  const advisories: RenderAdvisory[] = [];
+  const cropAdvisory = evaluateCropLoss(attempt.shape);
+  if (cropAdvisory) advisories.push(cropAdvisory);
+  try {
+    const { data, info } = await sharp(result.image, SHARP_DECODE_LIMITS)
+      .resize({ width: BLUR_MEASUREMENT_WIDTH, withoutEnlargement: true })
+      .grayscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const pixelAdvisory = evaluateOutputPixels({ data, width: info.width, height: info.height, channels: info.channels });
+    if (pixelAdvisory) advisories.push(pixelAdvisory);
+  } catch (error) {
+    sink?.push(
+      diag("warn", "images.advisory.unmeasured", "could not decode this render's output to measure advisory signals", {
+        path: "image_render_advisories",
+        context: { message: error instanceof Error ? error.message : String(error) },
+      }),
+    );
+  }
+  return advisories;
+}
+
+/**
+ * The produce-meta fragment recording one attempt under the row's `render`
+ * key, plus its advisories under the sibling `advisories` key when the
+ * caller passes a non-empty list — explicit threading, not identity lookup:
+ * every caller that has `result.advisories` passes it alongside
+ * `result.attempt`, the same way it already threads `result.image`. A caller
+ * with no advisories argument (or an empty one) gets exactly the meta shape
+ * this looked like before advisories existed.
+ */
+export function renderAttemptMeta(
+  attempt: ResolvedImageAttempt | undefined,
+  advisories?: RenderAdvisory[],
+): { meta?: Record<string, unknown> } {
+  if (!attempt) return {};
+  return { meta: { render: attempt, ...(advisories && advisories.length > 0 ? { advisories } : {}) } };
 }
 
 /**
@@ -342,7 +411,9 @@ export async function renderImageIntent(
     },
     sink,
   );
-  return { ...result, attempt: resolvedAttempt(seeded.intent, plan, seeded.seed, result) };
+  const attempt = resolvedAttempt(seeded.intent, plan, seeded.seed, result);
+  const advisories = await measureRenderAdvisories(attempt, result, sink);
+  return { ...result, attempt, advisories };
 }
 
 /** The roles a diagnostic is about, in the order they were given or sent. */

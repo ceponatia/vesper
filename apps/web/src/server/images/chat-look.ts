@@ -627,7 +627,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
         // A failure still THROWS (this lane's ruled failure shape), so provenance
         // is recorded only on success — a thrown produce has no meta channel.
         if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
-        return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
+        return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt, edit.advisories) };
       },
       // Keep-latest (ruled), PER CHARACTER: the superseded looks go with their
       // files. Scoped by `entityId` for the same reason the loader above is — a
@@ -703,7 +703,7 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
         // A failure still THROWS (this lane's ruled failure shape), so provenance
         // is recorded only on success — a thrown produce has no meta channel.
         if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
-        return { ok: true, image: shot.image, ...renderAttemptMeta(shot.attempt) };
+        return { ok: true, image: shot.image, ...renderAttemptMeta(shot.attempt, shot.advisories) };
       },
       failureDiagnostic: { code: "images.chat_place.failed" },
       sink,

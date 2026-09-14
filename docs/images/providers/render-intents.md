@@ -143,6 +143,11 @@ image's own pixel size, and the crop actually performed (`null` when none was ne
 target ratio, the placement, the exact rect, and where the focal box came from — `"none"` on every
 render today).
 
+A third sibling key, `images.meta.advisories`, carries ADVISORY annotations measured on the same
+successful render — never a gate, never a substituted model
+([../render-advisories.md](../render-advisories.md)) — present only when at least one signal
+triggered.
+
 **"Same composition" is a reproducibility REQUEST, never a pixel guarantee.** Replaying a stored
 `controls.seed` is honest reuse of the settings that produced a prior row — it is not a promise
 that the provider returns identical bytes. The portrait lane is the first caller of this: a

@@ -136,9 +136,9 @@ export function SettingsPage() {
           be listed here too. They are standalone tools rather than account
           preferences, so they now hang off the account dropdown beside Engine
           Comparison (`components/shell/account-menu.tsx`). Their routes are
-          unchanged. Identity trials and Face repair stay because each is a
-          one-off review/action screen rather than a tool reached every
-          session. */}
+          unchanged. Identity trials, Face repair and Image advisories stay
+          because each is a one-off review/action screen rather than a tool
+          reached every session. */}
       {me.data?.role === "admin" ? (
         <section className="mt-6 rounded-card border border-ink-600 bg-ink-850 p-5">
           <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Admin</h2>
@@ -153,6 +153,13 @@ export function SettingsPage() {
               Face repair
             </Link>{" "}
             — flagged, explicit repair of one character&rsquo;s face in one selected source image.
+          </p>
+          <p className="mt-2 text-sm text-paper-400">
+            <Link href="/settings/image-advisories" className="underline underline-offset-4">
+              Image advisories
+            </Link>{" "}
+            — the comparison record for advisory render signals: annotated counts against your own
+            agree/disagree review, never a gate.
           </p>
           <p className="mt-3 text-xs text-paper-500">
             The image generator, image lab, and image model registry moved to your account menu, above Engine
