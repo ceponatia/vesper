@@ -11,7 +11,7 @@ import { parseOrNull } from "@/lib/parse";
 import { useSession } from "@/components/auth/auth-client";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Disclosure } from "@/components/ui/disclosure";
 import { Field } from "@/components/ui/field";
 import { SaveBar } from "@/components/ui/save-bar";
@@ -346,15 +346,27 @@ function CharacterCreationSession({ ownerId, mode }: { ownerId: string; mode: "f
         diagnostics={diagnostics.filter((item) => item.severity !== "info")} />
       </fieldset>
       <SaveBar dirty={busy === null && !store.conflict} saving={saving} disabled={!!conflict} status={conflict ? "Resolve recovered edits to save" : undefined} onSave={() => void save()} saveLabel="Save authored character" />
-      <Dialog open={confirmNew} onClose={() => { if (!abandoning) setConfirmNew(false); }} title="Start a new character draft?" footer={<><Button disabled={abandoning} onClick={() => setConfirmNew(false)}>Keep editing</Button><Button variant="primary" busy={abandoning} disabled={generation.settling} onClick={() => { void (async () => {
-        setAbandoning(true);
-        const abandoned = await generation.abandon();
-        if (abandoned) { setDiagnostics([]); store.reset(); setConfirmNew(false); }
-        else toast.push({ title: "Draft not replaced", description: "The current generation could not be abandoned. Your draft is still here; try again.", tone: "error" });
-        if (active.current) setAbandoning(false);
-      })(); }}>Start new draft</Button></>}>
+      <ConfirmDialog
+        open={confirmNew}
+        onClose={() => setConfirmNew(false)}
+        onConfirm={() => {
+          void (async () => {
+            setAbandoning(true);
+            const abandoned = await generation.abandon();
+            if (abandoned) { setDiagnostics([]); store.reset(); setConfirmNew(false); }
+            else toast.push({ title: "Draft not replaced", description: "The current generation could not be abandoned. Your draft is still here; try again.", tone: "error" });
+            if (active.current) setAbandoning(false);
+          })();
+        }}
+        title="Start a new character draft?"
+        cancelLabel="Keep editing"
+        confirmLabel="Start new draft"
+        tone="primary"
+        busy={abandoning}
+        confirmDisabled={generation.settling}
+      >
         This replaces this browser&apos;s current creation draft and pending suggestions. Save the character first if you want to keep it in your library.
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

@@ -26,7 +26,7 @@ import {
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -218,22 +218,17 @@ export function ImageModelProfilesSection({
         ) : null}
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
         title={`Remove ${pendingDelete?.label ?? "this profile"}?`}
-        footer={
-          <>
-            <Button onClick={() => setPendingDelete(null)}>Cancel</Button>
-            <Button variant="danger" busy={busyId === pendingDelete?.id} onClick={() => void confirmDelete()}>
-              Remove
-            </Button>
-          </>
-        }
+        confirmLabel="Remove"
+        busy={busyId === pendingDelete?.id}
       >
         It disappears from every picker. Anything still storing it falls back to the task’s default profile —
         including when this was the default: the next render degrades to the next offered profile, by design.
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

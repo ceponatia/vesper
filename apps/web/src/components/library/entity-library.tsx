@@ -22,8 +22,8 @@ import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
-import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
@@ -898,22 +898,17 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
         <LibraryCards cards={cards} config={config} view={view} cardAction={cardAction} router={router} />
       )}
       {config.generateImages ? (
-        <Dialog
+        <ConfirmDialog
           open={confirmGen}
           onClose={() => setConfirmGen(false)}
+          onConfirm={confirmGenerate}
           title="Generate images?"
-          footer={
-            <>
-              <Button onClick={() => setConfirmGen(false)}>Cancel</Button>
-              <Button variant="primary" busy={generatingBatch} onClick={confirmGenerate}>
-                Ok
-              </Button>
-            </>
-          }
+          confirmLabel="Ok"
+          tone="primary"
         >
           This will generate {missingIds.length} image{missingIds.length === 1 ? "" : "s"} — one for each {scopeNoun}{" "}
           without one. It runs in the background, so you can keep working or leave this page.
-        </Dialog>
+        </ConfirmDialog>
       ) : null}
     </PageContainer>
   );

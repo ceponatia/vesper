@@ -31,8 +31,8 @@ import { EntityImageStudio } from "@/components/library/entity-image-studio";
 import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
-import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -476,18 +476,12 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
           </>
         }
       />
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={remove}
         title="Delete this item?"
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={remove}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         <div className="flex flex-col gap-2 text-sm">
           {usage === null ? (
@@ -507,7 +501,7 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
             </>
           )}
         </div>
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

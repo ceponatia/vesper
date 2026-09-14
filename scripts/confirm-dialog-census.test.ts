@@ -1,0 +1,185 @@
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { matchDelimiter, repoRelative, sourceFilesUnder, stripComments } from "@/server/test-support";
+
+/**
+ * Every confirmation — a destructive delete or an equivalent one-step
+ * decision — renders through `ConfirmDialog` (`components/ui/confirm-dialog.tsx`),
+ * which owns the busy-guarded dismissal contract (docs/ui/conventions.md
+ * §Confirmations). A component that still imports the raw `Dialog` primitive
+ * directly is therefore, by construction, NOT a yes/no confirmation: a form, a
+ * picker, a panel, or a reading surface.
+ *
+ * This is that boundary made a tripwire. `ALLOWED_DIALOG_IMPORTERS` is a
+ * reviewed, exhaustive list (#287) of the sites where a raw `Dialog` is
+ * correct — plus `confirm-dialog.tsx` itself, which is what `Dialog` renders
+ * through. A new entry belongs here only when the site genuinely collects
+ * input, picks an entity, or shows a reading surface; a new hand-rolled
+ * destructive dialog belongs on `ConfirmDialog` instead, which is exactly the
+ * class of site #287 found already unguarded (`entity-library.tsx`'s
+ * generate-images confirm, several settings remove dialogs) before this test
+ * existed to catch it.
+ *
+ * The second half of the boundary is at the bottom of this file: the census
+ * proves every confirmation ROUTES through `ConfirmDialog`, and that one proves
+ * `ConfirmDialog` still does the thing the routing was for.
+ */
+const COMPONENTS_DIR = path.join(process.cwd(), "apps/web/src/components");
+
+/** Sorted, and kept that way — `sourceFilesUnder` walks in `readdir` order, which is not stable. */
+const ALLOWED_DIALOG_IMPORTERS: readonly string[] = [
+  "apps/web/src/components/characters/avatar-upload-dialog.tsx",
+  "apps/web/src/components/characters/character-proposal-review.tsx",
+  "apps/web/src/components/characters/chat-scenario-modal.tsx",
+  "apps/web/src/components/characters/chat-state-tools.tsx",
+  "apps/web/src/components/characters/identity-crop-dialog.tsx",
+  "apps/web/src/components/characters/reference-view-history.tsx",
+  "apps/web/src/components/chat/calendar-start-dialog.tsx",
+  "apps/web/src/components/chat/chat-clock-card.tsx",
+  "apps/web/src/components/chat/chat-conversation-menu.tsx",
+  "apps/web/src/components/chat/chat-conversation.tsx",
+  "apps/web/src/components/chat/chat-inspector-agent-health.tsx",
+  "apps/web/src/components/chat/chat-permissions-panel.tsx",
+  "apps/web/src/components/chat/chat-plans-panel.tsx",
+  "apps/web/src/components/chat/chat-supporting-cast-panel.tsx",
+  "apps/web/src/components/chat/chats-page.tsx",
+  "apps/web/src/components/chat/new-chat-dialog.tsx",
+  "apps/web/src/components/library/entity-picker.tsx",
+  "apps/web/src/components/settings/identity-trials-page.tsx",
+  "apps/web/src/components/ui/confirm-dialog.tsx",
+];
+
+/**
+ * True when `source` imports the `Dialog` value export from the ui primitive
+ * — the `@/components/ui/dialog` alias every ordinary site uses, or the
+ * relative `./dialog` that only `confirm-dialog.tsx` (living beside it) uses.
+ * A regex, not a parser, mirrors `image-internal-callers.test.ts`: precision
+ * comes from requiring the bare identifier `Dialog` (so `DialogProps` and
+ * `ConfirmDialog` never match) from one of exactly those two specifiers.
+ */
+function importsDialogPrimitive(source: string, fileRepoRelative: string): boolean {
+  const declaration = /import\s*{([^}]+)}\s*from\s*["']([^"']+)["']/g;
+  let match = declaration.exec(source);
+  while (match !== null) {
+    const names = (match[1] ?? "")
+      .split(",")
+      .map((specifier) => specifier.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]?.trim() ?? "");
+    const from = match[2] ?? "";
+    if (names.includes("Dialog")) {
+      const isAliasImport = from === "@/components/ui/dialog";
+      const isConfirmDialogsOwnImport = from === "./dialog" && path.posix.dirname(fileRepoRelative) === "apps/web/src/components/ui";
+      if (isAliasImport || isConfirmDialogsOwnImport) return true;
+    }
+    match = declaration.exec(source);
+  }
+  return false;
+}
+
+describe("raw Dialog importer census", () => {
+  it("matches the reviewed allowlist of non-ConfirmDialog sites exactly", () => {
+    const actual = sourceFilesUnder(COMPONENTS_DIR)
+      .map((absolute) => repoRelative(absolute))
+      .filter((file) => importsDialogPrimitive(fs.readFileSync(path.join(process.cwd(), file), "utf8"), file))
+      .sort();
+
+    expect(actual).toEqual([...ALLOWED_DIALOG_IMPORTERS].sort());
+  });
+});
+
+/**
+ * `ConfirmDialog` still guards dismissal while the confirmed operation runs.
+ *
+ * The defect this kills is the silent removal of that guard, in either of its
+ * two shapes: wiring `Dialog`'s `onClose` straight to the `onClose` PROP, so
+ * Escape and a backdrop click stop being guarded while Cancel still looks
+ * guarded, or dropping `busy` from the confirm button, so a second click starts
+ * a second delete. Both are valid TypeScript, both are lint-clean, and one edit
+ * takes the guard away from all 26 adopted sites at once — the blast radius the
+ * one shared surface bought, spent in reverse.
+ *
+ * Nothing else can catch it. A rendered assertion is out of reach: both Vitest
+ * projects run in `node` and include `*.test.ts` only, so no suite here can
+ * mount this component (`image-control-vocabulary-display.test.ts` states the
+ * same constraint for the Generator's run detail, and answers it the same way).
+ *
+ * Structure, never a snapshot. It asserts that ONE shared local handler reaches
+ * both `Dialog`'s `onClose` and Cancel's `onClick`, that the handler's body
+ * decides on `busy`, and that the confirm button carries `busy` — not the text
+ * of any of them, so reformatting, renaming `dismiss`, reordering the props and
+ * rewording every label all stay green. A shape it cannot find THROWS rather
+ * than failing an assertion: a rewritten component is a stale scanner, and
+ * reporting that as a missing guard would send the next reader after the wrong
+ * thing.
+ */
+const CONFIRM_DIALOG = path.join(process.cwd(), "apps/web/src/components/ui/confirm-dialog.tsx");
+
+/** Comments blanked and whitespace collapsed — a guard named only in the doc comment must not satisfy a check. */
+function confirmDialogSource(): string {
+  return stripComments(fs.readFileSync(CONFIRM_DIALOG, "utf8")).replace(/\s+/g, " ");
+}
+
+/** The identifier `<Dialog>` is handed as `onClose`. */
+function dialogCloseHandler(source: string): string {
+  const match = /<Dialog\b[\s\S]*?\sonClose=\{(\w+)\}/.exec(source);
+  if (match === null) {
+    throw new Error(
+      `[confirm-dialog] ${repoRelative(CONFIRM_DIALOG)} hands <Dialog> no bare-identifier onClose — ` +
+        "the component was rewritten, so this scanner is stale rather than the guard missing",
+    );
+  }
+  return match[1] ?? "";
+}
+
+/** The brace-matched body of `const <name> = ...`. */
+function handlerBody(source: string, name: string): string {
+  const declaration = new RegExp(String.raw`\bconst\s+${name}\s*=`).exec(source);
+  if (declaration === null) {
+    throw new Error(`[confirm-dialog] ${name} is not declared as a const in ${repoRelative(CONFIRM_DIALOG)}`);
+  }
+  const open = source.indexOf("{", declaration.index + declaration[0].length);
+  const close = open === -1 ? -1 : matchDelimiter(source, open, "{", "}");
+  if (close === -1) {
+    throw new Error(`[confirm-dialog] ${name} has no brace-matched body in ${repoRelative(CONFIRM_DIALOG)}`);
+  }
+  return source.slice(open, close + 1);
+}
+
+/** The attribute text of the `<Button>` that fires `onConfirm`. */
+function confirmButtonAttributes(source: string): string {
+  const confirm = [...source.matchAll(/<Button\b([^>]*)>/g)]
+    .map((match) => match[1] ?? "")
+    .find((attributes) => attributes.includes("onClick={onConfirm}"));
+  if (confirm === undefined) {
+    throw new Error(
+      `[confirm-dialog] no <Button> in ${repoRelative(CONFIRM_DIALOG)} fires onConfirm — ` +
+        "the component was rewritten, so this scanner is stale rather than the guard missing",
+    );
+  }
+  return confirm;
+}
+
+describe("ConfirmDialog's busy guard", () => {
+  it("sends Escape, the backdrop click and Cancel through one handler that decides on busy", () => {
+    const source = confirmDialogSource();
+    const handler = dialogCloseHandler(source);
+
+    // The caller's own prop reaching Dialog IS the regression: Escape and a
+    // backdrop click would dismiss a running operation while Cancel refused.
+    expect(handler, "Dialog's onClose must be a guarded wrapper, not the onClose prop").not.toBe("onClose");
+    expect(source, "Cancel must share Dialog's dismissal handler").toContain(`onClick={${handler}}`);
+
+    const body = handlerBody(source, handler);
+    expect(body, `${handler} must decide on busy`).toContain("busy");
+    expect(body, `${handler} must still be able to close`).toContain("onClose()");
+  });
+
+  it("gives the confirm button Button's own busy, so a second click starts no second operation", () => {
+    // `Button` renders `disabled={disabled || busy}` plus the spinner, so this
+    // one prop is both halves of "cannot be clicked twice" and "says so".
+    expect(
+      confirmButtonAttributes(confirmDialogSource()),
+      "the confirm button must carry busy, not just confirmDisabled",
+    ).toContain("busy={busy}");
+  });
+});

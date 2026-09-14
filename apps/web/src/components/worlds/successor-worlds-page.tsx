@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
@@ -213,28 +213,18 @@ export function SuccessorWorldsPage() {
         )}
       </section>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTarget !== null}
-        onClose={() => {
-          if (!deleting) setDeleteTarget(null);
-        }}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void confirmDelete()}
         title="Delete this world?"
-        footer={
-          <>
-            <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="danger" busy={deleting} onClick={() => void confirmDelete()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         This permanently deletes{" "}
         <span className="text-paper-100">{deleteTarget?.title || deleteTarget?.characterName || "this world"}</span> —
         the conversation and the world it plays in: its people, places, and everything that has happened there. Nothing
         about the world can be recovered. Scene images stay in the Gallery.
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

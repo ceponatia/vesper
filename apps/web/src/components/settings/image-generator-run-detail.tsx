@@ -17,7 +17,7 @@ import { imageGeneratorApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -813,23 +813,17 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
         </details>
       ) : null}
 
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void remove()}
         title="Delete this run?"
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={() => void remove()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         {storedOutputIds.length > 1
           ? `The record and the ${String(storedOutputIds.length)} hidden images it rendered are removed. Input images are not touched.`
           : "The record and the hidden image it rendered are removed. Input images are not touched."}
-      </Dialog>
+      </ConfirmDialog>
 
       {/* The prompt rides the lightbox only for an image this run PRODUCED —
           every output of a fan-out, not just the one the row's column names.

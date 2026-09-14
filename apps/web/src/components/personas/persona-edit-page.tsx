@@ -10,7 +10,7 @@ import { useAutosave } from "@/components/hooks/use-autosave";
 import { LibraryBackLink } from "@/components/library/back-link";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { SaveBar } from "@/components/ui/save-bar";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
@@ -165,24 +165,18 @@ export function PersonaEditPage({ personaId }: { personaId: string }) {
           </Button>
         }
       />
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void remove()}
         title="Delete this persona?"
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={() => void remove()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         <p className="text-sm text-paper-300">
           {draft.title || "This persona"} will be removed from your library. Chats you played as it keep their
           transcript.
         </p>
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

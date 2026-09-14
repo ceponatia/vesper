@@ -12,7 +12,7 @@ import { PublishToggle } from "@/components/library/publish-toggle";
 import { EntityImageStudio } from "@/components/library/entity-image-studio";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -324,21 +324,15 @@ export function LocationEditorPage({ locationId }: { locationId: string }) {
           </Button>
         }
       />
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={remove}
         title="Delete this location?"
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={remove}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         Worlds that placed it keep their own copies.
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

@@ -6,8 +6,8 @@ import { charactersApi, galleryApi, type ApiError, type GalleryImage, type Galle
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
-import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
@@ -542,28 +542,18 @@ export function GalleryPage() {
         onClose={() => setEnlarged(null)}
       />
 
-      <Dialog
+      <ConfirmDialog
         open={pendingDelete !== null}
-        onClose={() => {
-          if (!deleting) setPendingDelete(null);
-        }}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
         title={`Delete ${pendingDelete?.ids.length ?? 0} image${(pendingDelete?.ids.length ?? 0) === 1 ? "" : "s"}?`}
-        footer={
-          <>
-            <Button onClick={() => setPendingDelete(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="danger" busy={deleting} onClick={() => void confirmDelete()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         This permanently removes {pendingDelete?.label ?? "these images"}
         {/* String-expression children: swc in next 16.2.x drops the leading space of a multi-line JSX text node
             containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
         {" — from the gallery and anywhere it appears. It can’t be undone."}
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

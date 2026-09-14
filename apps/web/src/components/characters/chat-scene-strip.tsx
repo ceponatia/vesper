@@ -5,7 +5,7 @@ import { chatsApi, galleryApi, imageProfilesApi, type ImageRecord } from "@/lib/
 import { useAsyncData } from "@/components/hooks/use-async";
 import { ImageProfileSelect } from "./image-profile-select";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -208,25 +208,15 @@ export function SceneStrip({
         onClose={() => setEnlarged(null)}
       />
 
-      <Dialog
+      <ConfirmDialog
         open={pendingDelete !== null}
-        onClose={() => {
-          if (!deleting) setPendingDelete(null);
-        }}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
         title="Delete this scene image?"
-        footer={
-          <>
-            <Button onClick={() => setPendingDelete(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="danger" busy={deleting} onClick={() => void confirmDelete()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         This permanently removes the image — from this strip, the conversation, and the Gallery. It can&rsquo;t be undone.
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

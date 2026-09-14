@@ -12,7 +12,7 @@ import { PublishToggle } from "@/components/library/publish-toggle";
 import { PageContainer } from "@/components/shell/app-shell";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
 import { SaveBar } from "@/components/ui/save-bar";
@@ -309,21 +309,15 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         status={author.blocked ? "Resolve recovered edits to save" : undefined}
         onSave={() => { if (!author.isBlocked()) void save(); }}
       />
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={remove}
         title="Delete this character?"
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={remove}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         This removes {draft.name || "the character"} from your library. Sessions keep their own snapshots.
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

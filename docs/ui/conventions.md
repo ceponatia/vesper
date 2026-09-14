@@ -79,6 +79,23 @@ modals.
 so the caller's cap and the base cap both land on the element and stylesheet order picks the
 winner: a `className="max-w-lg"` override silently renders at `max-w-md`.
 
+## Confirmations
+
+Every confirmation — a destructive delete or an equivalent one-step decision — renders through
+`ConfirmDialog` (`components/ui/confirm-dialog.tsx`), built on `Dialog`. Its busy guard is part of
+the contract: while the caller keeps its `busy` prop true, Cancel and `Dialog`'s own `onClose`
+(Escape, backdrop click) both do nothing, and the confirm button carries `Button`'s own `busy`
+(disables and shows the spinner) so a second click cannot start a second operation. The guard
+protects exactly what the caller reports — a site that clears its own pending-confirmation state
+before starting the operation (a background batch the page tracks separately, a save whose busy
+state a nearby control already shows) is by its own design not guarded, and passes no `busy` at
+all rather than one the dialog can never observe as true. Width is `Dialog`'s `size` prop, passed
+through unchanged — never a `max-w-*` className, for the same reason as above.
+
+A `Dialog` that collects input, picks an entity, or shows a reading surface (rename, scenario
+setup, an entity picker, avatar upload and crop) is a form or a picker, not a confirmation, and
+stays on the raw `Dialog` primitive.
+
 ## Image lightbox
 
 `ImageLightbox` (`components/ui/image-lightbox.tsx`) is the one full-screen viewer: darkened
