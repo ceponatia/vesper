@@ -100,11 +100,14 @@ describe("toggleSelected", () => {
 });
 
 describe("visibleSelection / isAllSelected / isSelectionPartial", () => {
-  const entries = [entry({ path: "a", kind: "file" }), entry({ path: "b", kind: "file" }), entry({ path: "c", kind: "folder" })];
+  const fileA = entry({ path: "a", kind: "file" });
+  const fileB = entry({ path: "b", kind: "file" });
+  const folderC = entry({ path: "c", kind: "folder" });
+  const entries = [fileA, fileB, folderC];
 
   it("reads the selection back through the entries on screen, dropping a stale path", () => {
     const selected = new Set(["a", "gone"]);
-    expect(visibleSelection(entries, selected)).toEqual([entries[0]]);
+    expect(visibleSelection(entries, selected)).toEqual([fileA]);
   });
 
   it("is not all-selected and not partial with nothing ticked", () => {

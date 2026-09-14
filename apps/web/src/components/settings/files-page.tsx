@@ -291,7 +291,7 @@ export function FilesPage() {
 
       for (let index = 0; index < plan.files.length; index += 1) {
         const item = plan.files[index];
-        if (!item) continue;
+        if (item === undefined) continue;
         const { relativePath, file } = item;
         const destPath = joinPath(pathValue, parentPathFor(relativePath));
         const fileIndex = index + 1;

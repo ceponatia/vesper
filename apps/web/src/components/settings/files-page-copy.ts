@@ -62,7 +62,7 @@ export interface ResultToast {
 /** The first failure of a partial-success batch, plus how many more there were. */
 function firstFailureDetail(failures: readonly AdminFileFailure[]): string | undefined {
   const first = failures[0];
-  if (!first) return undefined;
+  if (first === undefined) return undefined;
   const suffix = failures.length > 1 ? ` (+${String(failures.length - 1)} more)` : "";
   return `${first.path}: ${first.message}${suffix}`;
 }
