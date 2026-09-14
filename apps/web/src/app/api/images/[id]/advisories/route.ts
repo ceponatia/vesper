@@ -4,7 +4,7 @@ import { db, images } from "@/server/db";
 import { jsonError, jsonOk, readBody, withAuthorizedResource } from "@/server/api";
 import { mergeRenderAdvisoryReview, ownedImageRow, type ImageRow } from "@/server/images";
 
-type Params = { imageId: string };
+type Params = { id: string };
 
 const reviewRequestSchema = z.object({
   code: z.string().min(1),
@@ -13,8 +13,8 @@ const reviewRequestSchema = z.object({
 });
 
 /**
- * PATCH /api/images/:imageId/advisories — record the owner's agree/disagree
- * verdict on one render advisory this image measured (issue #249).
+ * PATCH /api/images/:id/advisories — record the owner's agree/disagree
+ * verdict on one render advisory this image measured.
  *
  * This is the human-judgment half of the advisory design: it never gates a
  * render and it never changes what is stored as the image, it only merges
@@ -24,23 +24,23 @@ const reviewRequestSchema = z.object({
  * measured is a 404, the same shape as a missing or foreign image, because
  * both are "there is nothing here for you to review" from the caller's side.
  *
- * `withAuthorizedResource` on the same "image" resolver `images/[id]/file`
- * uses — a missing row and a row owned by someone else collapse to the same
- * 404 before this handler ever runs.
+ * `withAuthorizedResource` uses the same "image" resolver as `images/[id]/file`;
+ * a missing row and a row owned by someone else collapse to the same 404 before
+ * this handler ever runs. Keeping the dynamic segment named `[id]` here is also
+ * required by Next.js because sibling routes under `/api/images/:id/*` must use
+ * one canonical slug name.
  *
  * The read-merge-write runs inside ONE transaction with the row locked
- * (`SELECT … FOR UPDATE`, the `character-save.ts` precedent) — issue #249
- * Codex round finding B: two requests reviewing DIFFERENT codes on the same
- * image at once both read the same stale `meta`, and the last `UPDATE` to
- * land would otherwise overwrite the other's merged review even though both
- * report success. Locking the row before reading it makes the second
- * request wait for the first's commit and merge over its ACTUAL result,
- * never its own stale read. `mergeRenderAdvisoryReview` itself stays pure
- * and unchanged — only what surrounds it changed.
+ * (`SELECT … FOR UPDATE`, the `character-save.ts` precedent): two requests
+ * reviewing DIFFERENT codes on the same image at once must not both read the
+ * same stale `meta` and let the last `UPDATE` overwrite the other's review.
+ * Locking the row before reading it makes the second request wait for the
+ * first's commit and merge over its actual result. `mergeRenderAdvisoryReview`
+ * itself stays pure and unchanged — only what surrounds it is transactional.
  */
 export const PATCH = withAuthorizedResource<Params, ImageRow>(
   "image",
-  async (user, params) => ownedImageRow(params.imageId, user.id),
+  async (user, params) => ownedImageRow(params.id, user.id),
   async (user, row, req) => {
     const body = await readBody(req, reviewRequestSchema);
     if (!body.ok) return body.response;
