@@ -163,7 +163,7 @@ function entryFromStat(name: string, relativePath: string, stat: Awaited<ReturnT
     return { name, path: relativePath, kind: "folder", size: null, modifiedAt: stat.mtime.toISOString() };
   }
   if (stat.isFile()) {
-    return { name, path: relativePath, kind: "file", size: stat.size, modifiedAt: stat.mtime.toISOString() };
+    return { name, path: relativePath, kind: "file", size: Number(stat.size), modifiedAt: stat.mtime.toISOString() };
   }
   throw new AdminFilesError("unsupported_entry", "Files storage contains an unsupported filesystem entry", 409);
 }
