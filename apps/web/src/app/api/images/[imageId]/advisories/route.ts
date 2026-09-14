@@ -2,8 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, images } from "@/server/db";
 import { jsonError, jsonOk, readBody, withAuthorizedResource } from "@/server/api";
-import { ownedImageRow, type ImageRow } from "@/server/images";
-import { mergeRenderAdvisoryReview } from "@/server/images/render-advisories-review";
+import { mergeRenderAdvisoryReview, ownedImageRow, type ImageRow } from "@/server/images";
 
 type Params = { imageId: string };
 

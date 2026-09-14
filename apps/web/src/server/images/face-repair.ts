@@ -8,10 +8,10 @@ import {
   type ImageModel,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
-import {
-  type FaceRepairMethod,
-  type FaceRepairSubjectCheck,
-  type ImageGeneratorCreateRunRequest,
+import type {
+  FaceRepairMethod,
+  FaceRepairSubjectCheck,
+  ImageGeneratorCreateRunRequest,
 } from "@/contracts/images/image-generator";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { characters, db, imageReferences, images } from "../db";

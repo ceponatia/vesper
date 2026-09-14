@@ -306,7 +306,11 @@ describe("binding resolution through the seam", () => {
     const strict = compiled(buildCharacterPromptProgram(programInput({ profile, refuseOnMissingRequired: true })));
     expect(strict).toEqual(tolerant);
 
-    expect(Object.keys(strict.meta).sort()).toEqual([IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY].sort());
+    // The appearance-revision stamp rides beside the two provenance keys on
+    // every character render, so a reference read back later can compare it.
+    expect(Object.keys(strict.meta).sort()).toEqual(
+      [IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY, APPEARANCE_REVISION_META_KEY].sort(),
+    );
     expect(parseImagePromptProgramProvenance(strict.meta[IMAGE_PROMPT_PROGRAM_META_KEY])).not.toBeNull();
     expect(parseImageWorldStateProvenance(strict.meta[IMAGE_WORLD_STATE_META_KEY])).not.toBeNull();
   });

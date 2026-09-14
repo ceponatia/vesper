@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import type { ResolvedImageAttemptShape } from "../render-intent";
 import type { RawPixels } from "../identity/identity-pack-quality";
+import type { renderAdvisorySchema } from "./render-advisories";
 import {
   BLANK_OUTPUT_GRAY_VARIANCE_FLOOR,
   CROP_LOSS_ADVISORY_FRACTION,
@@ -9,7 +10,6 @@ import {
   SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR,
   evaluateCropLoss,
   evaluateOutputPixels,
-  renderAdvisorySchema,
   type RenderAdvisory,
 } from "./render-advisories";
 

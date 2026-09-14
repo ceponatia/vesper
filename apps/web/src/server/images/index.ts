@@ -388,3 +388,8 @@ export * from "./upload";
 export * from "./entity";
 export * from "./scene";
 export * from "./character-scene";
+export {
+  mergeRenderAdvisoryReview,
+  type RenderAdvisoryReviewOutcome,
+  type RenderAdvisoryReviewRequest,
+} from "./render-advisories-review";

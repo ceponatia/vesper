@@ -1,6 +1,28 @@
 import { IMAGE_TARGET_ASPECT, parseAspectValue } from "../models/image-models";
 import type { ImageModelProfile, ImageProfileTask } from "../models/image-model-profiles";
-import type { ImageRenderTarget } from "./render-intent";
+
+/**
+ * The shape a lane wants back, as a width/height ratio — or `null` for "the
+ * model's own default shape".
+ *
+ * An object rather than a bare number because this is where the quality tier and
+ * explicit resolution join it in slice 4. They are deliberately absent now: a
+ * `quality: "fast" | "balanced" | "quality"` field would be a claim about the
+ * render that nothing in the payload honors until quality profiles and the
+ * control transports exist.
+ *
+ * `null` is the RAW-EXPLORATION shape, and it means three things together: no
+ * aspect/size key is written into the payload, no provider shape bucket is
+ * chosen for being closest to a Vesper target, and the returned image is not
+ * cropped. Every player-facing lane still names `IMAGE_TARGET_ASPECT` (or
+ * its own ratio) because a portrait strip whose images are whatever shape the
+ * model felt like is a broken product surface; the Image Generator asks for
+ * `null` because a bench that silently reshapes a model's output is not
+ * evidence about that model.
+ */
+export interface ImageRenderTarget {
+  aspectRatio: number | null;
+}
 
 /**
  * The closed table of DEFAULT target ratios, one per task — what a render asks
