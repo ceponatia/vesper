@@ -91,20 +91,25 @@ const REQUIRED_CONTROL_SLUG = "vesper-test/generator-required-control";
 const REPROBED_SLUG = "vesper-test/generator-reprobed";
 const SIZE_SLUG = "vesper-test/generator-size-mode";
 /**
- * A slug the REVIEWED table names (`nsfw-api/sdxl-pulid`), under a fixture
- * version pin of its own so the row is distinct from the one migration 0104
- * seeds. The reviewed lookup is on the base provider path, so the pin is also
- * what proves the bench asks under `baseImageModelSlug` rather than the raw
- * slug.
- */
-const REVIEWED_SLUG = "nsfw-api/sdxl-pulid:generatorbenchfixture";
-/**
  * A LoRA the library curates for SCENE renders only — deliberately not for the
  * synthetic profile's nominal `item` task. It is the exact row shape the bench
  * used to refuse.
  */
 const BENCH_LORA_ID = "imglorabenchonlyaaaaaaaa";
 const PINNED_VERSION = "generatorversionaaaaaaaa";
+/**
+ * A slug the REVIEWED table names (`nsfw-api/sdxl-pulid`), version-suffixed so
+ * the row is distinct from the one migration 0104 seeds AND so the reviewed
+ * lookup has a pin to strip — the bench asks under `baseImageModelSlug`, never
+ * the raw slug.
+ *
+ * The suffix IS `PINNED_VERSION`, and it has to be: `pinnedImageModelVersion`
+ * returns null when a slug pin and `probed_version_id` disagree, and the
+ * Generator refuses `version_unpinned` before it reaches any reviewed gate. A
+ * fixture pinned two different ways never gets as far as the behaviour under
+ * test.
+ */
+const REVIEWED_SLUG = `nsfw-api/sdxl-pulid:${PINNED_VERSION}`;
 const REPROBED_VERSION = "generatorversionbbbbbbbb";
 const EXECUTED_VERSION = PINNED_VERSION;
 
