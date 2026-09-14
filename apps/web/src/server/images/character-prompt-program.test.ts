@@ -11,11 +11,13 @@ import {
 import {
   QWEN_2511_APPEARANCE_MOVED_NOTICE,
   QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK,
+  QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
+import type { AttributeValue } from "@/contracts/attributes";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { APPEARANCE_REVISION_META_KEY, appearanceRevisionOf } from "@/contracts/images/appearance-revision";
 import { IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT } from "@/contracts/images/character-adapter";
@@ -1490,5 +1492,143 @@ describe("the preservation contract the reference's own stamp decides", () => {
     expect(result.prompt).not.toContain(QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK);
     expect(result.prompt).toMatch(/platinum hair/i);
     expect(redundantKeys(result).some((key) => key.includes("appearance.hair."))).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // A MIXED CAST'S SUPPRESSION FOLLOWS THE SAME VERDICT THE LOCK DOES
+  // (issue #551 Codex finding)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A TWO-PERSON CAST, BOTH ANCHORED ON AN IDENTITY REFERENCE — the shape the
+   * Codex finding is about. The dialect's several-people lock is one clause for
+   * the whole bound cast
+   * (`packages/image-core/src/prompt-program/prompt-program.test.ts` pins that
+   * it widens only when EVERY anchored subject's own verdict is `matches`), so
+   * this seam must decide which subject's hair and build to drop from the TEXT
+   * by the identical rule — never by one subject's own verdict alone, which is
+   * exactly the defect Codex found: a matching subject's hair and build
+   * suppressed from the text while the lock, correctly narrow because a
+   * castmate's reference was not current, never picked them up either.
+   *
+   * `secondRevision` computes Ilsa's stamp from HER OWN resolved cut
+   * attributes, so a `differs` case moves a real fact rather than comparing
+   * against an unrelated digest. Nyx's stamp is always the exact revision of
+   * the cut she was drawn from, so her verdict is always `matches` and any
+   * drift the assertions below see is Ilsa's alone.
+   */
+  const mixedCastProgram = (
+    secondRevision: (ilsaAttributes: readonly AttributeValue[]) => string | null,
+  ): CharacterPromptProgram => {
+    const members = laneProbeCastSubjects();
+    const plan = laneProbeCastScenePlan(members.map((subject) => subject.member));
+    const built = applySceneCastVisual({ plan, members });
+    expect(built.refusal).toBeNull();
+    const visualOf = (subjectId: string) => {
+      const slice = built.visuals.find((entry) => entry.subjectId === subjectId);
+      if (slice === undefined) throw new Error(`fixture is missing subject ${subjectId}`);
+      return slice;
+    };
+    const nyx = visualOf(LANE_PROBE_SUBJECT_ID);
+    const ilsa = visualOf(LANE_PROBE_SECOND_SUBJECT_ID);
+    return compiled(
+      buildCharacterPromptProgram({
+        lane: "scene",
+        task: "scene",
+        profile: resolvedImageProfileFixture({ slug: QWEN_2511_SLUG, task: "scene", key: SCENE_KEY }),
+        bindingProfileKey: SCENE_KEY,
+        bindingStrategy: "instruction_edit",
+        cuts: built.visuals.map((slice) => ({
+          subjectId: slice.subjectId,
+          name: slice.name,
+          digest: slice.digest,
+          attributes: slice.attributes,
+          exposure: slice.exposure,
+          hairOcclusion: slice.hairOcclusion,
+          realizedBody: slice.realizedBody,
+        })),
+        read: { kind: "committed_cut", token: built.visuals[0]?.cutId ?? "" },
+        references: [
+          {
+            reference: { role: "identity", buffer: Buffer.from(nyx.subjectId), name: nyx.name },
+            subjectId: nyx.subjectId,
+            // Always drawn from exactly this cut's own appearance: Nyx is the
+            // constant `matches` reference the whole suite compares Ilsa against.
+            appearanceRevision: appearanceRevisionOf(nyx.attributes),
+          },
+          {
+            reference: { role: "identity", buffer: Buffer.from(ilsa.subjectId), name: ilsa.name },
+            subjectId: ilsa.subjectId,
+            appearanceRevision: secondRevision(ilsa.attributes),
+          },
+        ],
+        operation: () => characterSceneImageOperation({ subjectCount: built.visuals.length, kind: "edit" }),
+        refuseOnMissingRequired: true,
+      }),
+    );
+  };
+
+  /**
+   * THE ALL-CURRENT CASE STILL SUPPRESSES FOR EVERYONE — the refactor that
+   * routes both sides through one shared predicate must not have narrowed the
+   * cast-wide widening it already did right. Both references are drawn from
+   * their subject's own cut, so both verdicts are `matches`, the lock widens,
+   * and both subjects' hair and build stay out of the text.
+   */
+  it("suppresses hair and build for every subject when every anchored reference is current", () => {
+    const program = mixedCastProgram((attributes) => appearanceRevisionOf(attributes));
+
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toMatch(/platinum/i);
+    expect(program.prompt).not.toMatch(/\bsturdy\b/i);
+    expect(program.prompt).not.toMatch(/dyed.teal/i);
+    expect(program.prompt).not.toMatch(/\bslight\b/i);
+  });
+
+  /**
+   * ACCEPTANCE (issue #551 Codex finding): one `matches` reference beside one
+   * `unknown` one keeps the ORDINARY lock for the whole cast — so Nyx's own
+   * current reference must not have her hair and build dropped from the text,
+   * because nothing in the compiled prompt would then preserve them at all.
+   */
+  it("keeps a matching subject's hair and build in the text beside a castmate with no stamp", () => {
+    const program = mixedCastProgram(() => null);
+
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+    // Nyx's own reference is current, but the cast-wide lock is narrow, so her
+    // hair and build must still be stated as text.
+    expect(program.prompt).toMatch(/platinum/i);
+    expect(program.prompt).toMatch(/\bsturdy\b/i);
+    const nyxRedundant = redundantKeys(program).filter((key) =>
+      key.startsWith(`subject.${LANE_PROBE_SUBJECT_ID}.appearance`),
+    );
+    expect(nyxRedundant.some((key) => key.includes("hair."))).toBe(false);
+    expect(nyxRedundant.some((key) => key.includes("build."))).toBe(false);
+  });
+
+  /**
+   * The same acceptance against a castmate the revision positively says has
+   * MOVED rather than one nobody stamped — stronger evidence than `unknown`
+   * that the wider lock would be wrong, so if Nyx keeps her text beside the
+   * weaker case above she must keep it here too.
+   */
+  it("keeps a matching subject's hair and build in the text beside a castmate whose appearance moved", () => {
+    const program = mixedCastProgram((attributes) =>
+      appearanceRevisionOf(
+        attributes.map((entry) => (entry.id === "hair.length" ? { ...entry, value: "shoulder_length" } : entry)),
+      ),
+    );
+
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(program.prompt).toMatch(/platinum/i);
+    expect(program.prompt).toMatch(/\bsturdy\b/i);
+    const nyxRedundant = redundantKeys(program).filter((key) =>
+      key.startsWith(`subject.${LANE_PROBE_SUBJECT_ID}.appearance`),
+    );
+    expect(nyxRedundant.some((key) => key.includes("hair."))).toBe(false);
+    expect(nyxRedundant.some((key) => key.includes("build."))).toBe(false);
   });
 });

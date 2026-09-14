@@ -709,11 +709,12 @@ function bindingSentence(
   // person is in this picture. Everything else about the clause is the same
   // sentence, because binding one person to one photograph is the same act
   // whether or not somebody else is standing next to them.
+  const scope = currentLookLockScope(groups.map(groupPreservation));
   if (first !== undefined && groups.length === 1 && (sole || described.length > 0)) {
     const role = sole
       ? "as the sole subject"
       : `as one of the ${countWord(peopleInPicture(input, state))} people in the picture`;
-    const bound = boundGroupSentence(state, first, open, role);
+    const bound = boundGroupSentence(state, first, open, role, scope);
     // Unreachable: a group exists because a slot made it. Answered rather than
     // thrown, because a compile has nothing to gain from an exception here.
     if (bound === null) return null;
@@ -754,9 +755,13 @@ function bindingSentence(
   // A mixed cast keeps the ordinary lock and says nothing further: "each
   // person's" is not a place a per-person correction can honestly go, and the
   // people whose references ARE current lose only what they would have lost
-  // before this contract existed.
-  const everyGroupCurrent = groups.length > 0 && groups.every((group) => groupPreservation(group) === "matches");
-  const multiLock = everyGroupCurrent ? QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK;
+  // before this contract existed. `scope` is the SAME verdict
+  // `character-prompt-program.ts` reads before it decides whether to drop a
+  // subject's hair/build text (`currentLookLockCoversSubject`), computed here
+  // from the identical per-group verdicts — one shared answer to "does the
+  // emitted lock preserve this cast's hair and build", never two.
+  const multiLock =
+    scope === "wide" ? QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK;
   const assigned = `${open} the numbered images as assigned${list}; ${multiLock}`;
   // The preserve set above is scoped by its own wording — "their own image" is
   // said of the people who have one — and the sentences after it say who does
@@ -781,6 +786,7 @@ function boundGroupSentence(
   group: IdentityGroup,
   open: string,
   role: string,
+  scope: CurrentLookLockScope,
 ): string | null {
   const voice = group.subjectRef === undefined ? null : (state.voices.get(group.subjectRef) ?? null);
   const primary = group.slots[0];
@@ -789,13 +795,18 @@ function boundGroupSentence(
   // current set earns the wider preserve clause; a set known to be out of date
   // keeps the ordinary one and says so in a sentence of its own; `unknown` —
   // every reference minted before the stamp existed — compiles exactly what this
-  // dialect compiled then.
+  // dialect compiled then. `covers` is the shared predicate
+  // (`currentLookLockCoversSubject`) that also gates the seam's own text
+  // suppression, so this group's hair and build are never dropped from one
+  // side and kept in the other: within a single-group render `scope` reduces to
+  // this very group's own verdict, and inside a multi-group render it is
+  // `"wide"` only when every anchored group in the cast is `matches`.
   const preservation = groupPreservation(group);
+  const covers = currentLookLockCoversSubject(scope, preservation);
   if (group.slots.length === 1) {
     const named = voice === null ? `the subject in Image ${primary.position}` : voice.binding;
     const qualified = primary.description === undefined ? named : `${named}, ${primary.description}`;
-    const lock =
-      preservation === "matches" ? QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK;
+    const lock = covers ? QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK;
     const keep = `keep ${their(voice)} ${lock}`;
     const moved =
       preservation === "differs" ? ` ${capitalize(their(voice))} ${QWEN_2511_APPEARANCE_MOVED_NOTICE}` : "";
@@ -815,8 +826,7 @@ function boundGroupSentence(
     `Image ${primary.position} is ${their(voice)} primary identity reference`,
     ...group.slots.slice(1).map((slot) => `Image ${slot.position} ${viewClause(slot, voice)}`),
   ];
-  const groupedLock =
-    preservation === "matches" ? QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK;
+  const groupedLock = covers ? QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK;
   const groupedMoved =
     preservation === "differs" ? ` ${capitalize(their(voice))} ${QWEN_2511_GROUPED_APPEARANCE_MOVED_NOTICE}` : "";
   return `${open} ${shown} ${role}. ${purposes.join("; ")}. Keep ${their(voice)} ${groupedLock}${groupedMoved}`;
@@ -937,6 +947,53 @@ function groupPreservation(group: IdentityGroup): "matches" | "differs" | "unkno
     if (slotVerdict === "unknown") verdict = "unknown";
   }
   return verdict;
+}
+
+/**
+ * Whether the render-wide current-look lock this cast produces is `"wide"`
+ * (hair and build preserved from the reference, alongside face, skin tone and
+ * apparent age) or `"narrow"` (the ordinary preserve set) — the SAME question
+ * `bindingSentence` and `boundGroupSentence` each word into a sentence and
+ * `character-prompt-program.ts` reads before it drops a subject's optional
+ * hair/build text (issue #551 Codex finding).
+ *
+ * `"wide"` only when every verdict given is `matches` — the lock is one clause
+ * for however many people it binds, so a mixed cast (one current reference
+ * beside one stale or unknown one) keeps the ordinary lock for EVERYONE, not
+ * only the subject whose own reference is current. An empty list is `"narrow"`:
+ * there is no anchored subject for a wide lock to be about.
+ *
+ * Exported so the seam that builds this dialect's digest can compute the exact
+ * scope the dialect will emit, from the same per-subject verdicts, rather than
+ * re-deriving a mixed-cast rule of its own that could disagree with this one.
+ */
+export function currentLookLockScope(
+  verdicts: readonly ("matches" | "differs" | "unknown")[],
+): CurrentLookLockScope {
+  return verdicts.length > 0 && verdicts.every((verdict) => verdict === "matches") ? "wide" : "narrow";
+}
+
+/** See {@link currentLookLockScope}. */
+export type CurrentLookLockScope = "wide" | "narrow";
+
+/**
+ * Whether the lock this `scope` produces actually preserves ONE subject's hair
+ * and build (issue #551 Codex finding) — the single predicate both sides of
+ * the suppression decision must read, so a subject's hair and build are never
+ * missing from both the lock and the text at once.
+ *
+ * `scope` alone would answer this for any subject inside it, because `"wide"`
+ * is defined as "every anchored subject is `matches`" — but `subjectVerdict` is
+ * still taken and checked, so a caller that computes `scope` over one set of
+ * subjects and then asks about a subject outside that set fails closed to the
+ * narrow, text-preserving answer instead of trusting a scope that was never
+ * about this subject.
+ */
+export function currentLookLockCoversSubject(
+  scope: CurrentLookLockScope,
+  subjectVerdict: "matches" | "differs" | "unknown",
+): boolean {
+  return scope === "wide" && subjectVerdict === "matches";
 }
 
 /**

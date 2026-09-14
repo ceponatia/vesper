@@ -593,10 +593,14 @@ wider preserve clauses are exported beside the three ordinary ones
 the `differs` correction is its own sentence after the lock
 (`QWEN_2511_APPEARANCE_MOVED_NOTICE`) rather than a variant of it. The
 several-people lock is one clause for the whole cast, so it takes the wider set
-only when every person in the picture is bound to a current reference. Each
-compiled slot's verdict is recorded on the program provenance's `references`
-entry, which is what lets a finished render explain why it said nothing about
-hair.
+only when every person in the picture is bound to a current reference. The
+seam that builds this dialect's digest (`character-prompt-program.ts`) reads
+that identical rule before it drops a subject's optional hair and build text,
+so a subject whose own reference is current keeps that text stated whenever a
+castmate's reference leaves the cast-wide lock at its ordinary, narrower set.
+Each compiled slot's verdict is recorded on the program provenance's
+`references` entry, which is what lets a finished render explain why it said
+nothing about hair.
 
 **No lock asks the reference to restore hair the headwear hides.** A subject at
 the `full` hair-occlusion band carries a `subject.hair_concealment` claim
