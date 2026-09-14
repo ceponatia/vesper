@@ -9,7 +9,7 @@ import {
 } from "@/contracts/turns/chat-summary";
 import { parseOrNull } from "@/lib/parse";
 import { log } from "@/server/log";
-import { generateChecked } from "../ai";
+import { generateCheckedBounded } from "../ai";
 import { characterChatMessages, characterChatSummaries, characters, chatParticipants, db, hasLiveChatJob } from "../db";
 import type { ChatTurn } from "./character-chat";
 import { CHARACTER_CHAT_HISTORY_TURNS, CHARACTER_CHAT_SUMMARIZE_AT, CHARACTER_CHAT_VERBATIM_KEEP } from "./constants";
@@ -261,16 +261,19 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
       content: narrator ? `[story narration, written by the player as storyteller]\n${r.content}` : r.content,
     };
   });
-  const { value, degraded } = await generateChecked<ChatSummaryFold>({
-    schema: chatSummaryFoldSchema,
-    system: CHAT_SUMMARY_SYSTEM,
-    prompt: buildChatSummaryFoldPrompt({ characterName: character.name, priorSummary, chunk }),
-    temperature: 0.2,
-    maxOutputTokens: CHAT_SUMMARY_MAX_OUTPUT_TOKENS,
-    code: "chat_summary.fold",
-    sink,
-    fallback: () => degradedChatSummaryFold(priorSummary),
-  });
+  const { value, degraded } = await generateCheckedBounded<ChatSummaryFold>(
+    {
+      schema: chatSummaryFoldSchema,
+      system: CHAT_SUMMARY_SYSTEM,
+      prompt: buildChatSummaryFoldPrompt({ characterName: character.name, priorSummary, chunk }),
+      temperature: 0.2,
+      maxOutputTokens: CHAT_SUMMARY_MAX_OUTPUT_TOKENS,
+      code: "chat_summary.fold",
+      sink,
+      fallback: () => degradedChatSummaryFold(priorSummary),
+    },
+    { timeoutMs: CHAT_SUMMARY_FOLD_TIMEOUT_MS, timeoutCode: "chat_summary.fold.timeout" },
+  );
 
   const folded = normalizeChatSummary(priorSummary, value, degraded, sink);
   if (!folded.advance) {
@@ -386,6 +389,8 @@ export async function repairChatSummaryForMessage(
 
 /** Output-token cap for the fold — the summary targets ~400 words; keep it cheap. */
 const CHAT_SUMMARY_MAX_OUTPUT_TOKENS = 800;
+/** The fold runs in a detached job, off any request's latency path — generous, but a stalled call must still release the keyed lock (docs/resilience.md §3). */
+const CHAT_SUMMARY_FOLD_TIMEOUT_MS = 60_000;
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

@@ -1,7 +1,7 @@
 import { diag, type DiagnosticSink } from "@/contracts";
 import type { AgentRunDescription } from "@/contracts/turns/agent-failure";
 import { recordAgentFailure, recordAgentRun, type AgentTelemetry } from "./agent-failures";
-import type { GenerateCheckedResult } from "./generate-checked";
+import { generateChecked, type GenerateCheckedOptions, type GenerateCheckedResult } from "./generate-checked";
 
 /**
  * What the race resolves to: the caller's value plus whatever spend the wrapped
@@ -105,5 +105,74 @@ export async function withGenerateTimeout<T>(
     return await Promise.race([settled, timeout]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * `generateCheckedBounded`'s result: `withGenerateTimeout`'s race outcome, plus
+ * whichever completed call's provider/latency were observed. Undefined on a
+ * timeout or a caller abort — nothing completed, so there is nothing honest to
+ * report (the same rule `GenerateTimeoutResult` already applies to usage/cost).
+ */
+export type GenerateCheckedBoundedResult<T> = GenerateTimeoutResult<T> & Pick<GenerateCheckedResult<T>, "provider" | "latencyMs">;
+
+/** The deadline half of a `generateCheckedBounded` call — everything `generateChecked` itself already owns (schema, prompt, fallback, sink, telemetry, signal) travels in `opts`. */
+export interface GenerateCheckedBound<T> {
+  /** Hard wall-clock budget for the call, its repair round-trip included. */
+  timeoutMs: number;
+  /** Diagnostic code for the timeout warning + recorded failure — conventionally `${code}.timeout`. */
+  timeoutCode: string;
+  /** Turns a clean, un-degraded value into the Inspector's one-line summary + detail sections (see `withGenerateTimeout`). */
+  describe?: (value: T) => AgentRunDescription;
+}
+
+/**
+ * Compose `generateChecked` with `withGenerateTimeout` in one call — the shape
+ * every non-streaming structured leg needs (docs/resilience.md §3): a bounded
+ * `AbortController` drives both the deadline and, when the caller supplies one,
+ * its own `opts.signal`. An already-aborted caller signal aborts the controller
+ * immediately; a later abort calls `controller.abort()` as soon as it fires; the
+ * listener is always removed in `finally` so a long-lived caller signal never
+ * accumulates one. `controller.signal` — never the caller's own — is what
+ * actually reaches `generateChecked`.
+ *
+ * The race itself, its timeout diagnostic, the recorded `timeout` failure and
+ * the success-run record all stay exactly where they live today, in
+ * `withGenerateTimeout` — this function adds no telemetry of its own. The one
+ * thing it adds on top: a timeout or a caller abort resolves with
+ * `{ value: null, degraded: true }` — the caller's OWN fallback rule
+ * (`opts.fallback`, the same one `generateChecked`'s degrade path applies) is
+ * not otherwise reachable from that branch, since the controller's abort
+ * orphans the in-flight `generateChecked` call, which then returns silently by
+ * design (its `abandoned()` contract — see generate-checked.ts). This function
+ * fills that gap so every caller keeps its documented degraded result whether
+ * the miss was a parse failure, a timeout, or a caller abort.
+ */
+export async function generateCheckedBounded<T>(
+  opts: GenerateCheckedOptions<T>,
+  bound: GenerateCheckedBound<T>,
+): Promise<GenerateCheckedBoundedResult<T>> {
+  const controller = new AbortController();
+  const callerSignal = opts.signal;
+  const onCallerAbort = () => controller.abort();
+  if (callerSignal?.aborted) {
+    controller.abort();
+  } else {
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+  }
+  // Observed off the SAME promise `withGenerateTimeout` races — a second
+  // subscriber, not a second call — so a completed call's provider/latency
+  // survive the race even though `GenerateTimeoutResult` itself drops them.
+  let observed: Pick<GenerateCheckedResult<T>, "provider" | "latencyMs"> = {};
+  try {
+    const work = generateChecked({ ...opts, signal: controller.signal });
+    void work.then((r) => {
+      observed = { provider: r.provider, latencyMs: r.latencyMs };
+    });
+    const result = await withGenerateTimeout(work, controller, bound.timeoutMs, bound.timeoutCode, opts.sink, opts.telemetry, bound.describe);
+    const value = result.degraded && result.value == null ? (opts.fallback ? opts.fallback() : null) : result.value;
+    return { ...result, value, ...observed };
+  } finally {
+    callerSignal?.removeEventListener("abort", onCallerAbort);
   }
 }

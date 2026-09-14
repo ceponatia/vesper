@@ -192,6 +192,16 @@ export const CHAT_STREAM_OVERALL_MS = 300_000;
  */
 export const CHAT_RERUN_LOCK_WAIT_MS = 8_000;
 
+/**
+ * The successor simulation engine's non-streaming narrator reply
+ * (`sim.narrator` / `sim.narrator.solo`, docs/resilience.md §3): the request
+ * awaits this render directly, so the budget is generous but finite — the
+ * streaming chat lane's own overall cap (CHAT_STREAM_OVERALL_MS) is 300s for a
+ * token-by-token reply; this is the equivalent ceiling for one non-streaming
+ * successor-lane call.
+ */
+export const SIM_NARRATOR_TIMEOUT_MS = 120_000;
+
 /** Heartbeat refresh cadence while a job is processing. */
 export const HEARTBEAT_INTERVAL_MS = 5_000;
 

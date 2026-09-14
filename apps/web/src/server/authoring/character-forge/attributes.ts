@@ -15,8 +15,8 @@ import {
 } from "@/contracts";
 import { sectionOwnsAttribute } from "@/lib/character-scopes";
 import { fnv1a32 } from "@/lib/hash";
-import { generateChecked } from "@/server/ai";
-import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
+import { generateCheckedBounded } from "@/server/ai";
+import { FORGE_LEG_OPTIONS, FORGE_LEG_TIMEOUT_MS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
 import {
   heritageForForgeContext,
   realizedBodyForForgeContext,
@@ -289,15 +289,18 @@ function attributesPrompt(context: CharacterForgeContext): string {
 
 export async function forgeAttributesSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
   const scope = context.scope;
-  const { value, degraded } = await generateChecked({
-    ...FORGE_LEG_OPTIONS,
-    schema: buildAttributeSectionSchema(context),
-    system: ATTRIBUTES_SYSTEM,
-    prompt: attributesPrompt(context),
-    code: "forge.character.attributes",
-    sink: context.sink,
-    fallback: scope || context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
-  });
+  const { value, degraded } = await generateCheckedBounded(
+    {
+      ...FORGE_LEG_OPTIONS,
+      schema: buildAttributeSectionSchema(context),
+      system: ATTRIBUTES_SYSTEM,
+      prompt: attributesPrompt(context),
+      code: "forge.character.attributes",
+      sink: context.sink,
+      fallback: scope || context.useFallbacks === false ? undefined : demoCharacterAttributeSection,
+    },
+    { timeoutMs: FORGE_LEG_TIMEOUT_MS, timeoutCode: "forge.character.attributes.timeout" },
+  );
   if (scope && (degraded || !value)) return {};
   return groundCharacterAttributeSection(value ?? { attributes: [], ranges: [] }, context);
 }

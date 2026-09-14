@@ -13,13 +13,13 @@ import type { NarratorRunProvenance } from "@/contracts/narrator-prompts";
 import {
   chatNarrativeModelId,
   collapseRepeatedBlocks,
-  generateChecked,
+  generateCheckedBounded,
   narrativeProviderOptions,
   stripNarratorArtifacts,
 } from "@/server/ai";
 import { db, type Db } from "@/server/db";
 import { buildNarratorRunProvenance } from "./chat-reply-store";
-import { NARRATIVE_TEMPERATURE } from "./constants";
+import { NARRATIVE_TEMPERATURE, SIM_NARRATOR_TIMEOUT_MS } from "./constants";
 import {
   beatHandlesForCut,
   buildSimHandleMap,
@@ -126,17 +126,20 @@ function liveRenderSeam(cut: NarrativeCut): RenderSeam {
     // Provider parity with the legacy narrator lane:
     // NARRATIVE_TEMPERATURE + the eval-ruled per-model reasoning/routing knobs.
     const providerOptions = narrativeProviderOptions(modelId);
-    const generated = await generateChecked({
-      schema: narratorResultSchema,
-      system,
-      prompt,
-      modelId,
-      temperature: NARRATIVE_TEMPERATURE,
-      ...(providerOptions === undefined ? {} : { providerOptions }),
-      maxOutputTokens: 2_000,
-      code: "sim.narrator",
-      fallback: () => deterministicFallbackResult(cut),
-    });
+    const generated = await generateCheckedBounded(
+      {
+        schema: narratorResultSchema,
+        system,
+        prompt,
+        modelId,
+        temperature: NARRATIVE_TEMPERATURE,
+        ...(providerOptions === undefined ? {} : { providerOptions }),
+        maxOutputTokens: 2_000,
+        code: "sim.narrator",
+        fallback: () => deterministicFallbackResult(cut),
+      },
+      { timeoutMs: SIM_NARRATOR_TIMEOUT_MS, timeoutCode: "sim.narrator.timeout" },
+    );
     return {
       raw: generated.value,
       provider: generated.provider ?? null,
@@ -393,21 +396,24 @@ export interface RenderedSolo {
   diagnostics: string[];
 }
 
-/** Live seam: one `generateChecked` call under narrator provider parity, degrading to the fallback prose. */
+/** Live seam: one bounded `generateChecked` call under narrator provider parity, degrading to the fallback prose. */
 function liveSoloSeam(fallbackProse: string): SoloRenderSeam {
   return async ({ system, prompt, modelId }) => {
     const providerOptions = narrativeProviderOptions(modelId);
-    const generated = await generateChecked({
-      schema: soloNarrationSchema,
-      system,
-      prompt,
-      modelId,
-      temperature: NARRATIVE_TEMPERATURE,
-      ...(providerOptions === undefined ? {} : { providerOptions }),
-      maxOutputTokens: 2_000,
-      code: "sim.narrator.solo",
-      fallback: () => ({ prose: fallbackProse }),
-    });
+    const generated = await generateCheckedBounded(
+      {
+        schema: soloNarrationSchema,
+        system,
+        prompt,
+        modelId,
+        temperature: NARRATIVE_TEMPERATURE,
+        ...(providerOptions === undefined ? {} : { providerOptions }),
+        maxOutputTokens: 2_000,
+        code: "sim.narrator.solo",
+        fallback: () => ({ prose: fallbackProse }),
+      },
+      { timeoutMs: SIM_NARRATOR_TIMEOUT_MS, timeoutCode: "sim.narrator.solo.timeout" },
+    );
     return {
       prose: generated.value?.prose ?? fallbackProse,
       provider: generated.provider ?? null,
@@ -509,24 +515,32 @@ export function buildLiveDeliberation(options: {
       setTimeout(() => resolve(undefined), timeoutMs).unref?.();
     }),
     deliberate: async (request) => {
-      const generated = await generateChecked({
-        schema: deliberatorResponseSchema,
-        system:
-          "You choose ONE option for a character in a simulation. Reply with strict JSON " +
-          '{"chosenCandidateId": "<one of the given ids>", "rationaleSummary": "<one short sentence>"} ' +
-          "and nothing else. You cannot invent options.",
-        prompt: [
-          `CANDIDATES: ${request.candidateIds.join(" | ")}`,
-          request.evidence.length > 0 ? `EVIDENCE:\n${request.evidence.map((line) => `- ${line}`).join("\n")}` : "",
-          "Pick the candidate the evidence best supports.",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        modelId,
-        temperature: 0.2,
-        maxOutputTokens: 300,
-        code: "sim.deliberator",
-      });
+      // The bare `timeout` promise above already races this against timeoutMs
+      // for the arbiter's own fallback decision; that race alone never aborted
+      // the provider call, leaving it to run to completion in the background.
+      // Composing the SAME timeoutMs here as the deadline means a trip now
+      // aborts the in-flight call instead of orphaning it.
+      const generated = await generateCheckedBounded(
+        {
+          schema: deliberatorResponseSchema,
+          system:
+            "You choose ONE option for a character in a simulation. Reply with strict JSON " +
+            '{"chosenCandidateId": "<one of the given ids>", "rationaleSummary": "<one short sentence>"} ' +
+            "and nothing else. You cannot invent options.",
+          prompt: [
+            `CANDIDATES: ${request.candidateIds.join(" | ")}`,
+            request.evidence.length > 0 ? `EVIDENCE:\n${request.evidence.map((line) => `- ${line}`).join("\n")}` : "",
+            "Pick the candidate the evidence best supports.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          modelId,
+          temperature: 0.2,
+          maxOutputTokens: 300,
+          code: "sim.deliberator",
+        },
+        { timeoutMs, timeoutCode: "sim.deliberator.timeout" },
+      );
       return generated.value;
     },
   };
