@@ -34,9 +34,12 @@ provider spend:
    an unrelated reason, but it is a genuine render of this character — the identity pack's own
    accepted view — so a repair accepts it as a source.
 4. The multi-person check (below) passes.
-5. The identity references resolve (below).
-6. The repair method resolves (below).
-7. The ordinary render cost guard (`imageRenderRejection`, hidden `generator_output` output kind).
+5. The repair profile pairs with an identity strategy the model's reference capacity affords
+   (below) — refuses `face_repair.model_unavailable` when no room is left for both the source
+   image and at least one identity reference.
+6. The identity references resolve (below).
+7. The repair method resolves (below).
+8. The ordinary render cost guard (`imageRenderRejection`, hidden `generator_output` output kind).
 
 A refusal at any step is a typed JSON error at 400 — `{ code: "face_repair.<code>", message }` —
 except the flag-off case, which answers the anonymous hidden 404 instead of naming itself, so a
@@ -49,7 +52,7 @@ disabled action is indistinguishable from a route that does not exist:
 | `face_repair.source_unavailable`   | the source is missing, not owned, not ready, hidden, or another character's |
 | `face_repair.multi_person`         | the source depicts, or asserts, more than one person                        |
 | `face_repair.identity_unavailable` | the identity-pack render lane refused before any byte was read              |
-| `face_repair.model_unavailable`    | no image model profile is offered for a repair                              |
+| `face_repair.model_unavailable`    | no offered model, or the offered model has no capacity left for a repair    |
 | `face_repair.method_unavailable`   | a masked repair is declared on the model but no mask source exists          |
 
 Once accepted, the route builds an ordinary `imageGeneratorCreateRunRequestSchema` request and
@@ -83,11 +86,25 @@ subjects }`, where `subjects` is `null` when no evidence existed either way.
 
 The repair profile resolves from `modelId` (default: the task's default `variant` profile) through
 `resolveImageProfileForTask("variant", modelId)`, then is paired **in memory** — no new registry
-row — with `referencePolicy.identityStrategy` set to `canonical_then_face_detail`
-(`pairFaceRepairIdentityProfile`), the same in-memory pairing shape `pairProfileWithNsfwLora` uses
-for the intimate-scene LoRA. A model whose registry row caps it at one reference (a
-single-reference candidate such as PuLID) degrades explicitly to `canonical_only` instead of asking
-for a strategy the model has no slot for.
+row — with an identity strategy `pairFaceRepairIdentityProfile` chooses from the model's own
+reference capacity, the same in-memory pairing shape `pairProfileWithNsfwLora` uses for the
+intimate-scene LoRA.
+
+The source image always occupies one reference slot too — `buildFaceRepairRunRequest` sends it as
+the first primary reference, before any identity reference — so the strategy is chosen against the
+model's capacity MINUS ONE, not against its raw capacity:
+
+| `referenceCapacity(model).max` | identity slots left | outcome                                                      |
+| ------------------------------ | ------------------- | ------------------------------------------------------------ |
+| 3 or more                      | 2 or more           | `canonical_then_face_detail` — source + portrait + face crop |
+| exactly 2                      | exactly 1           | `canonical_only` (the degraded strategy) — source + portrait |
+| 1 or fewer                     | 0 or fewer          | refuse `face_repair.model_unavailable` before any spend      |
+
+A model capped at one reference (an identity-conditioned single-reference generator such as
+PuLID) has no slot left once the source itself is counted: it can condition a new render on a
+face, but it cannot also take a source image to repair, so it is not a face-repair candidate at
+all — regenerating a face from an identity reference with no source is an ordinary Generator run,
+not this action.
 
 `identityPackRenderReferences` then resolves the character's canonical portrait (and face crop,
 where the strategy sends one) exactly as every other identity-critical lane does
@@ -143,13 +160,17 @@ comparison arm reads.
 
 ## The comparison arms
 
-The action makes three arms runnable against the untouched source, for an owner-run paid trial:
+The action makes two arms runnable against the untouched source, for an owner-run paid trial:
 
 - **Baseline** — the untouched source image; no run.
 - **Full-frame identity edit** — `qwen/qwen-image-edit-2511` with the portrait and face crop, the
   only method the resolver returns while no model declares a dedicated mask input.
-- **Single-reference** — a model capped at one identity reference (PuLID is a selectable
-  candidate; no winner is chosen in advance), which degrades to `canonical_only`.
+
+A single-reference, identity-conditioned generator (PuLID) is not a repair candidate: it has no
+reference slot left for the source once the source itself is counted (see the capacity table
+above), so it can only regenerate a face from an identity reference, never repair one in a source
+image. That regeneration is a useful comparison in its own right, but it is an ordinary Generator
+run, not this action.
 
 Grading and a verdict over these arms are owner work this action does not perform.
 

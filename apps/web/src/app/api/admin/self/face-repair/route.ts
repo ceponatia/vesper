@@ -120,11 +120,16 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
       return jsonError(faceRepairDiagnosticCode("model_unavailable"), message, 400);
     }
 
-    const pairedProfile = pairFaceRepairIdentityProfile(resolvedProfile);
+    const pairedResult = pairFaceRepairIdentityProfile(resolvedProfile);
+    if (!pairedResult.ok) {
+      sink.push(faceRepairDiagnostic(pairedResult.code, pairedResult.message));
+      return jsonError(faceRepairDiagnosticCode(pairedResult.code), pairedResult.message, 400);
+    }
+
     const identityResult = await identityPackRenderReferences({
       ownerId: user.id,
       characterId,
-      profile: pairedProfile,
+      profile: pairedResult.profile,
       sink,
     });
     if (!identityResult.ok) {
