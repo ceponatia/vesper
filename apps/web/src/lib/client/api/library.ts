@@ -432,13 +432,22 @@ export const charactersApi = {
       retry?:
         | { mode: "new_variation"; sourceImageId?: string }
         | { mode: "same_composition"; sourceImageId: string };
+      /**
+       * The caller's own completion-tracking token (`crypto.randomUUID()`
+       * in the studio), stamped on every row this request reserves — codex
+       * review round 2, threads 3–4: judging completion from a client-side
+       * snapshot of what existed before the request undercounts when the
+       * portraits list has not loaded yet, and drops the OLD request's rows
+       * out from under it once a new one starts.
+       */
+      requestId?: string;
     } = {},
   ) =>
     apiPost(
       // The queuing job's id, for a caller that judges the request's own
       // completion rather than the character's canonical pointer (the
       // portrait studio, best-of-two — codex review round 1, finding A).
-      z.object({ jobId: idSchema.catch("") }).catch({ jobId: "" }),
+      z.object({ jobId: idSchema.catch(""), requestId: idSchema.optional().catch(undefined) }).catch({ jobId: "" }),
       `/api/characters/${id}/avatar`,
       body,
     ),

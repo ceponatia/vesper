@@ -1,70 +1,72 @@
 import type { ImageRecord } from "@/lib/client/api";
 
 /**
- * What the portrait studio remembers about ONE avatar-generation request,
- * captured right before it is sent, so the request's OWN completion can be
- * judged later without depending on the character's canonical pointer
- * (codex review round 1, finding A on issue #248).
+ * What the portrait studio tracks about the CURRENT avatar-generation
+ * request, so its own completion can be judged without depending on the
+ * character's canonical pointer (issue #248 codex review round 1, finding
+ * A) or on a client-side snapshot of what existed before it (round 2,
+ * threads 3–4).
  *
  * The pointer is the wrong signal for a two-candidate request: it
  * deliberately claims no pointer at all (the player chooses via promote), so
  * `characters.avatarImageId` never changes no matter how the render turns
  * out, and a studio that only watches the pointer stays busy forever once
  * both candidates land.
+ *
+ * A snapshot of "rows that already existed" is the wrong signal too: taken
+ * before the portraits list has ever loaded, it is empty — every row the
+ * request goes on to produce reads as "new", so a completion check can fire
+ * on stale, unrelated history and clear the busy state before the request
+ * even reached the provider. And a ref filled in only once the POST
+ * resolves leaves a window where a completion check re-evaluates the
+ * PREVIOUS request's stale record instead of the new one.
+ *
+ * `requestId` closes both holes: it is minted CLIENT-SIDE (needs no
+ * response to exist) and tracked before either phase flips, and the server
+ * stamps it on every row this exact request reserves (`meta.request.id`),
+ * so completion is judged by an id match, never a count against history.
  */
 export interface AvatarGenerationRequest {
-  /**
-   * The queuing job's id, from the 202 response. Carried for traceability
-   * only — no stored row records which job produced it, so the completion
-   * judgment below never looks anything up by it.
-   */
-  readonly jobId: string;
+  readonly requestId: string;
   readonly candidates: 1 | 2;
-  /** Avatar-kind row ids that already existed when this request was sent. */
-  readonly priorAvatarRowIds: ReadonlySet<string>;
-  /** The canonical avatar pointer id before this request was sent. */
-  readonly priorAvatarImageId: string | null;
 }
 
 /** The current state a completion judgment reads — never more of the studio than this. */
 export interface AvatarGenerationSnapshot {
   readonly rows: readonly ImageRecord[];
-  readonly avatarImageId: string | null;
 }
 
 /**
  * The avatar-kind rows THIS request produced — everything of kind `avatar`
- * that was not already present when the request was captured. Exposed
- * separately from the completion check below so a caller that needs to know
- * WHAT happened (a failure toast reading the new rows' own error text) does
- * not have to re-derive the same filter.
+ * whose `meta.request.id` matches. Exposed separately from the completion
+ * check below so a caller that needs to know WHAT happened (a failure toast
+ * reading the new rows' own error text) does not have to re-derive the same
+ * filter.
  */
 export function avatarGenerationRows(
   request: AvatarGenerationRequest,
   rows: readonly ImageRecord[],
 ): ImageRecord[] {
-  return rows.filter((row) => row.kind === "avatar" && !request.priorAvatarRowIds.has(row.id));
+  return rows.filter((row) => row.kind === "avatar" && row.meta?.request?.id === request.requestId);
 }
 
 /**
- * Whether `request` has finished — judged two ways, either sufficient:
+ * Whether `request` has finished: as many rows stamped with its id exist as
+ * it asked for, and every one of them has settled (`ready` or `failed`).
+ * The ONLY signal a two-candidate request ever gets, since it claims no
+ * canonical pointer at all — and it covers a single-candidate SUCCESS or
+ * FAILURE identically, since neither needs the pointer once the row itself
+ * carries the request's own id.
  *
- * 1. The canonical pointer moved to something new (today's mechanism,
- *    unchanged): only a single-candidate success ever claims the pointer, so
- *    this is the ONLY way a single-candidate request was ever detected before
- *    this module existed, and it still is.
- * 2. As many NEW avatar-kind rows exist as this request asked for, and every
- *    one of them has settled (`ready` or `failed`). This is the ONLY signal a
- *    two-candidate request ever gets, since it claims no pointer at all — and
- *    it doubles as a same-shape check for a single-candidate FAILURE, which
- *    also never moves the pointer.
+ * Zero matching rows is always busy, never done — including the instant
+ * after the request was sent but before the server has reserved anything:
+ * there is nothing here to mistake for "nothing was asked for".
  */
 export function isAvatarGenerationComplete(
   request: AvatarGenerationRequest,
   current: AvatarGenerationSnapshot,
 ): boolean {
-  if (current.avatarImageId !== null && current.avatarImageId !== request.priorAvatarImageId) return true;
-  const newRows = avatarGenerationRows(request, current.rows);
-  if (newRows.length < request.candidates) return false;
-  return newRows.every((row) => row.status === "ready" || row.status === "failed");
+  const rows = avatarGenerationRows(request, current.rows);
+  if (rows.length < request.candidates) return false;
+  return rows.every((row) => row.status === "ready" || row.status === "failed");
 }

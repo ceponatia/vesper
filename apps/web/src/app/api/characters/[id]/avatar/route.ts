@@ -38,6 +38,16 @@ const avatarBodySchema = z.object({
    */
   candidates: z.union([z.literal(1), z.literal(2)]).default(1),
   retry: avatarRetryBodySchema.optional(),
+  /**
+   * A client-minted token (the studio uses `crypto.randomUUID()`) stamped on
+   * every row this request reserves, so the caller can judge best-of-two
+   * completion by which rows carry it rather than a snapshot of what existed
+   * before the request — which is empty (and so undercounts) before the
+   * portraits list has ever loaded (codex review round 2, threads 3–4).
+   * Optional: a caller with no completion-tracking need of its own (a
+   * script, an older client) simply gets no `meta.request` on its rows.
+   */
+  requestId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).optional(),
 });
 
 /**
@@ -106,6 +116,7 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
         modelId: body.value.modelId,
         candidates: body.value.candidates,
         ...(body.value.retry ? { retry: body.value.retry } : {}),
+        ...(body.value.requestId ? { requestId: body.value.requestId } : {}),
       },
       run: async () => {
         // Detached job, no route sink to answer to: the lane's degradation
@@ -128,6 +139,7 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
             candidates: body.value.candidates,
             ...(body.value.modelId ? { modelId: body.value.modelId } : {}),
             ...(body.value.retry ? { retry: body.value.retry } : {}),
+            ...(body.value.requestId ? { requestId: body.value.requestId } : {}),
           });
           return { imageId, imageIds };
         } finally {
@@ -140,7 +152,7 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
       if ("admissionPending" in job) return jsonError("admission_pending", "this portrait request is still being admitted; retry shortly", 409);
       return jobCapRejection(job, user, req);
     }
-    return jsonOk({ jobId: job.jobId, characterId: id }, 202);
+    return jsonOk({ jobId: job.jobId, characterId: id, ...(body.value.requestId ? { requestId: body.value.requestId } : {}) }, 202);
   },
   { limit: "image_generate" },
 );

@@ -216,6 +216,24 @@ function resolvedAttemptShape(plan: PlannedImageRender, result: RenderWithModelR
   };
 }
 
+/**
+ * The version pin baked into the model's OWN slug (`owner/name:version`), or
+ * null when the slug carries none.
+ *
+ * Deliberately narrower than `pinnedImageModelVersion` (which also honours a
+ * PROBED version): `replicatePredictionTarget`
+ * (`packages/image-replicate/src/prediction.ts`) sends an explicit
+ * `versionId` or a slug pin to `/predictions`, and otherwise reaches
+ * `/models/<owner>/<name>/predictions` — the provider's floating latest,
+ * ignoring the probed id entirely. Recording the probed id here as
+ * `requestedVersionId` claimed the wire pinned a version it never asked for
+ * (issue #248 codex review round 2, thread 1).
+ */
+function slugVersionPin(slug: string): string | null {
+  const pinned = slug.split(":")[1]?.trim() ?? "";
+  return pinned.length > 0 ? pinned : null;
+}
+
 /** Assemble the provenance record from the plan, the resolved seed, and the provider's echo. */
 function resolvedAttempt(
   intent: ImageRenderIntent,
@@ -232,10 +250,11 @@ function resolvedAttempt(
     task: profile.task,
     promptStrategy: profile.promptStrategy,
     // The version the transport was actually asked for: an explicit pin on
-    // this intent, else the app's own currently pinned version for this
-    // model — never the provider's echo, which `executedVersionId` alone
-    // owns (issue #248 correction round 2, finding 1).
-    requestedVersionId: intent.versionId ?? pinnedImageModelVersion(model),
+    // this intent, else the slug's OWN `:version` pin — never the app's
+    // merely-probed version, which the transport never sends unless the slug
+    // also pins it, and never the provider's echo, which `executedVersionId`
+    // alone owns (issue #248 codex review round 2, thread 1).
+    requestedVersionId: intent.versionId ?? slugVersionPin(model.slug),
     seed,
     appliedControls: plan.appliedControls,
     droppedControls: plan.droppedControls,

@@ -43,10 +43,12 @@ A **Candidates** field beside the image model picker offers *One portrait* (defa
 candidates* — the player ceiling. Two candidates compile one program and render both
 sequentially; neither claims the portrait pointer, so both land in **Portrait history** captioned
 *Candidate 1 of 2* / *Candidate 2 of 2*, with a header line explaining the choice and **Use this
-one** (the same promote action as any other variant) in place of **Promote**. The generate controls
-stay busy until every row the request asked for has settled — one row for an ordinary generation,
-both candidates for a two-candidate request — rather than watching the portrait pointer alone,
-which a two-candidate request never claims. Once a portrait
+one** (the same promote action as any other variant) in place of **Promote**. Each generate request
+carries its own client-minted id, stamped on every row it reserves; the generate controls stay busy
+until every row carrying that id has settled — one row for an ordinary generation, both candidates
+for a two-candidate request — rather than watching the portrait pointer alone, which a
+two-candidate request never claims, or counting rows against whatever history happened to be
+loaded before the request was sent. Once a portrait
 exists, **Regenerate portrait** keeps its usual primary/ghost emphasis and defaults to a fresh
 sampling attempt (a "new variation"); a small secondary **Same composition** control beside it
 asks instead to reuse this portrait's exact settings, disabled with a short reason (no seed was

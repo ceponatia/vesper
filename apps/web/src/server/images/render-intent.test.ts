@@ -255,19 +255,32 @@ describe("attempt provenance", () => {
     expect(result.attempt?.requestedVersionId).toBe("v-pinned");
   });
 
-  it("falls back to the app's own currently pinned version when the intent carries none (issue #248 correction round 2, finding 1)", async () => {
-    // No caller ever sets `intent.versionId` on the production portrait lane —
-    // recording `requestedVersionId` as a bare `null` there made every replay
-    // eligibility check compare a pin against an echo. A model whose SLUG pins
-    // a version must record that pin as what was requested, even though
-    // nothing on the intent said so explicitly.
+  it("falls back to the slug's OWN version pin when the intent carries none (issue #248 codex review round 2, thread 1)", async () => {
+    // No caller ever sets `intent.versionId` on the production portrait lane.
+    // A model whose SLUG pins a version (`owner/name:version`) records that
+    // pin as what was requested, because `replicatePredictionTarget` reads
+    // that exact slug and routes to `/predictions` with it — the wire truly
+    // did ask for it, unprompted by the intent.
     const pinnedSlugProfile = resolved();
     pinnedSlugProfile.model = { ...pinnedSlugProfile.model, slug: "vesper-test/render-intent:v-slug-pin" };
     const result = await renderImageIntent(intent({ profile: pinnedSlugProfile }));
     expect(result.attempt?.requestedVersionId).toBe("v-slug-pin");
   });
 
-  it("records null when the intent carries no pin and the app pins nothing for this model", async () => {
+  it("never records the merely PROBED version — a bare slug with no :version suffix reaches the floating-latest endpoint regardless (issue #248 codex review round 2, thread 1)", async () => {
+    // The bug this closes: recording `pinnedImageModelVersion` (probed OR
+    // slug) as `requestedVersionId` claimed a bare-slug model pinned the
+    // version its capabilities were PROBED against, even though
+    // `replicatePredictionTarget` never sends it — that request reaches
+    // `/models/<owner>/<name>/predictions` and follows whatever Replicate
+    // currently calls `latest_version`.
+    const probedUnpinnedProfile = resolved();
+    probedUnpinnedProfile.model = { ...probedUnpinnedProfile.model, probedVersionId: "v-probed-only" };
+    const result = await renderImageIntent(intent({ profile: probedUnpinnedProfile }));
+    expect(result.attempt?.requestedVersionId).toBeNull();
+  });
+
+  it("records null when the intent carries no pin and the slug pins nothing for this model", async () => {
     const result = await renderImageIntent(intent());
     expect(result.attempt?.requestedVersionId).toBeNull();
   });

@@ -196,14 +196,6 @@ export function PortraitStudio({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [acceptingPortrait, setAcceptingPortrait] = useState(false);
 
-  // Once the avatar id changes (a generate finished or a variant was
-  // promoted), stop treating the avatar job as pending. Adjusted during
-  // render — the "previous render" pattern — rather than setState in an effect.
-  const [prevAvatarImageId, setPrevAvatarImageId] = useState(avatarImageId);
-  if (avatarImageId !== prevAvatarImageId) {
-    setPrevAvatarImageId(avatarImageId);
-    if (avatarImageId) setAvatarPhase(null);
-  }
   useEffect(() => {
     if (avatarImageId) avatarActionRef.current = false;
   }, [avatarImageId]);
@@ -218,10 +210,12 @@ export function PortraitStudio({
   const generatingAvatar = avatarPhase !== null;
   const hasPending = hasPendingRow || rendering || generatingAvatar || variantQueued;
 
-  // What THIS avatar request asked for and what existed before it — lets the
-  // effect below judge the request's own completion instead of the
-  // canonical pointer, which a two-candidate request never claims (codex
-  // review round 1, finding A on issue #248).
+  // The current avatar request's client-minted id and candidate count —
+  // lets the effect below judge completion from the rows THIS request
+  // stamped, never the canonical pointer (which a two-candidate request
+  // never claims) and never a snapshot of pre-existing rows (which a
+  // completion check firing before the portraits list has loaded would
+  // wrongly read as empty; issue #248 codex review round 2, threads 3–4).
   const avatarRequestRef = useRef<AvatarGenerationRequest | null>(null);
 
   // Poll while anything is generating; also nudge the parent so a finished
@@ -237,18 +231,20 @@ export function PortraitStudio({
   );
 
   // Neither a two-candidate request (which claims no pointer at all) nor a
-  // single-candidate FAILURE (which never moves it either) ever clears via
-  // the pointer-change block above — codex review round 1, finding A. Judge
-  // completion from the request's own rows instead: as many new avatar-kind
-  // rows as were asked for, every one of them settled. A partial failure
-  // inside a two-candidate group is still a CHOICE, not an error, so the
-  // failure toast fires only when every new row failed.
+  // single-candidate FAILURE (which never moves it either) ever moves the
+  // canonical pointer, so completion is judged from the request's OWN rows:
+  // every row stamped with this request's `meta.request.id`, never a
+  // snapshot of what existed before it — which would be wrongly empty
+  // before the portraits list has ever loaded (codex review round 2,
+  // threads 3–4). A partial failure inside a two-candidate group is still a
+  // CHOICE, not an error, so the failure toast fires only when every
+  // stamped row failed.
   useEffect(() => {
     if (avatarPhase !== "generating") return;
     const request = avatarRequestRef.current;
     if (!request) return;
     const currentRows = portraits.data?.portraits ?? [];
-    if (!isAvatarGenerationComplete(request, { rows: currentRows, avatarImageId })) return;
+    if (!isAvatarGenerationComplete(request, { rows: currentRows })) return;
     setAvatarPhase(null);
     avatarActionRef.current = false;
     const newRows = avatarGenerationRows(request, currentRows);
@@ -262,7 +258,7 @@ export function PortraitStudio({
         tone: "error",
       });
     }
-  }, [portraits.data, avatarImageId, avatarPhase, toast]);
+  }, [portraits.data, avatarPhase, toast]);
 
   /**
    * `retry` states explicit semantics for a REGENERATION (issue #248) —
@@ -276,13 +272,17 @@ export function PortraitStudio({
     if (avatarActionRef.current || generationDisabled || pendingProposalCount > 0) return;
     avatarActionRef.current = true;
     const requestedCandidates = retry?.mode === "same_composition" ? 1 : candidateCount;
-    // Snapshot what exists BEFORE this request, so the completion effect can
-    // tell this request's own new rows from everything already in the
-    // history grid (codex review round 1, finding A).
-    const priorAvatarRowIds = new Set(
-      (portraits.data?.portraits ?? []).filter((img) => img.kind === "avatar").map((img) => img.id),
-    );
-    const priorAvatarImageId = avatarImageId;
+    // Minted and tracked BEFORE either phase flips (codex review round 2,
+    // threads 3–4): the ref used to be filled in only after the POST
+    // resolved, which left a window — anywhere from here to that response —
+    // where a completion check firing mid-request judged the PREVIOUS
+    // request's stale record, or found none at all. A client-minted id also
+    // needs no snapshot of what existed before it: the server stamps it on
+    // every row THIS request reserves, so completion is judged by that id
+    // alone, never by counting rows against a history that might not have
+    // loaded yet.
+    const requestId = crypto.randomUUID();
+    avatarRequestRef.current = { requestId, candidates: requestedCandidates };
     setAvatarPhase("saving");
     const source = await prepareGeneration();
     if (!source) {
@@ -295,15 +295,10 @@ export function PortraitStudio({
       authoringRevision: source.authoringRevision,
       modelId: pickedProfileId(avatarProfileId),
       candidates: requestedCandidates,
+      requestId,
       ...(retry ? { retry } : {}),
     });
     if (result.ok) {
-      avatarRequestRef.current = {
-        jobId: result.data.jobId,
-        candidates: requestedCandidates,
-        priorAvatarRowIds,
-        priorAvatarImageId,
-      };
       toast.push({
         title: retry?.mode === "same_composition" ? "Replaying the same composition" : "Avatar queued",
         description:

@@ -126,14 +126,16 @@ Every generating lane then records the attempt under `images.meta.render` — mo
 prompt strategy, resolved seed, applied and dropped controls, the reference roles actually sent
 (truncated to what the byte budget let through), the prediction id, the version the provider says
 it executed (`executedVersionId`), and the version the transport was actually ASKED for
-(`requestedVersionId`: an explicit pin on the intent, else the app's own currently pinned version
-for that model, else `null` when the app pins nothing) — on failures too where the lane's failure
-shape returns rather than throws. `requestedVersionId` and `executedVersionId` answer different
-questions and must never stand in for each other: a retry that compares a PIN against an ECHO
-either refuses a model the app pins whose transport happens to echo no version, or approves a
-model the app does not pin whose provider happens to echo a hash. That record is what a retry of
-the same composition reads. The character-fact lanes file a second, sibling provenance key beside
-it — `images.meta.visualState`, the visual-digest record
+(`requestedVersionId`: an explicit pin on the intent, else the model's OWN slug pin
+(`owner/name:version`), else `null` when neither the intent nor the slug pins one). A registry
+row's separately PROBED version — which schema informed its stored capability bindings — is never
+recorded here: a bare, unpinned slug reaches the provider's floating-latest endpoint regardless of
+what was probed, so claiming that id as what was "asked for" would describe a request the transport
+never sent. `requestedVersionId` and `executedVersionId` answer different questions and must never
+stand in for each other — one is the ask, the other is the provider's own echo of what actually
+ran — on failures too where the lane's failure shape returns rather than throws. That record is
+what a retry of the same composition reads. The character-fact lanes file a second, sibling
+provenance key beside it — `images.meta.visualState`, the visual-digest record
 ([../pipelines/README.md](../pipelines/README.md)).
 
 Alongside it sits `shape` — the render's own answer to "was the frame cut, where, and why"
@@ -156,12 +158,14 @@ explicit `controls.seed`, but only when the eligibility table in
 [../pipelines/avatars.md](../pipelines/avatars.md) §Same-composition eligibility holds — an
 unrecorded seed, a changed model or version, an unreadable prompt program, a demo-mode request, or
 a world that moved since the source rendered must never pass silently as "the same composition";
-each fails the row before provider spend, naming why. On a model the app does not pin at all, a
-replay reuses the seed against whatever version the provider currently serves, and the record says
-so (`meta.retry.pinnedVersionId: null`) rather than refusing outright — still a reproducibility
-request, never a pixel guarantee. Portraits send no references at all (every portrait profile's
-reference policy allows none),
-so a "reference went missing" refusal cannot arise on this lane — there is nothing to go missing.
+each fails the row before provider spend, naming why. The replay PINS EXPLICITLY too: it sends the
+source row's own version (`meta.render.executedVersionId`, falling back to `requestedVersionId` for
+a row whose provider echoed nothing) as `intent.versionId`, so the wire runs exactly the weights
+that produced the source rather than hoping a bare slug's floating latest still matches — and the
+row's own `meta.retry.pinnedVersionId` says which version that was, `null` meaning the replay
+floats along exactly like the source render did. Portraits send no references at all (every
+portrait profile's reference policy allows none), so a "reference went missing" refusal cannot
+arise on this lane — there is nothing to go missing.
 
 ## Selection stays fail-visible
 
