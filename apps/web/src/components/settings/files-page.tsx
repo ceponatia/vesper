@@ -1,28 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { meApi } from "@/lib/client/api";
+import { useMemo, useRef, useState } from "react";
+import { adminFilesApi, meApi, type AdminFileEntry } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-
-interface FileEntry {
-  name: string;
-  path: string;
-  kind: "file" | "folder";
-  size: number | null;
-  modifiedAt: string;
-}
-
-interface ListResponse {
-  path: string;
-  entries: FileEntry[];
-}
-
-interface ApiErrorEnvelope {
-  error?: { code?: string; message?: string };
-}
 
 interface UploadState {
   fileName: string;
@@ -32,23 +15,18 @@ interface UploadState {
   total: number;
 }
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const payload = (await response.json().catch(() => ({}))) as T & ApiErrorEnvelope;
-  if (!response.ok) throw new Error(payload.error?.message || `Request failed (${response.status})`);
-  return payload;
-}
-
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return "Folder";
   if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
+
+  const units = ["KB", "MB", "GB", "TB"] as const;
   let value = bytes / 1024;
-  let unit = units[0]!;
-  for (let i = 1; i < units.length && value >= 1024; i += 1) {
+  let unitIndex = 0;
+  while (unitIndex < units.length - 1 && value >= 1024) {
     value /= 1024;
-    unit = units[i]!;
+    unitIndex += 1;
   }
+  const unit = units[unitIndex] ?? "KB";
   return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${unit}`;
 }
 
@@ -63,163 +41,116 @@ function parentPathFor(pathValue: string): string {
   return segments.join("/");
 }
 
-function downloadUrl(pathValue: string): string {
-  return `/api/admin/self/files/download?${new URLSearchParams({ path: pathValue }).toString()}`;
-}
-
-function parseXhrError(xhr: XMLHttpRequest): { code: string; message: string } {
-  try {
-    const body = JSON.parse(xhr.responseText) as ApiErrorEnvelope;
-    return {
-      code: body.error?.code ?? "upload_failed",
-      message: body.error?.message ?? `Upload failed (${xhr.status})`,
-    };
-  } catch {
-    return { code: "upload_failed", message: `Upload failed (${xhr.status})` };
-  }
-}
-
 export function FilesPage() {
   const me = useAsyncData(() => meApi.get(), []);
   const inputRef = useRef<HTMLInputElement>(null);
   const [pathValue, setPathValue] = useState("");
-  const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [upload, setUpload] = useState<UploadState | null>(null);
+  const directory = useAsyncData(() => adminFilesApi.list(pathValue), [pathValue]);
 
   const isAdmin = me.data?.role === "admin";
-
-  const loadDirectory = useCallback(async (target: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const query = new URLSearchParams({ path: target });
-      const result = await requestJson<ListResponse>(`/api/admin/self/files?${query.toString()}`);
-      setEntries(result.entries);
-    } catch (loadError) {
-      setEntries([]);
-      setError(loadError instanceof Error ? loadError.message : "Could not load files");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isAdmin) void loadDirectory(pathValue);
-  }, [isAdmin, loadDirectory, pathValue]);
+  const entries = directory.data?.entries ?? [];
+  const visibleError = actionError ?? directory.error?.message ?? me.error?.message ?? null;
 
   const breadcrumbs = useMemo(() => {
     const segments = pathValue.split("/").filter(Boolean);
     return segments.map((name, index) => ({ name, path: segments.slice(0, index + 1).join("/") }));
   }, [pathValue]);
 
-  const mutate = useCallback(async (body: unknown) => {
-    return requestJson<{ entry?: FileEntry; ok?: boolean }>("/api/admin/self/files", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  }, []);
+  const navigate = (target: string) => {
+    setActionError(null);
+    setPathValue(target);
+  };
 
   const createFolder = async () => {
     const name = window.prompt("New folder name");
     if (name === null) return;
     setBusyPath("__new_folder__");
-    setError(null);
+    setActionError(null);
     try {
-      await mutate({ action: "create_folder", path: pathValue, name });
-      await loadDirectory(pathValue);
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Could not create folder");
+      const result = await adminFilesApi.createFolder(pathValue, name);
+      if (!result.ok) {
+        setActionError(result.error.message);
+        return;
+      }
+      directory.reload();
     } finally {
       setBusyPath(null);
     }
   };
 
-  const renameEntry = async (entry: FileEntry) => {
+  const renameEntry = async (entry: AdminFileEntry) => {
     const name = window.prompt(`Rename ${entry.name}`, entry.name);
     if (name === null || name === entry.name) return;
     setBusyPath(entry.path);
-    setError(null);
+    setActionError(null);
     try {
-      await mutate({ action: "rename", path: entry.path, name });
-      await loadDirectory(pathValue);
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Could not rename item");
+      const result = await adminFilesApi.rename(entry.path, name);
+      if (!result.ok) {
+        setActionError(result.error.message);
+        return;
+      }
+      directory.reload();
     } finally {
       setBusyPath(null);
     }
   };
 
-  const deleteEntry = async (entry: FileEntry) => {
+  const deleteEntry = async (entry: AdminFileEntry) => {
     const label = entry.kind === "folder" ? `folder “${entry.name}”` : `file “${entry.name}”`;
-    if (!window.confirm(`Delete ${label}?${entry.kind === "folder" ? " The folder must be empty." : ""}`)) return;
+    const warning = entry.kind === "folder" ? " The folder must be empty." : "";
+    if (!window.confirm(`Delete ${label}?${warning}`)) return;
+
     setBusyPath(entry.path);
-    setError(null);
+    setActionError(null);
     try {
-      await mutate({ action: "delete", path: entry.path });
-      await loadDirectory(pathValue);
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Could not delete item");
+      const result = await adminFilesApi.delete(entry.path);
+      if (!result.ok) {
+        setActionError(result.error.message);
+        return;
+      }
+      directory.reload();
     } finally {
       setBusyPath(null);
     }
   };
 
-  const uploadOne = useCallback(
-    (file: File, overwrite: boolean, fileIndex: number, fileCount: number): Promise<"ok" | "conflict"> =>
-      new Promise((resolve, reject) => {
-        const query = new URLSearchParams({ path: pathValue, name: file.name });
-        if (overwrite) query.set("overwrite", "1");
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", `/api/admin/self/files/upload?${query.toString()}`);
-        xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        xhr.upload.onprogress = (event) => {
-          setUpload({
-            fileName: file.name,
-            fileIndex,
-            fileCount,
-            loaded: event.loaded,
-            total: event.lengthComputable ? event.total : file.size,
-          });
-        };
-        xhr.onerror = () => reject(new Error("Upload failed before Vesper returned a response"));
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve("ok");
-            return;
-          }
-          const parsed = parseXhrError(xhr);
-          if (xhr.status === 409 && parsed.code === "already_exists" && !overwrite) {
-            resolve("conflict");
-            return;
-          }
-          reject(new Error(parsed.message));
-        };
-        xhr.send(file);
-      }),
-    [pathValue],
-  );
+  const uploadOne = async (file: File, overwrite: boolean, fileIndex: number, fileCount: number) => {
+    return adminFilesApi.upload({
+      path: pathValue,
+      file,
+      overwrite,
+      onProgress: ({ loaded, total }) => {
+        setUpload({ fileName: file.name, fileIndex, fileCount, loaded, total });
+      },
+    });
+  };
 
   const uploadFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    setError(null);
+    setActionError(null);
+
     try {
       for (let index = 0; index < files.length; index += 1) {
         const file = files.item(index);
         if (!file) continue;
-        setUpload({ fileName: file.name, fileIndex: index + 1, fileCount: files.length, loaded: 0, total: file.size });
-        const first = await uploadOne(file, false, index + 1, files.length);
-        if (first === "conflict") {
+        const fileIndex = index + 1;
+        setUpload({ fileName: file.name, fileIndex, fileCount: files.length, loaded: 0, total: file.size });
+
+        let result = await uploadOne(file, false, fileIndex, files.length);
+        if (!result.ok && result.error.status === 409 && result.error.code === "already_exists") {
           const replace = window.confirm(`“${file.name}” already exists. Replace the existing file?`);
-          if (replace) await uploadOne(file, true, index + 1, files.length);
+          if (!replace) continue;
+          result = await uploadOne(file, true, fileIndex, files.length);
+        }
+        if (!result.ok) {
+          setActionError(result.error.message);
+          break;
         }
       }
-      await loadDirectory(pathValue);
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed");
+      directory.reload();
     } finally {
       setUpload(null);
       if (inputRef.current) inputRef.current.value = "";
@@ -271,7 +202,7 @@ export function FilesPage() {
         </div>
 
         <div className="mt-6 flex min-h-9 flex-wrap items-center gap-1 rounded-md border border-ink-600 bg-ink-800 px-2 py-1 text-sm">
-          <button type="button" className="rounded px-2 py-1 text-paper-300 hover:bg-ink-700 hover:text-paper-100" onClick={() => setPathValue("")}>
+          <button type="button" className="rounded px-2 py-1 text-paper-300 hover:bg-ink-700 hover:text-paper-100" onClick={() => navigate("")}>
             Files
           </button>
           {breadcrumbs.map((crumb) => (
@@ -280,7 +211,7 @@ export function FilesPage() {
               <button
                 type="button"
                 className="max-w-48 truncate rounded px-2 py-1 text-paper-300 hover:bg-ink-700 hover:text-paper-100"
-                onClick={() => setPathValue(crumb.path)}
+                onClick={() => navigate(crumb.path)}
               >
                 {crumb.name}
               </button>
@@ -290,7 +221,7 @@ export function FilesPage() {
 
         {pathValue ? (
           <div className="mt-2">
-            <Button size="sm" variant="quiet" onClick={() => setPathValue(parentPathFor(pathValue))}>← Up one folder</Button>
+            <Button size="sm" variant="quiet" onClick={() => navigate(parentPathFor(pathValue))}>← Up one folder</Button>
           </div>
         ) : null}
 
@@ -306,9 +237,9 @@ export function FilesPage() {
           </div>
         ) : null}
 
-        {error ? (
+        {visibleError ? (
           <div className="mt-4 rounded-md border border-danger-500/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-300" role="alert">
-            {error}
+            {visibleError}
           </div>
         ) : null}
 
@@ -320,7 +251,7 @@ export function FilesPage() {
             <span className="text-right">Actions</span>
           </div>
 
-          {loading ? (
+          {directory.loading ? (
             <div className="p-4"><Skeleton className="h-10 w-full" /></div>
           ) : entries.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-paper-500">This folder is empty.</div>
@@ -337,14 +268,14 @@ export function FilesPage() {
                       <button
                         type="button"
                         className="max-w-full truncate text-left text-sm font-medium text-paper-100 hover:text-accent-300"
-                        onClick={() => setPathValue(entry.path)}
+                        onClick={() => navigate(entry.path)}
                       >
                         {entry.name}/
                       </button>
                     ) : (
                       <a
                         className="block truncate text-sm font-medium text-paper-100 hover:text-accent-300"
-                        href={downloadUrl(entry.path)}
+                        href={adminFilesApi.downloadUrl(entry.path)}
                       >
                         {entry.name}
                       </a>
@@ -359,7 +290,7 @@ export function FilesPage() {
                     {entry.kind === "file" ? (
                       <a
                         className="touch-target inline-flex h-7 items-center rounded-md px-2.5 text-xs text-paper-400 transition-colors hover:bg-ink-700 hover:text-paper-100"
-                        href={downloadUrl(entry.path)}
+                        href={adminFilesApi.downloadUrl(entry.path)}
                       >
                         Download
                       </a>
