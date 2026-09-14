@@ -48,6 +48,7 @@ const ALLOWED_DIALOG_IMPORTERS: readonly string[] = [
   "apps/web/src/components/chat/chats-page.tsx",
   "apps/web/src/components/chat/new-chat-dialog.tsx",
   "apps/web/src/components/library/entity-picker.tsx",
+  "apps/web/src/components/settings/files-page.tsx",
   "apps/web/src/components/settings/identity-trials-page.tsx",
   "apps/web/src/components/ui/confirm-dialog.tsx",
 ];
@@ -114,6 +115,7 @@ describe("raw Dialog importer census", () => {
 const MIXED_USE_CONFIRM_SITES: ReadonlyMap<string, number> = new Map([
   ["apps/web/src/components/chat/chat-conversation.tsx", 1],
   ["apps/web/src/components/chat/chats-page.tsx", 1],
+  ["apps/web/src/components/settings/files-page.tsx", 1],
 ]);
 
 /** `<ConfirmDialog` sites in `file`, comments blanked so prose never counts. */
