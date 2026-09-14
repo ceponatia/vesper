@@ -68,15 +68,26 @@ case "${1:-}" in
 esac
 EOF
 
+# Models `gh issue develop` as gh 2.89.0 defines it: --base, --branch-repo,
+# --checkout, --list and --name, beside the global --repo, and an unknown flag
+# is an error. A fake that accepts whatever it is handed cannot catch a helper
+# shipping a command line no installed gh will run, which is how --worktree
+# survived here.
 cat >"$BIN/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'gh' >>"$FAKE_LOG"
 printf ' %q' "$@" >>"$FAKE_LOG"
 printf '\n' >>"$FAKE_LOG"
+[ "${1:-}" = issue ] && [ "${2:-}" = develop ] || exit 0
+shift 2
 while [ $# -gt 0 ]; do
-  if [ "$1" = --worktree ]; then mkdir -p "$2"; exit 0; fi
-  shift
+  case "$1" in
+    --repo|--base|--branch-repo|--name) shift 2 ;;
+    --checkout|--list) shift ;;
+    -*) echo "unknown flag: $1" >&2; exit 1 ;;
+    *) shift ;;
+  esac
 done
 EOF
 
@@ -104,11 +115,16 @@ run_down() {
 fail() { echo "$1" >&2; exit 1; }
 
 output=$(run_up 42 feature --no-install)
-grep -Fq "gh issue develop 42 --repo ceponatia/vesper --base main --name codex/42-feature --checkout --worktree $MAIN/.codex/worktrees/issue-42" "$LOG" \
-  || fail "worktree-up did not target the main checkout"
+grep -Fq "gh issue develop 42 --repo ceponatia/vesper --base main --name codex/42-feature" "$LOG" \
+  || fail "worktree-up did not register the linked branch"
+! grep -Fq -- "--worktree" "$LOG" || fail "worktree-up passed a flag gh issue develop does not define"
+grep -Fq "git -C $MAIN fetch -q origin codex/42-feature" "$LOG" \
+  || fail "worktree-up did not fetch the branch gh created on the remote"
+grep -Fq "git -C $MAIN worktree add $MAIN/.codex/worktrees/issue-42 codex/42-feature" "$LOG" \
+  || fail "worktree-up did not add the linked worktree under the main checkout"
 ! grep -Fq "$SESSION/.codex/worktrees" "$LOG" || fail "worktree-up nested the worktree in the invoking worktree"
 grep -Fq "branch:   codex/42-feature @ abc1234" <<<"$output" || fail "worktree-up did not print the summary"
-echo 'ok  worktree-up places the worktree under the main checkout from any checkout'
+echo 'ok  worktree-up registers the linked branch and places its worktree under the main checkout'
 
 rm -rf "$MAIN/.codex"
 : >"$LOG"
