@@ -41,6 +41,14 @@ GATE_SCRIPT = re.compile(r"^(test|lint|typecheck|verify|vitest|build)(?::[\w.-]+
 GATE_ALLOWED = {"lint:docs"}  # sanctioned for documentation-only changes (AGENTS.md)
 PNPM_PASSTHROUGH = {"run", "exec", "dlx", "-r", "--recursive", "-w", "--workspace-root", "--stream", "--parallel"}
 RUNNERS = {"npx", "pnpx", "bunx"}  # `npx vitest …` — owner ruling 2026-09-04: no local vitest either
+# Runner options that consume the NEXT token, so the checker is not simply the
+# word after the runner. `npx --package=typescript -- tsc` and `npx --yes tsc`
+# are documented npm-exec spellings, and reading only the first argument let
+# both through (PR review, 2026-09-14).
+RUNNER_VALUE_OPTS = {"--package", "-p", "--userconfig", "--cache", "--shell", "--npm", "--node-arg"}
+# `-c`/`--call` runs its value as a shell string: `npx -c "tsc --noEmit"`. The
+# command lives inside one token, so it is re-tokenized rather than skipped.
+RUNNER_CALL_OPTS = {"-c", "--call"}
 # The checkers themselves, caught by basename so a path-qualified or
 # runner-prefixed spelling lands the same way: `tsc`, `npx tsc`,
 # `pnpm exec tsc`, `./node_modules/.bin/tsc`.
@@ -165,6 +173,44 @@ def commit_pathspec(args: list[str]) -> tuple[bool, bool]:
     return has_path, all_flag
 
 
+def skip_runner_options(seg: list[str], start: int) -> tuple[int, str | None]:
+    """Advance past a runner's own options to the command it will run.
+
+    Returns `(index, call_value)`. A `--` ends the options outright; a
+    value-taking option consumes two tokens; any other `-` token consumes one.
+    `call_value` is set when the command was handed over as a shell string
+    instead, which the caller re-tokenizes.
+    """
+    i = start
+    while i < len(seg):
+        token = seg[i]
+        if token == "--":
+            return i + 1, None
+        if token in RUNNER_CALL_OPTS:
+            return i + 2, (seg[i + 1] if i + 1 < len(seg) else None)
+        if token in RUNNER_VALUE_OPTS:
+            i += 2
+            continue
+        if token.startswith("-"):
+            # `--package=typescript` carries its value inline; a bare flag such
+            # as `--yes` carries none. Either way it is one token.
+            i += 1
+            continue
+        return i, None
+    return i, None
+
+
+def gate_behind(seg: list[str], start: int) -> str | None:
+    """The checker a runner is about to execute, past that runner's options."""
+    index, call = skip_runner_options(seg, start)
+    if call is not None:
+        inner = tokenize(call)
+        return gate_binary(inner[0]) or gate_builder(inner, 0) if inner else None
+    if index >= len(seg):
+        return None
+    return gate_binary(seg[index]) or gate_builder(seg, index)
+
+
 def gate_binary(token: str) -> str | None:
     """The checker a token names, ignoring any directory and `.cmd`/`.exe` tail."""
     base = os.path.basename(token)
@@ -204,7 +250,7 @@ def gate_violation(seg: list[str]) -> str | None:
     if direct:
         return direct
     if seg[0] in RUNNERS and len(seg) > 1:
-        behind = gate_binary(seg[1]) or gate_builder(seg, 1)
+        behind = gate_behind(seg, 1)
         if behind:
             return f"{seg[0]} {behind}"
 
@@ -217,6 +263,10 @@ def gate_violation(seg: list[str]) -> str | None:
             i += 1
         elif t in ("--filter", "-F", "-C", "--dir"):
             i += 2
+        elif t.startswith("-"):
+            # Same hole as the runners: `pnpm exec --package=typescript tsc`
+            # parked an option where the script name was expected.
+            i += 1
         else:
             break
     if i >= len(seg):
@@ -225,7 +275,7 @@ def gate_violation(seg: list[str]) -> str | None:
     if GATE_SCRIPT.match(script) and script not in GATE_ALLOWED:
         return f"pnpm {script}"
     # `pnpm exec tsc`, `pnpm dlx eslint`, `pnpm run build` into a bundler.
-    behind_pnpm = gate_binary(script) or gate_builder(seg, i)
+    behind_pnpm = gate_behind(seg, i)
     if behind_pnpm:
         return f"pnpm {behind_pnpm}"
     return None

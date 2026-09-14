@@ -78,6 +78,19 @@ REFUSED = [
     ("cd /tmp/scratch && tsc -p tsconfig.json", "after a cd, in its own segment"),
     ("VESPER_INDEX_OK=1 tsc --noEmit", "behind an env prefix"),
     ("git status && npx tsc --noEmit", "chained after allowed work"),
+    # Runner options sit between the runner and the checker in every documented
+    # npm-exec spelling, so reading only the first argument missed all of these
+    # (PR review, 2026-09-14). `-p` and `-y` are the short forms; the pnpm walk
+    # had the same hole one layer down.
+    ("npx --package=typescript -- tsc --noEmit", "--package= then a -- separator"),
+    ("npx --yes tsc", "a bare flag before the checker"),
+    ("npx -y tsc --noEmit", "the short flag"),
+    ("npx -p typescript tsc", "--package's short form, value-taking"),
+    ("npx --package typescript tsc --noEmit", "--package with a separate value"),
+    ("npx -c \"tsc --noEmit\"", "the checker inside a --call shell string"),
+    ("pnpm exec --package=typescript tsc", "the same hole in the pnpm walk"),
+    ("pnpm dlx --yes eslint .", "a flag before the linter"),
+    ("npx --package=x -- next build", "a bundler behind the separator"),
 ]
 
 # Each must keep working. A hook that blocks ordinary work gets routed around.
@@ -95,6 +108,8 @@ ALLOWED = [
     "pnpm install --offline --frozen-lockfile",
     "next dev",
     "rg --files-with-matches eslint",
+    "npx --yes prettier --check .",
+    "npx --package=cowsay -- cowsay hello",
     "sed -n '1,40p' apps/web/src/lib/media-preview.ts",
 ]
 

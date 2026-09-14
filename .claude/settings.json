@@ -71,7 +71,25 @@
       "Bash(node_modules/.bin/eslint)",
       "Bash(node_modules/.bin/eslint *)",
       "Bash(./node_modules/.bin/eslint)",
-      "Bash(./node_modules/.bin/eslint *)"
+      "Bash(./node_modules/.bin/eslint *)",
+      "Bash(npx --yes tsc)",
+      "Bash(npx --yes tsc *)",
+      "Bash(npx -y tsc)",
+      "Bash(npx -y tsc *)",
+      "Bash(npx --package=typescript)",
+      "Bash(npx --package=typescript *)",
+      "Bash(npx -p typescript)",
+      "Bash(npx -p typescript *)",
+      "Bash(npx --yes eslint)",
+      "Bash(npx --yes eslint *)",
+      "Bash(npx -y eslint)",
+      "Bash(npx -y eslint *)",
+      "Bash(pnpm exec --package=typescript)",
+      "Bash(pnpm exec --package=typescript *)",
+      "Bash(pnpm dlx --yes tsc)",
+      "Bash(pnpm dlx --yes tsc *)",
+      "Bash(pnpm dlx --yes eslint)",
+      "Bash(pnpm dlx --yes eslint *)"
     ]
   },
   "hooks": {
