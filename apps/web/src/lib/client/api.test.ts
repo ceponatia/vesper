@@ -194,6 +194,36 @@ describe("avatarReplayHintSchema / avatarReplayMapSchema (issue #248)", () => {
   });
 });
 
+describe("charactersApi.generateAvatar / portraits (codex review round 1, issue #248)", () => {
+  it("decodes the queuing job's id from the 202 response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ jobId: "job-1", characterId: "chr-1" }, 202)));
+    const result = await charactersApi.generateAvatar("chr-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.data.jobId).toBe("job-1");
+  });
+
+  it("degrades to an empty jobId rather than failing the request when the body is malformed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, 202)));
+    const result = await charactersApi.generateAvatar("chr-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.data.jobId).toBe("");
+  });
+
+  it("sends the caller's modelId as a query param, and omits it when absent (finding B: the same-composition hint must judge the selected profile, not always the task default)", async () => {
+    const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) =>
+      jsonResponse({ portraits: [], rendering: false, replay: {} }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await charactersApi.portraits("chr-1", { modelId: "prf-standard" });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/characters/chr-1/portraits?modelId=prf-standard");
+    fetchMock.mockClear();
+    await charactersApi.portraits("chr-1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/characters/chr-1/portraits");
+  });
+});
+
 describe("imageAdvisoriesApi.review", () => {
   it("reports ok:true on a PATCH response carrying a newer advisory version (issue #249 correction round 1)", async () => {
     // Regression: the response schema used to be `renderAdvisorySchema.extend(...)`,

@@ -39,8 +39,13 @@ type OwnedCharacter = NonNullable<Awaited<ReturnType<typeof findOwnedCharacter>>
 export const GET = withAuthorizedResource<Params, OwnedCharacter>(
   "character",
   ownedCharacter,
-  async (user, _character, _req, ctx) => {
+  async (user, _character, req, ctx) => {
     const { id } = await ctx.params;
+    // The studio's current profile-picker selection, so the cheap hint below
+    // judges against what a retry right now would actually resolve to
+    // (codex review round 1, finding B) — absent, it falls back to the task
+    // default, exactly like today.
+    const modelId = req.nextUrl.searchParams.get("modelId") ?? undefined;
     const [portraits, avatarLive, variantLive] = await Promise.all([
       listOwnedPortraits(user.id, id),
       hasLiveCharacterJob("avatar", id),
@@ -49,7 +54,7 @@ export const GET = withAuthorizedResource<Params, OwnedCharacter>(
     // The cheap same-composition hint per row (issue #248) — seed recorded,
     // model/profile/version still current. A world-state change is only
     // detectable at request time, so it never shows up here.
-    const replay = await avatarReplayMapForPortraits(portraits, user.id, id);
+    const replay = await avatarReplayMapForPortraits(portraits, user.id, id, modelId);
     return jsonOk({ portraits, rendering: avatarLive || variantLive, replay });
   },
 );

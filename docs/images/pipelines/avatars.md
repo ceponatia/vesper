@@ -294,6 +294,10 @@ version still current) — never `world_changed` or `program_unrecorded`, since
 no program is compiled at list time — so the Regenerate menu can disable
 "Same composition" with a reason before the player even asks; a world-state
 change surfaces only as the request's own refusal, once a program actually
-compiles. Portraits send no references at all (every portrait profile's
-reference policy allows none), so the issue's "missing reference" refusal
-arm is structurally impossible on this lane.
+compiles. That resolution follows an optional `modelId` query value, the
+studio's current profile-picker selection, so a portrait rendered on a
+non-default profile is judged against the profile actually in use rather
+than always the task default; omitted, it keeps resolving the task default.
+Portraits send no references at all (every portrait profile's reference
+policy allows none), so the issue's "missing reference" refusal arm is
+structurally impossible on this lane.

@@ -433,7 +433,15 @@ export const charactersApi = {
         | { mode: "new_variation"; sourceImageId?: string }
         | { mode: "same_composition"; sourceImageId: string };
     } = {},
-  ) => apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
+  ) =>
+    apiPost(
+      // The queuing job's id, for a caller that judges the request's own
+      // completion rather than the character's canonical pointer (the
+      // portrait studio, best-of-two — codex review round 1, finding A).
+      z.object({ jobId: idSchema.catch("") }).catch({ jobId: "" }),
+      `/api/characters/${id}/avatar`,
+      body,
+    ),
   uploadAvatar: (id: string, image: string) =>
     apiPost(
       z.object({ avatarImageId: idSchema }),
@@ -444,8 +452,14 @@ export const charactersApi = {
    * The studio list (avatar + variants, newest first) plus whether a portrait
    * job is live server-side (`rendering` — true through the pre-reserve reads
    * BEFORE the pending row exists, so the studio doesn't go blind there).
+   *
+   * `modelId` is the studio's current profile-picker selection — the same
+   * stored-pick value `generateAvatar` sends — so the per-row same-composition
+   * hint (`replay`) is judged against what a retry right now would actually
+   * resolve to rather than always the task default (codex review round 1,
+   * finding B). Omitted, the server falls back to the task default.
    */
-  portraits: (id: string) =>
+  portraits: (id: string, options: { modelId?: string } = {}) =>
     apiGet(
       z
         .object({
@@ -455,7 +469,7 @@ export const charactersApi = {
           replay: avatarReplayMapSchema,
         })
         .catch({ portraits: [], rendering: false, replay: {} }),
-      `/api/characters/${id}/portraits`,
+      withQuery(`/api/characters/${id}/portraits`, { modelId: options.modelId }),
     ),
   createPortrait: (
     id: string,
