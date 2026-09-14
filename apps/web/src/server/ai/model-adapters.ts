@@ -6,7 +6,6 @@ import {
   TEXT_MODEL_HOSTS,
   type BoundTextProfile,
   type TextCallSettings,
-  type TextModelExecutionHints,
   type TextModelHost,
   type TextModelProfile,
   type TextRequestBody,
@@ -34,10 +33,14 @@ import { log } from "@/server/log";
  * up as a quality change nobody could attribute — which is exactly the drift
  * the exact-model policy table this replaced was starting to accumulate.
  *
- * It is deliberately NOT narrator-only. Every model without a registered
- * adapter resolves to `null` and is asked exactly as it is today, so applying
- * the join wherever `textModel()` is called costs an unadapted model nothing
- * and removes the question of which call sites remembered to opt in.
+ * **A model's profile belongs to the leg that IS the narration**, not to every
+ * call that happens to name a narrator model. Most of them cost nothing either
+ * way — a model with no registered adapter resolves to `null` and is asked
+ * exactly as it is today — but the successor deliberator asks the chat's
+ * narrator model for one strict JSON object at a classifier's temperature, and a
+ * prose profile applied there would reshape a call nobody measured that way. The
+ * chat stream is narration by definition; `generateChecked` serves many legs and
+ * takes the profile only when a caller says the call is narration.
  */
 
 /**
@@ -118,8 +121,6 @@ export interface TextModelCall {
    * serves less than its author's profile, and the call proceeds without it.
    */
   readonly withheld: readonly WithheldTextSetting[];
-  /** How this model behaves, as opposed to what it accepts. Null when unadapted. */
-  readonly hints: TextModelExecutionHints | null;
 }
 
 /** The environment setting that names which host a profile is bound for. */
@@ -218,6 +219,18 @@ export function textModelCall(modelId: string, input: TextModelCallInput = {}): 
     providerOptions[host] = { ...(providerOptions[host] ?? {}), ...requestBodyJson(body) };
   }
 
+  if (perCall.withheld.length > 0) {
+    // WARN, where an adapter's withheld values only earn debug. A per-call value
+    // is the one layer chosen for this single call — a retry's token floor — so
+    // a host that cannot carry it has silently dropped something a lane asked
+    // for, rather than something an author published for a different runtime.
+    log.warn("ai.text_model_profile", "host does not serve a value this call asked for", {
+      modelId,
+      host,
+      withheld: perCall.withheld.map((entry) => entry.feature),
+    });
+  }
+
   if (profile.withheld.length > 0) {
     // Debug, because this is the EXPECTED answer for a model whose author tuned
     // it on a local runtime: an operator asking why a sampler seems to do
@@ -238,7 +251,6 @@ export function textModelCall(modelId: string, input: TextModelCallInput = {}): 
     // setting that never reached the wire; an adapter's is EXPECTED and is the
     // thing an operator needs told.
     withheld: profile.withheld,
-    hints: adapter?.executionHints ?? null,
   };
 }
 
@@ -305,7 +317,12 @@ function numberSetting(value: TextWireValue | undefined): number | undefined {
 /** A mutable string list for the SDK's `stopSequences`, or undefined for any other shape. */
 function stringListSetting(value: TextWireValue | undefined): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  return value.every((entry) => typeof entry === "string") ? [...value] : undefined;
+  const entries: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") return undefined;
+    entries.push(entry);
+  }
+  return entries;
 }
 
 /**

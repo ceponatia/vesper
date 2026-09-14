@@ -29,12 +29,12 @@ The header block is otherwise `**Exact id:**`, `**Host:**`, and an optional `**A
 
 A page's field table uses four verdicts and no others. The third is what keeps the tables honest:
 
-| Verdict                 | Meaning                                                                       |
-| ----------------------- | ----------------------------------------------------------------------------- |
-| **accepted+effective**  | Sent, and a measurement shows it changed the completion                       |
-| **accepted+ignored**    | Sent, answered 200, and measurably did nothing                                |
+| Verdict                 | Meaning                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| **accepted+effective**  | Sent, and a measurement shows it changed the completion                        |
+| **accepted+ignored**    | Sent, answered 200, and measurably did nothing                                 |
 | **accepted+unmeasured** | Sent and answered 200; the harness cannot observe the effect — with the reason |
-| **rejected**            | Refused with an error, so it must never be sent                               |
+| **rejected**            | Refused with an error, so it must never be sent                                |
 
 An unmeasured field is never quietly written down as ignored. "Accepted and returned an identical completion" separates neither "the host dropped it" from "the sampler never bit", and a page that collapsed the two would be inventing a measurement.
 
@@ -61,7 +61,7 @@ Curated narrator rows, grouped by the upstream that serves them. A row links to 
 - `aifeifei798/DarkIdol-Qwen3.8-27B-v1.1` — adapted: temperature and min-p, with its short reasoning pass kept **on** at medium effort.
 - `Naphula/Slimaki-Tavern-24B-v1.3` — unadapted. Its probe found no chain to suppress and its card recommends no baseline, so lane defaults are the measured answer rather than a gap.
 
-**OpenRouter** — every other row, all unadapted. Their per-call configuration is OpenRouter API surface (endpoint routing, provider exclusions, the reasoning knob) rather than a sampling profile, and it lives in the provider gateway: Aion 2.0, Aion 3.0, Aion 3.0 Mini, Aion-RP 8B, DeepSeek 4 Flash, GLM 5.2, Gemini 3.5 Flash, Grok 4.5, Euryale 70B (L3.1 and L3.3), Magnum v4 72B, Cydonia 24B, Skyfall 36B, UnslopNemo 12B, Rocinante 12B, Venice Uncensored 24B, Hermes 4 70B, MiniMax M2-her.
+**OpenRouter** — every other curated row, none of them adapted, and none of them listed here: the catalog owns which rows exist, and a second copy of that list would be believed the first time the two disagreed. What those rows carry instead of a sampling profile is OpenRouter API surface — endpoint routing, per-model provider exclusions, the eval-ruled reasoning knob — and it lives in the provider gateway rather than in an adapter.
 
 ## Adding a page
 

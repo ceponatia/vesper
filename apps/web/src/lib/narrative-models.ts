@@ -195,21 +195,15 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
     provider: "featherless",
   },
   // Owner ask, 2026-09-04. A Mistral-Small-24B merge, and the first row asked with
-  // its AUTHOR's whole published profile: the exact-model adapter
-  // (`@vesper/text-models`, family `mistral-24b`) declares every value the author
-  // set and Featherless carries the seven it serves — temperature 1.0, top-p 1.0,
-  // top-k 100, min-p 0.1, repetition penalty 1.08, presence penalty 0, and an
-  // explicit 1,024-token output cap. The rest, top-n-sigma included, is withheld
-  // by host selection rather than deleted.
+  // its AUTHOR's whole published profile rather than a trimmed subset. What it is
+  // asked for, which half of that profile Featherless carries, and every
+  // measurement behind both live in `docs/text-models/models/asmodeus-24b-v3.md`
+  // — this list is the UI's option registry and owns none of it.
   //
-  // The cap is the one number worth knowing at this layer: without it the host
-  // reserves 4,096 output tokens inside the 32K window, so the usable prompt is
-  // ~28.7K rather than the label's 32K. `chat_template_kwargs` must never be sent
-  // to this row — it 400s on a Mistral tokenizer, empty object included.
-  //
-  // Everything else about how it behaves lives in its reference page,
-  // `docs/text-models/models/asmodeus-24b-v3.md`, which is where a measurement
-  // belongs; this list stays the UI's option registry.
+  // One caveat belongs at this layer, because it contradicts the label: the `(32K)`
+  // marker is the context, not the prompt budget. The adapter sends an explicit
+  // output cap, so the usable prompt is ~31.7K; a caller that sent none would get
+  // ~28.7K, because the host reserves 4,096 output tokens inside the same window.
   {
     id: "DarkArtsForge/Asmodeus-24B-v3",
     label: "Asmodeus 24B v3 (32K)",

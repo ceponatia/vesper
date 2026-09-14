@@ -3,7 +3,7 @@ import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { recordAgentFailure, type AgentTelemetry } from "./agent-failures";
 import { classifyProviderError } from "./errors";
-import { textModelCall } from "./model-adapters";
+import { textModelCall, type TextModelCallSettings } from "./model-adapters";
 import { isDemoMode, providerRouting, routedProvider, stateModelId, textModel } from "./provider";
 
 /** An image handed to a vision-capable model alongside the prompt text. */
@@ -89,6 +89,25 @@ export interface GenerateCheckedOptions<T> {
    */
   usageAccounting?: boolean;
   /**
+   * Apply the exact model's measured call profile to this generation
+   * (`./model-adapters.ts`), with this helper's own `temperature` and
+   * `maxOutputTokens` as the lane's defaults for it to outrank.
+   *
+   * **Off by default, and the default is the safe one.** This helper serves the
+   * successor narrator, the post-turn agents, intake, the scene composer and
+   * vision, and only the first of those is NARRATION. A narrator's profile is
+   * tuned for prose — a high temperature, a wide top-k, a prose-sized output cap
+   * — and applying it to a strict-JSON classifier that happens to run on the
+   * chat's narrator model would reshape a leg nobody measured that way. The
+   * successor deliberator is exactly that leg: it asks the narrator model for one
+   * object at temperature 0.2 inside a 4s budget.
+   *
+   * So a call opts in when it IS the narration, and the failure mode of
+   * forgetting is a narrator leg quietly asked at lane defaults rather than an
+   * agent quietly asked at a narrator's sampler.
+   */
+  applyModelProfile?: boolean;
+  /**
    * Where this call lives (chat / session, which conversation, which exchange), so a
    * failure can be RECORDED and tallied rather than only logged
    * (`./agent-failures.ts`). Optional: without it the failure is still recorded, just
@@ -150,15 +169,24 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   if (opts.usageAccounting) orOptions.usage = { include: true };
   const routing = providerRouting(modelId, { sortLatency: opts.lowLatencyRouting });
   if (routing) orOptions.provider = routing;
-  // The model gateway (./model-adapters.ts) owns the call's shape: this helper's
-  // own settings are the LANE's defaults, and an exact model's measured profile
-  // outranks them — which is how a Featherless narrator keeps its baseline on a
-  // call site that also sets a temperature. A model with no registered adapter
-  // is asked with exactly these settings and nothing else.
-  const call = textModelCall(modelId, {
-    laneDefaults: { temperature: opts.temperature ?? 0, maxTokens: opts.maxOutputTokens ?? 4096 },
-    ...(Object.keys(orOptions).length > 0 ? { providerOptions: { openrouter: orOptions } } : {}),
-  });
+  const openrouterOptions = Object.keys(orOptions).length > 0 ? { openrouter: orOptions } : undefined;
+  // A NARRATION call goes through the model gateway (./model-adapters.ts), which
+  // owns its shape: the settings below are the lane's defaults and an exact
+  // model's measured profile outranks them, which is how a Featherless narrator
+  // keeps its baseline on a call site that also sets a temperature. Every other
+  // leg is asked exactly as it was before — see `applyModelProfile`.
+  const call =
+    opts.applyModelProfile === true
+      ? textModelCall(modelId, {
+          laneDefaults: { temperature: opts.temperature ?? 0, maxTokens: opts.maxOutputTokens ?? 4096 },
+          ...(openrouterOptions === undefined ? {} : { providerOptions: openrouterOptions }),
+        })
+      : null;
+  const settings: TextModelCallSettings = call?.settings ?? {
+    temperature: opts.temperature ?? 0,
+    maxOutputTokens: opts.maxOutputTokens ?? 4096,
+  };
+  const providerOptions = call === null ? openrouterOptions : call.providerOptions;
   // Provider + latency of the last *completed* call (set even when the response
   // then fails to parse): the Inspector reports them so a slow endpoint shows up.
   let provider: string | null = null;
@@ -180,9 +208,9 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
     const start = Date.now();
     const base = {
       model: textModel(modelId),
-      ...call.settings,
+      ...settings,
       abortSignal: opts.signal,
-      ...(call.providerOptions === undefined ? {} : { providerOptions: call.providerOptions }),
+      providerOptions,
       system: [
         opts.system,
         "",

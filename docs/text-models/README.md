@@ -14,9 +14,9 @@ It owns none of the call itself. Which upstream serves a model id, what credenti
 
 Source: [`packages/text-models`](../../packages/text-models/README.md). The image system's equivalent, and the pattern this package mirrors, is [image-models](../image-models/README.md).
 
-| Page                                              | Owns                                                                                     |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [Narrator model reference](models/README.md)      | Per-model host facts, field verdicts, template behavior, and each model's effective request |
+| Page                                               | Owns                                                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [Narrator model reference](models/README.md)       | Per-model host facts, field verdicts, template behavior, and each model's effective request |
 
 ## Feature vocabulary
 
@@ -224,7 +224,7 @@ Three properties follow, and they are the reason the join is one place rather th
 
 `apps/web/src/server/ai/model-adapters.ts` is that one place. Both narrator lanes — the character-chat stream and the successor narrator's structured call — build their request through `textModelCall(modelId, { laneDefaults, perCall, providerOptions })`, which returns the SDK's call settings already merged, the raw body fields under the transport's own provider-options key, the adapter's withheld list, and its execution hints.
 
-- **It is not narrator-only.** A model with no registered adapter resolves to `null` and is asked exactly as it was before, so applying the join wherever the model gateway is called costs an unadapted model nothing and removes the question of which call sites remembered to opt in.
+- **A profile belongs to the leg that IS the narration.** The chat stream is narration by definition. The structured helper serves many legs — post-turn agents, intake, the scene composer, vision, and the successor deliberator, which asks the chat's own narrator model for one strict JSON object at a classifier's temperature — so it takes a profile only when a caller states that the call is narration. The default is off, and the failure mode of forgetting is a narrator leg asked at lane defaults rather than an agent asked at a narrator's sampler.
 - **A lane's own setting is a lane DEFAULT, not a per-call override.** A caller asking a shared helper for a temperature is stating its lane's setting, and a measured exact-model baseline still outranks it. The per-call layer is reserved for what was chosen for one single call — a retry's minimum-token floor.
 - **Bound body fields travel as provider options.** Both transports Vesper uses spread `providerOptions.<provider>` into the request body, and the join merges into that key rather than replacing it, so an adapter's fields and a lane's existing routing block cannot clobber each other.
 - **`prepareRequest` runs at the transport.** The model boundary is the assembled body, after the SDK has spelled the call settings and spread the provider options, because that is the only moment a model-specific rewrite can see the whole request. A preparer owns the whole body it is handed.

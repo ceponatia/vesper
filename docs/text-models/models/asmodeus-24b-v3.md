@@ -43,33 +43,33 @@ Two properties of that template matter to anything that writes prompts for this 
 
 Verdicts use [the catalog's vocabulary](README.md). Truncation samplers cannot move the argmax, so each was sent at its most restrictive value on top of `temperature: 5` — measured to degrade this model to an ordinary-character ratio of 0.75–0.91 — and judged by whether it restored coherent text.
 
-| Field                       | Verdict                 | Note                                                                         |
-| --------------------------- | ----------------------- | ---------------------------------------------------------------------------- |
-| `temperature`               | accepted+effective      | 5 degrades the ratio to 0.85–0.88 and runs to the cap; 0 sits at 1.0          |
-| `top_p`                     | accepted+effective      | 0.01 restores a ratio of 1.0 without reproducing the argmax exactly           |
-| `top_k`                     | accepted+effective      | 1 restores 1.0 and stops on its own; byte-identical to `min_p`               |
-| `min_p`                     | accepted+effective      | 1 restores 1.0 and stops on its own                                          |
-| `repetition_penalty`        | accepted+effective      | 2 produces a completion outside the greedy anchor set, twice                 |
-| `presence_penalty`          | accepted+effective      | same standard                                                                |
-| `frequency_penalty`         | accepted+effective      | same standard                                                                |
-| `seed`                      | accepted+effective      | identical text for one seed at temperature 1; see determinism below          |
-| `max_tokens`                | accepted+effective      | `finish_reason: length` at exactly the requested count                       |
-| `min_tokens`                | accepted+effective      | 47 produced 48 completion tokens against anchors that stopped at 20          |
-| `stop`                      | accepted+effective      | `["."]` produced 4 completion tokens                                         |
-| `include_stop_str_in_output` | accepted+ignored       | documented, and the stop string is not retained                              |
-| `top_nsigma`                | accepted+ignored        | ratio inside the temperature-5 control band                                  |
-| `typical_p`                 | accepted+ignored        | ratio inside the control band                                                |
-| `tfs`                       | accepted+ignored        | ratio inside the control band                                                |
-| `top_a`                     | accepted+ignored        | ratio inside the control band                                                |
-| `smoothing_*`               | accepted+ignored        | ratio inside the control band                                                |
-| `dynatemp_*`                | accepted+ignored        | pinned to 0 it would have decoded greedily if honoured                       |
-| `dry_*`                     | accepted+ignored        | byte-identical to a plain greedy completion; sent as a group                 |
-| `xtc_*`                     | accepted+ignored        | byte-identical at XTC certainty                                              |
-| `mirostat_*`                | accepted+ignored        | byte-identical; mirostat overrides a decode when honoured                    |
-| `stop_token_ids`            | accepted+unmeasured     | a null result cannot separate ignored from never-sampled                     |
-| `logit_bias`                | accepted+unmeasured     | needs a token id from this checkpoint's tokenizer                            |
-| `repetition_penalty_range`  | accepted+unmeasured     | an 8-token window may not bite inside a 48-token completion                  |
-| `chat_template_kwargs`      | **rejected**            | 400 on this Mistral tokenizer, empty object included                         |
+| Field                        | Verdict                 | Note                                                                         |
+| ---------------------------- | ----------------------- | ---------------------------------------------------------------------------- |
+| `temperature`                | accepted+effective      | 5 degrades the ratio to 0.85–0.88 and runs to the cap; 0 sits at 1.0         |
+| `top_p`                      | accepted+effective      | 0.01 restores a ratio of 1.0 without reproducing the argmax exactly          |
+| `top_k`                      | accepted+effective      | 1 restores 1.0 and stops on its own; byte-identical to `min_p`               |
+| `min_p`                      | accepted+effective      | 1 restores 1.0 and stops on its own                                          |
+| `repetition_penalty`         | accepted+effective      | 2 produces a completion outside the greedy anchor set, twice                 |
+| `presence_penalty`           | accepted+effective      | same standard                                                                |
+| `frequency_penalty`          | accepted+effective      | same standard                                                                |
+| `seed`                       | accepted+effective      | identical text for one seed at temperature 1; see determinism below          |
+| `max_tokens`                 | accepted+effective      | `finish_reason: length` at exactly the requested count                       |
+| `min_tokens`                 | accepted+effective      | 47 produced 48 completion tokens against anchors that stopped at 20          |
+| `stop`                       | accepted+effective      | `["."]` produced 4 completion tokens                                         |
+| `include_stop_str_in_output` | accepted+ignored        | documented, and the stop string is not retained                              |
+| `top_nsigma`                 | accepted+ignored        | ratio inside the temperature-5 control band                                  |
+| `typical_p`                  | accepted+ignored        | ratio inside the control band                                                |
+| `tfs`                        | accepted+ignored        | ratio inside the control band                                                |
+| `top_a`                      | accepted+ignored        | ratio inside the control band                                                |
+| `smoothing_*`                | accepted+ignored        | ratio inside the control band                                                |
+| `dynatemp_*`                 | accepted+ignored        | pinned to 0 it would have decoded greedily if honoured                       |
+| `dry_*`                      | accepted+ignored        | byte-identical to a plain greedy completion; sent as a group                 |
+| `xtc_*`                      | accepted+ignored        | byte-identical at XTC certainty                                              |
+| `mirostat_*`                 | accepted+ignored        | byte-identical; mirostat overrides a decode when honoured                    |
+| `stop_token_ids`             | accepted+unmeasured     | a null result cannot separate ignored from never-sampled                     |
+| `logit_bias`                 | accepted+unmeasured     | needs a token id from this checkpoint's tokenizer                            |
+| `repetition_penalty_range`   | accepted+unmeasured     | an 8-token window may not bite inside a 48-token completion                  |
+| `chat_template_kwargs`       | **rejected**            | 400 on this Mistral tokenizer, empty object included                         |
 
 The pattern is exact: the host honours its documented parameter set and silently drops every undocumented one. Both exceptions sit inside the documented set — one documented field is ignored, and `chat_template_kwargs` is refused outright.
 
@@ -91,13 +91,13 @@ Carried on Featherless:
 
 Declared and withheld — the local-runtime half, kept so the record of how the model was meant to be asked survives a host that serves less than its author tuned against:
 
-| Feature                                                      | Value                |
-| ------------------------------------------------------------ | -------------------- |
-| `topNsigma`                                                  | 1.25                 |
-| `repetitionPenaltyRange` / `repetitionPenaltySlope`          | 360 / 0.7            |
+| Feature                                                       | Value                |
+| ------------------------------------------------------------- | -------------------- |
+| `topNsigma`                                                   | 1.25                 |
+| `repetitionPenaltyRange` / `repetitionPenaltySlope`           | 360 / 0.7            |
 | `dryMultiplier` / `dryBase` / `dryAllowedLength` / `dryRange` | 0.8 / 1.75 / 2 / 320 |
-| `xtcProbability` / `xtcThreshold`                            | 0.1 / 0.08           |
-| `dynatempMin` / `dynatempMax`                                | 0.65 / 1.35          |
+| `xtcProbability` / `xtcThreshold`                             | 0.1 / 0.08           |
+| `dynatempMin` / `dynatempMax`                                 | 0.65 / 1.35          |
 
 Two of the author's settings are recorded here and **not** declared in the adapter:
 
@@ -134,7 +134,7 @@ The model ends its own turns — every short probe call finished on `stop` with 
 
 | Request                                  | Result                                                         |
 | ---------------------------------------- | -------------------------------------------------------------- |
-| 31,594-token prompt, no `max_tokens`     | 400 — 4,096 requested output plus 31,594 input exceeds 32,768   |
+| 31,594-token prompt, no `max_tokens`     | 400 — 4,096 requested output plus 31,594 input exceeds 32,768  |
 | identical prompt, `max_tokens: 256`      | 200 — 31,594 prompt tokens, 27 completion tokens               |
 
 Owner ruling 2026-09-14: send an explicit cap of 1,024. Usable prompt is therefore **31,744 tokens**, against ~28,672 for a caller that sends none, and the longest reply measured on this row was 404 completion tokens.
