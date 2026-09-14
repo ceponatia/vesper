@@ -267,9 +267,9 @@ place a key is defined.
   it is a new key or an existing key whose shape changed, and a display-only operation
   like a take switch cannot permanently delete data it merely failed to read. The
   guarantee covers top-level keys and the two nested objects this contract owns
-  (`attachments` and `worldBeat`); `narratorRun` and `renderDiagnostics` belong to the
-  narrator-provenance and diagnostic contracts and keep their owners' strict shapes, so
-  an unknown key nested inside one is stripped by its owner.
+  (`attachments` and `worldBeat`); `narratorRun` belongs to the narrator-provenance
+  contract and keeps its owner's strict shape, so an unknown key nested inside it is
+  stripped by its owner.
 - **Version.** An optional integer `v` on the bag, where absent means 1. It is a reader
   hint, never a gate — no reader refuses a row over `v`. A v1 reader meeting a v2 row
   keeps the v2 keys it cannot interpret and writes them back; a v2 reader meeting a v1
@@ -291,7 +291,8 @@ place a key is defined.
   `stopped`, and the `narratorRun` provenance for the take currently displayed;
   successor-lane rows add `simTurn`, `cutId`, `modelId`, `attempts`, `solo`,
   `simOpening`, `confirmStatus`, the `worldBeat` marker, and the `compositionFallbacks`
-  and `renderDiagnostics` breadcrumbs.
+  and `renderDiagnostics` breadcrumbs — both lists of stable CODES, never diagnostic
+  records, because the row is client-readable and carries no private detail.
 
 ## Persistence guards
 

@@ -80,11 +80,13 @@ export const chatMessageSchema = z.object({
    * browser reads the column through the same module the server writes it with
    * and the transcript cannot disagree with the row about what was saved.
    *
-   * Per-field lenient, which the whole-object `.catch` it replaces was not — one
-   * malformed key used to reset every sibling to its default, so a corrupt
-   * `attachments` re-rendered a saved narrator line as ordinary player speech.
-   * Unknown keys survive the parse untouched (`meta.extra`), so a field a newer
-   * deploy writes is never lost to an older tab.
+   * What this buys over the four-field mirror it replaces, which was already
+   * per-field lenient: the client can no longer model the column differently from
+   * the writer, a world-beat kind reaches the renderer verbatim instead of being
+   * rewritten to `traveled`, unknown keys survive the parse (`meta.extra`) so a
+   * field a newer deploy writes is not lost to an older tab, and the key stays
+   * OPTIONAL below — a required one would make `listOf` drop a meta-less row out
+   * of the transcript entirely.
    */
   meta: z
     .unknown()

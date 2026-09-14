@@ -166,6 +166,12 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
     modelId: rendered.modelId,
     attempts: rendered.attempts,
     degraded: rendered.degraded,
-    diagnostics: [...ctx.instructionDiagnostics, ...metaDiagnostics.items, ...rendered.diagnostics],
+    // Codes only: this field is `string[]` and is returned verbatim in the sim-turn
+    // JSON, so it carries the stable code and never a diagnostic's message or context.
+    diagnostics: [
+      ...ctx.instructionDiagnostics,
+      ...metaDiagnostics.items.map((d) => d.code),
+      ...rendered.diagnostics,
+    ],
   };
 }

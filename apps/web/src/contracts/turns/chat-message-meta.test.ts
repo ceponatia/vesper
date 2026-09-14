@@ -56,11 +56,9 @@ const INVENTORY: ReadonlyArray<{ role: "user" | "assistant"; key: string; value:
   { role: "assistant", key: "confirmStatus", value: "confirmed" },
   { role: "assistant", key: "worldBeat", value: { kind: "traveled" } },
   { role: "assistant", key: "compositionFallbacks", value: ["traveled_alone"] },
-  {
-    role: "assistant",
-    key: "renderDiagnostics",
-    value: [{ severity: "warn", code: "sim.solo.degraded", message: "fell back" }],
-  },
+  // Stored as stable CODES, exactly like `compositionFallbacks` — never as
+  // `Diagnostic` records, which would put a message and context on a client-read row.
+  { role: "assistant", key: "renderDiagnostics", value: ["sim.solo.degraded", "attempt1.presentation.id_leak"] },
 ];
 
 describe("parseChatMessageMeta — the inventory", () => {
