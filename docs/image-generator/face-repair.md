@@ -34,9 +34,12 @@ provider spend:
    an unrelated reason, but it is a genuine render of this character — the identity pack's own
    accepted view — so a repair accepts it as a source.
 4. The multi-person check (below) passes.
-5. The identity references resolve (below).
-6. The repair method resolves (below).
-7. The ordinary render cost guard (`imageRenderRejection`, hidden `generator_output` output kind).
+5. The repair profile pairs with an identity strategy the model's reference capacity affords
+   (below) — refuses `face_repair.model_unavailable` when no room is left for both the source
+   image and at least one identity reference.
+6. The identity references resolve (below).
+7. The repair method resolves (below).
+8. The ordinary render cost guard (`imageRenderRejection`, hidden `generator_output` output kind).
 
 A refusal at any step is a typed JSON error at 400 — `{ code: "face_repair.<code>", message }` —
 except the flag-off case, which answers the anonymous hidden 404 instead of naming itself, so a
